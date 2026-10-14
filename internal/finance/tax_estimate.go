@@ -6,14 +6,16 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// A tax year's estimate sets the tax the year's wages owe beside what was
-// withheld from them, for the ring that shows a year's pay as the tax
-// already paid, the tax still to come out of paychecks, what will be owed
-// at filing, and what is left. Only wages count: interest, dividends,
-// gains, itemized deductions and credits are not on paystubs or W-2s, so
-// the federal figure is the tax on wages less the standard deduction.
-// Social Security and Medicare are exact. State and local income tax are
-// taken as withheld, since each state's rules are its own.
+// A tax year's estimate sets the tax the year's income owes beside what
+// was withheld, for the ring that shows a year's income as the tax already
+// paid, the tax still to come out of paychecks, what will be owed at
+// filing, and what is left. Income is wages and what the year's 1099s
+// report (see tax_investment.go); itemized deductions, credits and other
+// income are not on those forms, so the federal figure is the tax on that
+// income less the standard deduction. Social Security and Medicare are
+// exact. State and local income tax are taken as withheld, since each
+// state's rules are its own, so a state's tax on investment income is not
+// counted.
 
 // TaxFilingStatus is how a return is filed.
 type TaxFilingStatus string
@@ -50,10 +52,30 @@ type TaxYearEstimate struct {
 	IsProjected              bool            `json:"isProjected"`
 	// PayAmount is Medicare wages (box 5): pay before income tax,
 	// retirement savings included, pre-tax health benefits not; box 1 for
-	// documents that print no Medicare wages.
-	PayAmount               string `json:"payAmount"`
-	StandardDeductionAmount string `json:"standardDeductionAmount"`
-	TaxableIncomeAmount     string `json:"taxableIncomeAmount"`
+	// documents that print no Medicare wages. InvestmentIncomeAmount is
+	// interest, ordinary dividends and the capital result from 1099s (a
+	// net loss counted only up to the limit), and IncomeAmount the two
+	// together, the ring's whole.
+	PayAmount              string `json:"payAmount"`
+	InvestmentIncomeAmount string `json:"investmentIncomeAmount"`
+	IncomeAmount           string `json:"incomeAmount"`
+	// AdjustedGrossIncomeAmount is wages (box 1) and investment income.
+	AdjustedGrossIncomeAmount string `json:"adjustedGrossIncomeAmount"`
+	StandardDeductionAmount   string `json:"standardDeductionAmount"`
+	TaxableIncomeAmount       string `json:"taxableIncomeAmount"`
+	// PreferentialIncomeAmount is the part of taxable income taxed at the
+	// lower rates (qualified dividends and net long-term gain), and
+	// PreferentialIncomeTaxAmount that tax, part of the federal income
+	// tax. CapitalLossDeductionAmount is a net loss taken against other
+	// income, ForeignTaxCreditAmount the foreign tax taken off the
+	// federal income tax.
+	PreferentialIncomeAmount    string `json:"preferentialIncomeAmount"`
+	PreferentialIncomeTaxAmount string `json:"preferentialIncomeTaxAmount"`
+	CapitalLossDeductionAmount  string `json:"capitalLossDeductionAmount"`
+	ForeignTaxCreditAmount      string `json:"foreignTaxCreditAmount"`
+	// NetInvestmentIncomeTaxAmount is the 3.8% tax on investment income
+	// above the filing status's threshold.
+	NetInvestmentIncomeTaxAmount string `json:"netInvestmentIncomeTaxAmount"`
 	// The tax owed for the year, each kind, and all of it.
 	FederalIncomeTaxAmount  string `json:"federalIncomeTaxAmount"`
 	SocialSecurityTaxAmount string `json:"socialSecurityTaxAmount"`
@@ -71,9 +93,10 @@ type TaxYearEstimate struct {
 	// "0.00".
 	OwingTaxAmount string `json:"owingTaxAmount"`
 	RefundAmount   string `json:"refundAmount"`
-	// RemainingIncomeAmount is pay less what was withheld or is owed,
+	// RemainingIncomeAmount is income less what was withheld or is owed,
 	// whichever is more: what the person keeps before any refund. The
-	// ring's slices, paid, upcoming, owing and remaining, add up to pay.
+	// ring's slices, paid, upcoming, owing and remaining, add up to
+	// income.
 	RemainingIncomeAmount string `json:"remainingIncomeAmount"`
 }
 
@@ -192,9 +215,15 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 	}
 	pay, standardDeduction, taxableIncome, federal, socialSecurity, medicare := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
 	stateTax, localTax, withheld, paid := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
+	investmentIncome, adjustedGrossIncome, preferential, preferentialTax := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
+	capitalLossDeduction, foreignTaxCredit, netInvestmentIncomeTax := new(big.Rat), new(big.Rat), new(big.Rat)
 	for _, members := range returns {
 		wages, medicareWages := new(big.Rat), new(big.Rat)
+		investment := newInvestmentSums()
 		for _, person := range members {
+			if person.investment != nil {
+				investment.add(person.investment)
+			}
 			year := person.projected
 			wages.Add(wages, year.wages)
 			medicareWages.Add(medicareWages, year.medicareWages)
@@ -220,21 +249,60 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 			withheld.Add(withheld, withheldTax(year))
 			paid.Add(paid, withheldTax(person.figures))
 		}
+		// A 1099's withholding was paid already, whatever the year.
+		withheld.Add(withheld, investment.withheld)
+		paid.Add(paid, investment.withheld)
+		invested := figureInvestmentReturn(investment, status)
+		investmentIncome.Add(investmentIncome, invested.income)
+		capitalLossDeduction.Add(capitalLossDeduction, invested.capitalLossDeduction)
+		grossIncome := new(big.Rat).Add(wages, invested.income)
+		adjustedGrossIncome.Add(adjustedGrossIncome, grossIncome)
 		deduction := big.NewRat(table.standardDeductionByStatus[status], 1)
 		standardDeduction.Add(standardDeduction, deduction)
-		taxable := new(big.Rat).Sub(wages, deduction)
+		taxable := new(big.Rat).Sub(grossIncome, deduction)
 		if taxable.Sign() < 0 {
 			taxable = new(big.Rat)
 		}
 		taxableIncome.Add(taxableIncome, taxable)
-		federal.Add(federal, federalIncomeTax(table, status, taxable))
+		// Qualified dividends and net long-term gain at the lower rates,
+		// on top of the rest; as ordinary income in a year whose ceilings
+		// TeaNode does not know.
+		returnPreferential := new(big.Rat).Set(invested.preferential)
+		if returnPreferential.Cmp(taxable) > 0 {
+			returnPreferential.Set(taxable)
+		}
+		ceilings, isKnown := preferentialRateCeilingsByYear[taxYear][status]
+		if !isKnown {
+			returnPreferential = new(big.Rat)
+		}
+		ordinaryTaxable := new(big.Rat).Sub(taxable, returnPreferential)
+		returnTax := federalIncomeTax(table, status, ordinaryTaxable)
+		if returnPreferential.Sign() > 0 {
+			tax := preferentialIncomeTax(ceilings, ordinaryTaxable, returnPreferential)
+			preferential.Add(preferential, returnPreferential)
+			preferentialTax.Add(preferentialTax, tax)
+			returnTax.Add(returnTax, tax)
+		}
+		credit := new(big.Rat).Set(investment.foreignTaxPaid)
+		if credit.Cmp(returnTax) > 0 {
+			credit.Set(returnTax)
+		}
+		foreignTaxCredit.Add(foreignTaxCredit, credit)
+		federal.Add(federal, new(big.Rat).Sub(returnTax, credit))
+		if above := new(big.Rat).Sub(grossIncome, big.NewRat(netInvestmentIncomeThresholdByStatus[status], 1)); above.Sign() > 0 && invested.netInvestmentIncome.Sign() > 0 {
+			if invested.netInvestmentIncome.Cmp(above) < 0 {
+				above = invested.netInvestmentIncome
+			}
+			netInvestmentIncomeTax.Add(netInvestmentIncomeTax, roundToCents(new(big.Rat).Mul(above, netInvestmentIncomeTaxRate)))
+		}
 		medicare.Add(medicare, roundToCents(new(big.Rat).Mul(medicareWages, medicareRate)))
 		if above := new(big.Rat).Sub(medicareWages, big.NewRat(additionalMedicareThresholdByStatus[status], 1)); above.Sign() > 0 {
 			medicare.Add(medicare, roundToCents(new(big.Rat).Mul(above, additionalMedicareRate)))
 		}
 	}
 	total := new(big.Rat).Add(federal, socialSecurity)
-	total.Add(total, medicare).Add(total, stateTax).Add(total, localTax)
+	total.Add(total, medicare).Add(total, stateTax).Add(total, localTax).Add(total, netInvestmentIncomeTax)
+	income := new(big.Rat).Add(pay, investmentIncome)
 	owing, refund := new(big.Rat).Sub(total, withheld), new(big.Rat).Sub(withheld, total)
 	if owing.Sign() < 0 {
 		owing = new(big.Rat)
@@ -246,15 +314,20 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 	if upcoming.Sign() < 0 {
 		upcoming = new(big.Rat)
 	}
-	remaining := new(big.Rat).Sub(pay, total)
+	remaining := new(big.Rat).Sub(income, total)
 	remaining.Sub(remaining, refund)
 	if remaining.Sign() < 0 {
 		remaining = new(big.Rat)
 	}
 	return &TaxYearEstimate{
 		TaxFilingStatus: status, IsProjected: isProjected,
-		PayAmount: formatDollars(pay), StandardDeductionAmount: formatDollars(standardDeduction), TaxableIncomeAmount: formatDollars(taxableIncome),
-		FederalIncomeTaxAmount: formatDollars(federal), SocialSecurityTaxAmount: formatDollars(socialSecurity), MedicareTaxAmount: formatDollars(medicare),
+		PayAmount: formatDollars(pay), InvestmentIncomeAmount: formatDollars(investmentIncome), IncomeAmount: formatDollars(income),
+		AdjustedGrossIncomeAmount: formatDollars(adjustedGrossIncome),
+		StandardDeductionAmount:   formatDollars(standardDeduction), TaxableIncomeAmount: formatDollars(taxableIncome),
+		PreferentialIncomeAmount: formatDollars(preferential), PreferentialIncomeTaxAmount: formatDollars(preferentialTax),
+		CapitalLossDeductionAmount: formatDollars(capitalLossDeduction), ForeignTaxCreditAmount: formatDollars(foreignTaxCredit),
+		NetInvestmentIncomeTaxAmount: formatDollars(netInvestmentIncomeTax),
+		FederalIncomeTaxAmount:       formatDollars(federal), SocialSecurityTaxAmount: formatDollars(socialSecurity), MedicareTaxAmount: formatDollars(medicare),
 		StateIncomeTaxAmount: formatDollars(stateTax), LocalIncomeTaxAmount: formatDollars(localTax), TotalTaxAmount: formatDollars(total),
 		PaidTaxAmount: formatDollars(paid), UpcomingWithheldTaxAmount: formatDollars(upcoming),
 		OwingTaxAmount: formatDollars(owing), RefundAmount: formatDollars(refund), RemainingIncomeAmount: formatDollars(remaining),
@@ -272,9 +345,11 @@ func withheldTax(sums *figureSums) *big.Rat {
 }
 
 // personSums are one person's figures to date and to December 31 (the
-// same when nothing is projected).
+// same when nothing is projected), and the investment income of the 1099s
+// made out to them.
 type personSums struct {
 	figures, projected *figureSums
+	investment         *investmentSums
 }
 
 // retirementDeferralLimitByYear is the most a person may put into

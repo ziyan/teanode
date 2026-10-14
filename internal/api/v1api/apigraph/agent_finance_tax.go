@@ -78,7 +78,8 @@ type TaxFormEntry struct {
 }
 
 // RecordTaxFormArguments are a tax form as read and the upload it was read
-// from. TaxFormKind is w2. RecipientTaxIDMask is the last four digits of
+// from. TaxFormKind is w2 (the default), 1099_int, 1099_div or 1099_b; a
+// file may hold one form of each kind. RecipientTaxIDMask is the last four digits of
 // the person's taxpayer number, never more.
 type RecordTaxFormArguments struct {
 	AgentAttachmentID  string         `json:"agentAttachmentId"`

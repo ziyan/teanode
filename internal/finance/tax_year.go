@@ -102,6 +102,13 @@ const (
 	// across employers is more than the year's maximum; the excess comes
 	// back as a credit on the return.
 	TaxYearFindingExcessSocialSecurity TaxYearFindingCode = "excess_social_security"
+	// TaxYearFindingHSAOverLimit: a person's HSA contributions, theirs and
+	// their employer's, are more than the year's family limit; the excess
+	// is taxed and owes a 6% excise tax unless it is taken out in time.
+	TaxYearFindingHSAOverLimit TaxYearFindingCode = "hsa_over_limit"
+	// TaxYearFindingCostBasisMissing: a 1099-B prints proceeds without a
+	// cost basis, so the gain counts the whole proceeds.
+	TaxYearFindingCostBasisMissing TaxYearFindingCode = "cost_basis_missing"
 )
 
 // TaxYearFinding is one thing worth knowing about a tax year, in a
@@ -191,6 +198,9 @@ type TaxYearSummary struct {
 	TaxYearEstimate *TaxYearEstimate `json:"taxYearEstimate,omitempty" graphapi:"nullable"`
 	PaystubCount    int              `json:"paystubCount"`
 	TaxFormCount    int              `json:"taxFormCount"`
+	// TaxYearInvestment is the year's investment income from its 1099s,
+	// the household's; nil when there are none.
+	TaxYearInvestment *TaxYearInvestmentFigures `json:"taxYearInvestment,omitempty" graphapi:"nullable"`
 }
 
 // figureSums is TaxYearFigures while being added up.
@@ -559,6 +569,11 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			identities.learn(taxForm.RecipientName, taxForm.RecipientTaxIDMask, taxForm.PayerName, taxForm.PayerTaxID)
 		}
 	}
+	for _, taxForm := range taxForms {
+		if taxForm != nil && taxForm.TaxYear == taxYear && IsInvestmentTaxForm(taxForm.TaxFormKind) {
+			identities.learn(taxForm.RecipientName, taxForm.RecipientTaxIDMask, "", "")
+		}
+	}
 	groupOf := func(employeeName, employeeTaxIDMask, employerName, employerTaxID string) *employmentGroup {
 		employeeKey := identities.employeeKey(employeeName, employeeTaxIDMask)
 		key := employeeKey + "\x00" + identities.employerKey(employerName, employerTaxID)
@@ -693,6 +708,10 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		}
 		byEmployee[group.employeeKey] = append(byEmployee[group.employeeKey], group)
 	}
+	investmentByEmployee, investmentOrder := investmentSumsByEmployee(taxYear, taxForms, identities)
+	for _, employeeKey := range investmentOrder {
+		summary.TaxFormCount += len(investmentByEmployee[employeeKey].taxFormIds)
+	}
 	var everyoneSums []*personSums
 	for _, employeeKey := range employeeOrder {
 		personGroups := byEmployee[employeeKey]
@@ -707,7 +726,19 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		if hasProjection {
 			person.ProjectedFigures = projected.figures()
 		}
-		everyoneSums = append(everyoneSums, &personSums{figures: figures, projected: projected})
+		everyoneSums = append(everyoneSums, &personSums{figures: figures, projected: projected, investment: investmentByEmployee[employeeKey]})
+		delete(investmentByEmployee, employeeKey)
+		if limit, isKnown := hsaFamilyLimitByYear[taxYear]; isKnown {
+			limitValue := big.NewRat(limit, 1)
+			if excess := new(big.Rat).Sub(projected.hsa, limitValue); excess.Sign() > 0 {
+				summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
+					TaxYearFindingCode: TaxYearFindingHSAOverLimit, EmployeeName: person.EmployeeName,
+					FindingText: fmt.Sprintf("%s's HSA contributions of %s are %s over %d's family limit of %s; the excess is taxed and owes a 6%% excise tax unless it is taken out before the return is due (at 55 or older the limit is $1,000 more)",
+						person.EmployeeName, dollarsText(projected.hsa), dollarsText(excess), taxYear, dollarsText(limitValue)),
+					PaystubIDs: []string{},
+				})
+			}
+		}
 		if isWageBaseKnown && len(personGroups) > 1 {
 			maximumTax := roundToCents(new(big.Rat).Mul(wageBase, socialSecurityRate))
 			if excess := new(big.Rat).Sub(figures.socialSecurityTax, maximumTax); excess.Sign() > 0 {
@@ -721,6 +752,38 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			}
 		}
 		summary.TaxYearPeople = append(summary.TaxYearPeople, person)
+	}
+	// 1099s made out to nobody the W-2s and paystubs name: to the first
+	// person when there is one, else a person of their own.
+	for _, employeeKey := range investmentOrder {
+		sums := investmentByEmployee[employeeKey]
+		if sums == nil {
+			continue
+		}
+		if len(everyoneSums) > 0 {
+			if everyoneSums[0].investment == nil {
+				everyoneSums[0].investment = newInvestmentSums()
+			}
+			everyoneSums[0].investment.add(sums)
+			continue
+		}
+		empty := newFigureSums()
+		everyoneSums = append(everyoneSums, &personSums{figures: empty, projected: empty, investment: sums})
+		summary.TaxYearPeople = append(summary.TaxYearPeople, &TaxYearPerson{EmployeeName: sums.recipientName, Figures: empty.figures(), ExcessSocialSecurityTaxAmount: "0.00"})
+	}
+	householdInvestment := newInvestmentSums()
+	for _, person := range everyoneSums {
+		if person.investment != nil {
+			householdInvestment.add(person.investment)
+		}
+	}
+	if len(householdInvestment.taxFormIds) > 0 {
+		summary.TaxYearInvestment = householdInvestment.figures()
+		if text := investmentFindingText(householdInvestment); text != "" {
+			summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
+				TaxYearFindingCode: TaxYearFindingCostBasisMissing, FindingText: text, PaystubIDs: []string{},
+			})
+		}
 	}
 	summary.Figures = household.figures()
 	if isAnythingProjected {

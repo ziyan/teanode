@@ -697,6 +697,18 @@ message's PDFs and pictures with `CopyMailTaxDocuments`, queues the
 conversation what arrived, as a mailed statement's import is told. A
 payroll email forwarded there works the same.
 
+1099s are read the same way: 1099-INT (interest), 1099-DIV (dividends)
+and 1099-B (sales), often all three in one brokerage statement, so one
+upload holds at most one form of each kind (migration 0185) and reading it
+again deletes the kinds it no longer holds
+(`DeleteFinanceTaxFormsOfAttachment`). A 1099-B is kept as its totals, not
+each sale: boxes 1d (proceeds), 1e (cost basis), 1f and 1g (wash sale loss
+disallowed), each with the total it belongs to as its qualifier
+(`short_covered`, `short_noncovered`, `long_covered`, `long_noncovered`,
+`unknown_term`). `finance.TaxFormFindings` checks a 1099-DIV's qualified
+dividends against its ordinary ones and a 1099-B's cost basis beside its
+proceeds.
+
 A paystub is stored line by line as printed (`agent_finance_paystub`,
 `agent_finance_paystub_line`): each earning, each tax with its kind
 (`federal_income`, `social_security`, `medicare`, `medicare_additional`,
@@ -749,6 +761,21 @@ from age 50 once the year to date is already past it, or with the one from
 TeaNode does not. A traditional contribution that stops is counted as wages
 (box 1 and the state's) for the rest of the year; a Roth one was taxed
 already. The employment says so (`isRetirementDeferralCapped`).
+
+The year's 1099s are added up in `taxYearInvestment`
+(`internal/finance/tax_investment.go`): of each payer, kind and person the
+latest read, made out to the person the W-2s and paystubs name by the last
+four digits of the taxpayer number or the name. The estimate adds interest,
+ordinary dividends and the capital result to wages; taxes qualified
+dividends and net long-term gain (long term, capital gain distributions
+included, less any short-term loss) at 0%, 15% or 20% stacked on the rest
+of taxable income (`preferentialRateCeilingsByYear`); takes a net loss
+against at most 3,000 of other income (1,500 filing separately); adds the
+3.8% net investment income tax on the smaller of investment income and
+adjusted gross income above the threshold; takes foreign tax paid as a
+credit; and counts a 1099's withholding as paid. A loss carried over from
+an earlier year is not known. A person's HSA contributions above the
+year's family limit are a finding (`hsaFamilyLimitByYear`).
 
 The tax owed sits beside what was withheld in `taxYearEstimate`
 (`finance.estimateTaxYear`), the household's, to December 31 when anything

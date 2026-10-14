@@ -98,9 +98,12 @@ struct TaxesView: View {
                         }
                     }
                 }
+                if let investment = summary.taxYearInvestment {
+                    TaxInvestmentSection(investment: investment)
+                }
             }
             if !taxForms.isEmpty {
-                Section("W-2s") {
+                Section("Tax forms") {
                     ForEach(taxForms) { taxFormView in
                         NavigationLink {
                             TaxFormDetailView(taxFormView: taxFormView) { Task { await load() } }
@@ -110,7 +113,7 @@ struct TaxesView: View {
                         .swipeActions {
                             Button("Delete", systemImage: "trash", role: .destructive) {
                                 Task {
-                                    _ = await finance.act(saying: String(localized: "W-2 deleted")) { try await finance.connection.deleteTaxForm(taxFormView.id) }
+                                    _ = await finance.act(saying: String(localized: "Form deleted")) { try await finance.connection.deleteTaxForm(taxFormView.id) }
                                     await load()
                                 }
                             }
@@ -463,6 +466,10 @@ struct TaxEstimateSection: View {
                 figureRow(String(localized: "Refund at filing"), estimate.refundAmount)
             }
             figureRow(String(localized: "Pay"), estimate.payAmount, isTotal: true)
+            if (Double(estimate.investmentIncomeAmount ?? "") ?? 0) != 0 {
+                figureRow(String(localized: "Investment income"), estimate.investmentIncomeAmount)
+                figureRow(String(localized: "Income"), estimate.incomeAmount, isTotal: true)
+            }
             Picker("Filing status", selection: Binding(
                 get: { estimate.filingStatus ?? .single },
                 set: { onFilingStatus($0) }
@@ -472,8 +479,17 @@ struct TaxEstimateSection: View {
                 }
             }
             figureRow(String(localized: "Federal income tax"), estimate.federalIncomeTaxAmount)
+            if (Double(estimate.preferentialIncomeTaxAmount ?? "") ?? 0) > 0 {
+                figureRow(String(localized: "Of it, on qualified dividends and long-term gain"), estimate.preferentialIncomeTaxAmount)
+            }
+            if (Double(estimate.foreignTaxCreditAmount ?? "") ?? 0) > 0 {
+                figureRow(String(localized: "Foreign tax credit"), "-" + (estimate.foreignTaxCreditAmount ?? ""))
+            }
             figureRow(String(localized: "Social Security"), estimate.socialSecurityTaxAmount)
             figureRow(String(localized: "Medicare"), estimate.medicareTaxAmount)
+            if (Double(estimate.netInvestmentIncomeTaxAmount ?? "") ?? 0) > 0 {
+                figureRow(String(localized: "Net investment income tax"), estimate.netInvestmentIncomeTaxAmount)
+            }
             if (Double(estimate.stateIncomeTaxAmount ?? "") ?? 0) > 0 {
                 figureRow(String(localized: "State income tax, as withheld"), estimate.stateIncomeTaxAmount)
             }
@@ -492,7 +508,7 @@ struct TaxEstimateSection: View {
                 if estimate.isTaxFilingStatusAssumed == true {
                     Text("The filing status is assumed from the number of people; pick yours above and it is kept.")
                 }
-                Text("An estimate from wages only: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. Other income, itemized deductions and credits are not counted.")
+                Text("An estimate from wages and 1099s: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. Other income, itemized deductions, credits and a state's tax on investment income are not counted.")
             }
         }
     }
@@ -609,6 +625,38 @@ struct TaxEstimateSection: View {
     }
 }
 
+/// TaxInvestmentSection is the year's investment income from its 1099s,
+/// as the dashboard's card shows it: interest and dividends always, every
+/// other figure when it is not nothing.
+struct TaxInvestmentSection: View {
+    let investment: TaxYearSummary.Investment
+
+    var body: some View {
+        let lines: [(String, String?, Bool)] = [
+            (String(localized: "Interest"), investment.interestAmount, true),
+            (String(localized: "Tax-exempt interest"), investment.taxExemptInterestAmount, false),
+            (String(localized: "Ordinary dividends"), investment.ordinaryDividendsAmount, true),
+            (String(localized: "Qualified dividends, part of ordinary"), investment.qualifiedDividendsAmount, false),
+            (String(localized: "Capital gain distributions"), investment.capitalGainDistributionsAmount, false),
+            (String(localized: "Short-term gain or loss"), investment.shortTermGainAmount, false),
+            (String(localized: "Long-term gain or loss"), investment.longTermGainAmount, false),
+            (String(localized: "Federal income tax withheld"), investment.federalIncomeTaxWithheldAmount, false),
+            (String(localized: "Foreign tax paid"), investment.foreignTaxPaidAmount, false),
+        ]
+        Section {
+            ForEach(lines.filter { $0.2 || (Double($0.1 ?? "") ?? 0) != 0 }, id: \.0) { line in
+                LabeledContent(line.0) {
+                    Text(FinanceMoney.shown(line.1, currencyCode: TaxWords.currencyCode)).monospacedDigit()
+                }
+            }
+        } header: {
+            Text("Investment income")
+        } footer: {
+            Text("What the year's 1099s report: interest, dividends and the gains or losses on sales.")
+        }
+    }
+}
+
 struct TaxFigureRow: View {
     let row: TaxYearFigureRow
 
@@ -678,7 +726,7 @@ struct TaxYearFindingRow: View {
     }
 }
 
-/// TaxFormRow is a W-2 in a list: the employer, its year, and whether it
+/// TaxFormRow is a W-2 or a 1099 in a list: the payer, its kind and year, and whether it
 /// agrees with itself.
 struct TaxFormRow: View {
     let taxFormView: FinanceTaxFormView
@@ -686,9 +734,10 @@ struct TaxFormRow: View {
     var body: some View {
         let taxForm = taxFormView.financeTaxForm
         VStack(alignment: .leading, spacing: 2) {
-            Text(taxForm?.payerName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "W-2"))
+            Text(taxForm?.payerName.flatMap { $0.isEmpty ? nil : $0 } ?? taxForm?.kindName ?? "")
                 .foregroundStyle(Color(.label))
             HStack(spacing: 6) {
+                Text(verbatim: taxForm?.kindName ?? "")
                 Text(verbatim: taxForm?.recipientName ?? "")
                 if let year = taxForm?.taxYear {
                     Text(verbatim: String(year))
@@ -949,9 +998,9 @@ struct PaystubLineRow: View {
     }
 }
 
-// MARK: A W-2
+// MARK: A W-2 or a 1099
 
-/// TaxFormDetailView is one W-2, as the dashboard's dialog shows it: whose
+/// TaxFormDetailView is one W-2 or 1099, as the dashboard's dialog shows it: whose
 /// it is, whether it agrees with itself, every box, its file, and deleting
 /// it.
 struct TaxFormDetailView: View {
@@ -967,13 +1016,19 @@ struct TaxFormDetailView: View {
         let taxForm = taxFormView.financeTaxForm
         List {
             Section {
-                LabeledContent("Employer", value: taxForm?.payerName ?? "")
-                LabeledContent("Employee", value: TaxWords.personText(taxForm?.recipientName, taxIdMask: taxForm?.recipientTaxIdMask))
+                LabeledContent("Form") { Text(verbatim: taxForm?.kindName ?? "") }
+                if taxForm?.isW2 != false {
+                    LabeledContent("Employer", value: taxForm?.payerName ?? "")
+                    LabeledContent("Employee", value: TaxWords.personText(taxForm?.recipientName, taxIdMask: taxForm?.recipientTaxIdMask))
+                } else {
+                    LabeledContent("Payer", value: taxForm?.payerName ?? "")
+                    LabeledContent("Recipient", value: TaxWords.personText(taxForm?.recipientName, taxIdMask: taxForm?.recipientTaxIdMask))
+                }
                 if let year = taxForm?.taxYear {
                     LabeledContent("Tax year") { Text(verbatim: String(year)) }
                 }
                 if taxForm?.isCorrected == true {
-                    Label("A corrected W-2", systemImage: "pencil.circle")
+                    Label("A corrected form", systemImage: "pencil.circle")
                         .foregroundStyle(Color(.secondaryLabel))
                 }
             }
@@ -995,7 +1050,7 @@ struct TaxFormDetailView: View {
             if !entries.isEmpty {
                 Section("Boxes") {
                     ForEach(entries, id: \.id) { entry in
-                        TaxFormEntryRow(entry: entry)
+                        TaxFormEntryRow(entry: entry, taxFormKind: taxForm?.taxFormKind)
                     }
                 }
             }
@@ -1019,19 +1074,19 @@ struct TaxFormDetailView: View {
                 Button(role: .destructive) {
                     isConfirmingDelete = true
                 } label: {
-                    Label("Delete W-2", systemImage: "trash")
+                    Label("Delete form", systemImage: "trash")
                         .foregroundStyle(.red)
                 }
             }
         }
-        .navigationTitle(taxForm?.payerName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "W-2"))
+        .navigationTitle(taxForm?.payerName.flatMap { $0.isEmpty ? nil : $0 } ?? taxForm?.kindName ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .quickLookPreview($previewAddress)
-        .confirmationDialog("Delete this W-2?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete W-2", role: .destructive) {
+        .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+            Button("Delete form", role: .destructive) {
                 Task {
-                    let isDone = await finance.act(saying: String(localized: "W-2 deleted")) {
+                    let isDone = await finance.act(saying: String(localized: "Form deleted")) {
                         try await finance.connection.deleteTaxForm(taxFormView.id)
                     }
                     if isDone {
@@ -1057,7 +1112,7 @@ struct TaxFormDetailView: View {
         isOpeningFile = true
         defer { isOpeningFile = false }
         do {
-            previewAddress = try await TaxDocumentFile.save(attachmentId: attachmentId, baseName: "W-2", connection: finance.connection)
+            previewAddress = try await TaxDocumentFile.save(attachmentId: attachmentId, baseName: taxFormView.financeTaxForm?.kindName ?? "W-2", connection: finance.connection)
         } catch {
             finance.problemText = error.localizedDescription
         }
@@ -1068,6 +1123,8 @@ struct TaxFormDetailView: View {
 /// amount, text or mark.
 struct TaxFormEntryRow: View {
     let entry: FinanceTaxForm.Entry
+    /// The form's kind, which names its boxes.
+    var taxFormKind: String?
 
     var body: some View {
         LabeledContent {
@@ -1080,9 +1137,17 @@ struct TaxFormEntryRow: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Box \(entry.boxName)")
-                if let boxTitle = TaxWords.w2BoxTitle(entry.boxCode) {
+                // A 1099-B's boxes are told apart by their total, said in
+                // words under the box rather than as its qualifier.
+                let termTitle = taxFormKind == "1099_b" ? TaxWords.brokerTermTitle(entry.boxQualifier) : nil
+                Text("Box \(termTitle == nil ? entry.boxName : (entry.boxCode ?? ""))")
+                if let boxTitle = TaxWords.boxTitle(taxFormKind, entry.boxCode) {
                     Text(boxTitle)
+                        .font(.caption)
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+                if let termTitle {
+                    Text(termTitle)
                         .font(.caption)
                         .foregroundStyle(Color(.secondaryLabel))
                 }
@@ -1138,6 +1203,78 @@ enum TaxWords {
         case "18": String(localized: "Local wages")
         case "19": String(localized: "Local income tax")
         case "20": String(localized: "Locality name")
+        default: nil
+        }
+    }
+
+    /// What a box of a form is, by the form's kind and the box's number.
+    static func boxTitle(_ taxFormKind: String?, _ boxCode: String?) -> String? {
+        switch taxFormKind {
+        case "1099_int":
+            switch boxCode {
+            case "1": String(localized: "Interest income")
+            case "2": String(localized: "Early withdrawal penalty")
+            case "3": String(localized: "Interest on US savings bonds and Treasury obligations")
+            case "4": String(localized: "Federal income tax withheld")
+            case "5": String(localized: "Investment expenses")
+            case "6": String(localized: "Foreign tax paid")
+            case "8": String(localized: "Tax-exempt interest")
+            case "9": String(localized: "Private activity bond interest")
+            case "10": String(localized: "Market discount")
+            case "11": String(localized: "Bond premium")
+            case "12": String(localized: "Bond premium on Treasury obligations")
+            case "13": String(localized: "Bond premium on tax-exempt bonds")
+            case "16": String(localized: "State identification number")
+            case "17": String(localized: "State tax withheld")
+            default: nil
+            }
+        case "1099_div":
+            switch boxCode {
+            case "1a": String(localized: "Total ordinary dividends")
+            case "1b": String(localized: "Qualified dividends")
+            case "2a": String(localized: "Total capital gain distributions")
+            case "2b": String(localized: "Unrecaptured section 1250 gain")
+            case "2c": String(localized: "Section 1202 gain")
+            case "2d": String(localized: "Collectibles (28%) gain")
+            case "2e": String(localized: "Section 897 ordinary dividends")
+            case "2f": String(localized: "Section 897 capital gain")
+            case "3": String(localized: "Nondividend distributions")
+            case "4": String(localized: "Federal income tax withheld")
+            case "5": String(localized: "Section 199A dividends")
+            case "6": String(localized: "Investment expenses")
+            case "7": String(localized: "Foreign tax paid")
+            case "9": String(localized: "Cash liquidation distributions")
+            case "10": String(localized: "Noncash liquidation distributions")
+            case "12": String(localized: "Exempt-interest dividends")
+            case "13": String(localized: "Private activity bond dividends")
+            case "15": String(localized: "State identification number")
+            case "16": String(localized: "State tax withheld")
+            default: nil
+            }
+        case "1099_b":
+            switch boxCode {
+            case "1d": String(localized: "Proceeds")
+            case "1e": String(localized: "Cost basis")
+            case "1f": String(localized: "Accrued market discount")
+            case "1g": String(localized: "Wash sale loss disallowed")
+            case "4": String(localized: "Federal income tax withheld")
+            case "15": String(localized: "State identification number")
+            case "16": String(localized: "State tax withheld")
+            default: nil
+            }
+        default:
+            w2BoxTitle(boxCode)
+        }
+    }
+
+    /// Which of a 1099-B's totals a box belongs to.
+    static func brokerTermTitle(_ term: String?) -> String? {
+        switch term {
+        case "short_covered": String(localized: "Short term, basis reported")
+        case "short_noncovered": String(localized: "Short term, basis not reported")
+        case "long_covered": String(localized: "Long term, basis reported")
+        case "long_noncovered": String(localized: "Long term, basis not reported")
+        case "unknown_term": String(localized: "Term not known")
         default: nil
         }
     }

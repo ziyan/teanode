@@ -170,7 +170,7 @@ type FinanceQuery interface {
 	// One paystub with its lines.
 	FinancePaystub(ctx context.Context, arguments PaystubArguments) (*models.FinancePaystub, error)
 
-	// One page of the caller's tax forms (W-2s), each with its boxes and
+	// One page of the caller's tax forms (W-2s and 1099s), each with its boxes and
 	// what it says about itself, the latest tax year first.
 	FinanceTaxForms(ctx context.Context, arguments TaxFormsArguments) (*TaxFormPageView, error)
 
@@ -184,7 +184,8 @@ type FinanceQuery interface {
 	// paystub missing between two others, a W-2 not yet in, or Social
 	// Security withheld beyond the year's maximum; and the tax its wages
 	// owe beside what was withheld, for the filing status the person
-	// keeps unless another is asked.
+	// keeps unless another is asked, the 1099s' interest, dividends and
+	// gains taxed at their own rates.
 	TaxYear(ctx context.Context, arguments TaxYearArguments) (*finance.TaxYearSummary, error)
 
 	// The caller's tax document address, where a PDF or a picture mailed
@@ -372,11 +373,11 @@ type FinanceMutation interface {
 	// same file. Only the last four digits of the taxpayer number are kept.
 	RecordPaystub(ctx context.Context, arguments RecordPaystubArguments) (*models.FinancePaystub, error)
 
-	// Record a tax form (a W-2) read box by box from an uploaded file, in
-	// place of whatever was read from the same file.
+	// Record a tax form (a W-2 or a 1099) read box by box from an uploaded
+	// file, in place of the form of the same kind read from the same file.
 	RecordTaxForm(ctx context.Context, arguments RecordTaxFormArguments) (*TaxFormView, error)
 
-	// Queue the job that reads a paystub or a W-2 out of a file uploaded
+	// Queue the job that reads a paystub, a W-2 or 1099s out of a file uploaded
 	// to the agent's attachments, or out of each PDF and picture a message
 	// in the person's mailbox carries, and records it.
 	ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumentArguments) (*TaxDocumentReadingView, error)

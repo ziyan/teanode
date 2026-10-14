@@ -89,6 +89,19 @@ public struct FinanceTaxForm: Codable, Hashable, Sendable, Identifiable {
     public var entries: [Entry] {
         (taxFormEntries ?? []).compactMap { $0 }.sorted { ($0.entryNumber ?? 0) < ($1.entryNumber ?? 0) }
     }
+
+    /// The form's kind as it is titled: W-2, 1099-INT, 1099-DIV, 1099-B.
+    public var kindName: String {
+        switch taxFormKind {
+        case "1099_int": "1099-INT"
+        case "1099_div": "1099-DIV"
+        case "1099_b": "1099-B"
+        default: "W-2"
+        }
+    }
+
+    /// Whether it is a W-2, from an employer, rather than a 1099.
+    public var isW2: Bool { taxFormKind == nil || taxFormKind == "w2" }
 }
 
 /// FinanceTaxFormView is a tax form with what it says about itself.
@@ -261,6 +274,18 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
         public let isTaxFilingStatusAssumed: Bool?
         public let isProjected: Bool?
         public let payAmount: String?
+        /// Interest, ordinary dividends and the capital result from 1099s,
+        /// and pay and it together: the ring's whole.
+        public let investmentIncomeAmount: String?
+        public let incomeAmount: String?
+        public let adjustedGrossIncomeAmount: String?
+        /// Qualified dividends and net long-term gain, and their tax at
+        /// 0%, 15% or 20%, part of the federal income tax.
+        public let preferentialIncomeAmount: String?
+        public let preferentialIncomeTaxAmount: String?
+        public let capitalLossDeductionAmount: String?
+        public let foreignTaxCreditAmount: String?
+        public let netInvestmentIncomeTaxAmount: String?
         public let standardDeductionAmount: String?
         public let taxableIncomeAmount: String?
         public let federalIncomeTaxAmount: String?
@@ -288,10 +313,12 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
 
         public var filingStatus: TaxFilingStatus? { taxFilingStatus.flatMap(TaxFilingStatus.init(rawValue:)) }
 
-        /// An amount's share of pay, 0.191 for 19.1%; nil without pay.
+        /// An amount's share of income, 0.191 for 19.1%; nil without
+        /// income. Income is pay and investment income, or pay from a
+        /// server that does not say.
         public func shareOfPay(_ amount: String?) -> Double? {
-            guard let pay = Double(payAmount ?? ""), pay > 0 else { return nil }
-            return (Double(amount ?? "") ?? 0) / pay
+            guard let income = Double(incomeAmount ?? payAmount ?? ""), income > 0 else { return nil }
+            return (Double(amount ?? "") ?? 0) / income
         }
     }
 
@@ -309,6 +336,23 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
     public let taxYearPeople: [Person?]?
     public let taxYearFindings: [Finding?]?
     public let taxYearEstimate: Estimate?
+    public let taxYearInvestment: Investment?
+
+    /// Investment is the year's investment income from its 1099s, the
+    /// household's.
+    public struct Investment: Codable, Hashable, Sendable {
+        public let interestAmount: String?
+        public let taxExemptInterestAmount: String?
+        public let ordinaryDividendsAmount: String?
+        public let qualifiedDividendsAmount: String?
+        public let capitalGainDistributionsAmount: String?
+        public let shortTermGainAmount: String?
+        public let longTermGainAmount: String?
+        public let federalIncomeTaxWithheldAmount: String?
+        public let foreignTaxPaidAmount: String?
+        public let isCostBasisMissing: Bool?
+        public let taxFormIds: [String]?
+    }
 
     public var employments: [Employment] { (taxYearEmployments ?? []).compactMap { $0 } }
     public var findings: [Finding] { (taxYearFindings ?? []).compactMap { $0 } }
@@ -403,7 +447,12 @@ extension Documents {
             taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { \(taxYearFiguresFields) }
               projectedFigures { \(taxYearFiguresFields) } }
             taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
-            taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount standardDeductionAmount taxableIncomeAmount
+            taxYearInvestment { interestAmount taxExemptInterestAmount ordinaryDividendsAmount qualifiedDividendsAmount
+              capitalGainDistributionsAmount shortTermGainAmount longTermGainAmount federalIncomeTaxWithheldAmount
+              foreignTaxPaidAmount isCostBasisMissing taxFormIds }
+            taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount
+              adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount
+              foreignTaxCreditAmount netInvestmentIncomeTaxAmount standardDeductionAmount taxableIncomeAmount
               federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
               totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
           }

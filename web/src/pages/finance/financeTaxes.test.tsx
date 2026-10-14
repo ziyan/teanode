@@ -268,6 +268,14 @@ const yearSummary: TaxYearSummary = {
     isTaxFilingStatusAssumed: true,
     isProjected: true,
     payAmount: '110000.00',
+    investmentIncomeAmount: '0.00',
+    incomeAmount: '110000.00',
+    adjustedGrossIncomeAmount: '100000.00',
+    preferentialIncomeAmount: '0.00',
+    preferentialIncomeTaxAmount: '0.00',
+    capitalLossDeductionAmount: '0.00',
+    foreignTaxCreditAmount: '0.00',
+    netInvestmentIncomeTaxAmount: '0.00',
     standardDeductionAmount: '32200.00',
     taxableIncomeAmount: '67800.00',
     federalIncomeTaxAmount: '7618.00',
@@ -437,6 +445,46 @@ describe('the Taxes section', () => {
     expect(toast.done).toHaveBeenCalledWith(expect.stringContaining('finance.taxFilingStatusSaved'))
   })
 
+  it("adds the year's 1099s to the ring and lists them, the tax on them line by line", async () => {
+    answer({
+      summary: () => ({
+        ...yearSummary,
+        taxYearInvestment: {
+          interestAmount: '1000.00',
+          taxExemptInterestAmount: '0.00',
+          ordinaryDividendsAmount: '2000.00',
+          qualifiedDividendsAmount: '1500.00',
+          capitalGainDistributionsAmount: '500.00',
+          shortTermGainAmount: '-1900.00',
+          longTermGainAmount: '10000.00',
+          federalIncomeTaxWithheldAmount: '0.00',
+          foreignTaxPaidAmount: '0.00',
+          isCostBasisMissing: false,
+          taxFormIds: ['form-int', 'form-div', 'form-b'],
+        },
+        taxYearEstimate: {
+          ...yearSummary.taxYearEstimate!,
+          investmentIncomeAmount: '11600.00',
+          incomeAmount: '121600.00',
+          preferentialIncomeAmount: '10100.00',
+          preferentialIncomeTaxAmount: '1515.00',
+          netInvestmentIncomeTaxAmount: '0.00',
+          remainingIncomeAmount: '100567.00',
+        },
+      }),
+    })
+    renderSection()
+    const investment = await waitFor(() => panel('finance.taxInvestmentTitle'))
+    expect(within(investment).getByText('finance.taxInvestmentShortTerm')).toBeTruthy()
+    expect(within(investment).getByText('-$1,900.00')).toBeTruthy()
+    expect(within(investment).queryByText('finance.taxInvestmentTaxExemptInterest')).toBeNull()
+    const estimate = panel('finance.taxEstimateTitle {"year":"2026"}')
+    expect(within(estimate).getByText('finance.taxIncome')).toBeTruthy()
+    expect(within(estimate).getByText('$121,600.00')).toBeTruthy()
+    expect(within(estimate).getByText('finance.taxEstimatePreferential')).toBeTruthy()
+    expect(within(estimate).queryByText('finance.taxEstimateNetInvestment')).toBeNull()
+  })
+
   it('shows the address to mail paystubs and W-2s to, and makes a new one after asking', async () => {
     taxDocumentToken = 'invented0token01'
     answer()
@@ -517,7 +565,7 @@ describe('the Taxes section', () => {
     expect(within(dialog).getByText('D')).toBeTruthy()
     expect(within(dialog).getByText('$50,000.00')).toBeTruthy()
     expect(within(dialog).getByText('Social Security tax is 6.2% of Social Security wages.')).toBeTruthy()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'finance.deleteTaxForm' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'finance.deleteTaxForm {"form":"W-2"}' }))
     const confirmation = await screen.findByRole('alertdialog', { name: /^finance\.deleteTaxFormTitle/ })
     fireEvent.click(within(confirmation).getByRole('button', { name: 'common.delete' }))
     await waitFor(() => expect(calledWith('DeleteTaxForm')).toEqual([{ taxFormId: 'tax-form-sample' }]))

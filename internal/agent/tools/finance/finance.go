@@ -333,9 +333,9 @@ var operations = map[string]*financeOperation{
 		graphqlOperation: "ReadTaxDocument", risk: tools.RiskWrite, arguments: []string{"agent_attachment_id", "mailbox_item_id"},
 		preview: func(_ *previewLookup, call map[string]any) string {
 			if text(call, "mailbox_item_id") != "" {
-				return "Have the reading job read the paystubs or W-2s a message carries and record them"
+				return "Have the reading job read the paystubs, W-2s or 1099s a message carries and record them"
 			}
-			return "Have the reading job read the paystub or W-2 in the file and record it"
+			return "Have the reading job read the paystub, W-2 or 1099s in the file and record them"
 		},
 	},
 	"paystubs": {
@@ -757,11 +757,11 @@ const description = "The person's money: their finance sources (logins at banks,
 	"A receipt recorded before its charge arrives waits, and the sync that brings the charge matches it by the same rule, so say so rather than ask when there is no candidate yet. " +
 	"`receipts` pages like `transactions` (limit, offset or after, and totalCount); with no range it lists every receipt, those that print no day last, and is_undated lists only those; text finds receipts by merchant, receipt number or a word of what was bought on any line. " +
 	"`preview_record_receipt` says what recording would do, writing nothing; `receipt` reads one line by line; `propose_receipt_matches` lists the charges a stored one could explain; `unmatch_receipt` takes one off a charge, and nothing matches that receipt on its own again, neither a sync nor reading it again; `delete_receipt` deletes it.\n" +
-	"- Paystubs and W-2s, to get ready for a tax return: when the person hands over a paystub or a W-2 (a PDF or a photo in the chat, by the agent_attachment_id the conversation names the file with, or a message by mailbox_item_id), `read_tax_document` has the reading job read it in the background and record it, as a paystub or a W-2, whichever it is; that is the way to record one, rather than reading it yourself. " +
+	"- Paystubs, W-2s and 1099s (1099-INT, 1099-DIV and 1099-B, often one brokerage statement holding all three), to get ready for a tax return: read_tax_document reads 1099s too, recording each form a statement holds. When the person hands over a paystub or a W-2 (a PDF or a photo in the chat, by the agent_attachment_id the conversation names the file with, or a message by mailbox_item_id), `read_tax_document` has the reading job read it in the background and record it, as a paystub or a W-2, whichever it is; that is the way to record one, rather than reading it yourself. " +
 	"Only the last four digits of a taxpayer number (a Social Security number) are ever kept: never write more of one anywhere, in a call or an answer. " +
-	"`paystubs` (tax_year, or from and to) lists them with their check (paystubCheckState: gross less taxes and deductions is take-home pay); `paystub` reads one line by line; `tax_forms` and `tax_form` list and read W-2s with taxFormFindings (Social Security tax 6.2% of its wages, Medicare 1.45% plus 0.9% above 200,000, wages within the year's wage base). " +
+	"`paystubs` (tax_year, or from and to) lists them with their check (paystubCheckState: gross less taxes and deductions is take-home pay); `paystub` reads one line by line; `tax_forms` and `tax_form` list and read W-2s and 1099s with taxFormFindings (a 1099-DIV's qualified dividends within its ordinary, a 1099-B's cost basis beside its proceeds) (Social Security tax 6.2% of its wages, Medicare 1.45% plus 0.9% above 200,000, wages within the year's wage base). " +
 	"`tax_year` puts a year together per person and employer: figures from the W-2 when there is one (taxYearFigureSource w2), else the latest paystub's year to date, projectedFigures to December 31 at the latest paystub's amounts, taxYearComparisons setting each W-2 box beside the paystubs, and taxYearFindings (a paystub missing between two others, a W-2 not yet in, Social Security withheld beyond the year's maximum across employers, which comes back as a credit). `tax_document_address` gives the person's tax document address, where each PDF or picture mailed (or forwarded from a payroll email) is read as a paystub or W-2 on its own; `regenerate_tax_document_address` ends the old address and makes a new one, only when the person asks. Projected retirement contributions stop at the year's limit (retirementDeferralLimitAmount; isRetirementDeferralCapped), the rest counted as wages. taxYearEstimate sets the tax owed beside what was withheld: federal income tax on wages less the standard deduction by the filing status the person keeps (set_tax_filing_status when they say how they file; isTaxFilingStatusAssumed when they have not, married filing jointly for two people and single otherwise), or tax_filing_status to try another, Social Security and Medicare as owed, state and local as withheld, then paidTaxAmount, upcomingWithheldTaxAmount, owingTaxAmount or refundAmount, and remainingIncomeAmount; it counts wages only, so say so and ask about other income, deductions and credits before calling it what the return will say. " +
-	"Quote those figures rather than adding paystubs up yourself. They are what was earned and withheld, not the tax owed or a refund, so say so when asked what will be owed. " +
+	"taxYearInvestment adds the year's 1099s up (interest, dividends, qualified dividends, capital gain distributions, short- and long-term gain or loss), and the estimate taxes them: qualified dividends and net long-term gain at 0%, 15% or 20% (preferentialIncomeTaxAmount), a net loss against at most 3,000 of other income, the 3.8% net investment income tax above the threshold. Quote those figures rather than adding paystubs up yourself; the estimate leaves out itemized deductions, credits (such as the child tax credit) and a state's tax on investment income, so say so when asked what will be owed. " +
 	"`record_paystub` and `record_tax_form` record one you read yourself, from the file it was read out of (agent_attachment_id), one line per printed line with an amount or one entry per box that prints something; `delete_paystub` and `delete_tax_form` delete one with its file."
 
 func init() {
@@ -830,15 +830,15 @@ func init() {
 						"employer_current_amount":      tools.StringProperty("for a deduction: the employer's part this period, when printed"),
 						"employer_year_to_date_amount": tools.StringProperty("for a deduction: the employer's part for the year to date, when printed"),
 					}, "paystub_line_kind")),
-					"tax_form_kind":         tools.EnumProperty("for record_tax_form: the form", "w2"),
-					"is_corrected":          tools.BooleanProperty("for record_tax_form: true for a corrected W-2 (W-2c)"),
-					"payer_name":            tools.StringProperty("for record_tax_form: the employer (box c)"),
+					"tax_form_kind":         tools.EnumProperty("for record_tax_form: the form; a statement holding several is one call per form", "w2", "1099_int", "1099_div", "1099_b"),
+					"is_corrected":          tools.BooleanProperty("for record_tax_form: true for a corrected form (a W-2c, a 1099 marked CORRECTED)"),
+					"payer_name":            tools.StringProperty("for record_tax_form: the employer (box c), or the bank or broker that sent the 1099"),
 					"payer_tax_id":          tools.StringProperty("for record_tax_form: the employer's identification number (box b)"),
 					"recipient_name":        tools.StringProperty("for record_tax_form: the employee (box e)"),
 					"recipient_tax_id_mask": tools.StringProperty("for record_tax_form: the last four digits of the employee's taxpayer number (box a), never more"),
 					"tax_form_entries": tools.ArrayProperty("for record_tax_form: every box that prints something, once, though the file repeats the form", tools.Object(map[string]any{
-						"box_code":      tools.StringProperty("the box's number, 1 to 20"),
-						"box_qualifier": tools.StringProperty("box 12's code letter, box 13's checkbox (statutory_employee, retirement_plan, third_party_sick_pay), box 14's label, the state's two-letter code in boxes 15 to 17, the locality in 18 to 20"),
+						"box_code":      tools.StringProperty("the box as printed: 1 to 20 on a W-2; 1a, 1b, 2a on a 1099-DIV; 1d proceeds, 1e cost basis, 1f, 1g wash sale on a 1099-B"),
+						"box_qualifier": tools.StringProperty("box 12's code letter, box 13's checkbox (statutory_employee, retirement_plan, third_party_sick_pay), box 14's label, the state's two-letter code in a state box, the locality in 18 to 20; on a 1099-B the total a box belongs to: short_covered, short_noncovered, long_covered, long_noncovered or unknown_term"),
 						"amount":        tools.StringProperty("the box's amount, a decimal without separators"),
 						"text_value":    tools.StringProperty("the box's text, as box 15's employer state id"),
 						"is_checked":    tools.BooleanProperty("for box 13: true for a checked box"),

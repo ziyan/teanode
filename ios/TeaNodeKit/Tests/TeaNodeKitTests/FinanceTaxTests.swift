@@ -79,6 +79,19 @@ final class FinanceTaxTests: XCTestCase {
         XCTAssertTrue((sentQuery?["query"] as? String)?.contains("RegenerateTaxDocumentAddress") == true)
     }
 
+    func testA1099YearIsReadWithItsInvestmentIncome() async throws {
+        let body = #"{"data":{"TaxYear":{"taxYear":2026,"taxYearInvestment":{"interestAmount":"1000.00","ordinaryDividendsAmount":"2000.00","qualifiedDividendsAmount":"1500.00","shortTermGainAmount":"-1900.00","longTermGainAmount":"10000.00","isCostBasisMissing":false,"taxFormIds":["form-int"]},"taxYearEstimate":{"payAmount":"110000.00","incomeAmount":"121600.00","investmentIncomeAmount":"11600.00","totalTaxAmount":"12160.00"}}}}"#
+        let (connection, _) = try connection(answering: body)
+        let read = try await connection.taxYear(2026)
+        let summary = try XCTUnwrap(read)
+        XCTAssertEqual(summary.taxYearInvestment?.shortTermGainAmount, "-1900.00")
+        // Shares are of income, pay and investment income together.
+        XCTAssertEqual(try XCTUnwrap(summary.taxYearEstimate?.shareOfPay("12160.00")), 0.1, accuracy: 0.0001)
+        let form = try JSONDecoder().decode(FinanceTaxForm.self, from: Data(#"{"id":"form-1","taxFormKind":"1099_div"}"#.utf8))
+        XCTAssertEqual(form.kindName, "1099-DIV")
+        XCTAssertFalse(form.isW2)
+    }
+
     func testZeroRowsAreLeftOutExceptWagesAndFederalTax() throws {
         let figures = try JSONDecoder().decode(TaxYearFigures.self, from: Data(#"{"wagesAmount":"0.00","federalIncomeTaxAmount":"0.00","medicareTaxAmount":"0.00"}"#.utf8))
         let rows = figures.rows()

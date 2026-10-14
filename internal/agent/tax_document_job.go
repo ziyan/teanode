@@ -28,6 +28,8 @@ type taxDocumentAnswer struct {
 	Why          string         `json:"why"`
 	Paystub      *paystubAnswer `json:"paystub"`
 	TaxForm      *taxFormAnswer `json:"taxForm"`
+	// TaxForms are a statement's 1099s, one per form.
+	TaxForms []*taxFormAnswer `json:"taxForms"`
 }
 
 type paystubAnswer struct {
@@ -109,12 +111,19 @@ func (self *paystubAnswer) paystub() *models.FinancePaystub {
 
 // taxForm is the answer as a tax form to record.
 func (self *taxFormAnswer) taxForm() *models.FinanceTaxForm {
-	taxFormKind := lowerTrimmed(self.TaxFormKind)
+	taxFormKind := strings.NewReplacer("form ", "", "-", "_", " ", "_").Replace(lowerTrimmed(self.TaxFormKind))
 	// A W-2c is a W-2 that corrects one: it is laid over the original
 	// rather than replacing it, whatever the model called the kind.
-	isCorrected := self.IsCorrected || taxFormKind == "w2c" || taxFormKind == "w-2c"
-	if taxFormKind == "" || taxFormKind == "w-2" || taxFormKind == "w2c" || taxFormKind == "w-2c" {
+	isCorrected := self.IsCorrected || taxFormKind == "w2c" || taxFormKind == "w_2c"
+	switch taxFormKind {
+	case "", "w_2", "w2c", "w_2c":
 		taxFormKind = string(models.TaxFormKindW2)
+	case "1099int":
+		taxFormKind = string(models.TaxFormKind1099Int)
+	case "1099div":
+		taxFormKind = string(models.TaxFormKind1099Div)
+	case "1099b":
+		taxFormKind = string(models.TaxFormKind1099B)
 	}
 	taxForm := &models.FinanceTaxForm{
 		TaxFormKind: models.TaxFormKind(taxFormKind), TaxYear: self.TaxYear, IsCorrected: isCorrected,
@@ -279,12 +288,44 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 			return err
 		}
 		title = taxFormRunTitle(recorded)
+	case strings.HasPrefix(documentKind, "1099") && (len(answer.Value.TaxForms) > 0 || answer.Value.TaxForm != nil):
+		answers := answer.Value.TaxForms
+		if len(answers) == 0 {
+			answers = []*taxFormAnswer{answer.Value.TaxForm}
+		}
+		var titles []string
+		keptKinds := []models.TaxFormKind{}
+		for _, formAnswer := range answers {
+			if formAnswer == nil {
+				continue
+			}
+			taxForm := formAnswer.taxForm()
+			taxForm.AgentAttachmentID = source.attachment.ID
+			recorded, err := self.RecordTaxForm(ctx, run.Agent, taxForm)
+			if isTaxDocumentRefusal(err) {
+				titles = append(titles, fmt.Sprintf("not a %s: %s", finance.TaxFormKindName(taxForm.TaxFormKind), err))
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			keptKinds = append(keptKinds, recorded.TaxFormKind)
+			titles = append(titles, taxFormRunTitle(recorded))
+		}
+		// The forms read from this file before and not read now go, as
+		// reading a file again replaces what was read out of it.
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.DeleteFinanceTaxFormsOfAttachment(run.Agent.ID, source.attachment.ID, keptKinds)
+		}); err != nil {
+			return err
+		}
+		title = strings.Join(titles, "; ")
 	default:
 		why := strings.TrimSpace(answer.Value.Why)
 		if why == "" {
-			why = "it is neither a paystub nor a W-2"
+			why = "it is not a paystub, a W-2 or a 1099"
 		}
-		title = fmt.Sprintf("Read %s: not a paystub or a W-2, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
+		title = fmt.Sprintf("Read %s: not a paystub, a W-2 or a 1099, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
 	}
 	self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(title))
 	return nil
@@ -316,9 +357,10 @@ func paystubRunTitle(paystub *models.FinancePaystub) string {
 }
 
 func taxFormRunTitle(taxForm *models.FinanceTaxForm) string {
-	title := fmt.Sprintf("Read a %d W-2 from %s", taxForm.TaxYear, taxForm.PayerName)
+	kindName := finance.TaxFormKindName(taxForm.TaxFormKind)
+	title := fmt.Sprintf("Read a %d %s from %s", taxForm.TaxYear, kindName, taxForm.PayerName)
 	if taxForm.IsCorrected {
-		title = fmt.Sprintf("Read a corrected %d W-2 from %s", taxForm.TaxYear, taxForm.PayerName)
+		title = fmt.Sprintf("Read a corrected %d %s from %s", taxForm.TaxYear, kindName, taxForm.PayerName)
 	}
 	disagreeing := 0
 	for _, finding := range finance.TaxFormFindings(taxForm) {

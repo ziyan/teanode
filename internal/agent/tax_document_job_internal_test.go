@@ -115,7 +115,7 @@ func TestTaxDocumentJobReadsAW2AndLeavesTheRest(t *testing.T) {
 		t.Fatalf("box 12 D is normalized: %+v", entry)
 	}
 	titles := strings.Join(fixture.taxDocumentRunTitles(t), "\n")
-	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub or a W-2") {
+	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub, a W-2 or a 1099") {
 		t.Fatalf("the runs say what they read: %q", titles)
 	}
 	summary, err := fixture.worker.TaxYear(t.Context(), fixture.agent, 2025, "")
@@ -155,5 +155,14 @@ func TestTaxFormAnswerFoldsAW2cIntoACorrection(t *testing.T) {
 	}
 	if taxForm := (&taxFormAnswer{TaxFormKind: "W-2", TaxYear: 2025}).taxForm(); taxForm.IsCorrected {
 		t.Errorf("a W-2 is not a correction: %+v", taxForm)
+	}
+}
+
+// A 1099's kind is read however the model writes it.
+func TestTaxFormAnswerReads1099Kinds(t *testing.T) {
+	for written, kind := range map[string]models.TaxFormKind{"1099-INT": models.TaxFormKind1099Int, "Form 1099-DIV": models.TaxFormKind1099Div, "1099B": models.TaxFormKind1099B, "1099_b": models.TaxFormKind1099B} {
+		if taxForm := (&taxFormAnswer{TaxFormKind: written, TaxYear: 2025}).taxForm(); taxForm.TaxFormKind != kind {
+			t.Errorf("%s: %s", written, taxForm.TaxFormKind)
+		}
 	}
 }

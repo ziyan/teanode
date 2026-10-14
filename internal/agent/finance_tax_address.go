@@ -171,7 +171,7 @@ func (self *Agent) runTaxMail(ctx context.Context, run *Run) error {
 // nothing is.
 func TaxMailSummary(copied []*models.AgentAttachment, canReadPDFs bool) string {
 	if len(copied) == 0 {
-		return "A message reached your tax document address, but it carries no PDF or picture to read a paystub or W-2 out of."
+		return "A message reached your tax document address, but it carries no PDF or picture to read a paystub, a W-2 or a 1099 out of."
 	}
 	names := make([]string, 0, len(copied))
 	hasPDF := false
@@ -179,7 +179,7 @@ func TaxMailSummary(copied []*models.AgentAttachment, canReadPDFs bool) string {
 		names = append(names, attachment.Name)
 		hasPDF = hasPDF || IsPDFAttachment(attachment)
 	}
-	summary := fmt.Sprintf("Received %s at your tax document address (%s) and reading %s as paystubs or W-2s; they show under Finance, Taxes once read.",
+	summary := fmt.Sprintf("Received %s at your tax document address (%s) and reading %s as paystubs, W-2s or 1099s; they show under Finance, Taxes once read.",
 		countOf(len(copied), "file", "files"), strings.Join(names, ", "), map[bool]string{true: "it", false: "them"}[len(copied) == 1])
 	if hasPDF && !canReadPDFs {
 		summary += " This server cannot read PDFs, so send a photo or a screenshot of a PDF instead."
