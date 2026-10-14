@@ -84,7 +84,7 @@ func writePDFFile(content []byte) (directory, path string, err error) {
 	}
 	path = filepath.Join(directory, "document.pdf")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
-		os.RemoveAll(directory)
+		_ = os.RemoveAll(directory)
 		return "", "", err
 	}
 	return directory, path, nil
@@ -101,7 +101,7 @@ func readPDFText(ctx context.Context, content []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(directory)
+	defer func() { _ = os.RemoveAll(directory) }()
 	callContext, cancel := context.WithTimeout(ctx, pdfTextTimeout)
 	defer cancel()
 	output, err := exec.CommandContext(callContext, "pdftotext", "-layout", "-q", "-enc", "UTF-8", path, "-").Output()
@@ -126,7 +126,7 @@ func renderPDFPages(ctx context.Context, content []byte, maximumPageCount int) (
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(directory)
+	defer func() { _ = os.RemoveAll(directory) }()
 	callContext, cancel := context.WithTimeout(ctx, pdfRenderTimeout)
 	defer cancel()
 	prefix := filepath.Join(directory, "page")
