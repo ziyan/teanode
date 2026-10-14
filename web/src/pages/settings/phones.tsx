@@ -26,7 +26,7 @@ type Phone = {
 const PHONE_FIELDS =
   'id phoneName phoneModel notificationKinds canBeNotified lastSeenAt lastDeliveredAt lastDeliveryError'
 
-// The documents the Phones page sends, by operation, which TestPhoneParity
+// The documents the Phones section of Devices sends, by operation, which TestPhoneParity
 // reads to check the dashboard offers what the command line does.
 const PHONE_DOCUMENTS = {
   ListAgentPhones: `query { ListAgentPhones { phones { ${PHONE_FIELDS} } isPushEnabled notificationKinds } }`,
@@ -36,7 +36,7 @@ const PHONE_DOCUMENTS = {
   CreateOAuthConnectCode: `mutation { CreateOAuthConnectCode { connectLink } }`,
 }
 
-// PhonesPage lists the phones the TeaNode app is connected on: what each is
+// PhonesPage is the TeaNode app section of the Devices page. It lists the phones the TeaNode app is connected on: what each is
 // told about, whether notifications reach it, and a way to connect another.
 // Connecting itself is the Connect page, which shows the code. A phone is an
 // app connected as the person, so it is listed under Apps too; here is what

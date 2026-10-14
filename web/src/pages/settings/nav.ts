@@ -49,13 +49,6 @@ export const SETTINGS_CATEGORIES: { id: SettingsCategory; label: Key }[] = [
 
 export const SETTINGS_SURFACES: SettingsSurface[] = [
   {
-    segment: 'sync',
-    path: '/settings/sync',
-    label: 'deviceSetup.title',
-    description: 'deviceSetup.description',
-    category: 'account',
-  },
-  {
     segment: 'server',
     path: '/manage/server',
     label: 'server.title',
@@ -64,7 +57,7 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
   },
   // First among the account surfaces, and where /settings lands. A page of
   // cards pointing at six pages was a page whose only content was a menu, and
-  // the rail is already that menu.
+  // the rail is already that menu. Keep it first: nav.test.ts holds it there.
   {
     segment: 'preference',
     path: '/settings/preference',
@@ -145,11 +138,14 @@ export const SETTINGS_SURFACES: SettingsSurface[] = [
     description: 'settings.tokens.description',
     category: 'account',
   },
+  // Everything about connecting a device: the TeaNode app on a phone, and
+  // the built-in mail, calendar and contacts apps of an iPhone or Mac. Two
+  // rows made a person guess which one held the thing they wanted.
   {
-    segment: 'phones',
-    path: '/settings/phones',
-    label: 'phones.title',
-    description: 'settings.phones.description',
+    segment: 'devices',
+    path: '/settings/devices',
+    label: 'devices.title',
+    description: 'settings.devices.description',
     category: 'account',
   },
   {

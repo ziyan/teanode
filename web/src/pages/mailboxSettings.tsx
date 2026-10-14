@@ -1318,7 +1318,7 @@ function DevicesTab({ view }: { view: MailboxView }) {
                 className="primary"
                 disabled={!address}
                 onClick={() => {
-                  navigate(`/settings/sync?setup=1&mailboxId=${encodeURIComponent(view.mailbox.id)}`)
+                  navigate(`/settings/devices?setup=1&mailboxId=${encodeURIComponent(view.mailbox.id)}`)
                 }}
               >
                 {t('mailboxSettings.setUpAppleDevice')}

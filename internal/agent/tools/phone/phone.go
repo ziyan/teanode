@@ -26,7 +26,7 @@ import (
 // The dashboard lets the agent take it to both (web/src/components/dashboardPath.ts).
 const (
 	ConnectPath      = "/connect"
-	SetupProfilePath = "/settings/sync"
+	SetupProfilePath = "/settings/devices"
 )
 
 // Tools are the phone actions, for the account tool to group.
@@ -48,17 +48,17 @@ func Tools() []*tools.Tool {
 			Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				return show(ctx, ConnectPath,
 					"the page with the code to scan is open in the dashboard; it works for ten minutes. Tell them to open the Camera on the phone, scan it, and open TeaNode",
-					"Open Settings, then Phones, then Connect a phone, in the dashboard on a computer, and scan the code it shows with the phone's camera")
+					"Open Settings, then Devices, then Connect a phone, in the dashboard on a computer, and scan the code it shows with the phone's camera")
 			},
 		},
 		{
 			Name: "phone_setup_profile", Family: tools.FamilyAccount, Risk: tools.RiskRead,
-			Description: "Take them to account device setup, where they choose available Mail, Calendar, Reminders and Contacts for an iPhone or Mac. Mail is optional and collection setup requires no mailbox. They create the private profile themselves; you never receive its link or passwords.",
+			Description: "Take them to the Built-in apps section of Devices, where they choose available Mail, Calendar, Reminders and Contacts for an iPhone or Mac. Mail is optional and collection setup requires no mailbox. They create the private profile themselves; you never receive its link or passwords.",
 			Parameters:  tools.Object(map[string]any{}),
 			Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				return show(ctx, SetupProfilePath,
-					"device setup is open; tell them to press Set up an iPhone or Mac, choose the available services, and leave Mail off if they only want Calendar, Reminders or Contacts",
-					"Open Settings, then Device setup, and press Set up an iPhone or Mac. Choose available services; Calendar, Reminders and Contacts do not require a mailbox")
+					"Devices is open; tell them to press Set up an iPhone or Mac, choose the available services, and leave Mail off if they only want Calendar, Reminders or Contacts",
+					"Open Settings, then Devices, find Built-in apps, and press Set up an iPhone or Mac. Choose available services; Calendar, Reminders and Contacts do not require a mailbox")
 			},
 		},
 		{

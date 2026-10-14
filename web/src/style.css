@@ -11864,6 +11864,13 @@ main.content:has(> .knowledge-frame) {
   margin-top: var(--space-2);
 }
 
+.devices-group + .devices-group {
+  margin-top: var(--space-6);
+}
+.devices-group > h2 + .muted {
+  margin-bottom: var(--space-3);
+}
+
 .connect-back {
   display: inline-block;
   margin-top: var(--space-3);

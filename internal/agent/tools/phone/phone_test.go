@@ -45,7 +45,7 @@ func TestThePagesOpenOnlyWhereTheDashboardIs(t *testing.T) {
 		toolName, path, elsewhere string
 	}{
 		{"phone_pair", phone.ConnectPath, "Connect a phone"},
-		{"phone_setup_profile", phone.SetupProfilePath, "Device setup"},
+		{"phone_setup_profile", phone.SetupProfilePath, "Built-in apps"},
 	} {
 		dashboard := &showingRun{canShowPages: true}
 		shown := run(t, dashboard, testCase.toolName)
