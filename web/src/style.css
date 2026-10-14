@@ -3166,6 +3166,21 @@ body,
     justify-content: flex-end;
     flex-wrap: wrap;
   }
+
+  /* A row whose only action is one icon keeps it beside the title: on a line
+     of its own it sat alone under an empty band, the row twice its height. */
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child) {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-body {
+    min-width: 0;
+  }
+
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
+    width: auto;
+  }
 }
 
 /* Having none of something is ordinary, so it is said rather than shown as an
