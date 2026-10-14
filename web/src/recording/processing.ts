@@ -39,6 +39,8 @@ export interface TranscriptSegment {
   isAccountOwner?: boolean
   // temporarySpeakerLabel ("Speaker 1") is a speaker of a capture in progress that nobody has named yet.
   temporarySpeakerLabel?: string
+  // A passage of only filler ("Mm-hmm. Okay."), which the conversation leaves out.
+  isFiller?: boolean
 }
 export interface LiveUtterance {
   utteranceId: string

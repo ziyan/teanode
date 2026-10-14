@@ -79,9 +79,10 @@ public enum RecordingConversation {
         Set(segments.filter(hasWords).map(speakerKey)).count
     }
 
-    /// A passage with no words (a breath or a click a provider gave its own time) is not drawn: it would be an empty bubble.
+    /// A passage with no words (a breath or a click a provider gave its own time) is not drawn: it would be an empty bubble. Nor
+    /// is one of only filler ("Mm-hmm. Okay."), which the server marks: it says nothing a reader needs.
     static func hasWords(_ segment: RecordingTranscriptSegment) -> Bool {
-        !segment.displayedTranscriptText.allSatisfy(\.isWhitespace)
+        segment.isFiller != true && !segment.displayedTranscriptText.allSatisfy(\.isWhitespace)
     }
 
     /// "A" for the first unconfirmed speaker, then "B", and so on; past "Z" the number.

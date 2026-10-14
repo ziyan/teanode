@@ -154,4 +154,7 @@ type RecordingTranscriptSegment struct {
 	// speaker of the recording this passage was matched to, for a speaker
 	// nobody has named yet. The same speaker has the same label in every piece.
 	TemporarySpeakerLabel string `json:"temporarySpeakerLabel" gorm:"-"`
+	// IsFiller is a passage of only filler ("Mm-hmm. Okay."), which the
+	// conversation leaves out and nobody is asked to label.
+	IsFiller bool `json:"isFiller" gorm:"-"`
 }

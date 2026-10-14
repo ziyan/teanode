@@ -328,7 +328,7 @@ func TestTheUnnamedPassagesAreTheOnesLeftToLabel(test *testing.T) {
 	chunk, blob := fixture.createChunk(test)
 	attempt := fixture.beginAttempt(test, chunk, blob)
 	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
-		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 2300, TranscriptText: "Shall we start with the shelf plan?"}, {LocalSpeakerID: "speaker-two", SegmentStartMS: 2300, SegmentEndMS: 2600, TranscriptText: "Yes, the second shelf first."}, {LocalSpeakerID: "speaker-one", SegmentStartMS: 2600, SegmentEndMS: 3000, TranscriptText: "Then the crates."}}); err != nil {
+		if _, err := transaction.FinishRecordingTranscriptionAttempt(fixture.userId, attempt.ID, fixture.claim, &models.RecordingTranscriptionAttempt{RecordingAttemptState: models.RecordingAttemptComplete}, []*models.RecordingTranscriptSegment{{LocalSpeakerID: "speaker-one", SegmentStartMS: 2000, SegmentEndMS: 2300, TranscriptText: "Shall we start with the shelf plan?"}, {LocalSpeakerID: "speaker-two", SegmentStartMS: 2300, SegmentEndMS: 2600, TranscriptText: "Yes, the second shelf first."}, {LocalSpeakerID: "speaker-one", SegmentStartMS: 2600, SegmentEndMS: 2900, TranscriptText: "Then the crates."}, {LocalSpeakerID: "speaker-three", SegmentStartMS: 2900, SegmentEndMS: 3000, TranscriptText: "Mm-hmm. Okay."}}); err != nil {
 			test.Fatal(err)
 		}
 		if err := transaction.UpdateRecordingTranscriptProgress(fixture.userId, fixture.transcriptRun.ID, fixture.claim, models.RecordingProcessingComplete, "", 1000); err != nil {
@@ -339,6 +339,7 @@ func TestTheUnnamedPassagesAreTheOnesLeftToLabel(test *testing.T) {
 			test.Fatal(err)
 		}
 		unnamed, _, err := transaction.ReadUnnamedRecordingTranscriptSegments(fixture.userId, source.ID)
+		// The filler is nobody's to label.
 		if err != nil || len(unnamed) != 3 {
 			test.Fatalf("before naming, %d passages were unnamed: %v", len(unnamed), err)
 		}

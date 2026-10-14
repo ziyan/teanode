@@ -35,9 +35,10 @@ const isConfirmedSegment = (segment: TranscriptSegment) =>
   )
 
 // A passage with no words (a breath or a click a provider gave its own time)
-// is not drawn: it would be an empty bubble.
+// is not drawn: it would be an empty bubble. Nor is one of only filler
+// ("Mm-hmm. Okay."), which the server marks: it says nothing a reader needs.
 const hasWords = (segment: TranscriptSegment) =>
-  (segment.effectiveTranscriptText || segment.transcriptText).trim() !== ''
+  !segment.isFiller && (segment.effectiveTranscriptText || segment.transcriptText).trim() !== ''
 
 // Whether this is a passage of a speaker nobody has named that is only a few
 // words and a moment long.

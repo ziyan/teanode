@@ -101,7 +101,7 @@ func (self *transaction) ReadRecordingTranscriptTimelinePage(userId, recordingId
 }
 
 // ReadUnnamedRecordingTranscriptSegments reads the whole timeline and keeps
-// the passages with words whose speaker nobody has named (no confirmed name,
+// the passages with words, and not only filler, whose speaker nobody has named (no confirmed name,
 // no voice sample matched): what is left to label. Who spoke is worked out
 // passage by passage from the corrections, so the filter is applied after
 // that rather than in the query. The passages come with their corrections
@@ -127,7 +127,7 @@ func (self *transaction) ReadUnnamedRecordingTranscriptSegments(userId, recordin
 			if text == "" {
 				text = segment.TranscriptText
 			}
-			if segment.EffectiveSpeakerIdentityID == "" && strings.TrimSpace(text) != "" {
+			if segment.EffectiveSpeakerIdentityID == "" && strings.TrimSpace(text) != "" && !segment.IsFiller {
 				unnamed = append(unnamed, segment)
 			}
 		}

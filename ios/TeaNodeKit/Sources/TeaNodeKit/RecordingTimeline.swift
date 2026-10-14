@@ -26,7 +26,7 @@ extension Documents {
         isUnnamedOnly: $isUnnamedOnly) { sourceGeneration segments { id recordingTranscriptRunId
         recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText
         appliedTextCorrectionId hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker
-        isAccountOwner hasUnalignedSpeakerCorrection appliedSpeakerCorrectionId temporarySpeakerLabel } transcriptRuns { id recordingId recordingMediaId versionNumber
+        isAccountOwner hasUnalignedSpeakerCorrection appliedSpeakerCorrectionId temporarySpeakerLabel isFiller } transcriptRuns { id recordingId recordingMediaId versionNumber
         recordingProcessingState providerModelName processingErrorMessage createdAt } temporarySpeakers { speakerLabel speakerIdentityId } segmentCount
         hasMoreSegments liveUtterances { utteranceId utteranceStartMS utteranceEndMS transcriptText } } }
         """

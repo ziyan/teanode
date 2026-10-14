@@ -251,3 +251,18 @@ it('draws no bubble for a passage with no words', () => {
     distinctSpeakerCount([segmentFixture({}), segmentFixture({ localSpeakerId: 'local-two', transcriptText: '' })]),
   ).toBe(1)
 })
+
+it('draws no bubble for a passage of only filler', () => {
+  const groups = groupConversation([
+    segmentFixture({ id: 'a1', segmentStartMS: 1000 }),
+    segmentFixture({
+      id: 'filler',
+      localSpeakerId: 'local-two',
+      segmentStartMS: 5000,
+      transcriptText: 'Mm-hmm. Okay.',
+      isFiller: true,
+    }),
+    segmentFixture({ id: 'a2', segmentStartMS: 12000 }),
+  ])
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['a1', 'a2']])
+})

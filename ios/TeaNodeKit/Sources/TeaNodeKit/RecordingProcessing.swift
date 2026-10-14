@@ -35,6 +35,8 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     /// "Speaker 1" and so on for a speaker of a capture under way whom nobody has named: the same speaker has the same label in
     /// every piece. Empty or nil otherwise.
     public var temporarySpeakerLabel: String? = nil
+    /// Whether the passage is only filler ("Mm-hmm. Okay."), which the conversation leaves out. Older servers do not say.
+    public var isFiller: Bool? = nil
     /// The speaker's name when the person confirmed it or a voice sample recognized it; nil while it is only a label.
     public var confirmedSpeakerName: String? {
         guard hasUserConfirmedSpeaker == true || isRecognizedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,

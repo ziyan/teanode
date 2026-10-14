@@ -234,6 +234,7 @@ func (self *transaction) ProjectRecordingTranscriptTextCorrections(userId string
 			segment.AppliedTextCorrectionID = selected.ID
 			segment.AppliedTextCorrectionOrigin = selected.TextCorrectionOrigin
 		}
+		segment.IsFiller = models.IsFillerTranscriptText(segment.EffectiveTranscriptText)
 	}
 	return nil
 }
