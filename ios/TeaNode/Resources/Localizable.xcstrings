@@ -12357,34 +12357,34 @@
         }
       }
     },
-    "Each PDF or photo mailed or forwarded here is read as a paystub or W-2.": {
+    "Each PDF or photo mailed or forwarded here is read as a paystub, W-2, 1099 or 1098.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ここに送ったり転送したりした PDF や写真は、給与明細か W-2 として読み取られます。"
+            "value": "ここに送ったり転送したりした PDF や写真は、給与明細、W-2、1099、1098 のいずれかとして読み取られます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发送或转发到这里的每个 PDF 或照片都会作为工资单或 W-2 读取。"
+            "value": "发送或转发到这里的每个 PDF 或照片都会作为工资单、W-2、1099 或 1098 读取。"
           }
         }
       }
     },
-    "Each PDF or picture is read as a paystub or W-2 on its own, and the server keeps no text of it. No note goes with them.": {
+    "Each PDF or picture is read as a paystub, W-2, 1099 or 1098 on its own, and the server keeps no text of it. No note goes with them.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "PDF や画像は 1 つずつ給与明細か W-2 として読み取られ、サーバーはその文字を保存しません。メモは送られません。"
+            "value": "PDF や画像は 1 つずつ給与明細、W-2、1099、1098 のいずれかとして読み取られ、サーバーはその文字を保存しません。メモは送られません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每个 PDF 或图片会单独作为工资单或 W-2 读取，服务器不会保存其中的文字。备注不会一起发送。"
+            "value": "每个 PDF 或图片会单独作为工资单、W-2、1099 或 1098 读取，服务器不会保存其中的文字。备注不会一起发送。"
           }
         }
       }
@@ -12405,18 +12405,18 @@
         }
       }
     },
-    "Each photo mailed or forwarded here is read as a paystub or W-2; this server cannot read PDFs.": {
+    "Each photo mailed or forwarded here is read as a paystub, W-2, 1099 or 1098; this server cannot read PDFs.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ここに送ったり転送したりした写真は、給与明細か W-2 として読み取られます。このサーバーは PDF を読めません。"
+            "value": "ここに送ったり転送したりした写真は、給与明細、W-2、1099、1098 のいずれかとして読み取られます。このサーバーは PDF を読めません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发送或转发到这里的每张照片都会作为工资单或 W-2 读取；此服务器无法读取 PDF。"
+            "value": "发送或转发到这里的每张照片都会作为工资单、W-2、1099 或 1098 读取；此服务器无法读取 PDF。"
           }
         }
       }
@@ -26581,18 +26581,18 @@
         }
       }
     },
-    "Paystubs or W-2s mailed in": {
+    "Tax documents mailed in": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "メールで届いた給与明細や W-2"
+            "value": "メールで届いた税務書類"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "邮件送来的工资单或 W-2"
+            "value": "邮件送来的税务文件"
           }
         }
       }
@@ -27893,34 +27893,34 @@
         }
       }
     },
-    "Read a paystub or W-2": {
+    "Read a tax document": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与明細・W-2の読み取り"
+            "value": "税務書類の読み取り"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "读取工资单或 W-2"
+            "value": "读取税务文件"
           }
         }
       }
     },
-    "Read as paystubs or W-2s": {
+    "Read as tax documents": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与明細か W-2 として読み取る"
+            "value": "税務書類として読み取る"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "作为工资单或 W-2 读取"
+            "value": "作为税务文件读取"
           }
         }
       }
@@ -27989,66 +27989,66 @@
         }
       }
     },
-    "Read as paystub or W-2": {
+    "Read as tax document": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与明細またはW-2として読む"
+            "value": "税務書類として読む"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "作为工资单或 W-2 读取"
+            "value": "作为税务文件读取"
           }
         }
       }
     },
-    "Reading %lld documents as paystubs or W-2s. They show under Finance, Taxes once read.": {
+    "Reading %lld tax documents. They show under Finance, Taxes once read.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 件の書類を給与明細か W-2 として読み取っています。読み取ると「家計」の「税金」に表示されます。"
+            "value": "%lld 件の税務書類を読み取っています。読み取ると「家計」の「税金」に表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在把 %lld 份文件作为工资单或 W-2 读取，读取后会显示在“财务”的“税费”中。"
+            "value": "正在读取 %lld 份税务文件，读取后会显示在“财务”的“税费”中。"
           }
         }
       }
     },
-    "Reading 1 document as a paystub or W-2. It shows under Finance, Taxes once read.": {
+    "Reading 1 tax document. It shows under Finance, Taxes once read.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 件の書類を給与明細か W-2 として読み取っています。読み取ると「家計」の「税金」に表示されます。"
+            "value": "1 件の税務書類を読み取っています。読み取ると「家計」の「税金」に表示されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在把 1 份文件作为工资单或 W-2 读取，读取后会显示在“财务”的“税费”中。"
+            "value": "正在读取 1 份税务文件，读取后会显示在“财务”的“税费”中。"
           }
         }
       }
     },
-    "Reading it as a paystub or W-2": {
+    "Reading it as a tax document": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与明細またはW-2として読んでいます"
+            "value": "税務書類として読んでいます"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在作为工资单或 W-2 读取"
+            "value": "正在作为税务文件读取"
           }
         }
       }
@@ -50666,34 +50666,34 @@
         }
       }
     },
-    "No paystubs or W-2s": {
+    "No tax documents": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与明細や W-2 はありません"
+            "value": "税務書類はありません"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "没有工资单或 W-2"
+            "value": "没有税务文件"
           }
         }
       }
     },
-    "Add paystubs or W-2s for this year, as PDFs or photos, and the year is put together from them.": {
+    "Add paystubs, W-2s, 1099s or 1098s for this year, as PDFs or photos, and the year is put together from them.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この年の給与明細や W-2 を PDF または写真で追加すると、そこから1年分がまとめられます。"
+            "value": "この年の給与明細、W-2、1099、1098 を PDF または写真で追加すると、そこから1年分がまとめられます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "以 PDF 或照片添加这一年的工资单或 W-2，即可据此汇总全年。"
+            "value": "以 PDF 或照片添加这一年的工资单、W-2、1099 或 1098，即可据此汇总全年。"
           }
         }
       }
@@ -50794,18 +50794,18 @@
         }
       }
     },
-    "Add paystubs or W-2s": {
+    "Add tax documents": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与明細や W-2 を追加"
+            "value": "税務書類を追加"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "添加工资单或 W-2"
+            "value": "添加税务文件"
           }
         }
       }

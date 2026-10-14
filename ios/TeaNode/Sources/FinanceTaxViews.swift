@@ -59,9 +59,9 @@ struct TaxesView: View {
             if isLoaded, paystubs.isEmpty, taxForms.isEmpty {
                 Section {
                     ContentUnavailableView {
-                        Label("No paystubs or W-2s", systemImage: "doc.text")
+                        Label("No tax documents", systemImage: "doc.text")
                     } description: {
-                        Text("Add paystubs or W-2s for this year, as PDFs or photos, and the year is put together from them.")
+                        Text("Add paystubs, W-2s, 1099s or 1098s for this year, as PDFs or photos, and the year is put together from them.")
                     } actions: {
                         addMenu
                     }
@@ -204,7 +204,7 @@ struct TaxesView: View {
         }
     }
 
-    /// The address paystubs and W-2s are mailed to: each PDF or picture
+    /// The address tax documents are mailed to: each PDF or picture
     /// mailed or forwarded there is read on its own, as the dashboard says.
     @ViewBuilder
     private var mailInSection: some View {
@@ -227,9 +227,9 @@ struct TaxesView: View {
                 Text("Mail them in")
             } footer: {
                 if mailInAddress.canReadPdfs == false {
-                    Text("Each photo mailed or forwarded here is read as a paystub or W-2; this server cannot read PDFs.")
+                    Text("Each photo mailed or forwarded here is read as a paystub, W-2, 1099 or 1098; this server cannot read PDFs.")
                 } else {
-                    Text("Each PDF or photo mailed or forwarded here is read as a paystub or W-2.")
+                    Text("Each PDF or photo mailed or forwarded here is read as a paystub, W-2, 1099 or 1098.")
                 }
             }
         }
@@ -245,7 +245,7 @@ struct TaxesView: View {
             }
             Button("Files", systemImage: "folder") { isPickingFiles = true }
         } label: {
-            Label("Add paystubs or W-2s", systemImage: "plus")
+            Label("Add tax documents", systemImage: "plus")
         }
     }
 
@@ -1169,7 +1169,7 @@ struct PaystubLineRow: View {
 
 // MARK: A W-2 or a 1099
 
-/// TaxFormDetailView is one W-2 or 1099, as the dashboard's dialog shows it: whose
+/// TaxFormDetailView is one W-2, 1099 or 1098, as the dashboard's dialog shows it: whose
 /// it is, whether it agrees with itself, every box, its file, and deleting
 /// it.
 struct TaxFormDetailView: View {

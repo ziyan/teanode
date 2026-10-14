@@ -299,7 +299,7 @@ func (self *graph) ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumen
 	}
 	attachmentId, itemId := strings.TrimSpace(arguments.AgentAttachmentID), strings.TrimSpace(arguments.MailboxItemID)
 	if (attachmentId == "") == (itemId == "") {
-		return nil, fmt.Errorf("%w: give the uploaded file (agentAttachmentId) or the message (mailboxItemId) the paystub or W-2 is in, one of the two", api.ErrInvalidArguments)
+		return nil, fmt.Errorf("%w: give the uploaded file (agentAttachmentId) or the message (mailboxItemId) the tax document is in, one of the two", api.ErrInvalidArguments)
 	}
 	var attachmentIds []string
 	if attachmentId != "" {
@@ -324,7 +324,7 @@ func (self *graph) ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumen
 			return nil, err
 		}
 		if len(copied) == 0 {
-			return nil, fmt.Errorf("%w: the message carries no PDF or picture to read a paystub or W-2 out of", api.ErrInvalidArguments)
+			return nil, fmt.Errorf("%w: the message carries no PDF or picture to read a tax document out of", api.ErrInvalidArguments)
 		}
 		for _, attachment := range copied {
 			attachmentIds = append(attachmentIds, attachment.ID)
