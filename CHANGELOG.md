@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.2] - 2026-10-14
+
+### Fixed
+
+- The app and the dashboard say that 1099s and 1098s are read too, where they used to name only paystubs and W-2s. (#485)
+
 ## [0.159.1] - 2026-10-14
 
 ### Fixed
