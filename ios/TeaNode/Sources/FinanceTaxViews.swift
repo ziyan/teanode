@@ -208,7 +208,10 @@ struct TaxesView: View {
                     Text(verbatim: address)
                         .font(.callout.monospaced())
                         .textSelection(.enabled)
-                    Button("Copy address", systemImage: "doc.on.doc") { UIPasteboard.general.string = address }
+                    Button("Copy address", systemImage: "doc.on.doc") {
+                        UIPasteboard.general.string = address
+                        finance.doneText = String(localized: "Address copied")
+                    }
                 } else {
                     Text("You have no mailbox address to receive them; add the files instead.")
                         .foregroundStyle(.secondary)
@@ -457,7 +460,7 @@ struct TaxEstimateSection: View {
                 figureRow(title(slice.sliceKind), slice.amount, color: Self.color(slice.sliceKind))
             }
             if (Double(estimate.refundAmount ?? "") ?? 0) > 0 {
-                figureRow(String(localized: "Refund at filing"), estimate.refundAmount, amountStyle: .green)
+                figureRow(String(localized: "Refund at filing"), estimate.refundAmount)
             }
             figureRow(String(localized: "Pay"), estimate.payAmount, isTotal: true)
             Picker("Filing status", selection: Binding(
@@ -553,13 +556,12 @@ struct TaxEstimateSection: View {
 
     /// One figure: its name, with the slice's swatch when it is one, and
     /// its amount over its share of pay.
-    private func figureRow(_ label: String, _ amount: String?, color: Color? = nil, amountStyle: Color? = nil, isTotal: Bool = false) -> some View {
+    private func figureRow(_ label: String, _ amount: String?, color: Color? = nil, isTotal: Bool = false) -> some View {
         LabeledContent {
             VStack(alignment: .trailing, spacing: 0) {
                 Text(verbatim: money(amount))
                     .monospacedDigit()
                     .fontWeight(isTotal ? .semibold : .regular)
-                    .foregroundStyle(amountStyle ?? .primary)
                 if let share = estimate.shareOfPay(amount) {
                     Text(share, format: .percent.precision(.fractionLength(1)))
                         .font(.caption)

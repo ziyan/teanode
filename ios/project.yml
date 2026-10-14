@@ -125,6 +125,7 @@ targets:
     sources:
       - TeaNodeShare
       - TeaNode/Resources/Localizable.xcstrings
+      - TeaNode/Sources/StatementImportWords.swift
     dependencies:
       - package: TeaNodeKit
     entitlements:
