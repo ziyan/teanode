@@ -294,6 +294,16 @@ struct PhonesView: View {
                             }
                             Button("Remove", systemImage: "trash", role: .destructive) { removing = phone }
                         }
+                        .confirmationDialog(
+                            "Remove this phone?", isPresented: Binding(get: { removing?.id == phone.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
+                        ) {
+                            Button("Remove", role: .destructive) {
+                                guard let phone = removing else { return }
+                                Task { await remove(phone) }
+                            }
+                        } message: {
+                            Text("\(PairedPhoneRow.displayName(removing)) is signed out of TeaNode and told nothing more. Connect it again to use it.")
+                        }
                     }
                 } footer: {
                     if phoneList.isPushEnabled {
@@ -310,16 +320,6 @@ struct PhonesView: View {
         .navigationTitle("Phones")
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog(
-            "Remove this phone?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                guard let phone = removing else { return }
-                Task { await remove(phone) }
-            }
-        } message: {
-            Text("\(PairedPhoneRow.displayName(removing)) is signed out of TeaNode and told nothing more. Connect it again to use it.")
-        }
         .toast(done: $doneText, problem: $problemText)
     }
 
@@ -540,6 +540,16 @@ struct PasskeysView: View {
                             .contextMenu {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = passkey }
                             }
+                            .confirmationDialog(
+                                "Remove this passkey?", isPresented: Binding(get: { removing?.id == passkey.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
+                            ) {
+                                Button("Remove", role: .destructive) {
+                                    guard let passkey = removing else { return }
+                                    Task { await remove(passkey) }
+                                }
+                            } message: {
+                                Text("\(removing?.name ?? "") stops being able to sign in. Your password still works, so this does not lock you out.")
+                            }
                     }
                 } footer: {
                     VStack(alignment: .leading, spacing: 8) {
@@ -559,16 +569,6 @@ struct PasskeysView: View {
         .navigationTitle("Passkeys")
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog(
-            "Remove this passkey?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible
-        ) {
-            Button("Remove", role: .destructive) {
-                guard let passkey = removing else { return }
-                Task { await remove(passkey) }
-            }
-        } message: {
-            Text("\(removing?.name ?? "") stops being able to sign in. Your password still works, so this does not lock you out.")
-        }
         .toast(done: $doneText, problem: $problemText)
     }
 

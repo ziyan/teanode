@@ -1128,6 +1128,17 @@ struct FinanceSetupView: View {
                             .tint(.blue)
                         }
                     }
+                    .confirmationDialog("Remove this bank?", isPresented: Binding(get: { removing?.id == source.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+                        Button("Remove", role: .destructive) {
+                            guard let source = removing else { return }
+                            Task {
+                                _ = await finance.act(saying: String(localized: "Removed")) { try await finance.connection.deleteFinanceSource(source.id) }
+                                await load()
+                            }
+                        }
+                    } message: {
+                        Text("Its accounts and transactions are deleted from TeaNode. For SimpleFIN, also revoke the access on its site.")
+                    }
                 }
                 if sources.isEmpty {
                     Text("No bank linked yet.").foregroundStyle(.secondary)
@@ -1171,17 +1182,6 @@ struct FinanceSetupView: View {
             await load()
         }
         .refreshable { await load() }
-        .confirmationDialog("Remove this bank?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                guard let source = removing else { return }
-                Task {
-                    _ = await finance.act(saying: String(localized: "Removed")) { try await finance.connection.deleteFinanceSource(source.id) }
-                    await load()
-                }
-            }
-        } message: {
-            Text("Its accounts and transactions are deleted from TeaNode. For SimpleFIN, also revoke the access on its site.")
-        }
     }
 
     private func load() async {

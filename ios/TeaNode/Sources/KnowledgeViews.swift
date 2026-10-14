@@ -407,21 +407,6 @@ struct KnowledgePageView: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Forget this fact?", isPresented: Binding(get: { forgettingFact != nil }, set: { if !$0 { forgettingFact = nil } }), titleVisibility: .visible
-        ) {
-            Button("Forget", role: .destructive) {
-                guard let fact = forgettingFact else { return }
-                let pagePath = model.pagePath
-                Task {
-                    _ = await model.act(saying: String(localized: "Forgotten")) {
-                        try await model.connection.deleteKnowledgeFact(path: pagePath, number: fact.number)
-                    }
-                }
-            }
-        } message: {
-            Text("Your agent is shown it as an example of what not to keep: “\(forgettingFact?.text ?? "")”")
-        }
     }
 
     // MARK: Sections
@@ -552,6 +537,21 @@ struct KnowledgePageView: View {
                         choosing = PageChoice(kind: .moveFact(fact.number), title: String(localized: "Move it to"), initial: "")
                     }
                     .tint(.indigo)
+                }
+                .confirmationDialog(
+                    "Forget this fact?", isPresented: Binding(get: { forgettingFact?.id == fact.id }, set: { if !$0 { forgettingFact = nil } }), titleVisibility: .visible
+                ) {
+                    Button("Forget", role: .destructive) {
+                        guard let fact = forgettingFact else { return }
+                        let pagePath = model.pagePath
+                        Task {
+                            _ = await model.act(saying: String(localized: "Forgotten")) {
+                                try await model.connection.deleteKnowledgeFact(path: pagePath, number: fact.number)
+                            }
+                        }
+                    }
+                } message: {
+                    Text("Your agent is shown it as an example of what not to keep: “\(forgettingFact?.text ?? "")”")
                 }
                 // Where the evidence is one of the person's own records, the
                 // record opens, at the passage for a recording.

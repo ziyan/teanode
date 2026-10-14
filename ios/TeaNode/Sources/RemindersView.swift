@@ -116,6 +116,15 @@ struct RemindersList: View {
                         deleting = reminder
                     }
                 }
+                .confirmationDialog(
+                    "Delete “\(deleting?.title ?? "")”?", isPresented: Binding(get: { deleting?.id == reminder.id }, set: { if !$0 { deleting = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete reminder", role: .destructive) {
+                        guard let reminder = deleting else { return }
+                        Task { await model.delete(reminder) }
+                    }
+                }
             }
         }
         .overlay {
@@ -129,15 +138,6 @@ struct RemindersList: View {
         .task { await model.load() }
         .sheet(item: $editing) { reminder in
             ReminderEditor(model: model, reminder: reminder)
-        }
-        .confirmationDialog(
-            "Delete “\(deleting?.title ?? "")”?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete reminder", role: .destructive) {
-                guard let reminder = deleting else { return }
-                Task { await model.delete(reminder) }
-            }
         }
         .toast(done: $model.doneText, problem: $model.problemText)
     }

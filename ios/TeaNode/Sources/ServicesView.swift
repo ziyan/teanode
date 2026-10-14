@@ -102,6 +102,14 @@ struct SyncCredentialsView: View {
                         DevicePasswordRow(name: credential.credentialName, scopes: scopeText(credential), password: credential)
                         Spacer()
                         Button("Revoke", role: .destructive) { revoking = credential }.disabled(isWorking)
+                        .confirmationDialog("Revoke this device's sync access?", isPresented: Binding(get: { revoking?.id == credential.id }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible) {
+                            if let revoking {
+                                Button("Revoke", role: .destructive) {
+                                    isWorking = true
+                                    Task { defer { isWorking = false }; do { try await connection.revokeSyncCredential(revoking.id); await load() } catch { problemText = app.describe(error) } }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -109,14 +117,6 @@ struct SyncCredentialsView: View {
         }
         .navigationTitle("Device sync")
         .task { await load() }
-        .confirmationDialog("Revoke this device's sync access?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible) {
-            if let revoking {
-                Button("Revoke", role: .destructive) {
-                    isWorking = true
-                    Task { defer { isWorking = false }; do { try await connection.revokeSyncCredential(revoking.id); await load() } catch { problemText = app.describe(error) } }
-                }
-            }
-        }
     }
     private func scopeText(_ credential: SyncCredential) -> String {
         [

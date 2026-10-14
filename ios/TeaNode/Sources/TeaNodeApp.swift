@@ -189,19 +189,6 @@ struct ConversationsSheet: View {
                     Task { await act { try await connection.updateConversation(conversation.id, title: title) } }
                 }
             }
-            .confirmationDialog(
-                "Delete this conversation?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-                titleVisibility: .visible, presenting: deleting
-            ) { conversation in
-                Button("Delete", role: .destructive) {
-                    Task {
-                        await act { try await connection.deleteConversation(conversation.id) }
-                        leaveIfOpen(conversation)
-                    }
-                }
-            } message: { conversation in
-                Text("“\(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))” and everything in it, the files that came with it too.")
-            }
         }
     }
 
@@ -263,6 +250,19 @@ struct ConversationsSheet: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete this conversation?", isPresented: Binding(get: { deleting?.id == conversation.id }, set: { if !$0 { deleting = nil } }),
+            titleVisibility: .visible, presenting: deleting
+        ) { conversation in
+            Button("Delete", role: .destructive) {
+                Task {
+                    await act { try await connection.deleteConversation(conversation.id) }
+                    leaveIfOpen(conversation)
+                }
+            }
+        } message: { conversation in
+            Text("“\(ConversationModel.title(of: conversation, agentTitle: app.agentTitle))” and everything in it, the files that came with it too.")
         }
     }
 
@@ -606,6 +606,15 @@ struct AccountsSection: View {
                         Button("Sign out", role: .destructive) { signingOut = account }
                     }
                 }
+                .confirmationDialog(
+                    "Sign out of \(signingOut?.server.host ?? "")?", isPresented: Binding(get: { signingOut?.accountKey == account.accountKey }, set: { if !$0 { signingOut = nil } }),
+                    titleVisibility: .visible
+                ) {
+                    Button("Sign out", role: .destructive) {
+                        guard let account = signingOut else { return }
+                        Task { await app.signOut(of: account) }
+                    }
+                }
             }
             Button {
                 app.isAddingAccount = true
@@ -617,15 +626,6 @@ struct AccountsSection: View {
         } footer: {
             if app.accounts.count > 1 {
                 Text("The share sheet, widgets and Siri use the account in use.")
-            }
-        }
-        .confirmationDialog(
-            "Sign out of \(signingOut?.server.host ?? "")?", isPresented: Binding(get: { signingOut != nil }, set: { if !$0 { signingOut = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Sign out", role: .destructive) {
-                guard let account = signingOut else { return }
-                Task { await app.signOut(of: account) }
             }
         }
     }

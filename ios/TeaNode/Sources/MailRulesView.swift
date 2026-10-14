@@ -50,6 +50,18 @@ struct MailRulesView: View {
                         }
                         .tint(.gray)
                     }
+                    .confirmationDialog(
+                        "Remove rule", isPresented: Binding(get: { removing?.index == index }, set: { if !$0 { removing = nil } }),
+                        titleVisibility: .visible, presenting: removing
+                    ) { removed in
+                        Button("Remove rule", role: .destructive) {
+                            var next = rules
+                            if next.indices.contains(removed.index) { next.remove(at: removed.index) }
+                            commit(next)
+                        }
+                    } message: { removed in
+                        Text("Remove the rule “\(removed.name)”? Mail it would have sorted lands in the inbox.")
+                    }
                 }
                 .onMove { offsets, destination in
                     var next = rules
@@ -120,18 +132,6 @@ struct MailRulesView: View {
                     return await save(next)
                 }
             }
-        }
-        .confirmationDialog(
-            "Remove rule", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { removed in
-            Button("Remove rule", role: .destructive) {
-                var next = rules
-                if next.indices.contains(removed.index) { next.remove(at: removed.index) }
-                commit(next)
-            }
-        } message: { removed in
-            Text("Remove the rule “\(removed.name)”? Mail it would have sorted lands in the inbox.")
         }
         .toast(done: Bindable(mail).doneText, problem: Bindable(mail).problemText)
         .onAppear { rules = mail.mailbox?.rules ?? [] }
