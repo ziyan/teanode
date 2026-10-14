@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.1] - 2026-10-14
+
+### Fixed
+
+- On the iPhone, answering a coding session's question shows at once, and the chat no longer goes blank afterwards. (#484)
+
 ## [0.159.0] - 2026-10-14
 
 ### Added
