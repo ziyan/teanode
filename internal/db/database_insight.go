@@ -116,6 +116,11 @@ type InsightOperation interface {
 	ScavengeAgentConversations(kind models.AgentConversationKind, before time.Time) (int64, error)
 
 	AppendAgentMessage(message *models.AgentMessage) (*models.AgentMessage, error)
+	// RedactAgentConversationMessages rewrites the text of a conversation's
+	// messages through redact, answering how many changed: a run that read
+	// a person's taxpayer number off a picture keeps no more of it than its
+	// last four digits.
+	RedactAgentConversationMessages(conversationId string, redact func(string) string) (int, error)
 	// ListAgentMessages is a conversation's messages, oldest first, each
 	// with its reactions.
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
@@ -1149,4 +1154,23 @@ func (self *transaction) ReplaceMailProposals(mailboxId, mailId string, proposal
 		return err
 	}
 	return self.tx.Model(&mailInsightModel{}).Where("mailbox_id = ? AND mail_id = ?", mailboxId, mailId).Update("proposals", encoded).Error
+}
+
+func (self *transaction) RedactAgentConversationMessages(conversationId string, redact func(string) string) (int, error) {
+	var messages []agentMessageModel
+	if err := self.tx.Where(`"conversation_id" = ?`, conversationId).Find(&messages).Error; err != nil {
+		return 0, err
+	}
+	changedCount := 0
+	for index := range messages {
+		redacted := redact(messages[index].Content)
+		if redacted == messages[index].Content {
+			continue
+		}
+		if err := self.tx.Model(&agentMessageModel{}).Where(`"id" = ?`, messages[index].ID).Update("content", redacted).Error; err != nil {
+			return changedCount, err
+		}
+		changedCount++
+	}
+	return changedCount, nil
 }

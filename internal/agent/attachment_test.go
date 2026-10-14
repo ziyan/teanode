@@ -35,6 +35,20 @@ func TestExtractAttachmentTextReadsTextOnly(t *testing.T) {
 // saying it cannot be opened. Earlier turns name every file. Every file
 // carries its agent_attachment_id, which a tool takes it by: a receipt
 // photographed in the chat is recorded from that upload.
+// A file's text never keeps a taxpayer number whole: one written with
+// dashes always masked, nine digits alone masked in a text that reads like
+// a tax document and kept as an order number elsewhere.
+func TestExtractAttachmentTextMasksTaxpayerNumbers(t *testing.T) {
+	form := ExtractAttachmentText(t.Context(), "form.txt", "text/plain", []byte("Employee's social security number 987654321"))
+	if strings.Contains(form, "987654321") || !strings.Contains(form, "XXXXX4321") {
+		t.Fatalf("a tax document's number is masked: %q", form)
+	}
+	note := ExtractAttachmentText(t.Context(), "note.txt", "text/plain", []byte("order 987654321, ref 987-65-4321"))
+	if !strings.Contains(note, "order 987654321") || strings.Contains(note, "987-65-4321") {
+		t.Fatalf("an order number is kept and a dashed number masked: %q", note)
+	}
+}
+
 func TestUserTurnCarriesWhatTheModelCanRead(t *testing.T) {
 	store := &fakeFiles{files: map[string][]byte{"pic": {0x89, 'P', 'N', 'G'}}}
 	attachments := []*models.AgentAttachment{

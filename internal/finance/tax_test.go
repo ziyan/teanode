@@ -284,8 +284,47 @@ func TestSummarizeTaxYearFindsMissingPaystubs(t *testing.T) {
 	}
 }
 
+// A W-2 and its paystubs that spell the person and the employer
+// differently are one employment when they print the same numbers.
+func TestSummarizeTaxYearMatchesByNumberOverName(t *testing.T) {
+	paystub := checkedPaystub(t, "paystub-1", "2025-12-26", 6)
+	paystub.EmployerTaxID = "XXXXX6789"
+	taxForm := inventedW2("form-1", 2025, "Example Holdings Incorporated")
+	taxForm.RecipientName = "PAT Q EXAMPLE"
+	if err := CheckTaxForm(taxForm); err != nil {
+		t.Fatal(err)
+	}
+	summary := SummarizeTaxYear(2025, []*models.FinancePaystub{paystub}, []*models.FinanceTaxForm{taxForm}, time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC))
+	if len(summary.TaxYearEmployments) != 1 || len(summary.TaxYearPeople) != 1 || summary.Figures.WagesAmount != "21600.00" {
+		t.Fatalf("one employment, counted once: %d employments, wages %s", len(summary.TaxYearEmployments), summary.Figures.WagesAmount)
+	}
+}
+
+// A corrected W-2 that prints only box 2 is laid over the original: the
+// other boxes stay the original's.
+func TestSummarizeTaxYearLaysACorrectionOverTheOriginal(t *testing.T) {
+	original := inventedW2("form-1", 2025, "Example Employer LLC")
+	original.CreatedAt = time.Date(2026, 1, 20, 0, 0, 0, 0, time.UTC)
+	correction := &models.FinanceTaxForm{
+		ID: "form-2", TaxFormKind: models.TaxFormKindW2, TaxYear: 2025, IsCorrected: true, PayerName: "Example Employer LLC", PayerTaxID: "12-3456789",
+		RecipientName: "Pat Example", RecipientTaxIDMask: "0123", CreatedAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC),
+		TaxFormEntries: []*models.FinanceTaxFormEntry{{BoxCode: "2", Amount: "3100.00"}},
+	}
+	for _, taxForm := range []*models.FinanceTaxForm{original, correction} {
+		if err := CheckTaxForm(taxForm); err != nil {
+			t.Fatal(err)
+		}
+	}
+	summary := SummarizeTaxYear(2025, nil, []*models.FinanceTaxForm{correction, original}, time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC))
+	employment := summary.TaxYearEmployments[0]
+	if employment.TaxFormID != "form-2" || employment.Figures.FederalIncomeTaxAmount != "3100.00" || employment.Figures.WagesAmount != "21600.00" || len(summary.TaxYearFindings) != 0 {
+		t.Fatalf("box 2 is the correction's and the rest the original's: %+v %+v", employment.Figures, summary.TaxYearFindings)
+	}
+}
+
 func TestSummarizeTaxYearFindsExcessSocialSecurity(t *testing.T) {
 	first, second := inventedW2("form-1", 2025, "Example Employer LLC"), inventedW2("form-2", 2025, "Another Example Inc")
+	second.PayerTaxID = "98-7654321"
 	for _, taxForm := range []*models.FinanceTaxForm{first, second} {
 		taxForm.TaxFormEntries[2].Amount, taxForm.TaxFormEntries[3].Amount = "100000.00", "6200.00"
 	}

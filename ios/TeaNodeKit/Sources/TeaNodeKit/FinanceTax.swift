@@ -271,54 +271,55 @@ public struct TaxDocumentReading: Codable, Hashable, Sendable {
 
 extension Documents {
     static let financePaystubFields = """
-        { id agentAttachmentId employerName employerTaxId employeeName employeeTaxIdMask payDate periodStartOn periodEndOn
-          currencyCode grossAmount yearToDateGrossAmount totalTaxAmount totalDeductionAmount netAmount paystubCheckState
-          checkDifferenceAmount createdAt modifiedAt
-          paystubLines { id lineNumber paystubLineKind description hours rateAmount currentAmount yearToDateAmount paystubTaxKind
-            taxJurisdictionCode currentWagesAmount yearToDateWagesAmount paystubDeductionKind employerCurrentAmount
-            employerYearToDateAmount } }
+        id agentAttachmentId employerName employerTaxId employeeName employeeTaxIdMask payDate periodStartOn periodEndOn
+        currencyCode grossAmount yearToDateGrossAmount totalTaxAmount totalDeductionAmount netAmount paystubCheckState
+        checkDifferenceAmount createdAt modifiedAt
+        paystubLines { id lineNumber paystubLineKind description hours rateAmount currentAmount yearToDateAmount paystubTaxKind
+          taxJurisdictionCode currentWagesAmount yearToDateWagesAmount paystubDeductionKind employerCurrentAmount
+          employerYearToDateAmount }
         """
     static let taxFormViewFields = """
-        { financeTaxForm { id agentAttachmentId taxFormKind taxYear isCorrected payerName payerTaxId recipientName
-            recipientTaxIdMask createdAt modifiedAt
-            taxFormEntries { id entryNumber boxCode boxQualifier amount textValue isChecked } }
-          taxFormFindings { taxFormFindingCode isAgreeing expectedAmount printedAmount findingText } }
+        financeTaxForm { id agentAttachmentId taxFormKind taxYear isCorrected payerName payerTaxId recipientName
+          recipientTaxIdMask createdAt modifiedAt
+          taxFormEntries { id entryNumber boxCode boxQualifier amount textValue isChecked } }
+        taxFormFindings { taxFormFindingCode isAgreeing expectedAmount printedAmount findingText }
         """
     static let taxYearFiguresFields = """
-        { wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount medicareWagesAmount
-          medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount healthCoverageAmount
-          localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount } }
-        """
-    static let taxYearFields = """
-        { taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
-          figures \(taxYearFiguresFields) projectedFigures \(taxYearFiguresFields)
-          taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount
-            payCadenceDayCount isPaystubYearComplete remainingPayCount
-            figures \(taxYearFiguresFields) paystubFigures \(taxYearFiguresFields) projectedFigures \(taxYearFiguresFields)
-            taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
-          taxYearPeople { employeeName excessSocialSecurityTaxAmount figures \(taxYearFiguresFields)
-            projectedFigures \(taxYearFiguresFields) }
-          taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds } }
+        wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount medicareWagesAmount
+        medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount healthCoverageAmount
+        localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount }
         """
     public static let financePaystubs = """
         query ($taxYear: Int, $from: String, $to: String, $limit: Int, $offset: Int) {
           FinancePaystubs(taxYear: $taxYear, from: $from, to: $to, limit: $limit, offset: $offset) {
-            financePaystubs \(financePaystubFields) hasMore totalCount }
+            financePaystubs { \(financePaystubFields) } hasMore totalCount }
         }
         """
     public static let financePaystub = """
-        query ($paystubId: String!) { FinancePaystub(paystubId: $paystubId) \(financePaystubFields) }
+        query ($paystubId: String!) { FinancePaystub(paystubId: $paystubId) { \(financePaystubFields) } }
         """
     public static let financeTaxForms = """
         query ($taxYear: Int, $limit: Int, $offset: Int) {
-          FinanceTaxForms(taxYear: $taxYear, limit: $limit, offset: $offset) { taxForms \(taxFormViewFields) hasMore totalCount }
+          FinanceTaxForms(taxYear: $taxYear, limit: $limit, offset: $offset) { taxForms { \(taxFormViewFields) } hasMore totalCount }
         }
         """
     public static let financeTaxForm = """
-        query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) \(taxFormViewFields) }
+        query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) { \(taxFormViewFields) } }
         """
     public static let taxYear = """
-        query ($taxYear: Int!) { TaxYear(taxYear: $taxYear) \(taxYearFields) }
+        query ($taxYear: Int!) {
+          TaxYear(taxYear: $taxYear) {
+            taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
+            figures { \(taxYearFiguresFields) } projectedFigures { \(taxYearFiguresFields) }
+            taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount
+              payCadenceDayCount isPaystubYearComplete remainingPayCount
+              figures { \(taxYearFiguresFields) } paystubFigures { \(taxYearFiguresFields) } projectedFigures { \(taxYearFiguresFields) }
+              taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
+            taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { \(taxYearFiguresFields) }
+              projectedFigures { \(taxYearFiguresFields) } }
+            taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+          }
+        }
         """
     public static let readTaxDocument = """
         mutation ($agentAttachmentId: String, $mailboxItemId: String) {
@@ -368,6 +369,14 @@ extension Connection {
     public func readTaxDocument(attachmentId: String) async throws -> TaxDocumentReading? {
         struct Answer: Decodable, Sendable { let ReadTaxDocument: TaxDocumentReading? }
         return try await execute(Documents.readTaxDocument, variables: ["agentAttachmentId": .string(attachmentId)], as: Answer.self)
+            .ReadTaxDocument
+    }
+
+    /// Has the agent read each PDF and picture a message carries as a
+    /// paystub or a tax form.
+    public func readTaxDocument(mailboxItemId: String) async throws -> TaxDocumentReading? {
+        struct Answer: Decodable, Sendable { let ReadTaxDocument: TaxDocumentReading? }
+        return try await execute(Documents.readTaxDocument, variables: ["mailboxItemId": .string(mailboxItemId)], as: Answer.self)
             .ReadTaxDocument
     }
 

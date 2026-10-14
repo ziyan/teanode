@@ -612,6 +612,9 @@ func (self *graph) ReadReceipt(ctx context.Context, arguments ReadReceiptArgumen
 		if attachment == nil || attachment.AgentID != found.ID {
 			return nil, api.ErrNotFound
 		}
+		if attachment.IsTaxDocument {
+			return nil, fmt.Errorf("%w: %s was handed in as a paystub or a W-2, not a receipt", api.ErrInvalidArguments, attachment.Name)
+		}
 		// Refused now rather than queued to fail: the server reads a
 		// picture, a file with text in it, and a PDF when it has poppler
 		// (a scan with no text is rendered and shown as pictures).

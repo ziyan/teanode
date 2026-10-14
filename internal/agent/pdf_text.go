@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
 )
@@ -158,6 +159,9 @@ func renderPDFPages(ctx context.Context, content []byte, maximumPageCount int) (
 // PDF or a PDF with no text layer; ErrPDFReaderMissing when the server
 // has no reader.
 func ReadAttachmentText(ctx context.Context, store storage.Storage, attachment *models.AgentAttachment) (string, error) {
+	if attachment.IsTaxDocument {
+		return "", fmt.Errorf("%s was handed in as a paystub or a tax form; only its reading job reads it", attachment.Name)
+	}
 	if attachment.Text != "" {
 		return attachment.Text, nil
 	}
@@ -174,7 +178,8 @@ func ReadAttachmentText(ctx context.Context, store storage.Storage, attachment *
 	if !isPDFContent(content) {
 		return "", nil
 	}
-	return readPDFText(ctx, content)
+	text, err := readPDFText(ctx, content)
+	return finance.MaskTaxpayerNumbersInFile(text), err
 }
 
 // isGenericContentType says whether a declared type says nothing of what

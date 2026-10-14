@@ -312,9 +312,13 @@ func w2Sums(taxForm *models.FinanceTaxForm) *figureSums {
 // paystubSums are a paystub's figures, this period when isCurrent and
 // for the year to date otherwise: each tax's wages and amount, and the
 // deductions a W-2 names, the employer's part with the employee's where
-// the W-2 counts both. When the federal income tax line prints no wages,
-// box 1 is gross pay less the deductions taken before income tax.
-func paystubSums(paystub *models.FinancePaystub, isCurrent bool) *figureSums {
+// the W-2 counts both. A tax line that prints no wages has them worked out
+// as the W-2 counts them: federal and state wages are gross pay less every
+// deduction taken before income tax, Social Security and Medicare wages
+// gross pay less those of them taken before payroll taxes too (all but a
+// traditional retirement plan), Social Security's stopping at wageBase
+// when it is known and the figures are the year's.
+func paystubSums(paystub *models.FinancePaystub, isCurrent bool, wageBase *big.Rat) *figureSums {
 	sums := newFigureSums()
 	pick := func(currentText, yearToDateText string) *big.Rat {
 		text := yearToDateText
@@ -326,8 +330,9 @@ func paystubSums(paystub *models.FinancePaystub, isCurrent bool) *figureSums {
 		}
 		return nil
 	}
-	hasFederalWages := false
-	beforeIncomeTax := new(big.Rat)
+	hasFederalWages, hasSocialSecurityLine, hasSocialSecurityWages, hasMedicareLine, hasMedicareWages := false, false, false, false, false
+	statesWithoutWages := map[string]bool{}
+	beforeIncomeTax, beforePayrollTaxes := new(big.Rat), new(big.Rat)
 	for _, line := range paystub.PaystubLines {
 		if line == nil {
 			continue
@@ -348,14 +353,18 @@ func paystubSums(paystub *models.FinancePaystub, isCurrent bool) *figureSums {
 					hasFederalWages = true
 				}
 			case models.PaystubTaxKindSocialSecurity:
+				hasSocialSecurityLine = true
 				sums.socialSecurityTax.Add(sums.socialSecurityTax, amountValue)
 				if wagesAmount != nil {
 					sums.socialSecurityWages.Add(sums.socialSecurityWages, wagesAmount)
+					hasSocialSecurityWages = true
 				}
 			case models.PaystubTaxKindMedicare:
+				hasMedicareLine = true
 				sums.medicareTax.Add(sums.medicareTax, amountValue)
 				if wagesAmount != nil {
 					sums.medicareWages.Add(sums.medicareWages, wagesAmount)
+					hasMedicareWages = true
 				}
 			case models.PaystubTaxKindMedicareAdditional:
 				// Its wages are only the part above the threshold, already in
@@ -363,6 +372,9 @@ func paystubSums(paystub *models.FinancePaystub, isCurrent bool) *figureSums {
 				sums.medicareTax.Add(sums.medicareTax, amountValue)
 			case models.PaystubTaxKindStateIncome:
 				sums.addState(line.TaxJurisdictionCode, wagesAmount, amountValue)
+				if wagesAmount == nil {
+					statesWithoutWages[line.TaxJurisdictionCode] = true
+				}
 			case models.PaystubTaxKindLocalIncome:
 				sums.localIncomeTax.Add(sums.localIncomeTax, amountValue)
 			}
@@ -380,22 +392,40 @@ func paystubSums(paystub *models.FinancePaystub, isCurrent bool) *figureSums {
 			case models.PaystubDeductionKindHSA:
 				sums.hsa.Add(sums.hsa, withEmployer)
 				beforeIncomeTax.Add(beforeIncomeTax, amountValue)
+				beforePayrollTaxes.Add(beforePayrollTaxes, amountValue)
 			case models.PaystubDeductionKindHealthPremium:
 				sums.healthCoverage.Add(sums.healthCoverage, withEmployer)
 				beforeIncomeTax.Add(beforeIncomeTax, amountValue)
+				beforePayrollTaxes.Add(beforePayrollTaxes, amountValue)
 			case models.PaystubDeductionKindFSADependentCare:
 				sums.dependentCare.Add(sums.dependentCare, withEmployer)
 				beforeIncomeTax.Add(beforeIncomeTax, amountValue)
+				beforePayrollTaxes.Add(beforePayrollTaxes, amountValue)
 			case models.PaystubDeductionKindFSAHealth, models.PaystubDeductionKindCommuter:
 				beforeIncomeTax.Add(beforeIncomeTax, amountValue)
+				beforePayrollTaxes.Add(beforePayrollTaxes, amountValue)
 			}
 		}
 	}
+	gross := pick(paystub.GrossAmount, paystub.YearToDateGrossAmount)
+	if gross == nil {
+		return sums
+	}
 	if !hasFederalWages {
-		gross := pick(paystub.GrossAmount, paystub.YearToDateGrossAmount)
-		if gross != nil {
-			sums.wages = new(big.Rat).Sub(gross, beforeIncomeTax)
+		sums.wages = new(big.Rat).Sub(gross, beforeIncomeTax)
+	}
+	payrollWages := new(big.Rat).Sub(gross, beforePayrollTaxes)
+	if hasMedicareLine && !hasMedicareWages {
+		sums.medicareWages = new(big.Rat).Set(payrollWages)
+	}
+	if hasSocialSecurityLine && !hasSocialSecurityWages {
+		sums.socialSecurityWages = new(big.Rat).Set(payrollWages)
+		if wageBase != nil && !isCurrent && sums.socialSecurityWages.Cmp(wageBase) > 0 {
+			sums.socialSecurityWages = new(big.Rat).Set(wageBase)
 		}
+	}
+	for stateCode := range statesWithoutWages {
+		sums.addState(stateCode, new(big.Rat).Set(sums.wages), nil)
 	}
 	return sums
 }
@@ -419,6 +449,62 @@ func taxYearNameKey(name string, isEmployer bool) string {
 
 var employerSuffixes = map[string]bool{"INC": true, "INCORPORATED": true, "CORP": true, "CORPORATION": true, "CO": true, "COMPANY": true, "LLC": true, "LTD": true, "LP": true, "LLP": true, "PLLC": true, "PC": true}
 
+// lastFourDigits is the last four digits of a number however it is
+// written (12-3456789, XXXXX6789), or "" when it holds fewer.
+func lastFourDigits(text string) string {
+	digits := strings.Map(func(character rune) rune {
+		if character >= '0' && character <= '9' {
+			return character
+		}
+		return -1
+	}, text)
+	if len(digits) < 4 {
+		return ""
+	}
+	return digits[len(digits)-4:]
+}
+
+// taxYearIdentities tells people and employers apart across a year's
+// documents: by the last four digits of the number a document prints, by
+// the number another document of the same name printed, else by name.
+type taxYearIdentities struct {
+	employeeDigitsByName map[string]string
+	employerDigitsByName map[string]string
+}
+
+func newTaxYearIdentities() *taxYearIdentities {
+	return &taxYearIdentities{employeeDigitsByName: map[string]string{}, employerDigitsByName: map[string]string{}}
+}
+
+func (self *taxYearIdentities) learn(employeeName, employeeTaxIDMask, employerName, employerTaxID string) {
+	if digits := lastFourDigits(employeeTaxIDMask); digits != "" {
+		self.employeeDigitsByName[taxYearNameKey(employeeName, false)] = digits
+	}
+	if digits := lastFourDigits(employerTaxID); digits != "" {
+		self.employerDigitsByName[taxYearNameKey(employerName, true)] = digits
+	}
+}
+
+func (self *taxYearIdentities) employeeKey(name, taxIDMask string) string {
+	if digits := lastFourDigits(taxIDMask); digits != "" {
+		return "number:" + digits
+	}
+	if digits := self.employeeDigitsByName[taxYearNameKey(name, false)]; digits != "" {
+		return "number:" + digits
+	}
+	return "name:" + taxYearNameKey(name, false)
+}
+
+func (self *taxYearIdentities) employerKey(name, taxID string) string {
+	if digits := lastFourDigits(taxID); digits != "" {
+		return "number:" + digits
+	}
+	if digits := self.employerDigitsByName[taxYearNameKey(name, true)]; digits != "" {
+		return "number:" + digits
+	}
+	return "name:" + taxYearNameKey(name, true)
+}
+
 type employmentGroup struct {
 	key, employeeKey   string
 	employment         *TaxYearEmployment
@@ -441,9 +527,25 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	}
 	groups := map[string]*employmentGroup{}
 	var order []string
-	groupOf := func(employeeName, employerName, employerTaxID string) *employmentGroup {
-		employeeKey := taxYearNameKey(employeeName, false)
-		key := employeeKey + "\x00" + taxYearNameKey(employerName, true)
+	// A person and an employer are told apart by the last four digits of
+	// their numbers when the documents print them, since a W-2 and its
+	// paystubs often spell a name differently (a middle initial, "Inc"),
+	// and by name otherwise; a document that prints no number takes the
+	// one another document with the same name printed.
+	identities := newTaxYearIdentities()
+	for _, paystub := range paystubs {
+		if paystub != nil && strings.HasPrefix(paystub.PayDate, fmt.Sprintf("%04d-", taxYear)) {
+			identities.learn(paystub.EmployeeName, paystub.EmployeeTaxIDMask, paystub.EmployerName, paystub.EmployerTaxID)
+		}
+	}
+	for _, taxForm := range taxForms {
+		if taxForm != nil && taxForm.TaxYear == taxYear && taxForm.TaxFormKind == models.TaxFormKindW2 {
+			identities.learn(taxForm.RecipientName, taxForm.RecipientTaxIDMask, taxForm.PayerName, taxForm.PayerTaxID)
+		}
+	}
+	groupOf := func(employeeName, employeeTaxIDMask, employerName, employerTaxID string) *employmentGroup {
+		employeeKey := identities.employeeKey(employeeName, employeeTaxIDMask)
+		key := employeeKey + "\x00" + identities.employerKey(employerName, employerTaxID)
 		group := groups[key]
 		if group == nil {
 			group = &employmentGroup{key: key, employeeKey: employeeKey, employment: &TaxYearEmployment{
@@ -461,7 +563,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		if paystub == nil || !strings.HasPrefix(paystub.PayDate, fmt.Sprintf("%04d-", taxYear)) {
 			continue
 		}
-		group := groupOf(paystub.EmployeeName, paystub.EmployerName, paystub.EmployerTaxID)
+		group := groupOf(paystub.EmployeeName, paystub.EmployeeTaxIDMask, paystub.EmployerName, paystub.EmployerTaxID)
 		group.paystubs = append(group.paystubs, paystub)
 		summary.PaystubCount++
 	}
@@ -469,7 +571,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		if taxForm == nil || taxForm.TaxYear != taxYear || taxForm.TaxFormKind != models.TaxFormKindW2 {
 			continue
 		}
-		group := groupOf(taxForm.RecipientName, taxForm.PayerName, taxForm.PayerTaxID)
+		group := groupOf(taxForm.RecipientName, taxForm.RecipientTaxIDMask, taxForm.PayerName, taxForm.PayerTaxID)
 		group.taxForms = append(group.taxForms, taxForm)
 		summary.TaxFormCount++
 	}
@@ -483,6 +585,13 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			if group.paystubs[left].PayDate != group.paystubs[right].PayDate {
 				return group.paystubs[left].PayDate < group.paystubs[right].PayDate
 			}
+			// Two paychecks of one day (a bonus and the regular one) in the
+			// order their years to date say, not the order they came in.
+			leftYearToDate, errLeft := parseDecimal(group.paystubs[left].YearToDateGrossAmount)
+			rightYearToDate, errRight := parseDecimal(group.paystubs[right].YearToDateGrossAmount)
+			if errLeft == nil && errRight == nil && leftYearToDate.Cmp(rightYearToDate) != 0 {
+				return leftYearToDate.Cmp(rightYearToDate) < 0
+			}
 			return group.paystubs[left].ID < group.paystubs[right].ID
 		})
 		employment.PaystubCount = len(group.paystubs)
@@ -491,7 +600,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 		if len(group.paystubs) > 0 {
 			latest := group.paystubs[len(group.paystubs)-1]
 			employment.LatestPayDate = latest.PayDate
-			paystubYear = paystubSums(latest, false)
+			paystubYear = paystubSums(latest, false, wageBase)
 			employment.PaystubFigures = paystubYear.figures()
 			employment.PayCadenceDayCount = payCadenceDayCount(group.paystubs)
 			latestPayDate, _ := time.Parse(time.DateOnly, latest.PayDate)
@@ -500,10 +609,16 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			employment.IsPaystubYearComplete = employment.RemainingPayCount == 0
 		}
 		taxForm := chooseW2(group.taxForms)
-		if len(group.taxForms) > 1 && !taxForm.IsCorrected {
+		originalCount := 0
+		for _, candidate := range group.taxForms {
+			if !candidate.IsCorrected {
+				originalCount++
+			}
+		}
+		if originalCount > 1 {
 			summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
 				TaxYearFindingCode: TaxYearFindingSeveralW2s, EmployeeName: employment.EmployeeName, EmployerName: employment.EmployerName,
-				FindingText: fmt.Sprintf("%d W-2s from %s for %d; the latest is used", len(group.taxForms), employment.EmployerName, taxYear), PaystubIDs: []string{},
+				FindingText: fmt.Sprintf("%d W-2s from %s for %d; the latest is used", originalCount, employment.EmployerName, taxYear), PaystubIDs: []string{},
 			})
 		}
 		switch {
@@ -511,7 +626,9 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 			employment.TaxYearFigureSource, employment.TaxFormID = TaxYearFigureSourceW2, taxForm.ID
 			group.figures = w2Sums(taxForm)
 			group.projected = group.figures
-			if paystubYear != nil {
+			// Compared only once the paystubs reach the year's last pay date:
+			// against paystubs that stop in March every box would differ.
+			if paystubYear != nil && employment.IsPaystubYearComplete {
 				employment.TaxYearComparisons = compareW2WithPaystubs(group.figures, paystubYear)
 				differing := 0
 				for _, comparison := range employment.TaxYearComparisons {
@@ -537,7 +654,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 					FindingText: fmt.Sprintf("no W-2 from %s for %d yet; employers send them by January 31", employment.EmployerName, taxYear), PaystubIDs: []string{},
 				})
 			} else if employment.RemainingPayCount > 0 {
-				group.projected = projectPaystubs(paystubYear, paystubSums(group.paystubs[len(group.paystubs)-1], true), employment.RemainingPayCount, wageBase, isWageBaseKnown)
+				group.projected = projectPaystubs(paystubYear, paystubSums(group.paystubs[len(group.paystubs)-1], true, wageBase), employment.RemainingPayCount, wageBase, isWageBaseKnown)
 				employment.ProjectedFigures = group.projected.figures()
 				group.hasProjection = true
 				isAnythingProjected = true
@@ -601,22 +718,49 @@ func pluralize(count int, one, many string) string {
 }
 
 // chooseW2 is the W-2 to use among an employer's for the year: the latest
-// corrected one, else the latest.
+// that is not a correction, with every correction laid over it in the
+// order they came, box by box, since a corrected W-2 (W-2c) prints only
+// the boxes it changes. Its id is the latest correction's when there is
+// one.
 func chooseW2(taxForms []*models.FinanceTaxForm) *models.FinanceTaxForm {
-	var chosen *models.FinanceTaxForm
-	for _, taxForm := range taxForms {
-		switch {
-		case chosen == nil:
-			chosen = taxForm
-		case taxForm.IsCorrected != chosen.IsCorrected:
-			if taxForm.IsCorrected {
-				chosen = taxForm
-			}
-		case taxForm.CreatedAt.After(chosen.CreatedAt):
-			chosen = taxForm
+	if len(taxForms) == 0 {
+		return nil
+	}
+	ordered := append([]*models.FinanceTaxForm(nil), taxForms...)
+	sort.SliceStable(ordered, func(left, right int) bool { return ordered[left].CreatedAt.Before(ordered[right].CreatedAt) })
+	var original *models.FinanceTaxForm
+	var corrections []*models.FinanceTaxForm
+	for _, taxForm := range ordered {
+		if taxForm.IsCorrected {
+			corrections = append(corrections, taxForm)
+		} else {
+			original = taxForm
 		}
 	}
-	return chosen
+	if len(corrections) == 0 {
+		return original
+	}
+	merged := *corrections[len(corrections)-1]
+	entryByBox := map[string]*models.FinanceTaxFormEntry{}
+	var boxOrder []string
+	layers := corrections
+	if original != nil {
+		layers = append([]*models.FinanceTaxForm{original}, corrections...)
+	}
+	for _, layer := range layers {
+		for _, entry := range layer.TaxFormEntries {
+			key := entry.BoxCode + "\x00" + entry.BoxQualifier
+			if entryByBox[key] == nil {
+				boxOrder = append(boxOrder, key)
+			}
+			entryByBox[key] = entry
+		}
+	}
+	merged.TaxFormEntries = make([]*models.FinanceTaxFormEntry, 0, len(boxOrder))
+	for _, key := range boxOrder {
+		merged.TaxFormEntries = append(merged.TaxFormEntries, entryByBox[key])
+	}
+	return &merged
 }
 
 // payCadenceDayCount is the usual number of days between paychecks: the

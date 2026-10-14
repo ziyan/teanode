@@ -25,7 +25,7 @@ How to read a W-2:
 - A W-2 PDF repeats the same form several times (Copy B, Copy C, Copy 2): read it once.
 - One entry per box that prints something; leave out empty boxes. payerName and payerTaxId are the employer's (boxes c and b), recipientName the employee's (box e).
 - boxQualifier tells boxes of one number apart: box 12's code letter (D, W, DD, AA…); box 13's checked boxes only, as statutory_employee, retirement_plan or third_party_sick_pay with isChecked true; box 14's label; the state's two-letter code in boxes 15, 16 and 17, one set per state line; the locality's name in boxes 18, 19 and 20.
-- isCorrected is true for a W-2c.
+- isCorrected is true for a W-2c. A W-2c prints the boxes it corrects in two columns, "previously reported" and "correct information": give only the boxes it corrects, with the correct information, never the previously reported.
 
 For both:
 - Amounts are decimal strings with no thousands separators and no currency sign: 1234.50, not $1,234.50.

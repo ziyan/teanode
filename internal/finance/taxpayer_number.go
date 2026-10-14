@@ -26,6 +26,33 @@ func MaskTaxpayerNumbers(text string) string {
 	return replaceStandingNineDigitRuns(text, func(run string) string { return "XXXXX" + run[5:] })
 }
 
+// taxDocumentMarkers are words a text holding a person's taxpayer number
+// carries: a W-2, a paystub, a tax form.
+var taxDocumentMarkers = []string{"social security", "soc. sec", "ssn", "w-2", "wage and tax statement", "taxpayer", "employee's soc"}
+
+// MaskTaxpayerNumbersInFile is what any file's text keeps of the
+// taxpayer numbers in it, whatever it was handed in as: one written with
+// dashes or spaces is masked always, since nothing else is written that
+// way, and nine digits standing alone are masked too when the text reads
+// like a tax document, where they are a person's number; in any other
+// text they may be an order or a tracking number and are kept.
+func MaskTaxpayerNumbersInFile(text string) string {
+	lowered := strings.ToLower(text)
+	for _, marker := range taxDocumentMarkers {
+		if strings.Contains(lowered, marker) {
+			return MaskTaxpayerNumbers(text)
+		}
+	}
+	return dashedTaxpayerNumberPattern.ReplaceAllString(text, "XXX-XX-$1")
+}
+
+// HasDashedTaxpayerNumber says the text holds a number written as a
+// taxpayer number is, with dashes or spaces (123-45-6789), which nothing
+// else is written as, such as a business's number in a business's field.
+func HasDashedTaxpayerNumber(text string) bool {
+	return dashedTaxpayerNumberPattern.MatchString(text)
+}
+
 // HasTaxpayerNumber says the text holds a number shaped like a taxpayer
 // number, as MaskTaxpayerNumbers finds them.
 func HasTaxpayerNumber(text string) bool {

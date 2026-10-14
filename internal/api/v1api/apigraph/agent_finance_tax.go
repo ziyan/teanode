@@ -172,19 +172,18 @@ func taxDocumentError(err error) error {
 	return financeError(err)
 }
 
-func (self *graph) taxDocumentWorker(ctx context.Context) (*models.Agent, *agent.Agent, error) {
-	_, found, err := self.requireAgentPerson(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
+// taxDocumentWorker is the agent operations a paystub or tax form
+// operation goes through, once the caller is authorized: refused where the
+// server does not offer finance.
+func (self *graph) taxDocumentWorker() (*agent.Agent, error) {
 	if err := self.requireFinanceOffered(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	worker := self.agentWorker()
 	if worker == nil {
-		return nil, nil, agent.ErrUnavailable
+		return nil, agent.ErrUnavailable
 	}
-	return found, worker, nil
+	return worker, nil
 }
 
 func taxFormView(taxForm *models.FinanceTaxForm) *TaxFormView {
@@ -192,7 +191,11 @@ func taxFormView(taxForm *models.FinanceTaxForm) *TaxFormView {
 }
 
 func (self *graph) RecordPaystub(ctx context.Context, arguments RecordPaystubArguments) (*models.FinancePaystub, error) {
-	found, worker, err := self.taxDocumentWorker(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker, err := self.taxDocumentWorker()
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +224,11 @@ func (self *graph) RecordPaystub(ctx context.Context, arguments RecordPaystubArg
 }
 
 func (self *graph) RecordTaxForm(ctx context.Context, arguments RecordTaxFormArguments) (*TaxFormView, error) {
-	found, worker, err := self.taxDocumentWorker(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker, err := self.taxDocumentWorker()
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +255,11 @@ func (self *graph) RecordTaxForm(ctx context.Context, arguments RecordTaxFormArg
 }
 
 func (self *graph) DeletePaystub(ctx context.Context, arguments PaystubArguments) (bool, error) {
-	found, worker, err := self.taxDocumentWorker(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	worker, err := self.taxDocumentWorker()
 	if err != nil {
 		return false, err
 	}
@@ -259,7 +270,11 @@ func (self *graph) DeletePaystub(ctx context.Context, arguments PaystubArguments
 }
 
 func (self *graph) DeleteTaxForm(ctx context.Context, arguments TaxFormArguments) (bool, error) {
-	found, worker, err := self.taxDocumentWorker(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return false, err
+	}
+	worker, err := self.taxDocumentWorker()
 	if err != nil {
 		return false, err
 	}
@@ -270,7 +285,11 @@ func (self *graph) DeleteTaxForm(ctx context.Context, arguments TaxFormArguments
 }
 
 func (self *graph) ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumentArguments) (*TaxDocumentReadingView, error) {
-	found, worker, err := self.taxDocumentWorker(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker, err := self.taxDocumentWorker()
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +437,11 @@ func (self *graph) FinanceTaxForms(ctx context.Context, arguments TaxFormsArgume
 }
 
 func (self *graph) TaxYear(ctx context.Context, arguments TaxYearArguments) (*finance.TaxYearSummary, error) {
-	found, worker, err := self.taxDocumentWorker(ctx)
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker, err := self.taxDocumentWorker()
 	if err != nil {
 		return nil, err
 	}

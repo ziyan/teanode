@@ -448,6 +448,14 @@ struct MessageCard: View {
                             }
                         }
                     }
+                    Button("Read as paystub or W-2", systemImage: "doc.text") {
+                        let itemId = item.id
+                        Task {
+                            _ = await mail.act(saying: String(localized: "Reading it as a paystub or W-2")) {
+                                _ = try await mail.connection.readTaxDocument(mailboxItemId: itemId)
+                            }
+                        }
+                    }
                     Button("Download original", systemImage: "arrow.down.doc") {
                         Task { await app.preview("/api/v1/mail/\(message.id)/raw", name: "\(message.id).eml") }
                     }

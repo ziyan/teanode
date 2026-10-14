@@ -9,6 +9,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/storage"
@@ -94,7 +95,10 @@ func ExtractAttachmentText(ctx context.Context, name, contentType string, conten
 	default:
 		return ""
 	}
-	return capAttachmentText(text)
+	// A person's taxpayer number is never kept whole on a row, whatever
+	// the file was handed in as: a W-2 dropped into a conversation is a
+	// file like any other.
+	return capAttachmentText(finance.MaskTaxpayerNumbersInFile(text))
 }
 
 // capAttachmentText is the most of a file's text a model reads, marked

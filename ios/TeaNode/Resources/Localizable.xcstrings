@@ -26278,6 +26278,38 @@
         }
       }
     },
+    "Read as paystub or W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細またはW-2として読む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作为工资单或 W-2 读取"
+          }
+        }
+      }
+    },
+    "Reading it as a paystub or W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細またはW-2として読んでいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在作为工资单或 W-2 读取"
+          }
+        }
+      }
+    },
     "Read every person's agent conversations and runs, and speak to their agent as them": {
       "localizations": {
         "ja": {

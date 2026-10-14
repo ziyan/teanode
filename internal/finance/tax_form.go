@@ -95,8 +95,10 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 			return err
 		}
 	}
-	taxForm.PayerTaxID = strings.TrimSpace(normalization.NFKC.String(taxForm.PayerTaxID))
 	var err error
+	if taxForm.PayerTaxID, err = cleanBusinessTaxID("the payer's identification number", taxForm.PayerTaxID); err != nil {
+		return err
+	}
 	if taxForm.RecipientTaxIDMask, err = taxIDMask("the recipient's taxpayer number", taxForm.RecipientTaxIDMask, refuseTaxDocument); err != nil {
 		return err
 	}
@@ -158,7 +160,7 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 		}
 		seenBoxes[boxKey] = true
 		entry.TextValue = strings.Join(strings.Fields(normalization.NFKC.String(entry.TextValue)), " ")
-		if !box.isBusinessNumber && HasTaxpayerNumber(entry.TextValue) {
+		if (!box.isBusinessNumber && HasTaxpayerNumber(entry.TextValue)) || HasDashedTaxpayerNumber(entry.TextValue) {
 			return refuseTaxDocument("%s holds a number shaped like a taxpayer number; leave it out", label)
 		}
 		amountValue, err := optionalTaxDocumentAmount(label, &entry.Amount, "USD", false)

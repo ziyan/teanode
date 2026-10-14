@@ -66,6 +66,22 @@ func cleanTaxDocumentText(what string, text *string) error {
 	return nil
 }
 
+// cleanBusinessTaxID normalizes an employer's identification number as
+// printed (12-3456789, or masked as XXXXX6789), refusing one written as a
+// person's taxpayer number is (123-45-6789) and anything but digits, X, a
+// dash and spaces: what a person's number put in its place would look
+// like.
+func cleanBusinessTaxID(what, text string) (string, error) {
+	text = strings.Join(strings.Fields(normalization.NFKC.String(text)), " ")
+	if text == "" {
+		return "", nil
+	}
+	if HasDashedTaxpayerNumber(text) || strings.Trim(strings.ToUpper(text), "0123456789X- ") != "" || len(text) > 12 {
+		return "", refuseTaxDocument("%s is written 12-3456789; a person's taxpayer number never goes there", what)
+	}
+	return strings.ToUpper(text), nil
+}
+
 // cleanTaxDocumentDay checks a day written 2006-01-02, which may be
 // absent unless isRequired.
 func cleanTaxDocumentDay(what string, text *string, isRequired bool) (time.Time, error) {
@@ -127,7 +143,9 @@ func CheckPaystub(paystub *models.FinancePaystub) (models.PaystubCheckState, str
 			return "", "", err
 		}
 	}
-	paystub.EmployerTaxID = strings.TrimSpace(normalization.NFKC.String(paystub.EmployerTaxID))
+	if paystub.EmployerTaxID, err = cleanBusinessTaxID("the employer's identification number", paystub.EmployerTaxID); err != nil {
+		return "", "", err
+	}
 	if paystub.EmployeeTaxIDMask, err = taxIDMask("the employee's taxpayer number", paystub.EmployeeTaxIDMask, refuseTaxDocument); err != nil {
 		return "", "", err
 	}
@@ -203,7 +221,9 @@ func CheckPaystub(paystub *models.FinancePaystub) (models.PaystubCheckState, str
 		if !line.PaystubLineKind.IsValid() {
 			return "", "", refuseTaxDocument("%s is of kind %q; a line is an earning, a tax or a deduction", label, line.PaystubLineKind)
 		}
-		line.TaxJurisdictionCode = strings.TrimSpace(normalization.NFKC.String(line.TaxJurisdictionCode))
+		if err := cleanTaxDocumentText(label+"'s jurisdiction", &line.TaxJurisdictionCode); err != nil {
+			return "", "", err
+		}
 		switch line.PaystubLineKind {
 		case models.PaystubLineKindTax:
 			if !line.PaystubTaxKind.IsValid() {

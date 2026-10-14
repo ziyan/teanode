@@ -216,7 +216,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	if source == nil {
 		return nil // the upload is gone
 	}
-	sourceName := source.attachment.Name
+	sourceName := finance.MaskTaxpayerNumbers(source.attachment.Name)
 	if source.unreadableWhy != "" {
 		return noteTaxDocumentRun(ctx, run, sourceName, source.unreadableWhy)
 	}
@@ -233,9 +233,19 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 	if err != nil {
 		return err
 	}
+	// The model read a picture's number unmasked and may have written it
+	// down; the run keeps no more of it than its last four digits.
+	if thinking.Conversation != nil {
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			_, err := tx.RedactAgentConversationMessages(thinking.Conversation.ID, finance.MaskTaxpayerNumbers)
+			return err
+		}); err != nil {
+			return err
+		}
+	}
 	answer := readModelAnswer[taxDocumentAnswer](thinking.Text, "documentKind")
 	if !answer.IsValid {
-		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %s, and could not tell what the answer said: %s", sourceName, answer.Problem))
+		self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(fmt.Sprintf("Read %s, and could not tell what the answer said: %s", sourceName, answer.Problem)))
 		return nil
 	}
 	var title string
@@ -273,7 +283,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 		}
 		title = fmt.Sprintf("Read %s: not a paystub or a W-2, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
 	}
-	self.retitle(ctx, run, thinking.Conversation, title)
+	self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(title))
 	return nil
 }
 

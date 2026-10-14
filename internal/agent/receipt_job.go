@@ -197,6 +197,12 @@ func (self *Agent) readReceiptSource(ctx context.Context, run *Run, sourceId str
 		receipt:              &models.FinanceReceipt{ReceiptSourceKind: models.ReceiptSourceKindAttachment, AgentAttachmentID: attachment.ID},
 		financeTransactionId: attachment.FinanceTransactionID, sourceName: attachment.Name,
 	}
+	if attachment.IsTaxDocument {
+		// A paystub's or a tax form's file holds the person's taxpayer
+		// number, and is read only by its own job, which masks it.
+		source.unreadableWhy = "it was handed in as a paystub or a W-2, not a receipt"
+		return source, nil
+	}
 	switch {
 	case IsImageAttachment(attachment.ContentType):
 		if attachment.Size > attachmentImageBytes {
@@ -251,7 +257,7 @@ func readReceiptPDF(ctx context.Context, run *Run, attachment *models.AgentAttac
 		return nil
 	}
 	if text != "" {
-		source.receiptText = capAttachmentText(text)
+		source.receiptText = capAttachmentText(finance.MaskTaxpayerNumbersInFile(text))
 		return nil
 	}
 	pages, err := renderPDFPages(ctx, content, receiptPDFPageCount)

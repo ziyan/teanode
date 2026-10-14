@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -173,7 +174,20 @@ func (self *Agent) CopyMailTaxDocuments(ctx context.Context, agentRow *models.Ag
 		return nil
 	})
 	attachments := []*models.AgentAttachment{}
+	// A message read again reuses the uploads its files were copied into,
+	// so its documents are read again in place rather than twice.
+	var earlier []*models.AgentAttachment
+	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		earlier, err = tx.ListAgentAttachments(agentRow.ID, "")
+		return err
+	}); err != nil {
+		return nil, err
+	}
 	for _, part := range parts {
+		if existing := self.sameTaxDocument(ctx, earlier, part.fileName, part.content); existing != nil {
+			attachments = append(attachments, existing)
+			continue
+		}
 		var created *models.AgentAttachment
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
@@ -190,6 +204,21 @@ func (self *Agent) CopyMailTaxDocuments(ctx context.Context, agentRow *models.Ag
 		attachments = append(attachments, created)
 	}
 	return attachments, nil
+}
+
+// sameTaxDocument is an upload handed in as a tax document with the same
+// name and the same bytes as a file about to be copied, or nil.
+func (self *Agent) sameTaxDocument(ctx context.Context, attachments []*models.AgentAttachment, fileName string, content []byte) *models.AgentAttachment {
+	for _, attachment := range attachments {
+		if !attachment.IsTaxDocument || attachment.Name != fileName || attachment.Size != int64(len(content)) {
+			continue
+		}
+		stored, err := self.settings.Storage.GetFile(ctx, attachment.ID)
+		if err == nil && bytes.Equal(stored, content) {
+			return attachment
+		}
+	}
+	return nil
 }
 
 // TaxYear puts a tax year together from every paystub paid in it and every
