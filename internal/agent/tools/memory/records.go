@@ -47,20 +47,24 @@ func linksAction(ctx context.Context, run tools.Run, arguments *memoryArguments)
 		if node == nil {
 			return fmt.Errorf("there is no page at %s", path)
 		}
-		links, err := tx.ListAgentRecordLinks(run.Agent().ID, node.ID)
+		stored, err := tx.ListAgentRecordLinks(run.Agent().ID, node.ID)
 		if err != nil {
 			return err
 		}
-		linkCount = len(links)
-		if offset >= len(links) {
+		// One row for a recording however many of its passages the page is
+		// linked to, as the dashboard lists it.
+		rows := recordlink.GroupPassages(stored)
+		linkCount = len(rows)
+		if offset >= len(rows) {
 			return nil
 		}
-		for _, link := range links[offset:min(offset+linksShown, len(links))] {
+		for _, row := range rows[offset:min(offset+linksShown, len(rows))] {
+			link := row.Link
 			resolved, err := recordlink.Resolve(tx, recordLinkReader(run), link)
 			if err != nil {
 				return err
 			}
-			lines = append(lines, recordLinkLines(link, resolved)...)
+			lines = append(lines, recordLinkLines(link, row.PassageCount, resolved)...)
 			hasRecordText = hasRecordText || resolved.IsReadable()
 			// What a recording says is not the person's word, and what a
 			// run has read of one is marked so, as for a fact read out of one.
@@ -89,7 +93,11 @@ func linksAction(ctx context.Context, run tools.Run, arguments *memoryArguments)
 // recordLinkLines is one link as the agent reads it: what the page is to
 // the record, the record named so that another tool can open it, and what it
 // is called when the agent may read it.
-func recordLinkLines(link *models.AgentRecordLink, resolved *recordlink.Resolved) []string {
+//
+// A recording linked at many passages is one line, naming the first passage
+// and how many there are; unlink with the recording alone, no range, takes
+// them all.
+func recordLinkLines(link *models.AgentRecordLink, passageCount int, resolved *recordlink.Resolved) []string {
 	relation := string(link.RecordRelation)
 	guess := ""
 	if link.Proposed() {
@@ -97,6 +105,9 @@ func recordLinkLines(link *models.AgentRecordLink, resolved *recordlink.Resolved
 		guess = " (the agent's guess)"
 	}
 	line := "- " + relation + " " + link.Reference() + guess
+	if passageCount > 1 {
+		line += fmt.Sprintf(" (%d passages, the first shown)", passageCount)
+	}
 	switch {
 	case resolved.IsUnavailable:
 		return []string{line + "  [no longer there]"}

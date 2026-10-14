@@ -41,8 +41,15 @@ type AgentRecordLinkMutation interface {
 	LinkAgentRecord(ctx context.Context, arguments LinkAgentRecordArguments) (*AgentRecordLinkView, error)
 
 	// Take a page's links to a record away; every relation when none is
-	// given. Says whether there was one. Needs agent:use.
+	// given, and for a recording every passage when no range is given.
+	// Says whether there was one. Needs agent:use.
 	UnlinkAgentRecord(ctx context.Context, arguments UnlinkAgentRecordArguments) (bool, error)
+
+	// State the agent's guesses at a page's links to a record: every
+	// passage of a recording the page is linked to in that relation, or
+	// every relation when none is given. Says how many it confirmed. Needs
+	// agent:use.
+	ConfirmAgentRecord(ctx context.Context, arguments ConfirmAgentRecordArguments) (int, error)
 
 	// Name the contact card a person's page is about, from one of the
 	// person's own address books, and link the page to it. Empty clears it.
@@ -90,6 +97,18 @@ type UnlinkAgentRecordArguments struct {
 	PassageEndMS   int64  `json:"passageEndMS" graphapi:"nullable"`
 }
 
+type ConfirmAgentRecordArguments struct {
+	Path           string `json:"path"`
+	RecordKind     string `json:"recordKind"`
+	RecordID       string `json:"recordId"`
+	RecordRelation string `json:"recordRelation" graphapi:"nullable"`
+
+	// PassageStartMS and PassageEndMS narrow a recording to one passage;
+	// both left out is every passage the page has of it.
+	PassageStartMS int64 `json:"passageStartMS" graphapi:"nullable"`
+	PassageEndMS   int64 `json:"passageEndMS" graphapi:"nullable"`
+}
+
 type SetAgentNodeContactArguments struct {
 	Path string `json:"path"`
 
@@ -121,6 +140,11 @@ type AgentRecordLinkView struct {
 	PassageStartMS  int64  `json:"passageStartMS"`
 	PassageEndMS    int64  `json:"passageEndMS"`
 	TranscriptRunID string `json:"transcriptRunId"`
+
+	// PassageCount is how many passage links of the recording a page lists
+	// as this one row; the range above is the first of them. Zero for any
+	// other kind.
+	PassageCount int `json:"passageCount"`
 
 	Note       string            `json:"note"`
 	Evidence   []models.Evidence `json:"evidence"`
@@ -196,6 +220,9 @@ func (self *graph) recordLinkViews(tx db.Transaction, found *models.Agent, links
 			RecordTitle: resolved.Title, RecordHappenedAt: resolved.HappenedAt,
 			DashboardPath: resolved.DashboardPath, IsUnavailable: resolved.IsUnavailable,
 		}
+		if link.RecordKind == models.RecordRecordingPassage {
+			view.PassageCount = 1
+		}
 		if view.Evidence == nil {
 			view.Evidence = []models.Evidence{}
 		}
@@ -227,28 +254,42 @@ func (self *graph) ListAgentRecordLinks(ctx context.Context, arguments ListAgent
 	if node == nil {
 		return nil, fmt.Errorf("there is no page at %s", path)
 	}
-	links, err := tx.ListAgentRecordLinks(found.ID, node.ID)
+	stored, err := tx.ListAgentRecordLinks(found.ID, node.ID)
 	if err != nil {
 		return nil, err
 	}
+	rows := recordlink.GroupPassages(stored)
 	first := arguments.First
 	if first == 0 || first > recordLinkPageMost {
 		first = recordLinkPageMost
 	}
-	result := &AgentRecordLinksResult{RecordLinkCount: len(links)}
-	end := min(arguments.Offset+first, len(links))
-	if arguments.Offset < len(links) {
-		links = links[arguments.Offset:end]
+	result := &AgentRecordLinksResult{RecordLinkCount: len(rows)}
+	end := min(arguments.Offset+first, len(rows))
+	if arguments.Offset < len(rows) {
+		rows = rows[arguments.Offset:end]
 	} else {
-		links = nil
+		rows = nil
 	}
 	if end < result.RecordLinkCount {
 		result.NextOffset = end
 	}
-	if result.RecordLinks, err = self.recordLinkViews(tx, found, links, node); err != nil {
+	if result.RecordLinks, err = self.recordLinkRowViews(tx, found, rows, node); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// recordLinkRowViews is the rows of a page's links with their records
+// found for the person, a recording's passages counted in one row.
+func (self *graph) recordLinkRowViews(tx db.Transaction, found *models.Agent, rows []recordlink.Row, pageNode *models.AgentNode) ([]*AgentRecordLinkView, error) {
+	views, err := self.recordLinkViews(tx, found, recordlink.RowLinks(rows), pageNode)
+	if err != nil {
+		return nil, err
+	}
+	for index, row := range rows {
+		views[index].PassageCount = row.PassageCount
+	}
+	return views, nil
 }
 
 func (self *graph) ReadRecordMemoryLinks(ctx context.Context, arguments ReadRecordMemoryLinksArguments) ([]*AgentRecordLinkView, error) {
@@ -360,6 +401,56 @@ func (self *graph) UnlinkAgentRecord(ctx context.Context, arguments UnlinkAgentR
 	removed, err := tx.DeleteAgentRecordLink(found.ID, node.ID, recordKind, strings.TrimSpace(arguments.RecordID),
 		recordRelation, arguments.PassageStartMS, arguments.PassageEndMS)
 	return removed > 0, err
+}
+
+func (self *graph) ConfirmAgentRecord(ctx context.Context, arguments ConfirmAgentRecordArguments) (int, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return 0, err
+	}
+	recordKind := models.AgentRecordKind(arguments.RecordKind)
+	if !models.IsAgentRecordKind(recordKind) {
+		return 0, fmt.Errorf("%w: %q is not a kind of record", api.ErrInvalidArguments, arguments.RecordKind)
+	}
+	recordRelation := models.AgentRecordRelation(arguments.RecordRelation)
+	if recordRelation != "" && !models.IsAgentRecordRelation(recordRelation) {
+		return 0, fmt.Errorf("%w: %q is not a relation to a record", api.ErrInvalidArguments, arguments.RecordRelation)
+	}
+	path := models.NormalizePath(arguments.Path)
+	if path == "" {
+		return 0, fmt.Errorf("which page?")
+	}
+	tx := self.writing(ctx)
+	node, err := tx.GetAgentNode(found.ID, path)
+	if err != nil {
+		return 0, err
+	}
+	if node == nil {
+		return 0, fmt.Errorf("there is no page at %s", path)
+	}
+	links, err := tx.ListAgentRecordLinks(found.ID, node.ID)
+	if err != nil {
+		return 0, err
+	}
+	// Stating a link again is how a person confirms it, one link at a
+	// time, so a row that stands for many passages states each of them.
+	confirmed := 0
+	for _, link := range links {
+		if !link.Proposed() || link.RecordKind != recordKind || link.RecordID != strings.TrimSpace(arguments.RecordID) ||
+			(recordRelation != "" && link.RecordRelation != recordRelation) ||
+			(recordKind == models.RecordRecordingPassage && (arguments.PassageStartMS != 0 || arguments.PassageEndMS != 0) &&
+				(link.PassageStartMS != arguments.PassageStartMS || link.PassageEndMS != arguments.PassageEndMS)) {
+			continue
+		}
+		stated := *link
+		stated.LinkStatus = models.EdgeStated
+		stated.Evidence = []models.Evidence{{Kind: models.EvidencePerson}}
+		if _, err := tx.PutAgentRecordLink(&stated); err != nil {
+			return 0, err
+		}
+		confirmed++
+	}
+	return confirmed, nil
 }
 
 func (self *graph) SetAgentNodeContact(ctx context.Context, arguments SetAgentNodeContactArguments) (bool, error) {

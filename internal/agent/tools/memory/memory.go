@@ -24,6 +24,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/recordlink"
 )
 
 // The bounds.
@@ -473,7 +474,7 @@ func getAction(ctx context.Context, run tools.Run, arguments *memoryArguments) (
 			if err != nil {
 				return err
 			}
-			recordLinkCount = len(recordLinks)
+			recordLinkCount = len(recordlink.GroupPassages(recordLinks))
 		}
 		if arguments.LinkOffset > 0 {
 			edges, err = tx.ListAgentEdges(agentId, node.ID)

@@ -2937,6 +2937,8 @@ export const ja: Catalog = {
   'memoryLinks.remove': 'リンクを外す',
   'memoryLinks.confirmed': 'リンクを確定しました',
   'memoryLinks.removed': 'リンクを外しました',
+  'memoryLinks.passagesOne': '1 件の発言',
+  'memoryLinks.passagesOther': '{count} 件の発言',
   'memoryLinks.removeBody': '「{title}」へのリンクを外しますか？ あなたが作り直さない限り、エージェントは再び作りません。',
   'memoryLinks.unavailable': '利用できなくなりました',
   'memoryLinks.untitled': '無題',

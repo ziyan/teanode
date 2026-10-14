@@ -125,6 +125,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ReadRecordMemoryLinks": client.DocumentReadRecordMemoryLinks,
 		"LinkAgentRecord":       client.DocumentLinkAgentRecord,
 		"UnlinkAgentRecord":     client.DocumentUnlinkAgentRecord,
+		"ConfirmAgentRecord":    client.DocumentConfirmAgentRecord,
 		"SetAgentNodeContact":   client.DocumentSetAgentNodeContact,
 		"ListAgentDreams":       client.DocumentListAgentDreams,
 		"RewriteAgentOverview":  client.DocumentRewriteAgentOverview,

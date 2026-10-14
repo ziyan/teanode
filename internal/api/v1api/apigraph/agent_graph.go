@@ -17,6 +17,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/recordlink"
 )
 
 // The graph as the dashboard and the command line reach it: pages
@@ -875,12 +876,13 @@ func (self *graph) AgentGraphPage(ctx context.Context, arguments AgentGraphPageR
 	}
 	// The page's links to the person's other records. The person's own
 	// dashboard: all of them, whatever the agent was granted.
-	recordLinks, err := tx.ListAgentRecordLinks(found.ID, node.ID)
+	storedLinks, err := tx.ListAgentRecordLinks(found.ID, node.ID)
 	if err != nil {
 		return nil, err
 	}
-	result.RecordLinkCount = len(recordLinks)
-	if result.RecordLinks, err = self.recordLinkViews(tx, found, recordLinks[:min(len(recordLinks), recordLinksOnPage)], node); err != nil {
+	recordLinkRows := recordlink.GroupPassages(storedLinks)
+	result.RecordLinkCount = len(recordLinkRows)
+	if result.RecordLinks, err = self.recordLinkRowViews(tx, found, recordLinkRows[:min(len(recordLinkRows), recordLinksOnPage)], node); err != nil {
 		return nil, err
 	}
 	if result.EvidenceRecords, err = self.evidenceRecordsOf(tx, found, result.Facts); err != nil {

@@ -59,6 +59,9 @@ export type RecordLink = {
   passageStartMS: number
   passageEndMS: number
   transcriptRunId: string
+  // How many passage links of one recording this row stands for (the range
+  // above is the first of them); zero for any other kind.
+  passageCount: number
   note: string
   happenedAt?: string | null
   createdAt: string
@@ -70,7 +73,7 @@ export type RecordLink = {
 
 // RECORD_LINK_FIELDS is what a query selects of a link.
 export const RECORD_LINK_FIELDS =
-  'id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable'
+  'id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId passageCount note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable'
 
 const READ_RECORD_MEMORY_LINKS = `query ($recordKind: String!, $recordId: String!, $passageStartMS: Int64, $passageEndMS: Int64) {
   ReadRecordMemoryLinks(recordKind: $recordKind, recordId: $recordId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { ${RECORD_LINK_FIELDS} }
@@ -89,6 +92,12 @@ export const LINK_RECORD = `mutation ($path: String!, $recordKind: String!, $rec
 
 export const UNLINK_RECORD = `mutation ($path: String!, $recordKind: String!, $recordId: String!, $recordRelation: String, $passageStartMS: Int64, $passageEndMS: Int64) {
   UnlinkAgentRecord(path: $path, recordKind: $recordKind, recordId: $recordId, recordRelation: $recordRelation, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS)
+}`
+
+// CONFIRM_RECORD states the agent's guesses at a page's links to one record,
+// every passage of a recording at once.
+export const CONFIRM_RECORD = `mutation ($path: String!, $recordKind: String!, $recordId: String!, $recordRelation: String) {
+  ConfirmAgentRecord(path: $path, recordKind: $recordKind, recordId: $recordId, recordRelation: $recordRelation)
 }`
 
 export const SET_NODE_CONTACT = `mutation ($path: String!, $contactId: String) {
@@ -124,6 +133,12 @@ export function recordLinkDate(link: RecordLink): Date | null {
   if (!written) return null
   const date = new Date(written)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+// isRecordingRow says the row is a recording the page is linked to at some
+// passages: the server lists it once and counts them in passageCount.
+export function isRecordingRow(link: Pick<RecordLink, 'recordKind'>): boolean {
+  return link.recordKind === 'recording_passage'
 }
 
 // canOpen says the dashboard can open the record: there is a path in this

@@ -2197,6 +2197,22 @@
         }
       }
     },
+    "%lld passages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の発言"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 段"
+          }
+        }
+      }
+    },
     "%lld people": {
       "localizations": {
         "ja": {

@@ -28,15 +28,23 @@ func recordServer(test *testing.T) (*httptest.Server, map[string]map[string]any)
 		link := `{"id":"l1","nodePath":"people/fixture-friend","nodeName":"Fixture Friend","nodeKind":"person","recordKind":"mail","recordId":"item-1",` +
 			`"recordRelation":"received","linkStatus":"proposed","passageStartMS":0,"passageEndMS":0,"transcriptRunId":"","note":"",` +
 			`"createdAt":"2030-01-02T10:00:00Z","recordTitle":"Fixture subject","recordHappenedAt":"2030-01-02T10:00:00Z","dashboardPath":"/mailbox/starred/item-1","isUnavailable":false}`
+		passages := strings.NewReplacer(`"recordKind":"mail"`, `"recordKind":"recording_passage"`, `"recordId":"item-1"`, `"recordId":"rec-1"`,
+			`"recordRelation":"received"`, `"recordRelation":"spoke_in"`, `"passageStartMS":0,"passageEndMS":0`, `"passageStartMS":1000,"passageEndMS":2000,"passageCount":37`).Replace(link)
 		gone := strings.Replace(strings.Replace(link, `"recordId":"item-1"`, `"recordId":"item-2"`, 1), `"isUnavailable":false`, `"isUnavailable":true`, 1)
-		for _, name := range []string{"ListAgentRecordLinks", "ReadRecordMemoryLinks", "LinkAgentRecord", "UnlinkAgentRecord", "SetAgentNodeContact"} {
+		for _, name := range []string{"ListAgentRecordLinks", "ReadRecordMemoryLinks", "LinkAgentRecord", "UnlinkAgentRecord", "ConfirmAgentRecord", "SetAgentNodeContact"} {
 			if !strings.Contains(body.Query, name+"(") {
 				continue
 			}
 			calls[name] = body.Variables
 			switch name {
 			case "ListAgentRecordLinks":
+				if body.Variables["path"] == "people/fixture-speaker" {
+					_, _ = response.Write([]byte(`{"data":{"ListAgentRecordLinks":{"recordLinks":[` + passages + `],"recordLinkCount":1,"nextOffset":0}}}`))
+					return
+				}
 				_, _ = response.Write([]byte(`{"data":{"ListAgentRecordLinks":{"recordLinks":[` + link + `,` + gone + `],"recordLinkCount":5,"nextOffset":2}}}`))
+			case "ConfirmAgentRecord":
+				_, _ = response.Write([]byte(`{"data":{"ConfirmAgentRecord":37}}`))
 			case "ReadRecordMemoryLinks":
 				_, _ = response.Write([]byte(`{"data":{"ReadRecordMemoryLinks":[` + link + `]}}`))
 			case "LinkAgentRecord":
@@ -161,5 +169,28 @@ func TestConfirmStatesTheGuessesAboutARecordAndNothingElse(test *testing.T) {
 	output, _, err = runRecordCommand(test, server, "confirm", "people/fixture-friend", "--all", "--relation", "wrote")
 	if err != nil || !strings.Contains(output, "has no guess to confirm") || calls["LinkAgentRecord"] != nil {
 		test.Errorf("only the relation asked for: %v\n%s", err, output)
+	}
+}
+
+func TestRecordingPassagesAreOneRow(test *testing.T) {
+	test.Parallel()
+	server, calls := recordServer(test)
+	output, _, err := runRecordCommand(test, server, "links", "people/fixture-speaker")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(output, "recording_passage:rec-1@1000-2000 (37 passages, the first shown)  Fixture subject") {
+		test.Errorf("a recording listed once, with how many passages it covers:\n%s", output)
+	}
+	output, _, err = runRecordCommand(test, server, "confirm", "people/fixture-speaker", "--all")
+	if err != nil || !strings.Contains(output, "(37 passages confirmed)") {
+		test.Fatalf("confirm --all: %v\n%s", err, output)
+	}
+	variables := calls["ConfirmAgentRecord"]
+	if variables["recordKind"] != "recording_passage" || variables["recordId"] != "rec-1" || variables["recordRelation"] != "spoke_in" {
+		test.Errorf("a row of a recording is confirmed whole, on the server: %v", variables)
+	}
+	if _, present := variables["passageStartMS"]; present || calls["LinkAgentRecord"] != nil {
+		test.Errorf("no range was given, so every passage: %v", variables)
 	}
 }

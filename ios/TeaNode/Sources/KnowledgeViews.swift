@@ -475,7 +475,7 @@ struct KnowledgePageView: View {
                                 switch action {
                                 case .confirm:
                                     _ = await model.act(saying: String(localized: "Link confirmed")) {
-                                        try await model.connection.linkKnowledgeRecord(pagePath, link: link)
+                                        try await model.connection.confirmKnowledgeRecord(pagePath, link: link)
                                     }
                                 case .remove:
                                     _ = await model.act(saying: String(localized: "Link removed")) {
@@ -1355,6 +1355,9 @@ struct LinkedRecordRow: View {
                 }
                 HStack(spacing: 6) {
                     Text(KnowledgeRecordWords.relation(link.recordRelation))
+                    if link.coveredPassageCount > 1 {
+                        Text("\(link.coveredPassageCount) passages")
+                    }
                     if let date = link.date {
                         Text(date.formatted(date: .abbreviated, time: .omitted))
                     }

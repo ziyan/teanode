@@ -2859,6 +2859,8 @@ export const zh: Catalog = {
   'memoryLinks.remove': '移除关联',
   'memoryLinks.confirmed': '已确认关联',
   'memoryLinks.removed': '已移除关联',
+  'memoryLinks.passagesOne': '1 段',
+  'memoryLinks.passagesOther': '{count} 段',
   'memoryLinks.removeBody': '移除与“{title}”的关联？除非你自己重新建立，智能体不会再次建立它。',
   'memoryLinks.unavailable': '已不存在',
   'memoryLinks.untitled': '无标题',
