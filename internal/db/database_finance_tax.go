@@ -823,8 +823,11 @@ func (self *transaction) DeleteFinanceTaxFormsOfAttachment(agentId, attachmentId
 	}
 	for _, row := range stale {
 		before, err := self.GetFinanceTaxForm(agentId, row.ID)
-		if err != nil || before == nil {
+		if err != nil {
 			return err
+		}
+		if before == nil {
+			continue
 		}
 		if err := self.applyMutation(models.AuditResourceFinanceTaxForm, row.ID, models.AuditActionDelete, taxFormAudit(before), nil, func(tx *gorm.DB) error {
 			return tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, row.ID).Delete(&agentFinanceTaxFormModel{}).Error

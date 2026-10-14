@@ -170,3 +170,30 @@ func TestTaxFormAnswerReads1099Kinds(t *testing.T) {
 		t.Errorf("boxes of nothing are left out: %+v", taxForm.TaxFormEntries)
 	}
 }
+
+// A statement of two accounts with a 1099-DIV each keeps the first and
+// says so; read again into nothing it can record, it keeps what it had.
+func TestTaxDocumentJobReadsAStatementOfTwoAccounts(t *testing.T) {
+	statement := `{"documentKind": "1099", "taxForms": [
+ {"taxFormKind": "1099-INT", "taxYear": 2025, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1", "amount": "10.00"}]},
+ {"taxFormKind": "1099-DIV", "taxYear": 2025, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1a", "amount": "20.00"}, {"boxCode": "account", "textValue": "XX1111"}]},
+ {"taxFormKind": "1099-DIV", "taxYear": 2025, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1a", "amount": "30.00"}, {"boxCode": "account", "textValue": "XX2222"}]}]}`
+	refused := `{"documentKind": "1099", "taxForms": [{"taxFormKind": "1099-DIV", "taxYear": 1066, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1a", "amount": "20.00"}]}]}`
+	fixture, _ := receiptJobFixture(t, statement, refused)
+	upload := fixture.taxDocumentUpload(t, "statement.png", "image/png", []byte("\x89PNG\r\n\x1a\nan invented statement"))
+	for range 2 {
+		if err := fixture.worker.runReadTaxDocument(t.Context(), fixture.taxDocumentJobRun(upload.ID)); err != nil {
+			t.Fatalf("runReadTaxDocument: %s", err)
+		}
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTaxForms(fixture.agent.ID, nil)
+		if err != nil || len(page.FinanceTaxForms) != 2 {
+			t.Fatalf("the 1099-INT and the first 1099-DIV, kept though the second reading recorded nothing: %+v %v", page, err)
+		}
+	})
+	titles := strings.Join(fixture.taxDocumentRunTitles(t), "\n")
+	if !strings.Contains(titles, "a second 1099-DIV in the file was not kept") {
+		t.Fatalf("the run says what it left: %q", titles)
+	}
+}

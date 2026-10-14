@@ -292,7 +292,17 @@ func estimateTaxYear(taxYear int, status TaxFilingStatus, people []*personSums, 
 			preferentialTax.Add(preferentialTax, tax)
 			returnTax.Add(returnTax, tax)
 		}
+		// Foreign tax taken as a credit without Form 1116, which allows at
+		// most 300 (600 filing jointly); more needs the form, and the
+		// estimate does not count it.
 		credit := new(big.Rat).Set(investment.foreignTaxPaid)
+		simpleCreditLimit := big.NewRat(300, 1)
+		if status == TaxFilingStatusMarriedFilingJointly {
+			simpleCreditLimit = big.NewRat(600, 1)
+		}
+		if credit.Cmp(simpleCreditLimit) > 0 {
+			credit = simpleCreditLimit
+		}
 		if credit.Cmp(returnTax) > 0 {
 			credit.Set(returnTax)
 		}

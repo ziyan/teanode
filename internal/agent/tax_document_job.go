@@ -293,6 +293,12 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 			return err
 		}
 		title = taxFormRunTitle(recorded)
+		// A file read as a W-2 holds no 1099s any more.
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.DeleteFinanceTaxFormsOfAttachment(run.Agent.ID, source.attachment.ID, []models.TaxFormKind{recorded.TaxFormKind})
+		}); err != nil {
+			return err
+		}
 	case strings.HasPrefix(documentKind, "1099") && (len(answer.Value.TaxForms) > 0 || answer.Value.TaxForm != nil):
 		answers := answer.Value.TaxForms
 		if len(answers) == 0 {
@@ -300,12 +306,20 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 		}
 		var titles []string
 		keptKinds := []models.TaxFormKind{}
+		isKept := map[models.TaxFormKind]bool{}
 		for _, formAnswer := range answers {
 			if formAnswer == nil {
 				continue
 			}
 			taxForm := formAnswer.taxForm()
 			taxForm.AgentAttachmentID = source.attachment.ID
+			// One file keeps one form of each kind: a statement of two
+			// accounts with a 1099-DIV each keeps the first, and says so,
+			// rather than the second quietly taking its place.
+			if isKept[taxForm.TaxFormKind] {
+				titles = append(titles, fmt.Sprintf("a second %s in the file was not kept; hand in each account's statement as a file of its own", finance.TaxFormKindName(taxForm.TaxFormKind)))
+				continue
+			}
 			recorded, err := self.RecordTaxForm(ctx, run.Agent, taxForm)
 			if isTaxDocumentRefusal(err) {
 				titles = append(titles, fmt.Sprintf("not a %s: %s", finance.TaxFormKindName(taxForm.TaxFormKind), err))
@@ -315,14 +329,18 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 				return err
 			}
 			keptKinds = append(keptKinds, recorded.TaxFormKind)
+			isKept[recorded.TaxFormKind] = true
 			titles = append(titles, taxFormRunTitle(recorded))
 		}
 		// The forms read from this file before and not read now go, as
-		// reading a file again replaces what was read out of it.
-		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-			return tx.DeleteFinanceTaxFormsOfAttachment(run.Agent.ID, source.attachment.ID, keptKinds)
-		}); err != nil {
-			return err
+		// reading a file again replaces what was read out of it; when
+		// nothing could be recorded, what was there stays.
+		if len(keptKinds) > 0 {
+			if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+				return tx.DeleteFinanceTaxFormsOfAttachment(run.Agent.ID, source.attachment.ID, keptKinds)
+			}); err != nil {
+				return err
+			}
 		}
 		title = strings.Join(titles, "; ")
 	default:

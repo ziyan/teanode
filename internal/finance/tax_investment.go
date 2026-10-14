@@ -14,8 +14,10 @@ import (
 // rest of taxable income, a net loss against at most 3,000 of other income
 // (1,500 filing separately), and adds the 3.8% net investment income tax
 // above the filing status's threshold. Foreign tax paid is taken as a
-// credit, as it may be without Form 1116 below a few hundred dollars. A
-// loss carried over from an earlier year is not known and not counted.
+// credit up to what may be taken without Form 1116 (300, or 600 filing
+// jointly). A loss carried over from an earlier year is not known and not
+// counted, nor are 1099-B box 1f, 1099-INT boxes 2 and 11 to 13, and
+// 1099-DIV box 5, which change a return in ways the estimate leaves out.
 
 // TaxYearInvestmentFigures are a year's investment income from its 1099s.
 // Amounts are dollars with cents.
@@ -136,13 +138,19 @@ func investmentSumsByEmployee(taxYear int, taxForms []*models.FinanceTaxForm, id
 		if taxForm == nil || taxForm.TaxYear != taxYear || !IsInvestmentTaxForm(taxForm.TaxFormKind) {
 			continue
 		}
+		// One account's form of a kind, the same statement read twice or
+		// corrected, counts once: a correction over the form it corrects,
+		// else the latest read.
 		key := string(taxForm.TaxFormKind) + "\x00" + identities.employeeKey(taxForm.RecipientName, taxForm.RecipientTaxIDMask) + "\x00" +
-			identities.employerKey(taxForm.PayerName, taxForm.PayerTaxID)
+			identities.employerKey(taxForm.PayerName, taxForm.PayerTaxID) + "\x00" + TaxFormAccount(taxForm)
 		earlier := latestByKey[key]
 		if earlier == nil {
 			keys = append(keys, key)
 		}
-		if earlier == nil || !taxForm.CreatedAt.Before(earlier.CreatedAt) {
+		switch {
+		case earlier == nil, taxForm.IsCorrected && !earlier.IsCorrected:
+			latestByKey[key] = taxForm
+		case taxForm.IsCorrected == earlier.IsCorrected && !taxForm.CreatedAt.Before(earlier.CreatedAt):
 			latestByKey[key] = taxForm
 		}
 	}
@@ -269,7 +277,12 @@ func figureInvestmentReturn(sums *investmentSums, status TaxFilingStatus) *inves
 	if netCapitalGain.Sign() < 0 {
 		netCapitalGain = new(big.Rat)
 	}
-	result.preferential = new(big.Rat).Add(sums.qualifiedDividends, netCapitalGain)
+	// Qualified dividends are part of the ordinary ones, never more.
+	qualified := new(big.Rat).Set(sums.qualifiedDividends)
+	if qualified.Cmp(sums.ordinaryDividends) > 0 {
+		qualified.Set(sums.ordinaryDividends)
+	}
+	result.preferential = new(big.Rat).Add(qualified, netCapitalGain)
 	result.netInvestmentIncome = new(big.Rat).Add(sums.interest, sums.ordinaryDividends)
 	if netGain.Sign() > 0 {
 		result.netInvestmentIncome.Add(result.netInvestmentIncome, netGain)

@@ -109,6 +109,10 @@ const (
 	// TaxYearFindingCostBasisMissing: a 1099-B prints proceeds without a
 	// cost basis, so the gain counts the whole proceeds.
 	TaxYearFindingCostBasisMissing TaxYearFindingCode = "cost_basis_missing"
+	// TaxYearFindingInvestmentRecipientAssumed: a 1099 is made out to a
+	// name no W-2 or paystub names, so it is counted as the first
+	// person's.
+	TaxYearFindingInvestmentRecipientAssumed TaxYearFindingCode = "investment_recipient_assumed"
 )
 
 // TaxYearFinding is one thing worth knowing about a tax year, in a
@@ -571,7 +575,7 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	}
 	for _, taxForm := range taxForms {
 		if taxForm != nil && taxForm.TaxYear == taxYear && IsInvestmentTaxForm(taxForm.TaxFormKind) {
-			identities.learn(taxForm.RecipientName, taxForm.RecipientTaxIDMask, "", "")
+			identities.learn(taxForm.RecipientName, taxForm.RecipientTaxIDMask, taxForm.PayerName, taxForm.PayerTaxID)
 		}
 	}
 	groupOf := func(employeeName, employeeTaxIDMask, employerName, employerTaxID string) *employmentGroup {
@@ -765,6 +769,15 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 				everyoneSums[0].investment = newInvestmentSums()
 			}
 			everyoneSums[0].investment.add(sums)
+			recipient := sums.recipientName
+			if strings.TrimSpace(recipient) == "" {
+				recipient = "no name"
+			}
+			summary.TaxYearFindings = append(summary.TaxYearFindings, &TaxYearFinding{
+				TaxYearFindingCode: TaxYearFindingInvestmentRecipientAssumed, EmployeeName: summary.TaxYearPeople[0].EmployeeName,
+				FindingText: fmt.Sprintf("%d 1099s made out to %s, whom no W-2 or paystub names, are counted as %s's", len(sums.taxFormIds), recipient, summary.TaxYearPeople[0].EmployeeName),
+				PaystubIDs:  []string{},
+			})
 			continue
 		}
 		empty := newFigureSums()

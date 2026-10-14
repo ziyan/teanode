@@ -135,3 +135,28 @@ func containsCode(codes []TaxYearFindingCode, wanted TaxYearFindingCode) bool {
 	}
 	return false
 }
+
+// Two accounts at one broker are two forms; one account's form read twice
+// counts once, and a correction stands in for the form it corrects.
+func TestInvestmentFormsAreToldApartByAccount(t *testing.T) {
+	dividends := func(id, account, amount string, isCorrected bool, created time.Time) *models.FinanceTaxForm {
+		return &models.FinanceTaxForm{ID: id, TaxFormKind: models.TaxFormKind1099Div, TaxYear: 2026, PayerName: "Example Brokerage", RecipientName: "Pat Example",
+			IsCorrected: isCorrected, CreatedAt: created, TaxFormEntries: []*models.FinanceTaxFormEntry{
+				{BoxCode: "1a", Amount: amount}, {BoxCode: "account", TextValue: account}}}
+	}
+	day := time.Date(2027, 2, 15, 0, 0, 0, 0, time.UTC)
+	forms := []*models.FinanceTaxForm{
+		dividends("joint", "5282", "100.00", false, day),
+		dividends("individual", "7006", "40.00", false, day),
+		dividends("individual-again", "7006", "40.00", false, day.Add(time.Hour)),
+		dividends("joint-corrected", "5282", "120.00", true, day.Add(-time.Hour)),
+	}
+	byEmployee, order := investmentSumsByEmployee(2026, forms, newTaxYearIdentities())
+	sums := byEmployee[order[0]]
+	if formatDollars(sums.ordinaryDividends) != "160.00" || len(sums.taxFormIds) != 2 {
+		t.Fatalf("120 corrected and 40 once: %s %v", formatDollars(sums.ordinaryDividends), sums.taxFormIds)
+	}
+	if account := lastFourAlphanumerics("XXXX-xx52-82"); account != "5282" {
+		t.Fatalf("an account number's last four: %q", account)
+	}
+}

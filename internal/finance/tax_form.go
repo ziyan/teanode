@@ -90,8 +90,9 @@ var taxFormBoxesByKind = map[models.TaxFormKind]map[string]taxFormBox{
 	// 11 to 13 bond premium; 16 the state's id, 17 state tax withheld.
 	models.TaxFormKind1099Int: {
 		"1": {}, "2": {}, "3": {}, "4": {}, "5": {}, "6": {}, "8": {}, "9": {}, "10": {}, "11": {}, "12": {}, "13": {},
-		"16": {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
-		"17": {boxQualifier: qualifierState},
+		"16":      {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
+		"17":      {boxQualifier: qualifierState},
+		"account": accountBox,
 	},
 	// 1099-DIV: 1a ordinary dividends, 1b qualified dividends, 2a capital
 	// gain distributions, 2b to 2f their parts, 3 nondividend
@@ -102,8 +103,9 @@ var taxFormBoxesByKind = map[models.TaxFormKind]map[string]taxFormBox{
 	models.TaxFormKind1099Div: {
 		"1a": {}, "1b": {}, "2a": {}, "2b": {}, "2c": {}, "2d": {}, "2e": {}, "2f": {}, "3": {}, "4": {}, "5": {}, "6": {}, "7": {},
 		"9": {}, "10": {}, "12": {}, "13": {},
-		"15": {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
-		"16": {boxQualifier: qualifierState},
+		"15":      {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
+		"16":      {boxQualifier: qualifierState},
+		"account": accountBox,
 	},
 	// 1099-B, as a brokerage's summary totals it: 1d proceeds, 1e cost
 	// basis, 1f accrued market discount and 1g wash sale loss disallowed,
@@ -111,11 +113,17 @@ var taxFormBoxesByKind = map[models.TaxFormKind]map[string]taxFormBox{
 	// state's id, 16 state tax withheld.
 	models.TaxFormKind1099B: {
 		"1d": {boxQualifier: qualifierTerm}, "1e": {boxQualifier: qualifierTerm}, "1f": {boxQualifier: qualifierTerm}, "1g": {boxQualifier: qualifierTerm},
-		"4":  {},
-		"15": {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
-		"16": {boxQualifier: qualifierState},
+		"4":       {},
+		"15":      {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
+		"16":      {boxQualifier: qualifierState},
+		"account": accountBox,
 	},
 }
+
+// accountBox is a 1099's account number, kept as its last four letters
+// and digits: two forms of one kind from one payer to one person are told
+// apart by it, a joint account's from an individual one's.
+var accountBox = taxFormBox{isText: true, isBusinessNumber: true}
 
 // CheckTaxForm checks a tax form as read and normalizes it in place: text
 // NFKC with its spaces collapsed, box codes and qualifiers in their
@@ -231,6 +239,9 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 		entry.IsChecked = false
 		if amountValue == nil && entry.TextValue == "" {
 			return refuseTaxDocument("%s prints nothing; leave out boxes that are empty", label)
+		}
+		if entry.BoxCode == "account" {
+			entry.TextValue = lastFourAlphanumerics(entry.TextValue)
 		}
 		if box.isText {
 			continue
@@ -498,4 +509,29 @@ func brokerFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
 		})
 	}
 	return findings
+}
+
+// lastFourAlphanumerics is the last four letters and digits of an account
+// number however it is written (XXXX-1234, ****5282).
+func lastFourAlphanumerics(text string) string {
+	kept := []rune{}
+	for _, character := range text {
+		if (character >= '0' && character <= '9') || (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') {
+			kept = append(kept, character)
+		}
+	}
+	if len(kept) > 4 {
+		kept = kept[len(kept)-4:]
+	}
+	return strings.ToUpper(string(kept))
+}
+
+// TaxFormAccount is a 1099's account number's last four, or "".
+func TaxFormAccount(taxForm *models.FinanceTaxForm) string {
+	for _, entry := range taxForm.TaxFormEntries {
+		if entry != nil && entry.BoxCode == "account" {
+			return entry.TextValue
+		}
+	}
+	return ""
 }

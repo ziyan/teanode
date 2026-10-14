@@ -39,6 +39,7 @@ How to read a 1099:
 - 1099-B: give its totals, not each sale: 1d proceeds, 1e cost basis, 1f accrued market discount and 1g wash sale loss disallowed, each with boxQualifier saying which total: short_covered (short term, basis reported to the IRS, box A), short_noncovered (box B), long_covered (box D), long_noncovered (box E), or unknown_term when the statement does not know the term (box X). Use the summary the statement prints; when it prints only the sales, add them up by total. A cost basis the statement does not print is left out, never guessed. 4 is federal income tax withheld; 15 and 16 the state's id and tax, by state code.
 - Leave out a 1099 whose boxes are all empty, and the forms a consolidated statement holds that are not 1099-INT, 1099-DIV or 1099-B (a 1099-MISC, a 1099-OID): say which in "why".
 - isCorrected is true for a corrected 1099 ("CORRECTED" checked).
+- Give each 1099's account number as an entry {"boxCode": "account", "textValue": "…"}, its last four letters or digits only; it tells a joint account's forms from an individual one's at the same broker.
 
 For all of them:
 - Amounts are decimal strings with no thousands separators and no currency sign: 1234.50, not $1,234.50.
