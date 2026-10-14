@@ -13946,6 +13946,80 @@ button.idea-history-title {
   margin-top: var(--space-3);
 }
 
+/* The Taxes section. The year and the upload sit together where a
+   section's one action goes, wrapping under the heading on a phone. */
+.finance-taxes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.finance-tax-year-select.select {
+  width: 7rem;
+  min-width: 0;
+}
+
+/* A group of a paystub's lines, or the W-2 against the paystubs, follows
+   the table above it with room to tell the two apart. */
+.finance-receipt-lines-scroll + .finance-metadata-head,
+.finance-tax-note + .finance-metadata-head {
+  margin-top: var(--space-3);
+}
+
+.finance-tax-note {
+  margin-top: var(--space-2);
+}
+
+/* An employer's name in a list row is one line high, cut with an ellipsis
+   with the whole name on hover, so every row is the same height and the
+   amounts beside it stay on a phone's screen. */
+.finance-tax-name {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+@media (max-width: 600px) {
+  .finance-tax-name {
+    max-width: 8rem;
+  }
+
+  .finance-paystubs-table .table-surface th,
+  .finance-paystubs-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
+.finance-tax-findings li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.finance-tax-findings .link {
+  text-align: start;
+}
+
+/* A paystub's take-home pay, under its lines: the figure the rest add up
+   to, set apart as a total. */
+.finance-paystub-net {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-strong);
+  font-weight: 550;
+}
+
+.finance-paystub-net .numeric-value {
+  font-variant-numeric: tabular-nums;
+}
+
 /* In the transactions list: the mark of a row with a receipt, and the
    annotation under the description, one line cut short. */
 .finance-receipt-mark {

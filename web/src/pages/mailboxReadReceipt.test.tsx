@@ -2,11 +2,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
-import { ReadAsReceiptMenuItem } from './mailboxReadReceipt'
+import { ReadAsReceiptMenuItem, ReadAsTaxDocumentMenuItem } from './mailboxReadReceipt'
 
 const toast = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn(), failure: vi.fn() }))
 vi.mock('../api', () => ({ graphql: vi.fn() }))
-vi.mock('../i18n/i18n', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
+vi.mock('../i18n/i18n', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    plural: (count: number, forms: { one: string; other: string }, values?: Record<string, string>) =>
+      `${count === 1 ? forms.one : forms.other}${values ? ` ${values.count}` : ''}`,
+    language: 'en',
+  }),
+}))
 vi.mock('../components/toast', () => ({ useToast: () => toast }))
 const execute = vi.mocked(graphql)
 
@@ -37,5 +44,28 @@ it('says what the server said when it refuses', async () => {
   render(<ReadAsReceiptMenuItem mailboxItemId="item-invented" onChosen={vi.fn()} />)
   fireEvent.click(screen.getByRole('menuitem', { name: 'mailbox.readAsReceipt' }))
   await waitFor(() => expect(toast.failure).toHaveBeenCalledWith(refusal, 'mailbox.readAsReceiptFailed'))
+  expect(toast.done).not.toHaveBeenCalled()
+})
+
+it('asks the agent to read the files of the message as paystubs or W-2s, and says how many', async () => {
+  execute.mockResolvedValue({
+    ReadTaxDocument: { agentAttachmentIds: ['attachment-one', 'attachment-two'], agentJobIds: ['job-one', 'job-two'] },
+  })
+  const onChosen = vi.fn()
+  render(<ReadAsTaxDocumentMenuItem mailboxItemId="item-invented" onChosen={onChosen} />)
+  fireEvent.click(screen.getByRole('menuitem', { name: 'mailbox.readAsTaxDocument' }))
+  await waitFor(() => expect(toast.done).toHaveBeenCalledWith('mailbox.readingAsTaxDocumentOther 2'))
+  expect(onChosen).toHaveBeenCalled()
+  expect(execute).toHaveBeenCalledTimes(1)
+  expect(execute.mock.calls[0][0]).toContain('ReadTaxDocument(')
+  expect(execute.mock.calls[0][1]).toEqual({ mailboxItemId: 'item-invented' })
+})
+
+it('says what the server said when the message carries nothing to read', async () => {
+  const refusal = new Error('the message carries no PDF or picture to read a paystub or W-2 out of')
+  execute.mockRejectedValue(refusal)
+  render(<ReadAsTaxDocumentMenuItem mailboxItemId="item-invented" onChosen={vi.fn()} />)
+  fireEvent.click(screen.getByRole('menuitem', { name: 'mailbox.readAsTaxDocument' }))
+  await waitFor(() => expect(toast.failure).toHaveBeenCalledWith(refusal, 'mailbox.readAsTaxDocumentFailed'))
   expect(toast.done).not.toHaveBeenCalled()
 })

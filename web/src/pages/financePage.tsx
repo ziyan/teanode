@@ -11,6 +11,7 @@ import { useAgentFinancePresence } from './finance/financePresence'
 import { FinanceReceiptListSection } from './finance/financeReceiptList'
 import { FinanceSavingsTargetsSection } from './finance/financeSavingsTargets'
 import { FinanceSpendingSection } from './finance/financeSpending'
+import { FinanceTaxesSection } from './finance/financeTaxes'
 import { FinanceTransactionsSection } from './finance/financeTransactions'
 
 // Where the Finance page's setup is: linking an institution and choosing
@@ -29,6 +30,7 @@ export const FINANCE_SECTIONS: TabItem[] = [
   { id: 'spending', label: 'finance.tabSpending' },
   { id: 'transactions', label: 'finance.tabTransactions' },
   { id: 'receipts', label: 'finance.tabReceipts' },
+  { id: 'taxes', label: 'finance.tabTaxes' },
   { id: 'accounts', label: 'finance.tabAccounts' },
   { id: 'budgets', label: 'finance.tabBudgets' },
   { id: 'net-worth', label: 'finance.tabNetWorth' },
@@ -78,6 +80,7 @@ export function FinancePage() {
       {section === 'spending' ? <FinanceSpendingSection /> : null}
       {section === 'transactions' ? <FinanceTransactionsSection /> : null}
       {section === 'receipts' ? <FinanceReceiptListSection /> : null}
+      {section === 'taxes' ? <FinanceTaxesSection /> : null}
       {section === 'accounts' ? <FinanceAccountsSection /> : null}
       {section === 'budgets' ? <FinanceBudgetsSection /> : null}
       {section === 'net-worth' ? <FinanceNetWorthSection /> : null}

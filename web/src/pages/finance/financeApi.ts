@@ -812,6 +812,266 @@ export const READ_RECEIPT = `mutation ($agentAttachmentId: String, $mailboxItemI
     financeTransactionId: $financeTransactionId) { agentJobId }
 }`
 
+// --- paystubs and W-2s -----------------------------------------------------
+
+// One printed line of a paystub that has an amount: an earning, a tax with
+// the wages it was figured on, or a deduction with the employer's part
+// beside the employee's. Amounts are decimals, positive as printed.
+export type FinancePaystubLine = {
+  id: string
+  lineNumber: number
+  paystubLineKind: 'earning' | 'tax' | 'deduction'
+  description: string
+  hours?: string | null
+  rateAmount?: string | null
+  currentAmount?: string | null
+  yearToDateAmount?: string | null
+  paystubTaxKind?: string | null
+  taxJurisdictionCode?: string | null
+  currentWagesAmount?: string | null
+  yearToDateWagesAmount?: string | null
+  paystubDeductionKind?: string | null
+  employerCurrentAmount?: string | null
+  employerYearToDateAmount?: string | null
+}
+
+// A paycheck's pay statement, read from an upload, and whether gross pay
+// less its taxes and deductions comes to the take-home pay printed.
+export type FinancePaystub = {
+  id: string
+  agentAttachmentId: string
+  employerName: string
+  employerTaxId?: string | null
+  employeeName: string
+  employeeTaxIdMask?: string | null
+  payDate: string
+  periodStartOn?: string | null
+  periodEndOn?: string | null
+  currencyCode: string
+  grossAmount: string
+  yearToDateGrossAmount?: string | null
+  totalTaxAmount?: string | null
+  totalDeductionAmount?: string | null
+  netAmount: string
+  paystubCheckState: 'balanced' | 'unbalanced'
+  checkDifferenceAmount: string
+  paystubLines: FinancePaystubLine[]
+  createdAt: string
+  modifiedAt: string
+}
+
+const PAYSTUB_FIELDS = `id agentAttachmentId employerName employerTaxId employeeName employeeTaxIdMask payDate
+  periodStartOn periodEndOn currencyCode grossAmount yearToDateGrossAmount totalTaxAmount totalDeductionAmount
+  netAmount paystubCheckState checkDifferenceAmount createdAt modifiedAt
+  paystubLines { id lineNumber paystubLineKind description hours rateAmount currentAmount yearToDateAmount
+    paystubTaxKind taxJurisdictionCode currentWagesAmount yearToDateWagesAmount paystubDeductionKind
+    employerCurrentAmount employerYearToDateAmount }`
+
+// FinancePaystubPage is one page of paystubs, the latest pay date first.
+export type FinancePaystubPage = {
+  financePaystubs: FinancePaystub[]
+  hasMore: boolean
+  totalCount: number
+}
+
+// FINANCE_PAYSTUBS is one page of paystubs: those paid in a tax year, or
+// between two days. limit is at most MAXIMUM_LISTED_TAX_DOCUMENT_COUNT.
+export const FINANCE_PAYSTUBS = `query ($taxYear: Int, $from: String, $to: String, $limit: Int, $offset: Int) {
+  FinancePaystubs(taxYear: $taxYear, from: $from, to: $to, limit: $limit, offset: $offset) {
+    financePaystubs { ${PAYSTUB_FIELDS} }
+    hasMore
+    totalCount
+  }
+}`
+
+export const FINANCE_PAYSTUB = `query ($paystubId: String!) { FinancePaystub(paystubId: $paystubId) { ${PAYSTUB_FIELDS} } }`
+
+// The most paystubs or tax forms one page holds (the server's own limit).
+export const MAXIMUM_LISTED_TAX_DOCUMENT_COUNT = 200
+
+// One box of a tax form: box 12's letter, a state's code in boxes 15 to
+// 17, a locality in 18 to 20, box 14's label or box 13's checkbox is the
+// qualifier; the box holds an amount, a text or a mark.
+export type FinanceTaxFormEntry = {
+  id: string
+  entryNumber: number
+  boxCode: string
+  boxQualifier?: string | null
+  amount?: string | null
+  textValue?: string | null
+  isChecked: boolean
+}
+
+export type FinanceTaxForm = {
+  id: string
+  agentAttachmentId: string
+  taxFormKind: 'w2'
+  taxYear: number
+  isCorrected: boolean
+  payerName: string
+  payerTaxId?: string | null
+  recipientName: string
+  recipientTaxIdMask?: string | null
+  taxFormEntries: FinanceTaxFormEntry[]
+  createdAt: string
+  modifiedAt: string
+}
+
+// One of a tax form's checks of itself: Social Security tax against its
+// wages, Medicare tax against its wages, the wage base.
+export type TaxFormFinding = {
+  taxFormFindingCode: string
+  isAgreeing: boolean
+  expectedAmount: string
+  printedAmount: string
+  findingText: string
+}
+
+// A tax form with what its checks of itself found.
+export type TaxFormView = {
+  financeTaxForm: FinanceTaxForm
+  taxFormFindings: TaxFormFinding[]
+}
+
+const TAX_FORM_VIEW_FIELDS = `financeTaxForm { id agentAttachmentId taxFormKind taxYear isCorrected payerName payerTaxId
+    recipientName recipientTaxIdMask createdAt modifiedAt
+    taxFormEntries { id entryNumber boxCode boxQualifier amount textValue isChecked } }
+  taxFormFindings { taxFormFindingCode isAgreeing expectedAmount printedAmount findingText }`
+
+export type TaxFormPage = {
+  taxForms: TaxFormView[]
+  hasMore: boolean
+  totalCount: number
+}
+
+export const FINANCE_TAX_FORMS = `query ($taxYear: Int, $limit: Int, $offset: Int) {
+  FinanceTaxForms(taxYear: $taxYear, limit: $limit, offset: $offset) {
+    taxForms { ${TAX_FORM_VIEW_FIELDS} }
+    hasMore
+    totalCount
+  }
+}`
+
+export const FINANCE_TAX_FORM = `query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) { ${TAX_FORM_VIEW_FIELDS} } }`
+
+// One state's wages and income tax withheld.
+export type TaxYearStateFigures = {
+  stateCode: string
+  stateWagesAmount: string
+  stateIncomeTaxAmount: string
+}
+
+// A year's wages and withholding as a W-2 names them, in dollars.
+export type TaxYearFigures = {
+  wagesAmount: string
+  federalIncomeTaxAmount: string
+  socialSecurityWagesAmount: string
+  socialSecurityTaxAmount: string
+  medicareWagesAmount: string
+  medicareTaxAmount: string
+  dependentCareAmount: string
+  retirementTraditionalAmount: string
+  retirementRothAmount: string
+  hsaAmount: string
+  healthCoverageAmount: string
+  localIncomeTaxAmount: string
+  taxYearStateFigures: TaxYearStateFigures[]
+}
+
+// One W-2 box beside the paystubs' figure for it.
+export type TaxYearComparison = {
+  boxCode: string
+  boxQualifier?: string | null
+  boxLabel: string
+  w2Amount: string
+  paystubAmount: string
+  differenceAmount: string
+  isMatching: boolean
+}
+
+// One person's work for one employer in the year: the W-2's figures, or
+// the latest paystub's year to date with a projection to December 31.
+export type TaxYearEmployment = {
+  employeeName: string
+  employerName: string
+  employerTaxId?: string | null
+  taxYearFigureSource: 'w2' | 'paystubs'
+  taxFormId?: string | null
+  latestPayDate?: string | null
+  paystubCount: number
+  payCadenceDayCount?: number | null
+  isPaystubYearComplete: boolean
+  remainingPayCount: number
+  figures: TaxYearFigures
+  paystubFigures?: TaxYearFigures | null
+  projectedFigures?: TaxYearFigures | null
+  taxYearComparisons: TaxYearComparison[]
+}
+
+export type TaxYearPerson = {
+  employeeName: string
+  excessSocialSecurityTaxAmount: string
+  figures: TaxYearFigures
+  projectedFigures?: TaxYearFigures | null
+}
+
+// One thing worth knowing about the year, in a sentence, and the paystubs
+// it is about.
+export type TaxYearFinding = {
+  taxYearFindingCode: string
+  employeeName: string
+  employerName?: string | null
+  findingText: string
+  paystubIds: string[]
+}
+
+export type TaxYearSummary = {
+  taxYear: number
+  socialSecurityWageBaseAmount?: string | null
+  isYearOver: boolean
+  paystubCount: number
+  taxFormCount: number
+  figures: TaxYearFigures
+  projectedFigures?: TaxYearFigures | null
+  taxYearEmployments: TaxYearEmployment[]
+  taxYearPeople: TaxYearPerson[]
+  taxYearFindings: TaxYearFinding[]
+}
+
+const TAX_YEAR_FIGURES_FIELDS = `wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount
+  medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount
+  healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount }`
+
+export const TAX_YEAR = `query ($taxYear: Int!) {
+  TaxYear(taxYear: $taxYear) {
+    taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
+    figures { ${TAX_YEAR_FIGURES_FIELDS} } projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} }
+    taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate
+      paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount
+      figures { ${TAX_YEAR_FIGURES_FIELDS} } paystubFigures { ${TAX_YEAR_FIGURES_FIELDS} } projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} }
+      taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
+    taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { ${TAX_YEAR_FIGURES_FIELDS} }
+      projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} } }
+    taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+  }
+}`
+
+// READ_TAX_DOCUMENT queues the tax document job to read an upload, or each
+// PDF and picture a message in the mailbox carries, as a paystub or a W-2.
+export const READ_TAX_DOCUMENT = `mutation ($agentAttachmentId: String, $mailboxItemId: String) {
+  ReadTaxDocument(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId) { agentAttachmentIds agentJobIds }
+}`
+
+export type TaxDocumentReading = { agentAttachmentIds: string[]; agentJobIds: string[] }
+
+export const DELETE_PAYSTUB = `mutation ($paystubId: String!) { DeletePaystub(paystubId: $paystubId) }`
+
+export const DELETE_TAX_FORM = `mutation ($taxFormId: String!) { DeleteTaxForm(taxFormId: $taxFormId) }`
+
+// The query string that marks an upload as a tax document, so the server
+// keeps none of its text (api.AgentAttachmentTaxDocumentParameter).
+export const TAX_DOCUMENT_UPLOAD_PATH = `${AGENT_ATTACHMENTS_PATH}?isTaxDocument=true`
+
 // --- spending --------------------------------------------------------------
 
 export const SPENDING_SUMMARY = `query ($from: String, $to: String, $groupBy: String, $financeAccountId: String) {

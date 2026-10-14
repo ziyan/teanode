@@ -221,9 +221,11 @@ public actor Connection {
     }
 
     /// Uploads a file to hand the agent with a message, and returns its id.
-    public func upload(name: String, contentType: String, data: Data) async throws -> String {
+    /// A tax document (a paystub or a W-2) is kept apart: its text holds
+    /// the person's taxpayer number, so the server does not keep it.
+    public func upload(name: String, contentType: String, data: Data, isTaxDocument: Bool = false) async throws -> String {
         let boundary = "teanode-\(UUID().uuidString)"
-        var request = URLRequest(url: account.server.endpoint("/api/v1/agent/attachments"))
+        var request = URLRequest(url: account.server.endpoint(isTaxDocument ? "/api/v1/agent/attachments?isTaxDocument=true" : "/api/v1/agent/attachments"))
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = Upload.body(boundary: boundary, name: name, contentType: contentType, data: data)

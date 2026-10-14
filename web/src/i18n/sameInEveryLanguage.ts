@@ -10,6 +10,9 @@ export const SAME_IN_EVERY_LANGUAGE: ReadonlySet<Key> = new Set<Key>([
   // The product's name, and the dash that stands for nothing.
   'app.name',
   'common.none',
+  // The name of a US tax form, printed this way on the form itself and
+  // on every return that asks for it.
+  'finance.taxW2',
   // Protocol names, which is what the two web listeners are called in every
   // language and in the configuration file beside them.
   'domains.dns',
