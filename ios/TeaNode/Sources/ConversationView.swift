@@ -150,7 +150,8 @@ struct ConversationView: View {
                         Text("\(model.earlierCount) earlier messages")
                     }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
                 .frame(maxWidth: .infinity)
                 .onAppear {
                     if hasPersonScrolled { loadEarlier(scroller) }
