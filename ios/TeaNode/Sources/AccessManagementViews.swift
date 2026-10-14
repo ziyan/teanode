@@ -198,18 +198,6 @@ struct PeopleView: View {
         .sheet(item: $editing) { user in
             PersonForm(directory: directory, editedUser: user, hasMembersGroup: hasMembersGroup)
         }
-        .confirmationDialog(
-            "Remove this person?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { user in
-            Button("Remove \(user.username)", role: .destructive) {
-                Task {
-                    await directory.act(saying: String(localized: "Removed")) { try await directory.connection.deleteAccessUser(user.id) }
-                }
-            }
-        } message: { _ in
-            Text("Their sessions, tokens, passkeys and memberships go with them. Mail they received stays.")
-        }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
 
@@ -220,6 +208,18 @@ struct PeopleView: View {
             // left to undo it from the same screen.
             if user.id != directory.currentUserId {
                 Button("Remove", systemImage: "trash", role: .destructive) { removing = user }
+                    .confirmationDialog(
+                        "Remove this person?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                        titleVisibility: .visible, presenting: removing
+                    ) { user in
+                        Button("Remove \(user.username)", role: .destructive) {
+                            Task {
+                                await directory.act(saying: String(localized: "Removed")) { try await directory.connection.deleteAccessUser(user.id) }
+                            }
+                        }
+                    } message: { _ in
+                        Text("Their sessions, tokens, passkeys and memberships go with them. Mail they received stays.")
+                    }
                 Button(user.isDisabled ? LocalizedStringKey("Enable") : "Disable", systemImage: user.isDisabled ? "person.crop.circle.badge.checkmark" : "nosign") {
                     Task { await PersonActions.setDisabled(user, isDisabled: !user.isDisabled, in: directory) }
                 }
@@ -310,6 +310,18 @@ struct PersonDetailView: View {
                         Button("Set password", systemImage: "key") { isSettingPassword = true }
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
+                                .confirmationDialog("Remove \(user?.username ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
+                                    Button("Remove", role: .destructive) {
+                                        Task {
+                                            let isRemoved = await directory.act(saying: String(localized: "Removed")) {
+                                                try await directory.connection.deleteAccessUser(userId)
+                                            }
+                                            if isRemoved { dismiss() }
+                                        }
+                                    }
+                                } message: {
+                                    Text("Their sessions, tokens, passkeys and memberships go with them. Mail they received stays.")
+                                }
                         }
                     }
                 }
@@ -336,18 +348,6 @@ struct PersonDetailView: View {
             if let user {
                 PasswordForm(directory: directory, user: user)
             }
-        }
-        .confirmationDialog("Remove \(user?.username ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                Task {
-                    let isRemoved = await directory.act(saying: String(localized: "Removed")) {
-                        try await directory.connection.deleteAccessUser(userId)
-                    }
-                    if isRemoved { dismiss() }
-                }
-            }
-        } message: {
-            Text("Their sessions, tokens, passkeys and memberships go with them. Mail they received stays.")
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
@@ -609,6 +609,18 @@ struct GroupsView: View {
                         .swipeActions {
                             if directory.canManageGroups {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = group }
+                                    .confirmationDialog(
+                                        "Remove this group?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                                        titleVisibility: .visible, presenting: removing
+                                    ) { group in
+                                        Button("Remove \(group.name)", role: .destructive) {
+                                            Task {
+                                                await directory.act(saying: String(localized: "Removed")) { try await directory.connection.deleteAccessGroup(group.id) }
+                                            }
+                                        }
+                                    } message: { _ in
+                                        Text("Its members keep their accounts and lose what the group gave them.")
+                                    }
                                 Button("Edit", systemImage: "pencil") { editing = group }
                                     .tint(.indigo)
                             }
@@ -639,18 +651,6 @@ struct GroupsView: View {
         }
         .sheet(item: $editing) { group in
             GroupForm(directory: directory, editedGroup: group) { _ in }
-        }
-        .confirmationDialog(
-            "Remove this group?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { group in
-            Button("Remove \(group.name)", role: .destructive) {
-                Task {
-                    await directory.act(saying: String(localized: "Removed")) { try await directory.connection.deleteAccessGroup(group.id) }
-                }
-            }
-        } message: { _ in
-            Text("Its members keep their accounts and lose what the group gave them.")
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
@@ -716,6 +716,18 @@ struct GroupDetailView: View {
                     }
                     Section {
                         Button("Remove this group", systemImage: "trash", role: .destructive) { isRemoving = true }
+                            .confirmationDialog("Remove the group \(group?.name ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
+                                Button("Remove", role: .destructive) {
+                                    Task {
+                                        let isRemoved = await directory.act(saying: String(localized: "Removed")) {
+                                            try await directory.connection.deleteAccessGroup(groupId)
+                                        }
+                                        if isRemoved { dismiss() }
+                                    }
+                                }
+                            } message: {
+                                Text("Its members keep their accounts and lose what the group gave them.")
+                            }
                     }
                 }
             } else if directory.isLoaded {
@@ -741,18 +753,6 @@ struct GroupDetailView: View {
             if let group {
                 MemberPicker(directory: directory, group: group)
             }
-        }
-        .confirmationDialog("Remove the group \(group?.name ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                Task {
-                    let isRemoved = await directory.act(saying: String(localized: "Removed")) {
-                        try await directory.connection.deleteAccessGroup(groupId)
-                    }
-                    if isRemoved { dismiss() }
-                }
-            }
-        } message: {
-            Text("Its members keep their accounts and lose what the group gave them.")
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
@@ -1059,6 +1059,18 @@ struct RolesView: View {
                         .swipeActions {
                             if directory.canManageRoles {
                                 Button("Remove", systemImage: "trash", role: .destructive) { removing = role }
+                                    .confirmationDialog(
+                                        "Remove this role?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                                        titleVisibility: .visible, presenting: removing
+                                    ) { role in
+                                        Button("Remove \(role.name)", role: .destructive) {
+                                            Task {
+                                                await directory.act(saying: String(localized: "Removed")) { try await directory.connection.deleteAccessRole(role.id) }
+                                            }
+                                        }
+                                    } message: { _ in
+                                        Text("Every group that carried it loses it.")
+                                    }
                                 Button("Edit", systemImage: "pencil") { editing = role }
                                     .tint(.indigo)
                             }
@@ -1089,18 +1101,6 @@ struct RolesView: View {
         }
         .sheet(item: $editing) { role in
             RoleForm(directory: directory, editedRole: role) { _ in }
-        }
-        .confirmationDialog(
-            "Remove this role?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { role in
-            Button("Remove \(role.name)", role: .destructive) {
-                Task {
-                    await directory.act(saying: String(localized: "Removed")) { try await directory.connection.deleteAccessRole(role.id) }
-                }
-            }
-        } message: { _ in
-            Text("Every group that carried it loses it.")
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
@@ -1161,6 +1161,18 @@ struct RoleDetailView: View {
                 if directory.canManageRoles {
                     Section {
                         Button("Remove this role", systemImage: "trash", role: .destructive) { isRemoving = true }
+                            .confirmationDialog("Remove the role \(role?.name ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
+                                Button("Remove", role: .destructive) {
+                                    Task {
+                                        let isRemoved = await directory.act(saying: String(localized: "Removed")) {
+                                            try await directory.connection.deleteAccessRole(roleId)
+                                        }
+                                        if isRemoved { dismiss() }
+                                    }
+                                }
+                            } message: {
+                                Text("Every group that carried it loses it.")
+                            }
                     }
                 }
             } else if directory.isLoaded {
@@ -1181,18 +1193,6 @@ struct RoleDetailView: View {
             if let role {
                 RoleForm(directory: directory, editedRole: role) { _ in }
             }
-        }
-        .confirmationDialog("Remove the role \(role?.name ?? "")?", isPresented: $isRemoving, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                Task {
-                    let isRemoved = await directory.act(saying: String(localized: "Removed")) {
-                        try await directory.connection.deleteAccessRole(roleId)
-                    }
-                    if isRemoved { dismiss() }
-                }
-            }
-        } message: {
-            Text("Every group that carried it loses it.")
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }

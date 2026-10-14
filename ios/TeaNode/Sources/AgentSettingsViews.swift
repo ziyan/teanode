@@ -113,15 +113,6 @@ struct AgentSettingsView: View {
             if !model.isLoaded { await model.load() }
         }
         .refreshable { await model.load() }
-        .confirmationDialog("Forget everything", isPresented: $isConfirmingForget, titleVisibility: .visible) {
-            Button("Forget everything", role: .destructive) {
-                Task {
-                    _ = await model.change(saying: String(localized: "Forgotten.")) { try await model.connection.forgetAgent() }
-                }
-            }
-        } message: {
-            Text("This deletes your agent and everything it learned: memories, conversations, run records, and every mailbox's insights and summaries. Your mail is untouched.")
-        }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
     }
 
@@ -230,6 +221,15 @@ struct AgentSettingsView: View {
         }
         Section {
             Button("Forget everything", role: .destructive) { isConfirmingForget = true }
+                .confirmationDialog("Forget everything", isPresented: $isConfirmingForget, titleVisibility: .visible) {
+                    Button("Forget everything", role: .destructive) {
+                        Task {
+                            _ = await model.change(saying: String(localized: "Forgotten.")) { try await model.connection.forgetAgent() }
+                        }
+                    }
+                } message: {
+                    Text("This deletes your agent and everything it learned: memories, conversations, run records, and every mailbox's insights and summaries. Your mail is untouched.")
+                }
         } footer: {
             Text("Removes the agent with its memory, conversations, schedules and connections. Your mail is untouched.")
         }
@@ -1008,6 +1008,13 @@ struct AgentMailboxView: View {
                     Section {
                         Button("Revoke", role: .destructive) { isConfirmingRevoke = true }
                             .disabled(isWorking)
+                            .confirmationDialog("Revoke", isPresented: $isConfirmingRevoke, titleVisibility: .visible) {
+                                Button("Revoke", role: .destructive) {
+                                    Task { await revoke() }
+                                }
+                            } message: {
+                                Text("Take \(model.settings?.source(mailboxId)?.name ?? "") away from the agent? Queued work for it is cancelled; what it has sorted stays.")
+                            }
                     }
                 } else {
                     Section {
@@ -1022,13 +1029,6 @@ struct AgentMailboxView: View {
             }
         }
         .navigationTitle(model.settings?.source(mailboxId)?.name ?? String(localized: "Mailbox"))
-        .confirmationDialog("Revoke", isPresented: $isConfirmingRevoke, titleVisibility: .visible) {
-            Button("Revoke", role: .destructive) {
-                Task { await revoke() }
-            }
-        } message: {
-            Text("Take \(model.settings?.source(mailboxId)?.name ?? "") away from the agent? Queued work for it is cancelled; what it has sorted stays.")
-        }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
     }
 
@@ -1413,6 +1413,19 @@ struct AgentCategoriesView: View {
                             Button("Remove", systemImage: "trash", role: .destructive) {
                                 removing = RemovedCategory(index: index, name: category.name)
                             }
+                            .confirmationDialog(
+                                "Remove the category", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                                titleVisibility: .visible, presenting: removing
+                            ) { removed in
+                                Button("Remove", role: .destructive) {
+                                    var categories = model.agent?.categories ?? []
+                                    if categories.indices.contains(removed.index) { categories.remove(at: removed.index) }
+                                    let remaining = categories
+                                    Task { _ = await save(remaining) }
+                                }
+                            } message: { removed in
+                                Text("Remove \(removed.name)? Mail already sorted into it keeps the label; new mail is sorted without it.")
+                            }
                         }
                     }
                 } footer: {
@@ -1441,19 +1454,6 @@ struct AgentCategoriesView: View {
                     return await save(categories)
                 }
             }
-        }
-        .confirmationDialog(
-            "Remove the category", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { removed in
-            Button("Remove", role: .destructive) {
-                var categories = model.agent?.categories ?? []
-                if categories.indices.contains(removed.index) { categories.remove(at: removed.index) }
-                let remaining = categories
-                Task { _ = await save(remaining) }
-            }
-        } message: { removed in
-            Text("Remove \(removed.name)? Mail already sorted into it keeps the label; new mail is sorted without it.")
         }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
     }

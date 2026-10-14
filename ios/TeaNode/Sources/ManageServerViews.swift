@@ -398,6 +398,7 @@ private struct ServerSettingsForm<Draft: Hashable, Fields: View>: View {
                 }
             }
         }
+        // Left on the screen: the Save button lives in AgentSaveToolbar, which cannot carry a modifier from here.
         .confirmationDialog(
             confirmationText?.question ?? "", isPresented: $isConfirming, titleVisibility: .visible
         ) {
@@ -1112,24 +1113,6 @@ struct ServerAboutView: View {
         }
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog("Restart this instance?", isPresented: $isConfirmingRestart, titleVisibility: .visible, presenting: serverStatus) { _ in
-            Button("Yes, restart it", role: .destructive) {
-                Task { await restart() }
-            }
-        } message: { serverStatus in
-            Text("Restart \(serverStatus.instance)? Mail will not be accepted for a few seconds.")
-        }
-        .confirmationDialog(
-            upgradeQuestion, isPresented: $isConfirmingUpgrade, titleVisibility: .visible, presenting: upgrade
-        ) { upgrade in
-            Button("Download and restart") {
-                // The version this screen shows, so the upgrade installs
-                // what was agreed to rather than whatever is newest by then.
-                Task { await applyUpgrade(version: upgrade.latest) }
-            }
-        } message: { _ in
-            Text("The release is downloaded and checked against the checksums published with it, and this server then restarts into it. That takes a few seconds during which mail is not accepted; senders retry. The binary it replaces is kept, so going back does not need the network.")
-        }
         .toast(done: $doneText, problem: $problemText)
     }
 
@@ -1224,6 +1207,17 @@ struct ServerAboutView: View {
                     Label(isUpgrading ? String(localized: "Upgrading…") : String(localized: "Upgrade to \(latestText)"), systemImage: "arrow.down.circle")
                 }
                 .disabled(isUpgrading || upgrade.isUpgrading)
+                .confirmationDialog(
+                    upgradeQuestion, isPresented: $isConfirmingUpgrade, titleVisibility: .visible, presenting: upgrade
+                ) { upgrade in
+                    Button("Download and restart") {
+                        // The version this screen shows, so the upgrade installs
+                        // what was agreed to rather than whatever is newest by then.
+                        Task { await applyUpgrade(version: upgrade.latest) }
+                    }
+                } message: { _ in
+                    Text("The release is downloaded and checked against the checksums published with it, and this server then restarts into it. That takes a few seconds during which mail is not accepted; senders retry. The binary it replaces is kept, so going back does not need the network.")
+                }
             }
         } header: {
             Text("Version")
@@ -1282,6 +1276,13 @@ struct ServerAboutView: View {
                 Label(isRestarting ? LocalizedStringKey("Restarting…") : "Restart this instance", systemImage: "arrow.clockwise")
             }
             .disabled(isRestarting)
+            .confirmationDialog("Restart this instance?", isPresented: $isConfirmingRestart, titleVisibility: .visible, presenting: serverStatus) { _ in
+                Button("Yes, restart it", role: .destructive) {
+                    Task { await restart() }
+                }
+            } message: { serverStatus in
+                Text("Restart \(serverStatus.instance)? Mail will not be accepted for a few seconds.")
+            }
         } header: {
             Text("Restart")
         } footer: {
@@ -2132,6 +2133,16 @@ private struct AgentListView: View {
                     }
                     ForEach(overview.agents) { summary in
                         row(summary)
+                            .confirmationDialog(
+                                "Switch this agent off?", isPresented: Binding(get: { switchingOff != nil }, set: { if !$0 { switchingOff = nil } }),
+                                titleVisibility: .visible, presenting: switchingOff
+                            ) { summary in
+                                Button("Switch off", role: .destructive) {
+                                    Task { await setSwitchedOff(summary, isSwitchedOff: true) }
+                                }
+                            } message: { summary in
+                                Text("\(summary.username)’s agent stops, and the work it has queued is cancelled. It can be switched on again.")
+                            }
                             .swipeActions {
                                 switchButton(summary)
                                 Button("Daily token limit", systemImage: "pencil") { limiting = summary }
@@ -2158,16 +2169,6 @@ private struct AgentListView: View {
                 doneText = said
                 await load()
             }
-        }
-        .confirmationDialog(
-            "Switch this agent off?", isPresented: Binding(get: { switchingOff != nil }, set: { if !$0 { switchingOff = nil } }),
-            titleVisibility: .visible, presenting: switchingOff
-        ) { summary in
-            Button("Switch off", role: .destructive) {
-                Task { await setSwitchedOff(summary, isSwitchedOff: true) }
-            }
-        } message: { summary in
-            Text("\(summary.username)’s agent stops, and the work it has queued is cancelled. It can be switched on again.")
         }
         .toast(done: $doneText, problem: $problemText)
     }
@@ -2835,6 +2836,21 @@ private struct AgentProvidersView: View {
                         } label: {
                             row(provider)
                         }
+                        .confirmationDialog(
+                            "Remove the provider?", isPresented: Binding(get: { removingIndex != nil }, set: { if !$0 { removingIndex = nil } }),
+                            titleVisibility: .visible, presenting: removingIndex
+                        ) { index in
+                            Button("Remove", role: .destructive) {
+                                guard let settings = model.settings else { return }
+                                Task {
+                                    _ = await model.save(
+                                        AgentProviderDraft.agentParameters(removingProviderAt: index, in: settings), saying: String(localized: "Removed"))
+                                }
+                            }
+                        } message: { index in
+                            let nameText = model.settings?.providers[safe: index]?.name ?? ""
+                            Text("Remove \(nameText)? Work assigned to its models stops until another provider offers them.")
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
                             if provider.canBeTested {
@@ -2873,21 +2889,6 @@ private struct AgentProvidersView: View {
         .refreshable { await model.load() }
         .sheet(item: $editing) { providerEditing in
             AgentProviderForm(model: model, providerIndex: providerEditing.providerIndex)
-        }
-        .confirmationDialog(
-            "Remove the provider?", isPresented: Binding(get: { removingIndex != nil }, set: { if !$0 { removingIndex = nil } }),
-            titleVisibility: .visible, presenting: removingIndex
-        ) { index in
-            Button("Remove", role: .destructive) {
-                guard let settings = model.settings else { return }
-                Task {
-                    _ = await model.save(
-                        AgentProviderDraft.agentParameters(removingProviderAt: index, in: settings), saying: String(localized: "Removed"))
-                }
-            }
-        } message: { index in
-            let nameText = model.settings?.providers[safe: index]?.name ?? ""
-            Text("Remove \(nameText)? Work assigned to its models stops until another provider offers them.")
         }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
     }
@@ -3709,6 +3710,21 @@ private struct ConnectedServersView: View {
                         } label: {
                             row(server)
                         }
+                        .confirmationDialog(
+                            "Remove the server?", isPresented: Binding(get: { removingIndex != nil }, set: { if !$0 { removingIndex = nil } }),
+                            titleVisibility: .visible, presenting: removingIndex
+                        ) { index in
+                            Button("Remove", role: .destructive) {
+                                guard let settings = model.settings else { return }
+                                Task {
+                                    _ = await model.save(
+                                        ConnectedServerDraft.agentParameters(removingServerAt: index, in: settings), saying: String(localized: "Removed"))
+                                }
+                            }
+                        } message: { index in
+                            let nameText = model.settings?.mcpServers[safe: index]?.name ?? ""
+                            Text("Remove \(nameText)? Everyone connected to it loses its tools.")
+                        }
                         .swipeActions {
                             Button("Remove", systemImage: "trash", role: .destructive) { removingIndex = index }
                         }
@@ -3735,21 +3751,6 @@ private struct ConnectedServersView: View {
         .refreshable { await model.load() }
         .sheet(item: $editing) { serverEditing in
             ConnectedServerForm(model: model, serverIndex: serverEditing.serverIndex)
-        }
-        .confirmationDialog(
-            "Remove the server?", isPresented: Binding(get: { removingIndex != nil }, set: { if !$0 { removingIndex = nil } }),
-            titleVisibility: .visible, presenting: removingIndex
-        ) { index in
-            Button("Remove", role: .destructive) {
-                guard let settings = model.settings else { return }
-                Task {
-                    _ = await model.save(
-                        ConnectedServerDraft.agentParameters(removingServerAt: index, in: settings), saying: String(localized: "Removed"))
-                }
-            }
-        } message: { index in
-            let nameText = model.settings?.mcpServers[safe: index]?.name ?? ""
-            Text("Remove \(nameText)? Everyone connected to it loses its tools.")
         }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
     }
@@ -4205,6 +4206,18 @@ private struct InstalledSkillView: View {
                         }
                     }
                     Button("Remove", systemImage: "trash", role: .destructive) { isRemoving = true }
+                        .confirmationDialog("Remove \(skillName)?", isPresented: $isRemoving, titleVisibility: .visible) {
+                            Button("Remove", role: .destructive) {
+                                Task {
+                                    let isRemoved = await skills.act(skillName, saying: String(localized: "Removed \(skillName)")) {
+                                        try await skills.connection.removeSkill(name: skillName)
+                                    }
+                                    if isRemoved { dismiss() }
+                                }
+                            }
+                        } message: {
+                            Text("Its tools stop being offered to everybody here. It can be installed again from the registry.")
+                        }
                 }
                 .disabled(skills.busyName != nil)
             } else if skills.installed != nil {
@@ -4217,18 +4230,6 @@ private struct InstalledSkillView: View {
             if let skill = skills.skill(skillName) {
                 SkillSecretsForm(skills: skills, skill: skill)
             }
-        }
-        .confirmationDialog("Remove \(skillName)?", isPresented: $isRemoving, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                Task {
-                    let isRemoved = await skills.act(skillName, saying: String(localized: "Removed \(skillName)")) {
-                        try await skills.connection.removeSkill(name: skillName)
-                    }
-                    if isRemoved { dismiss() }
-                }
-            }
-        } message: {
-            Text("Its tools stop being offered to everybody here. It can be installed again from the registry.")
         }
         .toast(done: Bindable(skills).doneText, problem: Bindable(skills).problemText)
     }
@@ -4389,6 +4390,22 @@ private struct AgentSourceTypesView: View {
                     } label: {
                         row(sourceType)
                     }
+                    .confirmationDialog(
+                        "Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                        titleVisibility: .visible, presenting: removing
+                    ) { sourceType in
+                        Button("Remove", role: .destructive) {
+                            // Refused while a source is of this type; the server says
+                            // which, and the toast carries its words.
+                            Task {
+                                await act(sourceType.name, saying: String(localized: "Removed \(sourceType.name)")) {
+                                    try await connection.removeSourceType(name: sourceType.name)
+                                }
+                            }
+                        }
+                    } message: { _ in
+                        Text("Nobody can add a source of it any more. It is refused while any source is of this type.")
+                    }
                     .swipeActions {
                         Button("Remove", systemImage: "trash", role: .destructive) { removing = sourceType }
                     }
@@ -4438,22 +4455,6 @@ private struct AgentSourceTypesView: View {
         }
         .sheet(item: $reading) { sourceType in
             SourceTypeGuideSheet(sourceType: sourceType)
-        }
-        .confirmationDialog(
-            "Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-            titleVisibility: .visible, presenting: removing
-        ) { sourceType in
-            Button("Remove", role: .destructive) {
-                // Refused while a source is of this type; the server says
-                // which, and the toast carries its words.
-                Task {
-                    await act(sourceType.name, saying: String(localized: "Removed \(sourceType.name)")) {
-                        try await connection.removeSourceType(name: sourceType.name)
-                    }
-                }
-            }
-        } message: { _ in
-            Text("Nobody can add a source of it any more. It is refused while any source is of this type.")
         }
         .toast(done: $doneText, problem: $problemText)
     }
