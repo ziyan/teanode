@@ -728,8 +728,10 @@ function TaxInvestmentPreviewPanel({ preview }: { preview: TaxYearInvestmentPrev
             {preview.taxYearAccountIncomes.map((income) => (
               <tr key={`${income.financeAccountId}|${income.incomeKind}`}>
                 <td title={income.accountName}>
-                  {income.accountName}{' '}
-                  {income.isTaxAdvantaged ? <Tag value={t('finance.taxPreviewNotTaxed')} /> : null}
+                  <span className="finance-tax-preview-account">
+                    <span>{income.accountName}</span>
+                    {income.isTaxAdvantaged ? <Tag value={t('finance.taxPreviewNotTaxed')} /> : null}
+                  </span>
                 </td>
                 <td className="muted">
                   {t(income.incomeKind === 'dividend' ? 'finance.taxPreviewDividend' : 'finance.taxPreviewInterest')}
@@ -827,21 +829,15 @@ function TaxYearSettingDialog({
       onSubmit={() => void save()}
     >
       <p className="muted">{t('finance.taxYearSettingsHint')}</p>
-      <div className="row">
-        {field('childCount', 'finance.taxSettingChildren', true)}
-        {field('otherDependentCount', 'finance.taxSettingOtherDependents', true)}
-      </div>
+      {field('childCount', 'finance.taxSettingChildren', true)}
+      {field('otherDependentCount', 'finance.taxSettingOtherDependents', true)}
       {field('dependentCareExpenseAmount', 'finance.taxSettingDependentCare')}
       {field('otherIncomeAmount', 'finance.taxSettingOtherIncome')}
-      <div className="row">
-        {field('propertyTaxAmount', 'finance.taxSettingPropertyTax')}
-        {field('stateIncomeTaxPaidAmount', 'finance.taxSettingStateTaxPaid')}
-      </div>
+      {field('propertyTaxAmount', 'finance.taxSettingPropertyTax')}
+      {field('stateIncomeTaxPaidAmount', 'finance.taxSettingStateTaxPaid')}
       {field('charitableContributionAmount', 'finance.taxSettingCharitable')}
-      <div className="row">
-        {field('estimatedShortTermGainAmount', 'finance.taxSettingShortTermGain')}
-        {field('estimatedLongTermGainAmount', 'finance.taxSettingLongTermGain')}
-      </div>
+      {field('estimatedShortTermGainAmount', 'finance.taxSettingShortTermGain')}
+      {field('estimatedLongTermGainAmount', 'finance.taxSettingLongTermGain')}
       <label>
         <span>{t('finance.taxSettingGainNote')}</span>
         <input

@@ -13849,6 +13849,24 @@ button.idea-history-title {
   vertical-align: middle;
 }
 
+/* An account's name gives way before its "not taxed" mark, which says why
+   the row is not counted. */
+.finance-tax-preview-account {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.finance-tax-preview-account > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.finance-tax-preview-account > :not(:first-child) {
+  flex: none;
+}
+
 .finance-receipt-lines-scroll {
   max-width: 100%;
   overflow-x: auto;
