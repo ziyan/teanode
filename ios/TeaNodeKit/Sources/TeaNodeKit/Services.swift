@@ -50,6 +50,10 @@ public struct SyncCredential: Codable, Sendable, Identifiable {
     public let hasCalendarAccess: Bool
     public let hasRemindersAccess: Bool
     public let hasContactsAccess: Bool
+    /// When the password was made. Absent only in an answer that predates it.
+    public let createdAt: String?
+    /// When the password last signed anything in; null until it first does.
+    public let lastUsedAt: String?
 }
 
 public struct CreatedSyncCredential: Codable, Sendable {
@@ -73,7 +77,7 @@ extension Documents {
         }
         """
     public static let syncCredentials = """
-        query { ListSyncCredentials { id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess } }
+        query { ListSyncCredentials { id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess createdAt lastUsedAt } }
         """
     public static let createSyncCredential = """
         mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!) {

@@ -101,10 +101,17 @@ func TestOnlyAConnectedAppRegistersAPhoneAndRemovingItSignsItOut(test *testing.T
 	if _, errors := world.askWithToken(test, appToken, register); len(errors) > 0 {
 		test.Fatalf("registering again: %v", errors)
 	}
-	data, _ = world.ask(test, `{ ListAgentPhones { phones { id } isPushEnabled } }`)
+	data, _ = world.ask(test, `{ ListAgentPhones { phones { id phoneModel phoneModelName } isPushEnabled } }`)
 	list, _ := data["ListAgentPhones"].(map[string]any)
-	if phones, _ := list["phones"].([]any); len(phones) != 1 {
+	phones, _ := list["phones"].([]any)
+	if len(phones) != 1 {
 		test.Fatalf("the person has %d phones, not one", len(phones))
+	}
+	// The identifier stays as the app sent it, and the name beside it is
+	// what people call that phone.
+	listed, _ := phones[0].(map[string]any)
+	if listed["phoneModel"] != "iPhone17,1" || listed["phoneModelName"] != "iPhone 16 Pro" {
+		test.Errorf("the phone's model reads %v", listed)
 	}
 
 	if _, errors := world.ask(test, `mutation { UpdateAgentPhone(phoneId: "`+phone["id"].(string)+`", notificationKinds: ["approval", "nonsense"]) { id } }`); len(errors) == 0 {

@@ -196,7 +196,7 @@ export function SetupPage() {
           setup.selectedServices.isRemindersEnabled ||
           setup.selectedServices.isContactsEnabled) && (
           <p>
-            <Link to="/settings/sync">{t('services.sync')}</Link>
+            <Link to="/settings/devices">{t('services.sync')}</Link>
           </p>
         )}
         {setup.runningServices.isAssistantEnabled && (

@@ -6,6 +6,24 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.4] - 2026-10-14
+
+### Changed
+
+- Connected phones show their model by name, such as iPhone 17 Pro Max. (#473)
+
+## [0.154.3] - 2026-10-14
+
+### Changed
+
+- Phones and Device setup are one Devices page in settings, on the dashboard and the iPhone. (#471)
+- Sync and mail passwords show when each was created and last used. (#471)
+
+### Fixed
+
+- The Connect a phone page has a way back. (#471)
+- On the iPhone, a coding question's details show as the text it is, in a box that scrolls. (#471)
+
 ## [0.154.2] - 2026-10-14
 
 ### Fixed

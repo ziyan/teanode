@@ -104,7 +104,7 @@ struct ConnectView: View {
                         .buttonStyle(.bordered)
                         .buttonBorderShape(.capsule)
                         .controlSize(.large)
-                        Text("In the dashboard, open Settings, then Phones, and choose Connect a phone.")
+                        Text("In the dashboard, open Settings, then Devices, and choose Connect a phone.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

@@ -13,7 +13,7 @@ import (
 )
 
 // Everything a person does with their phones is on every surface they use:
-// the API, the dashboard's Phones page, teanode agent phone and the agent's
+// the API, the dashboard's Devices page, teanode agent phone and the agent's
 // account tool. One table names each, and nothing exists on a surface that
 // the table does not list.
 func TestPhoneParity(test *testing.T) {
@@ -94,7 +94,7 @@ func TestPhoneParity(test *testing.T) {
 	}
 	documents := regexp.MustCompile(`(?s)const PHONE_DOCUMENTS = \{(.*?)\n\}`).FindSubmatch(source)
 	if documents == nil {
-		test.Fatal("the Phones page's documents are not in web/src/pages/settings/phones.tsx")
+		test.Fatal("the Devices page's Phones documents are not in web/src/pages/settings/phones.tsx")
 	}
 	dashboard := map[string]bool{}
 	for _, match := range regexp.MustCompile(`(?m)^  ([A-Za-z]+): `).FindAllSubmatch(documents[1], -1) {
