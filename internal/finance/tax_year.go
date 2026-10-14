@@ -726,10 +726,14 @@ func SummarizeTaxYear(taxYear int, paystubs []*models.FinancePaystub, taxForms [
 	if isAnythingProjected {
 		summary.ProjectedFigures = householdProjected.figures()
 	}
-	if !filingStatus.IsValid() {
+	isAssumed := !filingStatus.IsValid()
+	if isAssumed {
 		filingStatus = DefaultTaxFilingStatus(len(everyoneSums))
 	}
 	summary.TaxYearEstimate = estimateTaxYear(taxYear, filingStatus, everyoneSums, isAnythingProjected)
+	if summary.TaxYearEstimate != nil {
+		summary.TaxYearEstimate.IsTaxFilingStatusAssumed = isAssumed
+	}
 	return summary
 }
 

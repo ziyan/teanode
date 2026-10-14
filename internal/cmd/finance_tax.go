@@ -103,13 +103,20 @@ func financeTaxCommands() []*cli.Command {
 			Name: "tax-year", Usage: "a tax year from your paystubs and W-2s: wages and withholding, projected to December 31, each W-2 box beside your paystubs, the tax owed beside what was withheld, and what is missing",
 			ArgsUsage: "[year]",
 			Description: "The estimate counts wages only: the tax on them less the standard deduction, Social Security\n" +
-				"and Medicare as owed, state and local income tax as withheld. --filing-status says how you file;\n" +
-				"without it, married filing jointly when the documents name two people and single otherwise.",
+				"and Medicare as owed, state and local income tax as withheld, for the filing status you keep\n" +
+				"(teanode finance set-tax-filing-status) or --filing-status; with neither, married filing jointly\n" +
+				"when the documents name two people and single otherwise.",
 			Flags: []cli.Flag{
 				JSONFlag(),
-				&cli.StringFlag{Name: "filing-status", Usage: "single, married_filing_jointly, married_filing_separately or head_of_household"},
+				&cli.StringFlag{Name: "filing-status", Usage: "estimate for this filing status instead of the one you keep: single, married_filing_jointly, married_filing_separately or head_of_household"},
 			},
 			Action: runFinanceTaxYear,
+		},
+		{
+			Name: "set-tax-filing-status", Usage: "keep how you file your tax return, which teanode finance tax-year estimates the tax for",
+			ArgsUsage: "single|married_filing_jointly|married_filing_separately|head_of_household",
+			Flags:     []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "clear", Usage: "go back to assuming one from the number of people on your paystubs and W-2s"}},
+			Action:    runFinanceSetTaxFilingStatus,
 		},
 	}
 }
@@ -448,6 +455,23 @@ func runFinanceDeleteTaxForm(ctx context.Context, command *cli.Command) error {
 	return printDone(command, map[string]any{"taxFormId": taxFormId, "isDeleted": isDeleted}, taxFormId+": deleted")
 }
 
+func runFinanceSetTaxFilingStatus(ctx context.Context, command *cli.Command) error {
+	filingStatus := strings.TrimSpace(command.Args().First())
+	if command.Bool("clear") {
+		filingStatus = ""
+	} else if filingStatus == "" {
+		return usage("give a filing status: single, married_filing_jointly, married_filing_separately or head_of_household; or --clear")
+	}
+	var saved string
+	if err := financeCall(ctx, command, operationOf(command), map[string]any{"taxFilingStatus": filingStatus}, &saved); err != nil {
+		return err
+	}
+	if saved == "" {
+		return printDone(command, map[string]string{"taxFilingStatus": saved}, "no filing status kept: the estimate assumes one from the number of people")
+	}
+	return printDone(command, map[string]string{"taxFilingStatus": saved}, "the tax year is estimated filing "+strings.ReplaceAll(saved, "_", " "))
+}
+
 func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 	taxYear := time.Now().Year()
 	if text := strings.TrimSpace(command.Args().Get(0)); text != "" {
@@ -507,6 +531,9 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 	}
 	if estimate := summary.TaxYearEstimate; estimate != nil {
 		heading := "tax owed beside withheld, filing " + strings.ReplaceAll(string(estimate.TaxFilingStatus), "_", " ")
+		if estimate.IsTaxFilingStatusAssumed {
+			heading += " (assumed; teanode finance set-tax-filing-status keeps yours)"
+		}
 		if estimate.IsProjected {
 			heading += ", by December 31"
 		}

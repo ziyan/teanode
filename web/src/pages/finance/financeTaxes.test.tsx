@@ -265,6 +265,7 @@ const yearSummary: TaxYearSummary = {
   // Invented, and adding up: paid, upcoming, owing and remaining are pay.
   taxYearEstimate: {
     taxFilingStatus: 'married_filing_jointly',
+    isTaxFilingStatusAssumed: true,
     isProjected: true,
     payAmount: '110000.00',
     standardDeductionAmount: '32200.00',
@@ -319,6 +320,7 @@ function answer({
     if (document.includes('ReadTaxDocument(')) {
       return { ReadTaxDocument: { agentAttachmentIds: [variables?.agentAttachmentId], agentJobIds: ['job-invented'] } }
     }
+    if (document.includes('SetTaxFilingStatus(')) return { SetTaxFilingStatus: variables?.taxFilingStatus }
     if (document.includes('DeletePaystub(')) return { DeletePaystub: true }
     if (document.includes('DeleteTaxForm(')) return { DeleteTaxForm: true }
     return {}
@@ -356,7 +358,7 @@ describe('the Taxes section', () => {
     const projected = await waitFor(() =>
       panel('finance.taxEmploymentTitle {"employee":"Pat Example","employer":"Example Employer LLC"}'),
     )
-    expect(calledWith('TaxYear')).toContainEqual({ taxYear: 2026, taxFilingStatus: null })
+    expect(calledWith('TaxYear')).toContainEqual({ taxYear: 2026 })
     // Where the figures come from, from how many paystubs through which day.
     expect(within(projected).getByText(/^finance\.taxFromPaystubsOther .*"count":"10"/)).toBeTruthy()
     // So far and by December 31, side by side, with how many paychecks.
@@ -400,10 +402,10 @@ describe('the Taxes section', () => {
     expect(calledWith('FinancePaystubs')[0]).toEqual({ taxYear: 2026, limit: 50, offset: 0 })
   })
 
-  it("rings the year's pay by tax paid, still to pay and remaining, and asks again for another filing status", async () => {
+  it("rings the year's pay by tax paid, still to pay and remaining, with shares, and keeps the filing status picked", async () => {
     answer()
     renderSection()
-    const estimate = await waitFor(() => panel('finance.taxEstimateTitleProjected {"year":"2026"}'))
+    const estimate = await waitFor(() => panel('finance.taxEstimateTitle {"year":"2026"}'))
     const ring = within(estimate).getByRole('img')
     expect(ring.getAttribute('aria-label')).toContain('finance.taxPaid: $9,000.00')
     expect(ring.getAttribute('aria-label')).toContain('finance.taxOwing: $1,033.00')
@@ -413,11 +415,16 @@ describe('the Taxes section', () => {
     expect(within(estimate).getByText('finance.taxEstimateFederal')).toBeTruthy()
     expect(within(estimate).queryByText('finance.taxEstimateLocal')).toBeNull()
     expect(within(estimate).queryByText('finance.taxRefund')).toBeNull()
+    // Each figure's share of pay; the year's tax's is the effective rate.
+    expect(within(estimate).getByText('19.1%')).toBeTruthy()
+    // Until the person picks one, the filing status says it is assumed.
+    expect(within(estimate).getByText(/finance\.taxFilingStatusAssumed/)).toBeTruthy()
 
     fireEvent.click(within(estimate).getByRole('combobox', { name: 'finance.taxFilingStatus' }))
     fireEvent.click(screen.getByRole('option', { name: 'finance.taxFilingSingle' }))
-    await waitFor(() => expect(calledWith('TaxYear')).toContainEqual({ taxYear: 2026, taxFilingStatus: 'single' }))
-    expect(shownSearch).toContain('filing=single')
+    await waitFor(() => expect(calledWith('SetTaxFilingStatus')).toEqual([{ taxFilingStatus: 'single' }]))
+    await waitFor(() => expect(calledWith('TaxYear').length).toBeGreaterThan(1))
+    expect(toast.done).toHaveBeenCalledWith(expect.stringContaining('finance.taxFilingStatusSaved'))
   })
 
   it('says to add paystubs or W-2s when the year has none, and nothing else', async () => {

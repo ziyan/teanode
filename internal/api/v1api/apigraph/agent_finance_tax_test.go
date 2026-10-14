@@ -100,6 +100,19 @@ func TestPaystubsAndTaxFormsOnTheAPI(test *testing.T) {
 			summary.TaxYearEstimate.TaxFilingStatus != finance.TaxFilingStatusSingle {
 			test.Fatalf("the year's tax is estimated for the filing status asked: %+v %v", summary, err)
 		}
+		if summary, _ := resolver.TaxYear(ctx, TaxYearArguments{TaxYear: 2026}); !summary.TaxYearEstimate.IsTaxFilingStatusAssumed {
+			test.Fatalf("with none kept, the filing status is assumed: %+v", summary.TaxYearEstimate)
+		}
+		if saved, err := resolver.SetTaxFilingStatus(ctx, SetTaxFilingStatusArguments{TaxFilingStatus: "head_of_household"}); err != nil || saved != "head_of_household" {
+			test.Fatalf("SetTaxFilingStatus: %q %v", saved, err)
+		}
+		if summary, _ := resolver.TaxYear(ctx, TaxYearArguments{TaxYear: 2026}); summary.TaxYearEstimate.TaxFilingStatus != finance.TaxFilingStatusHeadOfHousehold ||
+			summary.TaxYearEstimate.IsTaxFilingStatusAssumed {
+			test.Fatalf("the kept filing status is the estimate's: %+v", summary.TaxYearEstimate)
+		}
+		if _, err := resolver.SetTaxFilingStatus(ctx, SetTaxFilingStatusArguments{TaxFilingStatus: "jointly"}); !errors.Is(err, api.ErrInvalidArguments) {
+			test.Fatalf("a filing status that is none of them is not kept: %v", err)
+		}
 		unknown := "jointly"
 		if _, err := resolver.TaxYear(ctx, TaxYearArguments{TaxYear: 2026, TaxFilingStatus: &unknown}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Fatalf("a filing status that is none of them is refused: %v", err)

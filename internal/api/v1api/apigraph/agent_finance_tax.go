@@ -121,10 +121,9 @@ type TaxFormsArguments struct {
 	Offset  *int `json:"offset" graphapi:"nullable"`
 }
 
-// TaxYearArguments name a tax year, and the filing status to estimate its
+// TaxYearArguments name a tax year, and a filing status to estimate its
 // tax with (single, married_filing_jointly, married_filing_separately,
-// head_of_household); without one, married filing jointly for two
-// people's documents and single otherwise.
+// head_of_household) instead of the one the person keeps.
 type TaxYearArguments struct {
 	TaxYear         int     `json:"taxYear"`
 	TaxFilingStatus *string `json:"taxFilingStatus,omitempty"`
@@ -438,6 +437,31 @@ func (self *graph) FinanceTaxForms(ctx context.Context, arguments TaxFormsArgume
 		view.TaxForms = append(view.TaxForms, taxFormView(taxForm))
 	}
 	return view, nil
+}
+
+// SetTaxFilingStatusArguments name the filing status to keep; empty
+// clears it.
+type SetTaxFilingStatusArguments struct {
+	TaxFilingStatus string `json:"taxFilingStatus"`
+}
+
+func (self *graph) SetTaxFilingStatus(ctx context.Context, arguments SetTaxFilingStatusArguments) (string, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return "", err
+	}
+	filingStatus := strings.TrimSpace(arguments.TaxFilingStatus)
+	if filingStatus != "" && !models.IsTaxFilingStatus(filingStatus) {
+		return "", fmt.Errorf("%w: %q is not a filing status; say single, married_filing_jointly, married_filing_separately or head_of_household", api.ErrInvalidArguments, filingStatus)
+	}
+	updated, err := self.writing(ctx).UpdateAgent(found.ID, func(changed *models.Agent) error {
+		changed.TaxFilingStatus = filingStatus
+		return nil
+	})
+	if err != nil {
+		return "", financeError(err)
+	}
+	return updated.TaxFilingStatus, nil
 }
 
 func (self *graph) TaxYear(ctx context.Context, arguments TaxYearArguments) (*finance.TaxYearSummary, error) {

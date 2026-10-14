@@ -60,6 +60,12 @@ final class FinanceTaxTests: XCTestCase {
         let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.first?.httpBody)) as? [String: Any]
         let variables = sent?["variables"] as? [String: Any]
         XCTAssertEqual(variables?["taxFilingStatus"] as? String, "head_of_household")
+        XCTAssertEqual(try XCTUnwrap(estimate.shareOfPay(estimate.totalTaxAmount)), 0.1912, accuracy: 0.0001)
+
+        let (keeping, kept) = try self.connection(answering: #"{"data":{"SetTaxFilingStatus":"single"}}"#)
+        try await keeping.setTaxFilingStatus(.single)
+        let keptBody = try JSONSerialization.jsonObject(with: try XCTUnwrap(kept.sent.first?.httpBody)) as? [String: Any]
+        XCTAssertEqual((keptBody?["variables"] as? [String: Any])?["taxFilingStatus"] as? String, "single")
     }
 
     func testZeroRowsAreLeftOutExceptWagesAndFederalTax() throws {

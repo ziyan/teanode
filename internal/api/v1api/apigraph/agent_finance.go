@@ -180,9 +180,11 @@ type FinanceQuery interface {
 	// A tax year put together from the paystubs paid in it and the W-2s
 	// for it, per person and employer: the W-2's figures, or the latest
 	// paystub's year to date and a projection to December 31; each W-2
-	// box beside the paystubs' figure; and what is worth knowing, such as
-	// a paystub missing between two others, a W-2 not yet in, or Social
-	// Security withheld beyond the year's maximum.
+	// box beside the paystubs' figure; what is worth knowing, such as a
+	// paystub missing between two others, a W-2 not yet in, or Social
+	// Security withheld beyond the year's maximum; and the tax its wages
+	// owe beside what was withheld, for the filing status the person
+	// keeps unless another is asked.
 	TaxYear(ctx context.Context, arguments TaxYearArguments) (*finance.TaxYearSummary, error)
 }
 
@@ -215,6 +217,11 @@ type FinanceMutation interface {
 	// Set the one currency totals are shown in; empty goes back to the
 	// currency of the first finance account.
 	SetReportingCurrency(ctx context.Context, arguments SetReportingCurrencyArguments) (string, error)
+
+	// Keep how the person files their tax return, which the tax year's
+	// estimate works the federal tax out for; empty goes back to assuming
+	// one from the number of people.
+	SetTaxFilingStatus(ctx context.Context, arguments SetTaxFilingStatusArguments) (string, error)
 
 	// Import an OFX statement (.ofx, .qfx or .qbo): a file uploaded to the
 	// agent's attachments, or every OFX attachment of a message in the

@@ -357,7 +357,7 @@ var financeSubcommandOperations = map[string]string{
 	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "import-credential": "ImportFinanceCredential",
 	"sources": "FinanceSources", "accounts": "FinanceAccounts", "credit-usage": "CreditUsage", "transactions": "FinanceTransactions", "trades": "FinanceTrades", "spending-summary": "FinanceSpendingSummary",
 	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
-	"set-reporting-currency": "SetReportingCurrency", "net-worth": "NetWorth", "assets": "Assets",
+	"set-reporting-currency": "SetReportingCurrency", "set-tax-filing-status": "SetTaxFilingStatus", "net-worth": "NetWorth", "assets": "Assets",
 	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
 	"close-asset": "CloseAsset", "delete-asset": "DeleteAsset", "record-valuation": "RecordValuation",
 	"delete-valuation": "DeleteValuation", "spending-categories": "SpendingCategories",

@@ -222,8 +222,8 @@ func (self *Agent) sameTaxDocument(ctx context.Context, attachments []*models.Ag
 }
 
 // TaxYear puts a tax year together from every paystub paid in it and every
-// tax form for it, its tax estimated as filed with filingStatus, or as the
-// number of people suggests when it is empty.
+// tax form for it, its tax estimated as filed with filingStatus, else the
+// filing status the person keeps, else as the number of people suggests.
 func (self *Agent) TaxYear(ctx context.Context, agentRow *models.Agent, taxYear int, filingStatus finance.TaxFilingStatus) (*finance.TaxYearSummary, error) {
 	if taxYear < 1900 || taxYear > 2999 {
 		return nil, fmt.Errorf("%w: %d is not a tax year", db.ErrInvalidArguments, taxYear)
@@ -262,6 +262,9 @@ func (self *Agent) TaxYear(ctx context.Context, agentRow *models.Agent, taxYear 
 	})
 	if err != nil {
 		return nil, err
+	}
+	if filingStatus == "" {
+		filingStatus = finance.TaxFilingStatus(agentRow.TaxFilingStatus)
 	}
 	return finance.SummarizeTaxYear(taxYear, paystubs, taxForms, time.Now(), filingStatus), nil
 }

@@ -745,14 +745,17 @@ person's wages up to the wage base, so tax withheld beyond it across
 employers comes back; Medicare at 1.45% plus 0.9% above the filing
 status's threshold (250,000 jointly, 125,000 separately, 200,000
 otherwise); state and local income tax as withheld, since each state's
-rules are its own. The filing status is the person's to say
-(`taxFilingStatus`); without it, married filing jointly when the documents
-name two people and single otherwise, and a status other than jointly with
-two people is a return each. The estimate splits pay (Medicare wages) into
+rules are its own. The filing status is the person's setting
+(`agent.tax_filing_status`, migration 0182, set with `SetTaxFilingStatus`);
+`TaxYear` takes another to try (`taxFilingStatus`), and without either
+assumes married filing jointly when the documents name two people and
+single otherwise (`isTaxFilingStatusAssumed`). A status other than jointly
+with two people is a return each. The estimate splits pay (Medicare wages) into
 tax paid so far, tax the rest of the year's paychecks will withhold at the
 same pace, tax owing at filing, and the income remaining; a refund is
 inside what was withheld. The dashboard and the app draw those four as a
-ring. Interest, dividends, gains, itemized deductions and credits are not
+ring, every figure beside its share of pay, the year's tax's being the
+effective rate. Interest, dividends, gains, itemized deductions and credits are not
 counted, so the estimate is a floor to start a return from, not the
 return.
 

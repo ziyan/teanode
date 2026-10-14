@@ -33990,6 +33990,22 @@
         }
       }
     },
+    "The filing status is assumed from the number of people; pick yours above and it is kept.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告区分は人数から仮定しています。上で選ぶと保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税身份是根据人数假定的；在上方选择后会保存。"
+          }
+        }
+      }
+    },
     "The TeaNode app on your phones, and what each is told about.": {
       "localizations": {
         "ja": {
@@ -41077,6 +41093,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有附件"
+          }
+        }
+      }
+    },
+    "Withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已预扣"
           }
         }
       }

@@ -14,9 +14,6 @@ import UniformTypeIdentifiers
 struct TaxesView: View {
     @Environment(FinanceModel.self) private var finance
     @State private var taxYear = Calendar.current.component(.year, from: Date())
-    /// The filing status picked, or nil for the server's guess from the
-    /// number of people.
-    @State private var filingStatus: TaxFilingStatus?
     @State private var summary: TaxYearSummary?
     @State private var paystubs: [FinancePaystub] = []
     @State private var taxForms: [FinanceTaxFormView] = []
@@ -71,7 +68,13 @@ struct TaxesView: View {
             if let summary {
                 if let estimate = summary.taxYearEstimate {
                     TaxEstimateSection(estimate: estimate, taxYear: taxYear) { picked in
-                        filingStatus = picked
+                        Task {
+                            // The person's setting, kept on the server; the year
+                            // is read again for it.
+                            if await finance.act(saying: String(localized: "Saved"), { try await finance.connection.setTaxFilingStatus(picked) }) {
+                                await load()
+                            }
+                        }
                     }
                 }
                 findingsSection(summary)
@@ -136,7 +139,7 @@ struct TaxesView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { addMenu }
         }
-        .task(id: TaxYearChoice(taxYear: taxYear, filingStatus: filingStatus)) {
+        .task(id: taxYear) {
             // Another year's figures are cleared rather than shown under this
             // one; coming back from a document keeps the year on screen.
             if summary?.taxYear != taxYear {
@@ -271,7 +274,7 @@ struct TaxesView: View {
     private func load() async {
         let connection = finance.connection
         let chosenYear = taxYear
-        async let summaryRead = connection.taxYear(chosenYear, filingStatus: filingStatus)
+        async let summaryRead = connection.taxYear(chosenYear)
         async let paystubRead = connection.financePaystubs(taxYear: chosenYear)
         async let taxFormRead = connection.financeTaxForms(taxYear: chosenYear)
         do {
@@ -385,18 +388,12 @@ struct TaxDocumentUploadRow: View {
 
 /// TaxFigureRow is one figure of a year, with where it is heading by
 /// December 31 under it when there is a projection.
-/// TaxYearChoice is what the year on screen is read for: the year and the
-/// filing status, either of which reads it again.
-private struct TaxYearChoice: Equatable {
-    let taxYear: Int
-    let filingStatus: TaxFilingStatus?
-}
-
 /// TaxEstimateSection is the year's pay as a ring, as the dashboard draws
 /// it: the tax already withheld, what the rest of the year's paychecks will
 /// withhold, what will be owed at filing, and what is left, the year's tax
-/// in the middle. Under it each slice and each tax in figures, and the
-/// filing status the federal tax is worked out for.
+/// in the middle. Under it each slice and each tax in figures with its
+/// share of pay (the year's tax's is the effective rate), and the filing
+/// status the federal tax is worked out for, the person's setting.
 struct TaxEstimateSection: View {
     let estimate: TaxYearSummary.Estimate
     let taxYear: Int
@@ -409,21 +406,12 @@ struct TaxEstimateSection: View {
         Section {
             if !slices.isEmpty { ring(slices) }
             ForEach(slices) { slice in
-                LabeledContent {
-                    Text(money(slice.amount)).monospacedDigit()
-                } label: {
-                    HStack(spacing: 8) {
-                        ChartSwatch(color: Self.color(slice.sliceKind))
-                        Text(Self.title(slice.sliceKind))
-                    }
-                }
+                figureRow(title(slice.sliceKind), slice.amount, color: Self.color(slice.sliceKind))
             }
             if (Double(estimate.refundAmount ?? "") ?? 0) > 0 {
-                LabeledContent("Refund at filing") {
-                    Text(money(estimate.refundAmount)).monospacedDigit().foregroundStyle(.green)
-                }
+                figureRow(String(localized: "Refund at filing"), estimate.refundAmount, amountStyle: .green)
             }
-            LabeledContent("Pay") { Text(money(estimate.payAmount)).monospacedDigit().bold() }
+            figureRow(String(localized: "Pay"), estimate.payAmount, isTotal: true)
             Picker("Filing status", selection: Binding(
                 get: { estimate.filingStatus ?? .single },
                 set: { onFilingStatus($0) }
@@ -432,16 +420,16 @@ struct TaxEstimateSection: View {
                     Text(Self.title(status)).tag(status)
                 }
             }
-            LabeledContent("Federal income tax") { Text(money(estimate.federalIncomeTaxAmount)).monospacedDigit() }
-            LabeledContent("Social Security") { Text(money(estimate.socialSecurityTaxAmount)).monospacedDigit() }
-            LabeledContent("Medicare") { Text(money(estimate.medicareTaxAmount)).monospacedDigit() }
+            figureRow(String(localized: "Federal income tax"), estimate.federalIncomeTaxAmount)
+            figureRow(String(localized: "Social Security"), estimate.socialSecurityTaxAmount)
+            figureRow(String(localized: "Medicare"), estimate.medicareTaxAmount)
             if (Double(estimate.stateIncomeTaxAmount ?? "") ?? 0) > 0 {
-                LabeledContent("State income tax, as withheld") { Text(money(estimate.stateIncomeTaxAmount)).monospacedDigit() }
+                figureRow(String(localized: "State income tax, as withheld"), estimate.stateIncomeTaxAmount)
             }
             if (Double(estimate.localIncomeTaxAmount ?? "") ?? 0) > 0 {
-                LabeledContent("Local income tax, as withheld") { Text(money(estimate.localIncomeTaxAmount)).monospacedDigit() }
+                figureRow(String(localized: "Local income tax, as withheld"), estimate.localIncomeTaxAmount)
             }
-            LabeledContent("Tax for the year") { Text(money(estimate.totalTaxAmount)).monospacedDigit().bold() }
+            figureRow(String(localized: "Tax for the year"), estimate.totalTaxAmount, isTotal: true)
         } header: {
             if estimate.isProjected == true {
                 Text("Tax for \(String(taxYear)), by December 31")
@@ -449,7 +437,12 @@ struct TaxEstimateSection: View {
                 Text("Tax for \(String(taxYear))")
             }
         } footer: {
-            Text("An estimate from wages only: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. Other income, itemized deductions and credits are not counted.")
+            VStack(alignment: .leading, spacing: 4) {
+                if estimate.isTaxFilingStatusAssumed == true {
+                    Text("The filing status is assumed from the number of people; pick yours above and it is kept.")
+                }
+                Text("An estimate from wages only: \(money(estimate.taxableIncomeAmount)) taxable after the \(money(estimate.standardDeductionAmount)) standard deduction. Other income, itemized deductions and credits are not counted.")
+            }
         }
     }
 
@@ -468,7 +461,7 @@ struct TaxEstimateSection: View {
             )
             .foregroundStyle(Self.color(slice.sliceKind))
             .opacity(ChartPalette.markOpacity(isChosen: isChosen, isAnyChosen: selectedSlice != nil))
-            .accessibilityLabel(Text(Self.title(slice.sliceKind)))
+            .accessibilityLabel(Text(title(slice.sliceKind)))
             .accessibilityValue(Text(verbatim: money(slice.amount)))
         }
         .chartLegend(.hidden)
@@ -484,7 +477,7 @@ struct TaxEstimateSection: View {
                     let frame = geometry[plotFrame]
                     let holeWidth = min(frame.width, frame.height) * 0.62
                     VStack(spacing: 2) {
-                        Text(selectedSlice.map { Self.title($0.sliceKind) } ?? String(localized: "Tax for the year"))
+                        Text(selectedSlice.map { title($0.sliceKind) } ?? String(localized: "Tax for the year"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -510,6 +503,30 @@ struct TaxEstimateSection: View {
         FinanceMoney.shown(amount, currencyCode: TaxWords.currencyCode)
     }
 
+    /// One figure: its name, with the slice's swatch when it is one, and
+    /// its amount over its share of pay.
+    private func figureRow(_ label: String, _ amount: String?, color: Color? = nil, amountStyle: Color? = nil, isTotal: Bool = false) -> some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(verbatim: money(amount))
+                    .monospacedDigit()
+                    .fontWeight(isTotal ? .semibold : .regular)
+                    .foregroundStyle(amountStyle ?? .primary)
+                if let share = estimate.shareOfPay(amount) {
+                    Text(share, format: .percent.precision(.fractionLength(1)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                if let color { ChartSwatch(color: color) }
+                Text(verbatim: label)
+            }
+        }
+    }
+
     /// Tax withheld in orange, the part still to come paler, what is owed
     /// in red, and what is left in the app's green.
     static func color(_ sliceKind: TaxEstimateSliceKind) -> Color {
@@ -521,9 +538,11 @@ struct TaxEstimateSection: View {
         }
     }
 
-    static func title(_ sliceKind: TaxEstimateSliceKind) -> String {
+    /// A slice's name; what was paid is "so far" only while the year is
+    /// projected.
+    private func title(_ sliceKind: TaxEstimateSliceKind) -> String {
         switch sliceKind {
-        case .paid: String(localized: "Paid so far")
+        case .paid: estimate.isProjected == true ? String(localized: "Paid so far") : String(localized: "Withheld")
         case .upcomingWithheld: String(localized: "Still to be withheld")
         case .owing: String(localized: "Owing at filing")
         case .remainingIncome: String(localized: "Remaining income")

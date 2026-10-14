@@ -1041,6 +1041,8 @@ export const TAX_FILING_STATUSES: TaxFilingStatus[] = [
 // owing and remaining add up to pay; a refund is inside what was withheld.
 export type TaxYearEstimate = {
   taxFilingStatus: TaxFilingStatus
+  // The person has not said how they file, and this one is assumed.
+  isTaxFilingStatusAssumed: boolean
   isProjected: boolean
   payAmount: string
   standardDeductionAmount: string
@@ -1077,8 +1079,8 @@ const TAX_YEAR_FIGURES_FIELDS = `wagesAmount federalIncomeTaxAmount socialSecuri
   medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount
   healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount }`
 
-export const TAX_YEAR = `query ($taxYear: Int!, $taxFilingStatus: String) {
-  TaxYear(taxYear: $taxYear, taxFilingStatus: $taxFilingStatus) {
+export const TAX_YEAR = `query ($taxYear: Int!) {
+  TaxYear(taxYear: $taxYear) {
     taxYear socialSecurityWageBaseAmount retirementDeferralLimitAmount isYearOver paystubCount taxFormCount
     figures { ${TAX_YEAR_FIGURES_FIELDS} } projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} }
     taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate
@@ -1088,11 +1090,15 @@ export const TAX_YEAR = `query ($taxYear: Int!, $taxFilingStatus: String) {
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { ${TAX_YEAR_FIGURES_FIELDS} }
       projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} } }
     taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
-    taxYearEstimate { taxFilingStatus isProjected payAmount standardDeductionAmount taxableIncomeAmount
+    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount standardDeductionAmount taxableIncomeAmount
       federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
       totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
   }
 }`
+
+// SET_TAX_FILING_STATUS keeps how the person files, which the estimate
+// works the federal tax out for; empty clears it.
+export const SET_TAX_FILING_STATUS = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`
 
 // READ_TAX_DOCUMENT queues the tax document job to read an upload, or each
 // PDF and picture a message in the mailbox carries, as a paystub or a W-2.

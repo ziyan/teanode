@@ -28,6 +28,7 @@ import {
   FinanceTaxFormEntry,
   MAXIMUM_LISTED_TAX_DOCUMENT_COUNT,
   READ_TAX_DOCUMENT,
+  SET_TAX_FILING_STATUS,
   TAX_DOCUMENT_UPLOAD_PATH,
   TAX_FILING_STATUSES,
   TAX_YEAR,
@@ -96,14 +97,6 @@ export function offeredYears(currentYear: number, shownYear: number): string[] {
   for (let index = 0; index < OFFERED_YEAR_COUNT; index++) years.add(currentYear - index)
   years.add(shownYear)
   return [...years].sort((first, second) => second - first).map(String)
-}
-
-// filingStatusFromSearch is the filing status in the address (?filing=),
-// or none, which leaves it to the server: married filing jointly for two
-// people's documents, single otherwise.
-function filingStatusFromSearch(search: URLSearchParams): TaxFilingStatus | null {
-  const status = search.get('filing')
-  return TAX_FILING_STATUSES.find((candidate) => candidate === status) ?? null
 }
 
 function yearFromSearch(search: URLSearchParams, currentYear: number): number {
@@ -429,21 +422,32 @@ const FILING_STATUS_LABELS: Record<TaxFilingStatus, Key> = {
 // TaxEstimatePanel is the year's pay as a ring: the tax already withheld,
 // what the rest of the year's paychecks will withhold, what will be owed
 // at filing, and what is left, the year's tax in the middle; beside it the
-// same in figures, each tax on its own. The filing status is the server's
-// guess until the person picks one, which goes in the address.
+// same in figures, each tax on its own, every figure with its share of
+// pay (the year's tax's is the effective rate). The filing status is kept
+// on the server; until the person picks one it is assumed, and says so.
 function TaxEstimatePanel({
   estimate,
   year,
+  isSaving,
   onFilingStatus,
 }: {
   estimate: TaxYearEstimate
   year: number
+  isSaving: boolean
   onFilingStatus: (status: TaxFilingStatus) => void
 }) {
   const { t } = useTranslation()
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
+  const payAmount = amountOf(estimate.payAmount)
+  const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
+  const shareOfPay = (amount: number) => (payAmount > 0 ? percent.format(amount / payAmount) : '')
   const slices: RingSlice[] = [
-    { key: 'paid', label: t('finance.taxPaid'), amount: amountOf(estimate.paidTaxAmount), sliceClass: 'tone-1' },
+    {
+      key: 'paid',
+      label: t(estimate.isProjected ? 'finance.taxPaid' : 'finance.taxWithheld'),
+      amount: amountOf(estimate.paidTaxAmount),
+      sliceClass: 'tone-1',
+    },
     {
       key: 'upcoming',
       label: t('finance.taxUpcomingWithheld'),
@@ -459,20 +463,40 @@ function TaxEstimatePanel({
     },
   ].map((slice) => ({ ...slice, isOther: false, foldedCount: 0 }))
   const shown = slices.filter((slice) => slice.amount > 0)
-  // A slice's row in the figures, its swatch naming it; the row under the
-  // pointer picks out its slice, as the tables under the other rings do.
-  const sliceLine = (slice: RingSlice) => {
-    const pointing = {
-      onPointerEnter: () => setHighlightedKey(slice.key),
-      onPointerLeave: () => setHighlightedKey(null),
-    }
+  // A figure's row: its name, its amount and its share of pay. A slice's
+  // row has its swatch, and the row under the pointer picks out its slice,
+  // as the tables under the other rings do.
+  const figureLine = ({
+    key,
+    label,
+    amount,
+    slice,
+    className,
+    isTotal = false,
+  }: {
+    key: string
+    label: string
+    amount: number
+    slice?: RingSlice
+    className?: string
+    isTotal?: boolean
+  }) => {
+    const pointing = slice
+      ? { onPointerEnter: () => setHighlightedKey(slice.key), onPointerLeave: () => setHighlightedKey(null) }
+      : {}
+    const lineClass = isTotal ? 'finance-tax-estimate-total' : undefined
     return (
-      <Fragment key={slice.key}>
-        <dt {...pointing}>
-          <i className={`spending-ring-swatch ${ringSliceClass(slice, 0)}`} aria-hidden="true" />
-          {slice.label}
+      <Fragment key={key}>
+        <dt className={lineClass} {...pointing}>
+          {slice ? <i className={`spending-ring-swatch ${ringSliceClass(slice, 0)}`} aria-hidden="true" /> : null}
+          {label}
         </dt>
-        <dd {...pointing}>{formatDollars(String(slice.amount))}</dd>
+        <dd className={[lineClass, className].filter(Boolean).join(' ') || undefined} {...pointing}>
+          {isTotal ? <strong>{formatDollars(String(amount))}</strong> : formatDollars(String(amount))}
+        </dd>
+        <dd className={['muted finance-tax-share', lineClass].filter(Boolean).join(' ')} {...pointing}>
+          {shareOfPay(amount)}
+        </dd>
       </Fragment>
     )
   }
@@ -486,15 +510,14 @@ function TaxEstimatePanel({
   return (
     <SettingsSection
       card
-      title={t(estimate.isProjected ? 'finance.taxEstimateTitleProjected' : 'finance.taxEstimateTitle', {
-        year: String(year),
-      })}
-      description={t('finance.taxEstimateHint')}
+      title={t('finance.taxEstimateTitle', { year: String(year) })}
+      description={t(estimate.isProjected ? 'finance.taxEstimateHint' : 'finance.taxEstimateHintOver')}
       action={
         <Select
           className="finance-tax-filing-select"
           value={estimate.taxFilingStatus}
           label={t('finance.taxFilingStatus')}
+          disabled={isSaving}
           options={TAX_FILING_STATUSES.map((status) => ({ value: status, label: t(FILING_STATUS_LABELS[status]) }))}
           onChange={(value) => onFilingStatus(value as TaxFilingStatus)}
         />
@@ -510,32 +533,29 @@ function TaxEstimatePanel({
           highlightedKey={highlightedKey}
         />
         <dl className="finance-worth-line">
-          {shown.map(sliceLine)}
-          {!isZero(estimate.refundAmount) ? (
-            <>
-              <dt>{t('finance.taxRefund')}</dt>
-              <dd className="finance-tax-refund">{formatDollars(estimate.refundAmount)}</dd>
-            </>
-          ) : null}
-          <dt className="finance-tax-estimate-total">{t('finance.taxPay')}</dt>
-          <dd className="finance-tax-estimate-total">
-            <strong>{formatDollars(estimate.payAmount)}</strong>
-          </dd>
+          {shown.map((slice) => figureLine({ key: slice.key, label: slice.label, amount: slice.amount, slice }))}
+          {!isZero(estimate.refundAmount)
+            ? figureLine({
+                key: 'refund',
+                label: t('finance.taxRefund'),
+                amount: amountOf(estimate.refundAmount),
+                className: 'finance-tax-refund',
+              })
+            : null}
+          {figureLine({ key: 'pay', label: t('finance.taxPay'), amount: payAmount, isTotal: true })}
         </dl>
         <dl className="finance-worth-line">
-          {taxLines.map((line) => (
-            <Fragment key={line.key}>
-              <dt>{line.label}</dt>
-              <dd>{formatDollars(line.amount)}</dd>
-            </Fragment>
-          ))}
-          <dt className="finance-tax-estimate-total">{t('finance.taxForTheYear')}</dt>
-          <dd className="finance-tax-estimate-total">
-            <strong>{formatDollars(estimate.totalTaxAmount)}</strong>
-          </dd>
+          {taxLines.map((line) => figureLine({ key: line.key, label: line.label, amount: amountOf(line.amount) }))}
+          {figureLine({
+            key: 'total',
+            label: t('finance.taxForTheYear'),
+            amount: amountOf(estimate.totalTaxAmount),
+            isTotal: true,
+          })}
         </dl>
       </div>
       <p className="muted finance-receipt-detail finance-tax-note">
+        {estimate.isTaxFilingStatusAssumed ? `${t('finance.taxFilingStatusAssumed')} ` : null}
         {t('finance.taxEstimateNote', {
           deduction: formatDollars(estimate.standardDeductionAmount),
           taxable: formatDollars(estimate.taxableIncomeAmount),
@@ -846,7 +866,6 @@ export function FinanceTaxesSection() {
   const [search, setSearch] = useSearchParams()
   const currentYear = Number(personToday().slice(0, 4))
   const year = yearFromSearch(search, currentYear)
-  const filingStatus = filingStatusFromSearch(search)
   const picker = useRef<HTMLInputElement | null>(null)
 
   // Another year is another list of paystubs, so the page goes back to
@@ -866,23 +885,10 @@ export function FinanceTaxesSection() {
     [setSearch],
   )
 
-  const showFilingStatus = useCallback(
-    (status: TaxFilingStatus) =>
-      setSearch(
-        (previous) => {
-          const next = new URLSearchParams(previous)
-          next.set('filing', status)
-          return next
-        },
-        { replace: true },
-      ),
-    [setSearch],
-  )
-
   const taxYearQuery = useQuery(
     async () =>
-      (await graphql<{ TaxYear: TaxYearSummary }>(TAX_YEAR, { taxYear: year, taxFilingStatus: filingStatus })).TaxYear,
-    [year, filingStatus],
+      (await graphql<{ TaxYear: TaxYearSummary }>(TAX_YEAR, { taxYear: year })).TaxYear,
+    [year],
     { refresh: false },
   )
   const taxFormsQuery = useQuery(
@@ -951,6 +957,22 @@ export function FinanceTaxesSection() {
       setOpened({ dialogKind: 'paystub', paystub: answer.FinancePaystub })
     } catch (caught) {
       toast.failure(caught, t('finance.failed'))
+    }
+  }
+
+  // The filing status is the person's setting: kept on the server, the
+  // year read again for it.
+  const [isSavingFilingStatus, setIsSavingFilingStatus] = useState(false)
+  const saveFilingStatus = async (status: TaxFilingStatus) => {
+    setIsSavingFilingStatus(true)
+    try {
+      await graphql(SET_TAX_FILING_STATUS, { taxFilingStatus: status })
+      await taxYearQuery.reload(true)
+      toast.done(t('finance.taxFilingStatusSaved', { status: t(FILING_STATUS_LABELS[status]) }))
+    } catch (caught) {
+      toast.failure(caught, t('finance.failed'))
+    } finally {
+      setIsSavingFilingStatus(false)
     }
   }
 
@@ -1148,7 +1170,12 @@ export function FinanceTaxesSection() {
       {summary && !isEmptyYear ? (
         <>
           {summary.taxYearEstimate ? (
-            <TaxEstimatePanel estimate={summary.taxYearEstimate} year={year} onFilingStatus={showFilingStatus} />
+            <TaxEstimatePanel
+              estimate={summary.taxYearEstimate}
+              year={year}
+              isSaving={isSavingFilingStatus}
+              onFilingStatus={(status) => void saveFilingStatus(status)}
+            />
           ) : null}
           {summary.taxYearEmployments.map((employment) => (
             <EmploymentPanel

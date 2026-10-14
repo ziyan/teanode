@@ -13571,6 +13571,37 @@ button.idea-history-title {
   color: var(--good);
 }
 
+/* A name, an amount and its share of pay. The columns meet with no gap,
+   each figure padded off the one before, so a total's rule runs across
+   the line unbroken. */
+.finance-tax-estimate .finance-worth-line {
+  grid-template-columns: max-content auto auto;
+  column-gap: 0;
+}
+
+.finance-tax-estimate .finance-worth-line dd {
+  padding-left: var(--space-4);
+}
+
+.finance-tax-estimate .finance-worth-line .finance-tax-share {
+  padding-left: var(--space-3);
+  font-size: var(--text-label);
+  align-self: center;
+}
+
+/* On a phone the ring is centred on its own line and the two lists under
+   it take the card's width, so their amounts end at one edge. */
+@media (max-width: 600px) {
+  .finance-tax-estimate > .spending-ring {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .finance-tax-estimate .finance-worth-line {
+    width: 100%;
+  }
+}
+
 .finance-asset-name {
   display: inline-block;
   max-width: 22rem;

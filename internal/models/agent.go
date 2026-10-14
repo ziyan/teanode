@@ -133,6 +133,24 @@ type Agent struct {
 	// shown in, an ISO 4217 code. Empty means the currency of their first
 	// finance account.
 	ReportingCurrencyCode string `json:"reportingCurrencyCode,omitempty" graphapi:"nullable"`
+
+	// TaxFilingStatus is how the person files their tax return, one of
+	// TaxFilingStatuses. Empty means they have not said, and the tax
+	// year's estimate assumes one from the number of people.
+	TaxFilingStatus string `json:"taxFilingStatus,omitempty" graphapi:"nullable"`
+}
+
+// TaxFilingStatuses are the ways a US tax return is filed.
+var TaxFilingStatuses = []string{"single", "married_filing_jointly", "married_filing_separately", "head_of_household"}
+
+// IsTaxFilingStatus says text is one of TaxFilingStatuses.
+func IsTaxFilingStatus(text string) bool {
+	for _, status := range TaxFilingStatuses {
+		if text == status {
+			return true
+		}
+	}
+	return false
 }
 
 // The bounds alerts keep when the person has not said: a night from ten
@@ -289,6 +307,9 @@ func (self *Agent) Validate() error {
 	}
 	if self.ReportingCurrencyCode != "" && !IsCurrencyCode(self.ReportingCurrencyCode) {
 		errors.add("reportingCurrencyCode", "%q is not a currency code like USD", self.ReportingCurrencyCode)
+	}
+	if self.TaxFilingStatus != "" && !IsTaxFilingStatus(self.TaxFilingStatus) {
+		errors.add("taxFilingStatus", "%q is not a filing status; say single, married_filing_jointly, married_filing_separately or head_of_household", self.TaxFilingStatus)
 	}
 	return errors.ErrOrNil()
 }

@@ -256,6 +256,8 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
     /// inside what was withheld.
     public struct Estimate: Codable, Hashable, Sendable {
         public let taxFilingStatus: String?
+        /// The person has not said how they file, and this one is assumed.
+        public let isTaxFilingStatusAssumed: Bool?
         public let isProjected: Bool?
         public let payAmount: String?
         public let standardDeductionAmount: String?
@@ -284,6 +286,12 @@ public struct TaxYearSummary: Codable, Hashable, Sendable {
         }
 
         public var filingStatus: TaxFilingStatus? { taxFilingStatus.flatMap(TaxFilingStatus.init(rawValue:)) }
+
+        /// An amount's share of pay, 0.191 for 19.1%; nil without pay.
+        public func shareOfPay(_ amount: String?) -> Double? {
+            guard let pay = Double(payAmount ?? ""), pay > 0 else { return nil }
+            return (Double(amount ?? "") ?? 0) / pay
+        }
     }
 
     public let taxYear: Int?
@@ -387,11 +395,14 @@ extension Documents {
             taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { \(taxYearFiguresFields) }
               projectedFigures { \(taxYearFiguresFields) } }
             taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
-            taxYearEstimate { taxFilingStatus isProjected payAmount standardDeductionAmount taxableIncomeAmount
+            taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount standardDeductionAmount taxableIncomeAmount
               federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
               totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
           }
         }
+        """
+    public static let setTaxFilingStatus = """
+        mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }
         """
     public static let readTaxDocument = """
         mutation ($agentAttachmentId: String, $mailboxItemId: String) {
@@ -414,6 +425,13 @@ extension Connection {
         var variables: [String: JSONValue] = ["taxYear": .number(Double(year))]
         if let filingStatus { variables["taxFilingStatus"] = .string(filingStatus.rawValue) }
         return try await execute(Documents.taxYear, variables: variables, as: Answer.self).TaxYear
+    }
+
+    /// Keeps how the person files, which every tax year's estimate is
+    /// worked out for; nil goes back to assuming one.
+    public func setTaxFilingStatus(_ filingStatus: TaxFilingStatus?) async throws {
+        struct Answer: Decodable, Sendable { let SetTaxFilingStatus: JSONValue? }
+        _ = try await execute(Documents.setTaxFilingStatus, variables: ["taxFilingStatus": .string(filingStatus?.rawValue ?? "")], as: Answer.self)
     }
 
     public func financePaystubs(taxYear year: Int, limit: Int = 200, offset: Int = 0) async throws -> FinancePaystubPage {

@@ -2,6 +2,8 @@ package finance
 
 import (
 	"math/big"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // A tax year's estimate sets the tax the year's wages owe beside what was
@@ -29,25 +31,23 @@ var TaxFilingStatuses = []TaxFilingStatus{
 	TaxFilingStatusSingle, TaxFilingStatusMarriedFilingJointly, TaxFilingStatusMarriedFilingSeparately, TaxFilingStatusHeadOfHousehold,
 }
 
-// IsValid says the filing status is one of TaxFilingStatuses.
+// IsValid says the filing status is one of TaxFilingStatuses, the ones
+// an agent can keep (models.TaxFilingStatuses).
 func (self TaxFilingStatus) IsValid() bool {
-	for _, status := range TaxFilingStatuses {
-		if self == status {
-			return true
-		}
-	}
-	return false
+	return models.IsTaxFilingStatus(string(self))
 }
 
 // TaxYearEstimate is a year's tax on its wages beside what was withheld.
 // Amounts are dollars with cents, the household's, to December 31 when
 // the year is projected.
 type TaxYearEstimate struct {
-	// TaxFilingStatus is the one asked for, else married filing jointly
-	// when the documents name two people and single otherwise. Filing
+	// TaxFilingStatus is the one asked for, else the one the person
+	// keeps, else married filing jointly when the documents name two
+	// people and single otherwise (IsTaxFilingStatusAssumed). Filing
 	// separately, or single with two people, is a return each.
-	TaxFilingStatus TaxFilingStatus `json:"taxFilingStatus"`
-	IsProjected     bool            `json:"isProjected"`
+	TaxFilingStatus          TaxFilingStatus `json:"taxFilingStatus"`
+	IsTaxFilingStatusAssumed bool            `json:"isTaxFilingStatusAssumed"`
+	IsProjected              bool            `json:"isProjected"`
 	// PayAmount is Medicare wages (box 5): pay before income tax,
 	// retirement savings included, pre-tax health benefits not; box 1 for
 	// documents that print no Medicare wages.
