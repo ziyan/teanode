@@ -494,9 +494,9 @@
 
         static let phones = #"""
             {"data":{"ListAgentPhones":{"phones":[
-              {"id":"phone1","phoneName":"Robin's phone","phoneModel":"iPhone","notificationKinds":["message","approval","question","answer"],"canBeNotified":true,"lastSeenAt":"2026-10-10T09:05:00Z","lastDeliveredAt":"2026-10-10T09:05:02Z","lastDeliveryError":""},
-              {"id":"phone2","phoneName":"Kitchen tablet","phoneModel":"iPad","notificationKinds":["approval","question"],"canBeNotified":true,"lastSeenAt":"2026-10-09T20:10:00Z","lastDeliveredAt":"2026-10-09T20:11:00Z","lastDeliveryError":""},
-              {"id":"phone3","phoneName":"Old phone","phoneModel":"iPhone","notificationKinds":["message","approval","question","answer"],"canBeNotified":false,"lastSeenAt":"2026-06-20T08:00:00Z","lastDeliveredAt":null,"lastDeliveryError":""}
+              {"id":"phone1","phoneName":"Robin's phone","phoneModel":"iPhone18,2","phoneModelName":"iPhone 17 Pro Max","notificationKinds":["message","approval","question","answer"],"canBeNotified":true,"lastSeenAt":"2026-10-10T09:05:00Z","lastDeliveredAt":"2026-10-10T09:05:02Z","lastDeliveryError":""},
+              {"id":"phone2","phoneName":"Kitchen tablet","phoneModel":"iPad16,3","phoneModelName":"iPad Pro 11-inch (M4)","notificationKinds":["approval","question"],"canBeNotified":true,"lastSeenAt":"2026-10-09T20:10:00Z","lastDeliveredAt":"2026-10-09T20:11:00Z","lastDeliveryError":""},
+              {"id":"phone3","phoneName":"Old phone","phoneModel":"iPhone17,3","phoneModelName":"iPhone 16","notificationKinds":["message","approval","question","answer"],"canBeNotified":false,"lastSeenAt":"2026-06-20T08:00:00Z","lastDeliveredAt":null,"lastDeliveryError":""}
               ],"isPushEnabled":true,"notificationKinds":["message","approval","question","answer"]}}}
             """#
 

@@ -368,7 +368,7 @@ struct PairedPhoneRow: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.displayName(phone))
-                let detailText = [phone.phoneModel, notificationsText, phone.lastDeliveryError]
+                let detailText = [phone.modelDisplayName, notificationsText, phone.lastDeliveryError]
                     .filter { !$0.isEmpty }
                     .joined(separator: " · ")
                 if !detailText.isEmpty {
