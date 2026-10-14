@@ -160,7 +160,13 @@ func (self *transaction) recordingSpeakerCorrectionMatchesSegment(correction *mo
 		return false, false, err
 	}
 	if originalAttempt.RecordingTranscriptRunID == transcriptRun.ID {
-		return segment.RecordingTranscriptionAttemptID == correction.RecordingTranscriptionAttemptID && segment.LocalSpeakerID == correction.LocalSpeakerID, false, nil
+		// In its own transcript a correction was made on one passage, whole or a
+		// part inside it. One that runs past this passage on one side was made
+		// on a neighbor (the provider's passages can overlap by a moment) and
+		// says nothing about this one.
+		isCovering := correction.PassageStartMS <= segment.SegmentStartMS && correction.PassageEndMS >= segment.SegmentEndMS
+		isInside := correction.PassageStartMS >= segment.SegmentStartMS && correction.PassageEndMS <= segment.SegmentEndMS
+		return (isCovering || isInside) && segment.RecordingTranscriptionAttemptID == correction.RecordingTranscriptionAttemptID && segment.LocalSpeakerID == correction.LocalSpeakerID, false, nil
 	}
 	var originalPassages []*recordingSegmentModel
 	if err := self.tx.Where("recording_transcription_attempt_id = ? AND local_speaker_id = ? AND segment_start_ms <= ? AND segment_end_ms >= ?", correction.RecordingTranscriptionAttemptID, correction.LocalSpeakerID, correction.PassageStartMS, correction.PassageEndMS).Limit(2).Find(&originalPassages).Error; err != nil {
