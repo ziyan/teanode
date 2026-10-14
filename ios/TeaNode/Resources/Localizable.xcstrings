@@ -11990,6 +11990,22 @@
         }
       }
     },
+    "Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OFX、QFX、QBO ファイルは口座に取り込まれます。2 回取り込んだ取引は 1 件だけ残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个 OFX、QFX 或 QBO 文件都会导入你的账户；重复导入的交易只保留一笔。"
+          }
+        }
+      }
+    },
     "Each PDF or photo mailed or forwarded here is read as a paystub or W-2.": {
       "localizations": {
         "ja": {
@@ -12002,6 +12018,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "发送或转发到这里的每个 PDF 或照片都会作为工资单或 W-2 读取。"
+          }
+        }
+      }
+    },
+    "Each PDF or picture is read as a paystub or W-2 on its own, and the server keeps no text of it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF や画像は 1 つずつ給与明細か W-2 として読み取られ、サーバーはその文字を保存しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个 PDF 或图片会单独作为工资单或 W-2 读取，服务器不会保存其中的文字。"
           }
         }
       }
@@ -13650,6 +13682,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "决定不打开的文件"
+          }
+        }
+      }
+    },
+    "Files that are not a PDF or a picture were left out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "PDF でも画像でもないファイルは除きました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是 PDF 或图片的文件已略过。"
+          }
+        }
+      }
+    },
+    "Files that are not OFX statements were left out.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OFX の明細ではないファイルは除きました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是 OFX 对账单的文件已略过。"
           }
         }
       }
@@ -16002,6 +16066,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "导入地址已更换，旧地址不再接收邮件。"
+          }
+        }
+      }
+    },
+    "Import as statements": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細として取り込む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作为对账单导入"
           }
         }
       }
@@ -26726,6 +26806,22 @@
         }
       }
     },
+    "Read as paystubs or W-2s": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細か W-2 として読み取る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作为工资单或 W-2 读取"
+          }
+        }
+      }
+    },
     "Read DMARC reports": {
       "localizations": {
         "ja": {
@@ -26802,6 +26898,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "作为工资单或 W-2 读取"
+          }
+        }
+      }
+    },
+    "Reading %lld documents as paystubs or W-2s. They show under Finance, Taxes once read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件の書類を給与明細か W-2 として読み取っています。読み取ると「家計」の「税金」に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在把 %lld 份文件作为工资单或 W-2 读取，读取后会显示在“财务”的“税费”中。"
+          }
+        }
+      }
+    },
+    "Reading 1 document as a paystub or W-2. It shows under Finance, Taxes once read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 件の書類を給与明細か W-2 として読み取っています。読み取ると「家計」の「税金」に表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在把 1 份文件作为工资单或 W-2 读取，读取后会显示在“财务”的“税费”中。"
           }
         }
       }
@@ -29570,6 +29698,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "并发运行数"
+          }
+        }
+      }
+    },
+    "Send the files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルの送り先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件发送到"
           }
         }
       }
@@ -37797,6 +37941,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "要管理这部手机收到哪些通知，请在控制台打开“设置”中的“设备”。"
+          }
+        }
+      }
+    },
+    "To your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントへ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发给你的助手"
           }
         }
       }

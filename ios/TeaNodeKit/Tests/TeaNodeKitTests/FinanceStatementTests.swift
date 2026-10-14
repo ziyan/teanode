@@ -24,4 +24,13 @@ final class FinanceStatementTests: XCTestCase {
         let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
         XCTAssertTrue((sent?["query"] as? String)?.contains("RegenerateStatementImportAddress") == true)
     }
+
+    func testAnUploadedStatementIsImported() async throws {
+        let (connection, fake) = try connection(answering: #"{"data":{"ImportStatement":{"importedAt":"2026-10-14T12:00:00Z","addedTransactionCount":2,"updatedTransactionCount":0,"unchangedTransactionCount":0,"financeAccountNames":["Invented Card ··1a11"],"importErrorMessage":""}}}"#)
+        let imported = try await connection.importStatement(attachmentId: "attachment-1")
+        XCTAssertEqual(imported?.addedTransactionCount, 2)
+        XCTAssertEqual(imported?.isImported, true)
+        let sent = try JSONSerialization.jsonObject(with: try XCTUnwrap(fake.sent.last?.httpBody)) as? [String: Any]
+        XCTAssertEqual((sent?["variables"] as? [String: Any])?["agentAttachmentId"] as? String, "attachment-1")
+    }
 }

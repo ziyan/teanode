@@ -44,7 +44,24 @@ extension Documents {
         """
 }
 
+extension Documents {
+    public static let importStatement = """
+        mutation ($agentAttachmentId: String) {
+          ImportStatement(agentAttachmentId: $agentAttachmentId) {
+            importedAt statementImportOrigin addedTransactionCount updatedTransactionCount unchangedTransactionCount financeAccountNames importErrorMessage
+          }
+        }
+        """
+}
+
 extension Connection {
+    /// Imports an OFX statement (.ofx, .qfx or .qbo) already uploaded to
+    /// the agent's attachments, and answers what the import did.
+    public func importStatement(attachmentId: String) async throws -> StatementImport.LastImport? {
+        struct Answer: Decodable, Sendable { let ImportStatement: StatementImport.LastImport? }
+        return try await execute(Documents.importStatement, variables: ["agentAttachmentId": .string(attachmentId)], as: Answer.self).ImportStatement
+    }
+
     /// The statement import, its address made the first time it is asked.
     public func statementImport() async throws -> StatementImport? {
         struct Answer: Decodable, Sendable { let StatementImport: StatementImport? }
