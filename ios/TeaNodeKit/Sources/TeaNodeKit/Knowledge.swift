@@ -137,8 +137,20 @@ public struct KnowledgePage: Codable, Hashable, Sendable {
     public let children: [KnowledgeNode?]
     public let attachments: [KnowledgeAttachment?]
     public let contact: Contact?
+    /// The person's own records the page is linked to: the first part of
+    /// them, and how many there are in all. Missing from a server that does
+    /// not know record links.
+    public let recordLinks: [KnowledgeRecordLink?]?
+    public let recordLinkCount: Int?
+    /// The records the facts' evidence names, so a fact's source opens it.
+    public let evidenceRecords: [KnowledgeEvidenceRecord?]?
 
     public var presentFacts: [KnowledgeFact] { facts.compactMap { $0 } }
+
+    /// The records one fact's evidence names, in the order it names them.
+    public func records(of fact: KnowledgeFact) -> [KnowledgeEvidenceRecord] {
+        (evidenceRecords ?? []).compactMap { $0 }.filter { $0.factId == fact.id }.sorted { $0.evidenceIndex < $1.evidenceIndex }
+    }
 
     /// The files a fact cites: its evidence ids, without any [...] part,
     /// matched to the page's attachments.
@@ -366,6 +378,9 @@ extension Documents {
             children { \(nodeFields) }
             attachments { documentId name contentType channel path }
             contact { id name emails organization }
+            recordLinks { \(recordLinkFields) }
+            recordLinkCount
+            evidenceRecords { factId evidenceIndex recordKind recordId passageStartMS passageEndMS transcriptRunId recordTitle dashboardPath isUnavailable }
           }
         }
         """

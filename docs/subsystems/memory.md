@@ -877,6 +877,106 @@ the words that only say what a page is, subtract dates. If nothing is
 left, nothing was said. It errs towards keeping — one surviving word of
 substance is enough.
 
+## The person's own records
+
+A page is the agent's own writing. The person's records are not: a contact
+card, a mail message, a calendar event or reminder, a message of an agent
+conversation, a finance transaction or receipt, a passage of a recording.
+They live in their own tables, owned and permissioned there, and the graph
+does not copy them. A **record link** (`agent_record_link`) joins a page to
+one of them by kind and identifier and says what the page is to it:
+`is_contact`, `wrote`, `received`, `attended`, `organized`, `spoke_in`,
+`mentioned_in`, `paid`, `paid_by`, `receipt_for` or `about`. Only the kinds
+of record and the relations that fit them are accepted (a page cannot have
+`spoke_in` a transaction). A link has the status a link between pages has,
+`stated` or `proposed`; a recording passage is the recording's identifier
+plus a range in milliseconds, so one recording can be linked at many
+places. Every link can be walked both ways: from the page to the records,
+and from a record to the pages (`ReadRecordMemoryLinks`, and for a
+recording the pages whose passage overlaps a range).
+
+Nothing about the record is stored, so reading a link means finding the
+record again, and that is where access is decided (package `recordlink`).
+The person's own dashboard and command line see every link of their own
+agent's pages. The agent sees a record only when it could read it anyway:
+a contact in an address book with `AgentGranted`, an event or reminder in
+a calendar with `AgentGranted`, a message in a mailbox the agent is
+granted, a transaction whose finance source is switched on (a receipt: any
+finance source switched on), a conversation message of its own agent, a
+recording of the person whose agent it is. Any other link reads to the
+agent as one it may not open, with no title and no card. A record that is
+gone, or that is another person's, reads as unavailable to both, and the
+link can still be removed. A link never widens what the agent can read, and
+making one does not check the grant once: every read does.
+
+Linking never creates a contact card. `remember_apply.go` explains why pages
+must not: it once created hundreds of empty cards. A link points at a card
+that exists, and the person's `SetAgentNodeContact` takes only a card from
+one of their own address books and writes the page's `contact_id` and a
+stated `is_contact` link together.
+
+What the agent says about a link follows the same rule as a link between
+pages. It may *propose* one, and a proposal reads as a guess ("perhaps")
+everywhere. It states one only on the person's own words: `link_status:
+stated` needs a `quote` that is in the person's last message of the
+conversation, and a run with nobody present cannot state at all. Taking
+away a link the person stated needs their words as well; a proposal is the
+agent's to withdraw. A proposal made again never takes a statement back.
+
+The titles of records come from outside (a mail subject, an event name, a
+merchant), so the memory tool marks a result that carries one as untrusted
+and the loop fences it as data. A page recalled into a prompt names the
+records it is linked to by kind and title and nothing more, inside the same
+fence, and only those the agent may read; a recording's title is left out
+there, since recorded words reach a prompt only as marked evidence. The
+self card in the prompt is read only from an address book the person gave
+the agent.
+
+Evidence of a fact can name a record too. The kinds are the record kinds
+(`contact`, `mail`, `calendar_event`, `reminder`, `conversation_message`,
+`finance_transaction`, `finance_receipt`, `recording_passage`); a passage
+carries its transcript run and range so a click opens the recording at
+that place. Evidence that is a document read from a sent message is shown
+as the mail item it was read from.
+
+A dream makes the links nobody should have to make by hand
+(`dream_record_links.go`, after the pages are divided and before the
+overviews are written). It asks no model and spends none of the dream's
+share. It **states** a link only where the match is certain: an address of a
+person page that is on exactly one card of a granted address book and on no
+other page (the page also takes that card as its contact); a speaker name the
+person confirmed on a recording that is exactly one page's name or alias,
+for each turn of that speaker (the identity that is the person themselves
+goes to the self page); the sender of a message in a granted mailbox's Inbox
+or Archive (`wrote`) and the recipients of a message in its Sent folder
+(`received`), by exact address; the organizer and guests of an event in a
+granted calendar, by exact address (`organized`, `attended`); and, for a
+receipt already matched to a transaction, the receipt link of each page that
+has `paid` or `paid_by` that transaction, with the same status. It
+**proposes** a guess: a card whose full name is exactly the page's and no
+other page's; a project whose name is a whole word run in the title of an
+event or reminder (`about`); an organization whose name is exactly a
+transaction's merchant (`paid`, the page being the one the money went to).
+Each dream makes at most three hundred new links and looks only at the newest
+records of each source (a hundred messages per folder, fifty recordings, two
+hundred transactions), so the cost does not grow with the history and the rest
+is covered by later dreams. A link already there is left alone and a
+statement is never turned into a proposal. Every record is checked with the
+same resolver the agent reads links with before the link is written, so a
+record the agent was not given is not linked. A link the person took off a
+page is kept in `agent_record_link_dismissal` and not made again, until the
+person makes it by hand. There is no separate button: "Dream now" runs it.
+
+The agent reaches all of it through the memory tool: `links` (a page's
+records, each read under the grant), `backlinks` (the pages linked to a
+record), `link` and `unlink` with `record`. `get` of a person's page
+includes the linked card when its book is granted. The same operations are
+in GraphQL (`ListAgentRecordLinks`, `ReadRecordMemoryLinks`,
+`LinkAgentRecord`, `UnlinkAgentRecord`, `SetAgentNodeContact`, and
+`recordLinks` and `evidenceRecords` on `AgentGraphPage`) and the command
+line (`teanode agent memory links|backlinks|link --record|unlink
+--record|contact`).
+
 ## Traceable
 
 Every write files a revision against the page: what kind of change, who

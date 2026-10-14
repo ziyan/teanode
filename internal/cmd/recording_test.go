@@ -8,7 +8,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
@@ -114,6 +117,56 @@ func TestCompatiblePlaybackDownloadPreservesDestinationOnIntegrityFailure(test *
 				}
 			} else if readError != nil || !bytes.Equal(storedBytes, content) {
 				test.Fatal("verified compatible audio was not published")
+			}
+		}
+	}
+}
+
+func TestRecordingSpeakerConfirmOffersMeAndImportNeedsNoTitle(test *testing.T) {
+	var speakerConfirm *cli.Command
+	for _, command := range recordingActionCommands() {
+		if command.Name == "speaker-confirm" {
+			speakerConfirm = command
+		}
+	}
+	if speakerConfirm == nil {
+		test.Fatal("there is no speaker-confirm command")
+	}
+	var temporaryName *cli.Command
+	for _, command := range recordingActionCommands() {
+		if command.Name == "temporary-speaker-name" {
+			temporaryName = command
+		}
+	}
+	if temporaryName == nil {
+		test.Fatal("there is no temporary-speaker-name command")
+	}
+	flagNames := map[string]bool{}
+	for _, flag := range temporaryName.Flags {
+		flagNames[flag.Names()[0]] = true
+	}
+	for _, expected := range []string{"recording-id", "speaker-label", "confirmed-name", "me"} {
+		if !flagNames[expected] {
+			test.Fatal("temporary-speaker-name has no --" + expected + " flag")
+		}
+	}
+	hasMe := false
+	for _, flag := range speakerConfirm.Flags {
+		if flag.Names()[0] == "me" {
+			_, isBoolean := flag.(*cli.BoolFlag)
+			hasMe = isBoolean
+		}
+	}
+	if !hasMe {
+		test.Fatal("speaker-confirm has no --me flag")
+	}
+	for _, command := range NewRecordingCommand().Commands {
+		if command.Name != "import" {
+			continue
+		}
+		for _, flag := range command.Flags {
+			if flag.Names()[0] == "title" && !strings.Contains(flag.(*cli.StringFlag).Usage, "optional") {
+				test.Fatal("the import title is not optional")
 			}
 		}
 	}

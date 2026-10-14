@@ -337,6 +337,22 @@
         }
       }
     },
+    "%@ is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已关闭"
+          }
+        }
+      }
+    },
     "%@ is offered again": {
       "localizations": {
         "ja": {
@@ -925,6 +941,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@：剩余 %@%%"
+          }
+        }
+      }
+    },
+    "%@: no longer available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@：利用できなくなりました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@：已不存在"
           }
         }
       }
@@ -3649,6 +3681,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有一个工具调用无法读取，已重新请求。"
+          }
+        }
+      }
+    },
+    "A voice you named before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以前名前を付けた声"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你之前命名过的声音"
           }
         }
       }
@@ -6421,6 +6469,22 @@
         }
       }
     },
+    "Ask your agent, call it, or start a recording.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントに質問したり、通話したり、録音を始めたりできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向你的助手提问、与它通话，或开始录音。"
+          }
+        }
+      }
+    },
     "Ask your agent…": {
       "localizations": {
         "ja": {
@@ -6785,6 +6849,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "允许的突发次数"
+          }
+        }
+      }
+    },
+    "Attended": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出席"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出席"
           }
         }
       }
@@ -7637,6 +7717,22 @@
         }
       }
     },
+    "Calendar event": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历事件"
+          }
+        }
+      }
+    },
     "Calendars and address books": {
       "localizations": {
         "ja": {
@@ -7825,6 +7921,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无法联系到你的助手"
+          }
+        }
+      }
+    },
+    "Cannot reach your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法连接到你的服务器"
           }
         }
       }
@@ -8113,6 +8225,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "更改预算"
+          }
+        }
+      }
+    },
+    "Change contact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更换联系人"
           }
         }
       }
@@ -8981,6 +9109,38 @@
         }
       }
     },
+    "Confirm": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认"
+          }
+        }
+      }
+    },
+    "Confirm link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを確定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认关联"
+          }
+        }
+      }
+    },
     "Confirmed": {
       "localizations": {
         "ja": {
@@ -9125,6 +9285,22 @@
         }
       }
     },
+    "Connecting to your server": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに接続しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接你的服务器"
+          }
+        }
+      }
+    },
     "Connecting…": {
       "localizations": {
         "ja": {
@@ -9189,6 +9365,38 @@
         }
       }
     },
+    "Contact card": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先カード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系人卡片"
+          }
+        }
+      }
+    },
+    "Contact linked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先をリンクしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关联联系人"
+          }
+        }
+      }
+    },
     "Contact removed": {
       "localizations": {
         "ja": {
@@ -9217,6 +9425,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "联系人已保存"
+          }
+        }
+      }
+    },
+    "Contact unlinked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先のリンクを外しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消关联联系人"
           }
         }
       }
@@ -14085,6 +14309,38 @@
         }
       }
     },
+    "From your agent's memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの記憶から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你的助手记忆"
+          }
+        }
+      }
+    },
+    "From your contacts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自你的联系人"
+          }
+        }
+      }
+    },
     "General": {
       "localizations": {
         "ja": {
@@ -14577,6 +14833,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "群组声明"
+          }
+        }
+      }
+    },
+    "Has attachments": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添付ファイルあり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有附件"
           }
         }
       }
@@ -15701,6 +15973,22 @@
         }
       }
     },
+    "In memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモリー内"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在记忆中"
+          }
+        }
+      }
+    },
     "In no group, so they can sign in and read nothing.": {
       "localizations": {
         "ja": {
@@ -15729,6 +16017,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "队列中"
+          }
+        }
+      }
+    },
+    "In the dashboard, open Settings, then Phones, and choose Connect a phone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダッシュボードで設定を開き、電話を選んで、電話を接続を選びます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在仪表板中打开设置，再打开手机，选择连接手机。"
           }
         }
       }
@@ -16305,6 +16609,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "它只会显示这一次，请现在输入到邮件程序中。"
+          }
+        }
+      }
+    },
+    "It is turned off for this server. Turn it on in Services.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。「サービス」でオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。可在“服务”中开启。"
+          }
+        }
+      }
+    },
+    "It is turned off for this server. Whoever manages your TeaNode server can turn it on.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーではオフになっています。TeaNode サーバーの管理者がオンにできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器已关闭此功能。管理你的 TeaNode 服务器的人可以将其开启。"
           }
         }
       }
@@ -17077,6 +17413,22 @@
         }
       }
     },
+    "Last Week": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先週"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上周"
+          }
+        }
+      }
+    },
     "Later": {
       "localizations": {
         "ja": {
@@ -17537,6 +17889,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "请在控制台关联银行：设置 › 助手 › 财务。"
+          }
+        }
+      }
+    },
+    "Link a contact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先をリンク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关联联系人"
+          }
+        }
+      }
+    },
+    "Link confirmed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを確定しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已确认关联"
+          }
+        }
+      }
+    },
+    "Link contact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先をリンク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关联联系人"
+          }
+        }
+      }
+    },
+    "Link removed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを外しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除关联"
           }
         }
       }
@@ -18769,6 +19185,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "记忆检查已开启。"
+          }
+        }
+      }
+    },
+    "Mentioned in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "言及されている"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被提及于"
           }
         }
       }
@@ -20133,6 +20565,22 @@
         }
       }
     },
+    "New recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新录音"
+          }
+        }
+      }
+    },
     "New reminder": {
       "localizations": {
         "ja": {
@@ -20805,6 +21253,22 @@
         }
       }
     },
+    "No longer available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用できなくなりました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已不存在"
+          }
+        }
+      }
+    },
     "No machine sends through this domain yet.": {
       "localizations": {
         "ja": {
@@ -20961,6 +21425,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未选择任何通知"
+          }
+        }
+      }
+    },
+    "No page in memory is linked to this passage yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この一節にリンクされたメモリーのページはまだありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有记忆页面与这一段关联。"
           }
         }
       }
@@ -23445,6 +23925,22 @@
         }
       }
     },
+    "Open Services": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サービスを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开服务"
+          }
+        }
+      }
+    },
     "Open Settings": {
       "localizations": {
         "ja": {
@@ -23637,6 +24133,22 @@
         }
       }
     },
+    "Opens the page in memory": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモリー内のページを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开记忆中的页面"
+          }
+        }
+      }
+    },
     "Optional": {
       "localizations": {
         "ja": {
@@ -23649,6 +24161,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "可选"
+          }
+        }
+      }
+    },
+    "Or connect with a code from your dashboard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "またはダッシュボードのコードで接続"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "或使用仪表板中的代码连接"
           }
         }
       }
@@ -23723,6 +24251,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "組織"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组织"
+          }
+        }
+      }
+    },
+    "Organized": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主催"
           }
         },
         "zh-Hans": {
@@ -24085,6 +24629,38 @@
         }
       }
     },
+    "Pages in the agent's memory that mention what was said here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで話された内容に触れている、エージェントのメモリー内のページです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体记忆中提到这里所说内容的页面。"
+          }
+        }
+      }
+    },
+    "Paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払った"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "付款方"
+          }
+        }
+      }
+    },
     "Paperwork": {
       "localizations": {
         "ja": {
@@ -24241,6 +24817,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "密码已设置"
+          }
+        }
+      }
+    },
+    "Paste link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを貼り付け"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴链接"
           }
         }
       }
@@ -25909,6 +26501,22 @@
         }
       }
     },
+    "Reading…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込み中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取…"
+          }
+        }
+      }
+    },
     "Receipt": {
       "localizations": {
         "ja": {
@@ -25937,6 +26545,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "收据已删除"
+          }
+        }
+      }
+    },
+    "Receipt for": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応するレシート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对应的收据"
           }
         }
       }
@@ -26437,6 +27061,22 @@
         }
       }
     },
+    "Reminder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提醒"
+          }
+        }
+      }
+    },
     "Reminder added": {
       "localizations": {
         "ja": {
@@ -26657,6 +27297,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除凭据"
+          }
+        }
+      }
+    },
+    "Remove link": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リンクを外す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除关联"
           }
         }
       }
@@ -29797,6 +30453,22 @@
         }
       }
     },
+    "Server address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーのアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器地址"
+          }
+        }
+      }
+    },
     "Server and agents": {
       "localizations": {
         "ja": {
@@ -30645,6 +31317,22 @@
         }
       }
     },
+    "Sign in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サインイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录"
+          }
+        }
+      }
+    },
     "Sign in again": {
       "localizations": {
         "ja": {
@@ -30657,6 +31345,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新登录"
+          }
+        }
+      }
+    },
+    "Sign in to your TeaNode server.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode サーバーにサインインします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录你的 TeaNode 服务器。"
           }
         }
       }
@@ -31701,6 +32405,22 @@
         }
       }
     },
+    "Spoke in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "発言"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发言于"
+          }
+        }
+      }
+    },
     "Standing instructions": {
       "localizations": {
         "ja": {
@@ -32149,6 +32869,22 @@
         }
       }
     },
+    "Stop playback": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生を停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播放"
+          }
+        }
+      }
+    },
     "Stop publishing this logo?": {
       "localizations": {
         "ja": {
@@ -32549,6 +33285,22 @@
         }
       }
     },
+    "Suggestions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候補"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建议"
+          }
+        }
+      }
+    },
     "Summaries": {
       "localizations": {
         "ja": {
@@ -32769,6 +33521,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "跟随系统"
+          }
+        }
+      }
+    },
+    "TeaNode could not ask your server what it runs. Check the connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はサーバーで動いているサービスを確認できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法向你的服务器查询其运行的服务。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "The answer from the transcription service was lost, so this recording was not transcribed. Transcribing it again is a new paid request.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしサービスからの応答が失われたため、この録音は文字起こしされていません。もう一度文字起こしすると、新たな有料リクエストになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转写服务的响应丢失了，因此这段录音没有转写。重新转写会是一次新的付费请求。"
+          }
+        }
+      }
+    },
+    "This Month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今月"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本月"
+          }
+        }
+      }
+    },
+    "This Week": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今週"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周"
           }
         }
       }
@@ -36424,6 +37240,22 @@
         }
       }
     },
+    "Transaction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "交易"
+          }
+        }
+      }
+    },
     "Transactions": {
       "localizations": {
         "ja": {
@@ -36980,6 +37812,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消链接"
+          }
+        }
+      }
+    },
+    "Unlink contact": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先のリンクを外す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消关联联系人"
           }
         }
       }
@@ -37988,6 +38836,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "无本人时后台工作唤醒次数 (20)"
+          }
+        }
+      }
+    },
+    "Was paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払いを受けた"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收款方"
           }
         }
       }
@@ -39992,6 +40856,22 @@
         }
       }
     },
+    "Wrote": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差出人"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撰写"
+          }
+        }
+      }
+    },
     "Yes": {
       "localizations": {
         "ja": {
@@ -41144,6 +42024,22 @@
         }
       }
     },
+    "from a calendar event": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自一个日历事件"
+          }
+        }
+      }
+    },
     "from a chat": {
       "localizations": {
         "ja": {
@@ -41240,6 +42136,54 @@
         }
       }
     },
+    "from a receipt": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "レシートから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自一张收据"
+          }
+        }
+      }
+    },
+    "from a recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自一段录音"
+          }
+        }
+      }
+    },
+    "from a reminder": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リマインダーから"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自一个提醒"
+          }
+        }
+      }
+    },
     "from a repository": {
       "localizations": {
         "ja": {
@@ -41252,6 +42196,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "来自代码库"
+          }
+        }
+      }
+    },
+    "from a transaction": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取引から"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自一笔交易"
           }
         }
       }
@@ -43604,6 +44564,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "この話者グループに適用"
+          }
+        }
+      }
+    },
+    "Everything this speaker says in this recording, now and later, gets the name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この話者がこの録音で話すことすべてに、今も今後もこの名前が付きます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此说话人在本次录音中现在和之后说的每一句话，都会使用这个名字。"
           }
         }
       }
@@ -46252,6 +47228,864 @@
           "stringUnit": {
             "state": "translated",
             "value": "設定を読み込めませんでした"
+          }
+        }
+      }
+    },
+    "Cannot load recordings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を読み込めません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载录音"
+          }
+        }
+      }
+    },
+    "Copied.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピーしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制。"
+          }
+        }
+      }
+    },
+    "Copy this audio or video attachment into your account's recording library. The attachment remains in the conversation. Your agent names the recording once it is transcribed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この音声または動画の添付ファイルをアカウントの録音ライブラリにコピーします。添付ファイルは会話に残ります。文字起こしが終わると、エージェントが録音に名前を付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将此音频或视频附件复制到你账户的录音库。附件仍保留在对话中。录音转录完成后，你的助手会为它命名。"
+          }
+        }
+      }
+    },
+    "Correct text": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テキストを修正"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更正文字"
+          }
+        }
+      }
+    },
+    "Details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详情"
+          }
+        }
+      }
+    },
+    "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音していることを全員が知っている状態にしてください。TeaNode は音を出さず、サーバーがアップロードを確認するまで音声をこのiPhoneに保存します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请让所有人都知道你正在录音。TeaNode 不会出声，音频会保留在这部手机上，直到服务器确认上传完成。"
+          }
+        }
+      }
+    },
+    "Input level": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力レベル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入音量"
+          }
+        }
+      }
+    },
+    "Knowledge source": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ナレッジソース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "知识来源"
+          }
+        }
+      }
+    },
+    "Leave the title empty and TeaNode names the recording again from its transcript.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトルを空にすると、TeaNode が文字起こしから録音に改めて名前を付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题留空后，TeaNode 会根据转录内容重新为录音命名。"
+          }
+        }
+      }
+    },
+    "Loading recordings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を読み込み中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载录音"
+          }
+        }
+      }
+    },
+    "Marked as you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたとして記録しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已标记为你。"
+          }
+        }
+      }
+    },
+    "Not me": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分ではない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是我"
+          }
+        }
+      }
+    },
+    "Passage corrected.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この箇所を修正しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更正这段文字。"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停"
+          }
+        }
+      }
+    },
+    "Play": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再生"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放"
+          }
+        }
+      }
+    },
+    "Play from here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここから再生"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从这里播放"
+          }
+        }
+      }
+    },
+    "Plays the recording from here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここから録音を再生します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从这里开始播放录音"
+          }
+        }
+      }
+    },
+    "Position in the recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音内の位置"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音中的位置"
+          }
+        }
+      }
+    },
+    "Ready": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備完了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已就绪"
+          }
+        }
+      }
+    },
+    "Recording deleted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音已删除。"
+          }
+        }
+      }
+    },
+    "Removed from this phone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末から削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从此手机移除。"
+          }
+        }
+      }
+    },
+    "Saved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存。"
+          }
+        }
+      }
+    },
+    "Saved. TeaNode will upload the recording, then name it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存しました。TeaNode が録音をアップロードし、名前を付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存。TeaNode 会上传录音，然后为它命名。"
+          }
+        }
+      }
+    },
+    "Share original": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のファイルを共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享原文件"
+          }
+        }
+      }
+    },
+    "Show the recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示录音"
+          }
+        }
+      }
+    },
+    "Speaker %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "说话人 %@"
+          }
+        }
+      }
+    },
+    "Speaker named.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "話者に名前を付けました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已命名说话人。"
+          }
+        }
+      }
+    },
+    "Start a recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音を開始"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始录音"
+          }
+        }
+      }
+    },
+    "Tap + to start a recording or import audio or video.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "＋をタップして録音を開始するか、音声や動画を取り込みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻点 + 开始录音，或导入音频或视频。"
+          }
+        }
+      }
+    },
+    "Transcribe": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录"
+          }
+        }
+      }
+    },
+    "Transcribe again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度文字起こしする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新转录"
+          }
+        }
+      }
+    },
+    "Transcribing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし中です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在转录。"
+          }
+        }
+      }
+    },
+    "Transcription": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录"
+          }
+        }
+      }
+    },
+    "Transcription details": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしの詳細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转录详情"
+          }
+        }
+      }
+    },
+    "Uploading %lld%%": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード中 %lld%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传 %lld%%"
+          }
+        }
+      }
+    },
+    "Waiting for network": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネットワークを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待网络"
+          }
+        }
+      }
+    },
+    "Opens TeaNode and starts recording.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode を開いて録音を開始します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开 TeaNode 并开始录音。"
+          }
+        }
+      }
+    },
+    "Record": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音"
+          }
+        }
+      }
+    },
+    "%lld speakers": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld speaker"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld speakers"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 位说话人"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 位说话人"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 人の話者"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 人の話者"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续"
+          }
+        }
+      }
+    },
+    "Mic mode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクモード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风模式"
+          }
+        }
+      }
+    },
+    "Standard": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标准"
+          }
+        }
+      }
+    },
+    "Voice Isolation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "声を分離"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音突显"
+          }
+        }
+      }
+    },
+    "Wide Spectrum": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワイドスペクトル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宽谱"
+          }
+        }
+      }
+    },
+    "Recording while capturing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制中"
+          }
+        }
+      }
+    },
+    "Live transcription while recording": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音中のライブ文字起こし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制时实时转写"
+          }
+        }
+      }
+    },
+    "Show words as they are spoken while a recording is being captured. The audio is also streamed through this server to the voice provider's realtime transcription, billed by the minute to the person's agent, and the words are kept only until the saved audio has been transcribed with speakers.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音している間、話した言葉をその場で表示します。音声はこのサーバーを通じて音声プロバイダーのリアルタイム文字起こしにも送られ、利用者のエージェントに分単位で課金されます。文字は、保存された音声の話者分離つき文字起こしが終わるまでだけ保持されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制过程中实时显示所说的话。音频还会经本服务器传到语音提供方的实时转写，按分钟计入用户代理的用量，转写出的文字只保留到保存的音频完成说话人区分转写为止。"
+          }
+        }
+      }
+    },
+    "Accurate words in recordings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音の言葉をより正確に"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录音文字更准确"
+          }
+        }
+      }
+    },
+    "Transcribe each speaker's turn a second time with the voice transcription model, which is given the names and terms from the person's own data and spells them better. Speakers and times do not change, and a person's corrections still win. The audio is charged a second time to the person's agent.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各話者の発言を音声文字起こしモデルでもう一度文字起こしします。利用者自身のデータにある名前や用語を渡すので、綴りがより正確になります。話者と時刻は変わらず、利用者の修正が引き続き優先されます。音声は利用者のエージェントにもう一度課金されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用语音转写模型把每位说话人的发言再转写一遍，并提供来自用户自身数据的名称和术语，使拼写更准确。说话人和时间不变，用户的修改仍然优先。音频会再向用户的代理计费一次。"
+          }
+        }
+      }
+    },
+    "Could not resume. Open TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開できませんでした。TeaNode を開いてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法继续录制。请打开 TeaNode。"
+          }
+        }
+      }
+    },
+    "Mic mode: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクモード: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风模式：%@"
           }
         }
       }

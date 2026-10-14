@@ -117,6 +117,11 @@ type MemoryOperation interface {
 	UpdateCalendar(calendar *models.Calendar) (*models.Calendar, error)
 	DeleteCalendar(userId, calendarId string) error
 	ListCalendarObjects(calendarId string) ([]*models.CalendarObject, error)
+
+	// ListCalendarObjectsStartingBetween are the objects whose first
+	// occurrence starts in the window, earliest first and at most the
+	// limit, for a pass that must not read a whole calendar.
+	ListCalendarObjectsStartingBetween(calendarId string, from, until time.Time, limit int) ([]*models.CalendarObject, error)
 	GetCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	LockCalendarObject(calendarId, objectId string) (*models.CalendarObject, error)
 	GetCalendarObjectByUID(calendarId, uid string) (*models.CalendarObject, error)

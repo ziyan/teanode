@@ -19,7 +19,7 @@ func recordingActionCommands() []*cli.Command {
 		{"availability", "show recording processing availability without making a provider call", nil},
 		{"models", "inspect known transcription model capabilities (requires server-management permission)", nil},
 		{"passage-offset", "locate an exact historical citation without loading the whole transcript", []string{"transcript-run-id", "passage-start-ms", "passage-end-ms"}},
-		{"timeline", "read the latest completed original versions in absolute chronological order", []string{"recording-id", "segment-offset", "page-size"}},
+		{"timeline", "read the latest completed original versions in absolute chronological order; liveUtterances are words heard during a capture that no completed version covers yet", []string{"recording-id", "segment-offset", "page-size"}},
 		{"versions", "inspect immutable transcript versions and processing status", []string{"recording-id"}},
 		{"transcript", "read a transcript page, request-local speakers and provider usage evidence", []string{"transcript-run-id", "segment-offset", "page-size"}},
 		{"process", "request initial paid transcription using the configured audio model", []string{"media-id", "client-run-id"}},
@@ -27,18 +27,21 @@ func recordingActionCommands() []*cli.Command {
 		{"cancel", "stop further processing without claiming an in-flight call was refunded", []string{"transcript-run-id"}},
 		{"retry", "resume this version when the server can safely continue its work", []string{"transcript-run-id"}},
 		{"speakers", "inspect confirmed identities, correction intervals and voice references", []string{"recording-id"}},
-		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
+		{"speaker-names", "offer names for a speaker: voices already named, then people in your agent's memory, then your contacts", []string{"search-text", "page-size"}},
+		{"speaker-confirm", "apply a name supplied by the user to a passage or request-local group; --me says the speaker is you", []string{"recording-id", "expected-source-generation", "client-correction-id", "confirmed-name", "me", "attempt-id", "local-speaker-id", "passage-start-ms", "passage-end-ms"}},
+		{"temporary-speaker-name", "name a speaker of a recording still being captured (label such as \"Speaker 1\" from the timeline) using the name supplied by the user; the name applies to every piece; --me says the speaker is you", []string{"recording-id", "speaker-label", "confirmed-name", "me"}},
 		{"speaker-rename", "rename an identity linked to this recording using the name supplied by the user", []string{"recording-id", "expected-source-generation", "speaker-identity-id", "confirmed-name"}},
-		{"speaker-reset", "remove a manual speaker correction", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
+		{"speaker-reset", "remove a manual speaker correction, one passage of a naming", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
+		{"speaker-undo", "undo a naming whole: every passage it named goes back to the speaker's label, given any one of its corrections", []string{"recording-id", "expected-source-generation", "speaker-correction-id"}},
 		{"reference-delete", "revoke a curated voice reference without deleting the original", []string{"recording-id", "expected-source-generation", "voice-reference-id", "force"}},
-		{"text-corrections", "inspect immutable recognized-text correction history", []string{"recording-id"}},
+		{"text-corrections", "inspect immutable recognized-text correction history, each with its origin (person or glossary) and the glossary term it spells", []string{"recording-id"}},
 		{"text-edit", "apply exact recognized-text correction supplied by the user without a provider call", []string{"recording-id", "expected-source-generation", "segment-id", "client-correction-id", "corrected-transcript-text"}},
-		{"text-reset", "remove a recognized-text correction without rewriting the generated version", []string{"recording-id", "expected-source-generation", "text-correction-id"}},
+		{"text-reset", "remove a recognized-text correction (a glossary fix is not made again) without rewriting the generated version", []string{"recording-id", "expected-source-generation", "text-correction-id"}},
 		{"resume-learning", "resume source reading from current evidence without paid transcription", []string{"recording-id", "expected-source-generation"}},
 		{"learning", "inspect automatic knowledge ingestion and processed passage counts", []string{"recording-id"}},
 		{"source-schedule", "change periodic source reading; an explicit empty cron disables it", []string{"knowledge-source-id", "source-cron"}},
 		{"reference-invalidations", "inspect attribution made uncertain by revoked voice references", []string{"recording-id"}},
-		{"metadata", "edit the title and occurrence date (empty date means unknown)", []string{"recording-id", "expected-source-generation", "recording-title", "recorded-at"}},
+		{"metadata", "edit the title and occurrence date (empty date means unknown; leave --recording-title out to keep the title, give it empty to have it generated again)", []string{"recording-id", "expected-source-generation", "recording-title", "recorded-at"}},
 		{"import-attachment", "import a delivered audio/video attachment within the attachment delivery limit", []string{"attachment-id", "client-recording-id", "recording-title", "media-id"}},
 	}
 	commands := make([]*cli.Command, 0, len(definitions))
@@ -48,6 +51,8 @@ func recordingActionCommands() []*cli.Command {
 			switch flagName {
 			case "force":
 				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "perform this explicit operation without asking first"})
+			case "me":
+				flags = append(flags, &cli.BoolFlag{Name: flagName, Usage: "this speaker is you; the name defaults to your display name and no other speaker stays marked as you"})
 			case "expected-source-generation", "passage-start-ms", "passage-end-ms":
 				flags = append(flags, &cli.Int64Flag{Name: flagName, Usage: "explicit generation or passage bound in milliseconds; -1/-1 selects the request-local speaker group"})
 			case "segment-offset", "page-size":
@@ -73,6 +78,8 @@ func runRecordingAction(ctx context.Context, command *cli.Command) error {
 			continue
 		case "expected-source-generation", "passage-start-ms", "passage-end-ms":
 			inputFields[fieldName] = command.Int64(flagName)
+		case "me":
+			inputFields["is_account_owner"] = command.Bool(flagName)
 		case "segment-offset", "page-size":
 			inputFields[fieldName] = command.Int(flagName)
 		default:

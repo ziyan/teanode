@@ -15,11 +15,14 @@ if let appearanceSuffix = appearanceSuffixes.first(where: { recordingScreenName.
     recordingScreenName = String(recordingScreenName.dropLast(appearanceSuffix.count))
 }
 let expectedMarkersByScreen: [String: [String]] = [
-    "recordings": ["recordings", "ontheserver"],
+    "recordings": ["recordings", "untitledrecording"],
     "recording-compatible-playback": ["compatibleaudiopreview", "originalunchanged"],
     "recording-original-playback": ["useaudiopreview", "sharefulloriginal"],
     "recording-original-preview": ["compatibleaudiopreview", "originalunchanged", "useoriginal", "sharefullaudiopreview"],
-    "recording-detail": ["originalmedia"],
+    "recording-detail": ["layout"],
+    "recording-capture": ["recording", "stop"],
+    // The live words are the newest bubbles, which stay in view at every text size: the last one is still being said.
+    "recording-capture-live": ["recording", "stop", "invitation"],
     "recording-transcript": ["transcript"],
     "recording-version": ["processing"],
     "recording-speakers": ["confirmedspeakers"],

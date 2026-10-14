@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // Prefix is where the current API version is mounted. Everything the
@@ -39,6 +40,10 @@ const (
 	PathRecordingComplete = Prefix + "/recordings/media/{mediaId}/complete"
 	PathRecordingMedia    = Prefix + "/recordings/media/{mediaId}"
 	PathRecordingPlayback = Prefix + "/recordings/media/{mediaId}/playback"
+
+	// PathRecordingLive is the websocket a capture streams its microphone to
+	// for words as they are spoken.
+	PathRecordingLive = Prefix + "/recordings/{recordingId}/live"
 
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
@@ -247,6 +252,17 @@ func PublicPaths() []string {
 		// what it does per address and per phone.
 		PathPushRegistrations, PathPushNotifications,
 	}
+}
+
+// IsRecordingLivePath says whether a path is a recording's live socket,
+// PathRecordingLive with its id filled in. Like PathAgentVoice it is let
+// through the middleware: a phone opens it with its token in the first
+// message, which the handler checks, since a websocket from a phone cannot
+// be counted on to carry a header, and a session cookie is taken only from
+// this server's own pages.
+func IsRecordingLivePath(path string) bool {
+	recordingId, isLive := strings.CutSuffix(strings.TrimPrefix(path, Prefix+"/recordings/"), "/live")
+	return isLive && strings.HasPrefix(path, Prefix+"/recordings/") && recordingId != "" && !strings.Contains(recordingId, "/")
 }
 
 // PublicPrefixes are reachable without the middleware turning them away, for

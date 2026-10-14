@@ -91,6 +91,10 @@ type Agent struct {
 	handlersMutex sync.RWMutex
 	handlers      map[models.AgentJobKind]Handler
 
+	// claimMutex keeps two passes that claim jobs, the tick and a wake, from
+	// each counting the same free slots.
+	claimMutex sync.Mutex
+
 	// slots bounds how many runs execute at once on this instance.
 	slots chan struct{}
 
@@ -105,6 +109,7 @@ type Agent struct {
 	// a request; lastScavenge is when old rows were last swept.
 	operations                           OperationsFactory
 	lastScavenge                         time.Time
+	lastRecordingSummaryId               string
 	lastRecordingMediaId                 string
 	lastRecordingReferenceReconciliation time.Time
 	lastDescribe                         time.Time
@@ -278,6 +283,9 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobRemember, self.runRemember)
 	self.Register(models.AgentJobIngest, self.runIngest)
 	self.Register(models.AgentJobRecording, self.runRecording)
+	self.Register(models.AgentJobRecordingSummary, self.runRecordingSummary)
+	self.Register(models.AgentJobRecordingTerms, self.runRecordingTerms)
+	self.Register(models.AgentJobRecordingKnowledge, self.runRecordingKnowledge)
 	self.Register(models.AgentJobDream, self.runDream)
 	self.Register(models.AgentJobSpeakFirst, self.runSpeakFirst)
 	self.Register(models.AgentJobEvaluate, self.runEvaluation)
@@ -467,7 +475,9 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueRemembering(ctx, now)
 	self.queueIngestion(ctx, now)
 	self.queueRecordings(ctx)
+	self.queueRecordingSummaries(ctx)
 	self.queueRecordingSpeakerCuration(ctx)
+	self.queueRecordingKnowledgeSync(ctx)
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
 	self.queueWatching(ctx, now)
@@ -476,6 +486,15 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.sweepBrowsers()
 	self.sweepSessions()
 
+	return self.claimJobs(ctx, now)
+}
+
+// claimJobs takes the jobs that are due, up to the slots that are free, and
+// starts them.
+func (self *Agent) claimJobs(ctx context.Context, now time.Time) error {
+	configuration := self.settings.Configuration()
+	self.claimMutex.Lock()
+	defer self.claimMutex.Unlock()
 	free := cap(self.slots) - len(self.slots)
 	if free <= 0 {
 		return nil
@@ -527,6 +546,23 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 		}(job)
 	}
 	return nil
+}
+
+// claimSoon claims what is due without waiting for the next tick, for a job
+// that has just been made due: a piece of a recording waiting for the piece
+// before it should start when that one is published, not up to a tick later.
+func (self *Agent) claimSoon() {
+	if self.ctx == nil || self.ctx.Err() != nil || !self.settings.Configuration().Agent.Enabled {
+		return
+	}
+	self.waitGroup.Add(1)
+	go func() {
+		defer deferutil.Recover()
+		defer self.waitGroup.Done()
+		if err := self.claimJobs(self.ctx, time.Now()); err != nil && self.ctx.Err() == nil {
+			log.Warningf("cannot claim the jobs that just became due: %s", err)
+		}
+	}()
 }
 
 // Deferral is what a handler returns when a run must wait — for a budget,

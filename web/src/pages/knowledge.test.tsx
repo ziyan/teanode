@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { graphql } from '../api'
 import { en } from '../i18n/en'
 import type { Key } from '../i18n/i18n'
-import { DocumentsDialog, moreFoundInGraph, useSearchPages } from './knowledge'
+import { DocumentsDialog, Provenance, moreFoundInGraph, useSearchPages } from './knowledge'
 
 vi.mock('../api', () => ({ graphql: vi.fn(), askAgentAbout: vi.fn() }))
 vi.mock('../i18n/i18n', () => ({
@@ -127,7 +127,10 @@ it('reads the next passages by their offset in place of the first, and the first
   fireEvent.change(screen.getByPlaceholderText('knowledge.documents.placeholder'), { target: { value: 'harbor' } })
   fireEvent.click(screen.getByRole('button', { name: 'knowledge.documents.search' }))
   expect(await screen.findByText('Passage 1 of document01')).toBeTruthy()
-  expect(execute).toHaveBeenLastCalledWith(expect.stringContaining('SearchAgentDocuments'), { query: 'harbor', first: 20 })
+  expect(execute).toHaveBeenLastCalledWith(expect.stringContaining('SearchAgentDocuments'), {
+    query: 'harbor',
+    first: 20,
+  })
   expect((screen.getByRole('button', { name: 'table.previous' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
@@ -156,4 +159,50 @@ it('pages through the search and starts again for other words', async () => {
   expect(result.current.pageIndex).toBe(0)
   await waitFor(() => expect(result.current.found?.nodes.map((node) => node.id)).toEqual(['mooring-0']))
   expect(execute).toHaveBeenLastCalledWith(expect.any(String), { query: 'mooring', first: 60 })
+})
+
+const factWithEvidence = (kind: string) => ({
+  id: 'fact-1',
+  number: 3,
+  kind: 'fact',
+  text: 'Met the fixture guest.',
+  evidence: [{ kind, id: 'record-1', quote: '' }],
+  audiences: [],
+  createdAt: '2026-01-01T00:00:00Z',
+})
+
+const evidenceRecord = (overrides: Record<string, unknown> = {}) => ({
+  factId: 'fact-1',
+  evidenceIndex: 0,
+  recordKind: 'recording_passage',
+  recordId: 'recording-1',
+  passageStartMS: 1500,
+  passageEndMS: 4000,
+  transcriptRunId: 'run-1',
+  recordTitle: 'Fixture review',
+  dashboardPath: '/recordings/recording-1?startMS=1500&endMS=4000&version=run-1',
+  isUnavailable: false,
+  ...overrides,
+})
+
+it("opens the record a fact's evidence names, at the passage, and says when it is gone", () => {
+  const { rerender } = render(
+    <MemoryRouter>
+      <Provenance fact={factWithEvidence('recording_passage')} records={[evidenceRecord()]} />
+    </MemoryRouter>,
+  )
+  const link = screen.getByRole('link', { name: 'Fixture review' })
+  expect(link.getAttribute('href')).toBe('/recordings/recording-1?startMS=1500&endMS=4000&version=run-1')
+  expect(screen.getByText('knowledge.from.recording_passage')).toBeTruthy()
+
+  rerender(
+    <MemoryRouter>
+      <Provenance
+        fact={factWithEvidence('mail')}
+        records={[evidenceRecord({ recordKind: 'mail', isUnavailable: true })]}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.getByText(/memoryLinks\.unavailable/)).toBeTruthy()
 })

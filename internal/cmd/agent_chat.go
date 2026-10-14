@@ -35,6 +35,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringFlag{Name: "effort", Usage: "how hard the model thinks before it answers: low, medium or high; the agent's own choice by default"},
 			&cli.BoolFlag{Name: "quiet", Usage: "print the answer only, not what the agent did on the way"},
 			&cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the agent with the message; a picture is shown to it, a text file read to it, anything else named"},
+			&cli.StringSliceFlag{Name: "recording", Usage: "the id of a recording to ask about, as recording list shows them; repeat it for more than one"},
 			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
 		},
 		Action: runAgentAsk,
@@ -242,6 +243,11 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 			return fmt.Errorf("--reply-to names a message of an existing conversation; a new one has none")
 		}
 		references = append(references, client.AgentReference{AgentMessageID: replyTo})
+	}
+	for _, recordingId := range command.StringSlice("recording") {
+		if recordingId = strings.TrimSpace(recordingId); recordingId != "" {
+			references = append(references, client.AgentReference{RecordingID: recordingId})
+		}
 	}
 	return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort")}, command.Bool("json"), command.Bool("quiet"))
 }

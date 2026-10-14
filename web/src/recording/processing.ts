@@ -32,8 +32,19 @@ export interface TranscriptSegment {
   effectiveSpeakerIdentityId: string
   effectiveSpeakerName: string
   hasUserConfirmedSpeaker: boolean
+  // isRecognizedSpeaker is a speaker the transcription named after a voice sample.
+  isRecognizedSpeaker?: boolean
   hasUnalignedSpeakerCorrection: boolean
   appliedSpeakerCorrectionId: string
+  isAccountOwner?: boolean
+  // temporarySpeakerLabel ("Speaker 1") is a speaker of a capture in progress that nobody has named yet.
+  temporarySpeakerLabel?: string
+}
+export interface LiveUtterance {
+  utteranceId: string
+  utteranceStartMS: number
+  utteranceEndMS: number
+  transcriptText: string
 }
 export interface TranscriptionAttempt {
   id: string
@@ -61,6 +72,7 @@ export interface TranscriptTimeline {
   sourceGeneration: number
   segments: TranscriptSegment[]
   transcriptRuns: TranscriptRun[]
+  temporarySpeakers?: { speakerLabel: string; speakerIdentityId: string }[]
   segmentCount: number
   hasMoreSegments: boolean
 }
@@ -145,7 +157,9 @@ export async function recordingOperation<T>(
 // Only the server's canonical projection can confirm a segment speaker.
 // Equal-time overlapping speakers and ambiguous reruns remain unconfirmed.
 export function confirmedSegmentName(segment: TranscriptSegment): string | null {
-  return segment.hasUserConfirmedSpeaker && segment.effectiveSpeakerIdentityId && segment.effectiveSpeakerName
+  return (segment.hasUserConfirmedSpeaker || segment.isRecognizedSpeaker) &&
+    segment.effectiveSpeakerIdentityId &&
+    segment.effectiveSpeakerName
     ? segment.effectiveSpeakerName
     : null
 }

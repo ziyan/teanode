@@ -135,6 +135,7 @@ function answer(receipts: () => FinanceReceipt[]) {
         throw new Error('isUndated cannot be given with from or to')
       }
       const listed = receipts()
+        .filter((receipt) => !variables?.receiptId || receipt.id === variables.receiptId)
         .filter((receipt) => !variables?.isUnmatched || receipt.receiptMatches.length === 0)
         .filter((receipt) => !variables?.isUndated || !receipt.purchasedOn)
         .filter((receipt) => !(variables?.from || variables?.to) || receipt.purchasedOn)
@@ -193,6 +194,28 @@ function renderSection(address = '/finance/receipts') {
 }
 
 describe('the Receipts section', () => {
+  it('opens the receipt a link from memory names, read by its identifier, and forgets the address when it closes', async () => {
+    answer(() => [floristReceipt, hardwareReceipt])
+    renderSection('/finance/receipts?receipt=receipt-hardware&page=3')
+    const dialog = await screen.findByRole('alertdialog', { name: 'Birch Street Hardware' })
+    expect(calledWith('FinanceReceipts').some((variables) => variables?.receiptId === 'receipt-hardware')).toBe(true)
+    // The record's own view says which pages of memory it is in.
+    await waitFor(() =>
+      expect(
+        execute.mock.calls.some(
+          ([document, variables]) =>
+            document.includes('ReadRecordMemoryLinks') &&
+            (variables as { recordKind: string; recordId: string }).recordKind === 'finance_receipt' &&
+            (variables as { recordId: string }).recordId === 'receipt-hardware',
+        ),
+      ).toBe(true),
+    )
+    expect(shownSearch).toContain('receipt=receipt-hardware')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'common.close' }))
+    await waitFor(() => expect(shownSearch).not.toContain('receipt='))
+    expect(shownSearch).toContain('page=3')
+  })
+
   it('lists receipts with their check, what they explain and their source', async () => {
     answer(() => [floristReceipt, hardwareReceipt])
     renderSection()

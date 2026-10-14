@@ -31,6 +31,8 @@ import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { KnowledgeGraph } from './knowledgeExplore'
+import { LinkedRecords } from './knowledgeRecords'
+import { RECORD_LINK_FIELDS, RecordKindIcon, useRecordKindLabel, type RecordLink } from '../memoryLinks'
 // The set of things to tick, the one the access pages tick roles and
 // permissions with. Four audiences is the short end of what it is for,
 // and it is the only control here that is a list of ticks.
@@ -56,6 +58,9 @@ const PAGE = `query ($path: String!) {
     children { id path kind name summary }
     attachments { documentId name contentType channel path }
     contact { id name emails organization }
+    recordLinks { ${RECORD_LINK_FIELDS} }
+    recordLinkCount
+    evidenceRecords { factId evidenceIndex recordKind recordId passageStartMS passageEndMS transcriptRunId recordTitle dashboardPath isUnavailable }
   }
 }`
 
@@ -343,6 +348,26 @@ type Page = {
   children: Node[]
   attachments: Attachment[]
   contact?: { id: string; name: string; emails: string[]; organization: string } | null
+  // The person's own records this page is linked to (the first part of them,
+  // recordLinkCount in all) and the records the facts' evidence names.
+  recordLinks: RecordLink[]
+  recordLinkCount: number
+  evidenceRecords: EvidenceRecord[]
+}
+
+// A record one piece of a fact's evidence names, found again so that the
+// source opens the record itself.
+type EvidenceRecord = {
+  factId: string
+  evidenceIndex: number
+  recordKind: string
+  recordId: string
+  passageStartMS: number
+  passageEndMS: number
+  transcriptRunId: string
+  recordTitle: string
+  dashboardPath: string
+  isUnavailable: boolean
 }
 
 // PAGE_SIZE is how many pages a folder shows at a time, and how many facts
@@ -2063,7 +2088,8 @@ function PageView({
             {t('knowledge.contact', {
               name: page.contact.name,
               detail: page.contact.emails[0] || page.contact.organization || '',
-            })}
+            })}{' '}
+            <Link to={`/contacts?contact=${encodeURIComponent(page.contact.id)}`}>{t('memoryLinks.openContact')}</Link>
           </p>
         ) : null}
         {node.summary ? (
@@ -2152,7 +2178,13 @@ function PageView({
                 {fact.inferred ? <Tag value={t('knowledge.inferred')} tone="warn" /> : null}
               </>
             }
-            subtitle={<Provenance fact={fact} attachments={page.attachments} />}
+            subtitle={
+              <Provenance
+                fact={fact}
+                attachments={page.attachments}
+                records={(page.evidenceRecords ?? []).filter((record) => record.factId === fact.id)}
+              />
+            }
             actions={
               <div className="row-actions">
                 <Tooltip label={t('knowledge.editFact')}>
@@ -2216,6 +2248,23 @@ function PageView({
           </ul>
         ) : null}
       </SettingsSection>
+
+      {/* The person's own records this page is about: the card, mail, events,
+          transactions and recordings, each opening the record. Guesses are
+          marked and can be confirmed or taken away. */}
+      <LinkedRecords
+        path={node.path}
+        kind={node.kind}
+        contactId={node.contactId}
+        initialLinks={page.recordLinks ?? []}
+        linkCount={page.recordLinkCount ?? 0}
+        onChanged={() => {
+          setLinked((before) => before + 1)
+          onChanged()
+        }}
+        onDone={onDone}
+        onFailed={onFailed}
+      />
 
       {/* The drawing beside the card is this page's neighbourhood; the one
           behind the action is whatever is reached from it, with the room to
@@ -2476,8 +2525,17 @@ function reflectionKindOf(fact: Fact): string {
   return ['pattern', 'tension', 'trend', 'risk', 'question'].includes(reflectionKind) ? reflectionKind : ''
 }
 
-function Provenance({ fact, attachments }: { fact: Fact; attachments?: Attachment[] }) {
+export function Provenance({
+  fact,
+  attachments,
+  records = [],
+}: {
+  fact: Fact
+  attachments?: Attachment[]
+  records?: EvidenceRecord[]
+}) {
   const { t } = useTranslation()
+  const recordKindLabel = useRecordKindLabel()
   const first = fact.evidence[0]
   const cited = attachmentsCitedBy(fact, attachments)
   // A citation with no quote on an inferred fact is the write-time check
@@ -2495,6 +2553,22 @@ function Provenance({ fact, attachments }: { fact: Fact; attachments?: Attachmen
       </span>
       {cited.map((attachment) => (
         <AttachmentEvidence key={attachment.documentId} attachment={attachment} />
+      ))}
+      {/* Where the evidence is one of the person's own records, the record
+          itself opens, at the passage for a recording. */}
+      {records.map((record) => (
+        <span key={`${record.evidenceIndex}-${record.recordId}-${record.passageStartMS}`} className="knowledge-record-evidence">
+          <RecordKindIcon recordKind={record.recordKind} size={14} />
+          {record.isUnavailable || !record.dashboardPath.startsWith('/') ? (
+            <span className="muted">
+              {recordKindLabel(record.recordKind)}: {t('memoryLinks.unavailable')}
+            </span>
+          ) : (
+            <Link to={record.dashboardPath}>
+              {record.recordTitle || recordKindLabel(record.recordKind)}
+            </Link>
+          )}
+        </span>
       ))}
     </>
   )

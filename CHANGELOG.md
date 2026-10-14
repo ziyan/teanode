@@ -6,6 +6,54 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.2] - 2026-10-14
+
+### Fixed
+
+- A recording's conversation on the dashboard no longer splits into one-word bubbles between unnamed speakers. (#469)
+
+## [0.154.1] - 2026-10-14
+
+### Changed
+
+- On the iPhone, actions in settings lists look like standard rows, and the sign-in and empty screens use standard buttons. (#467)
+
+## [0.154.0] - 2026-10-13
+
+### Added
+
+- Live words while recording on the iPhone, the dashboard and the command line. (#466)
+- Memory pages link to the mail, events, contacts, recordings and receipts they come from. (#466)
+- Not me and Clear name take back a speaker naming. (#466)
+
+### Changed
+
+- Recordings are transcribed several pieces at once, so a backlog clears faster than real time. (#466)
+- Naming a speaker on a long recording returns at once; memory catches up in the background. (#466)
+- Playing a bubble stops at its end, with a floating player to pause it. (#466)
+
+## [0.153.0] - 2026-10-13
+
+### Added
+
+- The agent names and summarizes each recording once it is transcribed. (#460)
+- Mark a speaker as yourself; your passages show on the right of the conversation. (#460)
+
+### Changed
+
+- The recordings page is a table and a recording reads as a conversation, with passage actions in a menu and advanced details in a drawer. (#460)
+
+## [0.152.3] - 2026-10-13
+
+### Changed
+
+- The iPhone's connect page asks for your server's address first, with Scan code and Paste link for a code from the dashboard. (#464)
+
+### Fixed
+
+- On the iPhone, signing in with a password opens the server's sign-in page instead of waiting on Connecting. (#464)
+- On the iPhone, opening a connect link from Safari connects instead of failing with an error. (#464)
+
 ## [0.152.2] - 2026-10-13
 
 ### Changed

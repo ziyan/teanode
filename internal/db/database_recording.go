@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -24,7 +25,7 @@ type RecordingOperation interface {
 	CreateRecording(*models.Recording) (*models.Recording, error)
 	GetRecording(userId, recordingId string) (*models.Recording, error)
 	LockRecording(userId, recordingId string) (*models.Recording, error)
-	ListRecordings(userId, beforeId string, limit int) ([]*models.Recording, error)
+	ListRecordings(userId, beforeId, searchText string, limit int) ([]*models.Recording, error)
 	UpdateRecordingCapture(userId, recordingId string, expectedGeneration int64, captureState models.RecordingCaptureState, durationMS int64, gaps []models.RecordingGap) (*models.Recording, error)
 	CreateRecordingMedia(userId string, media *models.RecordingMedia, maximumMediaBytes, maximumAccountBytes int64) (*models.RecordingMedia, error)
 	GetRecordingMedia(userId, mediaId string) (*models.RecordingMedia, error)
@@ -40,20 +41,28 @@ type RecordingOperation interface {
 }
 
 type recordingModel struct {
-	ID                    string
-	UserID                *string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	RecordedAt            *time.Time
-	ClientRecordingID     string
-	RecordingTitle        string
-	RecordingOrigin       models.RecordingOrigin
-	RecordingCaptureState models.RecordingCaptureState
-	TimelineDurationMS    int64
-	CaptureGaps           []models.RecordingGap `gorm:"serializer:json"`
-	SourceGeneration      int64
-	DeletedAt             *time.Time
-	CleanupCompletedAt    *time.Time
+	ID                   string
+	UserID               *string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	RecordedAt           *time.Time
+	ClientRecordingID    string
+	RecordingTitle       string
+	RecordingTitleSource models.RecordingTitleSource
+	RecordingSummary     string
+	// RecordingSummaryQueuedAt is when generation was last queued; recordings
+	// without it are the ones the startup sweep still has to offer once.
+	RecordingSummaryQueuedAt *time.Time
+	RecordingOrigin          models.RecordingOrigin
+	RecordingCaptureState    models.RecordingCaptureState
+	TimelineDurationMS       int64
+	CaptureGaps              []models.RecordingGap `gorm:"serializer:json"`
+	SourceGeneration         int64
+	// KnowledgeSyncedGeneration is the source generation the recording's
+	// knowledge was last synced at. It is null until a change asks for a sync.
+	KnowledgeSyncedGeneration *int64
+	DeletedAt                 *time.Time
+	CleanupCompletedAt        *time.Time
 }
 
 func (recordingModel) TableName() string { return "recording" }
@@ -72,7 +81,7 @@ func recordingFromModel(row *recordingModel) *models.Recording {
 		recordedAtUTC := recordedAt.UTC()
 		recordedAt = &recordedAtUTC
 	}
-	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
+	return &models.Recording{ID: row.ID, UserID: optionalString(row.UserID), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), RecordedAt: recordedAt, ClientRecordingID: row.ClientRecordingID, RecordingTitle: row.RecordingTitle, RecordingTitleSource: row.RecordingTitleSource, RecordingSummary: row.RecordingSummary, RecordingOrigin: row.RecordingOrigin, RecordingCaptureState: row.RecordingCaptureState, TimelineDurationMS: row.TimelineDurationMS, CaptureGaps: row.CaptureGaps, SourceGeneration: row.SourceGeneration, DeletedAt: row.DeletedAt}
 }
 
 func recordingMediaFromModel(row *recordingMediaModel) *models.RecordingMedia {
@@ -129,7 +138,12 @@ func (self *transaction) CreateRecording(recording *models.Recording) (*models.R
 	if recording.RecordingOrigin == models.RecordingOriginCapture {
 		captureState = models.RecordingCaptureActive
 	}
-	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: strings.TrimSpace(recording.RecordingTitle), RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
+	recordingTitle := strings.TrimSpace(recording.RecordingTitle)
+	recordingTitleSource := models.RecordingTitleSourceNone
+	if recordingTitle != "" {
+		recordingTitleSource = models.RecordingTitleSourceUser
+	}
+	row := recordingModel{ID: newID(), UserID: new(recording.UserID), CreatedAt: time.Now().UTC().Truncate(time.Microsecond), UpdatedAt: time.Now().UTC().Truncate(time.Microsecond), ClientRecordingID: recording.ClientRecordingID, RecordingTitle: recordingTitle, RecordingTitleSource: recordingTitleSource, RecordedAt: recording.RecordedAt, RecordingOrigin: recording.RecordingOrigin, RecordingCaptureState: captureState, CaptureGaps: []models.RecordingGap{}, SourceGeneration: 1}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}
@@ -163,7 +177,12 @@ func (self *transaction) LockRecording(userId, recordingId string) (*models.Reco
 	return self.recordingOwned(userId, recordingId, true)
 }
 
-func (self *transaction) ListRecordings(userId, beforeId string, limit int) ([]*models.Recording, error) {
+// ListRecordings pages through the account's recordings, newest first. A
+// search keeps those whose title, summary or transcribed or corrected text
+// contains it, ignoring case. The transcribed text is the words a person reads
+// in the latest completed version of each original: the accurate words where
+// the second pass produced them, else the first pass's.
+func (self *transaction) ListRecordings(userId, beforeId, searchText string, limit int) ([]*models.Recording, error) {
 	if userId == "" {
 		return nil, ErrNotFound
 	}
@@ -174,6 +193,21 @@ func (self *transaction) ListRecordings(userId, beforeId string, limit int) ([]*
 	query := self.tx.Where("user_id = ? AND deleted_at IS NULL", userId)
 	if beforeId != "" {
 		query = query.Where("id < ?", beforeId)
+	}
+	if searchText = strings.TrimSpace(searchText); searchText != "" {
+		if len(searchText) > 200 {
+			return nil, ErrInvalidArguments
+		}
+		pattern := "%" + escapeLike(searchText) + "%"
+		query = query.Where(`recording_title ILIKE @pattern OR recording_summary ILIKE @pattern
+			OR EXISTS (SELECT 1 FROM recording_transcript_segment JOIN recording_transcript_run ON recording_transcript_run.id = recording_transcript_segment.recording_transcript_run_id
+				WHERE recording_transcript_run.recording_id = recording.id AND recording_transcript_run.recording_processing_state = @complete
+					AND recording_transcript_run.id IN (SELECT DISTINCT ON (latest.recording_media_id) latest.id FROM recording_transcript_run latest
+						WHERE latest.recording_id = recording.id AND latest.recording_processing_state = @complete ORDER BY latest.recording_media_id, latest.version_number DESC)
+					AND COALESCE(NULLIF(recording_transcript_segment.accurate_transcript_text, ''), recording_transcript_segment.transcript_text) ILIKE @pattern)
+			OR EXISTS (SELECT 1 FROM recording_transcript_text_correction
+				WHERE recording_transcript_text_correction.recording_id = recording.id AND NOT recording_transcript_text_correction.is_removed AND recording_transcript_text_correction.corrected_transcript_text ILIKE @pattern)`,
+			sql.Named("pattern", pattern), sql.Named("complete", models.RecordingProcessingComplete))
 	}
 	if err := query.Order("id DESC").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
@@ -230,7 +264,17 @@ func (self *transaction) UpdateRecordingCapture(userId, recordingId string, expe
 	if gaps == nil {
 		gaps = []models.RecordingGap{}
 	}
-	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: recording.SourceGeneration + 1, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
+	// Progress while the capture is still running (duration growing, a gap
+	// extending, active and paused switching) leaves the generation alone: a
+	// phone reports it every few seconds, and every speaker or text correction
+	// refuses a stale generation, so bumping it would make naming a speaker
+	// during capture fail. Only the move to stopped (or an import's own state)
+	// changes what the transcript is built from.
+	sourceGeneration := recording.SourceGeneration
+	if captureState == models.RecordingCaptureImported || (captureState == models.RecordingCaptureStopped && recording.RecordingCaptureState != models.RecordingCaptureStopped) {
+		sourceGeneration++
+	}
+	row := recordingModel{RecordingCaptureState: captureState, TimelineDurationMS: durationMS, CaptureGaps: gaps, SourceGeneration: sourceGeneration, UpdatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 	if err := self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Select("recording_capture_state", "timeline_duration_ms", "capture_gaps", "source_generation", "updated_at").Updates(&row).Error; err != nil {
 		return nil, err
 	}
@@ -264,7 +308,7 @@ func (self *transaction) CreateRecordingMedia(userId string, media *models.Recor
 	var previous recordingMediaModel
 	err = self.tx.Where("recording_id = ? AND client_media_id = ?", media.RecordingID, media.ClientMediaID).Take(&previous).Error
 	if err == nil {
-		if previous.OriginalSHA256 != media.OriginalSHA256 || previous.OriginalSizeBytes != media.OriginalSizeBytes || previous.TimelineStartMS != media.TimelineStartMS || previous.MediaDurationMS != media.MediaDurationMS || previous.OriginalContentType != media.OriginalContentType {
+		if previous.OriginalSHA256 != media.OriginalSHA256 || previous.OriginalSizeBytes != media.OriginalSizeBytes || previous.TimelineStartMS != media.TimelineStartMS || !sameRecordingMediaDuration(recording.RecordingOrigin, previous.MediaDurationMS, media.MediaDurationMS) || previous.OriginalContentType != media.OriginalContentType {
 			return nil, ErrAlreadyExists
 		}
 		return recordingMediaFromModel(&previous), nil
@@ -393,7 +437,8 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 
 	if err != nil {
 		return nil, false, err
 	}
-	if _, err := self.LockRecording(userId, media.RecordingID); err != nil {
+	source, err := self.LockRecording(userId, media.RecordingID)
+	if err != nil {
 		return nil, false, err
 	}
 	media, err = self.GetRecordingMedia(userId, mediaId)
@@ -424,7 +469,30 @@ func (self *transaction) CompleteRecordingMedia(userId, mediaId, verifiedSha256 
 	}
 	media.RecordingUploadState = models.RecordingUploadComplete
 	media.VerifiedAt = &verifiedAt
+	if err := self.extendImportedRecordingDuration(source); err != nil {
+		return nil, false, err
+	}
 	return media, true, nil
+}
+
+// extendImportedRecordingDuration sets an imported recording's length to the
+// end of its last verified original on the timeline, when that is longer than
+// the stored length. Only a capture reports its own length, so without this an
+// import would show no length at all. A capture is left alone.
+func (self *transaction) extendImportedRecordingDuration(source *models.Recording) error {
+	if source.RecordingOrigin == models.RecordingOriginCapture {
+		return nil
+	}
+	var endMS int64
+	if err := self.tx.Model(&recordingMediaModel{}).Where("recording_id = ? AND recording_upload_state = ?", source.ID, models.RecordingUploadComplete).Select("COALESCE(MAX(timeline_start_ms + media_duration_ms), 0)").Scan(&endMS).Error; err != nil {
+		return err
+	}
+	if endMS <= source.TimelineDurationMS {
+		return nil
+	}
+	// The length is filled in, not edited, so it does not advance the
+	// source generation a person's edit is checked against.
+	return self.tx.Model(&recordingModel{}).Where("id = ?", source.ID).Updates(map[string]any{"timeline_duration_ms": endMS, "updated_at": time.Now().UTC().Truncate(time.Microsecond)}).Error
 }
 func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	var owner userModel
@@ -454,8 +522,41 @@ func (self *transaction) DeleteRecording(userId, recordingId string) error {
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
+	// The speakers are forgotten now; their sample bytes are found by the
+	// recording's blob rows, like every other derived byte.
+	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingTemporarySpeakerModel{}).Error; err != nil {
+		return err
+	}
+	if err := self.deleteRecordingLiveUtterances(recordingId); err != nil {
+		return err
+	}
+	if err := self.deleteRecordingRunConversations(recordingId); err != nil {
+		return err
+	}
 	return self.tx.Model(&recordingModel{}).Where("id = ?", recordingId).Updates(map[string]any{"deleted_at": time.Now().UTC().Truncate(time.Microsecond), "source_generation": recording.SourceGeneration + 1}).Error
 }
+
+// deleteRecordingRunConversations deletes the run conversations of the model
+// calls that read the recording's transcript: each stores the prompt it was
+// given, and the prompt carries the transcript, which must not outlive the
+// recording. A run conversation names the recording as its subject. Cleanup
+// does this again, for a job that was still running when the recording was
+// deleted and wrote its conversation after.
+func (self *transaction) deleteRecordingRunConversations(recordingId string) error {
+	var conversationIds []string
+	if err := self.tx.Model(&agentConversationModel{}).
+		Where("kind = ? AND subject_id = ? AND job_kind IN ?", string(models.AgentConversationRun), recordingId, []string{string(models.AgentJobRecordingTerms), string(models.AgentJobRecordingSummary)}).
+		Pluck("id", &conversationIds).Error; err != nil {
+		return err
+	}
+	for _, conversationId := range conversationIds {
+		if err := self.DeleteAgentConversation(conversationId); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (self *transaction) ListRecordingsForCleanup(limit int) ([]*models.Recording, error) {
 	if limit < 1 || limit > 100 {
 		return nil, ErrInvalidArguments
@@ -493,6 +594,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	if err := self.ReconcileDeletedRecordingKnowledge(recordingId); err != nil {
 		return err
 	}
+	if err := self.deleteRecordingRunConversations(recordingId); err != nil {
+		return err
+	}
 	var incompleteCount int64
 	if err := self.tx.Model(&recordingMediaModel{}).Where("recording_id = ? AND cleanup_next_part_index < part_count", recordingId).Count(&incompleteCount).Error; err != nil {
 		return err
@@ -510,6 +614,9 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingKnowledgeDocumentModel{}).Error; err != nil {
 		return err
 	}
+	if err := self.deleteRecordingLiveUtterances(recordingId); err != nil {
+		return err
+	}
 	if err := self.tx.Where("recording_id = ?", recordingId).Delete(&recordingMediaModel{}).Error; err != nil {
 		return err
 	}
@@ -522,4 +629,15 @@ func (self *transaction) FinishRecordingCleanup(recordingId string) error {
 // RecordingPartFileID keeps even uncommitted part writes discoverable for cleanup.
 func RecordingPartFileID(mediaId string, partIndex int) string {
 	return fmt.Sprintf("recording-part-%d-%s", partIndex, mediaId)
+}
+
+// sameRecordingMediaDuration says whether a repeated media registration
+// names the length already stored. An import is registered without a length
+// and the server fills it in from the file, so a retry that still says zero
+// is the same registration.
+func sameRecordingMediaDuration(recordingOrigin models.RecordingOrigin, storedDurationMS, requestedDurationMS int64) bool {
+	if storedDurationMS == requestedDurationMS {
+		return true
+	}
+	return recordingOrigin != models.RecordingOriginCapture && requestedDurationMS == 0
 }

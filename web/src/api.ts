@@ -1072,6 +1072,10 @@ export interface AgentReference {
   currencyCode?: string
   merchantName?: string
   description?: string
+  // One of the person's recordings, with the title its chip shows. The
+  // server fills the title in again from the stored row.
+  recordingId?: string
+  recordingTitle?: string
   // A message of the conversation the turn answers: its id when the
   // drawer has one, whose it was, and what it said. The server reads the
   // words again from the stored message.

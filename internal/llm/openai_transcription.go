@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -89,6 +90,13 @@ func (self *openAI) Transcribe(ctx context.Context, request *TranscriptionReques
 	}
 	if request.Language != "" {
 		if err := writeField("language", request.Language); err != nil {
+			return nil, err
+		}
+	}
+	// The diarizing model does not accept a prompt, as far as is documented:
+	// sending one there would fail the whole request instead of helping.
+	if request.VocabularyPrompt != "" && !strings.Contains(strings.ToLower(request.Model), "diarize") {
+		if err := writeField("prompt", request.VocabularyPrompt); err != nil {
 			return nil, err
 		}
 	}
@@ -172,7 +180,7 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 	if decoded.Text == nil || (capabilities.HasSegmentTimestamps && decoded.Segments == nil) || (decoded.Text != nil && strings.TrimSpace(*decoded.Text) != "" && capabilities.HasSegmentTimestamps && len(decoded.Segments) == 0) {
 		return nil, fmt.Errorf("llm: transcription returned text without required segments")
 	}
-	normalized := &TranscriptionResponse{Model: request.Model, TranscriptText: *decoded.Text, Segments: []TranscriptSegment{}, ProviderResponseJSON: append(json.RawMessage(nil), responseBytes...)}
+	normalized := &TranscriptionResponse{Model: request.Model, TranscriptText: joinSpelledLetters(*decoded.Text), Segments: []TranscriptSegment{}, ProviderResponseJSON: append(json.RawMessage(nil), responseBytes...)}
 	if decoded.Duration != nil {
 		if *decoded.Duration < 0 || *decoded.Duration >= float64(math.MaxInt64)/1000 {
 			return nil, fmt.Errorf("llm: transcription returned invalid duration")
@@ -200,7 +208,7 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 			endMS = request.MediaDurationMS
 			startMS = min(startMS, endMS)
 		}
-		normalized.Segments = append(normalized.Segments, TranscriptSegment{SegmentID: fmt.Sprintf("segment-%d", segmentIndex), SpeakerID: segment.Speaker, StartMS: startMS, EndMS: endMS, TranscriptText: segment.Text})
+		normalized.Segments = append(normalized.Segments, TranscriptSegment{SegmentID: fmt.Sprintf("segment-%d", segmentIndex), SpeakerID: segment.Speaker, StartMS: startMS, EndMS: endMS, TranscriptText: joinSpelledLetters(segment.Text)})
 	}
 	if len(decoded.Usage) > 0 && string(decoded.Usage) != "null" {
 		var reported struct {
@@ -250,4 +258,16 @@ const transcriptionTimeout = 10 * time.Minute
 // context bounds it instead (see Transcribe).
 func (self *openAI) transcriptionClient() *http.Client {
 	return &http.Client{Transport: self.client.Transport, CheckRedirect: self.client.CheckRedirect, Jar: self.client.Jar}
+}
+
+// spelledLetters is a word said letter by letter as the diarizing model writes
+// it, each letter followed by an underscore: "P_L_C_".
+var spelledLetters = regexp.MustCompile(`\b(?:[A-Za-z0-9]_){2,}[A-Za-z0-9]?_?`)
+
+// joinSpelledLetters writes a word said letter by letter as one word, "PLC"
+// for "P_L_C_", which is how a person writes it and what a search finds.
+func joinSpelledLetters(text string) string {
+	return spelledLetters.ReplaceAllStringFunc(text, func(spelled string) string {
+		return strings.ReplaceAll(spelled, "_", "")
+	})
 }

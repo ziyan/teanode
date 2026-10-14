@@ -150,7 +150,8 @@ struct ConversationView: View {
                         Text("\(model.earlierCount) earlier messages")
                     }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
                 .frame(maxWidth: .infinity)
                 .onAppear {
                     if hasPersonScrolled { loadEarlier(scroller) }
@@ -193,6 +194,8 @@ struct ConversationView: View {
                     ReferenceBar(subject: subject, from: reference.from ?? "", onCancel: drop)
                 } else if let path = reference.path {
                     ReferenceStrip(systemImage: "brain", title: reference.name ?? path, detail: path, onCancel: drop)
+                } else if reference.recordingId != nil {
+                    ReferenceStrip(systemImage: "waveform", title: reference.label, detail: "", onCancel: drop)
                 } else if reference.financeTransactionId != nil {
                     ReferenceStrip(
                         systemImage: "creditcard", title: reference.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reference.description ?? "",
@@ -982,7 +985,7 @@ struct PersonBubble: View {
                         }
                 }
                 ForEach(line.references, id: \.self) { reference in
-                    Label(reference.label, systemImage: reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
+                    Label(reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

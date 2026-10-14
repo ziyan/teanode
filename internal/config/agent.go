@@ -107,6 +107,9 @@ type Agent struct {
 	// and each finished utterance is sent as an ordinary turn.
 	Voice AgentVoice `yaml:"voice"`
 
+	// Recording is how a recording still being captured is handled.
+	Recording AgentRecording `yaml:"recording"`
+
 	// MCP declares servers speaking the Model Context Protocol whose tools
 	// join the catalog.
 	MCP AgentMCP `yaml:"mcp"`
@@ -907,6 +910,36 @@ type AgentVoice struct {
 	// first words soon: on a long conversation a smaller model starts
 	// speaking a second or more before a larger one.
 	AskModel string `yaml:"askModel,omitempty"`
+}
+
+// AgentRecording is what the server does for a recording while it is being
+// captured.
+type AgentRecording struct {
+	// IsLiveTranscriptionEnabled says whether a phone or browser capturing
+	// a recording may stream its audio for words as they are spoken, a
+	// second transcription beside the speaker-separated one that is made of
+	// the saved audio. It is billed by the minute to the agent, so an
+	// operator who does not want that turns it off. Unset is on.
+	IsLiveTranscriptionEnabled *bool `yaml:"isLiveTranscriptionEnabled,omitempty"`
+
+	// IsAccurateWordsEnabled says whether each speaker's turn found by the
+	// speaker-separating model is transcribed a second time by the plain
+	// transcription model of the voice settings, which takes the person's
+	// vocabulary as a prompt and spells names and terms better. Speakers
+	// and times stay the first pass's. It is a second charge for the same
+	// audio, so an operator who does not want that turns it off. Unset is
+	// on.
+	IsAccurateWordsEnabled *bool `yaml:"isAccurateWordsEnabled,omitempty"`
+}
+
+// IsAccurateWordsOn resolves the unset IsAccurateWordsEnabled to on.
+func (self *AgentRecording) IsAccurateWordsOn() bool {
+	return self.IsAccurateWordsEnabled == nil || *self.IsAccurateWordsEnabled
+}
+
+// IsLiveTranscriptionOn resolves the unset IsLiveTranscriptionEnabled to on.
+func (self *AgentRecording) IsLiveTranscriptionOn() bool {
+	return self.IsLiveTranscriptionEnabled == nil || *self.IsLiveTranscriptionEnabled
 }
 
 // The defaults of the voice settings.

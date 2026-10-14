@@ -771,7 +771,7 @@ struct PendingChangeSection: View {
     var body: some View {
         if model.pending != nil {
             Section {
-                PendingChangeContent(model: model)
+                PendingChangeContent(model: model, isInRow: true)
             }
         }
     }
@@ -780,30 +780,55 @@ struct PendingChangeSection: View {
 /// PendingChangeContent says which change is in doubt, with its two ways out.
 struct PendingChangeContent: View {
     let model: CalendarModel
+    /// Whether the content is the rows of a list section: its two actions are then one row each,
+    /// as in Settings, and otherwise a pair of capsule buttons of equal width.
+    var isInRow = false
     @State private var isWorking = false
 
     var body: some View {
         if let pending = model.pending {
-            VStack(alignment: .leading, spacing: 10) {
-                Label {
-                    Text("“\(pending.summary)” may not have been saved: the answer did not come back. Try it again, or stop it.")
-                } icon: {
-                    Image(systemName: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
-                }
-                .font(.callout)
-                HStack {
-                    Button("Try again") {
-                        work { await model.retryPending() }
-                    }
-                    .buttonStyle(.glassProminent)
-                    Button("Stop", role: .destructive) {
-                        work { await model.stopPending() }
-                    }
-                    .buttonStyle(.glass)
+            if isInRow {
+                pendingLabel(pending)
+                Button("Try again") {
+                    work { await model.retryPending() }
                 }
                 .disabled(isWorking)
+                Button("Stop", role: .destructive) {
+                    work { await model.stopPending() }
+                }
+                .disabled(isWorking)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    pendingLabel(pending)
+                    HStack {
+                        Button {
+                            work { await model.retryPending() }
+                        } label: {
+                            Text("Try again").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button(role: .destructive) {
+                            work { await model.stopPending() }
+                        } label: {
+                            Text("Stop").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                    .disabled(isWorking)
+                }
             }
         }
+    }
+
+    private func pendingLabel(_ pending: CalendarChange) -> some View {
+        Label {
+            Text("“\(pending.summary)” may not have been saved: the answer did not come back. Try it again, or stop it.")
+        } icon: {
+            Image(systemName: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+        }
+        .font(.callout)
     }
 
     private func work(_ action: @MainActor @escaping () async -> Void) {
@@ -1111,6 +1136,7 @@ struct EventEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isSaving = false
     @State private var isConfirmingDelete = false
+    @State private var memory = InMemoryModel()
 
     var body: some View {
         NavigationStack {
@@ -1148,6 +1174,7 @@ struct EventEditor: View {
                     TextField("Notes", text: $draft.notes, axis: .vertical)
                         .lineLimit(3...)
                 }
+                InMemorySection(model: memory)
                 if draft.eventId != nil {
                     Section {
                         Button("Delete event", role: .destructive) {
@@ -1158,6 +1185,7 @@ struct EventEditor: View {
             }
             .navigationTitle(draft.eventId == nil ? String(localized: "New event") : String(localized: "Edit event"))
             .navigationBarTitleDisplayMode(.inline)
+            .inMemory(memory, recordKind: "calendar_event", recordId: draft.eventId ?? "")
             .onChange(of: draft.startsAt) { previous, startsAt in
                 // The end moves with the start, keeping how long it lasts.
                 draft.endsAt = max(startsAt, draft.endsAt.addingTimeInterval(startsAt.timeIntervalSince(previous)))

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { useSession } from '../session'
@@ -12,6 +12,7 @@ import { RemindersView } from '../components/reminders'
 import { useQuery } from '../components/useQuery'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
+import { InMemory } from '../memoryLinks'
 
 // The calendar: what somebody has on, and the form for putting something in.
 //
@@ -330,7 +331,10 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // The view and the day are in the address, so that a link to a week is a
   // link to that week and the back button goes where it looks like it goes.
   const serviceCapabilities = useSession().services
-  const requestedView = (parameters.get('view') as View) || 'month'
+  // The reminders address is the reminders list, which a link from the agent's
+  // memory ("/reminders?reminder=...") relies on.
+  const isRemindersAddress = useLocation().pathname.startsWith('/reminders')
+  const requestedView = (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : 'month')
   const view =
     serviceCapabilities?.isCalendarEnabled === false
       ? 'reminders'
@@ -485,6 +489,33 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
       if (generation === openingGeneration.current) setOpening('')
     }
   }
+
+  // A link from the agent's memory names the event in the address: the event
+  // opens, once, as if it had been chosen, and the address forgets it when
+  // the form closes.
+  const linkedEventId = parameters.get('event') ?? ''
+  const linkedEvent = useRef({ id: '', wasShown: false })
+  useEffect(() => {
+    if (!linkedEventId || !calendarId || linkedEvent.current.id === linkedEventId) return
+    linkedEvent.current = { id: linkedEventId, wasShown: false }
+    void edit({ id: linkedEventId, calendarId } as CalendarEvent)
+    // edit is made again on every render; the event is opened once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedEventId, calendarId])
+  useEffect(() => {
+    if (draft && draft.id === linkedEventId) linkedEvent.current.wasShown = true
+    if (!draft && linkedEventId && linkedEvent.current.wasShown) {
+      linkedEvent.current = { id: '', wasShown: false }
+      setParameters(
+        (previous) => {
+          const next = new URLSearchParams(previous)
+          next.delete('event')
+          return next
+        },
+        { replace: true },
+      )
+    }
+  }, [draft, linkedEventId, setParameters])
 
   const found = useMemo(() => events.data?.ListCalendarEvents ?? [], [events.data])
 
@@ -676,7 +707,21 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
         onSelect={(id) => move({ view: id as View })}
       />
 
-      {view === 'reminders' && <RemindersView />}
+      {view === 'reminders' && (
+        <RemindersView
+          focusReminderId={parameters.get('reminder') ?? ''}
+          onFocused={() =>
+            setParameters(
+              (previous) => {
+                const next = new URLSearchParams(previous)
+                next.delete('reminder')
+                return next
+              },
+              { replace: true },
+            )
+          }
+        />
+      )}
 
       {view !== 'reminders' && (
         <div className="calendar-bar">
@@ -1102,6 +1147,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
               onChange={(event) => setDraft({ ...draft, description: event.target.value })}
             />
           </label>
+          {draft.id ? <InMemory recordKind="calendar_event" recordId={draft.id} /> : null}
         </FormDialog>
       )}
 

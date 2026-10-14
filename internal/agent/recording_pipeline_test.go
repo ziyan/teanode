@@ -119,7 +119,7 @@ func TestRecordingUploadDecodeAndWorkerEvidencePipeline(test *testing.T) {
 	})
 	for _, chunk := range chunks {
 		for retryIndex := 0; retryIndex < 2; retryIndex++ {
-			if shouldContinue, err := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files, chunk); err != nil || !shouldContinue {
+			if shouldContinue, err := worker.transcribeRecordingChunk(test.Context(), run, transcriptRun, selection, files, chunk, ""); err != nil || !shouldContinue {
 				test.Fatal("worker could not publish or reuse decoded evidence", err)
 			}
 		}

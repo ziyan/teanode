@@ -16,7 +16,11 @@ afterEach(cleanup)
 const translate = ((key: string, values?: Record<string, string>) =>
   key === 'agentDrawer.financeTransactionReference' && values
     ? `Transaction: ${values.day}, ${values.name}, ${values.amount}`
-    : key) as unknown as Parameters<typeof referenceLabel>[1]
+    : key === 'agentDrawer.recordingReference' && values
+      ? `Recording: ${values.title}`
+      : key === 'recordings.untitled'
+        ? 'Untitled recording'
+        : key) as unknown as Parameters<typeof referenceLabel>[1]
 
 const fee = {
   financeTransactionId: 'transaction-invented',
@@ -37,6 +41,14 @@ it('names a finance transaction by day, merchant and amount', () => {
   expect(referenceLabel({ ...fee, merchantName: undefined }, translate)).toContain('INVENTED BROKERAGE MONTHLY FEE')
   expect(referenceLabel({ itemId: 'item-1', subject: 'Thursday?' }, translate)).toBe('Thursday?')
   expect(referenceLabel({ path: 'people/someone', name: 'Someone' }, translate)).toBe('Someone')
+})
+
+// A recording is named by its title, or as untitled when it has none yet.
+it('names a recording by its title', () => {
+  expect(referenceLabel({ recordingId: 'recording-1', recordingTitle: 'Quarterly planning' }, translate)).toBe(
+    'Recording: Quarterly planning',
+  )
+  expect(referenceLabel({ recordingId: 'recording-1' }, translate)).toBe('Recording: Untitled recording')
 })
 
 // A chip in the box can be taken off, and its button says which chip.

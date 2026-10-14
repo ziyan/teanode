@@ -153,6 +153,8 @@ public struct MailMessage: Codable, Hashable, Sendable {
     public let recipients: [String]
     public let receivedAt: String
     public let size: Int64
+    /// How many attachments the message carries; nil from a server that does not count them.
+    public var attachmentCount: Int? = nil
     public let messageId: String?
     public let listKey: String?
     public let listName: String?
@@ -569,7 +571,7 @@ extension Documents {
         insight { category priority needsReply summary actionItems notes model runId
           proposals { kind because status summary starts ends location allDay name organization title emails phones note contactId } }
         mail {
-          id from fromName sender subject recipients receivedAt size messageId listKey listName logoDomain
+          id from fromName sender subject recipients receivedAt size attachmentCount messageId listKey listName logoDomain
           authenticationResults { spf { result } dkims { result } dmarc { result } spamFilter { score } }
         }
         """

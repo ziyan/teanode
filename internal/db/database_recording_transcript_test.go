@@ -27,6 +27,11 @@ type transcriptFixture struct {
 
 func newTranscriptFixture(test *testing.T) *transcriptFixture {
 	test.Helper()
+	return newTranscriptFixtureOfOrigin(test, models.RecordingOriginAudioImport)
+}
+
+func newTranscriptFixtureOfOrigin(test *testing.T, recordingOrigin models.RecordingOrigin) *transcriptFixture {
+	test.Helper()
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	test.Cleanup(closeDatabase)
 	fixture := &transcriptFixture{database: database, userId: dbtest.CreateUser(test, database, "transcript-owner")}
@@ -39,7 +44,7 @@ func newTranscriptFixture(test *testing.T) *transcriptFixture {
 			test.Fatal(err)
 		}
 		fixture.agentId = agent.ID
-		source, err := transaction.CreateRecording(&models.Recording{UserID: fixture.userId, ClientRecordingID: "source-fixture", RecordingOrigin: models.RecordingOriginAudioImport})
+		source, err := transaction.CreateRecording(&models.Recording{UserID: fixture.userId, ClientRecordingID: "source-fixture", RecordingOrigin: recordingOrigin})
 		if err != nil {
 			test.Fatal(err)
 		}

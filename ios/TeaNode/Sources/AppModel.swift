@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var connection: Connection?
 
     private(set) var services: ServiceCapabilities?
+    /// Whether the server could not be asked which services it runs, and
+    /// none are known yet: the app says so rather than calling them off.
+    private(set) var hasServicesFailedToLoad = false
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -70,6 +73,9 @@ final class AppModel {
     /// A mail a link asks to open.
     var openedMailItemId: String?
 
+    /// A contact card a link from the agent's memory asks to open.
+    var openedContactId: String?
+
     /// An address to write to, from a contact: compose opens with it.
     var composingTo: String?
 
@@ -81,6 +87,9 @@ final class AppModel {
 
     /// Siri asked for a call: the conversation starts one once it can.
     var isCallRequested = false
+
+    /// Siri, the Action button or Control Center asked for a recording: the recordings screen starts one once it can.
+    var isRecordingRequested = false
 
     /// The call under way, for the buttons on its Live Activity.
     weak var currentCall: VoiceCall?
@@ -103,6 +112,33 @@ final class AppModel {
     func show(path: String, once key: String) {
         guard shownNavigations.insert(key).inserted else { return }
         show(path: path)
+    }
+
+    /// Opens one of the person's own records from a link on a page of memory,
+    /// where the dashboard opens it at `dashboardPath`: a mail, a contact
+    /// card, a conversation and a passage of a recording open themselves; an
+    /// event, a reminder, a transaction and a receipt open the part of the
+    /// app they are in.
+    func openRecord(dashboardPath: String) {
+        guard let target = RecordTarget(dashboardPath: dashboardPath) else { return }
+        switch target {
+        case .mail(let itemId):
+            openedMailItemId = itemId
+        case .contact(let id):
+            openedContactId = id
+        case .calendarEvent, .reminder:
+            openedSection = .calendar
+        case .conversation(let id):
+            openedConversationId = id
+        case .financeTransaction:
+            openedFinancePart = .transactions
+            openedSection = .finance
+        case .financeReceipt:
+            openedFinancePart = .receipts
+            openedSection = .finance
+        case .recording(let path):
+            show(path: path)
+        }
     }
 
     /// Goes to the dashboard path the agent's open_page names, checked as
@@ -724,12 +760,16 @@ extension AppModel {
         let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
         let verifiedAccount = await connection.account
         let availableServices = await refreshedServices
-        guard self.connection === connection else { return }
+        // A refresh cancelled as the screens are drawn again, right after
+        // signing in, failed to load nothing: counted as a failure, it
+        // flashed "Cannot reach your server" before another refresh landed.
+        guard !Task.isCancelled, self.connection === connection else { return }
         if hasVerifiedRecordingOwner {
             self.account = verifiedAccount
             self.accounts = (try? store.accounts().accounts) ?? self.accounts
         }
         if let availableServices { self.services = availableServices }
+        hasServicesFailedToLoad = availableServices == nil && services == nil
     }
 
     func isSectionAvailable(_ section: AppSection) -> Bool {

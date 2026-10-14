@@ -26,10 +26,18 @@ public struct RecordingTranscriptSegment: Codable, Hashable, Sendable, Identifia
     public var effectiveSpeakerIdentityId: String? = nil
     public var effectiveSpeakerName: String? = nil
     public var hasUserConfirmedSpeaker: Bool? = nil
+    /// Whether the transcription named this speaker after one of the person's voice samples, without the person confirming it here.
+    public var isRecognizedSpeaker: Bool? = nil
+    /// Whether the confirmed speaker is the person who owns the account, which is the side of the conversation their bubbles sit on.
+    public var isAccountOwner: Bool? = nil
     public var hasUnalignedSpeakerCorrection: Bool? = nil
     public var appliedSpeakerCorrectionId: String? = nil
+    /// "Speaker 1" and so on for a speaker of a capture under way whom nobody has named: the same speaker has the same label in
+    /// every piece. Empty or nil otherwise.
+    public var temporarySpeakerLabel: String? = nil
+    /// The speaker's name when the person confirmed it or a voice sample recognized it; nil while it is only a label.
     public var confirmedSpeakerName: String? {
-        guard hasUserConfirmedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
+        guard hasUserConfirmedSpeaker == true || isRecognizedSpeaker == true, let effectiveSpeakerIdentityId, !effectiveSpeakerIdentityId.isEmpty,
             let effectiveSpeakerName, !effectiveSpeakerName.isEmpty
         else { return nil }
         return effectiveSpeakerName
@@ -59,6 +67,7 @@ public struct RecordingTranscriptView: Codable, Hashable, Sendable {
 public struct RecordingSpeakerIdentity: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let confirmedName: String
+    public var isAccountOwner: Bool? = nil
 }
 
 public struct RecordingSpeakerCorrection: Codable, Hashable, Sendable, Identifiable {
@@ -98,7 +107,7 @@ extension Documents {
         id recordingId recordingMediaId versionNumber recordingProcessingState providerModelName processingErrorMessage createdAt
         """
     static let recordingSpeakersFields = """
-        sourceGeneration speakerIdentities { id confirmedName } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
+        sourceGeneration speakerIdentities { id confirmedName isAccountOwner } speakerCorrections { id recordingMediaId recordingTranscriptionAttemptId
         speakerIdentityId clientCorrectionId localSpeakerId passageStartMS passageEndMS sourceGeneration isRemoved } voiceReferences {
         id speakerIdentityId recordingMediaId recordingTranscriptRunId passageStartMS passageEndMS sourceGeneration isRevoked }
         """
@@ -107,7 +116,7 @@ extension Documents {
         ReadRecordingTranscript(recordingTranscriptRunId: $recordingTranscriptRunId, segmentOffset: $segmentOffset, pageSize: $pageSize)
         { transcriptRun { \(recordingTranscriptRunFields) } segments { id recordingTranscriptRunId recordingTranscriptionAttemptId
         localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText appliedTextCorrectionId
-        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker hasUnalignedSpeakerCorrection
+        hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker isAccountOwner hasUnalignedSpeakerCorrection
         appliedSpeakerCorrectionId } attempts { id recordingAttemptState providerModelName hasProviderUsage estimatedCostAmount
         actualCostAmount currencyCode attemptErrorMessage } segmentCount hasMoreSegments } }
         """
@@ -124,15 +133,24 @@ extension Documents {
         mutation ($recordingTranscriptRunId: String!) { CancelRecordingTranscription(recordingTranscriptRunId:
         $recordingTranscriptRunId) { \(recordingTranscriptRunFields) } }
         """
+    public static let suggestRecordingSpeakerNames = """
+        query ($searchText: String, $pageSize: Int) { SuggestRecordingSpeakerNames(searchText: $searchText, pageSize: $pageSize) {
+        confirmedName speakerNameSource } }
+        """
     public static let readRecordingSpeakers = """
         query ($recordingId: String!) { ReadRecordingSpeakers(recordingId: $recordingId) { \(recordingSpeakersFields) } }
         """
     public static let correctRecordingSpeaker = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $clientCorrectionId: String!, $confirmedName: String!,
-        $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) {
+        $isAccountOwner: Boolean, $recordingTranscriptionAttemptId: String!, $localSpeakerId: String!, $passageStartMS: Int64!, $passageEndMS: Int64!) {
         CorrectRecordingSpeaker(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration, clientCorrectionId:
-        $clientCorrectionId, confirmedName: $confirmedName, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
+        $clientCorrectionId, confirmedName: $confirmedName, isAccountOwner: $isAccountOwner, recordingTranscriptionAttemptId: $recordingTranscriptionAttemptId,
         localSpeakerId: $localSpeakerId, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS) { \(recordingSpeakersFields) } }
+        """
+    public static let nameRecordingTemporarySpeaker = """
+        mutation ($recordingId: String!, $speakerLabel: String!, $confirmedName: String!, $isAccountOwner: Boolean) {
+        NameRecordingTemporarySpeaker(recordingId: $recordingId, speakerLabel: $speakerLabel, confirmedName: $confirmedName, isAccountOwner:
+        $isAccountOwner) }
         """
     public static let renameRecordingSpeaker = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $speakerIdentityId: String!, $confirmedName: String!) {
@@ -142,6 +160,11 @@ extension Documents {
     public static let removeRecordingSpeakerCorrection = """
         mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
         RemoveRecordingSpeakerCorrection(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
+        recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
+        """
+    public static let undoRecordingSpeakerNaming = """
+        mutation ($recordingId: String!, $expectedSourceGeneration: Int64!, $recordingSpeakerCorrectionId: String!) {
+        UndoRecordingSpeakerNaming(recordingId: $recordingId, expectedSourceGeneration: $expectedSourceGeneration,
         recordingSpeakerCorrectionId: $recordingSpeakerCorrectionId) { \(recordingSpeakersFields) } }
         """
     public static let deleteRecordingVoiceReference = """
@@ -193,6 +216,13 @@ extension Connection {
             Documents.cancelRecordingTranscription, variables: ["recordingTranscriptRunId": .string(recordingTranscriptRunId)], as: Answer.self
         ).CancelRecordingTranscription
     }
+    /// Names to offer while a speaker is named: voices already named, then people in the agent's memory, then contacts.
+    public func suggestRecordingSpeakerNames(searchText: String) async throws -> [RecordingSpeakerNameSuggestion] {
+        struct Answer: Decodable, Sendable { let SuggestRecordingSpeakerNames: [RecordingSpeakerNameSuggestion] }
+        return try await execute(
+            Documents.suggestRecordingSpeakerNames, variables: ["searchText": .string(searchText)], as: Answer.self
+        ).SuggestRecordingSpeakerNames
+    }
     public func recordingSpeakers(recordingId: String) async throws -> RecordingSpeakersView {
         struct Answer: Decodable, Sendable { let ReadRecordingSpeakers: RecordingSpeakersView }
         return try await execute(Documents.readRecordingSpeakers, variables: ["recordingId": .string(recordingId)], as: Answer.self)
@@ -200,7 +230,7 @@ extension Connection {
     }
     public func correctRecordingSpeaker(
         recordingId: String, expectedSourceGeneration: Int64, clientCorrectionId: String, confirmedName: String, segment: RecordingTranscriptSegment,
-        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil
+        isWholeGroup: Bool, passageStartMS: Int64? = nil, passageEndMS: Int64? = nil, isAccountOwner: Bool? = nil
     ) async throws -> RecordingSpeakersView {
         struct Answer: Decodable, Sendable { let CorrectRecordingSpeaker: RecordingSpeakersView }
         let response = try await execute(
@@ -208,6 +238,7 @@ extension Connection {
             variables: [
                 "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
                 "clientCorrectionId": .string(clientCorrectionId), "confirmedName": .string(confirmedName),
+                "isAccountOwner": isAccountOwner.map { .bool($0) } ?? .null,
                 "recordingTranscriptionAttemptId": .string(segment.recordingTranscriptionAttemptId),
                 "localSpeakerId": .string(segment.localSpeakerId),
                 "passageStartMS": .number(Double(isWholeGroup ? -1 : passageStartMS ?? segment.segmentStartMS)),
@@ -222,6 +253,19 @@ extension Connection {
             })
         else { throw TeaNodeError.unreadableAnswer }
         return response
+    }
+    /// Names a speaker of a capture under way by the label the timeline shows, in every piece. An empty name with `isAccountOwner`
+    /// means the person who owns the account.
+    public func nameRecordingTemporarySpeaker(recordingId: String, speakerLabel: String, confirmedName: String, isAccountOwner: Bool) async throws {
+        struct Answer: Decodable, Sendable { let NameRecordingTemporarySpeaker: Bool }
+        let answer = try await execute(
+            Documents.nameRecordingTemporarySpeaker,
+            variables: [
+                "recordingId": .string(recordingId), "speakerLabel": .string(speakerLabel), "confirmedName": .string(confirmedName),
+                "isAccountOwner": isAccountOwner ? .bool(true) : .null,
+            ], as: Answer.self
+        ).NameRecordingTemporarySpeaker
+        guard answer else { throw TeaNodeError.unreadableAnswer }
     }
     public func renameRecordingSpeaker(recordingId: String, expectedSourceGeneration: Int64, speakerIdentityId: String, confirmedName: String)
         async throws -> RecordingSpeakersView
@@ -247,6 +291,19 @@ extension Connection {
             ], as: Answer.self
         ).RemoveRecordingSpeakerCorrection
     }
+    /// Takes back the naming a correction belongs to, whole: every passage that naming named returns to its speaker's label.
+    public func undoRecordingSpeakerNaming(recordingId: String, expectedSourceGeneration: Int64, recordingSpeakerCorrectionId: String)
+        async throws -> RecordingSpeakersView
+    {
+        struct Answer: Decodable, Sendable { let UndoRecordingSpeakerNaming: RecordingSpeakersView }
+        return try await execute(
+            Documents.undoRecordingSpeakerNaming,
+            variables: [
+                "recordingId": .string(recordingId), "expectedSourceGeneration": .number(Double(expectedSourceGeneration)),
+                "recordingSpeakerCorrectionId": .string(recordingSpeakerCorrectionId),
+            ], as: Answer.self
+        ).UndoRecordingSpeakerNaming
+    }
     public func deleteRecordingVoiceReference(recordingId: String, expectedSourceGeneration: Int64, recordingVoiceReferenceId: String) async throws
         -> RecordingSpeakersView
     {
@@ -259,4 +316,11 @@ extension Connection {
             ], as: Answer.self
         ).DeleteRecordingVoiceReference
     }
+}
+
+/// RecordingSpeakerNameSuggestion is a name offered for a speaker and where it came from: speaker, memory or contact.
+public struct RecordingSpeakerNameSuggestion: Codable, Hashable, Sendable, Identifiable {
+    public let confirmedName: String
+    public let speakerNameSource: String
+    public var id: String { confirmedName }
 }

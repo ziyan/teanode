@@ -653,7 +653,10 @@ func (self *transaction) ClaimAgentJobs(instance string, limit int, now time.Tim
 }
 
 // backgroundKinds are the long reading jobs backgroundLast puts last.
-var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill), string(models.AgentJobRecording)}
+// backgroundKinds are the long jobs nobody is waiting on. Transcribing a
+// recording is not one: the person who just recorded waits for it, and as
+// background it sat behind two long ingests until one of them finished.
+var backgroundKinds = []string{string(models.AgentJobIngest), string(models.AgentJobDream), string(models.AgentJobBackfill)}
 
 // ClaimAgentJobsKeepingRoom keeps a slot from the reading. Putting what a
 // person waits for first in the queue was not enough: with every slot
@@ -678,6 +681,19 @@ func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backg
 	if backgroundRoom <= 0 {
 		query = query.Where("\"kind\" NOT IN ?", backgroundKinds)
 	}
+	// Several pieces of one capture are transcribed at once, and a backlog
+	// has plenty of them, so they get the same bound: a slot stays for the
+	// triage or the answer somebody is waiting on.
+	var runningRecording int64
+	if err := self.tx.Model(&agentJobModel{}).
+		Where("\"status\" = ? AND \"claimed_by\" = ? AND \"kind\" = ?", string(models.AgentJobRunning), instance, string(models.AgentJobRecording)).
+		Count(&runningRecording).Error; err != nil {
+		return nil, err
+	}
+	recordingRoom := backgroundLimit - int(runningRecording)
+	if recordingRoom <= 0 {
+		query = query.Where("\"kind\" <> ?", string(models.AgentJobRecording))
+	}
 	var due []agentJobModel
 	if err := query.Order(backgroundLast).Order("\"created_at\" ASC").Limit(limit).Find(&due).Error; err != nil {
 		return nil, err
@@ -685,6 +701,12 @@ func (self *transaction) ClaimAgentJobsKeepingRoom(instance string, limit, backg
 	// Of the reading found, only as many as there is room for.
 	kept := due[:0]
 	for _, job := range due {
+		if job.Kind == string(models.AgentJobRecording) {
+			if recordingRoom <= 0 {
+				continue
+			}
+			recordingRoom--
+		}
 		if slices.Contains(backgroundKinds, job.Kind) {
 			if backgroundRoom <= 0 {
 				continue

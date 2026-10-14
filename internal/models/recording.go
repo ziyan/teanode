@@ -10,6 +10,19 @@ const (
 	RecordingGapInterrupted RecordingGapReason = "interrupted"
 )
 
+// RecordingTitleSource says who wrote a recording's title, which decides
+// whether generating a new one may replace it.
+type RecordingTitleSource string
+
+const (
+	// RecordingTitleSourceNone means the recording has no title yet.
+	RecordingTitleSourceNone RecordingTitleSource = "none"
+	// RecordingTitleSourceGenerated means the server named it from the transcript.
+	RecordingTitleSourceGenerated RecordingTitleSource = "generated"
+	// RecordingTitleSourceUser means the person typed it, and it is never replaced.
+	RecordingTitleSourceUser RecordingTitleSource = "user"
+)
+
 // RecordingOrigin distinguishes local capture from imported original media.
 type RecordingOrigin string
 
@@ -55,6 +68,8 @@ type Recording struct {
 	UpdatedAt             time.Time             `json:"updatedAt"`
 	ClientRecordingID     string                `json:"clientRecordingId"`
 	RecordingTitle        string                `json:"recordingTitle"`
+	RecordingTitleSource  RecordingTitleSource  `json:"recordingTitleSource"`
+	RecordingSummary      string                `json:"recordingSummary"`
 	RecordingOrigin       RecordingOrigin       `json:"recordingOrigin"`
 	RecordingCaptureState RecordingCaptureState `json:"recordingCaptureState"`
 	TimelineDurationMS    int64                 `json:"timelineDurationMS"`

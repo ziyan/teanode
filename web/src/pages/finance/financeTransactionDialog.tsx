@@ -8,6 +8,7 @@ import { Tooltip } from '../../components/tooltip'
 import { Select } from '../../components/select'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { InMemory } from '../../memoryLinks'
 import {
   FINANCE_TRANSACTIONS,
   FinanceAccount,
@@ -342,6 +343,7 @@ export function FinanceTransactionDialog({
             onUnmatch={(receipt) => void receipts.unmatch(receipt)}
             onDelete={setDeletingReceipt}
           />
+          <InMemory recordKind="finance_transaction" recordId={financeTransaction.id} />
           <dl className="properties">
             {property(t('finance.providerCategoryPrimary'), financeTransaction.providerCategoryPrimary, 'mono')}
             {property(t('finance.providerCategoryDetailed'), financeTransaction.providerCategoryDetailed, 'mono')}

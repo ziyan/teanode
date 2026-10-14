@@ -102,6 +102,9 @@ type FinanceReceiptOperation interface {
 // FinanceReceiptFilter narrows a listing of finance receipts. Every field
 // is optional.
 type FinanceReceiptFilter struct {
+	// ReceiptID keeps only this receipt: how a link to one receipt opens it.
+	ReceiptID string
+
 	// FinanceTransactionID keeps the receipts matched to this finance
 	// transaction.
 	FinanceTransactionID string
@@ -747,6 +750,9 @@ func (self *transaction) financeReceiptQuery(agentId string, filter *FinanceRece
 	}
 	if filter.IsUndated {
 		query = query.Where(`"purchased_on" IS NULL`)
+	}
+	if receiptId := strings.TrimSpace(filter.ReceiptID); receiptId != "" {
+		query = query.Where(`"id" = ?`, receiptId)
 	}
 	if financeTransactionId := strings.TrimSpace(filter.FinanceTransactionID); financeTransactionId != "" {
 		query = query.Where(`"id" IN (SELECT "receipt_id" FROM "agent_finance_receipt_match" WHERE "agent_id" = ? AND "finance_transaction_id" = ?)`,

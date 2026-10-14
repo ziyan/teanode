@@ -7,6 +7,9 @@ struct RecordingActivityAttributes: ActivityAttributes {
         var recordingCaptureState: String
         var elapsedMS: Int64
         var updatedAt: Date
+        /// Set when the person asked to resume and the microphone could not be started (iOS refuses it to an app that is not in
+        /// front): the lock screen says so, and to open TeaNode.
+        var didResumeFail: Bool? = nil
     }
     var localRecordingId: String
 }
@@ -56,10 +59,11 @@ struct StopRecordingIntent: LiveActivityIntent, AudioRecordingIntent {
 }
 
 enum RecordingActivities {
-    static func update(_ activityId: String, captureState: String, elapsedMS: Int64) async {
+    static func update(_ activityId: String, captureState: String, elapsedMS: Int64, didResumeFail: Bool = false) async {
         for activity in Activity<RecordingActivityAttributes>.activities where activity.id == activityId {
             await activity.update(
-                ActivityContent(state: .init(recordingCaptureState: captureState, elapsedMS: elapsedMS, updatedAt: Date()), staleDate: nil))
+                ActivityContent(state: .init(recordingCaptureState: captureState, elapsedMS: elapsedMS, updatedAt: Date(), didResumeFail: didResumeFail ? true : nil),
+                    staleDate: nil))
         }
     }
     static func end(_ activityId: String) async {

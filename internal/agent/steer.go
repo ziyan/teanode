@@ -189,10 +189,10 @@ func (self *AskRun) SteeredInto() *AskRun {
 // that came with it.
 func keepPersonTurn(tx db.Transaction, settings *AskSettings) (*models.AgentMessage, error) {
 	// The references as they are kept and then told, in the transaction
-	// that keeps them: a finance transaction that is not the agent's is
-	// dropped, and one that is carries what the model is told about it.
+	// that keeps them: a finance transaction that is not the agent's, or a
+	// recording that is not its owner's, is dropped, and one that is carries what the model is told about it.
 	if len(settings.References) > 0 {
-		references, err := resolveReferences(tx, settings.Agent.ID, settings.Conversation.ID, settings.References)
+		references, err := resolveReferences(tx, settings.Agent.ID, settings.Agent.UserID, settings.Conversation.ID, settings.References)
 		if err != nil {
 			return nil, err
 		}

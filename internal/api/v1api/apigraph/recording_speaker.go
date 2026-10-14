@@ -13,14 +13,17 @@ type RecordingSpeakerQuery interface {
 	ReadRecordingReferenceInvalidations(context.Context, RecordingArguments) ([]*models.RecordingReferenceInvalidation, error)
 	ReadRecordingLearning(context.Context, RecordingArguments) (*models.RecordingLearningView, error)
 	ReadRecordingSpeakers(context.Context, RecordingArguments) (*RecordingSpeakersView, error)
+	SuggestRecordingSpeakerNames(context.Context, SuggestRecordingSpeakerNamesArguments) ([]*RecordingSpeakerNameSuggestion, error)
 }
 
 // RecordingSpeakerMutation applies explicit user confirmations without retranscription.
 type RecordingSpeakerMutation interface {
 	ResumeRecordingLearning(context.Context, ResumeRecordingLearningArguments) (*models.RecordingLearningView, error)
 	CorrectRecordingSpeaker(context.Context, CorrectRecordingSpeakerArguments) (*RecordingSpeakersView, error)
+	NameRecordingTemporarySpeaker(context.Context, NameRecordingTemporarySpeakerArguments) (bool, error)
 	RenameRecordingSpeaker(context.Context, RenameRecordingSpeakerArguments) (*RecordingSpeakersView, error)
 	RemoveRecordingSpeakerCorrection(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
+	UndoRecordingSpeakerNaming(context.Context, RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error)
 	DeleteRecordingVoiceReference(context.Context, DeleteRecordingVoiceReferenceArguments) (*RecordingSpeakersView, error)
 }
 
@@ -39,10 +42,20 @@ type CorrectRecordingSpeakerArguments struct {
 	ExpectedSourceGeneration        int64  `json:"expectedSourceGeneration"`
 	ClientCorrectionID              string `json:"clientCorrectionId"`
 	ConfirmedName                   string `json:"confirmedName"`
+	IsAccountOwner                  bool   `json:"isAccountOwner" graphapi:"nullable"`
 	RecordingTranscriptionAttemptID string `json:"recordingTranscriptionAttemptId"`
 	LocalSpeakerID                  string `json:"localSpeakerId"`
 	PassageStartMS                  int64  `json:"passageStartMS"`
 	PassageEndMS                    int64  `json:"passageEndMS"`
+}
+
+// NameRecordingTemporarySpeakerArguments names a speaker of a recording that is
+// still being captured by the label the timeline gives it, in every piece.
+type NameRecordingTemporarySpeakerArguments struct {
+	RecordingID    string `json:"recordingId"`
+	SpeakerLabel   string `json:"speakerLabel"`
+	ConfirmedName  string `json:"confirmedName"`
+	IsAccountOwner bool   `json:"isAccountOwner" graphapi:"nullable"`
 }
 
 // RenameRecordingSpeakerArguments renames an existing confirmed identity.
@@ -106,11 +119,11 @@ func (self *graph) CorrectRecordingSpeaker(ctx context.Context, arguments Correc
 	if err != nil {
 		return nil, err
 	}
-	_, err = self.transaction(ctx).CorrectRecordingSpeaker(userId, db.RecordingSpeakerCorrectionInput{RecordingID: arguments.RecordingID, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration, ClientCorrectionID: arguments.ClientCorrectionID, ConfirmedName: arguments.ConfirmedName, RecordingTranscriptionAttemptID: arguments.RecordingTranscriptionAttemptID, LocalSpeakerID: arguments.LocalSpeakerID, PassageStartMS: arguments.PassageStartMS, PassageEndMS: arguments.PassageEndMS})
+	_, err = self.transaction(ctx).CorrectRecordingSpeaker(userId, db.RecordingSpeakerCorrectionInput{RecordingID: arguments.RecordingID, ExpectedSourceGeneration: arguments.ExpectedSourceGeneration, ClientCorrectionID: arguments.ClientCorrectionID, ConfirmedName: arguments.ConfirmedName, IsAccountOwner: arguments.IsAccountOwner, RecordingTranscriptionAttemptID: arguments.RecordingTranscriptionAttemptID, LocalSpeakerID: arguments.LocalSpeakerID, PassageStartMS: arguments.PassageStartMS, PassageEndMS: arguments.PassageEndMS})
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -120,6 +133,24 @@ func (self *graph) CorrectRecordingSpeaker(ctx context.Context, arguments Correc
 	})
 	return self.ReadRecordingSpeakers(ctx, RecordingArguments{RecordingID: arguments.RecordingID})
 }
+func (self *graph) NameRecordingTemporarySpeaker(ctx context.Context, arguments NameRecordingTemporarySpeakerArguments) (bool, error) {
+	userId, err := self.recordingSpeakerOwner(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := self.transaction(ctx).NameRecordingTemporarySpeaker(userId, arguments.RecordingID, arguments.SpeakerLabel, arguments.ConfirmedName, arguments.IsAccountOwner); err != nil {
+		return false, translateError(err)
+	}
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
+		return false, translateError(err)
+	}
+	self.transaction(ctx).AfterCommit(func() {
+		if worker := self.agentWorker(); worker != nil {
+			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
+		}
+	})
+	return true, nil
+}
 func (self *graph) RenameRecordingSpeaker(ctx context.Context, arguments RenameRecordingSpeakerArguments) (*RecordingSpeakersView, error) {
 	userId, err := self.recordingSpeakerOwner(ctx)
 	if err != nil {
@@ -127,9 +158,6 @@ func (self *graph) RenameRecordingSpeaker(ctx context.Context, arguments RenameR
 	}
 	err = self.transaction(ctx).RenameRecordingSpeaker(userId, arguments.RecordingID, arguments.SpeakerIdentityID, arguments.ConfirmedName, arguments.ExpectedSourceGeneration)
 	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -148,7 +176,28 @@ func (self *graph) RemoveRecordingSpeakerCorrection(ctx context.Context, argumen
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
+	self.transaction(ctx).AfterCommit(func() {
+		if worker := self.agentWorker(); worker != nil {
+			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
+		}
+	})
+	return self.ReadRecordingSpeakers(ctx, RecordingArguments{RecordingID: arguments.RecordingID})
+}
+
+// UndoRecordingSpeakerNaming removes the whole naming one correction belongs
+// to: every passage the same request named goes back to its speaker label.
+func (self *graph) UndoRecordingSpeakerNaming(ctx context.Context, arguments RemoveRecordingSpeakerCorrectionArguments) (*RecordingSpeakersView, error) {
+	userId, err := self.recordingSpeakerOwner(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := self.transaction(ctx).UndoRecordingSpeakerNaming(userId, arguments.RecordingID, arguments.RecordingSpeakerCorrectionID, arguments.ExpectedSourceGeneration); err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -167,7 +216,7 @@ func (self *graph) DeleteRecordingVoiceReference(ctx context.Context, arguments 
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.transaction(ctx).SyncRecordingKnowledge(userId, arguments.RecordingID); err != nil {
+	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
