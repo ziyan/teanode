@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.157.0] - 2026-10-14
+
+### Added
+
+- Passages of only filler ("Mm-hmm. Okay.") no longer show in a recording's conversation. (#479)
+- A recording's transcript can show only the speakers nobody has named yet, on the dashboard, the iPhone, the CLI and to the agent, with how many passages are left to name. (#479)
+
 ## [0.156.0] - 2026-10-14
 
 ### Added
