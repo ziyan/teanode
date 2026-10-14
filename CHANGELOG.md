@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.158.1] - 2026-10-14
+
+### Fixed
+
+- A long recording no longer stops being transcribed partway through. (#483)
+
 ## [0.158.0] - 2026-10-14
 
 ### Added
