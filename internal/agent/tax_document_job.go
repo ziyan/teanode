@@ -28,6 +28,8 @@ type taxDocumentAnswer struct {
 	Why          string         `json:"why"`
 	Paystub      *paystubAnswer `json:"paystub"`
 	TaxForm      *taxFormAnswer `json:"taxForm"`
+	// TaxForms are a statement's 1099s, one per form.
+	TaxForms []*taxFormAnswer `json:"taxForms"`
 }
 
 type paystubAnswer struct {
@@ -109,20 +111,32 @@ func (self *paystubAnswer) paystub() *models.FinancePaystub {
 
 // taxForm is the answer as a tax form to record.
 func (self *taxFormAnswer) taxForm() *models.FinanceTaxForm {
-	taxFormKind := lowerTrimmed(self.TaxFormKind)
+	taxFormKind := strings.NewReplacer("form ", "", "-", "_", " ", "_").Replace(lowerTrimmed(self.TaxFormKind))
 	// A W-2c is a W-2 that corrects one: it is laid over the original
 	// rather than replacing it, whatever the model called the kind.
-	isCorrected := self.IsCorrected || taxFormKind == "w2c" || taxFormKind == "w-2c"
-	if taxFormKind == "" || taxFormKind == "w-2" || taxFormKind == "w2c" || taxFormKind == "w-2c" {
+	isCorrected := self.IsCorrected || taxFormKind == "w2c" || taxFormKind == "w_2c"
+	switch taxFormKind {
+	case "", "w_2", "w2c", "w_2c":
 		taxFormKind = string(models.TaxFormKindW2)
+	case "1099int":
+		taxFormKind = string(models.TaxFormKind1099Int)
+	case "1099div":
+		taxFormKind = string(models.TaxFormKind1099Div)
+	case "1099b":
+		taxFormKind = string(models.TaxFormKind1099B)
 	}
 	taxForm := &models.FinanceTaxForm{
 		TaxFormKind: models.TaxFormKind(taxFormKind), TaxYear: self.TaxYear, IsCorrected: isCorrected,
 		PayerName: self.PayerName, PayerTaxID: self.PayerTaxID, RecipientName: self.RecipientName, RecipientTaxIDMask: string(self.RecipientTaxIDMask),
 	}
-	for index, entry := range self.TaxFormEntries {
+	for _, entry := range self.TaxFormEntries {
+		// A box the model gave as nothing is a box the form leaves empty:
+		// a consolidated statement prints every box, most of them 0.00.
+		if amountValue, err := finance.ParseAmount(string(entry.Amount)); err == nil && amountValue.Sign() == 0 && strings.TrimSpace(entry.TextValue) == "" && !entry.IsChecked {
+			continue
+		}
 		taxForm.TaxFormEntries = append(taxForm.TaxFormEntries, &models.FinanceTaxFormEntry{
-			EntryNumber: index + 1, BoxCode: string(entry.BoxCode), BoxQualifier: entry.BoxQualifier,
+			EntryNumber: len(taxForm.TaxFormEntries) + 1, BoxCode: string(entry.BoxCode), BoxQualifier: entry.BoxQualifier,
 			Amount: string(entry.Amount), TextValue: entry.TextValue, IsChecked: entry.IsChecked,
 		})
 	}
@@ -279,12 +293,62 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 			return err
 		}
 		title = taxFormRunTitle(recorded)
+		// A file read as a W-2 holds no 1099s any more.
+		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.DeleteFinanceTaxFormsOfAttachment(run.Agent.ID, source.attachment.ID, []models.TaxFormKind{recorded.TaxFormKind})
+		}); err != nil {
+			return err
+		}
+	case strings.HasPrefix(documentKind, "1099") && (len(answer.Value.TaxForms) > 0 || answer.Value.TaxForm != nil):
+		answers := answer.Value.TaxForms
+		if len(answers) == 0 {
+			answers = []*taxFormAnswer{answer.Value.TaxForm}
+		}
+		var titles []string
+		keptKinds := []models.TaxFormKind{}
+		isKept := map[models.TaxFormKind]bool{}
+		for _, formAnswer := range answers {
+			if formAnswer == nil {
+				continue
+			}
+			taxForm := formAnswer.taxForm()
+			taxForm.AgentAttachmentID = source.attachment.ID
+			// One file keeps one form of each kind: a statement of two
+			// accounts with a 1099-DIV each keeps the first, and says so,
+			// rather than the second quietly taking its place.
+			if isKept[taxForm.TaxFormKind] {
+				titles = append(titles, fmt.Sprintf("a second %s in the file was not kept; hand in each account's statement as a file of its own", finance.TaxFormKindName(taxForm.TaxFormKind)))
+				continue
+			}
+			recorded, err := self.RecordTaxForm(ctx, run.Agent, taxForm)
+			if isTaxDocumentRefusal(err) {
+				titles = append(titles, fmt.Sprintf("not a %s: %s", finance.TaxFormKindName(taxForm.TaxFormKind), err))
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			keptKinds = append(keptKinds, recorded.TaxFormKind)
+			isKept[recorded.TaxFormKind] = true
+			titles = append(titles, taxFormRunTitle(recorded))
+		}
+		// The forms read from this file before and not read now go, as
+		// reading a file again replaces what was read out of it; when
+		// nothing could be recorded, what was there stays.
+		if len(keptKinds) > 0 {
+			if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+				return tx.DeleteFinanceTaxFormsOfAttachment(run.Agent.ID, source.attachment.ID, keptKinds)
+			}); err != nil {
+				return err
+			}
+		}
+		title = strings.Join(titles, "; ")
 	default:
 		why := strings.TrimSpace(answer.Value.Why)
 		if why == "" {
-			why = "it is neither a paystub nor a W-2"
+			why = "it is not a paystub, a W-2 or a 1099"
 		}
-		title = fmt.Sprintf("Read %s: not a paystub or a W-2, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
+		title = fmt.Sprintf("Read %s: not a paystub, a W-2 or a 1099, so nothing was recorded (%s)", sourceName, finance.MaskTaxpayerNumbers(why))
 	}
 	self.retitle(ctx, run, thinking.Conversation, finance.MaskTaxpayerNumbers(title))
 	return nil
@@ -316,9 +380,10 @@ func paystubRunTitle(paystub *models.FinancePaystub) string {
 }
 
 func taxFormRunTitle(taxForm *models.FinanceTaxForm) string {
-	title := fmt.Sprintf("Read a %d W-2 from %s", taxForm.TaxYear, taxForm.PayerName)
+	kindName := finance.TaxFormKindName(taxForm.TaxFormKind)
+	title := fmt.Sprintf("Read a %d %s from %s", taxForm.TaxYear, kindName, taxForm.PayerName)
 	if taxForm.IsCorrected {
-		title = fmt.Sprintf("Read a corrected %d W-2 from %s", taxForm.TaxYear, taxForm.PayerName)
+		title = fmt.Sprintf("Read a corrected %d %s from %s", taxForm.TaxYear, kindName, taxForm.PayerName)
 	}
 	disagreeing := 0
 	for _, finding := range finance.TaxFormFindings(taxForm) {

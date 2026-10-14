@@ -272,3 +272,43 @@ func TestFinanceTaxDocumentsMigrationReversesAndReapplies(t *testing.T) {
 		}
 	})
 }
+
+// One brokerage statement holds a form of each kind, each put in its own
+// place; reading it again with fewer forms deletes the rest, keeping the
+// upload.
+func TestFinanceTaxFormsOfOneStatement(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	fixture := createFinanceFixture(t, database, "robin")
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		upload := createTaxUpload(t, tx, fixture.agentId, "consolidated-1099.pdf")
+		for _, kind := range []models.TaxFormKind{models.TaxFormKind1099Int, models.TaxFormKind1099Div, models.TaxFormKind1099B} {
+			form := inventedTaxForm(fixture.agentId, upload.ID, 2026)
+			form.TaxFormKind, form.PayerName = kind, "Example Brokerage"
+			form.TaxFormEntries = []*models.FinanceTaxFormEntry{{EntryNumber: 1, BoxCode: "4", Amount: "10.00"}}
+			if _, err := tx.PutFinanceTaxForm(form); err != nil {
+				t.Fatalf("PutFinanceTaxForm %s: %s", kind, err)
+			}
+		}
+		again := inventedTaxForm(fixture.agentId, upload.ID, 2026)
+		again.TaxFormKind, again.TaxFormEntries = models.TaxFormKind1099Int, []*models.FinanceTaxFormEntry{{EntryNumber: 1, BoxCode: "1", Amount: "20.00"}}
+		if _, err := tx.PutFinanceTaxForm(again); err != nil {
+			t.Fatalf("PutFinanceTaxForm again: %s", err)
+		}
+		page, err := tx.ListFinanceTaxForms(fixture.agentId, &db.FinanceTaxFormFilter{TaxYear: 2026})
+		if err != nil || len(page.FinanceTaxForms) != 3 {
+			t.Fatalf("one form of each kind for the upload: %+v %v", page, err)
+		}
+		if err := tx.DeleteFinanceTaxFormsOfAttachment(fixture.agentId, upload.ID, []models.TaxFormKind{models.TaxFormKind1099Int}); err != nil {
+			t.Fatalf("DeleteFinanceTaxFormsOfAttachment: %s", err)
+		}
+		page, _ = tx.ListFinanceTaxForms(fixture.agentId, &db.FinanceTaxFormFilter{TaxYear: 2026})
+		if len(page.FinanceTaxForms) != 1 || page.FinanceTaxForms[0].TaxFormKind != models.TaxFormKind1099Int {
+			t.Fatalf("only the form read again stays: %+v", page.FinanceTaxForms)
+		}
+		if kept, _ := tx.GetAgentAttachment(upload.ID); kept == nil {
+			t.Fatal("the upload stays")
+		}
+	})
+}

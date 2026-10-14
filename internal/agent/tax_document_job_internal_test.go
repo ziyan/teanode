@@ -115,7 +115,7 @@ func TestTaxDocumentJobReadsAW2AndLeavesTheRest(t *testing.T) {
 		t.Fatalf("box 12 D is normalized: %+v", entry)
 	}
 	titles := strings.Join(fixture.taxDocumentRunTitles(t), "\n")
-	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub or a W-2") {
+	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub, a W-2 or a 1099") {
 		t.Fatalf("the runs say what they read: %q", titles)
 	}
 	summary, err := fixture.worker.TaxYear(t.Context(), fixture.agent, 2025, "")
@@ -155,5 +155,45 @@ func TestTaxFormAnswerFoldsAW2cIntoACorrection(t *testing.T) {
 	}
 	if taxForm := (&taxFormAnswer{TaxFormKind: "W-2", TaxYear: 2025}).taxForm(); taxForm.IsCorrected {
 		t.Errorf("a W-2 is not a correction: %+v", taxForm)
+	}
+}
+
+// A 1099's kind is read however the model writes it.
+func TestTaxFormAnswerReads1099Kinds(t *testing.T) {
+	for written, kind := range map[string]models.TaxFormKind{"1099-INT": models.TaxFormKind1099Int, "Form 1099-DIV": models.TaxFormKind1099Div, "1099B": models.TaxFormKind1099B, "1099_b": models.TaxFormKind1099B} {
+		if taxForm := (&taxFormAnswer{TaxFormKind: written, TaxYear: 2025}).taxForm(); taxForm.TaxFormKind != kind {
+			t.Errorf("%s: %s", written, taxForm.TaxFormKind)
+		}
+	}
+	answer := &taxFormAnswer{TaxFormKind: "1099-INT", TaxYear: 2025, TaxFormEntries: []taxFormAnswerEntry{{BoxCode: "1", Amount: "6.35"}, {BoxCode: "2", Amount: "0.00"}, {BoxCode: "3", Amount: "0"}}}
+	if taxForm := answer.taxForm(); len(taxForm.TaxFormEntries) != 1 || taxForm.TaxFormEntries[0].EntryNumber != 1 {
+		t.Errorf("boxes of nothing are left out: %+v", taxForm.TaxFormEntries)
+	}
+}
+
+// A statement of two accounts with a 1099-DIV each keeps the first and
+// says so; read again into nothing it can record, it keeps what it had.
+func TestTaxDocumentJobReadsAStatementOfTwoAccounts(t *testing.T) {
+	statement := `{"documentKind": "1099", "taxForms": [
+ {"taxFormKind": "1099-INT", "taxYear": 2025, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1", "amount": "10.00"}]},
+ {"taxFormKind": "1099-DIV", "taxYear": 2025, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1a", "amount": "20.00"}, {"boxCode": "account", "textValue": "XX1111"}]},
+ {"taxFormKind": "1099-DIV", "taxYear": 2025, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1a", "amount": "30.00"}, {"boxCode": "account", "textValue": "XX2222"}]}]}`
+	refused := `{"documentKind": "1099", "taxForms": [{"taxFormKind": "1099-DIV", "taxYear": 1066, "payerName": "Example Brokerage", "recipientName": "Pat Example", "taxFormEntries": [{"boxCode": "1a", "amount": "20.00"}]}]}`
+	fixture, _ := receiptJobFixture(t, statement, refused)
+	upload := fixture.taxDocumentUpload(t, "statement.png", "image/png", []byte("\x89PNG\r\n\x1a\nan invented statement"))
+	for range 2 {
+		if err := fixture.worker.runReadTaxDocument(t.Context(), fixture.taxDocumentJobRun(upload.ID)); err != nil {
+			t.Fatalf("runReadTaxDocument: %s", err)
+		}
+	}
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTaxForms(fixture.agent.ID, nil)
+		if err != nil || len(page.FinanceTaxForms) != 2 {
+			t.Fatalf("the 1099-INT and the first 1099-DIV, kept though the second reading recorded nothing: %+v %v", page, err)
+		}
+	})
+	titles := strings.Join(fixture.taxDocumentRunTitles(t), "\n")
+	if !strings.Contains(titles, "a second 1099-DIV in the file was not kept") {
+		t.Fatalf("the run says what it left: %q", titles)
 	}
 }

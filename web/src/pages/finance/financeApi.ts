@@ -905,7 +905,7 @@ export type FinanceTaxFormEntry = {
 export type FinanceTaxForm = {
   id: string
   agentAttachmentId: string
-  taxFormKind: 'w2'
+  taxFormKind: 'w2' | '1099_int' | '1099_div' | '1099_b'
   taxYear: number
   isCorrected: boolean
   payerName: string
@@ -1045,6 +1045,18 @@ export type TaxYearEstimate = {
   isTaxFilingStatusAssumed: boolean
   isProjected: boolean
   payAmount: string
+  // Interest, ordinary dividends and the capital result from 1099s; pay
+  // and it together are the ring's whole.
+  investmentIncomeAmount: string
+  incomeAmount: string
+  adjustedGrossIncomeAmount: string
+  // Qualified dividends and net long-term gain, and their tax at 0%, 15%
+  // or 20%, part of the federal income tax.
+  preferentialIncomeAmount: string
+  preferentialIncomeTaxAmount: string
+  capitalLossDeductionAmount: string
+  foreignTaxCreditAmount: string
+  netInvestmentIncomeTaxAmount: string
   standardDeductionAmount: string
   taxableIncomeAmount: string
   federalIncomeTaxAmount: string
@@ -1073,6 +1085,22 @@ export type TaxYearSummary = {
   taxYearPeople: TaxYearPerson[]
   taxYearFindings: TaxYearFinding[]
   taxYearEstimate?: TaxYearEstimate | null
+  taxYearInvestment?: TaxYearInvestment | null
+}
+
+// The year's investment income from its 1099s, the household's.
+export type TaxYearInvestment = {
+  interestAmount: string
+  taxExemptInterestAmount: string
+  ordinaryDividendsAmount: string
+  qualifiedDividendsAmount: string
+  capitalGainDistributionsAmount: string
+  shortTermGainAmount: string
+  longTermGainAmount: string
+  federalIncomeTaxWithheldAmount: string
+  foreignTaxPaidAmount: string
+  isCostBasisMissing: boolean
+  taxFormIds: string[]
 }
 
 const TAX_YEAR_FIGURES_FIELDS = `wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount
@@ -1090,7 +1118,12 @@ export const TAX_YEAR = `query ($taxYear: Int!) {
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures { ${TAX_YEAR_FIGURES_FIELDS} }
       projectedFigures { ${TAX_YEAR_FIGURES_FIELDS} } }
     taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
-    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount standardDeductionAmount taxableIncomeAmount
+    taxYearInvestment { interestAmount taxExemptInterestAmount ordinaryDividendsAmount qualifiedDividendsAmount
+      capitalGainDistributionsAmount shortTermGainAmount longTermGainAmount federalIncomeTaxWithheldAmount
+      foreignTaxPaidAmount isCostBasisMissing taxFormIds }
+    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount
+      adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount
+      foreignTaxCreditAmount netInvestmentIncomeTaxAmount standardDeductionAmount taxableIncomeAmount
       federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount
       totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount }
   }

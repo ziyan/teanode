@@ -42,6 +42,7 @@ import {
   TaxYearComparison,
   TaxYearEmployment,
   TaxYearEstimate,
+  TaxYearInvestment,
   TaxYearFigures,
   TaxYearSummary,
   amountOf,
@@ -520,8 +521,11 @@ function TaxEstimatePanel({
   const { t } = useTranslation()
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null)
   const payAmount = amountOf(estimate.payAmount)
+  const incomeAmount = amountOf(estimate.incomeAmount)
+  const hasInvestmentIncome = !isZero(estimate.investmentIncomeAmount)
   const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
-  const shareOfPay = (amount: number) => (payAmount > 0 ? percent.format(amount / payAmount) : '')
+  // Every share is of income: pay and investment income together.
+  const shareOfPay = (amount: number) => (incomeAmount > 0 ? percent.format(amount / incomeAmount) : '')
   const slices: RingSlice[] = [
     {
       key: 'paid',
@@ -583,8 +587,23 @@ function TaxEstimatePanel({
   }
   const taxLines: { key: string; label: string; amount: string }[] = [
     { key: 'federal', label: t('finance.taxEstimateFederal'), amount: estimate.federalIncomeTaxAmount },
+    {
+      key: 'preferential',
+      label: t('finance.taxEstimatePreferential'),
+      amount: estimate.preferentialIncomeTaxAmount,
+    },
+    {
+      key: 'foreignTaxCredit',
+      label: t('finance.taxEstimateForeignTaxCredit'),
+      amount: estimate.foreignTaxCreditAmount ? `-${estimate.foreignTaxCreditAmount}` : '0',
+    },
     { key: 'socialSecurity', label: t('finance.taxEstimateSocialSecurity'), amount: estimate.socialSecurityTaxAmount },
     { key: 'medicare', label: t('finance.taxEstimateMedicare'), amount: estimate.medicareTaxAmount },
+    {
+      key: 'netInvestment',
+      label: t('finance.taxEstimateNetInvestment'),
+      amount: estimate.netInvestmentIncomeTaxAmount,
+    },
     { key: 'state', label: t('finance.taxEstimateState'), amount: estimate.stateIncomeTaxAmount },
     { key: 'local', label: t('finance.taxEstimateLocal'), amount: estimate.localIncomeTaxAmount },
   ].filter((line) => line.key === 'federal' || !isZero(line.amount))
@@ -623,7 +642,19 @@ function TaxEstimatePanel({
                 className: 'finance-tax-refund',
               })
             : null}
-          {figureLine({ key: 'pay', label: t('finance.taxPay'), amount: payAmount, isTotal: true })}
+          {hasInvestmentIncome ? (
+            <>
+              {figureLine({ key: 'pay', label: t('finance.taxPay'), amount: payAmount, isTotal: true })}
+              {figureLine({
+                key: 'investment',
+                label: t('finance.taxEstimateInvestmentIncome'),
+                amount: amountOf(estimate.investmentIncomeAmount),
+              })}
+              {figureLine({ key: 'income', label: t('finance.taxIncome'), amount: incomeAmount, isTotal: true })}
+            </>
+          ) : (
+            figureLine({ key: 'pay', label: t('finance.taxPay'), amount: payAmount, isTotal: true })
+          )}
         </dl>
         <dl className="finance-worth-line">
           {taxLines.map((line) => figureLine({ key: line.key, label: line.label, amount: amountOf(line.amount) }))}
@@ -637,6 +668,9 @@ function TaxEstimatePanel({
       </div>
       <p className="muted finance-receipt-detail finance-tax-note">
         {estimate.isTaxFilingStatusAssumed ? `${t('finance.taxFilingStatusAssumed')} ` : null}
+        {!isZero(estimate.capitalLossDeductionAmount)
+          ? `${t('finance.taxEstimateCapitalLoss', { amount: formatDollars(estimate.capitalLossDeductionAmount) })} `
+          : null}
         {t('finance.taxEstimateNote', {
           deduction: formatDollars(estimate.standardDeductionAmount),
           taxable: formatDollars(estimate.taxableIncomeAmount),
@@ -654,6 +688,51 @@ const FINDING_KIND_LABELS: Record<string, Key> = {
   w2_differs_from_paystubs: 'finance.taxFindingW2Differs',
   several_w2s: 'finance.taxFindingSeveralW2s',
   excess_social_security: 'finance.taxFindingExcessSocialSecurity',
+  hsa_over_limit: 'finance.taxFindingHSAOverLimit',
+  cost_basis_missing: 'finance.taxFindingCostBasisMissing',
+}
+
+// TaxInvestmentPanel is the year's investment income from its 1099s: each
+// figure the estimate taxes, a line apiece, those of nothing left out
+// except interest and dividends.
+function TaxInvestmentPanel({ investment }: { investment: TaxYearInvestment }) {
+  const { t } = useTranslation()
+  const lines: { key: string; label: string; amount: string; isAlwaysShown?: boolean }[] = [
+    { key: 'interest', label: t('finance.taxInvestmentInterest'), amount: investment.interestAmount, isAlwaysShown: true },
+    { key: 'taxExempt', label: t('finance.taxInvestmentTaxExemptInterest'), amount: investment.taxExemptInterestAmount },
+    {
+      key: 'ordinary',
+      label: t('finance.taxInvestmentOrdinaryDividends'),
+      amount: investment.ordinaryDividendsAmount,
+      isAlwaysShown: true,
+    },
+    { key: 'qualified', label: t('finance.taxInvestmentQualifiedDividends'), amount: investment.qualifiedDividendsAmount },
+    {
+      key: 'distributions',
+      label: t('finance.taxInvestmentCapitalGainDistributions'),
+      amount: investment.capitalGainDistributionsAmount,
+    },
+    { key: 'shortTerm', label: t('finance.taxInvestmentShortTerm'), amount: investment.shortTermGainAmount },
+    { key: 'longTerm', label: t('finance.taxInvestmentLongTerm'), amount: investment.longTermGainAmount },
+    { key: 'withheld', label: t('finance.taxInvestmentWithheld'), amount: investment.federalIncomeTaxWithheldAmount },
+    { key: 'foreign', label: t('finance.taxInvestmentForeignTax'), amount: investment.foreignTaxPaidAmount },
+  ].filter((line) => line.isAlwaysShown || !isZero(line.amount))
+  return (
+    <SettingsSection card title={t('finance.taxInvestmentTitle')} description={t('finance.taxInvestmentHint')}>
+      <div className="finance-receipt-lines-scroll">
+        <table className="finance-receipt-lines finance-tax-figures">
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.key}>
+                <td title={line.label}>{line.label}</td>
+                <td className="numeric">{formatDollars(line.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SettingsSection>
+  )
 }
 
 // --- the documents ----------------------------------------------------------
@@ -848,6 +927,7 @@ function useTaxDocumentUpload({
       taxForm: (taxFormView: TaxFormView) =>
         t('finance.taxFormRead', {
           year: String(taxFormView.financeTaxForm.taxYear),
+          form: taxFormKindName(taxFormView.financeTaxForm.taxFormKind),
           employer: taxFormName(taxFormView),
         }),
     }
@@ -1078,6 +1158,7 @@ export function FinanceTaxesSection() {
       toast.done(
         t('finance.taxFormDeleted', {
           year: String(taxFormView.financeTaxForm.taxYear),
+          form: taxFormKindName(taxFormView.financeTaxForm.taxFormKind),
           employer: taxFormName(taxFormView),
         }),
       )
@@ -1196,6 +1277,7 @@ export function FinanceTaxesSection() {
       <ConfirmDialog
         title={t('finance.deleteTaxFormTitle', {
           year: String(taxFormView.financeTaxForm.taxYear),
+          form: taxFormKindName(taxFormView.financeTaxForm.taxFormKind),
           employer: taxFormName(taxFormView),
         })}
         body={t('finance.deleteTaxFormBody')}
@@ -1267,6 +1349,7 @@ export function FinanceTaxesSection() {
             />
           ))}
           {summary.taxYearEmployments.length > 1 ? <HouseholdPanel summary={summary} /> : null}
+          {summary.taxYearInvestment ? <TaxInvestmentPanel investment={summary.taxYearInvestment} /> : null}
           {summary.taxYearFindings.length > 0 ? (
             <SettingsSection card title={t('finance.taxFindingsTitle')} description={t('finance.taxFindingsHint')}>
               <ul className="finance-receipt-candidates finance-tax-findings">
@@ -1306,7 +1389,8 @@ export function FinanceTaxesSection() {
                   <thead>
                     <tr>
                       <th>{t('finance.taxFormYear')}</th>
-                      <th>{t('finance.paystubEmployer')}</th>
+                      <th>{t('finance.taxFormKind')}</th>
+                      <th>{t('finance.taxFormPayer')}</th>
                       <th>{t('finance.taxFormEmployee')}</th>
                       <th>{t('finance.receiptCheck')}</th>
                       <th>{t('finance.taxFormFile')}</th>
@@ -1318,13 +1402,15 @@ export function FinanceTaxesSection() {
                       return (
                         <tr key={taxFormView.financeTaxForm.id}>
                           <td>{taxFormView.financeTaxForm.taxYear}</td>
+                          <td>{taxFormKindName(taxFormView.financeTaxForm.taxFormKind)}</td>
                           <td>
-                            <button /* link-button: opens the W-2's boxes in place, inline in a list of them */
+                            <button /* link-button: opens the form's boxes in place, inline in a list of them */
                               type="button"
                               className="link finance-tax-name"
                               title={name}
                               aria-label={t('finance.taxFormDetailsOf', {
                                 year: String(taxFormView.financeTaxForm.taxYear),
+                                form: taxFormKindName(taxFormView.financeTaxForm.taxFormKind),
                                 employer: name,
                               })}
                               onClick={() => setOpened({ dialogKind: 'taxForm', taxFormView })}
@@ -1623,28 +1709,98 @@ function PaystubDialog({
   )
 }
 
-// --- a W-2 ---------------------------------------------------------------------
+// --- a W-2 or a 1099 -------------------------------------------------------
 
-const W2_BOX_LABELS: Record<string, Key> = {
-  '1': 'finance.w2Box1',
-  '2': 'finance.w2Box2',
-  '3': 'finance.w2Box3',
-  '4': 'finance.w2Box4',
-  '5': 'finance.w2Box5',
-  '6': 'finance.w2Box6',
-  '7': 'finance.w2Box7',
-  '8': 'finance.w2Box8',
-  '10': 'finance.w2Box10',
-  '11': 'finance.w2Box11',
-  '12': 'finance.w2Box12',
-  '13': 'finance.w2Box13',
-  '14': 'finance.w2Box14',
-  '15': 'finance.w2Box15',
-  '16': 'finance.w2Box16',
-  '17': 'finance.w2Box17',
-  '18': 'finance.w2Box18',
-  '19': 'finance.w2Box19',
-  '20': 'finance.w2Box20',
+// taxFormKindName is a form's kind as it is titled: W-2, 1099-INT.
+export function taxFormKindName(taxFormKind: string): string {
+  return TAX_FORM_KIND_NAMES[taxFormKind] ?? taxFormKind
+}
+
+const TAX_FORM_KIND_NAMES: Record<string, string> = {
+  w2: 'W-2',
+  '1099_int': '1099-INT',
+  '1099_div': '1099-DIV',
+  '1099_b': '1099-B',
+}
+
+// BOX_LABELS name each kind's boxes, by box as printed.
+const BOX_LABELS: Record<string, Record<string, Key>> = {
+  w2: {
+    '1': 'finance.w2Box1',
+    '2': 'finance.w2Box2',
+    '3': 'finance.w2Box3',
+    '4': 'finance.w2Box4',
+    '5': 'finance.w2Box5',
+    '6': 'finance.w2Box6',
+    '7': 'finance.w2Box7',
+    '8': 'finance.w2Box8',
+    '10': 'finance.w2Box10',
+    '11': 'finance.w2Box11',
+    '12': 'finance.w2Box12',
+    '13': 'finance.w2Box13',
+    '14': 'finance.w2Box14',
+    '15': 'finance.w2Box15',
+    '16': 'finance.w2Box16',
+    '17': 'finance.w2Box17',
+    '18': 'finance.w2Box18',
+    '19': 'finance.w2Box19',
+    '20': 'finance.w2Box20',
+  },
+  '1099_int': {
+    '1': 'finance.int1099Box1',
+    '2': 'finance.int1099Box2',
+    '3': 'finance.int1099Box3',
+    '4': 'finance.int1099Box4',
+    '5': 'finance.int1099Box5',
+    '6': 'finance.int1099Box6',
+    '8': 'finance.int1099Box8',
+    '9': 'finance.int1099Box9',
+    '10': 'finance.int1099Box10',
+    '11': 'finance.int1099Box11',
+    '12': 'finance.int1099Box12',
+    '13': 'finance.int1099Box13',
+    '16': 'finance.int1099Box16',
+    '17': 'finance.int1099Box17',
+  },
+  '1099_div': {
+    '1a': 'finance.div1099Box1a',
+    '1b': 'finance.div1099Box1b',
+    '2a': 'finance.div1099Box2a',
+    '2b': 'finance.div1099Box2b',
+    '2c': 'finance.div1099Box2c',
+    '2d': 'finance.div1099Box2d',
+    '2e': 'finance.div1099Box2e',
+    '2f': 'finance.div1099Box2f',
+    '3': 'finance.div1099Box3',
+    '4': 'finance.div1099Box4',
+    '5': 'finance.div1099Box5',
+    '6': 'finance.div1099Box6',
+    '7': 'finance.div1099Box7',
+    '9': 'finance.div1099Box9',
+    '10': 'finance.div1099Box10',
+    '12': 'finance.div1099Box12',
+    '13': 'finance.div1099Box13',
+    '15': 'finance.div1099Box15',
+    '16': 'finance.div1099Box16',
+  },
+  '1099_b': {
+    '1d': 'finance.b1099Box1d',
+    '1e': 'finance.b1099Box1e',
+    '1f': 'finance.b1099Box1f',
+    '1g': 'finance.b1099Box1g',
+    '4': 'finance.b1099Box4',
+    '15': 'finance.b1099Box15',
+    '16': 'finance.b1099Box16',
+  },
+}
+
+// A 1099-B's totals, which the server names as its boxes' qualifiers.
+const BROKER_TERM_LABELS: Record<string, Key> = {
+  short_covered: 'finance.brokerTermShortCovered',
+  short_noncovered: 'finance.brokerTermShortNoncovered',
+  long_covered: 'finance.brokerTermLongCovered',
+  long_noncovered: 'finance.brokerTermLongNoncovered',
+  unknown_term: 'finance.brokerTermUnknown',
 }
 
 // Box 13's three checkboxes, which the server names as its qualifiers.
@@ -1654,7 +1810,7 @@ const W2_CHECKBOX_LABELS: Record<string, Key> = {
   third_party_sick_pay: 'finance.w2ThirdPartySickPay',
 }
 
-// TaxFormDialog is one W-2: whose and from whom, its check, its file, its
+// TaxFormDialog is one W-2 or 1099: whose and from whom, its check, its file, its
 // boxes as printed, what its checks of itself found, and Delete.
 function TaxFormDialog({
   taxFormView,
@@ -1673,20 +1829,29 @@ function TaxFormDialog({
   const entries = [...taxForm.taxFormEntries].sort((first, second) => first.entryNumber - second.entryNumber)
   const qualifierText = (entry: FinanceTaxFormEntry) => {
     const qualifier = entry.boxQualifier ?? ''
-    const checkboxLabel = entry.boxCode === '13' ? W2_CHECKBOX_LABELS[qualifier] : undefined
-    return checkboxLabel ? t(checkboxLabel) : qualifier
+    const qualifierLabel =
+      taxForm.taxFormKind === '1099_b'
+        ? BROKER_TERM_LABELS[qualifier]
+        : entry.boxCode === '13'
+          ? W2_CHECKBOX_LABELS[qualifier]
+          : undefined
+    return qualifierLabel ? t(qualifierLabel) : qualifier
   }
   const valueText = (entry: FinanceTaxFormEntry) => {
     if (hasAmount(entry.amount)) return formatDollars(entry.amount)
     if (entry.textValue) return entry.textValue
-    if (entry.boxCode === '13' || entry.isChecked)
+    if ((taxForm.taxFormKind === 'w2' && entry.boxCode === '13') || entry.isChecked)
       return entry.isChecked ? t('finance.w2Checked') : t('finance.w2NotChecked')
     return ''
   }
   return (
     <ConfirmDialog
       wide
-      title={t('finance.taxFormTitle', { year: String(taxForm.taxYear), employer: name })}
+      title={t('finance.taxFormTitle', {
+        year: String(taxForm.taxYear),
+        form: taxFormKindName(taxForm.taxFormKind),
+        employer: name,
+      })}
       onClose={onClose}
       body={
         <div className="finance-receipt-details">
@@ -1733,7 +1898,7 @@ function TaxFormDialog({
               </thead>
               <tbody>
                 {entries.map((entry) => {
-                  const boxLabelKey = W2_BOX_LABELS[entry.boxCode]
+                  const boxLabelKey = BOX_LABELS[taxForm.taxFormKind]?.[entry.boxCode]
                   const boxLabel = boxLabelKey ? t(boxLabelKey) : ''
                   return (
                     <tr key={entry.id}>
@@ -1751,7 +1916,7 @@ function TaxFormDialog({
           </div>
           <div className="finance-receipt-buttons">
             <button type="button" className="danger" disabled={isBusy} onClick={onDelete}>
-              {t('finance.deleteTaxForm')}
+              {t('finance.deleteTaxForm', { form: taxFormKindName(taxForm.taxFormKind) })}
             </button>
           </div>
         </div>

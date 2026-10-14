@@ -30,7 +30,24 @@ const (
 	// qualifierLabel: free text (box 14's label, a locality in boxes 18
 	// to 20).
 	qualifierLabel
+	// qualifierTerm: which of a 1099-B's totals the box belongs to, by
+	// term and by whether the broker reported the cost basis to the IRS
+	// (brokerTerms).
+	qualifierTerm
 )
+
+// brokerTerms are the totals a 1099-B's boxes are kept by: short or long
+// term (held a year or less, or more), the basis reported to the IRS
+// (covered) or not, and sales whose term the broker does not know.
+var brokerTerms = map[string]bool{
+	"short_covered": true, "short_noncovered": true, "long_covered": true, "long_noncovered": true, "unknown_term": true,
+}
+
+// IsShortTermBrokerTerm says a 1099-B total is of sales held a year or
+// less; a sale of unknown term counts as short, the safer guess.
+func IsShortTermBrokerTerm(term string) bool {
+	return strings.HasPrefix(term, "short_") || term == "unknown_term"
+}
 
 type taxFormBox struct {
 	boxQualifier taxFormBoxQualifier
@@ -66,7 +83,47 @@ var taxFormBoxesByKind = map[models.TaxFormKind]map[string]taxFormBox{
 		"19": {boxQualifier: qualifierLabel},
 		"20": {boxQualifier: qualifierLabel, isText: true},
 	},
+	// 1099-INT: 1 interest, 2 early withdrawal penalty, 3 interest on US
+	// savings bonds and Treasury obligations, 4 federal income tax
+	// withheld, 5 investment expenses, 6 foreign tax paid, 8 tax-exempt
+	// interest, 9 private activity bond interest, 10 market discount,
+	// 11 to 13 bond premium; 16 the state's id, 17 state tax withheld.
+	models.TaxFormKind1099Int: {
+		"1": {}, "2": {}, "3": {}, "4": {}, "5": {}, "6": {}, "8": {}, "9": {}, "10": {}, "11": {}, "12": {}, "13": {},
+		"16":      {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
+		"17":      {boxQualifier: qualifierState},
+		"account": accountBox,
+	},
+	// 1099-DIV: 1a ordinary dividends, 1b qualified dividends, 2a capital
+	// gain distributions, 2b to 2f their parts, 3 nondividend
+	// distributions, 4 federal income tax withheld, 5 section 199A
+	// dividends, 6 investment expenses, 7 foreign tax paid, 9 and 10
+	// liquidation distributions, 12 exempt-interest dividends, 13 private
+	// activity bond dividends; 15 the state's id, 16 state tax withheld.
+	models.TaxFormKind1099Div: {
+		"1a": {}, "1b": {}, "2a": {}, "2b": {}, "2c": {}, "2d": {}, "2e": {}, "2f": {}, "3": {}, "4": {}, "5": {}, "6": {}, "7": {},
+		"9": {}, "10": {}, "12": {}, "13": {},
+		"15":      {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
+		"16":      {boxQualifier: qualifierState},
+		"account": accountBox,
+	},
+	// 1099-B, as a brokerage's summary totals it: 1d proceeds, 1e cost
+	// basis, 1f accrued market discount and 1g wash sale loss disallowed,
+	// each by term (brokerTerms); 4 federal income tax withheld; 15 the
+	// state's id, 16 state tax withheld.
+	models.TaxFormKind1099B: {
+		"1d": {boxQualifier: qualifierTerm}, "1e": {boxQualifier: qualifierTerm}, "1f": {boxQualifier: qualifierTerm}, "1g": {boxQualifier: qualifierTerm},
+		"4":       {},
+		"15":      {boxQualifier: qualifierState, isText: true, isBusinessNumber: true},
+		"16":      {boxQualifier: qualifierState},
+		"account": accountBox,
+	},
 }
+
+// accountBox is a 1099's account number, kept as its last four letters
+// and digits: two forms of one kind from one payer to one person are told
+// apart by it, a joint account's from an individual one's.
+var accountBox = taxFormBox{isText: true, isBusinessNumber: true}
 
 // CheckTaxForm checks a tax form as read and normalizes it in place: text
 // NFKC with its spaces collapsed, box codes and qualifiers in their
@@ -82,7 +139,7 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 	}
 	boxes, isKnown := taxFormBoxesByKind[taxForm.TaxFormKind]
 	if !isKnown {
-		return refuseTaxDocument("a tax form of kind %q is not one TeaNode reads; it reads w2", taxForm.TaxFormKind)
+		return refuseTaxDocument("a tax form of kind %q is not one TeaNode reads; it reads w2, 1099_int, 1099_div and 1099_b", taxForm.TaxFormKind)
 	}
 	if taxForm.TaxYear < 1900 || taxForm.TaxYear > 2999 {
 		return refuseTaxDocument("the tax year %d is not a year", taxForm.TaxYear)
@@ -124,7 +181,7 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 		entry.BoxCode = strings.TrimSpace(strings.TrimPrefix(strings.ToLower(strings.TrimSpace(entry.BoxCode)), "box"))
 		box, isBox := boxes[entry.BoxCode]
 		if !isBox {
-			return refuseTaxDocument("a %s has no box %q", taxFormKindName(taxForm.TaxFormKind), entry.BoxCode)
+			return refuseTaxDocument("a %s has no box %q", TaxFormKindName(taxForm.TaxFormKind), entry.BoxCode)
 		}
 		label := "box " + entry.BoxCode
 		entry.BoxQualifier = strings.Join(strings.Fields(normalization.NFKC.String(entry.BoxQualifier)), " ")
@@ -149,6 +206,11 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 		case qualifierLabel:
 			if err := cleanTaxDocumentText(label+"'s label", &entry.BoxQualifier); err != nil {
 				return err
+			}
+		case qualifierTerm:
+			entry.BoxQualifier = strings.ReplaceAll(strings.ToLower(entry.BoxQualifier), " ", "_")
+			if !brokerTerms[entry.BoxQualifier] {
+				return refuseTaxDocument("%s is kept by term: short_covered, short_noncovered, long_covered, long_noncovered or unknown_term; %q is not one", label, entry.BoxQualifier)
 			}
 		}
 		if entry.BoxQualifier != "" {
@@ -178,6 +240,9 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 		if amountValue == nil && entry.TextValue == "" {
 			return refuseTaxDocument("%s prints nothing; leave out boxes that are empty", label)
 		}
+		if entry.BoxCode == "account" {
+			entry.TextValue = lastFourAlphanumerics(entry.TextValue)
+		}
 		if box.isText {
 			continue
 		}
@@ -191,9 +256,17 @@ func CheckTaxForm(taxForm *models.FinanceTaxForm) error {
 	return nil
 }
 
-func taxFormKindName(taxFormKind models.TaxFormKind) string {
-	if taxFormKind == models.TaxFormKindW2 {
+// TaxFormKindName is a kind as the form is titled: W-2, 1099-INT.
+func TaxFormKindName(taxFormKind models.TaxFormKind) string {
+	switch taxFormKind {
+	case models.TaxFormKindW2:
 		return "W-2"
+	case models.TaxFormKind1099Int:
+		return "1099-INT"
+	case models.TaxFormKind1099Div:
+		return "1099-DIV"
+	case models.TaxFormKind1099B:
+		return "1099-B"
 	}
 	return string(taxFormKind)
 }
@@ -210,6 +283,12 @@ const (
 	// TaxFormFindingMedicareRate: box 6 is 1.45% of box 5 and 0.9% more
 	// of what box 5 holds above 200,000.
 	TaxFormFindingMedicareRate TaxFormFindingCode = "medicare_rate"
+	// TaxFormFindingQualifiedDividends: a 1099-DIV's qualified dividends
+	// (1b) are part of its ordinary dividends (1a), never more.
+	TaxFormFindingQualifiedDividends TaxFormFindingCode = "qualified_dividends"
+	// TaxFormFindingCostBasis: a 1099-B prints a cost basis beside the
+	// proceeds of each of its totals.
+	TaxFormFindingCostBasis TaxFormFindingCode = "cost_basis"
 )
 
 // TaxFormFinding is one thing a tax form says about itself: what was
@@ -325,7 +404,16 @@ func dollarsText(amountValue *big.Rat) string {
 // no finding for it.
 func TaxFormFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
 	findings := []TaxFormFinding{}
-	if taxForm == nil || taxForm.TaxFormKind != models.TaxFormKindW2 {
+	if taxForm == nil {
+		return findings
+	}
+	switch taxForm.TaxFormKind {
+	case models.TaxFormKind1099Div:
+		return dividendFindings(taxForm)
+	case models.TaxFormKind1099B:
+		return brokerFindings(taxForm)
+	case models.TaxFormKindW2:
+	default:
 		return findings
 	}
 	socialSecurityWages, hasSocialSecurityWages := taxFormAmount(taxForm, "3")
@@ -374,4 +462,76 @@ func TaxFormFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
 		})
 	}
 	return findings
+}
+
+// dividendFindings checks that a 1099-DIV's qualified dividends are within
+// its ordinary dividends.
+func dividendFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
+	ordinary, hasOrdinary := taxFormAmount(taxForm, "1a")
+	qualified, hasQualified := taxFormAmount(taxForm, "1b")
+	if !hasOrdinary && !hasQualified {
+		return []TaxFormFinding{}
+	}
+	isAgreeing := qualified.Cmp(ordinary) <= 0
+	findingText := fmt.Sprintf("Qualified dividends %s are part of %s in ordinary dividends", dollarsText(qualified), dollarsText(ordinary))
+	if !isAgreeing {
+		findingText = fmt.Sprintf("Qualified dividends %s are more than %s in ordinary dividends, which they are part of", dollarsText(qualified), dollarsText(ordinary))
+	}
+	return []TaxFormFinding{{
+		TaxFormFindingCode: TaxFormFindingQualifiedDividends, IsAgreeing: isAgreeing,
+		ExpectedAmount: formatDollars(ordinary), PrintedAmount: formatDollars(qualified), FindingText: findingText,
+	}}
+}
+
+// brokerFindings checks that each of a 1099-B's totals with proceeds
+// prints a cost basis.
+func brokerFindings(taxForm *models.FinanceTaxForm) []TaxFormFinding {
+	findings := []TaxFormFinding{}
+	terms := make([]string, 0, len(brokerTerms))
+	for term := range brokerTerms {
+		terms = append(terms, term)
+	}
+	sort.Strings(terms)
+	for _, term := range terms {
+		proceeds, hasProceeds := taxFormAmount(taxForm, "1d", term)
+		if !hasProceeds || proceeds.Sign() == 0 {
+			continue
+		}
+		basis, hasBasis := taxFormAmount(taxForm, "1e", term)
+		termName := strings.ReplaceAll(term, "_", " ")
+		findingText := fmt.Sprintf("The %s sales print a cost basis of %s beside %s in proceeds", termName, dollarsText(basis), dollarsText(proceeds))
+		if !hasBasis {
+			findingText = fmt.Sprintf("The %s sales print %s in proceeds and no cost basis, so their gain counts the whole proceeds", termName, dollarsText(proceeds))
+		}
+		findings = append(findings, TaxFormFinding{
+			TaxFormFindingCode: TaxFormFindingCostBasis, IsAgreeing: hasBasis,
+			ExpectedAmount: formatDollars(proceeds), PrintedAmount: formatDollars(basis), FindingText: findingText,
+		})
+	}
+	return findings
+}
+
+// lastFourAlphanumerics is the last four letters and digits of an account
+// number however it is written (XXXX-1234, ****5282).
+func lastFourAlphanumerics(text string) string {
+	kept := []rune{}
+	for _, character := range text {
+		if (character >= '0' && character <= '9') || (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') {
+			kept = append(kept, character)
+		}
+	}
+	if len(kept) > 4 {
+		kept = kept[len(kept)-4:]
+	}
+	return strings.ToUpper(string(kept))
+}
+
+// TaxFormAccount is a 1099's account number's last four, or "".
+func TaxFormAccount(taxForm *models.FinanceTaxForm) string {
+	for _, entry := range taxForm.TaxFormEntries {
+		if entry != nil && entry.BoxCode == "account" {
+			return entry.TextValue
+		}
+	}
+	return ""
 }

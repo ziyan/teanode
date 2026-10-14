@@ -792,7 +792,8 @@ const (
       taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
     taxYearPeople { employeeName excessSocialSecurityTaxAmount figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + ` }
     taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
-    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount standardDeductionAmount taxableIncomeAmount federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount } }`
+    taxYearInvestment { interestAmount taxExemptInterestAmount ordinaryDividendsAmount qualifiedDividendsAmount capitalGainDistributionsAmount shortTermGainAmount longTermGainAmount federalIncomeTaxWithheldAmount foreignTaxPaidAmount isCostBasisMissing taxFormIds }
+    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount investmentIncomeAmount incomeAmount adjustedGrossIncomeAmount preferentialIncomeAmount preferentialIncomeTaxAmount capitalLossDeductionAmount foreignTaxCreditAmount netInvestmentIncomeTaxAmount standardDeductionAmount taxableIncomeAmount federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount } }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 

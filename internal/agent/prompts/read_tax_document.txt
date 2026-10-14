@@ -1,6 +1,6 @@
 Read the document below for {{.PersonName}} and answer with one JSON object and nothing else.
 
-First say what it is. A paystub (a pay statement, an earnings statement) is one paycheck's record: what was earned, the taxes withheld and the deductions, this period and year to date. A W-2 (Form W-2, Wage and Tax Statement, or a corrected W-2c) is an employer's statement of a year's wages and taxes. Anything else, or a document you cannot read, is neither: answer {"documentKind": "none", "why": "…"} and nothing more.
+First say what it is: a paystub, a W-2 or a 1099. A paystub (a pay statement, an earnings statement) is one paycheck's record: what was earned, the taxes withheld and the deductions, this period and year to date. A W-2 (Form W-2, Wage and Tax Statement, or a corrected W-2c) is an employer's statement of a year's wages and taxes. Anything else, or a document you cannot read, is neither: answer {"documentKind": "none", "why": "…"} and nothing more.
 
 The person's taxpayer number (a Social Security number) is printed on both. Give only its last four digits, and never write more of it anywhere in your answer: not in a name, a description or a box.
 
@@ -29,7 +29,19 @@ How to read a W-2:
 - boxQualifier tells boxes of one number apart: box 12's code letter (D, W, DD, AA…); box 13's checked boxes only, as statutory_employee, retirement_plan or third_party_sick_pay with isChecked true; box 14's label; the state's two-letter code in boxes 15, 16 and 17, one set per state line; the locality's name in boxes 18, 19 and 20.
 - isCorrected is true for a W-2c, and its documentKind is still "w2". A W-2c prints the boxes it corrects in two columns, "previously reported" and "correct information": give only the boxes it corrects, with the correct information, never the previously reported.
 
-For both:
+A 1099 is a bank's or a broker's statement of a year's investment income: 1099-INT (interest), 1099-DIV (dividends) and 1099-B (sales of stocks, bonds and funds). A brokerage often sends them together in one "consolidated" or "composite" Form 1099: read every one it holds. For 1099s, answer in this shape, one taxForm per form:
+
+{"documentKind": "1099", "taxForms": [{"taxFormKind": "1099_int", "taxYear": 2025, "isCorrected": false, "payerName": "…", "payerTaxId": "12-3456789", "recipientName": "…", "recipientTaxIdMask": "1234", "taxFormEntries": [{"boxCode": "1", "amount": "…"}]}, {"taxFormKind": "1099_div", …, "taxFormEntries": [{"boxCode": "1a", "amount": "…"}, {"boxCode": "1b", "amount": "…"}]}, {"taxFormKind": "1099_b", …, "taxFormEntries": [{"boxCode": "1d", "boxQualifier": "short_covered", "amount": "…"}, {"boxCode": "1e", "boxQualifier": "short_covered", "amount": "…"}]}]}
+
+How to read a 1099:
+- 1099-INT boxes: 1 interest income, 2 early withdrawal penalty, 3 interest on US savings bonds and Treasury obligations, 4 federal income tax withheld, 5 investment expenses, 6 foreign tax paid, 8 tax-exempt interest, 9 private activity bond interest, 10 market discount, 11 to 13 bond premium; 16 the state's id and 17 state tax withheld, with the state's two-letter code as boxQualifier.
+- 1099-DIV boxes: 1a total ordinary dividends, 1b qualified dividends, 2a total capital gain distributions, 2b to 2f their parts, 3 nondividend distributions, 4 federal income tax withheld, 5 section 199A dividends, 6 investment expenses, 7 foreign tax paid, 9 and 10 liquidation distributions, 12 exempt-interest dividends, 13 private activity bond dividends; 15 the state's id and 16 state tax withheld, with the state's code as boxQualifier.
+- 1099-B: give its totals, not each sale: 1d proceeds, 1e cost basis, 1f accrued market discount and 1g wash sale loss disallowed, each with boxQualifier saying which total: short_covered (short term, basis reported to the IRS, box A), short_noncovered (box B), long_covered (box D), long_noncovered (box E), or unknown_term when the statement does not know the term (box X). Use the summary the statement prints; when it prints only the sales, add them up by total. A cost basis the statement does not print is left out, never guessed. 4 is federal income tax withheld; 15 and 16 the state's id and tax, by state code.
+- Leave out a 1099 whose boxes are all empty, and the forms a consolidated statement holds that are not 1099-INT, 1099-DIV or 1099-B (a 1099-MISC, a 1099-OID): say which in "why".
+- isCorrected is true for a corrected 1099 ("CORRECTED" checked).
+- Give each 1099's account number as an entry {"boxCode": "account", "textValue": "…"}, its last four letters or digits only; it tells a joint account's forms from an individual one's at the same broker.
+
+For all of them:
 - Amounts are decimal strings with no thousands separators and no currency sign: 1234.50, not $1,234.50.
 - Never invent a field, a line, a box or a number the document does not show.
 

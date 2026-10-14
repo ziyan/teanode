@@ -32,10 +32,10 @@ func financeTaxCommands() []*cli.Command {
 	}
 	return []*cli.Command{
 		{
-			Name: "read-tax-document", Usage: "have your agent read paystubs or W-2s from PDFs or photos, or from a message, and record them",
+			Name: "read-tax-document", Usage: "have your agent read paystubs, W-2s or 1099s from PDFs or photos, or from a message, and record them",
 			ArgsUsage: "<file>... | --mailbox-item <id>",
 			Description: "Each file goes up as a tax document, whose text the server never keeps, and the reading\n" +
-				"job reads it in the background: whether it is a paystub or a W-2, and every line or box. Only the\n" +
+				"job reads it in the background: whether it is a paystub, a W-2 or 1099s, and every line or box. Only the\n" +
 				"last four digits of your taxpayer number are kept. --mailbox-item reads each PDF and picture a\n" +
 				"message carries instead. teanode finance paystubs and teanode finance tax-forms show them once\n" +
 				"read, and teanode finance tax-year puts the year together.",
@@ -76,19 +76,19 @@ func financeTaxCommands() []*cli.Command {
 			ArgsUsage: "<paystub-id>", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runFinanceDeletePaystub,
 		},
 		{
-			Name: "tax-forms", Usage: "your W-2s, the latest tax year first, each with what it says about itself",
+			Name: "tax-forms", Usage: "your W-2s and 1099s, the latest tax year first, each with what it says about itself",
 			Flags: []cli.Flag{JSONFlag(), taxYearFlag("only this year's"),
 				&cli.IntFlag{Name: "limit", Usage: "how many, at most 200", Value: 60},
 				&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
 			},
 			Action: runFinanceTaxForms,
 		},
-		{Name: "tax-form", Usage: "one W-2, box by box", ArgsUsage: "<tax-form-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxForm},
+		{Name: "tax-form", Usage: "one W-2 or 1099, box by box", ArgsUsage: "<tax-form-id>", Flags: []cli.Flag{JSONFlag()}, Action: runFinanceTaxForm},
 		{
-			Name: "record-tax-form", Usage: "record a W-2 from a JSON file of its boxes",
+			Name: "record-tax-form", Usage: "record a W-2 or a 1099 from a JSON file of its boxes",
 			ArgsUsage: "<file.json | ->",
 			Description: "The file is one JSON object with the RecordTaxForm arguments: agentAttachmentId (the uploaded\n" +
-				"file it was read from), taxFormKind (w2), taxYear, isCorrected, payerName, payerTaxId,\n" +
+				"file it was read from), taxFormKind (w2, 1099_int, 1099_div or 1099_b), taxYear, isCorrected, payerName, payerTaxId,\n" +
 				"recipientName, recipientTaxIdMask (the last four digits only) and taxFormEntries ([{boxCode,\n" +
 				"boxQualifier, amount, textValue, isChecked}]): box 12's letter, a state's code in boxes 15 to 17\n" +
 				"and box 14's label are the qualifier. Recording the same file again replaces what was read from it.",
@@ -133,7 +133,7 @@ func runFinanceReadTaxDocument(ctx context.Context, command *cli.Command) error 
 	itemId := strings.TrimSpace(command.String("mailbox-item"))
 	paths := command.Args().Slice()
 	if (itemId == "") == (len(paths) == 0) {
-		return usage("give the files of the paystubs or W-2s, or --mailbox-item with the message they are in, one of the two")
+		return usage("give the files of the paystubs, W-2s or 1099s, or --mailbox-item with the message they are in, one of the two")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -388,13 +388,13 @@ func runFinanceTaxForms(ctx context.Context, command *cli.Command) error {
 	rows := make([][]string, 0, len(page.TaxForms))
 	for _, view := range page.TaxForms {
 		taxForm := view.FinanceTaxForm
-		kind := "W-2"
+		kind := finance.TaxFormKindName(taxForm.TaxFormKind)
 		if taxForm.IsCorrected {
-			kind = "W-2c"
+			kind += " (corrected)"
 		}
 		rows = append(rows, []string{fmt.Sprint(taxForm.TaxYear), kind, taxForm.PayerName, taxForm.RecipientName, taxFormCheckWords(view.TaxFormFindings), taxForm.ID})
 	}
-	return printTable([]string{"year", "form", "employer", "employee", "check", "id"}, rows)
+	return printTable([]string{"year", "form", "payer", "recipient", "check", "id"}, rows)
 }
 
 func runFinanceTaxForm(ctx context.Context, command *cli.Command) error {
@@ -410,7 +410,7 @@ func runFinanceTaxForm(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(view)
 	}
 	taxForm := view.FinanceTaxForm
-	_, _ = fmt.Fprintln(command.Writer, forTerminal(fmt.Sprintf("%d W-2 from %s for %s", taxForm.TaxYear, taxForm.PayerName, taxForm.RecipientName)))
+	_, _ = fmt.Fprintln(command.Writer, forTerminal(fmt.Sprintf("%d %s from %s for %s", taxForm.TaxYear, finance.TaxFormKindName(taxForm.TaxFormKind), taxForm.PayerName, taxForm.RecipientName)))
 	rows := make([][]string, 0, len(taxForm.TaxFormEntries))
 	for _, entry := range taxForm.TaxFormEntries {
 		value := finance.FormatReceiptAmount(entry.Amount, "USD")
@@ -432,7 +432,7 @@ func runFinanceTaxForm(ctx context.Context, command *cli.Command) error {
 }
 
 func runFinanceRecordTaxForm(ctx context.Context, command *cli.Command) error {
-	path, err := financeArgument(command, 0, "the JSON file of the W-2: teanode finance record-tax-form w2.json")
+	path, err := financeArgument(command, 0, "the JSON file of the form: teanode finance record-tax-form w2.json")
 	if err != nil {
 		return err
 	}
@@ -491,7 +491,7 @@ func printTaxDocumentAddress(command *cli.Command, address *client.TaxDocumentAd
 		return nil
 	}
 	_, _ = fmt.Fprintf(command.Writer, "tax document address: %s\n", address.TaxDocumentAddress)
-	_, _ = fmt.Fprintln(command.Writer, "each PDF or picture mailed there is read as a paystub or W-2 and shows in teanode finance tax-year")
+	_, _ = fmt.Fprintln(command.Writer, "each PDF or picture mailed there is read as a paystub, a W-2 or 1099s and shows in teanode finance tax-year")
 	if !address.CanReadPDFs {
 		_, _ = fmt.Fprintln(command.Writer, "this server cannot read PDFs: mail photos or screenshots")
 	}
@@ -535,8 +535,8 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(summary)
 	}
-	if len(summary.TaxYearEmployments) == 0 {
-		_, _ = fmt.Fprintf(command.Writer, "no paystubs or W-2s for %d; teanode finance read-tax-document adds them\n", taxYear)
+	if summary.PaystubCount == 0 && summary.TaxFormCount == 0 {
+		_, _ = fmt.Fprintf(command.Writer, "no paystubs, W-2s or 1099s for %d; teanode finance read-tax-document adds them\n", taxYear)
 		return nil
 	}
 	for _, employment := range summary.TaxYearEmployments {
@@ -572,6 +572,29 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 			return err
 		}
 	}
+	if investment := summary.TaxYearInvestment; investment != nil {
+		_, _ = fmt.Fprintln(command.Writer, "investment income from 1099s")
+		rows := [][]string{
+			{"interest", investment.InterestAmount},
+			{"ordinary dividends", investment.OrdinaryDividendsAmount},
+			{"qualified dividends (part of ordinary)", investment.QualifiedDividendsAmount},
+			{"capital gain distributions", investment.CapitalGainDistributionsAmount},
+			{"short-term gain or loss", investment.ShortTermGainAmount},
+			{"long-term gain or loss", investment.LongTermGainAmount},
+		}
+		for _, optional := range [][]string{
+			{"tax-exempt interest", investment.TaxExemptInterestAmount},
+			{"federal income tax withheld", investment.FederalIncomeTaxWithheldAmount},
+			{"foreign tax paid", investment.ForeignTaxPaidAmount},
+		} {
+			if optional[1] != "0.00" {
+				rows = append(rows, optional)
+			}
+		}
+		if err := printTable([]string{"", ""}, rows); err != nil {
+			return err
+		}
+	}
 	if estimate := summary.TaxYearEstimate; estimate != nil {
 		heading := "tax owed beside withheld, filing " + strings.ReplaceAll(string(estimate.TaxFilingStatus), "_", " ")
 		if estimate.IsTaxFilingStatusAssumed {
@@ -581,15 +604,33 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 			heading += ", by December 31"
 		}
 		_, _ = fmt.Fprintln(command.Writer, heading)
-		rows := [][]string{
-			{"pay (Medicare wages)", estimate.PayAmount},
-			{"standard deduction", estimate.StandardDeductionAmount},
-			{"taxable income", estimate.TaxableIncomeAmount},
-			{"federal income tax", estimate.FederalIncomeTaxAmount},
-			{"Social Security tax", estimate.SocialSecurityTaxAmount},
-			{"Medicare tax", estimate.MedicareTaxAmount},
-			{"state income tax, as withheld", estimate.StateIncomeTaxAmount},
+		rows := [][]string{{"pay (Medicare wages)", estimate.PayAmount}}
+		if estimate.InvestmentIncomeAmount != "0.00" {
+			rows = append(rows, []string{"investment income", estimate.InvestmentIncomeAmount}, []string{"adjusted gross income", estimate.AdjustedGrossIncomeAmount})
 		}
+		if estimate.CapitalLossDeductionAmount != "0.00" {
+			rows = append(rows, []string{"capital loss taken", estimate.CapitalLossDeductionAmount})
+		}
+		rows = append(rows,
+			[]string{"standard deduction", estimate.StandardDeductionAmount},
+			[]string{"taxable income", estimate.TaxableIncomeAmount},
+		)
+		if estimate.PreferentialIncomeAmount != "0.00" {
+			rows = append(rows, []string{"of it, qualified dividends and long-term gain", estimate.PreferentialIncomeAmount},
+				[]string{"their tax at 0%, 15% or 20%", estimate.PreferentialIncomeTaxAmount})
+		}
+		if estimate.ForeignTaxCreditAmount != "0.00" {
+			rows = append(rows, []string{"foreign tax credit", estimate.ForeignTaxCreditAmount})
+		}
+		rows = append(rows,
+			[]string{"federal income tax", estimate.FederalIncomeTaxAmount},
+			[]string{"Social Security tax", estimate.SocialSecurityTaxAmount},
+			[]string{"Medicare tax", estimate.MedicareTaxAmount},
+		)
+		if estimate.NetInvestmentIncomeTaxAmount != "0.00" {
+			rows = append(rows, []string{"net investment income tax", estimate.NetInvestmentIncomeTaxAmount})
+		}
+		rows = append(rows, []string{"state income tax, as withheld", estimate.StateIncomeTaxAmount})
 		if estimate.LocalIncomeTaxAmount != "0.00" {
 			rows = append(rows, []string{"local income tax, as withheld", estimate.LocalIncomeTaxAmount})
 		}
@@ -606,7 +647,7 @@ func runFinanceTaxYear(ctx context.Context, command *cli.Command) error {
 		if err := printTable([]string{"", ""}, rows); err != nil {
 			return err
 		}
-		_, _ = fmt.Fprintln(command.Writer, "wages only: other income, itemized deductions and credits are not counted")
+		_, _ = fmt.Fprintln(command.Writer, "wages and 1099s only: other income, itemized deductions and credits are not counted, nor a state's tax on investment income")
 	}
 	for _, finding := range summary.TaxYearFindings {
 		_, _ = fmt.Fprintln(command.Writer, "- "+forTerminal(finding.FindingText))

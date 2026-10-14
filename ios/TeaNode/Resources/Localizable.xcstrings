@@ -3221,6 +3221,22 @@
         }
       }
     },
+    "A corrected form": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訂正されたフォーム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更正后的表格"
+          }
+        }
+      }
+    },
     "A disabled alias is ignored, as if it were not there. It stays so it can be turned back on.": {
       "localizations": {
         "ja": {
@@ -3765,6 +3781,22 @@
         }
       }
     },
+    "Accrued market discount": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "経過市場割引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应计市场折价"
+          }
+        }
+      }
+    },
     "Add mail, calendars, reminders and contacts to the apps already on an iPhone or Mac.": {
       "localizations": {
         "ja": {
@@ -3797,18 +3829,18 @@
         }
       }
     },
-    "An estimate from wages only: %@ taxable after the %@ standard deduction. Other income, itemized deductions and credits are not counted.": {
+    "An estimate from wages and 1099s: %@ taxable after the %@ standard deduction. Other income, itemized deductions, credits and a state's tax on investment income are not counted.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "給与だけからの見積もりです。標準控除 %2$@ を引いた課税所得は %1$@ です。その他の収入、項目別控除、税額控除は含みません。"
+            "value": "給与と 1099 からの見積もりです。標準控除 %2$@ を引いた課税所得は %1$@ です。その他の収入、項目別控除、税額控除、投資所得への州税は含みません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "仅根据工资估算：减去 %2$@ 标准扣除额后应税收入为 %1$@。未计入其他收入、分项扣除和税收抵免。"
+            "value": "根据工资和 1099 估算：减去 %2$@ 标准扣除额后应税收入为 %1$@。未计入其他收入、分项扣除、税收抵免以及州对投资收入征的税。"
           }
         }
       }
@@ -4773,7 +4805,6 @@
         }
       }
     },
-
     "Adds up": {
       "localizations": {
         "ja": {
@@ -7398,6 +7429,54 @@
         }
       }
     },
+    "Bond premium": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "債券プレミアム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "债券溢价"
+          }
+        }
+      }
+    },
+    "Bond premium on tax-exempt bonds": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非課税債の債券プレミアム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免税债券溢价"
+          }
+        }
+      }
+    },
+    "Bond premium on Treasury obligations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "財務省証券の債券プレミアム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "国债债券溢价"
+          }
+        }
+      }
+    },
     "Bootstrap": {
       "localizations": {
         "ja": {
@@ -8022,6 +8101,22 @@
         }
       }
     },
+    "Capital gain distributions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャピタルゲイン分配"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资本利得分配"
+          }
+        }
+      }
+    },
     "Caps on what one person, and the whole server, may spend in a day and a month; how far one run may go; how long transcripts and corrections are kept.": {
       "localizations": {
         "ja": {
@@ -8082,6 +8177,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "现金流"
+          }
+        }
+      }
+    },
+    "Cash liquidation distributions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現金による清算分配"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现金清算分配"
           }
         }
       }
@@ -9014,6 +9125,22 @@
         }
       }
     },
+    "Collectibles (28%) gain": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収集品（28%）利得"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收藏品（28%）利得"
+          }
+        }
+      }
+    },
     "Comma separated URLs asked, in order, what this machine’s public address is, used to fill in the A record a domain should publish. Each is asked only if the one before it did not answer.": {
       "localizations": {
         "ja": {
@@ -9814,6 +9941,22 @@
         }
       }
     },
+    "Cost basis": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取得価額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成本基础"
+          }
+        }
+      }
+    },
     "Cost: %@": {
       "localizations": {
         "ja": {
@@ -10226,6 +10369,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "中途被打断。"
+          }
+        }
+      }
+    },
+    "Delete form": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォームを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除表格"
+          }
+        }
+      }
+    },
+    "Delete this form?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフォームを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要删除这份表格吗？"
           }
         }
       }
@@ -12150,6 +12325,22 @@
         }
       }
     },
+    "Early withdrawal penalty": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "早期解約ペナルティ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提前支取罚金"
+          }
+        }
+      }
+    },
     "Edit": {
       "localizations": {
         "ja": {
@@ -12818,6 +13009,310 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有说话人都已命名。"
+          }
+        }
+      }
+    },
+    "Exempt-interest dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非課税利子配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免税利息股息"
+          }
+        }
+      }
+    },
+    "Foreign tax credit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外国税額控除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外国税收抵免"
+          }
+        }
+      }
+    },
+    "Foreign tax paid": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外国税額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已付外国税"
+          }
+        }
+      }
+    },
+    "Form": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォーム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表格"
+          }
+        }
+      }
+    },
+    "Form deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォームを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除表格"
+          }
+        }
+      }
+    },
+    "Interest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利子"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利息"
+          }
+        }
+      }
+    },
+    "Interest income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利子所得"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利息收入"
+          }
+        }
+      }
+    },
+    "Interest on US savings bonds and Treasury obligations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "米国貯蓄債券・財務省証券の利子"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "美国储蓄债券和国债利息"
+          }
+        }
+      }
+    },
+    "Investment expenses": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投資費用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投资费用"
+          }
+        }
+      }
+    },
+    "Investment income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投資所得"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "投资收入"
+          }
+        }
+      }
+    },
+    "Long term, basis not reported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長期・取得価額報告なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长期，未报告成本"
+          }
+        }
+      }
+    },
+    "Long term, basis reported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長期・取得価額報告あり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长期，已报告成本"
+          }
+        }
+      }
+    },
+    "Long-term gain or loss": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "長期の損益"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "长期盈亏"
+          }
+        }
+      }
+    },
+    "Market discount": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "市場割引"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "市场折价"
+          }
+        }
+      }
+    },
+    "Net investment income tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "純投資所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "净投资收入税"
+          }
+        }
+      }
+    },
+    "Noncash liquidation distributions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現金以外の清算分配"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非现金清算分配"
+          }
+        }
+      }
+    },
+    "Nondividend distributions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配当以外の分配"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非股息分配"
+          }
+        }
+      }
+    },
+    "Of it, on qualified dividends and long-term gain": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "うち適格配当と長期譲渡益の分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其中合格股息和长期利得部分"
+          }
+        }
+      }
+    },
+    "Ordinary dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通股息"
           }
         }
       }
@@ -25686,6 +26181,22 @@
         }
       }
     },
+    "Payer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払者"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "付款方"
+          }
+        }
+      }
+    },
     "Paystubs or W-2s mailed in": {
       "localizations": {
         "ja": {
@@ -26310,6 +26821,38 @@
         }
       }
     },
+    "Private activity bond dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私的活動債の配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私人活动债券股息"
+          }
+        }
+      }
+    },
+    "Private activity bond interest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私的活動債の利子"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私人活动债券利息"
+          }
+        }
+      }
+    },
     "Private key file": {
       "localizations": {
         "ja": {
@@ -26322,6 +26865,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "私钥文件"
+          }
+        }
+      }
+    },
+    "Proceeds": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "売却代金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出售所得"
           }
         }
       }
@@ -26578,6 +27137,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "放回队列"
+          }
+        }
+      }
+    },
+    "Qualified dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "適格配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合格股息"
+          }
+        }
+      }
+    },
+    "Qualified dividends, part of ordinary": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "適格配当（普通配当の一部）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合格股息（普通股息的一部分）"
           }
         }
       }
@@ -27458,6 +28049,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "最近的主动通知"
+          }
+        }
+      }
+    },
+    "Recipient": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受取人"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收款人"
           }
         }
       }
@@ -29782,6 +30389,70 @@
         }
       }
     },
+    "Section 1202 gain": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セクション1202利得"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第1202条利得"
+          }
+        }
+      }
+    },
+    "Section 199A dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セクション199A配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第199A条股息"
+          }
+        }
+      }
+    },
+    "Section 897 capital gain": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セクション897キャピタルゲイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第897条资本利得"
+          }
+        }
+      }
+    },
+    "Section 897 ordinary dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セクション897普通配当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第897条普通股息"
+          }
+        }
+      }
+    },
     "Send the files": {
       "localizations": {
         "ja": {
@@ -29794,6 +30465,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件发送到"
+          }
+        }
+      }
+    },
+    "Short term, basis not reported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短期・取得価額報告なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短期，未报告成本"
+          }
+        }
+      }
+    },
+    "Short term, basis reported": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短期・取得価額報告あり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短期，已报告成本"
+          }
+        }
+      }
+    },
+    "Short-term gain or loss": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短期の損益"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "短期盈亏"
           }
         }
       }
@@ -33606,6 +34325,22 @@
         }
       }
     },
+    "State identification number": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州の識別番号"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州识别号"
+          }
+        }
+      }
+    },
     "State income tax, as withheld": {
       "localizations": {
         "ja": {
@@ -33634,6 +34369,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "州或地区"
+          }
+        }
+      }
+    },
+    "State tax withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収された州税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预扣的州税"
           }
         }
       }
@@ -34518,6 +35269,38 @@
         }
       }
     },
+    "Tax forms": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税務フォーム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税表"
+          }
+        }
+      }
+    },
+    "Tax-exempt interest": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非課税利子"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "免税利息"
+          }
+        }
+      }
+    },
     "TeaNode app": {
       "localizations": {
         "ja": {
@@ -34546,6 +35329,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 无法向你的服务器查询其运行的服务。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
+    "Term not known": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期間不明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限未知"
           }
         }
       }
@@ -38297,6 +39096,38 @@
         }
       }
     },
+    "Total capital gain distributions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャピタルゲイン分配の合計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资本利得分配合计"
+          }
+        }
+      }
+    },
+    "Total ordinary dividends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通配当の合計"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通股息合计"
+          }
+        }
+      }
+    },
     "Totals are converted to it.": {
       "localizations": {
         "ja": {
@@ -38661,6 +39492,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请现在就把它输入那台机器。它只显示这一次，之后无法再次查看。"
+          }
+        }
+      }
+    },
+    "Unrecaptured section 1250 gain": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未回収のセクション1250利得"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未收回的第1250条利得"
           }
         }
       }
@@ -39929,6 +40776,22 @@
         }
       }
     },
+    "Wash sale loss disallowed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウォッシュセールで否認された損失"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "洗售不允许扣除的亏损"
+          }
+        }
+      }
+    },
     "Watching": {
       "localizations": {
         "ja": {
@@ -40533,6 +41396,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "规则会做什么"
+          }
+        }
+      }
+    },
+    "What the year's 1099s report: interest, dividends and the gains or losses on sales.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その年の 1099 が報告するもの：利子、配当、売却の損益。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一年的 1099 报告的内容：利息、股息和出售的盈亏。"
           }
         }
       }
@@ -48433,22 +49312,6 @@
         }
       }
     },
-    "Details": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "詳細"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "详情"
-          }
-        }
-      }
-    },
     "Everyone should know you are recording. TeaNode stays silent and keeps the audio on this phone until the server verifies the upload.": {
       "localizations": {
         "ja": {
@@ -49611,7 +50474,6 @@
         }
       }
     },
-
     "Paystub": {
       "localizations": {
         "ja": {

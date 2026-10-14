@@ -192,11 +192,27 @@ type TaxFormKind string
 const (
 	// TaxFormKindW2 is a Form W-2, Wage and Tax Statement.
 	TaxFormKindW2 TaxFormKind = "w2"
+	// TaxFormKind1099Int is a Form 1099-INT, interest income.
+	TaxFormKind1099Int TaxFormKind = "1099_int"
+	// TaxFormKind1099Div is a Form 1099-DIV, dividends and distributions.
+	TaxFormKind1099Div TaxFormKind = "1099_div"
+	// TaxFormKind1099B is a Form 1099-B, proceeds from broker
+	// transactions, kept as its totals by term and by whether the broker
+	// reported the cost basis, as a brokerage's summary prints them.
+	TaxFormKind1099B TaxFormKind = "1099_b"
 )
+
+// TaxFormKinds are every kind of tax form TeaNode reads.
+var TaxFormKinds = []TaxFormKind{TaxFormKindW2, TaxFormKind1099Int, TaxFormKind1099Div, TaxFormKind1099B}
 
 // IsValid says the kind is a known form.
 func (self TaxFormKind) IsValid() bool {
-	return self == TaxFormKindW2
+	for _, kind := range TaxFormKinds {
+		if self == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // FinanceTaxForm is one tax form for one tax year, its boxes as entries.
@@ -211,7 +227,8 @@ type FinanceTaxForm struct {
 	// IsCorrected says it is a corrected form (a W-2c).
 	IsCorrected bool `json:"isCorrected"`
 
-	// PayerName and PayerTaxID are the employer's on a W-2.
+	// PayerName and PayerTaxID are the employer's on a W-2, the bank's or
+	// the broker's on a 1099.
 	PayerName  string `json:"payerName"`
 	PayerTaxID string `json:"payerTaxId,omitempty" graphapi:"nullable"`
 	// RecipientName and RecipientTaxIDMask (the last four digits) are the

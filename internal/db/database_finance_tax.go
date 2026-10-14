@@ -45,6 +45,12 @@ type FinanceTaxOperation interface {
 	// from the same upload, deleting a paystub read from it before.
 	PutFinanceTaxForm(taxForm *models.FinanceTaxForm) (*models.FinanceTaxForm, error)
 
+	// DeleteFinanceTaxFormsOfAttachment deletes the tax forms read from an
+	// upload of the agent's whose kind is not one of keptKinds, with their
+	// boxes, keeping the upload: a statement read again that holds fewer
+	// forms than before.
+	DeleteFinanceTaxFormsOfAttachment(agentId, attachmentId string, keptKinds []models.TaxFormKind) error
+
 	// GetFinanceTaxForm is one tax form of the agent with its boxes, or nil.
 	GetFinanceTaxForm(agentId, taxFormId string) (*models.FinanceTaxForm, error)
 
@@ -669,7 +675,7 @@ func (self *transaction) PutFinanceTaxForm(taxForm *models.FinanceTaxForm) (*mod
 		return nil, err
 	}
 	var existing []agentFinanceTaxFormModel
-	if err := self.tx.Where(`"agent_id" = ? AND "agent_attachment_id" = ?`, taxForm.AgentID, taxForm.AgentAttachmentID).Limit(1).Find(&existing).Error; err != nil {
+	if err := self.tx.Where(`"agent_id" = ? AND "agent_attachment_id" = ? AND "tax_form_kind" = ?`, taxForm.AgentID, taxForm.AgentAttachmentID, string(taxForm.TaxFormKind)).Limit(1).Find(&existing).Error; err != nil {
 		return nil, err
 	}
 	now := time.Now()
@@ -800,4 +806,34 @@ func (self *transaction) DeleteFinanceTaxForm(agentId, taxFormId string) (*Finan
 		return nil, err
 	}
 	return self.deleteTaxDocumentAttachment(agentId, before.AgentAttachmentID)
+}
+
+func (self *transaction) DeleteFinanceTaxFormsOfAttachment(agentId, attachmentId string, keptKinds []models.TaxFormKind) error {
+	var stale []agentFinanceTaxFormModel
+	query := self.tx.Where(`"agent_id" = ? AND "agent_attachment_id" = ?`, agentId, attachmentId)
+	if len(keptKinds) > 0 {
+		kinds := make([]string, 0, len(keptKinds))
+		for _, kind := range keptKinds {
+			kinds = append(kinds, string(kind))
+		}
+		query = query.Where(`"tax_form_kind" NOT IN ?`, kinds)
+	}
+	if err := query.Find(&stale).Error; err != nil {
+		return err
+	}
+	for _, row := range stale {
+		before, err := self.GetFinanceTaxForm(agentId, row.ID)
+		if err != nil {
+			return err
+		}
+		if before == nil {
+			continue
+		}
+		if err := self.applyMutation(models.AuditResourceFinanceTaxForm, row.ID, models.AuditActionDelete, taxFormAudit(before), nil, func(tx *gorm.DB) error {
+			return tx.Where(`"agent_id" = ? AND "id" = ?`, agentId, row.ID).Delete(&agentFinanceTaxFormModel{}).Error
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
