@@ -252,6 +252,22 @@ struct CategoryEditor: View {
                 Toggle("Hidden", isOn: $draft.isHidden)
                 if draft.categoryId != nil, !draft.isBuiltIn {
                     Button("Delete category", role: .destructive) { isConfirmingDelete = true }
+                    .confirmationDialog("Delete \(draft.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                        Button("Delete category", role: .destructive) {
+                            guard let categoryId = draft.categoryId else { return }
+                            Task {
+                                let isDeleted = await finance.act(saying: String(localized: "Category deleted")) {
+                                    try await finance.connection.deleteSpendingCategory(categoryId)
+                                }
+                                if isDeleted {
+                                    onSaved()
+                                    dismiss()
+                                }
+                            }
+                        }
+                    } message: {
+                        Text("Its transactions become uncategorized, and its budget and rules are deleted.")
+                    }
                 }
             }
             .navigationTitle(draft.categoryId == nil ? String(localized: "New category") : String(localized: "Edit category"))
@@ -261,22 +277,6 @@ struct CategoryEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }.disabled(draft.name.trimmed.isEmpty)
                 }
-            }
-            .confirmationDialog("Delete \(draft.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                Button("Delete category", role: .destructive) {
-                    guard let categoryId = draft.categoryId else { return }
-                    Task {
-                        let isDeleted = await finance.act(saying: String(localized: "Category deleted")) {
-                            try await finance.connection.deleteSpendingCategory(categoryId)
-                        }
-                        if isDeleted {
-                            onSaved()
-                            dismiss()
-                        }
-                    }
-                }
-            } message: {
-                Text("Its transactions become uncategorized, and its budget and rules are deleted.")
             }
         }
     }
@@ -631,22 +631,22 @@ struct AssetDetail: View {
                     }
                 }
                 Button("Delete asset", role: .destructive) { isConfirmingDelete = true }
+                .confirmationDialog("Delete \(asset.assetName)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                    Button("Delete asset", role: .destructive) {
+                        let assetId = asset.id
+                        Task {
+                            let isDeleted = await finance.act(saying: String(localized: "Asset deleted")) { try await finance.connection.deleteAsset(assetId) }
+                            if isDeleted { dismiss() }
+                        }
+                    }
+                } message: {
+                    Text("Its \(history.count) values go with it.")
+                }
             }
         }
         .navigationTitle(asset.assetName)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .confirmationDialog("Delete \(asset.assetName)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete asset", role: .destructive) {
-                let assetId = asset.id
-                Task {
-                    let isDeleted = await finance.act(saying: String(localized: "Asset deleted")) { try await finance.connection.deleteAsset(assetId) }
-                    if isDeleted { dismiss() }
-                }
-            }
-        } message: {
-            Text("Its \(history.count) values go with it.")
-        }
     }
 
     private func load() async {
@@ -1054,26 +1054,26 @@ struct ReceiptDetailView: View {
                     Label("Delete receipt", systemImage: "trash")
                         .foregroundStyle(.red)
                 }
+                .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                    Button("Delete receipt", role: .destructive) {
+                        Task {
+                            let isDone = await finance.act(saying: String(localized: "Receipt deleted")) {
+                                try await finance.connection.deleteReceipt(receipt.id)
+                            }
+                            if isDone {
+                                onChange()
+                                dismiss()
+                            }
+                        }
+                    }
+                } message: {
+                    Text("Its picture and lines are deleted too.")
+                }
             }
         }
         .navigationTitle(receipt.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Receipt"))
         .navigationBarTitleDisplayMode(.inline)
         .inMemory(memory, recordKind: "finance_receipt", recordId: receipt.id)
-        .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete receipt", role: .destructive) {
-                Task {
-                    let isDone = await finance.act(saying: String(localized: "Receipt deleted")) {
-                        try await finance.connection.deleteReceipt(receipt.id)
-                    }
-                    if isDone {
-                        onChange()
-                        dismiss()
-                    }
-                }
-            }
-        } message: {
-            Text("Its picture and lines are deleted too.")
-        }
     }
 }
 
@@ -1128,6 +1128,17 @@ struct FinanceSetupView: View {
                             .tint(.blue)
                         }
                     }
+                    .confirmationDialog("Remove this bank?", isPresented: Binding(get: { removing?.id == source.id }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
+                        Button("Remove", role: .destructive) {
+                            guard let source = removing else { return }
+                            Task {
+                                _ = await finance.act(saying: String(localized: "Removed")) { try await finance.connection.deleteFinanceSource(source.id) }
+                                await load()
+                            }
+                        }
+                    } message: {
+                        Text("Its accounts and transactions are deleted from TeaNode. For SimpleFIN, also revoke the access on its site.")
+                    }
                 }
                 if sources.isEmpty {
                     Text("No bank linked yet.").foregroundStyle(.secondary)
@@ -1171,17 +1182,6 @@ struct FinanceSetupView: View {
             await load()
         }
         .refreshable { await load() }
-        .confirmationDialog("Remove this bank?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }), titleVisibility: .visible) {
-            Button("Remove", role: .destructive) {
-                guard let source = removing else { return }
-                Task {
-                    _ = await finance.act(saying: String(localized: "Removed")) { try await finance.connection.deleteFinanceSource(source.id) }
-                    await load()
-                }
-            }
-        } message: {
-            Text("Its accounts and transactions are deleted from TeaNode. For SimpleFIN, also revoke the access on its site.")
-        }
     }
 
     private func load() async {

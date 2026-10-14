@@ -132,6 +132,18 @@ struct RecordingTextHistoryScreen: View {
                         DisclosureGroup("Original transcript") { Text(correction.originalTranscriptText).textSelection(.enabled) }
                         if !correction.isRemoved {
                             Button("Remove text correction", role: .destructive) { selectedCorrection = correction }.disabled(isResetting)
+                            .confirmationDialog(
+                                "Remove text correction?",
+                                isPresented: Binding(
+                                    get: { selectedCorrection?.id == correction.id }, set: { if !$0 { selectedCorrection = nil } }
+                                ), titleVisibility: .visible
+                            ) {
+                                if let correction = selectedCorrection {
+                                    Button("Remove text correction", role: .destructive) { Task { await reset(correction) } }
+                                }
+                            } message: {
+                                Text("The generated transcript remains intact. Learning is reconciled without a paid reprocessing pass.")
+                            }
                         }
                     }.padding(.vertical, 4)
                 }
@@ -147,18 +159,6 @@ struct RecordingTextHistoryScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog(
-            "Remove text correction?",
-            isPresented: Binding(
-                get: { selectedCorrection != nil }, set: { if !$0 { selectedCorrection = nil } }
-            ), titleVisibility: .visible
-        ) {
-            if let correction = selectedCorrection {
-                Button("Remove text correction", role: .destructive) { Task { await reset(correction) } }
-            }
-        } message: {
-            Text("The generated transcript remains intact. Learning is reconciled without a paid reprocessing pass.")
-        }
     }
 
     private func load() async {

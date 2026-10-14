@@ -370,6 +370,15 @@ struct ContactDetailView: View {
                         Button("Delete contact", role: .destructive) {
                             isConfirmingDelete = true
                         }
+                        .confirmationDialog("Delete \(contact.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                            Button("Delete contact", role: .destructive) {
+                                Task {
+                                    if await model.delete(contactId) { dismiss() }
+                                }
+                            }
+                        } message: {
+                            Text("It is removed from your address book and from every device that reads it.")
+                        }
                     } footer: {
                         Text("Your agent knows the contact marked as you is you.")
                     }
@@ -393,15 +402,6 @@ struct ContactDetailView: View {
                     Task { await read() }
                 }
             }
-        }
-        .confirmationDialog("Delete \(contact?.name ?? "")?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete contact", role: .destructive) {
-                Task {
-                    if await model.delete(contactId) { dismiss() }
-                }
-            }
-        } message: {
-            Text("It is removed from your address book and from every device that reads it.")
         }
         .inMemory(memory, recordKind: "contact", recordId: contactId)
         .task { await read() }

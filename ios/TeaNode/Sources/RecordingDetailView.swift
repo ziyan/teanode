@@ -252,20 +252,6 @@ struct RecordingDetailScreen: View {
         }
         .sheet(isPresented: $isRenaming) { RecordingRenameSheet(model: model) }
         .sheet(item: $sharedMedia) { media in RecordingPlaybackScreen(connection: connection, media: media) }
-        .confirmationDialog("Start another transcription pass?", isPresented: $isConfirmingTranscription, titleVisibility: .visible) {
-            Button("Transcribe or reprocess") { Task { await transcribeAgain() } }
-        } message: {
-            Text(
-                "A new pass can be billed again by the provider. Confirmed labels stay separate from generated versions. Rename a speaker without reprocessing to avoid another pass."
-            )
-        }
-        .confirmationDialog("Delete recording and its originals?", isPresented: $isDeleting, titleVisibility: .visible) {
-            Button("Delete recording", role: .destructive) {
-                Task { if await model.delete() { dismiss() } }
-            }
-        } message: {
-            Text("Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.")
-        }
     }
 
     /// Where the transcript is, until it is done: the person should not wonder why the conversation is empty.
@@ -355,6 +341,20 @@ struct RecordingDetailScreen: View {
             }
         } label: {
             Label("Actions", systemImage: "ellipsis.circle")
+        }
+        .confirmationDialog("Start another transcription pass?", isPresented: $isConfirmingTranscription, titleVisibility: .visible) {
+            Button("Transcribe or reprocess") { Task { await transcribeAgain() } }
+        } message: {
+            Text(
+                "A new pass can be billed again by the provider. Confirmed labels stay separate from generated versions. Rename a speaker without reprocessing to avoid another pass."
+            )
+        }
+        .confirmationDialog("Delete recording and its originals?", isPresented: $isDeleting, titleVisibility: .visible) {
+            Button("Delete recording", role: .destructive) {
+                Task { if await model.delete() { dismiss() } }
+            }
+        } message: {
+            Text("Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.")
         }
     }
 

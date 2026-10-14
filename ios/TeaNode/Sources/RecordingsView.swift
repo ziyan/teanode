@@ -326,6 +326,28 @@ struct RecordingsScreen: View {
                                         }
                                     }
                                 }
+                                .confirmationDialog(
+                                    "Remove the local original?",
+                                    isPresented: Binding(get: { isRemoving && removedRecording?.id == row.localRecording?.id }, set: { isRemoving = $0 }),
+                                    titleVisibility: .visible
+                                ) {
+                                    Button("Remove from this phone", role: .destructive) {
+                                        if let removedRecording { Task { await model.removeFromPhone(removedRecording) } }
+                                    }
+                                } message: {
+                                    Text("Any audio not verified by the server will be lost. This does not delete the server recording.")
+                                }
+                                .confirmationDialog(
+                                    "Delete recording and its originals?",
+                                    isPresented: Binding(get: { isDeleting && deletedRecording?.id == row.recording?.id }, set: { isDeleting = $0 }),
+                                    titleVisibility: .visible
+                                ) {
+                                    Button("Delete recording", role: .destructive) {
+                                        if let deletedRecording { Task { await model.delete(deletedRecording) } }
+                                    }
+                                } message: {
+                                    Text("Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.")
+                                }
                                 .onAppear {
                                     if row.id == shownRows.last?.id, model.hasMoreRecordings, !model.isLoadingPage {
                                         Task { await model.loadMore() }
@@ -440,20 +462,6 @@ struct RecordingsScreen: View {
                 case .success(let file): Task { await model.importFile(file) }
                 case .failure(let error): model.problemText = error.localizedDescription
                 }
-            }
-            .confirmationDialog("Remove the local original?", isPresented: $isRemoving, titleVisibility: .visible) {
-                Button("Remove from this phone", role: .destructive) {
-                    if let removedRecording { Task { await model.removeFromPhone(removedRecording) } }
-                }
-            } message: {
-                Text("Any audio not verified by the server will be lost. This does not delete the server recording.")
-            }
-            .confirmationDialog("Delete recording and its originals?", isPresented: $isDeleting, titleVisibility: .visible) {
-                Button("Delete recording", role: .destructive) {
-                    if let deletedRecording { Task { await model.delete(deletedRecording) } }
-                }
-            } message: {
-                Text("Derived audio, transcripts and reference samples will be removed. Learned material will be reconciled.")
             }
             .withoutSwipeBack()
         }

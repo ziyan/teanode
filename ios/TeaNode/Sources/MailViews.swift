@@ -435,19 +435,6 @@ struct ThreadList: View {
                 }
             }
         }
-        .confirmationDialog("Empty Trash?", isPresented: $isConfirmingEmpty, titleVisibility: .visible) {
-            Button("Empty Trash", role: .destructive) {
-                Task {
-                    guard let mailboxId = mail.mailbox?.id else { return }
-                    _ = await mail.act(saying: String(localized: "Trash emptied")) {
-                        try await mail.connection.emptyTrash(mailboxId: mailboxId)
-                    }
-                    await list.load(mail)
-                }
-            }
-        } message: {
-            Text("Every message in Trash is removed. They cannot be brought back.")
-        }
     }
 
     private var title: String {
@@ -530,6 +517,19 @@ struct ThreadList: View {
             ToolbarItemGroup(placement: .bottomBar) {
                 if folder?.kind == "trash", list.total > 0 {
                     Button("Empty Trash", role: .destructive) { isConfirmingEmpty = true }
+                    .confirmationDialog("Empty Trash?", isPresented: $isConfirmingEmpty, titleVisibility: .visible) {
+                        Button("Empty Trash", role: .destructive) {
+                            Task {
+                                guard let mailboxId = mail.mailbox?.id else { return }
+                                _ = await mail.act(saying: String(localized: "Trash emptied")) {
+                                    try await mail.connection.emptyTrash(mailboxId: mailboxId)
+                                }
+                                await list.load(mail)
+                            }
+                        }
+                    } message: {
+                        Text("Every message in Trash is removed. They cannot be brought back.")
+                    }
                 }
                 Spacer()
                 Button {

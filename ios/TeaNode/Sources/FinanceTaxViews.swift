@@ -164,18 +164,6 @@ struct TaxesView: View {
                 mailInAddress = try? await finance.connection.taxDocumentAddress()
             }
         }
-        .confirmationDialog("New address?", isPresented: $isRegeneratingAddress, titleVisibility: .visible) {
-            Button("Make a new address", role: .destructive) {
-                Task {
-                    var renewed: TaxDocumentAddress?
-                    if await finance.act(saying: String(localized: "Made a new tax document address"), { renewed = try await finance.connection.regenerateTaxDocumentAddress() }) {
-                        mailInAddress = renewed
-                    }
-                }
-            }
-        } message: {
-            Text("The current address stops taking mail at once. Anything set to forward paystubs to it needs the new one.")
-        }
         .refreshable { await load() }
         .overlay {
             if !isLoaded { ProgressView() }
@@ -223,6 +211,18 @@ struct TaxesView: View {
                         .foregroundStyle(.secondary)
                 }
                 Button("New address", systemImage: "arrow.clockwise") { isRegeneratingAddress = true }
+                .confirmationDialog("New address?", isPresented: $isRegeneratingAddress, titleVisibility: .visible) {
+                    Button("Make a new address", role: .destructive) {
+                        Task {
+                            var renewed: TaxDocumentAddress?
+                            if await finance.act(saying: String(localized: "Made a new tax document address"), { renewed = try await finance.connection.regenerateTaxDocumentAddress() }) {
+                                self.mailInAddress = renewed
+                            }
+                        }
+                    }
+                } message: {
+                    Text("The current address stops taking mail at once. Anything set to forward paystubs to it needs the new one.")
+                }
             } header: {
                 Text("Mail them in")
             } footer: {
@@ -1031,6 +1031,21 @@ struct PaystubDetailView: View {
                         Label("Delete paystub", systemImage: "trash")
                             .foregroundStyle(.red)
                     }
+                    .confirmationDialog("Delete this paystub?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                        Button("Delete paystub", role: .destructive) {
+                            Task {
+                                let isDone = await finance.act(saying: String(localized: "Paystub deleted")) {
+                                    try await finance.connection.deletePaystub(paystubId)
+                                }
+                                if isDone {
+                                    onChange()
+                                    dismiss()
+                                }
+                            }
+                        }
+                    } message: {
+                        Text("Its lines are deleted too, and the tax year no longer counts it.")
+                    }
                 }
             } else {
                 ProgressView().frame(maxWidth: .infinity)
@@ -1040,21 +1055,6 @@ struct PaystubDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .quickLookPreview($previewAddress)
-        .confirmationDialog("Delete this paystub?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete paystub", role: .destructive) {
-                Task {
-                    let isDone = await finance.act(saying: String(localized: "Paystub deleted")) {
-                        try await finance.connection.deletePaystub(paystubId)
-                    }
-                    if isDone {
-                        onChange()
-                        dismiss()
-                    }
-                }
-            }
-        } message: {
-            Text("Its lines are deleted too, and the tax year no longer counts it.")
-        }
     }
 
     @ViewBuilder
@@ -1255,27 +1255,27 @@ struct TaxFormDetailView: View {
                     Label("Delete form", systemImage: "trash")
                         .foregroundStyle(.red)
                 }
+                .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                    Button("Delete form", role: .destructive) {
+                        Task {
+                            let isDone = await finance.act(saying: String(localized: "Form deleted")) {
+                                try await finance.connection.deleteTaxForm(taxFormView.id)
+                            }
+                            if isDone {
+                                onChange()
+                                dismiss()
+                            }
+                        }
+                    }
+                } message: {
+                    Text("Its boxes are deleted too, and the tax year no longer counts it.")
+                }
             }
         }
         .navigationTitle(taxForm?.payerName.flatMap { $0.isEmpty ? nil : $0 } ?? taxForm?.kindName ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .quickLookPreview($previewAddress)
-        .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete form", role: .destructive) {
-                Task {
-                    let isDone = await finance.act(saying: String(localized: "Form deleted")) {
-                        try await finance.connection.deleteTaxForm(taxFormView.id)
-                    }
-                    if isDone {
-                        onChange()
-                        dismiss()
-                    }
-                }
-            }
-        } message: {
-            Text("Its boxes are deleted too, and the tax year no longer counts it.")
-        }
     }
 
     private func load() async {

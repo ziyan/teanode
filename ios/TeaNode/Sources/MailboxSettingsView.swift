@@ -178,6 +178,20 @@ struct MailFoldersView: View {
                         .tint(.orange)
                     }
                 }
+                .confirmationDialog(
+                    "Delete \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting?.id == folder.id }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible
+                ) {
+                    Button("Delete folder", role: .destructive) {
+                        guard let folder = deleting else { return }
+                        Task {
+                            _ = await mail.act(saying: String(localized: "Folder deleted")) {
+                                try await mail.connection.deleteMailFolder(folder.id)
+                            }
+                        }
+                    }
+                } message: {
+                    Text("Its \(deleting?.total ?? 0) messages are deleted with it.")
+                }
             }
         }
         .navigationTitle("Folders")
@@ -217,20 +231,6 @@ struct MailFoldersView: View {
                 }
             }
         }
-        .confirmationDialog(
-            "Delete \(deleting?.name ?? "")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible
-        ) {
-            Button("Delete folder", role: .destructive) {
-                guard let folder = deleting else { return }
-                Task {
-                    _ = await mail.act(saying: String(localized: "Folder deleted")) {
-                        try await mail.connection.deleteMailFolder(folder.id)
-                    }
-                }
-            }
-        } message: {
-            Text("Its \(deleting?.total ?? 0) messages are deleted with it.")
-        }
     }
 }
 
@@ -263,6 +263,19 @@ struct MailAppPasswordsView: View {
                     DevicePasswordRow(name: password.name, password: password)
                     .swipeActions {
                         Button("Revoke", systemImage: "trash", role: .destructive) { revoking = password }
+                    }
+                    .confirmationDialog(
+                        "Revoke \(revoking?.name ?? "")?", isPresented: Binding(get: { revoking?.id == password.id }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible
+                    ) {
+                        Button("Revoke", role: .destructive) {
+                            guard let password = revoking else { return }
+                            Task {
+                                _ = await mail.act(saying: String(localized: "Revoked")) { try await mail.connection.deleteMailAppPassword(password.id) }
+                                await load()
+                            }
+                        }
+                    } message: {
+                        Text("The mail program using it stops reaching the mailbox.")
                     }
                 }
             } header: {
@@ -334,19 +347,6 @@ struct MailAppPasswordsView: View {
                 }
                 .interactiveDismissDisabled(true)
             }
-        }
-        .confirmationDialog(
-            "Revoke \(revoking?.name ?? "")?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible
-        ) {
-            Button("Revoke", role: .destructive) {
-                guard let password = revoking else { return }
-                Task {
-                    _ = await mail.act(saying: String(localized: "Revoked")) { try await mail.connection.deleteMailAppPassword(password.id) }
-                    await load()
-                }
-            }
-        } message: {
-            Text("The mail program using it stops reaching the mailbox.")
         }
     }
 

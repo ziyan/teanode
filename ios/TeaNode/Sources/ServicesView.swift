@@ -22,6 +22,15 @@ struct ServerServicesView: View {
                 }
                 Section {
                     Button("Review changes") { isReviewing = true }.disabled(isSaving)
+                    .confirmationDialog("Apply service changes?", isPresented: $isReviewing, titleVisibility: .visible) {
+                        Button("Apply changes") {
+                            isSaving = true
+                            Task {
+                                defer { isSaving = false }
+                                do { try await connection.updateServices(selection); await app.refreshServices() } catch { problemText = app.describe(error) }
+                            }
+                        }
+                    }
                 } footer: {
                     Text("Turning a service off keeps its data and pauses its pending work. A restart is needed to enable new services.")
                 }
@@ -37,16 +46,6 @@ struct ServerServicesView: View {
         }
         .navigationTitle("Services")
         .task { do { selection = try await connection.serviceSelection() } catch { problemText = app.describe(error) } }
-        .confirmationDialog("Apply service changes?", isPresented: $isReviewing, titleVisibility: .visible) {
-            Button("Apply changes") {
-                guard let selection else { return }
-                isSaving = true
-                Task {
-                    defer { isSaving = false }
-                    do { try await connection.updateServices(selection); await app.refreshServices() } catch { problemText = app.describe(error) }
-                }
-            }
-        }
     }
     private func binding(_ keyPath: WritableKeyPath<ServiceSelection, Bool>) -> Binding<Bool> {
         Binding(get: { selection?[keyPath: keyPath] ?? false }, set: { selection?[keyPath: keyPath] = $0 })
@@ -102,6 +101,14 @@ struct SyncCredentialsView: View {
                         DevicePasswordRow(name: credential.credentialName, scopes: scopeText(credential), password: credential)
                         Spacer()
                         Button("Revoke", role: .destructive) { revoking = credential }.disabled(isWorking)
+                        .confirmationDialog("Revoke this device's sync access?", isPresented: Binding(get: { revoking?.id == credential.id }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible) {
+                            if let revoking {
+                                Button("Revoke", role: .destructive) {
+                                    isWorking = true
+                                    Task { defer { isWorking = false }; do { try await connection.revokeSyncCredential(revoking.id); await load() } catch { problemText = app.describe(error) } }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -109,14 +116,6 @@ struct SyncCredentialsView: View {
         }
         .navigationTitle("Device sync")
         .task { await load() }
-        .confirmationDialog("Revoke this device's sync access?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }), titleVisibility: .visible) {
-            if let revoking {
-                Button("Revoke", role: .destructive) {
-                    isWorking = true
-                    Task { defer { isWorking = false }; do { try await connection.revokeSyncCredential(revoking.id); await load() } catch { problemText = app.describe(error) } }
-                }
-            }
-        }
     }
     private func scopeText(_ credential: SyncCredential) -> String {
         [

@@ -453,6 +453,25 @@ struct ComposeView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { isConfirmingClose = true }
+                    .confirmationDialog("Close this message?", isPresented: $isConfirmingClose, titleVisibility: .visible) {
+                        Button("Save draft") {
+                            Task {
+                                await model.save(isForced: true)
+                                dismiss()
+                            }
+                        }
+                        Button("Discard", role: .destructive) { isConfirmingDiscard = true }
+                    }
+                    .confirmationDialog("Discard this draft?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
+                        Button("Discard", role: .destructive) {
+                            Task {
+                                await model.discard()
+                                dismiss()
+                            }
+                        }
+                    } message: {
+                        Text("What was written is gone.")
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -469,25 +488,6 @@ struct ComposeView: View {
                         Text("Draft saved \(savedAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-            }
-            .confirmationDialog("Close this message?", isPresented: $isConfirmingClose, titleVisibility: .visible) {
-                Button("Save draft") {
-                    Task {
-                        await model.save(isForced: true)
-                        dismiss()
-                    }
-                }
-                Button("Discard", role: .destructive) { isConfirmingDiscard = true }
-            }
-            .confirmationDialog("Discard this draft?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
-                Button("Discard", role: .destructive) {
-                    Task {
-                        await model.discard()
-                        dismiss()
-                    }
-                }
-            } message: {
-                Text("What was written is gone.")
             }
             .interactiveDismissDisabled(true)
             .task { await model.load() }
