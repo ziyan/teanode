@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.5] - 2026-10-14
+
+### Fixed
+
+- The phone tour no longer offers each tip twice, and does not start again when the same phone signs in again. (#488)
+
 ## [0.159.4] - 2026-10-14
 
 ### Fixed
