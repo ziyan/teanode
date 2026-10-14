@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.8] - 2026-10-14
+
+### Fixed
+
+- iPhone: a recording's length no longer breaks across two lines in the player at the largest text sizes. (#492)
+
 ## [0.159.7] - 2026-10-14
 
 ### Fixed
