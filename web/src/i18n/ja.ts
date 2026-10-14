@@ -2196,6 +2196,7 @@ export const ja: Catalog = {
   'connect.openHere': 'このスマートフォンで見ていますか？ TeaNode アプリを開く',
   'connect.expired': 'このコードは期限切れです。',
   'connect.newCode': '新しいコードを作る',
+  'connect.back': '電話に戻る',
   'connect.making': 'コードを作っています…',
   'connect.failed': 'コードを作れませんでした。',
   'authorize.askedFor': '要求された送信先',

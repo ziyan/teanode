@@ -2140,6 +2140,7 @@ export const zh: Catalog = {
   'connect.openHere': '就在这部手机上？打开 TeaNode 应用',
   'connect.expired': '这个代码已过期。',
   'connect.newCode': '生成新代码',
+  'connect.back': '返回手机',
   'connect.making': '正在生成代码…',
   'connect.failed': '无法生成代码。',
   'authorize.askedFor': '它请求发送到',
