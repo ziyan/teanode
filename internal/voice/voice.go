@@ -117,8 +117,13 @@ type Settings struct {
 
 // Usage is what one finished transcription cost.
 type Usage struct {
-	InputTokens  int
-	OutputTokens int
+	// InputTokens are the input tokens that were not audio, when the
+	// provider reports the two apart, and all of them when it does not.
+	InputTokens int
+	// AudioInputTokens are the input tokens that were audio, which are
+	// billed at another price than text.
+	AudioInputTokens int
+	OutputTokens     int
 }
 
 // configureWait is how long the provider has to accept the session.
@@ -328,7 +333,11 @@ func (self *Session) Read(emit func(*Event), used func(*Usage)) error {
 				self.order.charged = map[string]bool{}
 			}
 			self.order.charged[event.ItemID] = true
-			used(&Usage{InputTokens: event.Usage.InputTokens, OutputTokens: event.Usage.OutputTokens})
+			audioInputTokens := event.Usage.InputTokenDetails.AudioTokens
+			if audioInputTokens < 0 || audioInputTokens > event.Usage.InputTokens {
+				audioInputTokens = 0
+			}
+			used(&Usage{InputTokens: event.Usage.InputTokens - audioInputTokens, AudioInputTokens: audioInputTokens, OutputTokens: event.Usage.OutputTokens})
 		}
 	}
 }
@@ -347,8 +356,11 @@ type providerEvent struct {
 		Code    string `json:"code"`
 	} `json:"error"`
 	Usage *struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens       int `json:"input_tokens"`
+		OutputTokens      int `json:"output_tokens"`
+		InputTokenDetails struct {
+			AudioTokens int `json:"audio_tokens"`
+		} `json:"input_token_details"`
 	} `json:"usage"`
 }
 

@@ -1368,7 +1368,7 @@ func (self *AskRun) turn() error {
 		history = append(history, answer)
 		answerUsage := &models.AgentUsageNote{Model: modelName, Kind: usageKind, PromptTokens: response.Usage.PromptTokens, CompletionTokens: response.Usage.CompletionTokens,
 			CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
-			Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens)}
+			Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.AudioInputTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens)}
 		self.carryJudgements(answerUsage)
 		if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			saved, err := tx.AppendAgentMessage(&models.AgentMessage{

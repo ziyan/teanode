@@ -219,7 +219,7 @@ func (self *graph) recordingLiveView(response http.ResponseWriter, request *http
 			}
 			_ = socket.say(event)
 		}, func(usage *voice.Usage) {
-			agent.RecordUsage(self.database, found.ID, "", usageModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, CompletionTokens: usage.OutputTokens})
+			agent.RecordUsage(self.database, found.ID, "", usageModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, AudioInputTokens: usage.AudioInputTokens, CompletionTokens: usage.OutputTokens})
 		})
 	}()
 	go func() {

@@ -22,7 +22,7 @@ func RecordUsage(database db.Database, agentId, mailboxId, model, kind string, u
 			Model:     model,
 			Kind:      kind,
 			At:        time.Now(),
-			Values:    []uint64{uint64(usage.PromptTokens), uint64(usage.CompletionTokens), uint64(usage.CacheReadTokens), uint64(usage.CacheWriteTokens), 1},
+			Values:    []uint64{uint64(usage.PromptTokens), uint64(usage.CompletionTokens), uint64(usage.CacheReadTokens), uint64(usage.CacheWriteTokens), 1, uint64(usage.AudioInputTokens)},
 		})
 	})
 	if err != nil {
@@ -42,7 +42,7 @@ func RecordUsageIn(tx db.Transaction, agentId, mailboxId, model, kind string, us
 		Model:     model,
 		Kind:      kind,
 		At:        time.Now(),
-		Values:    []uint64{uint64(usage.PromptTokens), uint64(usage.CompletionTokens), uint64(usage.CacheReadTokens), uint64(usage.CacheWriteTokens), 1},
+		Values:    []uint64{uint64(usage.PromptTokens), uint64(usage.CompletionTokens), uint64(usage.CacheReadTokens), uint64(usage.CacheWriteTokens), 1, uint64(usage.AudioInputTokens)},
 	})
 }
 
@@ -59,7 +59,7 @@ func (self *AskRun) countJudgement(model string, usage llm.Usage) {
 		kind = "evaluate"
 	}
 	RecordUsage(self.agent.settings.Database, self.settings.Agent.ID, "", model, kind, usage)
-	cost := self.agent.settings.Configuration().Agent.CostOf(model, usage.PromptTokens, usage.CompletionTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
+	cost := self.agent.settings.Configuration().Agent.CostOf(model, usage.PromptTokens, usage.AudioInputTokens, usage.CompletionTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
 	self.judgementUsage.PromptTokens += usage.PromptTokens

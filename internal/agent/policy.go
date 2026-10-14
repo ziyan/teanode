@@ -274,7 +274,7 @@ func SumSpend(tx db.Transaction, configuration *config.Configuration, agentId st
 	tokens, cost := int64(0), 0.0
 	for _, row := range rows {
 		tokens += row.Totals.Total()
-		cost += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
+		cost += configuration.Agent.CostOf(row.Key, int(row.Totals.PromptTokens), int(row.Totals.AudioInputTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
 	}
 	return tokens, cost, nil
 }

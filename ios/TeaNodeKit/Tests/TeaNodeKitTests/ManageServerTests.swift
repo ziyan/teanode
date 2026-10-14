@@ -278,10 +278,10 @@ final class ManageServerTests: XCTestCase {
         {"enabled":true,"instructions":"Be brief.","allowPrivateAddresses":["192.168.1.10"],"skipCertificateCheck":[],
          "providers":[
            {"name":"main","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],
-            "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0,"pricingCacheWrite":0,
-            "modelPricing":[{"model":"model-large*","input":2,"output":8,"cacheRead":0.5,"cacheWrite":0}],"planUsage":null},
+            "pricingInput":1.25,"pricingOutput":10,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":6,
+            "modelPricing":[{"model":"model-large*","input":2,"output":8,"cacheRead":0.5,"cacheWrite":0,"audioInput":4.5}],"planUsage":null},
            {"name":"decider","kind":"typesafe","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],
-            "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"modelPricing":[],
+            "pricingInput":0,"pricingOutput":0,"pricingCacheRead":0,"pricingCacheWrite":0,"pricingAudioInput":0,"modelPricing":[],
             "planUsage":{"planName":"plus","observedAt":"2030-01-02T03:04:05Z","windows":[{"usedPercent":140,"windowMinutes":300,"resetsAt":"2030-01-02T05:00:00Z"}]}}
          ],
          "models":{"default":"main:model-large","fast":"main:model-small","quick":"main:model-small","embedding":"","triage":"main:model-small","research":"","summarize":"",
@@ -356,6 +356,8 @@ final class ManageServerTests: XCTestCase {
         var draft = AgentProviderDraft(settings.providers[0])
         XCTAssertEqual(draft.pricingInputText, "1.25")
         XCTAssertEqual(draft.modelPrices.first?.cacheReadText, "0.5")
+        XCTAssertEqual(draft.pricingAudioInputText, "6")
+        XCTAssertEqual(draft.modelPrices.first?.audioInputText, "4.5")
         draft.name = "primary"
         draft.apiKey = ""
         let section = draft.agentParameters(replacingProviderAt: 0, in: settings)
@@ -364,6 +366,9 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(providers[0]["name"], .string("primary"))
         XCTAssertEqual(providers[0]["previousName"], .string("main"))
         XCTAssertEqual(providers[0]["apiKey"], .string(""), "a blank key keeps the stored one")
+        XCTAssertEqual(providers[0]["pricingAudioInput"], .number(6), "the audio input price is sent back")
+        guard case .array(let sentPrices) = providers[0]["modelPricing"] else { return XCTFail("no model prices") }
+        XCTAssertEqual(sentPrices[0]["audioInput"], .number(4.5))
         XCTAssertEqual(providers[1]["name"], .string("decider"))
         XCTAssertNil(providers[1]["previousName"])
         XCTAssertEqual(section["models"]?["default"], .string("primary:model-large"))
@@ -517,8 +522,8 @@ final class ManageServerTests: XCTestCase {
                     "dailyTokens":0,"dailyCost":1.5,"dead":1,"queued":2,"lastRunAt":null,
                     "sources":[{"mailboxId":"mailbox-1","name":"Inbox","policy":{"granted":true}},{"mailboxId":"mailbox-2","name":"Shared","policy":null}],
                     "today":{"used":1200,"limit":0,"resetsAt":"2030-01-02T00:00:00Z","cost":0.4,"costLimit":1.5,"currency":"USD"},
-                    "totals":{"promptTokens":10,"completionTokens":20,"cacheReadTokens":30,"cacheWriteTokens":40,"calls":3}}],
-                  "AgentServerUsage":[{"key":"2030-01-01","cost":0.25,"currency":"USD","totals":{"promptTokens":100,"completionTokens":50,"cacheReadTokens":0,"cacheWriteTokens":0,"calls":2}}],
+                    "totals":{"promptTokens":10,"completionTokens":20,"cacheReadTokens":30,"cacheWriteTokens":40,"audioInputTokens":5,"calls":3}}],
+                  "AgentServerUsage":[{"key":"2030-01-01","cost":0.25,"currency":"USD","totals":{"promptTokens":100,"completionTokens":50,"cacheReadTokens":0,"cacheWriteTokens":0,"audioInputTokens":0,"calls":2}}],
                   "ListAgentDeadLetters":[{"id":"job-1","agentId":"agent-1","mailboxId":null,"kind":"remember","subjectId":"conversation-1","attempts":3,"error":"timed out","finishedAt":"2030-01-01T01:00:00Z"}]
                 }}
                 """#)
@@ -533,7 +538,7 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(agent.grantedMailboxCount, 1)
         XCTAssertTrue(agent.isBoundByCost)
         XCTAssertEqual(agent.deadJobCount, 1)
-        XCTAssertEqual(agent.totals.totalTokenCount, 100)
+        XCTAssertEqual(agent.totals.totalTokenCount, 105, "audio input counts with the rest")
         XCTAssertEqual(overview.usageRows[0].totals.callCount, 2)
         XCTAssertEqual(overview.deadJobs[0].jobKind, "remember")
         XCTAssertEqual(overview.username(agentId: "agent-1"), "person-one")
@@ -549,7 +554,7 @@ final class ManageServerTests: XCTestCase {
         let summary = #"""
             {"agentId":"agent-1","userId":"user-1","username":"person-one","name":"","enabled":true,"operatorDisabledAt":null,"dailyTokens":5000,
              "dailyCost":0,"dead":0,"queued":0,"lastRunAt":null,"sources":[],"today":null,
-             "totals":{"promptTokens":0,"completionTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"calls":0}}
+             "totals":{"promptTokens":0,"completionTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"audioInputTokens":0,"calls":0}}
             """#
         let (limiting, limited) = connection(answering: #"{"data":{"SetAgentLimit":"# + summary + "}}")
         var draft = AgentLimitDraft(try JSONDecoder().decode(AgentAdminSummary.self, from: Data(summary.utf8)))

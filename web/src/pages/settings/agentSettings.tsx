@@ -42,7 +42,8 @@ export type AgentProvider = {
   deny: string[]
   pricingInput: number
   pricingCacheWrite: number
-  modelPricing: { model: string; input: number; output: number; cacheRead: number; cacheWrite: number }[]
+  pricingAudioInput: number
+  modelPricing: { model: string; input: number; output: number; cacheRead: number; cacheWrite: number; audioInput: number }[]
   pricingOutput: number
   pricingCacheRead: number
   // What a provider that runs on a plan last said of its allowance; null
@@ -178,7 +179,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
@@ -440,7 +441,8 @@ type ProviderDraft = {
   pricingOutput: string
   pricingCacheRead: string
   pricingCacheWrite: string
-  modelPricing: { model: string; input: string; output: string; cacheRead: string; cacheWrite: string }[]
+  pricingAudioInput: string
+  modelPricing: { model: string; input: string; output: string; cacheRead: string; cacheWrite: string; audioInput: string }[]
 }
 
 function providerDraft(provider?: AgentProvider): ProviderDraft {
@@ -459,12 +461,14 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         pricingOutput: provider.pricingOutput ? String(provider.pricingOutput) : '',
         pricingCacheRead: provider.pricingCacheRead ? String(provider.pricingCacheRead) : '',
         pricingCacheWrite: provider.pricingCacheWrite ? String(provider.pricingCacheWrite) : '',
+        pricingAudioInput: provider.pricingAudioInput ? String(provider.pricingAudioInput) : '',
         modelPricing: (provider.modelPricing ?? []).map((priced) => ({
           model: priced.model,
           input: priced.input ? String(priced.input) : '',
           output: priced.output ? String(priced.output) : '',
           cacheRead: priced.cacheRead ? String(priced.cacheRead) : '',
           cacheWrite: priced.cacheWrite ? String(priced.cacheWrite) : '',
+          audioInput: priced.audioInput ? String(priced.audioInput) : '',
         })),
       }
     : {
@@ -481,6 +485,7 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         pricingOutput: '',
         pricingCacheRead: '',
         pricingCacheWrite: '',
+        pricingAudioInput: '',
         modelPricing: [],
       }
 }
@@ -505,6 +510,7 @@ function providerValues(provider: AgentProvider) {
     pricingOutput: provider.pricingOutput,
     pricingCacheRead: provider.pricingCacheRead,
     pricingCacheWrite: provider.pricingCacheWrite,
+    pricingAudioInput: provider.pricingAudioInput,
     modelPricing: provider.modelPricing ?? [],
   }
 }
@@ -522,6 +528,7 @@ function draftValues(draft: ProviderDraft) {
     pricingOutput: Number(draft.pricingOutput) || 0,
     pricingCacheRead: Number(draft.pricingCacheRead) || 0,
     pricingCacheWrite: Number(draft.pricingCacheWrite) || 0,
+    pricingAudioInput: Number(draft.pricingAudioInput) || 0,
     modelPricing: draft.modelPricing
       .filter((priced) => priced.model.trim())
       .map((priced) => ({
@@ -530,6 +537,7 @@ function draftValues(draft: ProviderDraft) {
         output: Number(priced.output) || 0,
         cacheRead: Number(priced.cacheRead) || 0,
         cacheWrite: Number(priced.cacheWrite) || 0,
+        audioInput: Number(priced.audioInput) || 0,
       })),
   }
 }
@@ -867,6 +875,14 @@ function ProviderDialog({
             onChange={(event) => set({ pricingCacheWrite: asPrice(event.target.value) })}
           />
         </label>
+        <label>
+          <span>{t('agentSettings.pricingAudioInput')}</span>
+          <input
+            value={draft.pricingAudioInput}
+            inputMode="decimal"
+            onChange={(event) => set({ pricingAudioInput: asPrice(event.target.value) })}
+          />
+        </label>
       </div>
       <p className="field-label">{t('agentSettings.modelPricing')}</p>
       <p className="muted field-hint">{t('agentSettings.modelPricingHint')}</p>
@@ -912,6 +928,13 @@ function ProviderDialog({
                   aria-label={`${named}: ${t('agentSettings.pricingCaching')}`}
                   onChange={(event) => change({ cacheWrite: asPrice(event.target.value) })}
                 />
+                <input
+                  value={priced.audioInput}
+                  inputMode="decimal"
+                  placeholder={t('agentSettings.pricingAudio')}
+                  aria-label={`${named}: ${t('agentSettings.pricingAudio')}`}
+                  onChange={(event) => change({ audioInput: asPrice(event.target.value) })}
+                />
                 <Tooltip label={t('common.remove')}>
                   <button
                     type="button"
@@ -934,7 +957,7 @@ function ProviderDialog({
             set({
               modelPricing: [
                 ...draft.modelPricing,
-                { model: '', input: '', output: '', cacheRead: '', cacheWrite: '' },
+                { model: '', input: '', output: '', cacheRead: '', cacheWrite: '', audioInput: '' },
               ],
             })
           }

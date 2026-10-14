@@ -1096,7 +1096,7 @@ func printUsage(command *cli.Command, rows []*client.AgentUsageRow, by string) e
 		if key == "" {
 			key = "total"
 		}
-		total := row.Totals.PromptTokens + row.Totals.CompletionTokens + row.Totals.CacheReadTokens + row.Totals.CacheWriteTokens
+		total := row.Totals.PromptTokens + row.Totals.CompletionTokens + row.Totals.CacheReadTokens + row.Totals.CacheWriteTokens + row.Totals.AudioInputTokens
 		cost := fmt.Sprintf("%.2f %s", row.Cost, row.Currency)
 		if row.Currency == "" {
 			cost = fmt.Sprintf("%.2f", row.Cost)

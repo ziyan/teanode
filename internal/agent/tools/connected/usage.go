@@ -37,11 +37,11 @@ type usageRequest struct {
 }
 
 const documentMine = `query ($since: DateTime, $until: DateTime, $by: String) {
-	AgentUsage(since: $since, until: $until, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+	AgentUsage(since: $since, until: $until, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
 	ReadAgent { budget { used limit cost costLimit currency resetsAt } } }`
 
 const documentServer = `query ($since: DateTime, $until: DateTime, $by: String) {
-	AgentServerUsage(since: $since, until: $until, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } } }`
+	AgentServerUsage(since: $since, until: $until, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } } }`
 
 func runUsage(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	arguments, err := tools.DecodeArguments[usageRequest](call)
@@ -141,6 +141,11 @@ func describeRows(rows []*usageRow) []map[string]any {
 		entry := map[string]any{
 			"cost": fmt.Sprintf("%.2f", row.Cost), "currency": row.Currency,
 			"tokens": row.Totals.Total(), "calls": row.Totals.Calls,
+		}
+		// Audio input is priced apart from text, so a person asking why a
+		// cost is high can see how much of the count was audio.
+		if row.Totals.AudioInputTokens > 0 {
+			entry["audio_input_tokens"] = row.Totals.AudioInputTokens
 		}
 		if row.Key != "" {
 			entry["key"] = row.Key

@@ -1651,6 +1651,8 @@ export const en = {
   'agentSettings.pricingCached': 'Cached',
   'agentSettings.pricingCaching': 'Caching',
   'agentSettings.pricingCacheWrite': '… writing to the cache',
+  'agentSettings.pricingAudioInput': '… audio input',
+  'agentSettings.pricingAudio': 'Audio',
   'agentSettings.addModelPricing': 'Price another model',
   'agentSettings.secretKept': '(set; leave blank to keep)',
   'agentSettings.test': 'Test',

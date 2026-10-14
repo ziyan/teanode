@@ -74,3 +74,23 @@ func TestAFinishedSignInIsSavedToItsProvider(t *testing.T) {
 		t.Errorf("the keyed provider changed: %+v", providers[0])
 	}
 }
+
+// The audio input price is saved on a provider and on each of its models'
+// prices, and read back the same way.
+func TestTheAudioInputPriceIsSavedAndReadBack(t *testing.T) {
+	configuration := &config.Configuration{}
+	providers := []*AgentProviderParameters{{
+		Name: "priced", Kind: config.AgentProviderKindOpenAI, Enabled: true, PricingInput: 2.5, PricingAudioInput: 6,
+		ModelPricing: []*AgentModelPricingSettings{{Model: "transcriber", Input: 2.5, Output: 10, AudioInput: 7}},
+	}}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	read := describeAgentSettings(configuration).Providers[0]
+	if read.PricingAudioInput != 6 || len(read.ModelPricing) != 1 || read.ModelPricing[0].AudioInput != 7 {
+		t.Errorf("read back %+v", read)
+	}
+	if configuration.Agent.Providers[0].Pricing.AudioInput != 6 || configuration.Agent.Providers[0].ModelPricing[0].AudioInput != 7 {
+		t.Errorf("stored %+v", configuration.Agent.Providers[0])
+	}
+}

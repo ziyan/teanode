@@ -527,17 +527,19 @@ func (self *Agent) transcribeRecordingChunk(ctx context.Context, run *Run, trans
 		usage = reported.Usage
 		finished.InputAudioTokens = int64(reported.InputAudioTokens)
 		finished.InputTextTokens = int64(reported.InputTextTokens)
-		finished.PromptTokens = int64(usage.PromptTokens)
+		// The attempt keeps its prompt tokens as all the input, as it always
+		// has; the usage splits audio from text only to price them apart.
+		finished.PromptTokens = int64(usage.PromptTokens + usage.AudioInputTokens)
 		finished.CompletionTokens = int64(usage.CompletionTokens)
 		finished.ProviderAudioDurationMS = reported.AudioDurationMS
 		finished.HasProviderUsage = reported.HasProviderUsage
 		finished.ProviderUsageJSON = reported.ProviderUsageJSON
 		finished.ProviderResponseJSON = response.ProviderResponseJSON
 		providerName, modelName, _ := strings.Cut(transcriptRun.ProviderModelName, ":")
-		if provider := configuration.Agent.Provider(providerName); provider != nil && reported.HasProviderUsage && (reported.AudioDurationMS == 0 || usage.PromptTokens > 0 || usage.CompletionTokens > 0) {
+		if provider := configuration.Agent.Provider(providerName); provider != nil && reported.HasProviderUsage && (reported.AudioDurationMS == 0 || usage.PromptTokens > 0 || usage.AudioInputTokens > 0 || usage.CompletionTokens > 0) {
 			pricing := provider.PricingFor(modelName)
 			if pricing.Input > 0 || pricing.Output > 0 {
-				estimatedCostAmount := configuration.Agent.CostOf(transcriptRun.ProviderModelName, usage.PromptTokens, usage.CompletionTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
+				estimatedCostAmount := configuration.Agent.CostOf(transcriptRun.ProviderModelName, usage.PromptTokens, usage.AudioInputTokens, usage.CompletionTokens, usage.CacheReadTokens, usage.CacheWriteTokens)
 				finished.EstimatedCostAmount = &estimatedCostAmount
 			}
 		}

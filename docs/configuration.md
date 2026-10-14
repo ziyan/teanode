@@ -1228,21 +1228,23 @@ after allow. Only admitted models may be assigned work.
 **`allow`**, **`deny`** — The two lists of the filter.
 
 **`pricing`** — What the service charges, per million tokens, with
-`input`, `output`, `cacheRead` and `cacheWrite`. Optional; it lets the usage view show
+`input`, `output`, `cacheRead`, `cacheWrite` and `audioInput`. Optional; it lets the usage view show
 money beside tokens, which is the number an operator budgets.
 
-**`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`** — The four
+**`input`**, **`output`**, **`cacheRead`**, **`cacheWrite`**, **`audioInput`** — The five
 prices. `cacheWrite` is what putting a prompt into the cache costs, which some
 services bill above the input price and report apart from it; left unset it
 costs nothing, which is right for a service that does not charge for it and
-wrong for one that does.
+wrong for one that does. `audioInput` is what a million audio input tokens
+cost, which a transcription model bills apart from text input; left unset,
+audio is priced as text input, at `input`.
 
 **`model`** — Which model a `modelPricing` entry prices: the name after
 the provider's, matched the way `allow` and `deny` are.
 
 **`modelPricing`** — Prices for particular models of this provider, since
 one service's models rarely cost alike: a small model and a large one behind
-the same key are priced apart. Each entry has a `model` and the same four
+the same key are priced apart. Each entry has a `model` and the same five
 prices. The `model` is the name after the provider's, matched the way `allow`
 and `deny` are, so `gpt-5*` prices a family; the first entry that matches a
 model is the one used, so exact names belong above the patterns that would

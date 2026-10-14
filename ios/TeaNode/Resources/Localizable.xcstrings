@@ -7013,6 +7013,22 @@
         }
       }
     },
+    "Audio input": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频输入"
+          }
+        }
+      }
+    },
     "Audit": {
       "localizations": {
         "ja": {

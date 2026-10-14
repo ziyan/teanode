@@ -176,7 +176,7 @@ func (self *Progress) priceTheReading(tx db.Transaction, configuration *config.C
 			continue
 		}
 		self.Spent += configuration.Agent.CostOf(row.Model,
-			int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens),
+			int(row.Totals.PromptTokens), int(row.Totals.AudioInputTokens), int(row.Totals.CompletionTokens),
 			int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
 	}
 	if self.Spent > 0 && documents > 0 {

@@ -38,7 +38,7 @@ const settingsSelection = `{
 	geoip { enabled databaseFile }
 	agent {
 		enabled instructions currency effort allowPrivateAddresses skipCertificateCheck
-		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } }
+		providers { name kind baseUrl hasApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } }
 		skillSecrets { skill key hasValue }
 		models { default fast quick embedding triage research summarize reply ask schedule compact choices scan synthesize decide categorize embeddingDimensions }
 		features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }

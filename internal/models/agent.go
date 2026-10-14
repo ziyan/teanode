@@ -722,7 +722,10 @@ const (
 	AgentUsageCacheReadTokens  = 2
 	AgentUsageCacheWriteTokens = 3
 	AgentUsageCalls            = 4
-	AgentUsageValueCount       = 5
+	// AgentUsageAudioInputTokens was added after the others; a row written
+	// before it has five values, and a missing sixth reads as zero.
+	AgentUsageAudioInputTokens = 5
+	AgentUsageValueCount       = 6
 )
 
 // AgentUsageTotals are token counts summed over some rows.
@@ -731,12 +734,13 @@ type AgentUsageTotals struct {
 	CompletionTokens int64 `json:"completionTokens"`
 	CacheReadTokens  int64 `json:"cacheReadTokens"`
 	CacheWriteTokens int64 `json:"cacheWriteTokens"`
+	AudioInputTokens int64 `json:"audioInputTokens"`
 	Calls            int64 `json:"calls"`
 }
 
 // Total is every token.
 func (self AgentUsageTotals) Total() int64 {
-	return self.PromptTokens + self.CompletionTokens + self.CacheReadTokens + self.CacheWriteTokens
+	return self.PromptTokens + self.CompletionTokens + self.CacheReadTokens + self.CacheWriteTokens + self.AudioInputTokens
 }
 
 // AgentUsageRow is totals under one key: a day, a run kind, a source or a

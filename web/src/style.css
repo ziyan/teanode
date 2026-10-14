@@ -2914,13 +2914,13 @@ body,
   margin-bottom: 10px;
 }
 
-/* A model takes its own line and its four prices share the next: four
+/* A model takes its own line and its five prices share the next: five
    fields and a name across one line of a dialog leaves no room for the
    name, and a header cannot sit over a row that wraps, so the columns
    are named inside the fields. */
 .priced-models-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) 30px;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) 30px;
   gap: 6px;
   align-items: center;
   margin-bottom: 6px;
