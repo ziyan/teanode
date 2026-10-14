@@ -98,6 +98,22 @@ var operations = map[string]*financeOperation{
 		graphqlOperation: "ConvertCurrency", risk: tools.RiskRead,
 		arguments: []string{"amount", "from_currency_code", "to_currency_code", "rate_on"}, required: []string{"amount", "from_currency_code", "to_currency_code"},
 	},
+	"tax_document_address": {graphqlOperation: "TaxDocumentAddress", risk: tools.RiskRead},
+	"regenerate_tax_document_address": {
+		graphqlOperation: "RegenerateTaxDocumentAddress", risk: tools.RiskWrite,
+		preview: func(_ *previewLookup, _ map[string]any) string {
+			return "Give the tax document address a new token; mail to the old address will be refused"
+		},
+	},
+	"set_tax_filing_status": {
+		graphqlOperation: "SetTaxFilingStatus", risk: tools.RiskWrite, arguments: []string{"tax_filing_status"}, required: []string{"tax_filing_status"},
+		preview: func(_ *previewLookup, call map[string]any) string {
+			if text(call, "tax_filing_status") == "" {
+				return "Forget the filing status kept for tax estimates"
+			}
+			return "Estimate taxes filing " + strings.ReplaceAll(text(call, "tax_filing_status"), "_", " ")
+		},
+	},
 	"set_reporting_currency": {
 		graphqlOperation: "SetReportingCurrency", risk: tools.RiskWrite, arguments: []string{"currency_code"}, required: []string{"currency_code"},
 		preview: func(_ *previewLookup, call map[string]any) string {
@@ -310,7 +326,49 @@ var operations = map[string]*financeOperation{
 			return "Delete " + lookup.receiptName(text(call, "receipt_id")) + ", its lines and its matches, and the photo or PDF it was read from"
 		},
 	},
-	"budgets": {graphqlOperation: "Budgets", risk: tools.RiskRead},
+	// Paystubs and W-2s (tax.go). read_tax_document takes a file handed
+	// over in the conversation, by the id the conversation names it with,
+	// or a message whose files are each read.
+	"read_tax_document": {
+		graphqlOperation: "ReadTaxDocument", risk: tools.RiskWrite, arguments: []string{"agent_attachment_id", "mailbox_item_id"},
+		preview: func(_ *previewLookup, call map[string]any) string {
+			if text(call, "mailbox_item_id") != "" {
+				return "Have the reading job read the paystubs or W-2s a message carries and record them"
+			}
+			return "Have the reading job read the paystub or W-2 in the file and record it"
+		},
+	},
+	"paystubs": {
+		graphqlOperation: "FinancePaystubs", risk: tools.RiskRead, isUntrusted: true,
+		arguments: []string{"tax_year", "from", "to", "limit", "offset"},
+	},
+	"paystub": {graphqlOperation: "FinancePaystub", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"paystub_id"}, required: []string{"paystub_id"}},
+	"record_paystub": {
+		graphqlOperation: "RecordPaystub", risk: tools.RiskWrite, isUntrusted: true, arguments: paystubArguments,
+		required: []string{"agent_attachment_id", "employer_name", "employee_name", "pay_date", "gross_amount", "net_amount", "paystub_lines"},
+		preview:  recordPaystubPreview,
+	},
+	"delete_paystub": {
+		graphqlOperation: "DeletePaystub", risk: tools.RiskDestructive, arguments: []string{"paystub_id"}, required: []string{"paystub_id"},
+		preview: func(_ *previewLookup, call map[string]any) string {
+			return "Delete the paystub " + text(call, "paystub_id") + ", its lines and the file it was read from"
+		},
+	},
+	"tax_forms": {graphqlOperation: "FinanceTaxForms", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"tax_year", "limit", "offset"}},
+	"tax_form":  {graphqlOperation: "FinanceTaxForm", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"tax_form_id"}, required: []string{"tax_form_id"}},
+	"record_tax_form": {
+		graphqlOperation: "RecordTaxForm", risk: tools.RiskWrite, isUntrusted: true, arguments: taxFormArguments,
+		required: []string{"agent_attachment_id", "tax_year", "payer_name", "recipient_name", "tax_form_entries"},
+		preview:  recordTaxFormPreview,
+	},
+	"delete_tax_form": {
+		graphqlOperation: "DeleteTaxForm", risk: tools.RiskDestructive, arguments: []string{"tax_form_id"}, required: []string{"tax_form_id"},
+		preview: func(_ *previewLookup, call map[string]any) string {
+			return "Delete the W-2 " + text(call, "tax_form_id") + ", its boxes and the file it was read from"
+		},
+	},
+	"tax_year": {graphqlOperation: "TaxYear", risk: tools.RiskRead, isUntrusted: true, arguments: []string{"tax_year", "tax_filing_status"}, required: []string{"tax_year"}},
+	"budgets":  {graphqlOperation: "Budgets", risk: tools.RiskRead},
 	"set_budget": {
 		graphqlOperation: "SetBudget", risk: tools.RiskWrite,
 		arguments: []string{"spending_category_id", "monthly_amount", "currency_code", "effective_from"}, required: []string{"spending_category_id", "monthly_amount"},
@@ -698,7 +756,13 @@ const description = "The person's money: their finance sources (logins at banks,
 	"`read_receipt` has the receipt job read the receipt in a message (mailbox_item_id) in the background, record it and match it, as when sorting files a message as a receipt. " +
 	"A receipt recorded before its charge arrives waits, and the sync that brings the charge matches it by the same rule, so say so rather than ask when there is no candidate yet. " +
 	"`receipts` pages like `transactions` (limit, offset or after, and totalCount); with no range it lists every receipt, those that print no day last, and is_undated lists only those; text finds receipts by merchant, receipt number or a word of what was bought on any line. " +
-	"`preview_record_receipt` says what recording would do, writing nothing; `receipt` reads one line by line; `propose_receipt_matches` lists the charges a stored one could explain; `unmatch_receipt` takes one off a charge, and nothing matches that receipt on its own again, neither a sync nor reading it again; `delete_receipt` deletes it."
+	"`preview_record_receipt` says what recording would do, writing nothing; `receipt` reads one line by line; `propose_receipt_matches` lists the charges a stored one could explain; `unmatch_receipt` takes one off a charge, and nothing matches that receipt on its own again, neither a sync nor reading it again; `delete_receipt` deletes it.\n" +
+	"- Paystubs and W-2s, to get ready for a tax return: when the person hands over a paystub or a W-2 (a PDF or a photo in the chat, by the agent_attachment_id the conversation names the file with, or a message by mailbox_item_id), `read_tax_document` has the reading job read it in the background and record it, as a paystub or a W-2, whichever it is; that is the way to record one, rather than reading it yourself. " +
+	"Only the last four digits of a taxpayer number (a Social Security number) are ever kept: never write more of one anywhere, in a call or an answer. " +
+	"`paystubs` (tax_year, or from and to) lists them with their check (paystubCheckState: gross less taxes and deductions is take-home pay); `paystub` reads one line by line; `tax_forms` and `tax_form` list and read W-2s with taxFormFindings (Social Security tax 6.2% of its wages, Medicare 1.45% plus 0.9% above 200,000, wages within the year's wage base). " +
+	"`tax_year` puts a year together per person and employer: figures from the W-2 when there is one (taxYearFigureSource w2), else the latest paystub's year to date, projectedFigures to December 31 at the latest paystub's amounts, taxYearComparisons setting each W-2 box beside the paystubs, and taxYearFindings (a paystub missing between two others, a W-2 not yet in, Social Security withheld beyond the year's maximum across employers, which comes back as a credit). `tax_document_address` gives the person's tax document address, where each PDF or picture mailed (or forwarded from a payroll email) is read as a paystub or W-2 on its own; `regenerate_tax_document_address` ends the old address and makes a new one, only when the person asks. Projected retirement contributions stop at the year's limit (retirementDeferralLimitAmount; isRetirementDeferralCapped), the rest counted as wages. taxYearEstimate sets the tax owed beside what was withheld: federal income tax on wages less the standard deduction by the filing status the person keeps (set_tax_filing_status when they say how they file; isTaxFilingStatusAssumed when they have not, married filing jointly for two people and single otherwise), or tax_filing_status to try another, Social Security and Medicare as owed, state and local as withheld, then paidTaxAmount, upcomingWithheldTaxAmount, owingTaxAmount or refundAmount, and remainingIncomeAmount; it counts wages only, so say so and ask about other income, deductions and credits before calling it what the return will say. " +
+	"Quote those figures rather than adding paystubs up yourself. They are what was earned and withheld, not the tax owed or a refund, so say so when asked what will be owed. " +
+	"`record_paystub` and `record_tax_form` record one you read yourself, from the file it was read out of (agent_attachment_id), one line per printed line with an amount or one entry per box that prints something; `delete_paystub` and `delete_tax_form` delete one with its file."
 
 func init() {
 	tools.Register(func() []*tools.Tool {
@@ -709,9 +773,9 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"operation":               tools.EnumProperty("what to do", operationNames()...),
 					"source_id":               tools.StringProperty("a finance source, by the id sources gives"),
-					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; by the item_id mail_search or mail_read gives"),
+					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; for read_tax_document: the message whose PDFs and pictures to read as paystubs or W-2s; by the item_id mail_search or mail_read gives"),
 					"gmail_message_id":        tools.StringProperty("for record_receipt and preview_record_receipt: the Gmail message the receipt was read from, by the id the Gmail skill gives"),
-					"agent_attachment_id":     tools.StringProperty("for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from, by the agent_attachment_id the conversation names the file with, never invented"),
+					"agent_attachment_id":     tools.StringProperty("for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub or W-2 to read; for record_paystub and record_tax_form: the file it was read from; by the agent_attachment_id the conversation names the file with, never invented"),
 					"annotation":              tools.StringProperty("for annotate_transaction: what the transaction was for, in the person's words; empty takes it away"),
 					"receipt_id":              tools.StringProperty("a receipt, by the id receipts gives"),
 					"is_unmatched":            tools.BooleanProperty("for receipts: only those matched to no transaction"),
@@ -734,7 +798,51 @@ func init() {
 						"tax_class_code":         tools.StringProperty("the receipt's tax mark: on an item or discount the tax it falls under, on a tax line the mark it covers"),
 						"discounted_line_number": tools.IntegerProperty("for a discount: the line_number of the item it is printed under"),
 					}, "receipt_line_kind", "line_amount")),
-					"is_unbalanced_accepted":      tools.BooleanProperty("for record_receipt: true only when the person said to record a receipt whose lines do not add up, as it is"),
+					"is_unbalanced_accepted":    tools.BooleanProperty("for record_receipt and record_paystub: true only when the person said to record one whose lines do not add up, as it is"),
+					"paystub_id":                tools.StringProperty("a paystub, by the id paystubs gives"),
+					"tax_form_id":               tools.StringProperty("a W-2, by the id tax_forms gives"),
+					"tax_year":                  tools.IntegerProperty("for tax_year, paystubs and tax_forms: the tax year, 2026; for record_tax_form: the year the W-2 is for"),
+					"tax_filing_status":         tools.EnumProperty("for set_tax_filing_status: how the person files, to keep (empty clears it); for tax_year: another filing status to estimate for instead of the one kept", "", "single", "married_filing_jointly", "married_filing_separately", "head_of_household"),
+					"employer_name":             tools.StringProperty("for record_paystub: the employer as the paystub names it"),
+					"employer_tax_id":           tools.StringProperty("for record_paystub: the employer's identification number as printed, 12-3456789"),
+					"employee_name":             tools.StringProperty("for record_paystub: the employee as the paystub names them"),
+					"employee_tax_id_mask":      tools.StringProperty("for record_paystub: the last four digits of the employee's taxpayer number, never more"),
+					"pay_date":                  tools.StringProperty("for record_paystub: the day paid, 2026-09-30, not the end of the period"),
+					"period_start_on":           tools.StringProperty("for record_paystub: the first day of the pay period"),
+					"period_end_on":             tools.StringProperty("for record_paystub: the last day of the pay period"),
+					"gross_amount":              tools.StringProperty("for record_paystub: gross pay this period, as printed"),
+					"year_to_date_gross_amount": tools.StringProperty("for record_paystub: gross pay for the year to date, as printed"),
+					"total_tax_amount":          tools.StringProperty("for record_paystub: the taxes' total this period, as printed"),
+					"total_deduction_amount":    tools.StringProperty("for record_paystub: the deductions' total this period (the employee's), as printed"),
+					"net_amount":                tools.StringProperty("for record_paystub: take-home pay this period, as printed"),
+					"paystub_lines": tools.ArrayProperty("for record_paystub: every printed line with an amount, one each, in order: earnings, taxes, deductions; not totals, not hours alone", tools.Object(map[string]any{
+						"paystub_line_kind":            tools.EnumProperty("what the line is: a reimbursement is money paid back outside gross pay, printed as a non-taxable earning", "earning", "tax", "deduction", "reimbursement"),
+						"description":                  tools.StringProperty("what the line says, as printed"),
+						"hours":                        tools.StringProperty("an earning's hours, when printed"),
+						"rate_amount":                  tools.StringProperty("an earning's rate, when printed"),
+						"current_amount":               tools.StringProperty("this period: the earning, the tax, or the employee's part of a deduction"),
+						"year_to_date_amount":          tools.StringProperty("the same for the year to date"),
+						"paystub_tax_kind":             tools.EnumProperty("for a tax: which", "federal_income", "social_security", "medicare", "medicare_additional", "state_income", "local_income", "state_disability", "other"),
+						"tax_jurisdiction_code":        tools.StringProperty("for a state tax the state's two-letter code; for a local tax the locality"),
+						"current_wages_amount":         tools.StringProperty("for a tax: the wages it was figured on this period, when printed"),
+						"year_to_date_wages_amount":    tools.StringProperty("for a tax: the wages it was figured on for the year to date, when printed"),
+						"paystub_deduction_kind":       tools.EnumProperty("for a deduction: what it pays for", "retirement_traditional", "retirement_roth", "hsa", "health_premium", "fsa_health", "fsa_dependent_care", "commuter", "insurance", "other"),
+						"employer_current_amount":      tools.StringProperty("for a deduction: the employer's part this period, when printed"),
+						"employer_year_to_date_amount": tools.StringProperty("for a deduction: the employer's part for the year to date, when printed"),
+					}, "paystub_line_kind")),
+					"tax_form_kind":         tools.EnumProperty("for record_tax_form: the form", "w2"),
+					"is_corrected":          tools.BooleanProperty("for record_tax_form: true for a corrected W-2 (W-2c)"),
+					"payer_name":            tools.StringProperty("for record_tax_form: the employer (box c)"),
+					"payer_tax_id":          tools.StringProperty("for record_tax_form: the employer's identification number (box b)"),
+					"recipient_name":        tools.StringProperty("for record_tax_form: the employee (box e)"),
+					"recipient_tax_id_mask": tools.StringProperty("for record_tax_form: the last four digits of the employee's taxpayer number (box a), never more"),
+					"tax_form_entries": tools.ArrayProperty("for record_tax_form: every box that prints something, once, though the file repeats the form", tools.Object(map[string]any{
+						"box_code":      tools.StringProperty("the box's number, 1 to 20"),
+						"box_qualifier": tools.StringProperty("box 12's code letter, box 13's checkbox (statutory_employee, retirement_plan, third_party_sick_pay), box 14's label, the state's two-letter code in boxes 15 to 17, the locality in 18 to 20"),
+						"amount":        tools.StringProperty("the box's amount, a decimal without separators"),
+						"text_value":    tools.StringProperty("the box's text, as box 15's employer state id"),
+						"is_checked":    tools.BooleanProperty("for box 13: true for a checked box"),
+					}, "box_code")),
 					"matched_amount":              tools.StringProperty("for match_receipt: how much of the charge the receipt explains, for an order charged in parts; the charge or the receipt's total, whichever is less, when left out"),
 					"finance_account_id":          tools.StringProperty("a finance account, by the id accounts gives; for assets, what it values: its own asset and its holdings; for import_transactions and preview_import_transactions: the imported account the rows are of"),
 					"is_new_account":              tools.BooleanProperty("for import_transactions and preview_import_transactions: true only when the person said the rows are of an account not imported before, after the server named accounts at the same institution"),
@@ -742,8 +850,8 @@ func init() {
 					"finance_transaction_id":      tools.StringProperty("a finance transaction, by the id transactions gives; for receipts, only its receipts; for record_receipt, the charge the person said the receipt is for, matched by hand"),
 					"finance_transaction_ids":     tools.ArrayProperty("several finance transactions, by the ids transactions gives. For transactions: only these, to read one by its id (a duplicate's counted copy, say). For categorize_transaction: at most 500 categorized together. For propose_spending_rules: at most 5000", tools.StringProperty("a finance transaction id")),
 					"finance_security_id":         tools.StringProperty("for trades: a security, by the financeSecurityId an asset or a trade gives"),
-					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01; for receipts, the first day of purchase"),
-					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30; for receipts, the last day of purchase"),
+					"from":                        tools.StringProperty("for transactions, trades, spending_summary and net_worth: the first day, 2026-09-01; for receipts, the first day of purchase; for paystubs, the first pay date"),
+					"to":                          tools.StringProperty("for transactions, trades, spending_summary and net_worth: the last day, 2026-09-30; for receipts, the last day of purchase; for paystubs, the last pay date"),
 					"text":                        tools.StringProperty("for transactions: words within the description or merchant; for assets: words within the asset's name; for receipts: words within the merchant, the receipt number or a line's description, as what was bought"),
 					"minimum_amount":              tools.StringProperty("the least signed amount; money out is negative"),
 					"maximum_amount":              tools.StringProperty("the greatest signed amount"),
@@ -752,11 +860,11 @@ func init() {
 					"is_uncategorized":            tools.BooleanProperty("for transactions: only the ones that need a spending category, not decided yet (a transfer has the transfer category, one that fits nothing the other category)"),
 					"duplicate_of_transaction_id": tools.StringProperty("for transactions: only the mirrored copies of this finance transaction, its duplicates"),
 					"is_duplicate_included":       tools.BooleanProperty("for transactions: list the mirrored copies too; left out, they are left out (and counted in leftOutDuplicateCount), as every total leaves them out"),
-					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 15 when left out and at most 200"),
-					"offset":                      tools.IntegerProperty("for transactions, trades and receipts: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
+					"limit":                       tools.IntegerProperty("for transactions, trades and receipts: how many, 15 when left out and at most 200; for paystubs and tax_forms, 60 when left out"),
+					"offset":                      tools.IntegerProperty("for transactions, trades, receipts, paystubs and tax_forms: how many to skip, for the next page (the offset of the page before plus the rows it gave)"),
 					"after":                       tools.StringProperty("for transactions, trades and receipts: the nextCursor of the page before"),
 					"group_by":                    tools.EnumProperty("for spending_summary", "spendingCategory", "providerCategory", "merchant", "month", "financeAccount"),
-					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency. For record_receipt: the receipt's currency"),
+					"currency_code":               tools.StringProperty("a currency code like EUR. For accounts, credit_usage, spending_summary, net_worth, spending_by_day, cash_flow and saving_summary: convert totals into it instead of the reporting currency. For create_asset, update_asset, set_budget and savings targets: its currency. For set_reporting_currency: the currency to show totals in. For import_transactions: the account's currency. For record_receipt: the receipt's currency. For record_paystub: the paystub's currency, USD when left out"),
 					"institution_name":            tools.StringProperty("for import_transactions: the bank or card issuer, as its app or list shows it"),
 					"account_name":                tools.StringProperty("for import_transactions: the account's own name or label as shown (Savings, the card's product name), left out when none; for rename_statement_account: the new name, left out to keep the name"),
 					"account_mask":                tools.StringProperty("for rename_statement_account: the last 4 to 8 digits of the account's number as the person gives them, shown and matched in place of the statement's; none takes the person's back so the statement's shows again; left out or empty leaves the number"),
@@ -1189,6 +1297,10 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return recordReceipt(ctx, executor, name, asked)
 	case "read_receipt":
 		return readReceipt(ctx, executor, name, asked)
+	case "record_paystub", "record_tax_form":
+		return recordTaxDocument(ctx, executor, name, asked)
+	case "read_tax_document":
+		return readTaxDocument(ctx, executor, name, asked)
 	case "import_statement":
 		// Only a message in a mailbox the person granted, as mail_read
 		// reads: a mailbox kept back from the agent stays kept back.
@@ -1224,6 +1336,9 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	if offset, isNumber := variables["offset"].(float64); isNumber {
 		variables["offset"] = int(offset)
+	}
+	if taxYear, isNumber := variables["taxYear"].(float64); isNumber {
+		variables["taxYear"] = int(taxYear)
 	}
 	if priority, isNumber := variables["rulePriority"].(float64); isNumber {
 		variables["rulePriority"] = int(priority)

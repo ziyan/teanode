@@ -337,6 +337,7 @@ func NewFinanceCommand() *cli.Command {
 		},
 	}
 	finance.Commands = append(finance.Commands, financeReceiptCommands()...)
+	finance.Commands = append(finance.Commands, financeTaxCommands()...)
 	for _, subcommand := range finance.Commands {
 		if operation := financeSubcommandOperations[subcommand.Name]; operation != "" {
 			subcommand.Metadata = map[string]any{financeOperationKey: operation}
@@ -356,7 +357,8 @@ var financeSubcommandOperations = map[string]string{
 	"providers": "FinanceProviders", "link-simplefin": "LinkSimpleFIN", "import-credential": "ImportFinanceCredential",
 	"sources": "FinanceSources", "accounts": "FinanceAccounts", "credit-usage": "CreditUsage", "transactions": "FinanceTransactions", "trades": "FinanceTrades", "spending-summary": "FinanceSpendingSummary",
 	"exchange-rate": "ExchangeRate", "convert-currency": "ConvertCurrency", "reporting-currency": "ReportingCurrency",
-	"set-reporting-currency": "SetReportingCurrency", "net-worth": "NetWorth", "assets": "Assets",
+	"set-reporting-currency": "SetReportingCurrency", "set-tax-filing-status": "SetTaxFilingStatus",
+	"tax-document-address": "TaxDocumentAddress", "regenerate-tax-document-address": "RegenerateTaxDocumentAddress", "net-worth": "NetWorth", "assets": "Assets",
 	"asset-history": "AssetHistory", "create-asset": "CreateAsset", "update-asset": "UpdateAsset",
 	"close-asset": "CloseAsset", "delete-asset": "DeleteAsset", "record-valuation": "RecordValuation",
 	"delete-valuation": "DeleteValuation", "spending-categories": "SpendingCategories",
@@ -374,6 +376,9 @@ var financeSubcommandOperations = map[string]string{
 	"annotate-transaction": "AnnotateTransaction", "receipts": "FinanceReceipts", "receipt": "FinanceReceipt",
 	"record-receipt": "RecordReceipt", "propose-receipt-matches": "ProposeReceiptMatches", "match-receipt": "MatchReceipt",
 	"unmatch-receipt": "UnmatchReceipt", "delete-receipt": "DeleteReceipt", "read-receipt": "ReadReceipt",
+	"read-tax-document": "ReadTaxDocument", "paystubs": "FinancePaystubs", "paystub": "FinancePaystub",
+	"record-paystub": "RecordPaystub", "delete-paystub": "DeletePaystub", "tax-forms": "FinanceTaxForms",
+	"tax-form": "FinanceTaxForm", "record-tax-form": "RecordTaxForm", "delete-tax-form": "DeleteTaxForm", "tax-year": "TaxYear",
 }
 
 // operationOf is the finance operation a subcommand calls.

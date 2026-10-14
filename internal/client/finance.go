@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/ziyan/teanode/internal/finance"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // The finance area: finance sources, finance accounts and transactions,
@@ -634,6 +637,13 @@ type StatementAccountDeleted struct {
 	DeletedAssetCount       int    `json:"deletedAssetCount"`
 }
 
+// TaxDocumentAddress is the address to mail paystubs and W-2s to, empty
+// without a mailbox address, and whether the server reads PDFs.
+type TaxDocumentAddress struct {
+	TaxDocumentAddress string `json:"taxDocumentAddress"`
+	CanReadPDFs        bool   `json:"canReadPdfs"`
+}
+
 // StatementImport is the address to mail statements to, whether importing
 // is on, and what the last import did.
 type StatementImport struct {
@@ -765,6 +775,24 @@ const (
 	receiptVariables = `($mailboxItemId: String, $gmailMessageId: String, $agentAttachmentId: String, $merchantName: String!, $merchantReceiptNumber: String, $purchasedOn: String, $purchasedAt: String, $currencyCode: String!, $subtotalAmount: String, $totalAmount: String!, $paymentAccountMask: String, $receiptLines: [ReceiptLineInput!]!, $financeTransactionId: String, $isUnbalancedAccepted: Boolean)`
 
 	receiptArguments = `(mailboxItemId: $mailboxItemId, gmailMessageId: $gmailMessageId, agentAttachmentId: $agentAttachmentId, merchantName: $merchantName, merchantReceiptNumber: $merchantReceiptNumber, purchasedOn: $purchasedOn, purchasedAt: $purchasedAt, currencyCode: $currencyCode, subtotalAmount: $subtotalAmount, totalAmount: $totalAmount, paymentAccountMask: $paymentAccountMask, receiptLines: $receiptLines, financeTransactionId: $financeTransactionId, isUnbalancedAccepted: $isUnbalancedAccepted)`
+
+	financePaystubFields = `{ id agentAttachmentId employerName employerTaxId employeeName employeeTaxIdMask payDate periodStartOn periodEndOn currencyCode grossAmount yearToDateGrossAmount totalTaxAmount totalDeductionAmount netAmount paystubCheckState checkDifferenceAmount createdAt modifiedAt
+    paystubLines { id lineNumber paystubLineKind description hours rateAmount currentAmount yearToDateAmount paystubTaxKind taxJurisdictionCode currentWagesAmount yearToDateWagesAmount paystubDeductionKind employerCurrentAmount employerYearToDateAmount } }`
+
+	taxFormViewFields = `{ financeTaxForm { id agentAttachmentId taxFormKind taxYear isCorrected payerName payerTaxId recipientName recipientTaxIdMask createdAt modifiedAt
+    taxFormEntries { id entryNumber boxCode boxQualifier amount textValue isChecked } }
+    taxFormFindings { taxFormFindingCode isAgreeing expectedAmount printedAmount findingText } }`
+
+	taxYearFiguresFields = `{ wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount } }`
+
+	taxYearFields = `{ taxYear socialSecurityWageBaseAmount retirementDeferralLimitAmount isYearOver paystubCount taxFormCount
+    figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + `
+    taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount isRetirementDeferralCapped
+      figures ` + taxYearFiguresFields + ` paystubFigures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + `
+      taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
+    taxYearPeople { employeeName excessSocialSecurityTaxAmount figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + ` }
+    taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds }
+    taxYearEstimate { taxFilingStatus isTaxFilingStatusAssumed isProjected payAmount standardDeductionAmount taxableIncomeAmount federalIncomeTaxAmount socialSecurityTaxAmount medicareTaxAmount stateIncomeTaxAmount localIncomeTaxAmount totalTaxAmount paidTaxAmount upcomingWithheldTaxAmount owingTaxAmount refundAmount remainingIncomeAmount } }`
 
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
@@ -950,7 +978,10 @@ const (
   ImportFinanceCredential(providerKind: $providerKind, credential: $credential, institutionName: $institutionName) ` + financeSourceFields + `
 }`
 
-	DocumentSetReportingCurrency = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
+	DocumentSetReportingCurrency         = `mutation ($currencyCode: String!) { SetReportingCurrency(currencyCode: $currencyCode) }`
+	DocumentSetTaxFilingStatus           = `mutation ($taxFilingStatus: String!) { SetTaxFilingStatus(taxFilingStatus: $taxFilingStatus) }`
+	DocumentTaxDocumentAddress           = `query { TaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
+	DocumentRegenerateTaxDocumentAddress = `mutation { RegenerateTaxDocumentAddress { taxDocumentAddress canReadPdfs } }`
 
 	DocumentCreateAsset = `mutation ($assetName: String!, $assetKind: String!, $currencyCode: String!, $valuationSource: String, $estimateDescription: String, $isEstimateAllowed: Boolean, $value: String, $valuedOn: String) {
   CreateAsset(assetName: $assetName, assetKind: $assetKind, currencyCode: $currencyCode, valuationSource: $valuationSource, estimateDescription: $estimateDescription, isEstimateAllowed: $isEstimateAllowed, value: $value, valuedOn: $valuedOn) ` + assetFields + `
@@ -1048,6 +1079,36 @@ const (
   ReadReceipt(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId, financeTransactionId: $financeTransactionId) { agentJobId }
 }`
 
+	DocumentFinancePaystubs = `query ($taxYear: Int, $from: String, $to: String, $limit: Int, $offset: Int) {
+  FinancePaystubs(taxYear: $taxYear, from: $from, to: $to, limit: $limit, offset: $offset) { financePaystubs ` + financePaystubFields + ` hasMore totalCount }
+}`
+
+	DocumentFinancePaystub = `query ($paystubId: String!) { FinancePaystub(paystubId: $paystubId) ` + financePaystubFields + ` }`
+
+	DocumentFinanceTaxForms = `query ($taxYear: Int, $limit: Int, $offset: Int) {
+  FinanceTaxForms(taxYear: $taxYear, limit: $limit, offset: $offset) { taxForms ` + taxFormViewFields + ` hasMore totalCount }
+}`
+
+	DocumentFinanceTaxForm = `query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) ` + taxFormViewFields + ` }`
+
+	DocumentTaxYear = `query ($taxYear: Int!, $taxFilingStatus: String) { TaxYear(taxYear: $taxYear, taxFilingStatus: $taxFilingStatus) ` + taxYearFields + ` }`
+
+	DocumentRecordPaystub = `mutation ($agentAttachmentId: String!, $employerName: String!, $employerTaxId: String, $employeeName: String!, $employeeTaxIdMask: String, $payDate: String!, $periodStartOn: String, $periodEndOn: String, $currencyCode: String, $grossAmount: String!, $yearToDateGrossAmount: String, $totalTaxAmount: String, $totalDeductionAmount: String, $netAmount: String!, $paystubLines: [PaystubLineInput!]!, $isUnbalancedAccepted: Boolean) {
+  RecordPaystub(agentAttachmentId: $agentAttachmentId, employerName: $employerName, employerTaxId: $employerTaxId, employeeName: $employeeName, employeeTaxIdMask: $employeeTaxIdMask, payDate: $payDate, periodStartOn: $periodStartOn, periodEndOn: $periodEndOn, currencyCode: $currencyCode, grossAmount: $grossAmount, yearToDateGrossAmount: $yearToDateGrossAmount, totalTaxAmount: $totalTaxAmount, totalDeductionAmount: $totalDeductionAmount, netAmount: $netAmount, paystubLines: $paystubLines, isUnbalancedAccepted: $isUnbalancedAccepted) ` + financePaystubFields + `
+}`
+
+	DocumentRecordTaxForm = `mutation ($agentAttachmentId: String!, $taxFormKind: String, $taxYear: Int!, $isCorrected: Boolean, $payerName: String!, $payerTaxId: String, $recipientName: String!, $recipientTaxIdMask: String, $taxFormEntries: [TaxFormEntryInput!]!) {
+  RecordTaxForm(agentAttachmentId: $agentAttachmentId, taxFormKind: $taxFormKind, taxYear: $taxYear, isCorrected: $isCorrected, payerName: $payerName, payerTaxId: $payerTaxId, recipientName: $recipientName, recipientTaxIdMask: $recipientTaxIdMask, taxFormEntries: $taxFormEntries) ` + taxFormViewFields + `
+}`
+
+	DocumentReadTaxDocument = `mutation ($agentAttachmentId: String, $mailboxItemId: String) {
+  ReadTaxDocument(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId) { agentAttachmentIds agentJobIds }
+}`
+
+	DocumentDeletePaystub = `mutation ($paystubId: String!) { DeletePaystub(paystubId: $paystubId) }`
+
+	DocumentDeleteTaxForm = `mutation ($taxFormId: String!) { DeleteTaxForm(taxFormId: $taxFormId) }`
+
 	DocumentSetBudget = `mutation ($spendingCategoryId: String!, $monthlyAmount: String!, $currencyCode: String, $effectiveFrom: String) {
   SetBudget(spendingCategoryId: $spendingCategoryId, monthlyAmount: $monthlyAmount, currencyCode: $currencyCode, effectiveFrom: $effectiveFrom) ` + budgetFields + `
 }`
@@ -1086,8 +1147,10 @@ var FinanceDocuments = map[string]string{
 	"CreateFinanceLinkToken": DocumentCreateFinanceLinkToken, "CompleteFinanceLink": DocumentCompleteFinanceLink,
 	"CompleteFinanceRepair": DocumentCompleteFinanceRepair, "LinkSimpleFIN": DocumentLinkSimpleFIN,
 	"ImportFinanceCredential": DocumentImportFinanceCredential, "SetReportingCurrency": DocumentSetReportingCurrency,
-	"CreateAsset": DocumentCreateAsset,
-	"UpdateAsset": DocumentUpdateAsset, "CloseAsset": DocumentCloseAsset, "DeleteAsset": DocumentDeleteAsset,
+	"SetTaxFilingStatus": DocumentSetTaxFilingStatus, "TaxDocumentAddress": DocumentTaxDocumentAddress,
+	"RegenerateTaxDocumentAddress": DocumentRegenerateTaxDocumentAddress,
+	"CreateAsset":                  DocumentCreateAsset,
+	"UpdateAsset":                  DocumentUpdateAsset, "CloseAsset": DocumentCloseAsset, "DeleteAsset": DocumentDeleteAsset,
 	"RecordValuation": DocumentRecordValuation, "DeleteValuation": DocumentDeleteValuation,
 	"CreateSpendingCategory": DocumentCreateSpendingCategory, "UpdateSpendingCategory": DocumentUpdateSpendingCategory,
 	"DeleteSpendingCategory": DocumentDeleteSpendingCategory, "CreateSpendingRule": DocumentCreateSpendingRule,
@@ -1101,6 +1164,37 @@ var FinanceDocuments = map[string]string{
 	"ProposeReceiptMatches": DocumentProposeReceiptMatches, "RecordReceipt": DocumentRecordReceipt,
 	"PreviewRecordReceipt": DocumentPreviewRecordReceipt, "MatchReceipt": DocumentMatchReceipt,
 	"UnmatchReceipt": DocumentUnmatchReceipt, "DeleteReceipt": DocumentDeleteReceipt, "ReadReceipt": DocumentReadReceipt,
+	"FinancePaystubs": DocumentFinancePaystubs, "FinancePaystub": DocumentFinancePaystub,
+	"FinanceTaxForms": DocumentFinanceTaxForms, "FinanceTaxForm": DocumentFinanceTaxForm, "TaxYear": DocumentTaxYear,
+	"RecordPaystub": DocumentRecordPaystub, "RecordTaxForm": DocumentRecordTaxForm, "ReadTaxDocument": DocumentReadTaxDocument,
+	"DeletePaystub": DocumentDeletePaystub, "DeleteTaxForm": DocumentDeleteTaxForm,
+}
+
+// PaystubPage is one page of paystubs.
+type PaystubPage struct {
+	FinancePaystubs []*models.FinancePaystub `json:"financePaystubs"`
+	HasMore         bool                     `json:"hasMore"`
+	TotalCount      int                      `json:"totalCount"`
+}
+
+// TaxFormView is a tax form with what it says about itself.
+type TaxFormView struct {
+	FinanceTaxForm  *models.FinanceTaxForm   `json:"financeTaxForm"`
+	TaxFormFindings []finance.TaxFormFinding `json:"taxFormFindings"`
+}
+
+// TaxFormPage is one page of tax forms.
+type TaxFormPage struct {
+	TaxForms   []*TaxFormView `json:"taxForms"`
+	HasMore    bool           `json:"hasMore"`
+	TotalCount int            `json:"totalCount"`
+}
+
+// TaxDocumentReading is the uploads queued to be read as paystubs or tax
+// forms, and the job reading each.
+type TaxDocumentReading struct {
+	AgentAttachmentIDs []string `json:"agentAttachmentIds"`
+	AgentJobIDs        []string `json:"agentJobIds"`
 }
 
 // Executor runs a document: a Client, or the agent's operations as the

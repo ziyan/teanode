@@ -27,7 +27,9 @@ use one — see "Choosing a spam filter" below.
     curl -L -O https://raw.githubusercontent.com/ziyan/teanode/main/deploy/docker-compose.yml
 
 Nothing else needs to be installed — not even the binaries, since the image
-carries both of them.
+carries both of them, along with the readers the server runs on uploads:
+ffmpeg and ffprobe for audio and video, and poppler's pdftotext and pdftoppm
+for PDFs.
 
 ## 2. Describe the server
 

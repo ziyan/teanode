@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/models"
+	"gorm.io/gorm"
 )
 
 // AttachmentOperation is the files a person hands their agent in a
@@ -29,13 +30,16 @@ type AttachmentOperation interface {
 	// a turn, older than the given time, for the sweep. A photo or PDF a
 	// finance receipt was read from is not an orphan: the receipt holds
 	// it. Nor is one uploaded to a finance transaction as its receipt,
-	// waiting to be read, while that finance transaction exists.
+	// waiting to be read, while that finance transaction exists, nor one
+	// handed in as a paystub or a tax form, until TaxDocumentUnreadRetention
+	// has passed with nothing read out of it.
 	ListOrphanAgentAttachments(before time.Time) ([]*models.AgentAttachment, error)
 
 	// DetachReceiptAttachments takes a conversation's files that a finance
-	// receipt was read from out of the conversation, for deleting the
-	// conversation without them: they no longer name a conversation or a
-	// message, and go when their receipt is deleted.
+	// receipt was read from, and those handed in as a paystub or a tax
+	// form, out of the conversation, for deleting the conversation without
+	// them: they no longer name a conversation or a message, and go when
+	// their receipt, paystub or tax form is deleted.
 	DetachReceiptAttachments(agentId, conversationId string) error
 
 	DeleteAgentAttachment(attachmentId string) error
@@ -44,7 +48,19 @@ type AttachmentOperation interface {
 	// an upload of the agent's is the receipt for. ErrNotFound when the
 	// agent has no such upload or no such finance transaction.
 	SetAgentAttachmentFinanceTransaction(agentId, attachmentId, financeTransactionId string) error
+
+	// MarkAgentAttachmentTaxDocument records that an upload of the agent's
+	// was handed in as a paystub or a tax form, and forgets the text kept
+	// of it, unless a message of a conversation carries it: the turns
+	// after it read that text, already masked when it was kept, and
+	// would lose the file. ErrNotFound when the agent has no such upload.
+	MarkAgentAttachmentTaxDocument(agentId, attachmentId string) error
 }
+
+// TaxDocumentUnreadRetention is how long a file handed in as a paystub or
+// a tax form is kept when nothing was read out of it: time enough for the
+// reading job's retries and for the person to notice and read it again.
+const TaxDocumentUnreadRetention = 30 * 24 * time.Hour
 
 type agentAttachmentModel struct {
 	ID             string    `gorm:"column:id;primaryKey"`
@@ -58,6 +74,7 @@ type agentAttachmentModel struct {
 	Text           string    `gorm:"column:text"`
 
 	FinanceTransactionID *string `gorm:"column:finance_transaction_id"`
+	IsTaxDocument        bool    `gorm:"column:is_tax_document"`
 }
 
 func (agentAttachmentModel) TableName() string { return "agent_attachment" }
@@ -67,7 +84,7 @@ func attachmentFromModel(model *agentAttachmentModel) *models.AgentAttachment {
 		ID: model.ID, CreatedAt: model.CreatedAt.In(time.Local), AgentID: model.AgentID,
 		ConversationID: model.ConversationID, MessageID: model.MessageID,
 		Name: model.Name, ContentType: model.ContentType, Size: model.Size, Text: model.Text,
-		FinanceTransactionID: optionalString(model.FinanceTransactionID),
+		FinanceTransactionID: optionalString(model.FinanceTransactionID), IsTaxDocument: model.IsTaxDocument,
 	}
 }
 
@@ -79,7 +96,10 @@ func (self *transaction) CreateAgentAttachment(attachment *models.AgentAttachmen
 		ID: newID(), CreatedAt: time.Now(), AgentID: attachment.AgentID,
 		ConversationID: attachment.ConversationID, MessageID: attachment.MessageID,
 		Name: truncateRunes(attachment.Name, 255), ContentType: truncateRunes(attachment.ContentType, 128),
-		Size: attachment.Size, Text: attachment.Text,
+		Size: attachment.Size, Text: attachment.Text, IsTaxDocument: attachment.IsTaxDocument,
+	}
+	if attachment.IsTaxDocument {
+		model.Text = ""
 	}
 	if err := self.tx.Create(model).Error; err != nil {
 		return nil, err
@@ -149,8 +169,15 @@ func (self *transaction) ListOrphanAgentAttachments(before time.Time) ([]*models
 	var found []agentAttachmentModel
 	// The finance transaction id is set null when its finance transaction
 	// is deleted, so a set one names a charge that still exists.
+	// A tax document is kept while it waits to be read, and after, by the
+	// paystub or tax form read out of it; one nothing was read out of in
+	// TaxDocumentUnreadRetention (not a paystub or a W-2 after all, or never
+	// readable) goes, since it holds the person's taxpayer number.
 	if err := self.tx.Where(`"message_id" = '' AND "created_at" < ? AND "finance_transaction_id" IS NULL
-		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before).
+		AND (NOT "is_tax_document" OR ("created_at" < ?
+			AND NOT EXISTS (SELECT 1 FROM "agent_finance_paystub" WHERE "agent_attachment_id" = "agent_attachment"."id")
+			AND NOT EXISTS (SELECT 1 FROM "agent_finance_tax_form" WHERE "agent_attachment_id" = "agent_attachment"."id")))
+		AND NOT EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`, before, before.Add(-TaxDocumentUnreadRetention)).
 		Limit(500).Find(&found).Error; err != nil {
 		return nil, err
 	}
@@ -167,7 +194,7 @@ func (self *transaction) DetachReceiptAttachments(agentId, conversationId string
 	}
 	return self.tx.Exec(`UPDATE "agent_attachment" SET "conversation_id" = '', "message_id" = ''
 		WHERE "agent_id" = ? AND "conversation_id" = ?
-		  AND EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id")`,
+		  AND ("is_tax_document" OR EXISTS (SELECT 1 FROM "agent_finance_receipt" WHERE "agent_attachment_id" = "agent_attachment"."id"))`,
 		agentId, conversationId).Error
 }
 
@@ -185,6 +212,18 @@ func (self *transaction) SetAgentAttachmentFinanceTransaction(agentId, attachmen
 	}
 	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, attachmentId).
 		Update("finance_transaction_id", financeTransaction.ID)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (self *transaction) MarkAgentAttachmentTaxDocument(agentId, attachmentId string) error {
+	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, attachmentId).
+		Updates(map[string]any{"is_tax_document": true, "text": gorm.Expr(`CASE WHEN "message_id" = '' THEN '' ELSE "text" END`)})
 	if updated.Error != nil {
 		return updated.Error
 	}

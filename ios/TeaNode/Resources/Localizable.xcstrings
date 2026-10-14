@@ -3765,6 +3765,22 @@
         }
       }
     },
+    "An estimate from wages only: %@ taxable after the %@ standard deduction. Other income, itemized deductions and credits are not counted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与だけからの見積もりです。標準控除 %2$@ を引いた課税所得は %1$@ です。その他の収入、項目別控除、税額控除は含みません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅根据工资估算：减去 %2$@ 标准扣除额后应税收入为 %1$@。未计入其他收入、分项扣除和税收抵免。"
+          }
+        }
+      }
+    },
     "API key": {
       "localizations": {
         "ja": {
@@ -4725,6 +4741,7 @@
         }
       }
     },
+
     "Adds up": {
       "localizations": {
         "ja": {
@@ -9669,6 +9686,22 @@
         }
       }
     },
+    "Copy address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレスをコピー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制地址"
+          }
+        }
+      }
+    },
     "Copy password": {
       "localizations": {
         "ja": {
@@ -11957,6 +11990,22 @@
         }
       }
     },
+    "Each PDF or photo mailed or forwarded here is read as a paystub or W-2.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに送ったり転送したりした PDF や写真は、給与明細か W-2 として読み取られます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送或转发到这里的每个 PDF 或照片都会作为工资单或 W-2 读取。"
+          }
+        }
+      }
+    },
     "Each person's own": {
       "localizations": {
         "ja": {
@@ -11969,6 +12018,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "每人各自填写"
+          }
+        }
+      }
+    },
+    "Each photo mailed or forwarded here is read as a paystub or W-2; this server cannot read PDFs.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここに送ったり転送したりした写真は、給与明細か W-2 として読み取られます。このサーバーは PDF を読めません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送或转发到这里的每张照片都会作为工资单或 W-2 读取；此服务器无法读取 PDF。"
           }
         }
       }
@@ -13269,6 +13334,22 @@
         }
       }
     },
+    "Federal income tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連邦所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联邦所得税"
+          }
+        }
+      }
+    },
     "Fees": {
       "localizations": {
         "ja": {
@@ -13569,6 +13650,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "决定不打开的文件"
+          }
+        }
+      }
+    },
+    "Filing status": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告区分"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税身份"
           }
         }
       }
@@ -14881,6 +14978,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有附件"
+          }
+        }
+      }
+    },
+    "Head of household": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "世帯主"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "户主"
           }
         }
       }
@@ -18181,6 +18294,22 @@
         }
       }
     },
+    "Local income tax, as withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税（源泉徴収額）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税（按预扣额）"
+          }
+        }
+      }
+    },
     "Location": {
       "localizations": {
         "ja": {
@@ -18369,6 +18498,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "低"
+          }
+        }
+      }
+    },
+    "Made a new tax document address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい税務書類アドレスを作りました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已生成新的税务文件地址"
           }
         }
       }
@@ -18581,6 +18726,22 @@
         }
       }
     },
+    "Mail them in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールで送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过邮件发送"
+          }
+        }
+      }
+    },
     "Mailbox": {
       "localizations": {
         "ja": {
@@ -18641,6 +18802,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "主对话"
+          }
+        }
+      }
+    },
+    "Make a new address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいアドレスを作る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成新地址"
           }
         }
       }
@@ -19029,6 +19206,38 @@
         }
       }
     },
+    "Married filing jointly": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夫婦合算申告"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已婚合并申报"
+          }
+        }
+      }
+    },
+    "Married filing separately": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "夫婦個別申告"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已婚分开申报"
+          }
+        }
+      }
+    },
     "Matched to %lld charges": {
       "localizations": {
         "ja": {
@@ -19137,6 +19346,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "依据最近一次梦境估算，其花费为 %@。"
+          }
+        }
+      }
+    },
+    "Medicare": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディケア税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联邦医疗保险税"
           }
         }
       }
@@ -20385,6 +20610,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "从未使用"
+          }
+        }
+      }
+    },
+    "New address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新地址"
+          }
+        }
+      }
+    },
+    "New address?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいアドレスにしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要换新地址吗？"
           }
         }
       }
@@ -24645,6 +24902,22 @@
         }
       }
     },
+    "Owing at filing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告時に納付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税时补缴"
+          }
+        }
+      }
+    },
     "Page actions": {
       "localizations": {
         "ja": {
@@ -24721,6 +24994,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "付款方"
+          }
+        }
+      }
+    },
+    "Paid so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "納付済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已缴"
           }
         }
       }
@@ -25045,6 +25334,22 @@
         }
       }
     },
+    "Pay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资"
+          }
+        }
+      }
+    },
     "Pay, buy, sell, trade, or place or cancel an order, a transfer or a payment.": {
       "localizations": {
         "ja": {
@@ -25057,6 +25362,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "付款、购买、出售、交易，或下达、取消订单、转账或付款。"
+          }
+        }
+      }
+    },
+    "Paystubs or W-2s mailed in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールで届いた給与明細や W-2"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邮件送来的工资单或 W-2"
           }
         }
       }
@@ -26229,6 +26550,22 @@
         }
       }
     },
+    "Read a paystub or W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細・W-2の読み取り"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取工资单或 W-2"
+          }
+        }
+      }
+    },
     "Read DMARC reports": {
       "localizations": {
         "ja": {
@@ -26289,6 +26626,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "作为收据读取"
+          }
+        }
+      }
+    },
+    "Read as paystub or W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細またはW-2として読む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作为工资单或 W-2 读取"
+          }
+        }
+      }
+    },
+    "Reading it as a paystub or W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細またはW-2として読んでいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在作为工资单或 W-2 读取"
           }
         }
       }
@@ -26837,6 +27206,22 @@
         }
       }
     },
+    "Refund at filing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告時に還付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税时退税"
+          }
+        }
+      }
+    },
     "Refused on arrival": {
       "localizations": {
         "ja": {
@@ -26913,6 +27298,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "注册名：%@"
+          }
+        }
+      }
+    },
+    "Reimbursements": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立替金の払い戻し"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报销"
           }
         }
       }
@@ -27089,6 +27490,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "发布页面"
+          }
+        }
+      }
+    },
+    "Remaining income": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残る収入"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩余收入"
           }
         }
       }
@@ -28469,6 +28886,22 @@
         }
       }
     },
+    "Retirement contributions stop at the year's limit of %@, and the pay that would have gone in counts as wages.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退職積立は年間上限の %@ で止まり、積み立てられなかった分は給与として数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退休金缴款在全年上限 %@ 处停止，本应缴入的部分计为工资。"
+          }
+        }
+      }
+    },
     "Retry": {
       "localizations": {
         "ja": {
@@ -28977,6 +29410,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "并发运行数"
+          }
+        }
+      }
+    },
+    "Single": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "独身"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单身"
+          }
+        }
+      }
+    },
+    "Social Security": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税"
           }
         }
       }
@@ -32757,6 +33222,22 @@
         }
       }
     },
+    "State income tax, as withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税（源泉徴収額）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税（按预扣额）"
+          }
+        }
+      }
+    },
     "State or region": {
       "localizations": {
         "ja": {
@@ -32833,6 +33314,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "仍在读取，完成后会显示在这里。"
+          }
+        }
+      }
+    },
+    "Still to be withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これから源泉徴収"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还会预扣"
           }
         }
       }
@@ -33589,6 +34086,54 @@
         }
       }
     },
+    "Tax for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年の税金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年的税"
+          }
+        }
+      }
+    },
+    "Tax for %@, by December 31": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年の税金（12 月 31 日までの見込み）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 年的税（预计到 12 月 31 日）"
+          }
+        }
+      }
+    },
+    "Tax for the year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年間の税金"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全年税额"
+          }
+        }
+      }
+    },
     "TeaNode app": {
       "localizations": {
         "ja": {
@@ -33633,6 +34178,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "转写服务的响应丢失了，因此这段录音没有转写。重新转写会是一次新的付费请求。"
+          }
+        }
+      }
+    },
+    "The current address stops taking mail at once. Anything set to forward paystubs to it needs the new one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今のアドレスはすぐにメールを受け付けなくなります。給与明細の転送先に設定している場合は、新しいアドレスに変えてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前地址会立即停止接收邮件。设置了把工资单转发到这里的地方需要改用新地址。"
+          }
+        }
+      }
+    },
+    "The filing status is assumed from the number of people; pick yours above and it is kept.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "申告区分は人数から仮定しています。上で選ぶと保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报税身份是根据人数假定的；在上方选择后会保存。"
           }
         }
       }
@@ -40728,6 +41305,22 @@
         }
       }
     },
+    "Withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已预扣"
+          }
+        }
+      }
+    },
     "Without": {
       "localizations": {
         "ja": {
@@ -41028,6 +41621,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你"
+          }
+        }
+      }
+    },
+    "You have no mailbox address to receive them; add the files instead.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受け取れるメールボックスのアドレスがありません。ファイルを追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你没有可接收邮件的邮箱地址；请改为添加文件。"
           }
         }
       }
@@ -48182,6 +48791,1429 @@
           "stringUnit": {
             "state": "translated",
             "value": "麦克风模式：%@"
+          }
+        }
+      }
+    },
+    "Tax year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "課税年度"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纳税年度"
+          }
+        }
+      }
+    },
+    "Adding": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在添加"
+          }
+        }
+      }
+    },
+    "No paystubs or W-2s": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細や W-2 はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有工资单或 W-2"
+          }
+        }
+      }
+    },
+    "Add paystubs or W-2s for this year, as PDFs or photos, and the year is put together from them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この年の給与明細や W-2 を PDF または写真で追加すると、そこから1年分がまとめられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以 PDF 或照片添加这一年的工资单或 W-2，即可据此汇总全年。"
+          }
+        }
+      }
+    },
+    "Household": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "世帯"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭"
+          }
+        }
+      }
+    },
+    "Projected to December 31 where there is no W-2 yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 がまだない分は12月31日までの見込みです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚无 W-2 的部分按预计到 12 月 31 日计算。"
+          }
+        }
+      }
+    },
+    "W-2s": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2"
+          }
+        }
+      }
+    },
+    "W-2 deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 已删除"
+          }
+        }
+      }
+    },
+    "Paystubs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资单"
+          }
+        }
+      }
+    },
+    "Paystub deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资单已删除"
+          }
+        }
+      }
+    },
+    "Add paystubs or W-2s": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細や W-2 を追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加工资单或 W-2"
+          }
+        }
+      }
+    },
+    "Findings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "気づいた点"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发现"
+          }
+        }
+      }
+    },
+    "From the W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 より"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自 W-2"
+          }
+        }
+      }
+    },
+    "%@ at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（%2$@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（%2$@）"
+          }
+        }
+      }
+    },
+    "W-2 against paystubs": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 と給与明細の比較"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 与工资单对照"
+          }
+        }
+      }
+    },
+    "Each box of the W-2 beside the year to date on the last paystub.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 の各欄を最後の給与明細の年初来累計と並べています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 的每一栏与最后一张工资单的年初至今金额并列。"
+          }
+        }
+      }
+    },
+    "From %lld paystubs through %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@ までの給与明細 %1$lld 件より"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自截至 %2$@ 的 %1$lld 张工资单"
+          }
+        }
+      }
+    },
+    "From 1 paystub through %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ までの給与明細 1 件より"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自截至 %@ 的 1 张工资单"
+          }
+        }
+      }
+    },
+    "Uploading…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在上传…"
+          }
+        }
+      }
+    },
+    "Still reading. Pull to refresh, or look under another year.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ読み取り中です。引っ張って更新するか、別の年を確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仍在读取。下拉刷新，或查看其他年份。"
+          }
+        }
+      }
+    },
+    "%@ by December 31": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "12月31日までに %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到 12 月 31 日 %@"
+          }
+        }
+      }
+    },
+    "Differs by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の差"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相差 %@"
+          }
+        }
+      }
+    },
+    "Box %@: W-2 %@, paystubs %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "欄 %1$@：W-2 %2$@、給与明細 %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %1$@ 栏：W-2 %2$@，工资单 %3$@"
+          }
+        }
+      }
+    },
+    "W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2"
+          }
+        }
+      }
+    },
+
+    "Paystub": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资单"
+          }
+        }
+      }
+    },
+    "Earnings": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支給"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入"
+          }
+        }
+      }
+    },
+    "Deductions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "控除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扣除"
+          }
+        }
+      }
+    },
+    "Open the original": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のファイルを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开原件"
+          }
+        }
+      }
+    },
+    "Delete paystub": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与明細を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除工资单"
+          }
+        }
+      }
+    },
+    "Delete this paystub?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この給与明細を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这张工资单？"
+          }
+        }
+      }
+    },
+    "Its lines are deleted too, and the tax year no longer counts it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明細行も削除され、課税年度の集計から外れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其明细行也会删除，纳税年度不再计入。"
+          }
+        }
+      }
+    },
+    "Employer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇用主"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇主"
+          }
+        }
+      }
+    },
+    "Employee": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "従業員"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇员"
+          }
+        }
+      }
+    },
+    "Paid on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支給日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发薪日"
+          }
+        }
+      }
+    },
+    "Pay period": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与期間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资期间"
+          }
+        }
+      }
+    },
+    "Gross pay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "総支給額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "税前工资"
+          }
+        }
+      }
+    },
+    "Take-home pay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手取り"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实发工资"
+          }
+        }
+      }
+    },
+    "Gross pay this year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年の総支給額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年税前工资"
+          }
+        }
+      }
+    },
+    "%@ this year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今年 %@"
+          }
+        }
+      }
+    },
+    "%@ hours at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 時間 × %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 小时 × %2$@"
+          }
+        }
+      }
+    },
+    "%@ hours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 小时"
+          }
+        }
+      }
+    },
+    "on %@ of wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "課税対象 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计税工资 %@"
+          }
+        }
+      }
+    },
+    "Employer adds %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇用主負担 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雇主另付 %@"
+          }
+        }
+      }
+    },
+    "A corrected W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訂正済みの W-2"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更正后的 W-2"
+          }
+        }
+      }
+    },
+    "Boxes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各欄"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各栏"
+          }
+        }
+      }
+    },
+    "Delete W-2": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "W-2 を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 W-2"
+          }
+        }
+      }
+    },
+    "Delete this W-2?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この W-2 を削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这份 W-2？"
+          }
+        }
+      }
+    },
+    "Its boxes are deleted too, and the tax year no longer counts it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各欄も削除され、課税年度の集計から外れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其各栏也会删除，纳税年度不再计入。"
+          }
+        }
+      }
+    },
+    "Marked": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チェックあり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已勾选"
+          }
+        }
+      }
+    },
+    "Box %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "欄 %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第 %@ 栏"
+          }
+        }
+      }
+    },
+    "Wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资"
+          }
+        }
+      }
+    },
+    "Federal income tax withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収された連邦所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预扣联邦所得税"
+          }
+        }
+      }
+    },
+    "Social Security wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税の対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障工资"
+          }
+        }
+      }
+    },
+    "Social Security tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税"
+          }
+        }
+      }
+    },
+    "Medicare wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディケアの対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医疗保险工资"
+          }
+        }
+      }
+    },
+    "Medicare tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディケア税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医疗保险税"
+          }
+        }
+      }
+    },
+    "Traditional retirement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "従来型退職積立"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "传统退休金缴款"
+          }
+        }
+      }
+    },
+    "Roth retirement": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Roth 退職積立"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Roth 退休金缴款"
+          }
+        }
+      }
+    },
+    "HSA": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HSA"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HSA"
+          }
+        }
+      }
+    },
+    "Dependent care": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扶養家族ケア"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受抚养人照护"
+          }
+        }
+      }
+    },
+    "%@ wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 工资"
+          }
+        }
+      }
+    },
+    "%@ income tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 所得税"
+          }
+        }
+      }
+    },
+    "Local income tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方所得税"
+          }
+        }
+      }
+    },
+    "Wages, tips, other compensation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給与、チップ、その他の報酬"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工资、小费及其他报酬"
+          }
+        }
+      }
+    },
+    "Social Security tax withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収された社会保障税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预扣社会保障税"
+          }
+        }
+      }
+    },
+    "Medicare wages and tips": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メディケア対象の給与とチップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "医疗保险工资和小费"
+          }
+        }
+      }
+    },
+    "Medicare tax withheld": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "源泉徴収されたメディケア税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预扣医疗保险税"
+          }
+        }
+      }
+    },
+    "Social Security tips": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障税対象のチップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "社会保障小费"
+          }
+        }
+      }
+    },
+    "Allocated tips": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配分チップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分配小费"
+          }
+        }
+      }
+    },
+    "Dependent care benefits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扶養家族ケア給付"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受抚养人照护福利"
+          }
+        }
+      }
+    },
+    "Nonqualified plans": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非適格プラン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非合格计划"
+          }
+        }
+      }
+    },
+    "Coded amounts": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コード付きの金額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代码金额"
+          }
+        }
+      }
+    },
+    "Statutory employee, retirement plan, third-party sick pay": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "法定従業員、退職プラン、第三者による病気休暇手当"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "法定雇员、退休计划、第三方病假工资"
+          }
+        }
+      }
+    },
+    "State and employer's state ID": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州と雇用主の州 ID"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州及雇主州 ID"
+          }
+        }
+      }
+    },
+    "State wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州の対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州工资"
+          }
+        }
+      }
+    },
+    "State income tax": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "州所得税"
+          }
+        }
+      }
+    },
+    "Local wages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方の対象給与"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地方工资"
+          }
+        }
+      }
+    },
+    "Locality name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地域名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地区名称"
+          }
+        }
+      }
+    },
+    "Projected to December 31 with %lld more paychecks like the latest.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Projected to December 31 with %lld more paycheck like the latest."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Projected to December 31 with %lld more paychecks like the latest."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "最新と同じ給与があと %lld 回あるとして12月31日まで見込んでいます。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "最新と同じ給与があと %lld 回あるとして12月31日まで見込んでいます。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "按与最近一次相同的工资再发 %lld 次，预计到 12 月 31 日。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "按与最近一次相同的工资再发 %lld 次，预计到 12 月 31 日。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld checks disagree": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld check disagrees"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld checks disagree"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の検証が不一致"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の検証が不一致"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 项检查不一致"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 项检查不一致"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Reading %lld documents": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Reading %lld document"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Reading %lld documents"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の書類を読み取っています"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 件の書類を読み取っています"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在读取 %lld 份文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在读取 %lld 份文件"
+                }
+              }
+            }
           }
         }
       }

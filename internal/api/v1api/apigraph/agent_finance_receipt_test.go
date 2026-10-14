@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -203,18 +204,22 @@ func TestRecordReceiptChecksMatchesAndStaysTheCallers(test *testing.T) {
 
 // An upload is queued for the receipt job, remembering the charge it was
 // uploaded to; a file with no text the server can read is refused, and so
-// is another person's upload or a charge named with a message.
+// is a PDF on a server without poppler, another person's upload or a
+// charge named with a message.
 func TestReadReceiptQueuesTheReceiptJob(test *testing.T) {
 	fixture := newFinanceFixture(test, true)
 	_, _, transactions := fixture.seedFinanceSource(test)
 	resolver := fixture.resolver
-	var photo, document *models.AgentAttachment
+	var photo, document, archive *models.AgentAttachment
 	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
 		var err error
 		if photo, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: fixture.ownerAgent.ID, Name: "receipt.jpg", ContentType: "image/jpeg", Size: 4}); err != nil {
 			test.Fatal(err)
 		}
 		if document, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: fixture.ownerAgent.ID, Name: "receipt.pdf", ContentType: "application/pdf", Size: 4}); err != nil {
+			test.Fatal(err)
+		}
+		if archive, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: fixture.ownerAgent.ID, Name: "receipt.zip", ContentType: "application/zip", Size: 4}); err != nil {
 			test.Fatal(err)
 		}
 	})
@@ -231,8 +236,18 @@ func TestReadReceiptQueuesTheReceiptJob(test *testing.T) {
 		if err != nil || uploaded.FinanceTransactionID != transactions[0].ID {
 			test.Fatalf("the upload remembers its charge: %+v %v", uploaded, err)
 		}
-		if _, err := resolver.ReadReceipt(ctx, ReadReceiptArguments{AgentAttachmentID: document.ID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "photo") {
-			test.Fatalf("a PDF with no text is refused, saying what to give: %v", err)
+		if _, err := resolver.ReadReceipt(ctx, ReadReceiptArguments{AgentAttachmentID: archive.ID}); !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "photo") {
+			test.Fatalf("a file with no text is refused, saying what to give: %v", err)
+		}
+		// A PDF with no text kept is read by the job (its text, or its
+		// pages as pictures) when the server has poppler.
+		reading, err = resolver.ReadReceipt(ctx, ReadReceiptArguments{AgentAttachmentID: document.ID})
+		if agent.CanReadPDFs() {
+			if err != nil || reading.AgentJobID == "" {
+				test.Fatalf("a PDF is queued for the receipt job: %+v %v", reading, err)
+			}
+		} else if !errors.Is(err, api.ErrInvalidArguments) || !strings.Contains(err.Error(), "cannot read PDFs") {
+			test.Fatalf("a PDF is refused on a server that cannot read one: %v", err)
 		}
 		if _, err := resolver.ReadReceipt(ctx, ReadReceiptArguments{MailboxItemID: "item-invented", FinanceTransactionID: transactions[0].ID}); !errors.Is(err, api.ErrInvalidArguments) {
 			test.Fatalf("a charge named with a message is refused: %v", err)

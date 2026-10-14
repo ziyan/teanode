@@ -48,6 +48,12 @@ const (
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
+	// AgentAttachmentTaxDocumentParameter, set to true on a
+	// PathAgentAttachments upload, hands the files in as paystubs or tax
+	// forms: their text, which holds the person's taxpayer number, is
+	// never kept.
+	AgentAttachmentTaxDocumentParameter = "isTaxDocument"
+
 	// PathAgentDocumentFile serves the bytes of one thing a knowledge
 	// source indexed: the picture or the file a record came with, kept in
 	// object storage under the document's key. The document itself is

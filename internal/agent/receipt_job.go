@@ -197,6 +197,12 @@ func (self *Agent) readReceiptSource(ctx context.Context, run *Run, sourceId str
 		receipt:              &models.FinanceReceipt{ReceiptSourceKind: models.ReceiptSourceKindAttachment, AgentAttachmentID: attachment.ID},
 		financeTransactionId: attachment.FinanceTransactionID, sourceName: attachment.Name,
 	}
+	if attachment.IsTaxDocument {
+		// A paystub's or a tax form's file holds the person's taxpayer
+		// number, and is read only by its own job, which masks it.
+		source.unreadableWhy = "it was handed in as a paystub or a W-2, not a receipt"
+		return source, nil
+	}
 	switch {
 	case IsImageAttachment(attachment.ContentType):
 		if attachment.Size > attachmentImageBytes {
@@ -213,10 +219,66 @@ func (self *Agent) readReceiptSource(ctx context.Context, run *Run, sourceId str
 		source.pictures = []llm.ContentPart{{Type: "image", MediaType: attachment.ContentType, Data: content}}
 	case strings.TrimSpace(attachment.Text) != "":
 		source.receiptText = attachment.Text
+	case IsPDFAttachment(attachment):
+		return source, readReceiptPDF(ctx, run, attachment, source)
 	default:
-		source.unreadableWhy = "no text could be read out of it here; a PDF's text is not read on the server, so upload a photo or a screenshot of it"
+		source.unreadableWhy = "no text could be read out of it here; upload a photo, a screenshot or a PDF of it"
 	}
 	return source, nil
+}
+
+// receiptPDFPageCount is the most pages of a scanned PDF receipt shown to
+// the model: a receipt is a page or two, and every page is a picture's
+// worth of tokens.
+const receiptPDFPageCount = 3
+
+// readReceiptPDF reads a PDF receipt with no text kept on its row: its
+// text when it has a text layer (an upload from before the server could
+// read one), else its first pages as pictures, as a scan is.
+func readReceiptPDF(ctx context.Context, run *Run, attachment *models.AgentAttachment, source *receiptSource) error {
+	if run.Storage() == nil {
+		return fmt.Errorf("there is no storage to read the PDF of the receipt from")
+	}
+	content, err := run.Storage().GetFile(ctx, attachment.ID)
+	if err != nil {
+		return fmt.Errorf("the PDF of the receipt cannot be read yet: %w", err)
+	}
+	if !isPDFContent(content) {
+		source.unreadableWhy = "it is named a PDF but is not one"
+		return nil
+	}
+	text, err := readPDFText(ctx, content)
+	if errors.Is(err, ErrPDFReaderMissing) {
+		source.unreadableWhy = "this server cannot read PDFs, so upload a photo or a screenshot of it"
+		return nil
+	}
+	if err != nil {
+		source.unreadableWhy = "the PDF could not be read: " + err.Error()
+		return nil
+	}
+	if text != "" {
+		source.receiptText = capAttachmentText(finance.MaskTaxpayerNumbersInFile(text))
+		return nil
+	}
+	pages, err := renderPDFPages(ctx, content, receiptPDFPageCount)
+	if errors.Is(err, ErrPDFReaderMissing) {
+		source.unreadableWhy = "the PDF has no text and this server cannot render PDFs, so upload a photo or a screenshot of it"
+		return nil
+	}
+	if err != nil {
+		source.unreadableWhy = "the PDF has no text and could not be rendered: " + err.Error()
+		return nil
+	}
+	for _, page := range pages {
+		if len(page) > attachmentImageBytes {
+			continue
+		}
+		source.pictures = append(source.pictures, llm.ContentPart{Type: "image", MediaType: "image/png", Data: page})
+	}
+	if len(source.pictures) == 0 {
+		source.unreadableWhy = "the PDF has no text, and no page of it renders to a picture small enough for a model"
+	}
+	return nil
 }
 
 // receiptModelReady says why no model can read the receipt, or "" when one

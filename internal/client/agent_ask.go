@@ -274,7 +274,18 @@ func AskAgentWith(ctx context.Context, connection *Client, request *AskAgentRequ
 // UploadAgentAttachment hands the agent a file for the next turn and
 // returns its record; AskAgentWith names it by id.
 func UploadAgentAttachment(ctx context.Context, connection *Client, filename string, content []byte) (*AgentAttachment, error) {
-	response, err := connection.Upload(ctx, api.PathAgentAttachments, "file", filename, content)
+	return uploadAgentAttachment(ctx, connection, api.PathAgentAttachments, filename, content)
+}
+
+// UploadTaxDocument hands the agent a paystub's or a tax form's file,
+// whose text, which holds the person's taxpayer number, the server never
+// keeps; ReadTaxDocument then names it by id.
+func UploadTaxDocument(ctx context.Context, connection *Client, filename string, content []byte) (*AgentAttachment, error) {
+	return uploadAgentAttachment(ctx, connection, api.PathAgentAttachments+"?"+api.AgentAttachmentTaxDocumentParameter+"=true", filename, content)
+}
+
+func uploadAgentAttachment(ctx context.Context, connection *Client, path, filename string, content []byte) (*AgentAttachment, error) {
+	response, err := connection.Upload(ctx, path, "file", filename, content)
 	if err != nil {
 		return nil, err
 	}

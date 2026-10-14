@@ -98,6 +98,7 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 	}
 	ctx := db.ContextWithAuditPrincipal(request.Context(), self.auditPrincipal(request, user, impersonator))
 	result := &AgentAttachmentUploadResult{Attachments: []*models.AgentAttachment{}}
+	isTaxDocument := request.URL.Query().Get(api.AgentAttachmentTaxDocumentParameter) == "true"
 	for _, upload := range uploads {
 		var created *models.AgentAttachment
 		// Read out of the file before the transaction opens rather than
@@ -105,14 +106,20 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 		// the database, so doing it under the transaction held one open
 		// for the length of a file.
 		contentType := contentTypeOf(upload.Filename, upload.ContentType, upload.Content)
-		text := agent.ExtractAttachmentText(upload.Filename, upload.ContentType, upload.Content)
+		// A paystub's or a tax form's text holds the person's taxpayer
+		// number, and is read from the file each time it is needed.
+		text := ""
+		if !isTaxDocument {
+			text = agent.ExtractAttachmentText(ctx, upload.Filename, upload.ContentType, upload.Content)
+		}
 		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 			created, err = tx.CreateAgentAttachment(&models.AgentAttachment{
-				AgentID:     found.ID,
-				Name:        upload.Filename,
-				ContentType: contentType,
-				Size:        int64(len(upload.Content)),
-				Text:        text,
+				AgentID:       found.ID,
+				Name:          upload.Filename,
+				ContentType:   contentType,
+				Size:          int64(len(upload.Content)),
+				Text:          text,
+				IsTaxDocument: isTaxDocument,
 			})
 			if err != nil {
 				return err
@@ -138,6 +145,11 @@ func contentTypeOf(name, declared string, content []byte) string {
 	declared = strings.TrimSpace(declared)
 	if declared != "" && declared != "application/octet-stream" {
 		return declared
+	}
+	// A PDF by its bytes before anything else: a mail client sends one as
+	// application/octet-stream under any name.
+	if corrected := agent.AttachmentContentType(declared, content); corrected != declared {
+		return corrected
 	}
 	// The name's extension first — a command line sends no type — then
 	// the bytes.

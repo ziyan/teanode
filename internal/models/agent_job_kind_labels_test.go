@@ -31,6 +31,17 @@ func TestEveryAgentJobKindHasALabel(t *testing.T) {
 	}
 }
 
+// Every kind of agent job fits the column a run's conversation keeps it in,
+// agent_conversation.job_kind, character varying(16): a longer kind fails
+// the run's first write with "value too long", which no compiler catches.
+func TestEveryAgentJobKindFitsItsColumn(t *testing.T) {
+	for _, kind := range agentJobKinds(t) {
+		if len(kind) > 16 {
+			t.Errorf("the agent job kind %q is %d characters; agent_conversation.job_kind holds 16", kind, len(kind))
+		}
+	}
+}
+
 // agentJobKinds is the value of every AgentJobKind constant in agent.go,
 // read from the source so a kind added there is checked without a list
 // here to keep up to date.

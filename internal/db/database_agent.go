@@ -170,6 +170,12 @@ type agentModel struct {
 	// The currency totals are shown in. See migration 0133.
 	ReportingCurrencyCode string `gorm:"column:reporting_currency_code"`
 
+	// How the person files their tax return. See migration 0182.
+	TaxFilingStatus string `gorm:"column:tax_filing_status"`
+
+	// The sealed token of the tax document address. See migration 0183.
+	TaxDocumentToken string `gorm:"column:tax_document_token"`
+
 	// When the links were last faded. See migration 0084.
 	DecayedAt *time.Time `gorm:"column:decayed_at"`
 }
@@ -249,6 +255,8 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		AlertQuietEnd:          model.AlertQuietEnd,
 		AlertDailyMost:         model.AlertDailyMost,
 		ReportingCurrencyCode:  model.ReportingCurrencyCode,
+		TaxFilingStatus:        model.TaxFilingStatus,
+		TaxDocumentToken:       model.TaxDocumentToken,
 	}
 	if model.DreamedAt != nil {
 		at := model.DreamedAt.In(time.Local)
@@ -320,6 +328,8 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		AlertQuietEnd:          agent.AlertQuietEnd,
 		AlertDailyMost:         agent.AlertDailyMost,
 		ReportingCurrencyCode:  agent.ReportingCurrencyCode,
+		TaxFilingStatus:        agent.TaxFilingStatus,
+		TaxDocumentToken:       agent.TaxDocumentToken,
 	}
 	var err error
 	if model.Voice, err = encodeJSON(agent.Voice); err != nil {
@@ -517,6 +527,8 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"alert_quiet_end":         model.AlertQuietEnd,
 			"alert_daily_most":        model.AlertDailyMost,
 			"reporting_currency_code": model.ReportingCurrencyCode,
+			"tax_filing_status":       model.TaxFilingStatus,
+			"tax_document_token":      model.TaxDocumentToken,
 			"decayed_at":              model.DecayedAt,
 		}).Error
 	}); err != nil {

@@ -411,6 +411,11 @@ type AgentAttachment struct {
 	// FinanceTransactionID is the finance transaction the file was
 	// uploaded to as its receipt, empty for any other file.
 	FinanceTransactionID string `json:"financeTransactionId,omitempty" graphapi:"nullable"`
+
+	// IsTaxDocument says the file was handed in as a paystub or a tax
+	// form: it is kept while it waits to be read, and its text, which
+	// holds the person's taxpayer number, is never kept in Text.
+	IsTaxDocument bool `json:"isTaxDocument,omitempty"`
 }
 
 // AgentReference is a thread or message the person pointed the agent at

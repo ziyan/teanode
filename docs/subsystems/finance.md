@@ -636,6 +636,144 @@ Deleting a conversation leaves a receipt's photo to the receipt
 (`DetachReceiptAttachments`); deleting the receipt deletes it unless a
 message holds it.
 
+A PDF is read on the server with poppler, which the production image
+carries beside ffmpeg. It is known by its first bytes (`%PDF-`), so one a
+mail client sent as `application/octet-stream` is kept as
+`application/pdf`. Its text is read at upload into the attachment's text,
+cut like a text file's, and the receipt job reads it as text. A PDF with no
+text layer (a scan) has its first three pages rendered and shown to the
+model as pictures, each within the picture size limit. On a server without
+poppler, `ReadReceipt` refuses a PDF that has no text kept, saying the
+server cannot read PDFs. `agent.ReadAttachmentText` reads a stored file's
+text on demand from storage, for files whose text is not kept in the
+database.
+
+## Paystubs and W-2s
+
+A paystub is one paycheck's statement: what was earned, the taxes withheld
+and the deductions, this period and year to date. A W-2 is an employer's
+statement of a year's wages and taxes. Both are read out of a file the
+person hands in, a PDF or a photo, and kept to get ready for a tax return;
+the plan is `docs/planning/finance-tax-documents-execplan.md`.
+
+Every document is an upload (`agent_attachment`) marked `is_tax_document`.
+An upload made with `?isTaxDocument=true` never keeps its text, and marking
+one later (a file sent in a conversation, then read as a paystub) forgets
+the text kept of it: the text holds the person's taxpayer number. A marked
+upload is kept from the sweep of unclaimed uploads and is detached from a conversation that
+is deleted, like a receipt's file. A message is read by copying each PDF
+and picture it carries into such an upload (`CopyMailTaxDocuments`), so
+the original file is always there to open beside what was read. A marked
+upload nothing was read out of goes with the sweep after 30 days
+(`db.TaxDocumentUnreadRetention`).
+
+The `tax_document` job (`internal/agent/tax_document_job.go`, prompt
+`read_tax_document.txt`) reads the file out of storage: a PDF's text, or
+its first four pages as pictures when it has none, or the picture. Before
+the model sees text, every number shaped like a taxpayer number
+(`123-45-6789`, `123 45 6789`, nine digits standing alone) is masked to its
+last four digits (`finance.MaskTaxpayerNumbers`). The model says which
+document it is (`paystub`, `w2`, or `none` with why) and reads it into the
+shape `RecordPaystub` or `RecordTaxForm` takes, the operations the
+dashboard, the command line and the tool use too. Reading an upload again
+replaces what was read out of it, and reading it as the other kind deletes
+the first. Only the last four digits of a taxpayer number are stored
+(`employee_tax_id_mask`, `recipient_tax_id_mask`), and every text field
+written is refused when it holds a number shaped like one; an employer's
+identification number is a business's and is kept as printed.
+
+Paystubs and W-2s can also be mailed in. The tax document address is the
+person's own mailbox address with `+taxes-` and a random token after the
+local part (`reader+taxes-<token>@example.com`), made the first time it is
+asked for (`TaxDocumentAddress`) and kept sealed on the agent
+(`agent.tax_document_token`, migration 0183); `RegenerateTaxDocumentAddress`
+ends the old one. Delivery treats it as it treats the statement import
+address (`internal/mx/exchange_statement.go`): only the person's own
+mailbox address, never a catch-all, filed in the Archive as read, a wrong
+token refused, a message the spam filter failed put in Junk unread. The
+`tax_mail` job (`internal/agent/finance_tax_address.go`) copies the
+message's PDFs and pictures with `CopyMailTaxDocuments`, queues the
+`tax_document` job for each, and tells the person in their main
+conversation what arrived, as a mailed statement's import is told. A
+payroll email forwarded there works the same.
+
+A paystub is stored line by line as printed (`agent_finance_paystub`,
+`agent_finance_paystub_line`): each earning, each tax with its kind
+(`federal_income`, `social_security`, `medicare`, `medicare_additional`,
+`state_income`, `local_income`, `state_disability`, `other`), its state or
+locality and the wages it was figured on when printed, and each deduction
+with its kind (`retirement_traditional`, `retirement_roth`, `hsa`,
+`health_premium`, `fsa_health`, `fsa_dependent_care`, `commuter`,
+`insurance`, `other`) and the employer's part beside the employee's. Lines of
+hours only are not kept. `finance.CheckPaystub` says it is `balanced` when
+gross pay less the taxes and the employee's deductions is take-home pay and
+the earnings, taxes and deductions come to their printed totals; otherwise
+it is `unbalanced` with the difference, refused unless the person says to
+record it (the job, with nobody to ask, keeps it marked).
+
+A tax form (`agent_finance_tax_form`, kind `w2` for now) keeps its boxes as
+rows (`agent_finance_tax_form_entry`): box 12's letter, box 14's label, the
+state of boxes 15 to 17, the locality of 18 to 20 and box 13's checkboxes
+are the box's qualifier. `finance.TaxFormFindings` works out, each time a
+form is read, what it says about itself, within a dollar since payroll
+rounds each paycheck: Social Security tax is 6.2% of boxes 3 and 7, those
+wages are within the year's wage base (a table by year in
+`internal/finance/tax_form.go`; a year not in it skips the check), and
+Medicare tax is 1.45% of box 5 plus 0.9% of what it holds above 200,000.
+
+`TaxYear` (`finance.SummarizeTaxYear`) puts a year together from the
+paystubs paid in it and the W-2s for it, per person and employer (told
+apart by name, case, punctuation and suffixes such as Inc or LLC aside):
+the W-2's figures when there is one, the latest corrected one first, else
+the latest paystub's year to date, with a projection to December 31 at the
+latest paystub's amounts and the pay cadence (the median gap between pay
+dates), Social Security stopping at the wage base. A paystub's federal
+taxable wages are box 1, its Social Security and Medicare wages boxes 3 and
+5, additional Medicare goes into box 6, a traditional retirement deduction
+is box 12 D, an HSA's employee and employer parts box 12 W, and dependent
+care box 10. When there are both, each W-2 box is set beside the paystubs'
+figure (box 12 DD is left out: the W-2 counts medical coverage only, while
+a paystub's premiums often include dental and vision). Findings point out
+a paystub that does not follow on from the one before it (its year to date
+is not the earlier one's plus this period), a gap of more than one and a
+half pay periods, two copies of one paystub, a W-2 not yet in once the year
+is over, a W-2 that differs from the year's last paystub, and Social
+Security withheld beyond the year's maximum across several employers, which
+comes back as a credit on the return.
+
+A projection stops a person's retirement contributions (traditional and
+Roth together) at the year's limit, `retirementDeferralLimitByYear` in
+`internal/finance/tax_estimate.go`: the base limit, or with the catch-up
+from age 50 once the year to date is already past it, or with the one from
+60 to 63 once past that, since the paystubs then know the person's age and
+TeaNode does not. A traditional contribution that stops is counted as wages
+(box 1 and the state's) for the rest of the year; a Roth one was taxed
+already. The employment says so (`isRetirementDeferralCapped`).
+
+The tax owed sits beside what was withheld in `taxYearEstimate`
+(`finance.estimateTaxYear`), the household's, to December 31 when anything
+is projected. It counts wages only, since nothing else is on a paystub or a
+W-2: federal income tax on box 1 less the standard deduction, by the year's
+brackets (`federalTaxTableByYear`, from the IRS revenue procedure each
+autumn; a year not in it has no estimate); Social Security at 6.2% of each
+person's wages up to the wage base, so tax withheld beyond it across
+employers comes back; Medicare at 1.45% plus 0.9% above the filing
+status's threshold (250,000 jointly, 125,000 separately, 200,000
+otherwise); state and local income tax as withheld, since each state's
+rules are its own. The filing status is the person's setting
+(`agent.tax_filing_status`, migration 0182, set with `SetTaxFilingStatus`);
+`TaxYear` takes another to try (`taxFilingStatus`), and without either
+assumes married filing jointly when the documents name two people and
+single otherwise (`isTaxFilingStatusAssumed`). A status other than jointly
+with two people is a return each. The estimate splits pay (Medicare wages) into
+tax paid so far, tax the rest of the year's paychecks will withhold at the
+same pace, tax owing at filing, and the income remaining; a refund is
+inside what was withheld. The dashboard and the app draw those four as a
+ring, every figure beside its share of pay, the year's tax's being the
+effective rate. Interest, dividends, gains, itemized deductions and credits are not
+counted, so the estimate is a floor to start a return from, not the
+return.
+
 ## Mirrored copies
 
 Some providers report one charge on every account of a connection: an
@@ -1221,10 +1359,12 @@ stay in the transcript and go to the model provider; `link_simplefin` and
 alone: deleting an account of imported statements, which the tool's
 `delete_statement_account` only says where to do. The tool's
 `import_statement` takes a message (`mailbox_item_id`) in a mailbox the
-person granted the agent, as `mail_read` reads, and never an uploaded file,
-whose id the model is not shown; `import_transactions` takes the rows the
-agent read off pictures, with the rows' and totals' fields in snake case
-like every argument.
+person granted the agent, as `mail_read` reads, and never an uploaded file;
+`import_transactions` takes the rows the agent read off pictures, with the
+rows' and totals' fields in snake case like every argument. A file handed
+over in a conversation is named to the model with its
+`agent_attachment_id`, which `record_receipt` and `read_tax_document`
+take; the server checks it is the person's.
 
 ## In the dashboard
 

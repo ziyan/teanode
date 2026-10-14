@@ -1,0 +1,159 @@
+package agent
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+// inventedPaystubAnswer is the model's reading of an invented paystub
+// that adds up: 4,000.00 gross, 880.00 in taxes, 400.00 in deductions.
+const inventedPaystubAnswer = `{"documentKind": "paystub", "paystub": {"employerName": "Example Employer LLC", "employeeName": "Pat Example",
+"employeeTaxIdMask": "XXX-XX-0123", "payDate": "2026-03-06", "periodStartOn": "2026-02-15", "periodEndOn": "2026-02-28", "currencyCode": "USD",
+"grossAmount": 4000.00, "totalTaxAmount": "880.00", "totalDeductionAmount": "400.00", "netAmount": "2720.00", "paystubLines": [
+ {"paystubLineKind": "earning", "description": "Regular", "hours": "80", "currentAmount": "4000.00", "yearToDateAmount": "20000.00"},
+ {"paystubLineKind": "tax", "description": "Federal", "paystubTaxKind": "federal_income", "currentAmount": "500.00", "currentWagesAmount": "3600.00"},
+ {"paystubLineKind": "tax", "description": "State", "paystubTaxKind": "state_income", "taxJurisdictionCode": "ca", "currentAmount": "380.00"},
+ {"paystubLineKind": "deduction", "description": "HSA", "paystubDeductionKind": "hsa", "currentAmount": "400.00", "employerCurrentAmount": "50.00"}]}}`
+
+// inventedW2Answer is the model's reading of an invented W-2.
+const inventedW2Answer = `{"documentKind": "w2", "taxForm": {"taxFormKind": "W-2", "taxYear": 2025, "payerName": "Example Employer LLC",
+"payerTaxId": "12-3456789", "recipientName": "Pat Example", "recipientTaxIdMask": "0123", "taxFormEntries": [
+ {"boxCode": "1", "amount": "21600.00"}, {"boxCode": 3, "amount": "22200.00"}, {"boxCode": "4", "amount": "1376.40"},
+ {"boxCode": "12", "boxQualifier": "d", "amount": "1800.00"}]}}`
+
+// taxDocumentUpload stores a file handed in as a tax document.
+func (self *financeFixture) taxDocumentUpload(t *testing.T, name, contentType string, content []byte) *models.AgentAttachment {
+	t.Helper()
+	var attachment *models.AgentAttachment
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		var err error
+		attachment, err = tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: self.agent.ID, Name: name, ContentType: contentType, Size: int64(len(content)), IsTaxDocument: true})
+		if err != nil {
+			t.Fatalf("CreateAgentAttachment: %s", err)
+		}
+	})
+	if err := self.worker.settings.Storage.PutFile(t.Context(), attachment.ID, content); err != nil {
+		t.Fatalf("PutFile: %s", err)
+	}
+	return attachment
+}
+
+func (self *financeFixture) taxDocumentJobRun(subjectId string) *Run {
+	run := self.run()
+	run.Job = &models.AgentJob{ID: "job-tax-document", AgentID: self.agent.ID, Kind: models.AgentJobTaxDocument, SubjectID: subjectId}
+	return run
+}
+
+// A paystub PDF is read as text with every number shaped like a taxpayer
+// number masked, recorded as a paystub that adds up, and read again it
+// replaces what it read before. The run says what it read.
+func TestTaxDocumentJobReadsAPaystub(t *testing.T) {
+	requirePoppler(t)
+	fixture, model := receiptJobFixture(t, inventedPaystubAnswer)
+	upload := fixture.taxDocumentUpload(t, "stub.pdf", "application/pdf", inventedPDF("EXAMPLE EMPLOYER LLC PAY STATEMENT", "SSN 987654321", "NET PAY 2720.00"))
+	for range 2 {
+		if err := fixture.worker.runReadTaxDocument(t.Context(), fixture.taxDocumentJobRun(upload.ID)); err != nil {
+			t.Fatalf("runReadTaxDocument: %s", err)
+		}
+	}
+	prompt := model.prompts[0]
+	if !strings.Contains(prompt, "NET PAY 2720.00") || !strings.Contains(prompt, "XXXXX4321") || strings.Contains(prompt, "987654321") || !strings.Contains(prompt, "untrusted-data") {
+		t.Fatalf("the model is sent the PDF's text, the taxpayer number masked, inside the fence")
+	}
+	var paystubs []*models.FinancePaystub
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinancePaystubs(fixture.agent.ID, nil)
+		if err != nil {
+			t.Fatalf("ListFinancePaystubs: %s", err)
+		}
+		paystubs = page.FinancePaystubs
+	})
+	if len(paystubs) != 1 {
+		t.Fatalf("reading the file twice keeps one paystub: %d", len(paystubs))
+	}
+	paystub := paystubs[0]
+	if paystub.AgentAttachmentID != upload.ID || paystub.PaystubCheckState != models.PaystubCheckStateBalanced || paystub.EmployeeTaxIDMask != "0123" || len(paystub.PaystubLines) != 4 {
+		t.Fatalf("the paystub is recorded from the file, adding up, with only four digits kept: %+v", paystub)
+	}
+	if line := paystub.PaystubLines[2]; line.TaxJurisdictionCode != "CA" || line.PaystubTaxKind != models.PaystubTaxKindStateIncome {
+		t.Fatalf("the state tax keeps its state: %+v", line)
+	}
+	titles := fixture.taxDocumentRunTitles(t)
+	if len(titles) == 0 || !strings.Contains(titles[0], "Read a paystub from Example Employer LLC paid 2026-03-06") {
+		t.Fatalf("the run says what it read: %q", titles)
+	}
+}
+
+// A W-2 answer records a tax form, and an answer of none records nothing.
+func TestTaxDocumentJobReadsAW2AndLeavesTheRest(t *testing.T) {
+	fixture, _ := receiptJobFixture(t, inventedW2Answer, `{"documentKind": "none", "why": "a holiday card"}`)
+	form := fixture.taxDocumentUpload(t, "w2.png", "image/png", []byte("\x89PNG\r\n\x1a\nan invented picture"))
+	if err := fixture.worker.runReadTaxDocument(t.Context(), fixture.taxDocumentJobRun(form.ID)); err != nil {
+		t.Fatalf("runReadTaxDocument: %s", err)
+	}
+	other := fixture.taxDocumentUpload(t, "card.png", "image/png", []byte("\x89PNG\r\n\x1a\nanother invented picture"))
+	if err := fixture.worker.runReadTaxDocument(t.Context(), fixture.taxDocumentJobRun(other.ID)); err != nil {
+		t.Fatalf("runReadTaxDocument: %s", err)
+	}
+	var taxForms []*models.FinanceTaxForm
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		page, err := tx.ListFinanceTaxForms(fixture.agent.ID, nil)
+		if err != nil {
+			t.Fatalf("ListFinanceTaxForms: %s", err)
+		}
+		taxForms = page.FinanceTaxForms
+	})
+	if len(taxForms) != 1 || taxForms[0].AgentAttachmentID != form.ID || taxForms[0].TaxFormKind != models.TaxFormKindW2 || len(taxForms[0].TaxFormEntries) != 4 {
+		t.Fatalf("one W-2, from the first picture: %+v", taxForms)
+	}
+	if entry := taxForms[0].TaxFormEntries[3]; entry.BoxCode != "12" || entry.BoxQualifier != "D" {
+		t.Fatalf("box 12 D is normalized: %+v", entry)
+	}
+	titles := strings.Join(fixture.taxDocumentRunTitles(t), "\n")
+	if !strings.Contains(titles, "Read a 2025 W-2 from Example Employer LLC") || !strings.Contains(titles, "not a paystub or a W-2") {
+		t.Fatalf("the runs say what they read: %q", titles)
+	}
+	summary, err := fixture.worker.TaxYear(t.Context(), fixture.agent, 2025, "")
+	if err != nil || len(summary.TaxYearEmployments) != 1 || summary.Figures.WagesAmount != "21600.00" {
+		t.Fatalf("the tax year takes the W-2's figures: %+v %v", summary, err)
+	}
+	if _, err := fixture.worker.TaxYear(t.Context(), fixture.agent, time.Now().Year(), ""); err != nil {
+		t.Fatalf("a year with nothing in it is an empty year: %v", err)
+	}
+}
+
+// taxDocumentRunTitles are the titles of the tax document job's runs.
+func (self *financeFixture) taxDocumentRunTitles(t *testing.T) []string {
+	t.Helper()
+	var titles []string
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		conversations, err := tx.ListAgentConversations(self.agent.ID, []models.AgentConversationKind{models.AgentConversationRun}, nil)
+		if err != nil {
+			t.Fatalf("ListAgentConversations: %s", err)
+		}
+		for _, conversation := range conversations {
+			if conversation.JobKind == string(models.AgentJobTaxDocument) {
+				titles = append(titles, conversation.Title)
+			}
+		}
+	})
+	return titles
+}
+
+// A W-2c is recorded as a corrected W-2, whatever the model called it.
+func TestTaxFormAnswerFoldsAW2cIntoACorrection(t *testing.T) {
+	for _, kind := range []string{"W-2c", "w2c"} {
+		taxForm := (&taxFormAnswer{TaxFormKind: kind, TaxYear: 2025}).taxForm()
+		if taxForm.TaxFormKind != models.TaxFormKindW2 || !taxForm.IsCorrected {
+			t.Errorf("%s: %+v", kind, taxForm)
+		}
+	}
+	if taxForm := (&taxFormAnswer{TaxFormKind: "W-2", TaxYear: 2025}).taxForm(); taxForm.IsCorrected {
+		t.Errorf("a W-2 is not a correction: %+v", taxForm)
+	}
+}

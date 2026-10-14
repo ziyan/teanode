@@ -13070,7 +13070,8 @@ button.idea-history-title {
 .spending-ring,
 .finance-summary-table,
 .finance-assets-table,
-.finance-credit-table {
+.finance-credit-table,
+.finance-tax-estimate {
   --ring-tone-0: var(--leaf);
   --ring-tone-1: var(--warn);
   --ring-tone-2: color-mix(in srgb, var(--text) 62%, var(--surface));
@@ -13213,6 +13214,15 @@ button.idea-history-title {
 
 .spending-ring-swatch.other {
   background: var(--ring-other);
+}
+
+/* The tax ring's tax still owing at filing. */
+.spending-ring-slice.owing {
+  fill: var(--bad);
+}
+
+.spending-ring-swatch.owing {
+  background: var(--bad);
 }
 
 /* Credit usage, on Accounts: the share in the ring's middle and in each
@@ -13569,6 +13579,60 @@ button.idea-history-title {
 .finance-worth-line dd {
   margin: 0;
   text-align: right;
+}
+
+/* The tax ring's figures: the slices and pay, then each tax and the
+   year's, each list closed by its total over a rule. */
+.finance-worth-line .finance-tax-estimate-total {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.finance-tax-refund {
+  color: var(--good);
+}
+
+/* What mailing to the tax document address does, under the address. */
+.finance-tax-address-hint {
+  display: block;
+  margin-top: 2px;
+}
+
+/* A name, an amount and its share of pay. The columns meet with no gap,
+   each figure padded off the one before, so a total's rule runs across
+   the line unbroken. */
+/* Any width beyond the figures goes to the names, so on a phone the
+   amounts and shares stay together at the right edge. */
+.finance-tax-estimate .finance-worth-line {
+  grid-template-columns: 1fr auto auto;
+  column-gap: 0;
+}
+
+.finance-tax-estimate .finance-worth-line dd {
+  padding-left: var(--space-4);
+}
+
+/* The share stretches to its row's height like the cells beside it, so a
+   total's rule sits level across the line, its smaller figure centred. */
+.finance-tax-estimate .finance-worth-line .finance-tax-share {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-left: var(--space-3);
+  font-size: var(--text-label);
+}
+
+/* On a phone the ring is centred on its own line and the two lists under
+   it take the card's width, so their amounts end at one edge. */
+@media (max-width: 600px) {
+  .finance-tax-estimate > .spending-ring {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .finance-tax-estimate .finance-worth-line {
+    width: 100%;
+  }
 }
 
 .finance-asset-name {
@@ -13965,6 +14029,80 @@ button.idea-history-title {
 
 .finance-receipt-details .finance-receipt-lines-scroll {
   margin-top: var(--space-3);
+}
+
+/* The Taxes section. The year and the upload sit together where a
+   section's one action goes, wrapping under the heading on a phone. */
+.finance-taxes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.finance-tax-year-select.select {
+  width: 7rem;
+  min-width: 0;
+}
+
+/* A group of a paystub's lines, or the W-2 against the paystubs, follows
+   the table above it with room to tell the two apart. */
+.finance-receipt-lines-scroll + .finance-metadata-head,
+.finance-tax-note + .finance-metadata-head {
+  margin-top: var(--space-3);
+}
+
+.finance-tax-note {
+  margin-top: var(--space-2);
+}
+
+/* An employer's name in a list row is one line high, cut with an ellipsis
+   with the whole name on hover, so every row is the same height and the
+   amounts beside it stay on a phone's screen. */
+.finance-tax-name {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+@media (max-width: 600px) {
+  .finance-tax-name {
+    max-width: 8rem;
+  }
+
+  .finance-paystubs-table .table-surface th,
+  .finance-paystubs-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}
+
+.finance-tax-findings li > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.finance-tax-findings .link {
+  text-align: start;
+}
+
+/* A paystub's take-home pay, under its lines: the figure the rest add up
+   to, set apart as a total. */
+.finance-paystub-net {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-strong);
+  font-weight: 550;
+}
+
+.finance-paystub-net .numeric-value {
+  font-variant-numeric: tabular-nums;
 }
 
 /* In the transactions list: the mark of a row with a receipt, and the
@@ -14686,4 +14824,29 @@ body.has-recording-bar .content {
 .recording-live-line {
   width: fit-content;
   max-width: 100%;
+}
+
+/* A paystub's lines carry up to five amounts each: the dialog is wider than
+   a receipt's, the line's name keeps room for a word or two before it is
+   cut, and on a narrow screen the table scrolls sideways inside its box
+   rather than squeezing the names to a letter. The totals row's label is
+   one line. */
+.dialog.dialog-wide:has(.finance-paystub-lines) {
+  max-width: min(780px, calc(100vw - 32px));
+}
+
+.finance-paystub-lines thead th:first-child,
+.finance-paystub-lines tbody td:first-child {
+  width: auto;
+  min-width: 11rem;
+  max-width: 16rem;
+}
+
+.finance-paystub-lines tfoot th {
+  white-space: nowrap;
+}
+
+.finance-paystub-lines th,
+.finance-paystub-lines td {
+  white-space: nowrap;
 }

@@ -133,6 +133,29 @@ type Agent struct {
 	// shown in, an ISO 4217 code. Empty means the currency of their first
 	// finance account.
 	ReportingCurrencyCode string `json:"reportingCurrencyCode,omitempty" graphapi:"nullable"`
+
+	// TaxFilingStatus is how the person files their tax return, one of
+	// TaxFilingStatuses. Empty means they have not said, and the tax
+	// year's estimate assumes one from the number of people.
+	TaxFilingStatus string `json:"taxFilingStatus,omitempty" graphapi:"nullable"`
+
+	// TaxDocumentToken is the token of the person's tax document address,
+	// sealed with the server's secret; empty until the address is first
+	// asked for. Never shown: the address is the way in.
+	TaxDocumentToken string `json:"-" graphapi:"ignore"`
+}
+
+// TaxFilingStatuses are the ways a US tax return is filed.
+var TaxFilingStatuses = []string{"single", "married_filing_jointly", "married_filing_separately", "head_of_household"}
+
+// IsTaxFilingStatus says text is one of TaxFilingStatuses.
+func IsTaxFilingStatus(text string) bool {
+	for _, status := range TaxFilingStatuses {
+		if text == status {
+			return true
+		}
+	}
+	return false
 }
 
 // The bounds alerts keep when the person has not said: a night from ten
@@ -289,6 +312,9 @@ func (self *Agent) Validate() error {
 	}
 	if self.ReportingCurrencyCode != "" && !IsCurrencyCode(self.ReportingCurrencyCode) {
 		errors.add("reportingCurrencyCode", "%q is not a currency code like USD", self.ReportingCurrencyCode)
+	}
+	if self.TaxFilingStatus != "" && !IsTaxFilingStatus(self.TaxFilingStatus) {
+		errors.add("taxFilingStatus", "%q is not a filing status; say single, married_filing_jointly, married_filing_separately or head_of_household", self.TaxFilingStatus)
 	}
 	return errors.ErrOrNil()
 }
@@ -637,6 +663,17 @@ const (
 	// uploaded file, which names the finance transaction it was uploaded
 	// to, when there is one.
 	AgentJobReadReceipt AgentJobKind = "read_receipt"
+
+	// AgentJobTaxDocument reads a paystub or a tax form (a W-2) out of
+	// a file handed in as one and records it. Its subject is the uploaded
+	// file.
+	AgentJobTaxDocument AgentJobKind = "tax_document"
+
+	// AgentJobTaxMail copies the PDFs and pictures of a message that
+	// arrived at the person's tax document address into tax document
+	// uploads, queues the reading of each, and tells the person. Its
+	// subject is the message.
+	AgentJobTaxMail AgentJobKind = "tax_mail"
 
 	// AgentJobWatch is one look by one watch of an installed skill: it
 	// lists what arrived since the last look through the skill's own
