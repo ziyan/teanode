@@ -30,6 +30,9 @@ struct ConversationView: View {
     /// however far up it is, where scrolling to the last line needs that
     /// line built, which a long lazy list has not done.
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    /// When the person last moved the conversation themselves, and the pending second look for its end after a card folds.
+    @State private var lastScrolledAt = Date.distantPast
+    @State private var refindEnd: Task<Void, Never>?
     /// Whether the person has scrolled the transcript themselves. Until
     /// they have, the earlier-messages row is not read on sight: a lazy
     /// list lays itself out from the top for a moment when it comes back,
@@ -103,7 +106,10 @@ struct ConversationView: View {
                 isAtEnd = isNearEnd
             }
             .onScrollPhaseChange { _, phase in
-                if phase == .interacting { hasPersonScrolled = true }
+                if phase == .interacting {
+                    hasPersonScrolled = true
+                    lastScrolledAt = .now
+                }
             }
             .defaultScrollAnchor(.bottom)
             .defaultScrollAnchor(.bottom, for: .sizeChanges)
@@ -122,14 +128,21 @@ struct ConversationView: View {
                     .padding()
                 }
             }
+            .onChange(of: model.sentCount) {
+                withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+            }
             // A card that folds when answered shrinks the list under the
             // scroll: the end is found again once the smaller card has been
-            // laid out, or the view is left past the content, blank.
-            .onChange(of: model.sentCount) {
+            // laid out, or the view is left past the content, blank. Not when
+            // the person has scrolled since; a newer fold replaces it.
+            .onChange(of: model.cardSettledCount) {
+                let foldedAt = Date.now
                 scrollPosition.scrollTo(edge: .bottom)
-                Task { @MainActor in
+                refindEnd?.cancel()
+                refindEnd = Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(150))
-                    withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+                    guard !Task.isCancelled, lastScrolledAt < foldedAt else { return }
+                    scrollPosition.scrollTo(edge: .bottom)
                 }
             }
             // Read, or read again on coming back: opened at its end, where

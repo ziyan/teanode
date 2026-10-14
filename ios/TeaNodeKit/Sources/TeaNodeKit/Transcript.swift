@@ -258,6 +258,8 @@ let answeringMarker = "[answering]"
 /// dashboard's drawer does.
 public struct Transcript: Sendable {
     public private(set) var lines: [TranscriptLine] = []
+    /// The cards this app settled while their answer is still on its way.
+    private var awaitingCardIds: Set<String> = []
 
     public init(messages: [AgentMessage], interactions: [AgentInteraction] = []) {
         var results: [String: String] = [:]
@@ -527,6 +529,7 @@ public struct Transcript: Sendable {
                 lines[index].resolution = event.note ?? ""
             }
             // A card's call has an answer: settled, wherever it was settled.
+            awaitingCardIds.remove(Self.cardId(runId: event.runId, callId: event.callId ?? ""))
             if let index = lines.firstIndex(where: { $0.id == Self.cardId(runId: event.runId, callId: event.callId ?? "") }), !lines[index].isDone {
                 lines[index].isDone = true
                 lines[index].resolution = Self.resolution(of: event.text ?? "", kind: lines[index].kind)
@@ -597,6 +600,7 @@ public struct Transcript: Sendable {
             })
         else { return }
         lines[index].isDone = true
+        awaitingCardIds.remove(lines[index].id)
         if let answerText = answered.answerText, !answerText.isEmpty {
             lines[index].resolution = answerText
         }
@@ -604,18 +608,26 @@ public struct Transcript: Sendable {
 
     /// Marks a card settled from this app, before the feed says so.
     public mutating func settle(cardId: String, resolution: String) {
+        awaitingCardIds.remove(cardId)
         if let index = lines.firstIndex(where: { $0.id == cardId }) {
             lines[index].isDone = true
             lines[index].resolution = resolution
         }
     }
 
-    /// Opens a card again that was settled before its answer was sent, when the answer did not go through.
+    /// Marks a card settled as soon as it is answered here, while the answer is still on its way: it can open again with
+    /// `reopen` if the answer does not go through, unless something else settles it meanwhile.
+    public mutating func settleAwaiting(cardId: String, resolution: String) {
+        settle(cardId: cardId, resolution: resolution)
+        awaitingCardIds.insert(cardId)
+    }
+
+    /// Opens a card again that was settled before its answer was sent, when the answer did not go through. A card the feed
+    /// or a confirmed answer settled since stays settled: it was answered, at the computer or by another device.
     public mutating func reopen(cardId: String) {
-        if let index = lines.firstIndex(where: { $0.id == cardId }) {
-            lines[index].isDone = false
-            lines[index].resolution = ""
-        }
+        guard awaitingCardIds.remove(cardId) != nil, let index = lines.firstIndex(where: { $0.id == cardId }) else { return }
+        lines[index].isDone = false
+        lines[index].resolution = ""
     }
 
     /// Takes a card away that the server says is no longer waiting.
