@@ -241,6 +241,15 @@ struct ReminderEditor: View {
                         Button("Delete reminder", role: .destructive) {
                             isConfirmingDelete = true
                         }
+                        .confirmationDialog("Delete “\(title)”?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                            Button("Delete reminder", role: .destructive) {
+                                guard let reminder else { return }
+                                Task {
+                                    await model.delete(reminder)
+                                    dismiss()
+                                }
+                            }
+                        }
                     } footer: {
                         if reminder.isRepeating == true {
                             Text("This reminder repeats. Ticking it off moves it on to the next time.")
@@ -257,15 +266,6 @@ struct ReminderEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(isSaving || title.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-            .confirmationDialog("Delete “\(title)”?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                Button("Delete reminder", role: .destructive) {
-                    guard let reminder else { return }
-                    Task {
-                        await model.delete(reminder)
-                        dismiss()
-                    }
                 }
             }
             .onAppear(perform: fill)

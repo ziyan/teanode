@@ -22,6 +22,16 @@ struct ServerServicesView: View {
                 }
                 Section {
                     Button("Review changes") { isReviewing = true }.disabled(isSaving)
+                    .confirmationDialog("Apply service changes?", isPresented: $isReviewing, titleVisibility: .visible) {
+                        Button("Apply changes") {
+                            guard let selection else { return }
+                            isSaving = true
+                            Task {
+                                defer { isSaving = false }
+                                do { try await connection.updateServices(selection); await app.refreshServices() } catch { problemText = app.describe(error) }
+                            }
+                        }
+                    }
                 } footer: {
                     Text("Turning a service off keeps its data and pauses its pending work. A restart is needed to enable new services.")
                 }
@@ -37,16 +47,6 @@ struct ServerServicesView: View {
         }
         .navigationTitle("Services")
         .task { do { selection = try await connection.serviceSelection() } catch { problemText = app.describe(error) } }
-        .confirmationDialog("Apply service changes?", isPresented: $isReviewing, titleVisibility: .visible) {
-            Button("Apply changes") {
-                guard let selection else { return }
-                isSaving = true
-                Task {
-                    defer { isSaving = false }
-                    do { try await connection.updateServices(selection); await app.refreshServices() } catch { problemText = app.describe(error) }
-                }
-            }
-        }
     }
     private func binding(_ keyPath: WritableKeyPath<ServiceSelection, Bool>) -> Binding<Bool> {
         Binding(get: { selection?[keyPath: keyPath] ?? false }, set: { selection?[keyPath: keyPath] = $0 })

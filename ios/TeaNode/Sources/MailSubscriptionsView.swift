@@ -168,26 +168,6 @@ struct SubscriptionReader: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .toolbar { toolbar }
-        .confirmationDialog(leaveTitle, isPresented: $isConfirmingLeave, titleVisibility: .visible) {
-            if subscription.leaveKind == "none" {
-                if subscription.mutedAt == nil {
-                    Button("Mute instead") { Task { await mute(true) } }
-                }
-            } else {
-                Button("Unsubscribe", role: .destructive) { Task { await leave() } }
-            }
-        } message: {
-            Text(leaveMessage)
-        }
-        .confirmationDialog("Delete every message from this list?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-            Button("Delete \(items.count) messages", role: .destructive) {
-                Task {
-                    let target = MailTarget(items: items)
-                    _ = await mail.delete(target, isForever: false, saying: String(localized: "Moved to Trash"))
-                    await changed()
-                }
-            }
-        }
     }
 
     private var items: [MailItem] { (thread?.entries ?? []).compactMap(\.item).filter { !$0.draft } }
@@ -232,6 +212,15 @@ struct SubscriptionReader: View {
                 Label("Actions", systemImage: "ellipsis.circle")
             }
             .disabled(items.isEmpty)
+            .confirmationDialog("Delete every message from this list?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                Button("Delete \(items.count) messages", role: .destructive) {
+                    Task {
+                        let target = MailTarget(items: items)
+                        _ = await mail.delete(target, isForever: false, saying: String(localized: "Moved to Trash"))
+                        await changed()
+                    }
+                }
+            }
         }
         ToolbarItemGroup(placement: .bottomBar) {
             if let archive = mail.folder(kind: "archive") {
@@ -249,6 +238,17 @@ struct SubscriptionReader: View {
             Spacer()
             Button("Unsubscribe", role: .destructive) { isConfirmingLeave = true }
                 .disabled(subscription.requestedAt != nil && !subscription.failed)
+            .confirmationDialog(leaveTitle, isPresented: $isConfirmingLeave, titleVisibility: .visible) {
+                if subscription.leaveKind == "none" {
+                    if subscription.mutedAt == nil {
+                        Button("Mute instead") { Task { await mute(true) } }
+                    }
+                } else {
+                    Button("Unsubscribe", role: .destructive) { Task { await leave() } }
+                }
+            } message: {
+                Text(leaveMessage)
+            }
         }
     }
 

@@ -407,29 +407,6 @@ struct KnowledgePageView: View {
                 }
             }
         }
-        .confirmationDialog("Forget this page?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
-            Button("Forget page", role: .destructive) {
-                Task {
-                    let pagePath = model.pagePath
-                    let isForgotten = await model.act(saying: String(localized: "Forgotten")) {
-                        try await model.connection.deleteKnowledgeNode(pagePath)
-                    }
-                    if isForgotten { dismiss() }
-                }
-            }
-        } message: {
-            Text("Forget \(model.pagePath), its \(model.page?.presentFacts.count ?? 0) facts and the \(model.page?.children.count ?? 0) pages under it.")
-        }
-        .confirmationDialog(
-            "Merge this page?", isPresented: Binding(get: { mergingInto != nil }, set: { if !$0 { mergingInto = nil } }), titleVisibility: .visible
-        ) {
-            Button("Merge", role: .destructive) {
-                guard let into = mergingInto else { return }
-                Task { await merge(into: into) }
-            }
-        } message: {
-            Text("Fold \(model.pagePath) into \(mergingInto ?? ""). Its \(model.page?.presentFacts.count ?? 0) facts, its links and the \(model.page?.children.count ?? 0) pages under it move there, and \(model.pagePath) is gone afterwards.")
-        }
         .confirmationDialog(
             "Forget this fact?", isPresented: Binding(get: { forgettingFact != nil }, set: { if !$0 { forgettingFact = nil } }), titleVisibility: .visible
         ) {
@@ -709,6 +686,29 @@ struct KnowledgePageView: View {
                 }
             } label: {
                 Label("Page actions", systemImage: "ellipsis.circle")
+            }
+            .confirmationDialog("Forget this page?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
+                Button("Forget page", role: .destructive) {
+                    Task {
+                        let pagePath = model.pagePath
+                        let isForgotten = await model.act(saying: String(localized: "Forgotten")) {
+                            try await model.connection.deleteKnowledgeNode(pagePath)
+                        }
+                        if isForgotten { dismiss() }
+                    }
+                }
+            } message: {
+                Text("Forget \(model.pagePath), its \(model.page?.presentFacts.count ?? 0) facts and the \(model.page?.children.count ?? 0) pages under it.")
+            }
+            .confirmationDialog(
+                "Merge this page?", isPresented: Binding(get: { mergingInto != nil }, set: { if !$0 { mergingInto = nil } }), titleVisibility: .visible
+            ) {
+                Button("Merge", role: .destructive) {
+                    guard let into = mergingInto else { return }
+                    Task { await merge(into: into) }
+                }
+            } message: {
+                Text("Fold \(model.pagePath) into \(mergingInto ?? ""). Its \(model.page?.presentFacts.count ?? 0) facts, its links and the \(model.page?.children.count ?? 0) pages under it move there, and \(model.pagePath) is gone afterwards.")
             }
         }
     }

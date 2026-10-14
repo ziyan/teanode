@@ -167,6 +167,11 @@ struct GoalDetail: View {
                     if goal.isOpen {
                         Button("Mark met", systemImage: "checkmark.circle") { Task { await setState("met", saying: String(localized: "Marked met")) } }
                         Button("Drop goal", systemImage: "xmark.circle", role: .destructive) { isConfirmingDrop = true }
+                        .confirmationDialog("Drop this goal?", isPresented: $isConfirmingDrop, titleVisibility: .visible) {
+                            Button("Drop goal", role: .destructive) { Task { await setState("dropped", saying: String(localized: "Dropped")) } }
+                        } message: {
+                            Text("It takes no more turns. You can reopen it later.")
+                        }
                     } else {
                         Button("Reopen", systemImage: "arrow.uturn.backward") { Task { await setState("working", saying: String(localized: "Reopened")) } }
                     }
@@ -179,11 +184,6 @@ struct GoalDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .refreshable { await load() }
-        .confirmationDialog("Drop this goal?", isPresented: $isConfirmingDrop, titleVisibility: .visible) {
-            Button("Drop goal", role: .destructive) { Task { await setState("dropped", saying: String(localized: "Dropped")) } }
-        } message: {
-            Text("It takes no more turns. You can reopen it later.")
-        }
     }
 
     private func load() async {

@@ -94,19 +94,19 @@ struct PreferencesView: View {
                         }
                     }
                     .disabled(draft?.canSave != true)
+                    .confirmationDialog("Change your username?", isPresented: $isConfirmingRename, titleVisibility: .visible) {
+                        Button("Change it") {
+                            Task { await save() }
+                        }
+                    } message: {
+                        if let draft {
+                            Text("You will sign in as \(draft.username.trimmed) instead of \(draft.profile.username) from now on. Your sessions and API tokens move with the account.")
+                        }
+                    }
                 }
             }
         }
         .task { await load() }
-        .confirmationDialog("Change your username?", isPresented: $isConfirmingRename, titleVisibility: .visible) {
-            Button("Change it") {
-                Task { await save() }
-            }
-        } message: {
-            if let draft {
-                Text("You will sign in as \(draft.username.trimmed) instead of \(draft.profile.username) from now on. Your sessions and API tokens move with the account.")
-            }
-        }
         .toast(done: $doneText, problem: $problemText)
     }
 

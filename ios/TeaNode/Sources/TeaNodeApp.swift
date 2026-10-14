@@ -436,6 +436,13 @@ struct SettingsForm: View {
                 Button(app.accounts.count > 1 ? String(localized: "Sign out of \(app.account?.server.host ?? "")") : String(localized: "Sign out"), role: .destructive) {
                     isConfirmingSignOut = true
                 }
+                .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+                    Button("Sign out", role: .destructive) {
+                        Task { await app.signOut() }
+                    }
+                } message: {
+                    Text("This phone stops talking to your agent until you connect it again.")
+                }
             } footer: {
                 Text("To manage what this phone is told about, open Settings, then Devices, on your dashboard.")
             }
@@ -449,13 +456,6 @@ struct SettingsForm: View {
             if let connection = app.connection {
                 isOperator = (try? await connection.isOperator()) ?? false
             }
-        }
-        .confirmationDialog("Sign out of TeaNode?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
-            Button("Sign out", role: .destructive) {
-                Task { await app.signOut() }
-            }
-        } message: {
-            Text("This phone stops talking to your agent until you connect it again.")
         }
         #if DEBUG
             .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }

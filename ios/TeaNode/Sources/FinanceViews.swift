@@ -1288,18 +1288,6 @@ struct AccountsView: View {
             await load()
             await loadStatementImport()
         }
-        .confirmationDialog("New import address?", isPresented: $isRegeneratingStatementAddress, titleVisibility: .visible) {
-            Button("Make a new address", role: .destructive) {
-                Task {
-                    var renewed: StatementImport?
-                    if await finance.act(saying: String(localized: "Import address changed. The old one no longer takes mail."), { renewed = try await finance.connection.regenerateStatementImportAddress() }) {
-                        statementImport = renewed
-                    }
-                }
-            }
-        } message: {
-            Text("You get a new import address, and mail to the old one is refused from now on. What was already imported stays.")
-        }
     }
 
     /// The statement import, as the dashboard's Accounts tab shows it: the
@@ -1322,6 +1310,18 @@ struct AccountsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Button("New address", systemImage: "arrow.clockwise") { isRegeneratingStatementAddress = true }
+                .confirmationDialog("New import address?", isPresented: $isRegeneratingStatementAddress, titleVisibility: .visible) {
+                    Button("Make a new address", role: .destructive) {
+                        Task {
+                            var renewed: StatementImport?
+                            if await finance.act(saying: String(localized: "Import address changed. The old one no longer takes mail."), { renewed = try await finance.connection.regenerateStatementImportAddress() }) {
+                                statementImport = renewed
+                            }
+                        }
+                    }
+                } message: {
+                    Text("You get a new import address, and mail to the old one is refused from now on. What was already imported stays.")
+                }
                 if statementImport.isEnabled == false {
                     Label("Importing is off. Turn the Imported statements source on to import again.", systemImage: "pause.circle")
                         .foregroundStyle(.secondary)

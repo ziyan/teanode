@@ -1180,6 +1180,13 @@ struct EventEditor: View {
                         Button("Delete event", role: .destructive) {
                             isConfirmingDelete = true
                         }
+                        .confirmationDialog("Delete “\(draft.summary)”?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                            Button("Delete event", role: .destructive) {
+                                delete()
+                            }
+                        } message: {
+                            Text(draft.recurrence.isEmpty ? String(localized: "It is removed from your calendar.") : String(localized: "Every time it repeats is removed."))
+                        }
                     }
                 }
             }
@@ -1200,13 +1207,6 @@ struct EventEditor: View {
                     }
                     .disabled(isSaving || draft.summary.trimmingCharacters(in: .whitespaces).isEmpty || model.calendar == nil)
                 }
-            }
-            .confirmationDialog("Delete “\(draft.summary)”?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                Button("Delete event", role: .destructive) {
-                    delete()
-                }
-            } message: {
-                Text(draft.recurrence.isEmpty ? String(localized: "It is removed from your calendar.") : String(localized: "Every time it repeats is removed."))
             }
             .interactiveDismissDisabled(isSaving)
         }
