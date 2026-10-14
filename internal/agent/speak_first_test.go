@@ -335,7 +335,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 		t.Fatalf("one phone tour, done: %+v", jobs)
 	}
 	request := fmt.Sprint((*world.requests)[0]["messages"])
-	for _, want := range []string{"A test phone", "Show them around it", "Share button", "Ask TeaNode"} {
+	for _, want := range []string{"A test phone", "Show them around it", "Share button", "Ask TeaNode", "question of one ask_user call", "offered once"} {
 		if !strings.Contains(request, want) {
 			t.Errorf("the tour's message says %q", want)
 		}
@@ -360,5 +360,26 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 	world.worker.Wait()
 	if jobs := world.speakFirstJobs(t); len(jobs) != 1 {
 		t.Fatalf("shown around once: %+v", jobs)
+	}
+
+	// Signed out and in again: the same phone, as a new record with a new
+	// client. It is not shown around again.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.PutAgentPhone(&models.AgentPhone{AgentID: world.agent.ID, ClientID: "a-phone-client-again", PhoneName: "A test phone"}); err != nil {
+			t.Fatalf("PutAgentPhone: %s", err)
+		}
+	})
+	if _, err := world.database.CreateAuthorizedToken(&models.Token{
+		ID: "a-phone-token-again", UserID: world.owner.ID, Name: "A test phone", ClientID: "a-phone-client-again", ExpiresAt: time.Now().Add(time.Hour),
+	}, "another-key-hash", "another-refresh-hash"); err != nil {
+		t.Fatalf("CreateAuthorizedToken: %s", err)
+	}
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(4*time.Minute))
+	if err := world.worker.TickAt(context.Background(), time.Now().Add(4*time.Minute)); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 {
+		t.Fatalf("the same phone signed in again was shown around again: %+v", jobs)
 	}
 }
