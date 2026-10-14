@@ -443,8 +443,6 @@ struct TaxDocumentUploadRow: View {
     }
 }
 
-/// TaxFigureRow is one figure of a year, with where it is heading by
-/// December 31 under it when there is a projection.
 /// TaxEstimateSection is the year's pay as a ring, as the dashboard draws
 /// it: the tax already withheld, what the rest of the year's paychecks will
 /// withhold, what will be owed at filing, and what is left, the year's tax
@@ -826,20 +824,31 @@ struct TaxInvestmentSection: View {
     }
 }
 
+/// TaxFigureRow is one figure of a year, with where it is heading by
+/// December 31 under it when there is a projection.
 struct TaxFigureRow: View {
     let row: TaxYearFigureRow
 
     var body: some View {
-        LabeledContent(TaxWords.figureTitle(row.figureKind)) {
+        // Not LabeledContent: a long name such as the federal tax withheld
+        // makes it stack the amounts under the name, centered. The name
+        // wraps instead, and the amounts keep to the trailing edge.
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(TaxWords.figureTitle(row.figureKind))
+                .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing) {
-                Text(FinanceMoney.shown(row.amount, currencyCode: TaxWords.currencyCode)).monospacedDigit()
+                Text(FinanceMoney.shown(row.amount, currencyCode: TaxWords.currencyCode))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
                 if let projectedAmount = row.projectedAmount, !projectedAmount.isEmpty {
                     Text("\(FinanceMoney.shown(projectedAmount, currencyCode: TaxWords.currencyCode)) by December 31")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            .fixedSize()
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
