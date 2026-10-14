@@ -23237,6 +23237,22 @@
         }
       }
     },
+    "Notifications off on this phone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この電話では通知がオフ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此手机的通知已关闭"
+          }
+        }
+      }
+    },
     "Notifications to phones are off on this server, so phones are told nothing until the operator turns them on.": {
       "localizations": {
         "ja": {
