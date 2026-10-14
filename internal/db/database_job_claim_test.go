@@ -104,3 +104,38 @@ func TestJobClaimMigrationCanBeReversedAndReapplied(test *testing.T) {
 		}
 	})
 }
+
+func TestAQueuedJobIsPostponedOnlyLater(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		user, err := transaction.CreateUser(&models.User{Username: "postpone-fixture"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		owner, err := transaction.CreateAgent(&models.Agent{UserID: user.ID, Enabled: true})
+		if err != nil {
+			test.Fatal(err)
+		}
+		first := time.Now().Add(5 * time.Minute).UTC().Truncate(time.Microsecond)
+		job, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: owner.ID, Kind: models.AgentJobNoop, SubjectID: "postponed-subject", NotBefore: &first})
+		if err != nil {
+			test.Fatal(err)
+		}
+		later := first.Add(3 * time.Minute)
+		// A second change coalesces into the queued job and moves its start.
+		again, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: owner.ID, Kind: models.AgentJobNoop, SubjectID: "postponed-subject", NotBefore: &later})
+		if err != nil || again.ID != job.ID {
+			test.Fatal("the second change queued another job", err)
+		}
+		for _, notBefore := range []time.Time{later, first} {
+			if err := transaction.PostponeAgentJob(job.ID, notBefore); err != nil {
+				test.Fatal(err)
+			}
+		}
+		stored, err := transaction.GetAgentJob(job.ID)
+		if err != nil || stored.NotBefore == nil || !stored.NotBefore.Equal(later) {
+			test.Fatalf("the job starts at %v, not the later time", stored.NotBefore)
+		}
+	})
+}

@@ -126,6 +126,9 @@ func (self *graph) CorrectRecordingSpeaker(ctx context.Context, arguments Correc
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
 	self.transaction(ctx).AfterCommit(func() {
 		if worker := self.agentWorker(); worker != nil {
 			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
@@ -144,6 +147,9 @@ func (self *graph) NameRecordingTemporarySpeaker(ctx context.Context, arguments 
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return false, translateError(err)
 	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return false, translateError(err)
+	}
 	self.transaction(ctx).AfterCommit(func() {
 		if worker := self.agentWorker(); worker != nil {
 			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
@@ -158,6 +164,9 @@ func (self *graph) RenameRecordingSpeaker(ctx context.Context, arguments RenameR
 	}
 	err = self.transaction(ctx).RenameRecordingSpeaker(userId, arguments.RecordingID, arguments.SpeakerIdentityID, arguments.ConfirmedName, arguments.ExpectedSourceGeneration)
 	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -177,6 +186,9 @@ func (self *graph) RemoveRecordingSpeakerCorrection(ctx context.Context, argumen
 		return nil, translateError(err)
 	}
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
 	self.transaction(ctx).AfterCommit(func() {
@@ -200,6 +212,9 @@ func (self *graph) UndoRecordingSpeakerNaming(ctx context.Context, arguments Rem
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
 	self.transaction(ctx).AfterCommit(func() {
 		if worker := self.agentWorker(); worker != nil {
 			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
@@ -219,10 +234,23 @@ func (self *graph) DeleteRecordingVoiceReference(ctx context.Context, arguments 
 	if err := self.transaction(ctx).QueueRecordingKnowledgeSync(userId, arguments.RecordingID); err != nil {
 		return nil, translateError(err)
 	}
+	if err := self.queueRecordingSummaryAfterEdit(ctx, userId, arguments.RecordingID); err != nil {
+		return nil, translateError(err)
+	}
 	self.transaction(ctx).AfterCommit(func() {
 		if worker := self.agentWorker(); worker != nil {
 			worker.WakeRecordingSpeakerCuration(userId, arguments.RecordingID)
 		}
 	})
 	return self.ReadRecordingSpeakers(ctx, RecordingArguments{RecordingID: arguments.RecordingID})
+}
+
+// queueRecordingSummaryAfterEdit has the recording's summary written again a
+// few minutes after the person stops changing who said what or the words, so
+// it names the people they named.
+func (self *graph) queueRecordingSummaryAfterEdit(ctx context.Context, userId, recordingId string) error {
+	if worker := self.agentWorker(); worker != nil {
+		return worker.QueueRecordingSummaryAfterEdit(self.transaction(ctx), userId, recordingId)
+	}
+	return nil
 }

@@ -32,6 +32,11 @@ type AgentOperation interface {
 	// returned: the second arrival coalesces into the first.
 	EnqueueAgentJob(job *models.AgentJob) (*models.AgentJob, error)
 
+	// PostponeAgentJob moves a queued job's start to notBefore when that is
+	// later than its start now, so a burst of changes runs it once, after the
+	// last of them. A job already running or finished is left as it is.
+	PostponeAgentJob(jobId string, notBefore time.Time) error
+
 	// ClaimAgentJobs takes up to limit due jobs for this instance, skipping
 	// any another instance has locked, and marks them running.
 	ClaimAgentJobs(instance string, limit int, now time.Time) ([]*models.AgentJob, error)
@@ -756,6 +761,12 @@ func (self *transaction) FinishAgentJob(jobId, claimId string, outcome *AgentJob
 		Where("id = ? AND status = ? AND claim_id = ?", jobId, string(models.AgentJobRunning), claimId).
 		Updates(updates)
 	return updated.RowsAffected == 1, updated.Error
+}
+
+func (self *transaction) PostponeAgentJob(jobId string, notBefore time.Time) error {
+	return self.tx.Model(&agentJobModel{}).
+		Where("id = ? AND status = ? AND (not_before IS NULL OR not_before < ?)", jobId, string(models.AgentJobQueued), notBefore).
+		Update("not_before", notBefore).Error
 }
 
 func (self *transaction) RetryAgentJob(jobId string) (bool, error) {

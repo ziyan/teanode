@@ -137,3 +137,39 @@ func TestTemporarySpeakerSamplesAreNotSentForAnotherRecording(test *testing.T) {
 		test.Fatal("a sample cut from one recording was offered for another", err, len(sent))
 	}
 }
+
+// A meeting of more people than samples a request takes sends the samples of
+// those who spoke in the latest pieces, not of those who spoke first.
+func TestTheLatestSpeakersAreSentFirstWhenThereAreMoreThanFour(test *testing.T) {
+	fixture := newLiveRecordingFixture(test)
+	// Each piece is two people not heard before.
+	fixture.provider.answer = func(requestIndex int, request fakeTranscriptionRequest) []fakeTranscriptionSegment {
+		first, second := string(rune('A'+2*requestIndex)), string(rune('B'+2*requestIndex))
+		return []fakeTranscriptionSegment{{SpeakerLabel: first, StartMS: 200, EndMS: 4200, Text: "The first voice."}, {SpeakerLabel: second, StartMS: 4300, EndMS: 7400, Text: "The second voice."}}
+	}
+	for pieceIndex := 0; pieceIndex < 3; pieceIndex++ {
+		fixture.transcribe(fixture.addPiece(8000, 0))
+		if err := fixture.worker.CurateRecordingSpeakers(test.Context(), fixture.userId, fixture.source.ID); err != nil {
+			test.Fatal(err)
+		}
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		speakers, err := transaction.ListRecordingTemporarySpeakers(fixture.userId, fixture.source.ID)
+		if err != nil || len(speakers) != 6 {
+			test.Fatal("the three pieces did not make six speakers", err, len(speakers))
+		}
+	})
+	capabilities := llm.TranscriptionCapabilities{HasSpeakerReferences: true, MaximumSpeakerReferenceCount: 4}
+	sent, _, err := fixture.worker.recordingSpeakerReferences(test.Context(), fixture.userId, fixture.source.ID, capabilities, fixture.files)
+	if err != nil {
+		test.Fatal(err)
+	}
+	names := make([]string, 0, len(sent))
+	for _, reference := range sent {
+		names = append(names, reference.SpeakerName)
+	}
+	slices.Sort(names)
+	if !slices.Equal(names, []string{"Speaker 3", "Speaker 4", "Speaker 5", "Speaker 6"}) {
+		test.Fatal("the samples sent are not of the latest two pieces' speakers", names)
+	}
+}

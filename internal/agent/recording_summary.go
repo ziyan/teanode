@@ -237,6 +237,36 @@ func (self *Agent) QueueRecordingSummary(transaction db.Transaction, userId, rec
 	return transaction.MarkRecordingSummaryQueued(userId, recordingId)
 }
 
+// recordingSummaryEditDelay is how long after the last change to a
+// recording's speakers or words its summary is written again: long enough
+// that naming a dozen speakers in a row writes it once.
+const recordingSummaryEditDelay = 5 * time.Minute
+
+// QueueRecordingSummaryAfterEdit has the summary written again once the
+// person has stopped changing who said what, or the words: the job is
+// queued to start recordingSummaryEditDelay from now, and one already
+// queued is moved to then. A title the person set is kept; a generated one
+// may change with the summary.
+func (self *Agent) QueueRecordingSummaryAfterEdit(transaction db.Transaction, userId, recordingId string) error {
+	configuration := self.settings.Configuration()
+	if !configuration.Agent.Enabled || self.settings.Registry == nil || configuration.Agent.Models.ForWork(config.AgentWorkSummarize) == "" {
+		return nil
+	}
+	assistant, err := transaction.GetAgentByUser(userId)
+	if err != nil {
+		return err
+	}
+	if assistant == nil || !assistant.Active() {
+		return nil
+	}
+	notBefore := time.Now().Add(recordingSummaryEditDelay)
+	job, err := transaction.EnqueueAgentJob(&models.AgentJob{AgentID: assistant.ID, Kind: models.AgentJobRecordingSummary, SubjectID: recordingId, NotBefore: &notBefore})
+	if err != nil {
+		return err
+	}
+	return transaction.PostponeAgentJob(job.ID, notBefore)
+}
+
 // queueRecordingSummary queues the job once a transcript has completed, in a
 // transaction of its own: a failure to queue is logged and never fails the transcript.
 func (self *Agent) queueRecordingSummary(ctx context.Context, userId, recordingId string) {
