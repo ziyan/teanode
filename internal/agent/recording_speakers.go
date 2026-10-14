@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"slices"
 	"sync"
@@ -170,20 +169,9 @@ func (self *Agent) CurateRecordingSpeakers(ctx context.Context, userId, recordin
 		}
 		sampleOffsetBytes := 44 + (clipStartMS-audioChunk.TimelineStartMS)*recording.AudioSampleRateHz*2/1000
 		clipSizeBytes := (clipEndMS - clipStartMS) * recording.AudioSampleRateHz * 2 / 1000
-		stream, err := files.OpenFileRange(ctx, audioBlob.ID, sampleOffsetBytes, clipSizeBytes)
+		samples, err := readRecordingPCM(ctx, files, audioBlob, sampleOffsetBytes, clipSizeBytes)
 		if err != nil {
 			return err
-		}
-		samples, err := io.ReadAll(io.LimitReader(stream, clipSizeBytes+1))
-		closeErr := stream.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if int64(len(samples)) != clipSizeBytes {
-			return fmt.Errorf("recording reference audio is incomplete")
 		}
 		if !isCleanRecordingVoice(samples) {
 			continue
