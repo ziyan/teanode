@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.154.2] - 2026-10-14
+
+### Fixed
+
+- A recording's conversation on the dashboard no longer splits into one-word bubbles between unnamed speakers. (#469)
+
 ## [0.154.1] - 2026-10-14
 
 ### Changed
