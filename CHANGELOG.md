@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.158.0] - 2026-10-14
+
+### Added
+
+- 1099-INT, 1099-DIV and 1099-B: hand them in like W-2s (a brokerage's consolidated statement too), and the tax year's estimate counts interest, dividends and gains, qualified dividends and long-term gains at their lower rates, with the net investment income tax. (#480)
+
 ## [0.157.0] - 2026-10-14
 
 ### Added
