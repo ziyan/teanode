@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"io"
 	"sort"
 	"strings"
 	"unicode"
@@ -261,18 +260,9 @@ func (self *Agent) recordingTurnAudio(ctx context.Context, userId string, files 
 		return nil, errors.New("recording: derived audio is not verified")
 	}
 	lengthBytes := (turn.endMS() - turn.startMS()) * recordingPCMBytesPerMS
-	stream, err := files.OpenFileRange(ctx, blob.ID, 44+(turn.startMS()-turn.Chunk.TimelineStartMS)*recordingPCMBytesPerMS, lengthBytes)
+	samples, err := readRecordingPCM(ctx, files, blob, 44+(turn.startMS()-turn.Chunk.TimelineStartMS)*recordingPCMBytesPerMS, lengthBytes)
 	if err != nil {
 		return nil, err
-	}
-	samples := make([]byte, lengthBytes)
-	_, readError := io.ReadFull(stream, samples)
-	closeError := stream.Close()
-	if readError != nil {
-		return nil, readError
-	}
-	if closeError != nil {
-		return nil, closeError
 	}
 	return recordingReferenceWave(samples), nil
 }

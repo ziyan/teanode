@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"sort"
 
@@ -181,20 +180,9 @@ func (self *Agent) createRecordingTemporarySpeaker(ctx context.Context, userId s
 		}
 		sampleOffsetBytes := 44 + (clipStartMS-audioChunk.TimelineStartMS)*recording.AudioSampleRateHz*2/1000
 		clipSizeBytes := (clipEndMS - clipStartMS) * recording.AudioSampleRateHz * 2 / 1000
-		stream, err := files.OpenFileRange(ctx, audioBlob.ID, sampleOffsetBytes, clipSizeBytes)
+		samples, err := readRecordingPCM(ctx, files, audioBlob, sampleOffsetBytes, clipSizeBytes)
 		if err != nil {
 			return err
-		}
-		samples, readError := io.ReadAll(io.LimitReader(stream, clipSizeBytes+1))
-		closeError := stream.Close()
-		if readError != nil {
-			return readError
-		}
-		if closeError != nil {
-			return closeError
-		}
-		if int64(len(samples)) != clipSizeBytes {
-			return fmt.Errorf("recording sample audio is incomplete")
 		}
 		if !isCleanRecordingVoice(samples) {
 			continue

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"time"
 
@@ -326,23 +325,14 @@ func (self *Agent) recordingHandoffAudio(ctx context.Context, userId string, med
 		return nil, nil
 	}
 	headBytes := headMS * recordingPCMBytesPerMS
-	samples := make([]byte, len(handoff.PCM)+int(headBytes))
-	copy(samples, handoff.PCM)
-	stream, err := files.OpenFileRange(ctx, blob.ID, 44, headBytes)
+	head, err := readRecordingPCM(ctx, files, blob, 44, headBytes)
 	if errors.Is(err, storage.ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	_, readError := io.ReadFull(stream, samples[len(handoff.PCM):])
-	closeError := stream.Close()
-	if readError != nil {
-		return nil, readError
-	}
-	if closeError != nil {
-		return nil, closeError
-	}
+	samples := append(append(make([]byte, 0, len(handoff.PCM)+len(head)), handoff.PCM...), head...)
 	return &recording.DecodedAudioChunk{TimelineStartMS: handoff.StartMS, AudioDurationMS: media.TimelineStartMS - handoff.StartMS + headMS, WaveBytes: recordingReferenceWave(samples)}, nil
 }
 
@@ -414,21 +404,14 @@ func (self *Agent) recordingHandoffBefore(ctx context.Context, userId string, me
 			return nil, nil
 		}
 		lengthBytes := (overlapEndMS - overlapStartMS) * recordingPCMBytesPerMS
-		stream, err := files.OpenFileRange(ctx, blob.ID, 44+(overlapStartMS-chunk.TimelineStartMS)*recordingPCMBytesPerMS, lengthBytes)
+		overlap, err := readRecordingPCM(ctx, files, blob, 44+(overlapStartMS-chunk.TimelineStartMS)*recordingPCMBytesPerMS, lengthBytes)
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-		_, readError := io.ReadFull(stream, handoff.PCM[(overlapStartMS-handoff.StartMS)*recordingPCMBytesPerMS:][:lengthBytes])
-		closeError := stream.Close()
-		if readError != nil {
-			return nil, readError
-		}
-		if closeError != nil {
-			return nil, closeError
-		}
+		copy(handoff.PCM[(overlapStartMS-handoff.StartMS)*recordingPCMBytesPerMS:], overlap)
 	}
 	return handoff, nil
 }
