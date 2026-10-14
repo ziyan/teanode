@@ -80,24 +80,24 @@ struct ContactsScreen: View {
             // Laid out as the mail and recordings lists are, under a letter
             // instead of a period: no chevrons, no lines, rows close together.
             List {
+                // Each letter is a row of its own rather than a section header: a plain list puts a fixed band
+                // above every section, which left a letter with one contact mostly empty space.
                 ForEach(ContactLetterSection.sections(of: model.contacts)) { section in
-                    Section {
-                        ForEach(section.contacts) { contact in
-                            NavigationLink(value: contact.id) {
-                                ContactRow(contact: contact, isMine: contact.id == model.myContactId)
-                            }
-                            .navigationLinkIndicatorVisibility(.hidden)
-                            .listRowInsets(ListRowSpacing.insets)
-                            .listRowSeparator(.hidden)
+                    ListPeriodHeader(title: section.letter)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 2, trailing: 16))
+                        .listRowSeparator(.hidden)
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(section.contacts) { contact in
+                        NavigationLink(value: contact.id) {
+                            ContactRow(contact: contact, isMine: contact.id == model.myContactId)
                         }
-                    } header: {
-                        ListPeriodHeader(title: section.letter)
+                        .navigationLinkIndicatorVisibility(.hidden)
+                        .listRowInsets(ListRowSpacing.insets)
+                        .listRowSeparator(.hidden)
                     }
-                    .listSectionSeparator(.hidden)
                 }
             }
             .listStyle(.plain)
-            .listSectionSpacing(.compact)
             .navigationTitle("Contacts")
             .withoutSwipeBack()
             .navigationDestination(for: String.self) { contactId in

@@ -989,7 +989,7 @@ export const ja: Catalog = {
   'phones.none': 'スマートフォンはまだありません。接続すると、そこからエージェントと話し、あなたの対応が必要なときに知らせを受け取れます。',
   'phones.unnamed': '名前のないスマートフォン',
   'phones.notified': '通知オン',
-  'phones.notRegistered': '通知なし',
+  'phones.notRegistered': 'この電話では通知がオフ',
   'phones.lastFailed': '前回の通知に失敗',
   'phones.test': 'テスト',
   'phones.tested': '{name} に通知を送りました。数秒で届くはずです。',

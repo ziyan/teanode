@@ -368,7 +368,11 @@ struct PairedPhoneRow: View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Self.displayName(phone))
-                let detailText = [phone.modelDisplayName, notificationsText, phone.lastDeliveryError]
+                // Which notifications it would get is left out while it gets none, as on the dashboard: the
+                // two read as a contradiction side by side.
+                let detailText = [
+                    phone.modelDisplayName, phone.notificationState == .notRegistered ? "" : notificationsText, phone.lastDeliveryError,
+                ]
                     .filter { !$0.isEmpty }
                     .joined(separator: " · ")
                 if !detailText.isEmpty {
@@ -380,7 +384,7 @@ struct PairedPhoneRow: View {
             Spacer()
             switch phone.notificationState {
             case .notRegistered:
-                Label("No notifications", systemImage: "bell.slash")
+                Label("Notifications off on this phone", systemImage: "bell.slash")
                     .labelStyle(.tag)
                     .font(.caption)
                     .foregroundStyle(.orange)

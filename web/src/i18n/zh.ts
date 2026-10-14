@@ -956,7 +956,7 @@ export const zh: Catalog = {
   'phones.none': '还没有手机。连接一部手机，就能用它与助理对话，并在有事需要你时收到通知。',
   'phones.unnamed': '未命名的手机',
   'phones.notified': '已开启通知',
-  'phones.notRegistered': '未开启通知',
+  'phones.notRegistered': '此手机的通知已关闭',
   'phones.lastFailed': '上次通知失败',
   'phones.test': '测试',
   'phones.tested': '已向 {name} 发送通知，几秒钟内应会到达。',
