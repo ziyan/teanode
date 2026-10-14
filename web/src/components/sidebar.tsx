@@ -63,8 +63,8 @@ const SERVER_ICONS: Record<string, React.ReactNode> = {
   server: <ServerIcon />,
 }
 
-const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
-  sync: <SmartphoneIcon />,
+// Every page of the account's settings has one; a test checks it.
+export const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   preference: <UserIcon />,
   agent: <SparkIcon />,
   mailbox: <MailIcon />,
@@ -74,7 +74,7 @@ const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
-  phones: <SmartphoneIcon />,
+  devices: <SmartphoneIcon />,
   apps: <LinkIcon />,
   sessions: <LogoutIcon />,
 }
