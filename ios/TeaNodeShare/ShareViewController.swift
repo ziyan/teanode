@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// ShareViewController is TeaNode in the share sheet: what another app
 /// shares (pictures, files, a link, words) goes to the person's agent, in
 /// the main conversation, with a note they can write. Shared files can go
-/// straight to finance instead: PDFs and pictures read as paystubs or W-2s,
+/// straight to finance instead: PDFs and pictures read as tax documents,
 /// handed in as tax documents so the server keeps no text of them, and OFX
 /// statements imported; the sheet then says what came of it.
 ///
@@ -47,7 +47,7 @@ struct SharedFile: Identifiable {
 }
 
 /// ShareFileDestination is where shared files go: to the agent with the
-/// note, to be read as paystubs or W-2s, or to be imported as statements.
+/// note, to be read as tax documents, or to be imported as statements.
 enum ShareFileDestination: Hashable {
     case agent, taxDocuments, statements
 }
@@ -224,8 +224,8 @@ final class ShareModel: ObservableObject {
             }
         }
         var said = taxDocuments.count == 1
-            ? String(localized: "Reading 1 document as a paystub or W-2. It shows under Finance, Taxes once read.")
-            : String(localized: "Reading \(taxDocuments.count) documents as paystubs or W-2s. They show under Finance, Taxes once read.")
+            ? String(localized: "Reading 1 tax document. It shows under Finance, Taxes once read.")
+            : String(localized: "Reading \(taxDocuments.count) tax documents. They show under Finance, Taxes once read.")
         if taxDocuments.count < files.count {
             said += " " + String(localized: "Files that are not a PDF or a picture were left out.")
         }
@@ -380,7 +380,7 @@ struct ShareView: View {
                             Picker("Send the files", selection: $model.fileDestination) {
                                 Text("To your agent").tag(ShareFileDestination.agent)
                                 if model.canReadTaxDocuments {
-                                    Text("Read as paystubs or W-2s").tag(ShareFileDestination.taxDocuments)
+                                    Text("Read as tax documents").tag(ShareFileDestination.taxDocuments)
                                 }
                                 if model.canImportStatements {
                                     Text("Import as statements").tag(ShareFileDestination.statements)
@@ -394,7 +394,7 @@ struct ShareView: View {
                         } footer: {
                             switch model.effectiveFileDestination {
                             case .taxDocuments:
-                                Text("Each PDF or picture is read as a paystub or W-2 on its own, and the server keeps no text of it. No note goes with them.")
+                                Text("Each PDF or picture is read as a paystub, W-2, 1099 or 1098 on its own, and the server keeps no text of it. No note goes with them.")
                             case .statements:
                                 Text("Each OFX, QFX or QBO file is imported into your accounts; a transaction imported twice is kept once. No note goes with them.")
                             case .agent:

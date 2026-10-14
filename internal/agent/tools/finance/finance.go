@@ -783,9 +783,9 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"operation":               tools.EnumProperty("what to do", operationNames()...),
 					"source_id":               tools.StringProperty("a finance source, by the id sources gives"),
-					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; for read_tax_document: the message whose PDFs and pictures to read as paystubs or W-2s; by the item_id mail_search or mail_read gives"),
+					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; for read_tax_document: the message whose PDFs and pictures to read as paystubs, W-2s, 1099s or 1098s; by the item_id mail_search or mail_read gives"),
 					"gmail_message_id":        tools.StringProperty("for record_receipt and preview_record_receipt: the Gmail message the receipt was read from, by the id the Gmail skill gives"),
-					"agent_attachment_id":     tools.StringProperty("for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub or W-2 to read; for record_paystub and record_tax_form: the file it was read from; by the agent_attachment_id the conversation names the file with, never invented"),
+					"agent_attachment_id":     tools.StringProperty("for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub, W-2, 1099 or 1098 to read; for record_paystub and record_tax_form: the file it was read from; by the agent_attachment_id the conversation names the file with, never invented"),
 					"annotation":              tools.StringProperty("for annotate_transaction: what the transaction was for, in the person's words; empty takes it away"),
 					"receipt_id":              tools.StringProperty("a receipt, by the id receipts gives"),
 					"is_unmatched":            tools.BooleanProperty("for receipts: only those matched to no transaction"),

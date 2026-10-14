@@ -185,8 +185,8 @@ enum UpkeepWords {
         case "categorize": String(localized: "Categorizing")
         case "statement_import": String(localized: "Statement import")
         case "read_receipt": String(localized: "Read a receipt")
-        case "tax_document": String(localized: "Read a paystub or W-2")
-        case "tax_mail": String(localized: "Paystubs or W-2s mailed in")
+        case "tax_document": String(localized: "Read a tax document")
+        case "tax_mail": String(localized: "Tax documents mailed in")
         case "watch": String(localized: "Watching")
         default: jobKind
         }
