@@ -150,6 +150,24 @@ func TestRecordingSpeakerConfirmOffersMeAndImportNeedsNoTitle(test *testing.T) {
 			test.Fatal("temporary-speaker-name has no --" + expected + " flag")
 		}
 	}
+	var separate *cli.Command
+	for _, command := range recordingActionCommands() {
+		if command.Name == "speaker-separate" {
+			separate = command
+		}
+	}
+	if separate == nil {
+		test.Fatal("there is no speaker-separate command")
+	}
+	separateFlagNames := map[string]bool{}
+	for _, flag := range separate.Flags {
+		separateFlagNames[flag.Names()[0]] = true
+	}
+	for _, expected := range []string{"recording-id", "speaker-label"} {
+		if !separateFlagNames[expected] {
+			test.Fatal("speaker-separate has no --" + expected + " flag")
+		}
+	}
 	hasMe := false
 	for _, flag := range speakerConfirm.Flags {
 		if flag.Names()[0] == "me" {

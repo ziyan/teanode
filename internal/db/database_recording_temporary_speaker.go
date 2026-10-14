@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,9 @@ type RecordingTemporarySpeakerOperation interface {
 	ListRecordingTemporarySpeakers(userId, recordingId string) ([]*models.RecordingTemporarySpeaker, error)
 	CreateRecordingTemporarySpeaker(userId string, speaker *models.RecordingTemporarySpeaker, blob *models.RecordingBlob, maximumAccountBytes int64) (*models.RecordingTemporarySpeaker, error)
 	NameRecordingTemporarySpeaker(userId, recordingId, speakerLabel, confirmedName string, isAccountOwner bool) error
+	MergeRecordingTemporarySpeaker(userId, recordingId, speakerLabel, intoSpeakerLabel string) error
+	SeparateRecordingTemporarySpeaker(userId, recordingId, speakerLabel string) error
+	MarkRecordingTemporarySpeakerMergeChecked(userId, speakerId string) error
 }
 
 type recordingTemporarySpeakerModel struct {
@@ -38,12 +42,14 @@ type recordingTemporarySpeakerModel struct {
 	PassageEndMS         int64
 	SpeakerIdentityID    *string
 	CreatedAt            time.Time
+	MergedIntoSpeakerID  *string `gorm:"column:merged_into_temporary_speaker_id"`
+	MergeCheckedAt       *time.Time
 }
 
 func (recordingTemporarySpeakerModel) TableName() string { return "recording_temporary_speaker" }
 
 func recordingTemporarySpeakerFromModel(row *recordingTemporarySpeakerModel) *models.RecordingTemporarySpeaker {
-	return &models.RecordingTemporarySpeaker{ID: row.ID, RecordingID: row.RecordingID, SpeakerLabel: row.SpeakerLabel, RecordingBlobID: optionalString(row.RecordingBlobID), SourceAttemptID: row.SourceAttemptID, SourceLocalSpeakerID: row.SourceLocalSpeakerID, PassageStartMS: row.PassageStartMS, PassageEndMS: row.PassageEndMS, SpeakerIdentityID: optionalString(row.SpeakerIdentityID), CreatedAt: row.CreatedAt.UTC()}
+	return &models.RecordingTemporarySpeaker{ID: row.ID, RecordingID: row.RecordingID, SpeakerLabel: row.SpeakerLabel, RecordingBlobID: optionalString(row.RecordingBlobID), SourceAttemptID: row.SourceAttemptID, SourceLocalSpeakerID: row.SourceLocalSpeakerID, PassageStartMS: row.PassageStartMS, PassageEndMS: row.PassageEndMS, SpeakerIdentityID: optionalString(row.SpeakerIdentityID), CreatedAt: row.CreatedAt.UTC(), MergedIntoTemporarySpeakerID: optionalString(row.MergedIntoSpeakerID), MergeCheckedAt: row.MergeCheckedAt}
 }
 
 // ListRecordingTemporarySpeakers lists a recording's speakers in the order they
@@ -222,49 +228,35 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 	if err != nil {
 		return err
 	}
-	var speaker recordingTemporarySpeakerModel
-	if err := self.tx.Where("recording_id = ? AND speaker_label = ?", source.ID, speakerLabel).Take(&speaker).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNotFound
-		}
+	speaker, err := self.recordingTemporarySpeakerNamed(source.ID, speakerLabel)
+	if err != nil {
 		return err
 	}
-	// Every piece the speaker was heard in: the one its sample was cut from,
-	// under the label that piece gave it, and each piece it was sent to, under
-	// the temporary label the provider answered with.
-	var appearances []struct {
-		RecordingTranscriptionAttemptID string
-		LocalSpeakerID                  string
+	// A label that was merged is the voice of the speaker it was merged into,
+	// so naming either names both.
+	if speaker, err = self.recordingTemporarySpeakerRoot(speaker); err != nil {
+		return err
 	}
-	if err := self.tx.Raw(`SELECT DISTINCT attempt.id AS recording_transcription_attempt_id, segment.local_speaker_id
-  FROM recording_transcript_run run
-  JOIN recording_transcription_attempt attempt ON attempt.recording_transcript_run_id = run.id
-  JOIN recording_transcript_segment segment ON segment.recording_transcription_attempt_id = attempt.id
-  WHERE run.recording_id = @recordingId AND attempt.recording_attempt_state = @complete AND (
-   (attempt.id = @sourceAttemptId AND segment.local_speaker_id = @sourceLocalSpeakerId)
-   OR (segment.local_speaker_id = @speakerLabel AND attempt.reference_blob_ids @> jsonb_build_array(CAST(@blobId AS text))))
-  ORDER BY attempt.id, segment.local_speaker_id`,
-		map[string]any{"recordingId": source.ID, "complete": models.RecordingAttemptComplete, "sourceAttemptId": speaker.SourceAttemptID, "sourceLocalSpeakerId": speaker.SourceLocalSpeakerID, "speakerLabel": speaker.SpeakerLabel, "blobId": optionalString(speaker.RecordingBlobID)}).Scan(&appearances).Error; err != nil {
+	appearances, err := self.recordingTemporarySpeakerAppearances(source.ID, speaker)
+	if err != nil {
 		return err
 	}
 	if len(appearances) == 0 {
 		return ErrNotFound
 	}
-	nameDigest := sha256.Sum256([]byte(confirmedName))
-	// The account and the recording are locked above, so each piece is corrected
-	// without taking the locks again. Each correction advances the generation.
-	for _, appearance := range appearances {
-		if err := self.tx.Raw("SELECT source_generation FROM recording WHERE id = ?", source.ID).Scan(&source.SourceGeneration).Error; err != nil {
+	var mergedSpeakers []*recordingTemporarySpeakerModel
+	if err := self.tx.Where("merged_into_temporary_speaker_id = ?", speaker.ID).Order("created_at, id").Find(&mergedSpeakers).Error; err != nil {
+		return err
+	}
+	for _, mergedSpeaker := range mergedSpeakers {
+		mergedAppearances, err := self.recordingTemporarySpeakerAppearances(source.ID, mergedSpeaker)
+		if err != nil {
 			return err
 		}
-		if _, err := self.correctRecordingSpeakerLocked(userId, source, RecordingSpeakerCorrectionInput{
-			RecordingID: source.ID, RecordingTranscriptionAttemptID: appearance.RecordingTranscriptionAttemptID, LocalSpeakerID: appearance.LocalSpeakerID,
-			// The key names the speaker, the piece and the name, so repeating a request is harmless and renaming is a new correction.
-			ClientCorrectionID: temporarySpeakerKeyPrefix + speaker.ID + "-" + appearance.RecordingTranscriptionAttemptID + "-" + hex.EncodeToString(nameDigest[:4]),
-			ConfirmedName:      confirmedName, IsAccountOwner: isAccountOwner, ExpectedSourceGeneration: source.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1,
-		}); err != nil {
-			return err
-		}
+		appearances = append(appearances, withMergedSpeakerID(mergedAppearances, mergedSpeaker.ID)...)
+	}
+	if err := self.writeTemporarySpeakerCorrections(userId, source, speaker.ID, appearances, confirmedName, isAccountOwner); err != nil {
+		return err
 	}
 	var identity recordingSpeakerIdentityModel
 	if err := self.tx.Where("user_id = ? AND confirmed_name = ?", userId, confirmedName).Take(&identity).Error; err != nil {
@@ -273,9 +265,219 @@ func (self *transaction) NameRecordingTemporarySpeaker(userId, recordingId, spea
 	return self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ?", speaker.ID).Update("speaker_identity_id", identity.ID).Error
 }
 
+// recordingSpeakerAppearance is one piece a temporary speaker was heard in and
+// the label that piece's provider answer gave it.
+type recordingSpeakerAppearance struct {
+	RecordingTranscriptionAttemptID string
+	LocalSpeakerID                  string
+	// MergedSpeakerID is the label merged into the one that carries the name,
+	// empty for the appearances of the speaker that carries it.
+	MergedSpeakerID string
+}
+
+func (self *transaction) recordingTemporarySpeakerNamed(recordingId, speakerLabel string) (*recordingTemporarySpeakerModel, error) {
+	var speaker recordingTemporarySpeakerModel
+	if err := self.tx.Where("recording_id = ? AND speaker_label = ?", recordingId, speakerLabel).Take(&speaker).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return &speaker, nil
+}
+
+// recordingTemporarySpeakerRoot follows the speakers a label was merged into to
+// the one that was not merged into another. A merge points at the root, so the
+// chain is normally one step; the walk is bounded in case a row was edited by hand.
+func (self *transaction) recordingTemporarySpeakerRoot(speaker *recordingTemporarySpeakerModel) (*recordingTemporarySpeakerModel, error) {
+	for range recordingTemporarySpeakerLimit {
+		if speaker.MergedIntoSpeakerID == nil {
+			return speaker, nil
+		}
+		var target recordingTemporarySpeakerModel
+		if err := self.tx.Where("id = ?", *speaker.MergedIntoSpeakerID).Take(&target).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, ErrNotFound
+			}
+			return nil, err
+		}
+		speaker = &target
+	}
+	return nil, ErrInvalidArguments
+}
+
+// recordingTemporarySpeakerAppearances lists every piece the speaker was heard
+// in: the one its sample was cut from, under the label that piece gave it, and
+// each piece it was sent to, under the temporary label the provider answered with.
+func (self *transaction) recordingTemporarySpeakerAppearances(recordingId string, speaker *recordingTemporarySpeakerModel) ([]recordingSpeakerAppearance, error) {
+	var appearances []recordingSpeakerAppearance
+	if err := self.tx.Raw(`SELECT DISTINCT attempt.id AS recording_transcription_attempt_id, segment.local_speaker_id
+  FROM recording_transcript_run run
+  JOIN recording_transcription_attempt attempt ON attempt.recording_transcript_run_id = run.id
+  JOIN recording_transcript_segment segment ON segment.recording_transcription_attempt_id = attempt.id
+  WHERE run.recording_id = @recordingId AND attempt.recording_attempt_state = @complete AND (
+   (attempt.id = @sourceAttemptId AND segment.local_speaker_id = @sourceLocalSpeakerId)
+   OR (segment.local_speaker_id = @speakerLabel AND attempt.reference_blob_ids @> jsonb_build_array(CAST(@blobId AS text))))
+  ORDER BY attempt.id, segment.local_speaker_id`,
+		map[string]any{"recordingId": recordingId, "complete": models.RecordingAttemptComplete, "sourceAttemptId": speaker.SourceAttemptID, "sourceLocalSpeakerId": speaker.SourceLocalSpeakerID, "speakerLabel": speaker.SpeakerLabel, "blobId": optionalString(speaker.RecordingBlobID)}).Scan(&appearances).Error; err != nil {
+		return nil, err
+	}
+	return appearances, nil
+}
+
+func withMergedSpeakerID(appearances []recordingSpeakerAppearance, mergedSpeakerId string) []recordingSpeakerAppearance {
+	for index := range appearances {
+		appearances[index].MergedSpeakerID = mergedSpeakerId
+	}
+	return appearances
+}
+
+// writeTemporarySpeakerCorrections names the appearances with the name, each
+// as the ordinary correction of its piece. The corrections are keyed by the
+// speaker that carries the name, so undoing that speaker's naming finds the
+// ones written for the labels merged into it as well.
+func (self *transaction) writeTemporarySpeakerCorrections(userId string, source *models.Recording, namedSpeakerId string, appearances []recordingSpeakerAppearance, confirmedName string, isAccountOwner bool) error {
+	nameDigest := sha256.Sum256([]byte(confirmedName))
+	// The account and the recording are locked by the caller, so each piece is corrected
+	// without taking the locks again. Each correction advances the generation.
+	for _, appearance := range appearances {
+		mergedKey := ""
+		if appearance.MergedSpeakerID != "" {
+			mergedKey = "-" + appearance.MergedSpeakerID
+		}
+		if err := self.tx.Raw("SELECT source_generation FROM recording WHERE id = ?", source.ID).Scan(&source.SourceGeneration).Error; err != nil {
+			return err
+		}
+		if _, err := self.correctRecordingSpeakerLocked(userId, source, RecordingSpeakerCorrectionInput{
+			RecordingID: source.ID, RecordingTranscriptionAttemptID: appearance.RecordingTranscriptionAttemptID, LocalSpeakerID: appearance.LocalSpeakerID,
+			// The key names the speaker, the piece and the name, so repeating a request is harmless and renaming is a new correction.
+			// A label merged into the speaker adds its own ID, since two labels of one piece would otherwise share a key.
+			ClientCorrectionID: temporarySpeakerKeyPrefix + namedSpeakerId + "-" + appearance.RecordingTranscriptionAttemptID + mergedKey + "-" + hex.EncodeToString(nameDigest[:4]),
+			ConfirmedName:      confirmedName, IsAccountOwner: isAccountOwner, ExpectedSourceGeneration: source.SourceGeneration, PassageStartMS: -1, PassageEndMS: -1,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// MergeRecordingTemporarySpeaker makes a label read as the voice of an earlier
+// one: the provider said they are the same person. The label's passages show
+// the earlier label, or its name once it has one, and its sample is no longer
+// sent. When the earlier speaker is already named, its passages read as that
+// name through the projection, as recognized rather than confirmed: the
+// provider made the merge, not the person, so no correction is written for it.
+func (self *transaction) MergeRecordingTemporarySpeaker(userId, recordingId, speakerLabel, intoSpeakerLabel string) error {
+	if speakerLabel == "" || intoSpeakerLabel == "" || speakerLabel == intoSpeakerLabel {
+		return ErrInvalidArguments
+	}
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return err
+	}
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	speaker, err := self.recordingTemporarySpeakerNamed(source.ID, speakerLabel)
+	if err != nil {
+		return err
+	}
+	target, err := self.recordingTemporarySpeakerNamed(source.ID, intoSpeakerLabel)
+	if err != nil {
+		return err
+	}
+	// A named speaker keeps its name and a merged one is already someone's.
+	if speaker.SpeakerIdentityID != nil || speaker.MergedIntoSpeakerID != nil {
+		return ErrInvalidArguments
+	}
+	root, err := self.recordingTemporarySpeakerRoot(target)
+	if err != nil {
+		return err
+	}
+	if root.ID == speaker.ID {
+		return ErrInvalidArguments
+	}
+	// Whatever was merged into this speaker follows it, so a pointer never has a chain of two.
+	if err := self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ? OR merged_into_temporary_speaker_id = ?", speaker.ID, speaker.ID).Update("merged_into_temporary_speaker_id", root.ID).Error; err != nil {
+		return err
+	}
+	return self.advanceRecordingSpeakerGeneration(source.ID)
+}
+
+// SeparateRecordingTemporarySpeaker undoes a merge: the label reads as its own
+// speaker again, and the corrections the merge wrote for it under the earlier
+// speaker's name are removed. The earlier speaker's own naming is left alone.
+func (self *transaction) SeparateRecordingTemporarySpeaker(userId, recordingId, speakerLabel string) error {
+	if speakerLabel == "" {
+		return ErrInvalidArguments
+	}
+	var owner userModel
+	if err := self.tx.Raw("SELECT * FROM \"user\" WHERE id = ? FOR UPDATE", userId).Scan(&owner).Error; err != nil {
+		return err
+	}
+	if err := self.lockRecordingReferenceDependents(userId, recordingId); err != nil {
+		return err
+	}
+	source, err := self.LockRecording(userId, recordingId)
+	if err != nil {
+		return err
+	}
+	speaker, err := self.recordingTemporarySpeakerNamed(source.ID, speakerLabel)
+	if err != nil {
+		return err
+	}
+	if speaker.MergedIntoSpeakerID == nil {
+		return ErrInvalidArguments
+	}
+	appearances, err := self.recordingTemporarySpeakerAppearances(source.ID, speaker)
+	if err != nil {
+		return err
+	}
+	for _, appearance := range appearances {
+		// Only the corrections the merge wrote carry the earlier speaker's key.
+		if err := self.tx.Model(&recordingSpeakerCorrectionModel{}).
+			Where("recording_id = ? AND NOT is_removed AND recording_transcription_attempt_id = ? AND local_speaker_id = ? AND client_correction_id LIKE ?", source.ID, appearance.RecordingTranscriptionAttemptID, appearance.LocalSpeakerID, temporarySpeakerKeyPrefix+*speaker.MergedIntoSpeakerID+"-%").
+			Update("is_removed", true).Error; err != nil {
+			return err
+		}
+	}
+	if err := self.tx.Model(&recordingTemporarySpeakerModel{}).Where("id = ?", speaker.ID).Update("merged_into_temporary_speaker_id", nil).Error; err != nil {
+		return err
+	}
+	return self.advanceRecordingSpeakerGeneration(source.ID)
+}
+
+// MarkRecordingTemporarySpeakerMergeChecked claims the provider's check of
+// whether the speaker is an earlier one, so it is asked once: the first call
+// wins and a later one, from another curation running at the same time, gets
+// ErrAlreadyExists.
+func (self *transaction) MarkRecordingTemporarySpeakerMergeChecked(userId, speakerId string) error {
+	var recordingId string
+	if err := self.tx.Raw(`SELECT recording.id FROM recording_temporary_speaker speaker JOIN recording ON recording.id = speaker.recording_id WHERE speaker.id = ? AND recording.user_id = ? AND recording.deleted_at IS NULL`, speakerId, userId).Scan(&recordingId).Error; err != nil {
+		return err
+	}
+	if recordingId == "" {
+		return ErrNotFound
+	}
+	claimed := self.tx.Exec(`UPDATE recording_temporary_speaker SET merge_checked_at = ? WHERE id = ? AND merge_checked_at IS NULL`, time.Now().UTC().Truncate(time.Microsecond), speakerId)
+	if claimed.Error != nil {
+		return claimed.Error
+	}
+	if claimed.RowsAffected == 0 {
+		return ErrAlreadyExists
+	}
+	return nil
+}
+
 // temporarySpeakerKeyPrefix starts the client correction ID of every correction
 // written by naming a temporary speaker: the prefix, the speaker's ID, the
-// piece's attempt ID, then the first bytes of the name's digest in hex.
+// piece's attempt ID, the ID of the label merged into the speaker when the
+// correction is for that label's passages, then the first bytes of the name's
+// digest in hex.
 const temporarySpeakerKeyPrefix = "temporary-speaker-"
 
 // TemporarySpeakerNamingOf reads the temporary speaker's ID and the name digest
@@ -286,10 +488,10 @@ func TemporarySpeakerNamingOf(clientCorrectionId string) (string, string) {
 	if !isTemporary {
 		return "", ""
 	}
-	// IDs are ULIDs and the digest is hex, so none of the three parts holds a hyphen.
+	// IDs are ULIDs and the digest is hex, so none of the parts holds a hyphen.
 	parts := strings.Split(rest, "-")
-	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
+	if len(parts) != 3 && len(parts) != 4 || slices.Contains(parts, "") {
 		return "", ""
 	}
-	return parts[0], parts[2]
+	return parts[0], parts[len(parts)-1]
 }

@@ -34,7 +34,8 @@ const (
 // the latest transcripts of the capture and skips a speaker the provider
 // recognized by one of the samples it was sent, a speaker the person named, and
 // one that already has a temporary label. A speaker with no clean passage yet
-// is left for a later piece; not finding one is not an error.
+// is left for a later piece; not finding one is not an error. Then each new
+// label is checked once against the earlier ones it may be another label for.
 func (self *Agent) curateRecordingTemporarySpeakers(ctx context.Context, userId, recordingId string, files storage.StreamFiles) error {
 	var source *models.Recording
 	var runs []*models.RecordingTranscriptRun
@@ -69,7 +70,7 @@ func (self *Agent) curateRecordingTemporarySpeakers(ctx context.Context, userId,
 			return err
 		}
 	}
-	return nil
+	return self.checkRecordingTemporarySpeakerMerges(ctx, userId, recordingId, latestRuns, files)
 }
 
 func (self *Agent) curateRecordingTemporarySpeakersOfRun(ctx context.Context, userId string, transcriptRun *models.RecordingTranscriptRun, files storage.StreamFiles) error {

@@ -83,7 +83,8 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 	// Each group keeps its own order; the groups are concatenated in priority order.
 	var namedCandidates, ownerCandidates, temporaryCandidates, otherCandidates []recordingReferenceCandidate
 	for _, temporarySpeaker := range temporarySpeakers {
-		if temporarySpeaker.RecordingBlobID == "" {
+		// A label merged into another is that voice, which is sent under the other's sample.
+		if temporarySpeaker.RecordingBlobID == "" || temporarySpeaker.MergedIntoTemporarySpeakerID != "" {
 			continue
 		}
 		candidate := recordingReferenceCandidate{SpeakerName: temporarySpeaker.SpeakerLabel, BlobID: temporarySpeaker.RecordingBlobID, DurationMS: temporarySpeaker.PassageEndMS - temporarySpeaker.PassageStartMS}
@@ -129,41 +130,56 @@ func (self *Agent) recordingSpeakerReferences(ctx context.Context, userId, recor
 		if candidate.SpeakerName == "" || selectedNames[candidate.SpeakerName] || candidate.DurationMS < 2000 || candidate.DurationMS > 10000 {
 			continue
 		}
-		var blob *models.RecordingBlob
-		err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-			blob, err = transaction.GetRecordingBlob(userId, candidate.BlobID)
-			return err
-		})
-		if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrRecordingDeleted) {
-			continue
-		}
+		content, isUsable, err := self.readRecordingSpeakerSample(ctx, userId, candidate.BlobID, files)
 		if err != nil {
 			return nil, nil, err
 		}
-		if !blob.IsStoredVerified || blob.RecordingBlobPurpose != models.RecordingBlobSpeakerReference || blob.BlobSizeBytes < 44 || blob.BlobSizeBytes > 320044 {
+		if !isUsable {
 			continue
-		}
-		stream, err := files.OpenFileRange(ctx, blob.ID, 0, blob.BlobSizeBytes)
-		if errors.Is(err, storage.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		content, readError := io.ReadAll(io.LimitReader(stream, blob.BlobSizeBytes+1))
-		_ = stream.Close()
-		if readError != nil {
-			return nil, nil, readError
-		}
-		digest := sha256.Sum256(content)
-		if int64(len(content)) != blob.BlobSizeBytes || hex.EncodeToString(digest[:]) != blob.BlobSHA256 {
-			return nil, nil, fmt.Errorf("recording voice reference failed its integrity check")
 		}
 		selectedNames[candidate.SpeakerName] = true
 		speakerReferences = append(speakerReferences, llm.SpeakerReference{SpeakerName: candidate.SpeakerName, MediaContentType: "audio/wav", MediaBytes: content, DurationMS: candidate.DurationMS})
-		referenceBlobIds = append(referenceBlobIds, blob.ID)
+		referenceBlobIds = append(referenceBlobIds, candidate.BlobID)
 	}
 	return speakerReferences, referenceBlobIds, nil
+}
+
+// readRecordingSpeakerSample reads the bytes of a voice sample after checking
+// that it is a verified speaker reference of a size a provider takes. A sample
+// that is missing, deleted or not yet written is not usable, which is not an
+// error: it is left out. One whose bytes fail the integrity check is an error.
+func (self *Agent) readRecordingSpeakerSample(ctx context.Context, userId, blobId string, files storage.StreamFiles) ([]byte, bool, error) {
+	var blob *models.RecordingBlob
+	err := self.settings.Database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		blob, err = transaction.GetRecordingBlob(userId, blobId)
+		return err
+	})
+	if errors.Is(err, db.ErrNotFound) || errors.Is(err, db.ErrRecordingDeleted) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if !blob.IsStoredVerified || blob.RecordingBlobPurpose != models.RecordingBlobSpeakerReference || blob.BlobSizeBytes < 44 || blob.BlobSizeBytes > 320044 {
+		return nil, false, nil
+	}
+	stream, err := files.OpenFileRange(ctx, blob.ID, 0, blob.BlobSizeBytes)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	content, readError := io.ReadAll(io.LimitReader(stream, blob.BlobSizeBytes+1))
+	_ = stream.Close()
+	if readError != nil {
+		return nil, false, readError
+	}
+	digest := sha256.Sum256(content)
+	if int64(len(content)) != blob.BlobSizeBytes || hex.EncodeToString(digest[:]) != blob.BlobSHA256 {
+		return nil, false, fmt.Errorf("recording voice reference failed its integrity check")
+	}
+	return content, true, nil
 }
 
 func spokenMS(temporarySpeakers []*models.RecordingTemporarySpeaker, blobId string) int64 {
