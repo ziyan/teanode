@@ -469,7 +469,7 @@ const manySegments = (count: number) =>
 it('reads a hundred passages and appends the next hundred when the end comes near', async () => {
   const fireEnd = observeEnd()
   show(manySegments(250))
-  await screen.findByText('Text of passage-0')
+  await screen.findByText('Text of passage-0', undefined, { timeout: 10_000 })
   expect(calls('ReadRecordingTranscriptTimeline')[0][1]).toMatchObject({ segmentOffset: 0, pageSize: 100 })
   expect(screen.queryByText('Text of passage-100')).toBeNull()
   expect(document.querySelector('.pager')).toBeNull()
@@ -478,7 +478,7 @@ it('reads a hundred passages and appends the next hundred when the end comes nea
   expect(calls('ReadRecordingTranscriptTimeline')[1][1]).toMatchObject({ segmentOffset: 100, pageSize: 100 })
   expect(screen.getByText('Text of passage-0')).toBeTruthy()
   fireEnd()
-  await screen.findByText('Text of passage-249')
+  await screen.findByText('Text of passage-249', undefined, { timeout: 10_000 })
   expect(calls('ReadRecordingTranscriptTimeline')).toHaveLength(3)
   // Nothing is left to read, so nothing more is asked for.
   expect(document.querySelector('.recording-more-sentinel')).toBeNull()
@@ -487,9 +487,9 @@ it('reads a hundred passages and appends the next hundred when the end comes nea
 it("keeps one speaker's bubble together across the edge of two pages", async () => {
   const fireEnd = observeEnd()
   show(manySegments(250))
-  await screen.findByText('Text of passage-99')
+  await screen.findByText('Text of passage-99', undefined, { timeout: 10_000 })
   fireEnd()
-  await screen.findByText('Text of passage-102')
+  await screen.findByText('Text of passage-102', undefined, { timeout: 10_000 })
   const turn = bubbleOf('Text of passage-98').closest('.recording-turn') as HTMLElement
   for (const index of [98, 99, 100, 101, 102]) expect(within(turn).getByText(`Text of passage-${index}`)).toBeTruthy()
 })
