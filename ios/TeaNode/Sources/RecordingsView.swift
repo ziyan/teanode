@@ -540,17 +540,20 @@ struct RecordingRowView: View {
                         recordedTime
                     }
                 }
-                ViewThatFits(in: .horizontal) {
-                    // At its own width, or the status wraps beside the duration
-                    // ("Record-ing") instead of moving below it.
-                    HStack(spacing: 6) {
-                        duration
-                        if row.status != .ready { RecordingStatusLabel(status: row.status) }
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                    VStack(alignment: .leading, spacing: 3) {
-                        duration
-                        if row.status != .ready { RecordingStatusLabel(status: row.status) }
+                // At the accessibility sizes the status goes below the length, as
+                // the title goes above the time: beside it, it wraps mid-word
+                // ("Record-ing").
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 3) {
+                            duration
+                            if row.status != .ready { RecordingStatusLabel(status: row.status) }
+                        }
+                    } else {
+                        HStack(spacing: 6) {
+                            duration
+                            if row.status != .ready { RecordingStatusLabel(status: row.status) }
+                        }
                     }
                 }
                 .font(.subheadline)
