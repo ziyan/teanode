@@ -122,8 +122,15 @@ struct ConversationView: View {
                     .padding()
                 }
             }
+            // A card that folds when answered shrinks the list under the
+            // scroll: the end is found again once the smaller card has been
+            // laid out, or the view is left past the content, blank.
             .onChange(of: model.sentCount) {
-                withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+                scrollPosition.scrollTo(edge: .bottom)
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+                }
             }
             // Read, or read again on coming back: opened at its end, where
             // the newest message is, whatever the lazy list measured first.

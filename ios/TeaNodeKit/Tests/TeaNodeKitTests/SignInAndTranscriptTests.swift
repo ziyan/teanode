@@ -268,6 +268,11 @@ final class TranscriptTests: XCTestCase {
                 kind: "note", runId: "", sequence: 0, noteKind: "herdr_answered",
                 noteDetail: #"{"computer":"a laptop","paneId":"w1:p1","questionFingerprint":"f1"}"#))
         XCTAssertEqual(transcript.lines[0].resolution, "2. No")
+
+        // Settled as soon as it was tapped; the answer did not go through, so it opens again.
+        transcript.reopen(cardId: transcript.lines[0].id)
+        XCTAssertFalse(transcript.lines[0].isDone)
+        XCTAssertEqual(transcript.lines[0].resolution, "")
     }
 
     func testAReplayedTurnIsNotDrawnTwice() {

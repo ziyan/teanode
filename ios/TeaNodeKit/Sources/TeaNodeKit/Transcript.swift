@@ -610,6 +610,14 @@ public struct Transcript: Sendable {
         }
     }
 
+    /// Opens a card again that was settled before its answer was sent, when the answer did not go through.
+    public mutating func reopen(cardId: String) {
+        if let index = lines.firstIndex(where: { $0.id == cardId }) {
+            lines[index].isDone = false
+            lines[index].resolution = ""
+        }
+    }
+
     /// Takes a card away that the server says is no longer waiting.
     public mutating func remove(cardId: String) {
         lines.removeAll { $0.id == cardId }

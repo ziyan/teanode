@@ -458,11 +458,17 @@ final class ConversationModel {
     /// what to type into it.
     @discardableResult
     func answerCodingQuestion(_ line: TranscriptLine, options: [CodingQuestion.Option], freeText: String?) async -> Bool {
-        guard let question = line.codingQuestion else { return false }
+        guard let question = line.codingQuestion, !line.isDone else { return false }
+        // The card shows the answer as soon as it is chosen: typing it into
+        // the session at the computer takes a few seconds, and a card that
+        // stays as it was looks like a tap that did nothing. It opens again
+        // if the answer does not go through.
+        let chosenWords = freeText ?? options.map(\.optionLabel).joined(separator: ", ")
+        transcript.settle(cardId: line.id, resolution: chosenWords)
+        sentCount += 1
         do {
             let answeredWith = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
-            transcript.settle(cardId: line.id, resolution: answeredWith)
-            sentCount += 1
+            transcript.settle(cardId: line.id, resolution: answeredWith.isEmpty ? chosenWords : answeredWith)
             return true
         } catch TeaNodeError.refused(let reason) where reason.contains("already answered") {
             // Answered at the computer, or by another device: the card folds
@@ -471,6 +477,7 @@ final class ConversationModel {
             // it fills in what it was answered with.
             transcript.settle(cardId: line.id, resolution: "")
         } catch {
+            transcript.reopen(cardId: line.id)
             sendProblemText = app.describe(error)
         }
         return false
