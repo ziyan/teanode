@@ -243,7 +243,6 @@ struct ReminderEditor: View {
                         }
                         .confirmationDialog("Delete “\(title)”?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                             Button("Delete reminder", role: .destructive) {
-                                guard let reminder else { return }
                                 Task {
                                     await model.delete(reminder)
                                     dismiss()

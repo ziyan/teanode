@@ -24,7 +24,6 @@ struct ServerServicesView: View {
                     Button("Review changes") { isReviewing = true }.disabled(isSaving)
                     .confirmationDialog("Apply service changes?", isPresented: $isReviewing, titleVisibility: .visible) {
                         Button("Apply changes") {
-                            guard let selection else { return }
                             isSaving = true
                             Task {
                                 defer { isSaving = false }
