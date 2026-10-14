@@ -1759,8 +1759,7 @@ struct CodingQuestionCard: View {
             .buttonStyle(.plain)
             .accessibilityHint(isShowingDetails ? Text("Hides the details") : Text("Shows the details"))
             if isShowingDetails {
-                MarkdownView(text: question.shownText)
-                    .font(.footnote)
+                CodingQuestionDetails(text: question.shownText)
             }
         }
     }
@@ -1786,8 +1785,7 @@ struct CodingQuestionCard: View {
                 Text(verbatim: question.headline)
                     .lineLimit(3)
                 if isShowingDetails {
-                    MarkdownView(text: question.shownText)
-                        .font(.footnote)
+                    CodingQuestionDetails(text: question.shownText)
                 }
                 VStack(spacing: 0) {
                     ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in
@@ -1827,6 +1825,25 @@ struct CodingQuestionCard: View {
                 }
             }
         }
+    }
+}
+
+/// CodingQuestionDetails is the whole of a coding session's question as the session wrote it: a command, a script, a
+/// diff. Read as Markdown, a script's comments became headings and its quotes and line breaks were taken apart, so it
+/// is shown as it is, in a fixed-width face, in a box that scrolls and whose text can be selected.
+struct CodingQuestionDetails: View {
+    let text: String
+
+    var body: some View {
+        ScrollView {
+            Text(verbatim: text)
+                .font(.footnote.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+        }
+        .frame(maxHeight: 280)
+        .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 10, style: .continuous))
     }
 }
 

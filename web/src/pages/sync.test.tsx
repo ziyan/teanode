@@ -77,3 +77,65 @@ it('retains the one-time setup receipt while refreshing credentials after profil
   finishCredentialRefresh?.({ ListSyncCredentials: [] })
   expect(await screen.findByRole('alertdialog', { name: 'Set up Fixture device' })).toBeTruthy()
 })
+
+it('lists the newest password first with its created time and last use', async () => {
+  const fixtureCredential = (id: string, createdAt: string, lastUsedAt: string | null) => ({
+    id,
+    credentialName: 'iPhone',
+    hasCalendarAccess: true,
+    hasRemindersAccess: false,
+    hasContactsAccess: false,
+    createdAt,
+    lastUsedAt,
+  })
+  vi.mocked(graphql).mockImplementation(async (document) => {
+    if (document.includes('ListSyncCredentials'))
+      return {
+        ListSyncCredentials: [
+          fixtureCredential('older', new Date(Date.now() - 5 * 86_400_000).toISOString(), null),
+          fixtureCredential(
+            'newer',
+            new Date(Date.now() - 86_400_000).toISOString(),
+            new Date(Date.now() - 5 * 60_000).toISOString(),
+          ),
+        ],
+      } as never
+    if (document.includes('GetDeviceSetupCapabilities'))
+      return {
+        GetDeviceSetupCapabilities: {
+          canSetUpMail: false,
+          canSetUpCalendar: true,
+          canSetUpReminders: false,
+          canSetUpContacts: false,
+          mailboxes: [],
+        },
+      } as never
+    throw new Error('Unexpected fixture query')
+  })
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <SessionProvider
+          value={{
+            userId: 'fixture-owner',
+            authenticated: true,
+            authenticationRequired: true,
+            username: 'fixture',
+            passkeysEnabled: false,
+          }}
+        >
+          <MemoryRouter initialEntries={['/settings/sync']}>
+            <SyncPage />
+          </MemoryRouter>
+        </SessionProvider>
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  await screen.findAllByText('iPhone')
+  const rows = Array.from(document.querySelectorAll('.settings-row-subtitle'))
+  expect(rows).toHaveLength(2)
+  expect(rows[0].textContent).toContain('Last used 5 minutes ago')
+  expect(rows[0].textContent).not.toContain('safe to delete')
+  expect(rows[1].textContent).toContain('Never used')
+  expect(rows[1].textContent).toContain('May be safe to delete')
+})

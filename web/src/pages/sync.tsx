@@ -7,6 +7,7 @@ import { SettingsSection, SettingsRow, SettingsEmpty, SecretDialog } from '../co
 import { TrashIcon } from '../components/icons'
 import { useQuery } from '../components/useQuery'
 import { useSession } from '../session'
+import { PasswordUsage, sortNewestFirst } from '../components/passwordUsage'
 import { useTranslation } from '../i18n/i18n'
 import { DeviceSetupDialog, DEVICE_SETUP_CAPABILITIES, type DeviceSetupCapabilities } from '../components/deviceSetup'
 
@@ -16,8 +17,10 @@ type Credential = {
   hasCalendarAccess: boolean
   hasRemindersAccess: boolean
   hasContactsAccess: boolean
+  createdAt: string
+  lastUsedAt?: string | null
 }
-const CREDENTIAL = `id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess`
+const CREDENTIAL = `id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess createdAt lastUsedAt`
 const LIST = `{ ListSyncCredentials { ${CREDENTIAL} } }`
 const CREATE = `mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!) {
  CreateSyncCredential(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess) { username password principalPath credential { ${CREDENTIAL} } }
@@ -130,9 +133,7 @@ function AccountDeviceSetupPage() {
           <Loading />
         ) : !canSetUp ? (
           <SettingsEmpty>{t('deviceSetup.noServices')}</SettingsEmpty>
-        ) : (
-          <p className="muted">{t('deviceSetup.selectionHint')}</p>
-        )}
+        ) : null}
       </SettingsSection>
       <SettingsSection
         card
@@ -153,17 +154,23 @@ function AccountDeviceSetupPage() {
       >
         <ErrorMessage error={error} />
         {!data?.ListSyncCredentials.length && <SettingsEmpty>{t('services.noDevices')}</SettingsEmpty>}
-        {data?.ListSyncCredentials.map((credential) => (
+        {sortNewestFirst(data?.ListSyncCredentials ?? []).map((credential) => (
           <SettingsRow
             key={credential.id}
             title={credential.credentialName}
-            subtitle={[
-              credential.hasCalendarAccess && t('nav.calendar'),
-              credential.hasRemindersAccess && t('services.remindersLabel'),
-              credential.hasContactsAccess && t('nav.contacts'),
-            ]
-              .filter(Boolean)
-              .join(', ')}
+            subtitle={
+              <>
+                {[
+                  credential.hasCalendarAccess && t('nav.calendar'),
+                  credential.hasRemindersAccess && t('services.remindersLabel'),
+                  credential.hasContactsAccess && t('nav.contacts'),
+                ]
+                  .filter(Boolean)
+                  .join(', ')}
+                <br />
+                <PasswordUsage password={credential} />
+              </>
+            }
             actions={
               <button
                 type="button"

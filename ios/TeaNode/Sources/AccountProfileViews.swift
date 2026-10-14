@@ -214,6 +214,42 @@ struct ChangePasswordView: View {
     }
 }
 
+/// DevicesView is the one place for connecting a device, as the dashboard's
+/// Devices page is: the TeaNode app on phones, and the built-in apps of this
+/// iPhone, which the setup profile fills with mail, calendars and contacts.
+struct DevicesView: View {
+    let connection: Connection
+
+    var body: some View {
+        List {
+            Section {
+                NavigationLink {
+                    PhonesView(connection: connection)
+                } label: {
+                    Label("Phones", systemImage: "iphone")
+                }
+            } header: {
+                Text("TeaNode app")
+            } footer: {
+                Text("The TeaNode app on your phones, and what each is told about.")
+            }
+            Section {
+                NavigationLink { DeviceSetupView(connection: connection) } label: {
+                    Label("Set up on this iPhone", systemImage: "iphone")
+                }
+                NavigationLink { SyncCredentialsView(connection: connection) } label: {
+                    Label("Sync passwords", systemImage: "key")
+                }
+            } header: {
+                Text("Built-in apps")
+            } footer: {
+                Text("Add mail, calendars, reminders and contacts to the apps already on an iPhone or Mac.")
+            }
+        }
+        .navigationTitle("Devices")
+    }
+}
+
 /// PhonesView is the phones the app is connected on: what each is told
 /// about, whether notifications reach it, a test, and removing one.
 struct PhonesView: View {

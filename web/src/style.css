@@ -2472,8 +2472,10 @@ pre.message-text {
     padding-right: max(8px, env(safe-area-inset-right));
   }
 
+  /* The bottom keeps 84 pixels free, as the toasts do, so the last row's
+     buttons can scroll clear of the agent's button instead of under it. */
   .content {
-    padding: var(--space-4) max(14px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom))
+    padding: var(--space-4) max(14px, env(safe-area-inset-right)) calc(84px + env(safe-area-inset-bottom))
       max(14px, env(safe-area-inset-left));
   }
 
@@ -3165,6 +3167,21 @@ body,
     width: 100%;
     justify-content: flex-end;
     flex-wrap: wrap;
+  }
+
+  /* A row whose only action is one icon keeps it beside the title: on a line
+     of its own it sat alone under an empty band, the row twice its height. */
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child) {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-body {
+    min-width: 0;
+  }
+
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
+    width: auto;
   }
 }
 
@@ -11847,6 +11864,20 @@ main.content:has(> .knowledge-frame) {
 .connect-here {
   display: inline-block;
   margin-top: var(--space-2);
+}
+
+.devices-group + .devices-group {
+  margin-top: var(--space-6);
+}
+.devices-group > h2 + .muted {
+  margin-bottom: var(--space-3);
+}
+
+.connect-back {
+  display: inline-block;
+  margin-top: var(--space-3);
+  color: var(--muted);
+  font-size: var(--text-label);
 }
 
 .authorize-grant {

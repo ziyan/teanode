@@ -97,8 +97,12 @@ struct SyncCredentialsView: View {
                 }
             }
             Section("Devices") {
-                ForEach(credentials) { credential in
-                    HStack { Text(credential.credentialName); Spacer(); Button("Revoke", role: .destructive) { revoking = credential }.disabled(isWorking) }
+                ForEach(credentials.newestFirst()) { credential in
+                    HStack {
+                        DevicePasswordRow(name: credential.credentialName, scopes: scopeText(credential), password: credential)
+                        Spacer()
+                        Button("Revoke", role: .destructive) { revoking = credential }.disabled(isWorking)
+                    }
                 }
             }
             if let problemText { Text(problemText).foregroundStyle(.red) }
@@ -113,6 +117,13 @@ struct SyncCredentialsView: View {
                 }
             }
         }
+    }
+    private func scopeText(_ credential: SyncCredential) -> String {
+        [
+            credential.hasCalendarAccess ? String(localized: "Calendar") : nil,
+            credential.hasRemindersAccess ? String(localized: "Reminders") : nil,
+            credential.hasContactsAccess ? String(localized: "Contacts") : nil,
+        ].compactMap { $0 }.joined(separator: ", ")
     }
     private func load() async { do { credentials = try await connection.syncCredentials() } catch { problemText = app.describe(error) } }
 }

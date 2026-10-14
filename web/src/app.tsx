@@ -1,5 +1,6 @@
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { RedirectKeepingQuery } from './components/redirectKeepingQuery'
 
 import { Session, framedDrawer, getSession, logout, signInWithToken } from './api'
 import { LoginPage } from './pages/login'
@@ -26,7 +27,6 @@ import { RecordingBar } from './recording/recordingBar'
 import { MailboxesProvider } from './mailboxes'
 import { homePath } from './services'
 import { ServiceGate } from './components/serviceGate'
-import { SyncPage } from './pages/sync'
 import { Tooltip } from './components/tooltip'
 
 // The pages somebody may never open are fetched when they do. What is left in
@@ -121,8 +121,8 @@ const PasskeysPage = lazyPage(async () => ({
 const TokensPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/tokens')).TokensPage,
 }))
-const PhonesPage = lazyPage(async () => ({
-  default: (await import(/* webpackChunkName: "account" */ './pages/settings/phones')).PhonesPage,
+const DevicesPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/settings/devices')).DevicesPage,
 }))
 const AppsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/settings/apps')).AppsPage,
@@ -487,7 +487,12 @@ export function App() {
 
                       {/* What configures the person signed in, which is a place you
                   go into from your own name at the foot of the rail. */}
-                      <Route path="/settings/sync" element={<SyncPage />} />
+                      {/* Phones and Device setup were two pages; they are the sections of
+                      Devices now. The old paths stay for bookmarks and for links already
+                      sent (a chat reply from the agent, an older app), and carry the
+                      query along: ?setup=1&mailboxId= opens the setup dialog. */}
+                      <Route path="/settings/sync" element={<RedirectKeepingQuery to="/settings/devices" />} />
+                      <Route path="/settings/phones" element={<RedirectKeepingQuery to="/settings/devices" />} />
                       <Route path="/settings" element={<Navigate to={SETTINGS_LANDING} replace />} />
                       <Route path="/settings/preference" element={<ProfilePage onSaved={refresh} />} />
                       {/* The person's own agent, in tabs of its own: a link that
@@ -513,7 +518,7 @@ export function App() {
                       <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                       <Route path="/settings/passkeys" element={<PasskeysPage />} />
                       <Route path="/settings/tokens" element={<TokensPage />} />
-                      <Route path="/settings/phones" element={<PhonesPage />} />
+                      <Route path="/settings/devices" element={<DevicesPage />} />
                       <Route path="/settings/apps" element={<AppsPage />} />
                       <Route path="/settings/sessions" element={<SessionsPage onSignedOut={refresh} />} />
 
