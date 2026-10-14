@@ -35,6 +35,11 @@ its pull request is opened.
   `.bordered` one when there is a second. Toolbar actions are toolbar items.
   `.glass` and `.glassProminent` only on controls floating over content.
   A screen has at most one prominent button.
+- A confirmation (`.confirmationDialog`) is attached to the control that asks
+  for it: the row button, the swipe action or the toolbar button. On iOS 26 it
+  opens as a popover pointing at that view, so one attached to the Form or the
+  screen points at the wrong place. When the trigger is an item in a `Menu`,
+  attach it to the `Menu`, since the item goes away with the menu.
 - Never put glass on content: a message, a card, a list row. Content sits on
   the plain background; glass sits on top of it.
 - Let a tab bar get out of the way while reading
