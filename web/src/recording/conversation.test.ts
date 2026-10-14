@@ -266,3 +266,43 @@ it('draws no bubble for a passage of only filler', () => {
   ])
   expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([['a1', 'a2']])
 })
+
+it("folds a named person's word thrown into the middle of another's sentence", () => {
+  const named = (name: string) => ({
+    hasUserConfirmedSpeaker: true,
+    effectiveSpeakerIdentityId: `identity-${name}`,
+    effectiveSpeakerName: name,
+  })
+  const groups = groupConversation([
+    segmentFixture({
+      id: 'f1',
+      ...named('First'),
+      segmentStartMS: 0,
+      segmentEndMS: 3000,
+      transcriptText: 'Did the crates come in from the',
+    }),
+    segmentFixture({ id: 'f2', ...named('Second'), segmentStartMS: 3000, segmentEndMS: 3400, transcriptText: 'Wait,' }),
+    segmentFixture({
+      id: 'f3',
+      ...named('First'),
+      segmentStartMS: 3400,
+      segmentEndMS: 5000,
+      transcriptText: 'second dock this morning?',
+    }),
+    segmentFixture({ id: 'f4', ...named('Second'), segmentStartMS: 5000, segmentEndMS: 5400, transcriptText: 'Yes.' }),
+    segmentFixture({
+      id: 'f5',
+      ...named('First'),
+      segmentStartMS: 5400,
+      segmentEndMS: 9000,
+      transcriptText: 'Good, then we can start the count.',
+    }),
+  ])
+  // The word thrown into an unfinished sentence stays in it; the answer to a
+  // finished question stays an answer.
+  expect(groups.map((group) => group.segments.map((segment) => segment.id))).toEqual([
+    ['f1', 'f2', 'f3'],
+    ['f4'],
+    ['f5'],
+  ])
+})

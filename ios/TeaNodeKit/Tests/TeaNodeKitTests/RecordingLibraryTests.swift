@@ -234,6 +234,23 @@ final class RecordingConversationTests: XCTestCase {
         XCTAssertEqual(RecordingConversation.bubbles(passages).map(\.id), ["s1"])
     }
 
+    func testANamedPersonsWordInAnothersSentenceFoldsButAnAnswerStands() {
+        func at(_ id: String, _ start: Int64, _ end: Int64, _ name: String, _ text: String) -> RecordingTranscriptSegment {
+            RecordingTranscriptSegment(
+                id: id, recordingTranscriptRunId: "run-a", recordingTranscriptionAttemptId: "attempt-a", localSpeakerId: name,
+                segmentStartMS: start, segmentEndMS: end, transcriptText: text, effectiveSpeakerIdentityId: "identity-" + name,
+                effectiveSpeakerName: name, hasUserConfirmedSpeaker: true, isAccountOwner: false)
+        }
+        let bubbles = RecordingConversation.bubbles([
+            at("f1", 0, 3000, "First", "Did the crates come in from the"),
+            at("f2", 3000, 3400, "Second", "Wait,"),
+            at("f3", 3400, 5000, "First", "second dock this morning?"),
+            at("f4", 5000, 5400, "Second", "Yes."),
+            at("f5", 5400, 9000, "First", "Good, then we can start the count."),
+        ])
+        XCTAssertEqual(bubbles.map { $0.segments.map(\.id) }, [["f1", "f2", "f3"], ["f4"], ["f5"]])
+    }
+
     func testSpeakerLettersRunPastTheAlphabetIntoNumbers() {
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 0), "A")
         XCTAssertEqual(RecordingConversation.speakerLetter(ordinal: 25), "Z")
