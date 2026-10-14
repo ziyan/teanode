@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.9] - 2026-10-14
+
+### Fixed
+
+- Recordings: naming a speaker no longer keeps voice samples from pieces where only the provider said who was speaking, so another person's voice is not learned under the name. (#493)
+
 ## [0.159.8] - 2026-10-14
 
 ### Fixed
