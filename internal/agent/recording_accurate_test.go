@@ -254,6 +254,18 @@ func TestATurnsWordsAreSharedOutByTime(test *testing.T) {
 	}
 }
 
+func TestASecondReadingThatIsNotWhatWasSaidKeepsTheFirstWords(test *testing.T) {
+	first := []*models.RecordingTranscriptSegment{{ID: "a", SegmentStartMS: 0, SegmentEndMS: 6000, TranscriptText: "the fixture lift moves the crate onto the second shelf before noon"}}
+	for _, accurateText := range []string{`{"lift":"shelf"}`, `["crate"]`, "the crate", strings.Repeat("the fixture lift moves the crate onto the second shelf ", 3)} {
+		if texts := splitRecordingTurnText(accurateText, first); texts != nil {
+			test.Fatalf("%q replaced the first reading: %q", accurateText, texts)
+		}
+	}
+	if texts := splitRecordingTurnText("The fixture lift moves the crate onto the second shelf before noon.", first); texts["a"] == "" {
+		test.Fatal("a faithful second reading was refused")
+	}
+}
+
 func TestTheEndOfTheTurnBeforeStartsAtAWord(test *testing.T) {
 	text := strings.Repeat("alpha beta ", 40)
 	tail := recordingTurnContext(text, recordingTurnContextCharacters)

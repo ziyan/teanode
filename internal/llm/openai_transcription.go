@@ -83,7 +83,9 @@ func (self *openAI) Transcribe(ctx context.Context, request *TranscriptionReques
 	if err := writeField("response_format", responseFormat); err != nil {
 		return nil, err
 	}
-	if capabilities.HasSpeakerDiarization {
+	// Without it a model may end its answer at the first long pause and leave
+	// the rest of the audio out; whisper-1 cuts the audio itself.
+	if request.Model != "whisper-1" {
 		if err := writeField("chunking_strategy", "auto"); err != nil {
 			return nil, err
 		}

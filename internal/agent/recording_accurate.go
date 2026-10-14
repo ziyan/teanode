@@ -343,7 +343,7 @@ func isRecordingSentenceEnd(token string) bool {
 // passages keep their first words.
 func splitRecordingTurnText(accurateText string, segments []*models.RecordingTranscriptSegment) map[string]string {
 	accurateText = strings.TrimSpace(accurateText)
-	if accurateText == "" || len(segments) == 0 {
+	if accurateText == "" || len(segments) == 0 || !isPlausibleAccurateText(accurateText, segments) {
 		return nil
 	}
 	if len(segments) == 1 {
@@ -403,6 +403,32 @@ func splitRecordingTurnText(accurateText string, segments []*models.RecordingTra
 	}
 	return texts
 }
+
+// isPlausibleAccurateText says whether the second reading of a turn can stand
+// for the first. A transcription model can answer with something other than
+// what was said: a few words of it wrapped as data, or text the audio does not
+// hold. Such an answer keeps the first words: one that looks like data, one
+// that lost more than half of the first reading's words, and one with more
+// than twice as many.
+func isPlausibleAccurateText(accurateText string, segments []*models.RecordingTranscriptSegment) bool {
+	if (strings.HasPrefix(accurateText, "{") && strings.HasSuffix(accurateText, "}")) || (strings.HasPrefix(accurateText, "[") && strings.HasSuffix(accurateText, "]")) {
+		return false
+	}
+	firstWordCount := 0
+	for _, segment := range segments {
+		words, _ := recordingWords(recordingTextTokens(segment.TranscriptText))
+		firstWordCount += len(words)
+	}
+	accurateWords, _ := recordingWords(recordingTextTokens(accurateText))
+	if firstWordCount < recordingPlausibleWordsMinimum {
+		return true
+	}
+	return 2*len(accurateWords) >= firstWordCount && len(accurateWords) <= 2*firstWordCount
+}
+
+// Below this many words, a first reading is too short to judge a second one
+// by its share of them.
+const recordingPlausibleWordsMinimum = 4
 
 // recordingWords are the words of a text, lowercase letters and digits only, so
 // "person-our" and "person. Our" both read as person, our. Each word carries
