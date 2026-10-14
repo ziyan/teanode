@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.155.1] - 2026-10-14
+
+### Changed
+
+- A recording's summary is written again a few minutes after you name speakers or correct its words. (#481)
+- In a meeting of more than four people, a speaker heard recently keeps the same label in the next piece more often. (#481)
+
 ## [0.155.0] - 2026-10-14
 
 ### Added
