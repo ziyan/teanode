@@ -328,12 +328,6 @@ struct SettingsForm: View {
             AccountsSection()
             if let connection = app.connection {
                 Section("Your account") {
-                    NavigationLink { DeviceSetupView(connection: connection) } label: {
-                        Label("Set up on this iPhone", systemImage: "iphone")
-                    }
-                    NavigationLink { SyncCredentialsView(connection: connection) } label: {
-                        Label("Sync passwords", systemImage: "key")
-                    }
                     NavigationLink {
                         PreferencesView(connection: connection)
                     } label: {
@@ -350,11 +344,6 @@ struct SettingsForm: View {
                         Label("Passkeys", systemImage: "person.badge.key")
                     }
                     NavigationLink {
-                        PhonesView(connection: connection)
-                    } label: {
-                        Label("Phones", systemImage: "iphone")
-                    }
-                    NavigationLink {
                         SessionsView(connection: connection)
                     } label: {
                         Label("Sessions", systemImage: "macbook.and.iphone")
@@ -363,6 +352,11 @@ struct SettingsForm: View {
                         TokensView(connection: connection)
                     } label: {
                         Label("API tokens", systemImage: "terminal")
+                    }
+                    NavigationLink {
+                        DevicesView(connection: connection)
+                    } label: {
+                        Label("Devices", systemImage: "iphone")
                     }
                     NavigationLink {
                         ConnectedAppsView(connection: connection)
@@ -442,7 +436,7 @@ struct SettingsForm: View {
                     isConfirmingSignOut = true
                 }
             } footer: {
-                Text("To manage what this phone is told about, open Settings, then Phones, on your dashboard.")
+                Text("To manage what this phone is told about, open Settings, then Devices, on your dashboard.")
             }
             Section("About") {
                 LabeledContent("Version", value: Self.version)
@@ -488,6 +482,7 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
+                case "devices": DevicesView(connection: connection)
                 case "rules":
                     if let mail {
                         MailRulesView(mail: mail, mailboxId: mail.mailbox?.id ?? "")

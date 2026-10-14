@@ -3749,6 +3749,22 @@
         }
       }
     },
+    "Add mail, calendars, reminders and contacts to the apps already on an iPhone or Mac.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone や Mac にあるアプリに、メール、カレンダー、リマインダー、連絡先を追加します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将邮件、日历、提醒事项和联系人添加到 iPhone 或 Mac 上已有的应用。"
+          }
+        }
+      }
+    },
     "API key": {
       "localizations": {
         "ja": {
@@ -7569,6 +7585,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "内置，在本服务器内评分"
+          }
+        }
+      }
+    },
+    "Built-in apps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準アプリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内置应用"
           }
         }
       }
@@ -16021,18 +16053,18 @@
         }
       }
     },
-    "In the dashboard, open Settings, then Phones, and choose Connect a phone.": {
+    "In the dashboard, open Settings, then Devices, and choose Connect a phone.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ダッシュボードで設定を開き、電話を選んで、電話を接続を選びます。"
+            "value": "ダッシュボードで「設定」の「デバイス」を開き、「スマートフォンを接続」を選びます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在仪表板中打开设置，再打开手机，选择连接手机。"
+            "value": "在仪表板中打开设置，再打开设备，选择连接手机。"
           }
         }
       }
@@ -33541,6 +33573,22 @@
         }
       }
     },
+    "TeaNode app": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode アプリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 应用"
+          }
+        }
+      }
+    },
     "TeaNode could not ask your server what it runs. Check the connection and try again.": {
       "localizations": {
         "ja": {
@@ -33569,6 +33617,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "转写服务的响应丢失了，因此这段录音没有转写。重新转写会是一次新的付费请求。"
+          }
+        }
+      }
+    },
+    "The TeaNode app on your phones, and what each is told about.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スマートフォンの TeaNode アプリと、それぞれに知らせる内容です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机上的 TeaNode 应用，以及每部手机收到哪些通知。"
           }
         }
       }
@@ -36952,18 +37016,18 @@
         }
       }
     },
-    "To manage what this phone is told about, open Settings, then Phones, on your dashboard.": {
+    "To manage what this phone is told about, open Settings, then Devices, on your dashboard.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この電話に届く通知を管理するには、ダッシュボードの「設定」から「電話」を開いてください。"
+            "value": "この電話に届く通知を管理するには、ダッシュボードの「設定」から「デバイス」を開いてください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "要管理这部手机收到哪些通知，请在控制台打开“设置”中的“手机”。"
+            "value": "要管理这部手机收到哪些通知，请在控制台打开“设置”中的“设备”。"
           }
         }
       }

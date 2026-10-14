@@ -196,6 +196,8 @@ jobs:
           shoot dns-records-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
           shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
           shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions
+          shoot devices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen devices
+          shoot devices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen devices
           shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
