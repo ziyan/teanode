@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.0] - 2026-10-14
+
+### Added
+
+- The tax year previews interest and dividends from your linked accounts until the 1099s come, takes a year's settings (children, child care, other household income, gifts, property and state taxes, gains so far), reads Form 1098, itemizes when that is larger (mortgage interest up to the debt limit, gifts by 2026's rules), and takes the child tax credit and the child and dependent care credit. (#482)
+
+### Fixed
+
+- A long recording no longer stops being transcribed partway through. (#483)
+
 ## [0.158.1] - 2026-10-14
 
 ### Fixed
