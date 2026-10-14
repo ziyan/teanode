@@ -68,6 +68,10 @@ type AgentPhoneView struct {
 	PhoneName  string `json:"phoneName"`
 	PhoneModel string `json:"phoneModel"`
 
+	// PhoneModelName is PhoneModel as people say it, such as iPhone 17 Pro
+	// Max; the identifier itself when it is not one we know
+	PhoneModelName string `json:"phoneModelName"`
+
 	// NotificationKinds it receives; every kind when it chose none
 	NotificationKinds []string `json:"notificationKinds"`
 
@@ -125,7 +129,8 @@ func phoneView(phone *models.AgentPhone) *AgentPhoneView {
 		kinds = models.NotificationKinds
 	}
 	return &AgentPhoneView{
-		ID: phone.ID, PhoneName: phone.PhoneName, PhoneModel: phone.PhoneModel, NotificationKinds: kinds,
+		ID: phone.ID, PhoneName: phone.PhoneName, PhoneModel: phone.PhoneModel,
+		PhoneModelName: models.PhoneModelName(phone.PhoneModel), NotificationKinds: kinds,
 		CanBeNotified: phone.CanBeNotified(), CreatedAt: phone.CreatedAt, LastSeenAt: phone.LastSeenAt,
 		LastDeliveredAt: phone.LastDeliveredAt, LastDeliveryError: phone.LastDeliveryError,
 	}
