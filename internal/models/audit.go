@@ -117,6 +117,8 @@ const (
 	AuditResourceFinanceAccount     AuditResourceType = "finance_account"     // renamed or deleted by the person; a sync's writes are not audited
 	AuditResourceFinanceTransaction AuditResourceType = "finance_transaction" // annotated by the person or their agent
 	AuditResourceFinanceReceipt     AuditResourceType = "finance_receipt"     // and its lines and matches
+	AuditResourceFinancePaystub     AuditResourceType = "finance_paystub"     // and its lines
+	AuditResourceFinanceTaxForm     AuditResourceType = "finance_tax_form"    // and its boxes
 )
 
 // AuditRedactor is implemented by a model that carries a secret, so the secret

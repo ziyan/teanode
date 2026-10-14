@@ -17,6 +17,32 @@ CI runs `make lint-ci`, which is golangci-lint only. A local check enforces this
 project's naming conventions and is local-only, so a contributor without it is
 never blocked; run it anyway if you have it.
 
+## Building a feature
+
+A feature is done when all of these hold, not when the code compiles.
+
+- **Coordinate with what is in flight.** Before starting, read the open pull
+  requests and the plans under `docs/planning/` for work on the same tables,
+  files or screens. Build on it or settle an order instead of colliding.
+  Rebase onto `main` before opening, and renumber a migration if `main` took
+  its number meanwhile.
+- **Every surface, the same behavior.** A capability ships on the dashboard,
+  the agent's tools, the command line and the iPhone app together, through
+  the same GraphQL operation, with the same names and the same refusals. The
+  parity tests check the command line and tool names against the operation's;
+  the iPhone app follows `ios/DESIGN.md`.
+- **Follow the closest existing feature.** Copy the shape of its tables,
+  operations, job, tool entries and pages, and reuse the words it already
+  uses for the same idea. A new word for an old idea, or a convention no
+  neighbor uses, needs a reason in the pull request.
+- **Look at it.** Walk every screen the change touches on a running server, at
+  desktop and phone widths, in light and dark, from real screenshots: spacing,
+  alignment, rows that cannot be told apart, text that overflows, a way back.
+  Fix what you find before asking for review.
+- **Review it, then fix what the review finds.** Read the whole diff as a
+  reviewer would, or have one read it, and fix every finding before calling it
+  done; a finding left open says why in the pull request.
+
 ## Naming
 
 These are not negotiable, and `make lint` checks most of them.
