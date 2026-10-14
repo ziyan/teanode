@@ -436,3 +436,18 @@ func TestUndoingATemporarySpeakerNamingReachesEveryPieceAndLaterOnes(test *testi
 		}
 	})
 }
+
+func TestTemporarySpeakerNamingOfReadsBothKeyShapes(test *testing.T) {
+	for _, fixture := range []struct{ key, speakerId, nameDigest string }{
+		{"temporary-speaker-s1-a1-1234abcd", "s1", "1234abcd"},
+		{"temporary-speaker-s1-a1-s2-1234abcd", "s1", "1234abcd"},
+		{"temporary-speaker-s1-a1", "", ""},
+		{"temporary-speaker-s1--1234abcd", "", ""},
+		{"temporary-speaker-s1-a1-s2-s3-1234abcd", "", ""},
+		{"another-key", "", ""},
+	} {
+		if speakerId, nameDigest := db.TemporarySpeakerNamingOf(fixture.key); speakerId != fixture.speakerId || nameDigest != fixture.nameDigest {
+			test.Fatal("a key was read wrong", fixture.key, speakerId, nameDigest)
+		}
+	}
+}

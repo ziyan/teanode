@@ -61,6 +61,12 @@ type RecordingTemporarySpeaker struct {
 	// SpeakerIdentityID is the confirmed identity once the person has named this speaker.
 	SpeakerIdentityID string    `json:"speakerIdentityId"`
 	CreatedAt         time.Time `json:"-"`
+	// MergedIntoTemporarySpeakerID is the speaker this label was found to be
+	// the voice of, when the provider said so; empty for a label that stands on its own.
+	MergedIntoTemporarySpeakerID string `json:"-"`
+	// MergeCheckedAt is when the provider was asked whether this label is an
+	// earlier one, set whether or not it said so, so each label is asked once.
+	MergeCheckedAt *time.Time `json:"-"`
 	// LastHeardEndMS is the timeline millisecond this speaker was last heard, filled when listed.
 	LastHeardEndMS int64 `json:"-" gorm:"-"`
 	// SpokenMS is how long this speaker has spoken in the recording so far, filled when listed.

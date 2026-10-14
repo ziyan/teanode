@@ -2,6 +2,8 @@ package db
 
 import (
 	"fmt"
+	"slices"
+
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -34,6 +36,7 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 		segment.HasUnalignedSpeakerCorrection = false
 		segment.AppliedSpeakerCorrectionID = ""
 		segment.TemporarySpeakerLabel = ""
+		segment.MergedTemporarySpeakerLabel = ""
 		recognized, isRead := recognizedByAttemptID[segment.RecordingTranscriptionAttemptID]
 		if !isRead {
 			var err error
@@ -82,14 +85,20 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 			if !isSourcePassage && !isSentSample {
 				continue
 			}
-			if identityId := optionalString(temporarySpeaker.SpeakerIdentityID); identityId != "" {
+			// A label that was merged reads as the speaker it was merged into,
+			// and keeps its own label so the person can separate it again.
+			shownSpeaker := resolveMergedTemporarySpeaker(temporarySpeaker, temporarySpeakers)
+			if shownSpeaker != temporarySpeaker {
+				segment.MergedTemporarySpeakerLabel = temporarySpeaker.SpeakerLabel
+			}
+			if identityId := optionalString(shownSpeaker.SpeakerIdentityID); identityId != "" {
 				segment.EffectiveSpeakerIdentityID = identityId
 				segment.EffectiveSpeakerName = confirmedNames[identityId]
 				segment.IsRecognizedSpeaker = true
 				segment.IsAccountOwner = isOwnerByIdentityID[identityId]
 			} else {
-				segment.TemporarySpeakerLabel = temporarySpeaker.SpeakerLabel
-				segment.EffectiveSpeakerName = temporarySpeaker.SpeakerLabel
+				segment.TemporarySpeakerLabel = shownSpeaker.SpeakerLabel
+				segment.EffectiveSpeakerName = shownSpeaker.SpeakerLabel
 			}
 			break
 		}
@@ -147,6 +156,25 @@ func (self *transaction) ProjectRecordingSpeakerCorrections(userId string, segme
 		}
 	}
 	return nil
+}
+
+// resolveMergedTemporarySpeaker is the speaker a label reads as: itself, or the
+// one it was merged into. A merge points at the root, so this is one step; the
+// loop is bounded so a pointer that loops back cannot hang a read.
+func resolveMergedTemporarySpeaker(speaker *recordingTemporarySpeakerModel, temporarySpeakers []*recordingTemporarySpeakerModel) *recordingTemporarySpeakerModel {
+	for range len(temporarySpeakers) {
+		if speaker.MergedIntoSpeakerID == nil {
+			return speaker
+		}
+		mergedInto := slices.IndexFunc(temporarySpeakers, func(candidate *recordingTemporarySpeakerModel) bool {
+			return candidate.ID == *speaker.MergedIntoSpeakerID
+		})
+		if mergedInto < 0 {
+			return speaker
+		}
+		speaker = temporarySpeakers[mergedInto]
+	}
+	return speaker
 }
 
 // Request-local IDs never cross an attempt. Later versions additionally require
