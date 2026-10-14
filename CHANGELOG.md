@@ -6,6 +6,15 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.155.0] - 2026-10-14
+
+### Added
+
+- Paystubs and W-2s: hand them in as PDFs or photos on the Taxes tab, in the iPhone app, from a message, with `teanode finance read-tax-document` or by asking the agent; each is read, checked, and put together into the tax year, with what is projected to December 31 and what is missing. Only the last four digits of a taxpayer number are kept. (#472)
+- The server reads the text of an uploaded PDF, and shows a scanned one to the model as pictures, so a PDF receipt no longer needs a photo. (#472)
+- The tax year estimates the tax owed on its wages beside what was withheld, as a ring with each share of pay, for a filing status you keep; projected 401(k) contributions stop at the yearly limit. (#472)
+- A tax document address: mail or forward paystubs and W-2s to it and each is read; shown on the Taxes tab, in the iPhone app, by `teanode finance tax-document-address` and by the agent. (#472)
+
 ## [0.154.6] - 2026-10-14
 
 ### Fixed
