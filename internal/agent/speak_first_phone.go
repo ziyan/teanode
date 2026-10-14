@@ -55,17 +55,27 @@ func (self *Agent) phoneTourReason() speakFirstReason {
 // untouredPhone is the newest phone connected within phoneTourWithin and
 // not shown around yet, or, when the person asked for the tour, their newest
 // phone whatever its state; nil when there is none.
+//
+// Signing in again connects the same phone anew, with a new record: a phone
+// of the same name and model as one already shown around is that phone, and
+// is not shown around again unless they ask.
 func untouredPhone(tx db.Transaction, agentId string, now time.Time, isAsked bool) (*models.AgentPhone, error) {
 	phones, err := tx.ListAgentPhones(agentId)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(phones, func(first, second int) bool { return phones[first].CreatedAt.After(phones[second].CreatedAt) })
+	isToured := map[string]bool{}
+	for _, phone := range phones {
+		if phone.TouredAt != nil {
+			isToured[phone.PhoneName+"\x00"+phone.PhoneModel] = true
+		}
+	}
 	for _, phone := range phones {
 		if isAsked {
 			return phone, nil
 		}
-		if phone.TouredAt == nil && now.Sub(phone.CreatedAt) < phoneTourWithin {
+		if phone.TouredAt == nil && now.Sub(phone.CreatedAt) < phoneTourWithin && !isToured[phone.PhoneName+"\x00"+phone.PhoneModel] {
 			return phone, nil
 		}
 	}
@@ -118,7 +128,7 @@ func phoneTourInstructions(facts phoneTourFacts) string {
 		offers = append(offers, "Their mail, calendars and contacts in the iPhone's own apps: the account tool's set_up_phone_mail action takes them to where one tap sets it up.")
 	}
 	lines := []string{
-		"Greet them on the new phone in a sentence, then offer these one at a time, a short message each, waiting for them to say yes, no or enough before the next:",
+		"Greet them on the new phone in a sentence, then offer these one at a time, waiting for them to say yes, no or enough before the next. Each offer is the question of one ask_user call, with nothing written beside it, and is offered once: after they answer, go on to the next item, never to the one just asked.",
 		"",
 	}
 	for index, offer := range offers {
