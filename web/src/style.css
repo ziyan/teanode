@@ -13574,8 +13574,10 @@ button.idea-history-title {
 /* A name, an amount and its share of pay. The columns meet with no gap,
    each figure padded off the one before, so a total's rule runs across
    the line unbroken. */
+/* Any width beyond the figures goes to the names, so on a phone the
+   amounts and shares stay together at the right edge. */
 .finance-tax-estimate .finance-worth-line {
-  grid-template-columns: max-content auto auto;
+  grid-template-columns: 1fr auto auto;
   column-gap: 0;
 }
 
@@ -13583,10 +13585,14 @@ button.idea-history-title {
   padding-left: var(--space-4);
 }
 
+/* The share stretches to its row's height like the cells beside it, so a
+   total's rule sits level across the line, its smaller figure centred. */
 .finance-tax-estimate .finance-worth-line .finance-tax-share {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   padding-left: var(--space-3);
   font-size: var(--text-label);
-  align-self: center;
 }
 
 /* On a phone the ring is centred on its own line and the two lists under
