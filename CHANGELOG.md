@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.159.3] - 2026-10-14
+
+### Fixed
+
+- On the iPhone at the largest text sizes, a recording's status in the list no longer breaks mid-word. (#486)
+
 ## [0.159.2] - 2026-10-14
 
 ### Fixed
