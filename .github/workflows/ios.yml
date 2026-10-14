@@ -4,17 +4,10 @@ name: iOS
 # tests run on Linux, and the app is built on GitHub's macOS runners, which
 # are free for a public repository.
 on:
-  # Main, and branches named ios/..., which also go to TestFlight so a
-  # change can be tried on a phone before it merges.
-  push:
-    branches: [main, "ios/**"]
-    paths:
-      - "ios/**"
-      - ".github/workflows/ios.yml"
+  # Every pull request, so the checks are there to be required; one that
+  # does not touch the app skips the build at once (see changes). By hand,
+  # on any branch, for a build that also goes to TestFlight.
   pull_request:
-    paths:
-      - "ios/**"
-      - ".github/workflows/ios.yml"
   workflow_dispatch:
 
 concurrency:
@@ -25,8 +18,35 @@ permissions:
   contents: read
 
 jobs:
+  # Whether a pull request touches the app. A required check that never
+  # reports holds a pull request forever, so the workflow runs on every one
+  # and the builds are skipped, which counts as passing, when nothing in
+  # ios/ changed.
+  changes:
+    name: App changes
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.diff.outputs.ios }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$EVENT_NAME" != pull_request ] || git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -qE '^(ios/|\.github/workflows/ios\.yml$)'; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ios=false" >> "$GITHUB_OUTPUT"
+          fi
+
   kit:
     name: TeaNodeKit on Linux
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: ubuntu-latest
     container: swift:6.1
     steps:
@@ -38,6 +58,8 @@ jobs:
 
   app:
     name: App on macOS
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -18,7 +18,11 @@ Without a Mac, test the package in Swift's own container:
     cd ios/TeaNodeKit
     docker run --rm -v "$PWD":/package -w /package swift:6.1 swift test --scratch-path /tmp/build
 
-Every pull request that touches `ios/` is also built on GitHub's macOS runners (`.github/workflows/ios.yml`).
+Every pull request that touches `ios/` is built on GitHub's macOS runners (`.github/workflows/ios.yml`), and the build must pass before it merges: it builds the app, photographs the screens and checks them. A pull request that does not touch `ios/` skips the build. A build for TestFlight is started by hand, on any branch, from the Actions tab's Run workflow button or with
+
+    gh workflow run ios.yml --ref <branch>
+
+A newer build of the same branch or pull request replaces one still running.
 
 On a Mac with Xcode 26 and XcodeGen (`brew install xcodegen`):
 
