@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.160.0] - 2026-10-14
+
+### Added
+
+- Recordings: a voice that comes back under a new speaker label in a later piece is merged into its earlier label automatically, and a merge can be separated again. (#495)
+
 ## [0.159.9] - 2026-10-14
 
 ### Fixed
