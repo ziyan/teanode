@@ -179,25 +179,40 @@ func spokenMS(temporarySpeakers []*models.RecordingTemporarySpeaker, blobId stri
 // pieces say who has just been speaking.
 const recordingRecentPieceCount = 2
 
-// recentRecordingSpeakerNames are the names the speakers of the latest
-// finished pieces of a recording go by, the confirmed name or the temporary
-// label, which is the name their sample is sent under.
+// recentRecordingSpeakerNames are the names the speakers of a recording's
+// latest finished pieces on its timeline go by, the confirmed name or the
+// temporary label, which is the name their sample is sent under. Latest is by
+// where a piece sits on the timeline, not when it was transcribed: pieces are
+// transcribed side by side, and an old piece may be transcribed again.
 func recentRecordingSpeakerNames(transaction db.Transaction, userId, recordingId string) (map[string]bool, error) {
+	mediaFiles, err := transaction.ListRecordingMedia(userId, recordingId)
+	if err != nil {
+		return nil, err
+	}
 	runs, err := transaction.ListRecordingTranscriptRuns(userId, recordingId)
 	if err != nil {
 		return nil, err
 	}
+	// The latest finished run of each piece; runs come newest first.
+	latestRunByMediaId := map[string]*models.RecordingTranscriptRun{}
+	for _, transcriptRun := range runs {
+		if transcriptRun.RecordingProcessingState == models.RecordingProcessingComplete && latestRunByMediaId[transcriptRun.RecordingMediaID] == nil {
+			latestRunByMediaId[transcriptRun.RecordingMediaID] = transcriptRun
+		}
+	}
+	sort.SliceStable(mediaFiles, func(left, right int) bool {
+		return mediaFiles[left].TimelineStartMS > mediaFiles[right].TimelineStartMS
+	})
 	names := map[string]bool{}
 	pieceCount := 0
-	seenMediaIds := map[string]bool{}
-	for _, transcriptRun := range runs {
+	for _, media := range mediaFiles {
+		transcriptRun := latestRunByMediaId[media.ID]
+		if transcriptRun == nil {
+			continue
+		}
 		if pieceCount == recordingRecentPieceCount {
 			break
 		}
-		if transcriptRun.RecordingProcessingState != models.RecordingProcessingComplete || seenMediaIds[transcriptRun.RecordingMediaID] {
-			continue
-		}
-		seenMediaIds[transcriptRun.RecordingMediaID] = true
 		pieceCount++
 		segments, err := transaction.ListRecordingTranscriptSegments(userId, transcriptRun.ID)
 		if err != nil {

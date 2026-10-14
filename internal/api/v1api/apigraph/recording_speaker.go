@@ -247,10 +247,13 @@ func (self *graph) DeleteRecordingVoiceReference(ctx context.Context, arguments 
 
 // queueRecordingSummaryAfterEdit has the recording's summary written again a
 // few minutes after the person stops changing who said what or the words, so
-// it names the people they named.
+// it names the people they named. The edit stands whether or not that could
+// be queued: a failure is logged, never answered.
 func (self *graph) queueRecordingSummaryAfterEdit(ctx context.Context, userId, recordingId string) error {
 	if worker := self.agentWorker(); worker != nil {
-		return worker.QueueRecordingSummaryAfterEdit(self.transaction(ctx), userId, recordingId)
+		if err := worker.QueueRecordingSummaryAfterEdit(self.transaction(ctx), userId, recordingId); err != nil {
+			log.Warningf("cannot queue the summary of recording %q after an edit: %s", recordingId, err)
+		}
 	}
 	return nil
 }
