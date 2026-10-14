@@ -144,3 +144,16 @@ func (self *financeFixture) taxDocumentRunTitles(t *testing.T) []string {
 	})
 	return titles
 }
+
+// A W-2c is recorded as a corrected W-2, whatever the model called it.
+func TestTaxFormAnswerFoldsAW2cIntoACorrection(t *testing.T) {
+	for _, kind := range []string{"W-2c", "w2c"} {
+		taxForm := (&taxFormAnswer{TaxFormKind: kind, TaxYear: 2025}).taxForm()
+		if taxForm.TaxFormKind != models.TaxFormKindW2 || !taxForm.IsCorrected {
+			t.Errorf("%s: %+v", kind, taxForm)
+		}
+	}
+	if taxForm := (&taxFormAnswer{TaxFormKind: "W-2", TaxYear: 2025}).taxForm(); taxForm.IsCorrected {
+		t.Errorf("a W-2 is not a correction: %+v", taxForm)
+	}
+}

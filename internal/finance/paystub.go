@@ -198,7 +198,7 @@ func CheckPaystub(paystub *models.FinancePaystub) (models.PaystubCheckState, str
 		isNumbered = isNumbered || line.LineNumber != 0
 	}
 	seenLineNumbers := map[int]bool{}
-	earningsAmount, earningsYearToDateAmount, taxesAmount, deductionsAmount := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
+	earningsAmount, earningsYearToDateAmount, taxesAmount, deductionsAmount, reimbursementsAmount := new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat), new(big.Rat)
 	hasEarningAmount, hasEarningYearToDate := false, false
 	for index, line := range paystub.PaystubLines {
 		if line == nil {
@@ -219,7 +219,7 @@ func CheckPaystub(paystub *models.FinancePaystub) (models.PaystubCheckState, str
 			label += fmt.Sprintf(" (%s)", line.Description)
 		}
 		if !line.PaystubLineKind.IsValid() {
-			return "", "", refuseTaxDocument("%s is of kind %q; a line is an earning, a tax or a deduction", label, line.PaystubLineKind)
+			return "", "", refuseTaxDocument("%s is of kind %q; a line is an earning, a tax, a deduction or a reimbursement", label, line.PaystubLineKind)
 		}
 		if err := cleanTaxDocumentText(label+"'s jurisdiction", &line.TaxJurisdictionCode); err != nil {
 			return "", "", err
@@ -250,11 +250,13 @@ func CheckPaystub(paystub *models.FinancePaystub) (models.PaystubCheckState, str
 		if line.PaystubLineKind != models.PaystubLineKindEarning {
 			line.Hours, line.RateAmount = "", ""
 		}
-		currentAmount, err := optionalTaxDocumentAmount(label+"'s amount this period", &line.CurrentAmount, currencyCode, line.PaystubLineKind == models.PaystubLineKindEarning)
+		// Any line may be negative: a reversed earning, a tax refunded, a
+		// deduction paid back, a correction of the year to date.
+		currentAmount, err := optionalTaxDocumentAmount(label+"'s amount this period", &line.CurrentAmount, currencyCode, true)
 		if err != nil {
 			return "", "", err
 		}
-		yearToDateAmount, err := optionalTaxDocumentAmount(label+"'s amount for the year to date", &line.YearToDateAmount, currencyCode, line.PaystubLineKind == models.PaystubLineKindEarning)
+		yearToDateAmount, err := optionalTaxDocumentAmount(label+"'s amount for the year to date", &line.YearToDateAmount, currencyCode, true)
 		if err != nil {
 			return "", "", err
 		}
@@ -300,12 +302,18 @@ func CheckPaystub(paystub *models.FinancePaystub) (models.PaystubCheckState, str
 			if currentAmount != nil {
 				deductionsAmount.Add(deductionsAmount, currentAmount)
 			}
+		case models.PaystubLineKindReimbursement:
+			if currentAmount != nil {
+				reimbursementsAmount.Add(reimbursementsAmount, currentAmount)
+			}
 		}
 	}
 
-	// Take-home pay first: it is the figure that reaches the bank.
+	// Take-home pay first: it is the figure that reaches the bank. A
+	// reimbursement is not gross pay but reaches the bank with it.
 	computedNetAmount := new(big.Rat).Sub(grossAmount, taxesAmount)
 	computedNetAmount.Sub(computedNetAmount, deductionsAmount)
+	computedNetAmount.Add(computedNetAmount, reimbursementsAmount)
 	differences := []struct{ computed, printed *big.Rat }{{computedNetAmount, netAmount}}
 	if hasEarningAmount {
 		differences = append(differences, struct{ computed, printed *big.Rat }{earningsAmount, grossAmount})

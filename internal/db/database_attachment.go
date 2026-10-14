@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/models"
+	"gorm.io/gorm"
 )
 
 // AttachmentOperation is the files a person hands their agent in a
@@ -50,7 +51,9 @@ type AttachmentOperation interface {
 
 	// MarkAgentAttachmentTaxDocument records that an upload of the agent's
 	// was handed in as a paystub or a tax form, and forgets the text kept
-	// of it. ErrNotFound when the agent has no such upload.
+	// of it, unless a message of a conversation carries it: the turns
+	// after it read that text, already masked when it was kept, and
+	// would lose the file. ErrNotFound when the agent has no such upload.
 	MarkAgentAttachmentTaxDocument(agentId, attachmentId string) error
 }
 
@@ -220,7 +223,7 @@ func (self *transaction) SetAgentAttachmentFinanceTransaction(agentId, attachmen
 
 func (self *transaction) MarkAgentAttachmentTaxDocument(agentId, attachmentId string) error {
 	updated := self.tx.Model(&agentAttachmentModel{}).Where(`"agent_id" = ? AND "id" = ?`, agentId, attachmentId).
-		Updates(map[string]any{"is_tax_document": true, "text": ""})
+		Updates(map[string]any{"is_tax_document": true, "text": gorm.Expr(`CASE WHEN "message_id" = '' THEN '' ELSE "text" END`)})
 	if updated.Error != nil {
 		return updated.Error
 	}

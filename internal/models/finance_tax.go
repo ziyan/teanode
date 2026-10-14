@@ -14,12 +14,16 @@ const (
 	// than a tax: a retirement plan, a health premium, an HSA. The
 	// employer's part, when the paystub prints one, is beside it.
 	PaystubLineKindDeduction PaystubLineKind = "deduction"
+	// PaystubLineKindReimbursement is money paid back that is not pay:
+	// expenses, printed as non-taxable earnings. It is outside gross pay
+	// and its taxes, and is added to take-home pay.
+	PaystubLineKindReimbursement PaystubLineKind = "reimbursement"
 )
 
-// IsValid says the kind is one of the three.
+// IsValid says the kind is one of the four.
 func (self PaystubLineKind) IsValid() bool {
 	switch self {
-	case PaystubLineKindEarning, PaystubLineKindTax, PaystubLineKindDeduction:
+	case PaystubLineKindEarning, PaystubLineKindTax, PaystubLineKindDeduction, PaystubLineKindReimbursement:
 		return true
 	}
 	return false

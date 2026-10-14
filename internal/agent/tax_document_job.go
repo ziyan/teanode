@@ -110,11 +110,14 @@ func (self *paystubAnswer) paystub() *models.FinancePaystub {
 // taxForm is the answer as a tax form to record.
 func (self *taxFormAnswer) taxForm() *models.FinanceTaxForm {
 	taxFormKind := lowerTrimmed(self.TaxFormKind)
+	// A W-2c is a W-2 that corrects one: it is laid over the original
+	// rather than replacing it, whatever the model called the kind.
+	isCorrected := self.IsCorrected || taxFormKind == "w2c" || taxFormKind == "w-2c"
 	if taxFormKind == "" || taxFormKind == "w-2" || taxFormKind == "w2c" || taxFormKind == "w-2c" {
 		taxFormKind = string(models.TaxFormKindW2)
 	}
 	taxForm := &models.FinanceTaxForm{
-		TaxFormKind: models.TaxFormKind(taxFormKind), TaxYear: self.TaxYear, IsCorrected: self.IsCorrected,
+		TaxFormKind: models.TaxFormKind(taxFormKind), TaxYear: self.TaxYear, IsCorrected: isCorrected,
 		PayerName: self.PayerName, PayerTaxID: self.PayerTaxID, RecipientName: self.RecipientName, RecipientTaxIDMask: string(self.RecipientTaxIDMask),
 	}
 	for index, entry := range self.TaxFormEntries {
@@ -264,7 +267,7 @@ func (self *Agent) runReadTaxDocument(ctx context.Context, run *Run) error {
 			return err
 		}
 		title = paystubRunTitle(recorded)
-	case (documentKind == "w2" || documentKind == "w-2") && answer.Value.TaxForm != nil:
+	case (documentKind == "w2" || documentKind == "w-2" || documentKind == "w2c" || documentKind == "w-2c") && answer.Value.TaxForm != nil:
 		taxForm := answer.Value.TaxForm.taxForm()
 		taxForm.AgentAttachmentID = source.attachment.ID
 		recorded, err := self.RecordTaxForm(ctx, run.Agent, taxForm)

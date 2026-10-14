@@ -3882,6 +3882,7 @@ export const zh: Catalog = {
   'finance.paystubGross': '工资总额',
   'finance.paystubTaxes': '税款',
   'finance.paystubDeductions': '扣除项',
+  'finance.paystubReimbursements': '报销',
   'finance.paystubNet': '实发工资',
   'finance.paystubPaidOn': '{day} 发放',
   'finance.paystubPeriod': '{from} 至 {to} 期间',

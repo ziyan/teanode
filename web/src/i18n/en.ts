@@ -4022,6 +4022,7 @@ export const en = {
   'finance.paystubGross': 'Gross pay',
   'finance.paystubTaxes': 'Taxes',
   'finance.paystubDeductions': 'Deductions',
+  'finance.paystubReimbursements': 'Reimbursements',
   'finance.paystubNet': 'Take-home pay',
   'finance.paystubPaidOn': 'Paid on {day}',
   'finance.paystubPeriod': 'for {from} to {to}',

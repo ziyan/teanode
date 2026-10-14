@@ -27286,6 +27286,22 @@
         }
       }
     },
+    "Reimbursements": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立替金の払い戻し"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "报销"
+          }
+        }
+      }
+    },
     "Rejected": {
       "localizations": {
         "ja": {

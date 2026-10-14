@@ -820,7 +820,7 @@ export const READ_RECEIPT = `mutation ($agentAttachmentId: String, $mailboxItemI
 export type FinancePaystubLine = {
   id: string
   lineNumber: number
-  paystubLineKind: 'earning' | 'tax' | 'deduction'
+  paystubLineKind: 'earning' | 'tax' | 'deduction' | 'reimbursement'
   description: string
   hours?: string | null
   rateAmount?: string | null

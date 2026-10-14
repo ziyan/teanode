@@ -22,7 +22,11 @@ import (
 // is told to import its OFX files; no rule, no triage, no calendar and no
 // out-of-office reply sees it.
 //
-// An address with either detail whose local part is a person's
+// A tax document address differs in one thing: one whose token is not the
+// person's is delivered as ordinary mail rather than refused, since a plus
+// tag such as +taxes-2025 is something a person may well use on their own.
+//
+// An address with the statements- detail whose local part is a person's
 // own mailbox address is never matched as ordinary mail: a wrong token, a
 // switched off source or no agent at all refuses it, and a message the
 // spam filter failed goes to that person's Junk unimported. Falling
@@ -66,6 +70,9 @@ func splitDetailAddress(recipientAlias, marker string) (string, string, bool) {
 type importAddress struct {
 	marker      string
 	addressName string
+	// isRefusedUnlessOpen says a message to the address without an open
+	// token is refused rather than matched as ordinary mail.
+	isRefusedUnlessOpen bool
 	isToken     func(tx db.Transaction, mailbox *models.Mailbox, token string) bool
 	onDelivery  func(tx db.Transaction, mailbox *models.Mailbox, item *models.MailboxItem, mail *models.Mail)
 }
@@ -74,7 +81,7 @@ type importAddress struct {
 // takes, statements first.
 func (self *exchange) importAddresses() []importAddress {
 	hook := self.currentAgentHook()
-	statements := importAddress{marker: statementDetailMarker, addressName: "statement import address"}
+	statements := importAddress{marker: statementDetailMarker, addressName: "statement import address", isRefusedUnlessOpen: true}
 	if statementHook, isStatementHook := hook.(StatementHook); isStatementHook {
 		statements.isToken, statements.onDelivery = statementHook.IsStatementImportToken, statementHook.OnStatementDelivery
 	}
@@ -148,6 +155,9 @@ func (self *exchange) matchImportAddress(tx db.Transaction, domain *models.Domai
 			}
 			return []*models.Delivery{delivery}, true, nil
 		}
+	}
+	if !address.isRefusedUnlessOpen {
+		return nil, false, nil
 	}
 	log.Noticef("refusing message %q to %q: it names a person's %s, and no open one has that token", mail.ID, recipient, address.addressName)
 	return nil, true, nil

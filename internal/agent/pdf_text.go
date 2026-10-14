@@ -34,7 +34,59 @@ const (
 	// pdfRenderResolution is the dots per inch a page is rendered at:
 	// enough for a model to read a receipt's small print.
 	pdfRenderResolution = "150"
+
+	// pdfRenderWidth and pdfRenderHeight bound a rendered page in pixels,
+	// whatever size the PDF says its page is: 17 by 22 inches at the
+	// resolution, room for any paper, while a page made a few metres wide
+	// is cut there rather than rendered to gigabytes.
+	pdfRenderWidth  = "2550"
+	pdfRenderHeight = "3300"
+
+	// pdfMaximumFileBytes is the largest PDF read at all; anything a person
+	// hands in to be read is far smaller.
+	pdfMaximumFileBytes = 50 << 20
+
+	// pdfMaximumTextBytes is the most text pdftotext may write before it is
+	// stopped: a few thousand pages of dense print.
+	pdfMaximumTextBytes = 16 << 20
+
+	// pdfReaderCount is how many PDFs are read or rendered at once on the
+	// server; the rest wait their turn.
+	pdfReaderCount = 2
 )
+
+// pdfReaders holds a place for each PDF being read or rendered.
+var pdfReaders = make(chan struct{}, pdfReaderCount)
+
+// takePDFReader waits for a place to read a PDF in, and answers how to
+// give it back.
+func takePDFReader(ctx context.Context) (func(), error) {
+	select {
+	case pdfReaders <- struct{}{}:
+		return func() { <-pdfReaders }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// errPDFTooLarge refuses a PDF past pdfMaximumFileBytes.
+var errPDFTooLarge = fmt.Errorf("the PDF is larger than %d MB, more than is read", pdfMaximumFileBytes>>20)
+
+// limitedBuffer keeps what is written to it up to a limit and then refuses
+// more, which stops the program writing.
+type limitedBuffer struct {
+	buffer   bytes.Buffer
+	limit    int
+	isTooBig bool
+}
+
+func (self *limitedBuffer) Write(written []byte) (int, error) {
+	if self.buffer.Len()+len(written) > self.limit {
+		self.isTooBig = true
+		return 0, errors.New("too much output")
+	}
+	return self.buffer.Write(written)
+}
 
 // ErrPDFReaderMissing is a server without poppler's readers.
 var ErrPDFReaderMissing = errors.New("this server cannot read PDFs: poppler (pdftotext, pdftoppm) is not installed")
@@ -97,6 +149,14 @@ func readPDFText(ctx context.Context, content []byte) (string, error) {
 	if _, err := exec.LookPath("pdftotext"); err != nil {
 		return "", ErrPDFReaderMissing
 	}
+	if len(content) > pdfMaximumFileBytes {
+		return "", errPDFTooLarge
+	}
+	release, err := takePDFReader(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	directory, path, err := writePDFFile(content)
 	if err != nil {
 		return "", err
@@ -104,12 +164,17 @@ func readPDFText(ctx context.Context, content []byte) (string, error) {
 	defer func() { _ = os.RemoveAll(directory) }()
 	callContext, cancel := context.WithTimeout(ctx, pdfTextTimeout)
 	defer cancel()
-	output, err := exec.CommandContext(callContext, "pdftotext", "-layout", "-q", "-enc", "UTF-8", path, "-").Output()
-	if err != nil {
+	output := &limitedBuffer{limit: pdfMaximumTextBytes}
+	command := exec.CommandContext(callContext, "pdftotext", "-layout", "-q", "-enc", "UTF-8", path, "-")
+	command.Stdout = output
+	if err := command.Run(); err != nil {
+		if output.isTooBig {
+			return "", fmt.Errorf("the PDF's text is larger than %d MB, more than is read", pdfMaximumTextBytes>>20)
+		}
 		return "", fmt.Errorf("pdftotext could not read it: %w", err)
 	}
 	// Every page ends in a form feed, and a scan's pages are nothing else.
-	text := strings.TrimLeft(strings.ToValidUTF8(string(output), ""), "\f\r\n")
+	text := strings.TrimLeft(strings.ToValidUTF8(output.buffer.String(), ""), "\f\r\n")
 	return strings.TrimRightFunc(text, unicode.IsSpace), nil
 }
 
@@ -122,6 +187,14 @@ func renderPDFPages(ctx context.Context, content []byte, maximumPageCount int) (
 	if maximumPageCount < 1 {
 		return nil, nil
 	}
+	if len(content) > pdfMaximumFileBytes {
+		return nil, errPDFTooLarge
+	}
+	release, err := takePDFReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	directory, path, err := writePDFFile(content)
 	if err != nil {
 		return nil, err
@@ -130,7 +203,7 @@ func renderPDFPages(ctx context.Context, content []byte, maximumPageCount int) (
 	callContext, cancel := context.WithTimeout(ctx, pdfRenderTimeout)
 	defer cancel()
 	prefix := filepath.Join(directory, "page")
-	if err := exec.CommandContext(callContext, "pdftoppm", "-q", "-png", "-r", pdfRenderResolution,
+	if err := exec.CommandContext(callContext, "pdftoppm", "-q", "-png", "-r", pdfRenderResolution, "-W", pdfRenderWidth, "-H", pdfRenderHeight,
 		"-f", "1", "-l", fmt.Sprint(maximumPageCount), path, prefix).Run(); err != nil {
 		return nil, fmt.Errorf("pdftoppm could not render it: %w", err)
 	}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -191,5 +192,21 @@ func TestReceiptJobShowsAScannedPDFAsPictures(t *testing.T) {
 	source, err := fixture.worker.readReceiptSource(t.Context(), fixture.receiptJobRun(nil, attachment.ID), attachment.ID)
 	if err != nil || source == nil || source.unreadableWhy != "" || len(source.pictures) != 1 || source.pictures[0].MediaType != "image/png" {
 		t.Fatalf("the scan is shown as one picture: %+v %v", source, err)
+	}
+}
+
+// A program's output past the limit stops it rather than filling memory,
+// and a PDF too large is not read at all.
+func TestPDFReadingIsBounded(t *testing.T) {
+	output := &limitedBuffer{limit: 4}
+	if count, err := output.Write([]byte("abc")); err != nil || count != 3 {
+		t.Fatalf("within the limit: %d %v", count, err)
+	}
+	if _, err := output.Write([]byte("de")); err == nil || !output.isTooBig || output.buffer.String() != "abc" {
+		t.Fatalf("past the limit: %v %q", err, output.buffer.String())
+	}
+	tooLarge := append([]byte("%PDF-1.4\n"), make([]byte, pdfMaximumFileBytes)...)
+	if _, err := readPDFText(t.Context(), tooLarge); !errors.Is(err, errPDFTooLarge) && !errors.Is(err, ErrPDFReaderMissing) {
+		t.Fatalf("a PDF too large is refused: %v", err)
 	}
 }

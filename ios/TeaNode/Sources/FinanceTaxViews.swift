@@ -770,6 +770,7 @@ struct PaystubDetailView: View {
                 linesSection(paystub, lineKind: "earning", title: String(localized: "Earnings"))
                 linesSection(paystub, lineKind: "tax", title: String(localized: "Taxes"))
                 linesSection(paystub, lineKind: "deduction", title: String(localized: "Deductions"))
+                linesSection(paystub, lineKind: "reimbursement", title: String(localized: "Reimbursements"))
                 let named = findings.filter { $0.paystubIds?.contains(paystubId) == true }
                 if !named.isEmpty {
                     Section("Findings") {

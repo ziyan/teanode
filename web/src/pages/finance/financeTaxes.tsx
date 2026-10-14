@@ -1600,6 +1600,14 @@ function PaystubDialog({
             totalLabel={t('finance.paystubDeductions')}
             totalAmount={paystubDeductionTotal(paystub)}
           />
+          <PaystubLineGroup
+            heading={t('finance.paystubReimbursements')}
+            lines={linesOf('reimbursement')}
+            columns={[current, yearToDate]}
+            currencyCode={paystub.currencyCode}
+            totalLabel={t('finance.paystubReimbursements')}
+            totalAmount={paystubLinesTotal(paystub, 'reimbursement')}
+          />
           <p className="finance-paystub-net">
             <span>{t('finance.paystubNet')}</span>
             <span className="numeric-value">{formatMoney(amountOf(paystub.netAmount), paystub.currencyCode)}</span>

@@ -32,30 +32,26 @@ const taxMailNoticeRetry = time.Minute
 
 // taxDocumentToken is the agent's tax document token, made and kept the
 // first time it is asked for, or a new one in its place when isRenewed.
+// Decided under the agent's row lock, so two first asks at once keep one
+// token rather than each showing its own and one of them dead.
 func (self *Agent) taxDocumentToken(ctx context.Context, agentRow *models.Agent, isRenewed bool) (string, error) {
 	var token string
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		// Read again inside the transaction, the token kept now.
-		current, err := tx.GetAgent(agentRow.ID)
-		if err != nil {
-			return err
-		}
-		if current == nil {
-			return db.ErrNotFound
-		}
-		if current.TaxDocumentToken != "" && !isRenewed {
-			token, err = self.OpenSecret(current.TaxDocumentToken)
-			return err
-		}
-		if token, err = newStatementToken(); err != nil {
-			return err
-		}
-		sealed, err := self.SealSecret(token)
-		if err != nil {
-			return err
-		}
-		_, err = tx.UpdateAgent(agentRow.ID, func(changed *models.Agent) error {
-			changed.TaxDocumentToken = sealed
+		_, err := tx.UpdateAgent(agentRow.ID, func(changed *models.Agent) error {
+			if changed.TaxDocumentToken != "" && !isRenewed {
+				opened, err := self.OpenSecret(changed.TaxDocumentToken)
+				token = opened
+				return err
+			}
+			fresh, err := newStatementToken()
+			if err != nil {
+				return err
+			}
+			sealed, err := self.SealSecret(fresh)
+			if err != nil {
+				return err
+			}
+			token, changed.TaxDocumentToken = fresh, sealed
 			return nil
 		})
 		return err

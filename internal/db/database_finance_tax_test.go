@@ -197,7 +197,8 @@ func TestUnreadTaxDocumentIsSweptAfterItsRetention(t *testing.T) {
 	})
 }
 
-// An upload handed in as a tax document forgets the text kept of it.
+// An upload handed in as a tax document forgets the text kept of it; one a
+// conversation's message carries keeps it for the turns after.
 func TestMarkAgentAttachmentTaxDocumentForgetsItsText(t *testing.T) {
 	t.Parallel()
 	database, release := dbtest.AcquireDatabase(t)
@@ -217,6 +218,19 @@ func TestMarkAgentAttachmentTaxDocumentForgetsItsText(t *testing.T) {
 		}
 		if err := tx.MarkAgentAttachmentTaxDocument("another-agent", upload.ID); !errors.Is(err, db.ErrNotFound) {
 			t.Fatalf("another agent's upload is not found: %v", err)
+		}
+		inMessage, err := tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: fixture.agentId, Name: "w2.pdf", ContentType: "application/pdf", Size: 10, Text: "masked text"})
+		if err != nil {
+			t.Fatalf("CreateAgentAttachment: %s", err)
+		}
+		if err := tx.ClaimAgentAttachments([]string{inMessage.ID}, "conversation-invented", "message-invented"); err != nil {
+			t.Fatalf("ClaimAgentAttachments: %s", err)
+		}
+		if err := tx.MarkAgentAttachmentTaxDocument(fixture.agentId, inMessage.ID); err != nil {
+			t.Fatalf("MarkAgentAttachmentTaxDocument: %s", err)
+		}
+		if marked, _ := tx.GetAgentAttachment(inMessage.ID); marked.Text != "masked text" || !marked.IsTaxDocument {
+			t.Fatalf("a message's file keeps its text: %+v", marked)
 		}
 	})
 }

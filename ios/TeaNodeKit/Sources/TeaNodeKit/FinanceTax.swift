@@ -44,7 +44,8 @@ public struct FinancePaystub: Codable, Hashable, Sendable, Identifiable {
     /// Whether its lines add up to its printed totals.
     public var isBalanced: Bool { paystubCheckState == "balanced" }
 
-    /// Its lines of one kind ("earning", "tax", "deduction"), in printed order.
+    /// Its lines of one kind ("earning", "tax", "deduction",
+    /// "reimbursement"), in printed order.
     public func lines(ofKind lineKind: String) -> [Line] {
         (paystubLines ?? []).compactMap { $0 }.filter { $0.paystubLineKind == lineKind }
             .sorted { ($0.lineNumber ?? 0) < ($1.lineNumber ?? 0) }

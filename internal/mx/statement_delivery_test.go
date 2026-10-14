@@ -391,7 +391,8 @@ func (self *taxDocumentHook) OnTaxDocumentDelivery(_ db.Transaction, _ *models.M
 // A message to the person's address with "+taxes-" and their tax document
 // token is filed in the Archive, read, and handed to the tax document
 // reading, never to the statement import; the statement token at the tax
-// address, and a wrong token, are refused.
+// address, and a wrong token, are mail like any other, delivered to the
+// address's own alias when it takes plus addressing and to nobody here.
 func TestTaxDocumentAddress(t *testing.T) {
 	t.Parallel()
 	database, release := dbtest.AcquireDatabase(t)
@@ -409,8 +410,13 @@ func TestTaxDocumentAddress(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateMailbox: %s", err)
 		}
+		catchAllMailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: user.ID, Name: "Everything else"})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
 		domain := &models.Domain{ID: "domain-one", Domain: "example.com", Aliases: []*models.Alias{
 			{ID: "alias-reader", Pattern: models.PatternForLocalPart("reader"), Kind: models.AliasKindMailbox, MailboxID: mailbox.ID},
+			{ID: "alias-catch-all", Kind: models.AliasKindMailbox, MailboxID: catchAllMailbox.ID},
 		}}
 		deliver := func(localPart string) []*models.Delivery {
 			t.Helper()
@@ -439,9 +445,9 @@ func TestTaxDocumentAddress(t *testing.T) {
 		if archive == nil || item.FolderID != archive.ID || !item.Seen {
 			t.Errorf("filed in %s, seen %v; want the Archive, seen", item.FolderID, item.Seen)
 		}
-		for _, localPart := range []string{"reader+taxes-invented0token01", "reader+taxes-wrong0token00000"} {
-			if deliveries := deliver(localPart); len(deliveries) != 0 {
-				t.Errorf("%s delivered: %+v", localPart, deliveries)
+		for _, localPart := range []string{"reader+taxes-invented0token01", "reader+taxes-2025"} {
+			if deliveries := deliver(localPart); len(deliveries) != 1 || deliveries[0].MailboxID != catchAllMailbox.ID {
+				t.Errorf("%s is ordinary mail: %+v", localPart, deliveries)
 			}
 		}
 		if len(hook.taxDocumentItemIds) != 1 || len(hook.statementItemIds) != 0 {

@@ -20,7 +20,7 @@ import (
 // number are ever stored or answered.
 
 // PaystubLine is one printed line of a paystub with an amount: its kind
-// (earning, tax or deduction), what it says, an earning's hours and rate,
+// (earning, tax, deduction or reimbursement), what it says, an earning's hours and rate,
 // its amount this period and for the year to date (a deduction's employee
 // part), a tax's kind, jurisdiction and the wages it was figured on, and a
 // deduction's kind and the employer's part. Its number is its place in the

@@ -91,7 +91,6 @@ func TestCheckPaystubRefuses(t *testing.T) {
 		},
 		"an unknown tax":   func(paystub *models.FinancePaystub) { paystub.PaystubLines[1].PaystubTaxKind = "income" },
 		"a deduction kind": func(paystub *models.FinancePaystub) { paystub.PaystubLines[5].PaystubDeductionKind = "" },
-		"a negative tax":   func(paystub *models.FinancePaystub) { paystub.PaystubLines[1].CurrentAmount = "-500.00" },
 		"too many places":  func(paystub *models.FinancePaystub) { paystub.GrossAmount = "4000.001" },
 		"a backwards period": func(paystub *models.FinancePaystub) {
 			paystub.PeriodStartOn, paystub.PeriodEndOn = "2026-03-10", "2026-03-01"
@@ -420,5 +419,26 @@ func TestEstimateTaxYear(t *testing.T) {
 	}
 	if DefaultTaxFilingStatus(2) != TaxFilingStatusMarriedFilingJointly || DefaultTaxFilingStatus(1) != TaxFilingStatusSingle {
 		t.Fatalf("the default filing status follows the number of people")
+	}
+}
+
+// A reimbursement is outside gross pay and reaches take-home pay on its
+// own; a tax refunded is a negative line.
+func TestCheckPaystubTakesReimbursementsAndNegativeLines(t *testing.T) {
+	paystub := inventedPaystub("paystub-1", "2026-03-06", 5)
+	paystub.NetAmount = "2770.00"
+	paystub.PaystubLines = append(paystub.PaystubLines,
+		&models.FinancePaystubLine{PaystubLineKind: models.PaystubLineKindReimbursement, Description: "Expense", CurrentAmount: "100.00", YearToDateAmount: "300.00"},
+		&models.FinancePaystubLine{PaystubLineKind: models.PaystubLineKindTax, Description: "State refund", PaystubTaxKind: models.PaystubTaxKindStateIncome,
+			TaxJurisdictionCode: "CA", CurrentAmount: "-50.00"},
+	)
+	paystub.TotalTaxAmount = "830.00"
+	// 4,000.00 - 830.00 - 400.00 + 100.00
+	paystub.NetAmount = "2870.00"
+	if state, difference, err := CheckPaystub(paystub); err != nil || state != models.PaystubCheckStateBalanced {
+		t.Fatalf("balanced with a reimbursement and a refund: %s %s %v", state, difference, err)
+	}
+	if sums := paystubSums(paystub, true, nil); formatDollars(sums.wages) != "3600.00" {
+		t.Fatalf("a reimbursement is not wages: %s", formatDollars(sums.wages))
 	}
 }

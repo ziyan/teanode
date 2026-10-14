@@ -816,7 +816,7 @@ func init() {
 					"total_deduction_amount":    tools.StringProperty("for record_paystub: the deductions' total this period (the employee's), as printed"),
 					"net_amount":                tools.StringProperty("for record_paystub: take-home pay this period, as printed"),
 					"paystub_lines": tools.ArrayProperty("for record_paystub: every printed line with an amount, one each, in order: earnings, taxes, deductions; not totals, not hours alone", tools.Object(map[string]any{
-						"paystub_line_kind":            tools.EnumProperty("what the line is", "earning", "tax", "deduction"),
+						"paystub_line_kind":            tools.EnumProperty("what the line is: a reimbursement is money paid back outside gross pay, printed as a non-taxable earning", "earning", "tax", "deduction", "reimbursement"),
 						"description":                  tools.StringProperty("what the line says, as printed"),
 						"hours":                        tools.StringProperty("an earning's hours, when printed"),
 						"rate_amount":                  tools.StringProperty("an earning's rate, when printed"),

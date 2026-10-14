@@ -3975,6 +3975,7 @@ export const ja: Catalog = {
   'finance.paystubGross': '総支給額',
   'finance.paystubTaxes': '税金',
   'finance.paystubDeductions': '控除',
+  'finance.paystubReimbursements': '立替金の払い戻し',
   'finance.paystubNet': '手取り額',
   'finance.paystubPaidOn': '{day} 支給',
   'finance.paystubPeriod': '{from} から {to} の分',
