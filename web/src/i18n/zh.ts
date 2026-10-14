@@ -1682,6 +1682,7 @@ export const zh: Catalog = {
   'agent.runKinds.categorize': '分类',
   'agent.runKinds.statement_import': '导入对账单',
   'agent.runKinds.read_receipt': '读取收据',
+  'agent.runKinds.tax_document': '读取工资单或 W-2',
   'agent.runKinds.watch': '关注',
   'agent.runKinds.embed': '建立索引',
   'agent.runKinds.send': '发送',

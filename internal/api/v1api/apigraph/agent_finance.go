@@ -162,6 +162,28 @@ type FinanceQuery interface {
 	// nothing: whether the lines add up, the charges it could explain,
 	// and whether it would replace the receipt read from the same source.
 	PreviewRecordReceipt(ctx context.Context, arguments RecordReceiptArguments) (*ReceiptPreviewView, error)
+
+	// One page of the caller's paystubs, each with its lines, the latest
+	// pay date first: those paid in a tax year, or within pay dates.
+	FinancePaystubs(ctx context.Context, arguments PaystubsArguments) (*PaystubPageView, error)
+
+	// One paystub with its lines.
+	FinancePaystub(ctx context.Context, arguments PaystubArguments) (*models.FinancePaystub, error)
+
+	// One page of the caller's tax forms (W-2s), each with its boxes and
+	// what it says about itself, the latest tax year first.
+	FinanceTaxForms(ctx context.Context, arguments TaxFormsArguments) (*TaxFormPageView, error)
+
+	// One tax form with its boxes and what it says about itself.
+	FinanceTaxForm(ctx context.Context, arguments TaxFormArguments) (*TaxFormView, error)
+
+	// A tax year put together from the paystubs paid in it and the W-2s
+	// for it, per person and employer: the W-2's figures, or the latest
+	// paystub's year to date and a projection to December 31; each W-2
+	// box beside the paystubs' figure; and what is worth knowing, such as
+	// a paystub missing between two others, a W-2 not yet in, or Social
+	// Security withheld beyond the year's maximum.
+	TaxYear(ctx context.Context, arguments TaxYearArguments) (*finance.TaxYearSummary, error)
 }
 
 // FinanceMutation links institutions and changes the person's finance
@@ -326,6 +348,28 @@ type FinanceMutation interface {
 	// Delete a receipt with its lines and matches, and the photo or PDF it
 	// was read from.
 	DeleteReceipt(ctx context.Context, arguments ReceiptArguments) (bool, error)
+
+	// Record a paystub read line by line from an uploaded file: checked so
+	// gross less taxes and deductions is take-home pay and the lines add
+	// up to the printed totals (refused when they do not, unless
+	// isUnbalancedAccepted), stored in place of whatever was read from the
+	// same file. Only the last four digits of the taxpayer number are kept.
+	RecordPaystub(ctx context.Context, arguments RecordPaystubArguments) (*models.FinancePaystub, error)
+
+	// Record a tax form (a W-2) read box by box from an uploaded file, in
+	// place of whatever was read from the same file.
+	RecordTaxForm(ctx context.Context, arguments RecordTaxFormArguments) (*TaxFormView, error)
+
+	// Queue the job that reads a paystub or a W-2 out of a file uploaded
+	// to the agent's attachments, or out of each PDF and picture a message
+	// in the person's mailbox carries, and records it.
+	ReadTaxDocument(ctx context.Context, arguments ReadTaxDocumentArguments) (*TaxDocumentReadingView, error)
+
+	// Delete a paystub with its lines and the file it was read from.
+	DeletePaystub(ctx context.Context, arguments PaystubArguments) (bool, error)
+
+	// Delete a tax form with its boxes and the file it was read from.
+	DeleteTaxForm(ctx context.Context, arguments TaxFormArguments) (bool, error)
 
 	// Set a spending category's monthly budget from a month on.
 	SetBudget(ctx context.Context, arguments SetBudgetArguments) (*models.Budget, error)

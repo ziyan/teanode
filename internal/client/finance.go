@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/ziyan/teanode/internal/finance"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // The finance area: finance sources, finance accounts and transactions,
@@ -766,6 +769,23 @@ const (
 
 	receiptArguments = `(mailboxItemId: $mailboxItemId, gmailMessageId: $gmailMessageId, agentAttachmentId: $agentAttachmentId, merchantName: $merchantName, merchantReceiptNumber: $merchantReceiptNumber, purchasedOn: $purchasedOn, purchasedAt: $purchasedAt, currencyCode: $currencyCode, subtotalAmount: $subtotalAmount, totalAmount: $totalAmount, paymentAccountMask: $paymentAccountMask, receiptLines: $receiptLines, financeTransactionId: $financeTransactionId, isUnbalancedAccepted: $isUnbalancedAccepted)`
 
+	financePaystubFields = `{ id agentAttachmentId employerName employerTaxId employeeName employeeTaxIdMask payDate periodStartOn periodEndOn currencyCode grossAmount yearToDateGrossAmount totalTaxAmount totalDeductionAmount netAmount paystubCheckState checkDifferenceAmount createdAt modifiedAt
+    paystubLines { id lineNumber paystubLineKind description hours rateAmount currentAmount yearToDateAmount paystubTaxKind taxJurisdictionCode currentWagesAmount yearToDateWagesAmount paystubDeductionKind employerCurrentAmount employerYearToDateAmount } }`
+
+	taxFormViewFields = `{ financeTaxForm { id agentAttachmentId taxFormKind taxYear isCorrected payerName payerTaxId recipientName recipientTaxIdMask createdAt modifiedAt
+    taxFormEntries { id entryNumber boxCode boxQualifier amount textValue isChecked } }
+    taxFormFindings { taxFormFindingCode isAgreeing expectedAmount printedAmount findingText } }`
+
+	taxYearFiguresFields = `{ wagesAmount federalIncomeTaxAmount socialSecurityWagesAmount socialSecurityTaxAmount medicareWagesAmount medicareTaxAmount dependentCareAmount retirementTraditionalAmount retirementRothAmount hsaAmount healthCoverageAmount localIncomeTaxAmount taxYearStateFigures { stateCode stateWagesAmount stateIncomeTaxAmount } }`
+
+	taxYearFields = `{ taxYear socialSecurityWageBaseAmount isYearOver paystubCount taxFormCount
+    figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + `
+    taxYearEmployments { employeeName employerName employerTaxId taxYearFigureSource taxFormId latestPayDate paystubCount payCadenceDayCount isPaystubYearComplete remainingPayCount
+      figures ` + taxYearFiguresFields + ` paystubFigures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + `
+      taxYearComparisons { boxCode boxQualifier boxLabel w2Amount paystubAmount differenceAmount isMatching } }
+    taxYearPeople { employeeName excessSocialSecurityTaxAmount figures ` + taxYearFiguresFields + ` projectedFigures ` + taxYearFiguresFields + ` }
+    taxYearFindings { taxYearFindingCode employeeName employerName findingText paystubIds } }`
+
 	currencyPairRateFields = `{ fromCurrencyCode toCurrencyCode rate rateOn rateSource }`
 
 	assetValuationFields = `{ id assetId valuedOn value currencyCode valuationSource estimateLow estimateHigh valuationNote evidenceUrls heldQuantity unitPrice costBasis }`
@@ -1048,6 +1068,36 @@ const (
   ReadReceipt(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId, financeTransactionId: $financeTransactionId) { agentJobId }
 }`
 
+	DocumentFinancePaystubs = `query ($taxYear: Int, $from: String, $to: String, $limit: Int, $offset: Int) {
+  FinancePaystubs(taxYear: $taxYear, from: $from, to: $to, limit: $limit, offset: $offset) { financePaystubs ` + financePaystubFields + ` hasMore totalCount }
+}`
+
+	DocumentFinancePaystub = `query ($paystubId: String!) { FinancePaystub(paystubId: $paystubId) ` + financePaystubFields + ` }`
+
+	DocumentFinanceTaxForms = `query ($taxYear: Int, $limit: Int, $offset: Int) {
+  FinanceTaxForms(taxYear: $taxYear, limit: $limit, offset: $offset) { taxForms ` + taxFormViewFields + ` hasMore totalCount }
+}`
+
+	DocumentFinanceTaxForm = `query ($taxFormId: String!) { FinanceTaxForm(taxFormId: $taxFormId) ` + taxFormViewFields + ` }`
+
+	DocumentTaxYear = `query ($taxYear: Int!) { TaxYear(taxYear: $taxYear) ` + taxYearFields + ` }`
+
+	DocumentRecordPaystub = `mutation ($agentAttachmentId: String!, $employerName: String!, $employerTaxId: String, $employeeName: String!, $employeeTaxIdMask: String, $payDate: String!, $periodStartOn: String, $periodEndOn: String, $currencyCode: String, $grossAmount: String!, $yearToDateGrossAmount: String, $totalTaxAmount: String, $totalDeductionAmount: String, $netAmount: String!, $paystubLines: [PaystubLineInput!]!, $isUnbalancedAccepted: Boolean) {
+  RecordPaystub(agentAttachmentId: $agentAttachmentId, employerName: $employerName, employerTaxId: $employerTaxId, employeeName: $employeeName, employeeTaxIdMask: $employeeTaxIdMask, payDate: $payDate, periodStartOn: $periodStartOn, periodEndOn: $periodEndOn, currencyCode: $currencyCode, grossAmount: $grossAmount, yearToDateGrossAmount: $yearToDateGrossAmount, totalTaxAmount: $totalTaxAmount, totalDeductionAmount: $totalDeductionAmount, netAmount: $netAmount, paystubLines: $paystubLines, isUnbalancedAccepted: $isUnbalancedAccepted) ` + financePaystubFields + `
+}`
+
+	DocumentRecordTaxForm = `mutation ($agentAttachmentId: String!, $taxFormKind: String, $taxYear: Int!, $isCorrected: Boolean, $payerName: String!, $payerTaxId: String, $recipientName: String!, $recipientTaxIdMask: String, $taxFormEntries: [TaxFormEntryInput!]!) {
+  RecordTaxForm(agentAttachmentId: $agentAttachmentId, taxFormKind: $taxFormKind, taxYear: $taxYear, isCorrected: $isCorrected, payerName: $payerName, payerTaxId: $payerTaxId, recipientName: $recipientName, recipientTaxIdMask: $recipientTaxIdMask, taxFormEntries: $taxFormEntries) ` + taxFormViewFields + `
+}`
+
+	DocumentReadTaxDocument = `mutation ($agentAttachmentId: String, $mailboxItemId: String) {
+  ReadTaxDocument(agentAttachmentId: $agentAttachmentId, mailboxItemId: $mailboxItemId) { agentAttachmentIds agentJobIds }
+}`
+
+	DocumentDeletePaystub = `mutation ($paystubId: String!) { DeletePaystub(paystubId: $paystubId) }`
+
+	DocumentDeleteTaxForm = `mutation ($taxFormId: String!) { DeleteTaxForm(taxFormId: $taxFormId) }`
+
 	DocumentSetBudget = `mutation ($spendingCategoryId: String!, $monthlyAmount: String!, $currencyCode: String, $effectiveFrom: String) {
   SetBudget(spendingCategoryId: $spendingCategoryId, monthlyAmount: $monthlyAmount, currencyCode: $currencyCode, effectiveFrom: $effectiveFrom) ` + budgetFields + `
 }`
@@ -1101,6 +1151,37 @@ var FinanceDocuments = map[string]string{
 	"ProposeReceiptMatches": DocumentProposeReceiptMatches, "RecordReceipt": DocumentRecordReceipt,
 	"PreviewRecordReceipt": DocumentPreviewRecordReceipt, "MatchReceipt": DocumentMatchReceipt,
 	"UnmatchReceipt": DocumentUnmatchReceipt, "DeleteReceipt": DocumentDeleteReceipt, "ReadReceipt": DocumentReadReceipt,
+	"FinancePaystubs": DocumentFinancePaystubs, "FinancePaystub": DocumentFinancePaystub,
+	"FinanceTaxForms": DocumentFinanceTaxForms, "FinanceTaxForm": DocumentFinanceTaxForm, "TaxYear": DocumentTaxYear,
+	"RecordPaystub": DocumentRecordPaystub, "RecordTaxForm": DocumentRecordTaxForm, "ReadTaxDocument": DocumentReadTaxDocument,
+	"DeletePaystub": DocumentDeletePaystub, "DeleteTaxForm": DocumentDeleteTaxForm,
+}
+
+// PaystubPage is one page of paystubs.
+type PaystubPage struct {
+	FinancePaystubs []*models.FinancePaystub `json:"financePaystubs"`
+	HasMore         bool                     `json:"hasMore"`
+	TotalCount      int                      `json:"totalCount"`
+}
+
+// TaxFormView is a tax form with what it says about itself.
+type TaxFormView struct {
+	FinanceTaxForm  *models.FinanceTaxForm   `json:"financeTaxForm"`
+	TaxFormFindings []finance.TaxFormFinding `json:"taxFormFindings"`
+}
+
+// TaxFormPage is one page of tax forms.
+type TaxFormPage struct {
+	TaxForms   []*TaxFormView `json:"taxForms"`
+	HasMore    bool           `json:"hasMore"`
+	TotalCount int            `json:"totalCount"`
+}
+
+// TaxDocumentReading is the uploads queued to be read as paystubs or tax
+// forms, and the job reading each.
+type TaxDocumentReading struct {
+	AgentAttachmentIDs []string `json:"agentAttachmentIds"`
+	AgentJobIDs        []string `json:"agentJobIds"`
 }
 
 // Executor runs a document: a Client, or the agent's operations as the

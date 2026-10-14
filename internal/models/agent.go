@@ -638,6 +638,11 @@ const (
 	// to, when there is one.
 	AgentJobReadReceipt AgentJobKind = "read_receipt"
 
+	// AgentJobTaxDocument reads a paystub or a tax form (a W-2) out of
+	// a file handed in as one and records it. Its subject is the uploaded
+	// file.
+	AgentJobTaxDocument AgentJobKind = "tax_document"
+
 	// AgentJobWatch is one look by one watch of an installed skill: it
 	// lists what arrived since the last look through the skill's own
 	// tools, judges each new item and makes alert candidates of what

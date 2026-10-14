@@ -294,6 +294,7 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobCategorize, self.runCategorize)
 	self.Register(models.AgentJobStatementImport, self.runStatementImport)
 	self.Register(models.AgentJobReadReceipt, self.runReadReceipt)
+	self.Register(models.AgentJobTaxDocument, self.runReadTaxDocument)
 	self.Register(models.AgentJobWatch, self.runWatch)
 	self.catalog = FullCatalog()
 	return self

@@ -115,10 +115,6 @@ type FinancePaystub struct {
 	AgentID           string `json:"agentId"`
 	AgentAttachmentID string `json:"agentAttachmentId"`
 
-	// MailID is the message the file was copied out of, when it came by
-	// mail; empty for an upload.
-	MailID string `json:"mailId,omitempty" graphapi:"nullable"`
-
 	EmployerName string `json:"employerName"`
 	// EmployerTaxID is the employer's identification number as printed.
 	EmployerTaxID string `json:"employerTaxId,omitempty" graphapi:"nullable"`
@@ -205,10 +201,6 @@ type FinanceTaxForm struct {
 	ID                string `json:"id"`
 	AgentID           string `json:"agentId"`
 	AgentAttachmentID string `json:"agentAttachmentId"`
-
-	// MailID is the message the file was copied out of, when it came by
-	// mail; empty for an upload.
-	MailID string `json:"mailId,omitempty" graphapi:"nullable"`
 
 	TaxFormKind TaxFormKind `json:"taxFormKind"`
 	TaxYear     int         `json:"taxYear"`

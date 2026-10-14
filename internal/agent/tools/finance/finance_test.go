@@ -240,6 +240,7 @@ func TestFinanceRiskPerOperation(test *testing.T) {
 		"link_plaid": true, "repair": true, "link_simplefin": true, "import_credential": true, "reporting_currency": true,
 		"statement_import": true, "delete_statement_account": true, "preview_import_transactions": true,
 		"receipts": true, "receipt": true, "propose_receipt_matches": true, "preview_record_receipt": true,
+		"paystubs": true, "paystub": true, "tax_forms": true, "tax_form": true, "tax_year": true,
 	}
 	for name := range toolOperations(test, tool) {
 		wanted := tools.RiskWrite

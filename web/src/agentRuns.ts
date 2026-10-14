@@ -35,6 +35,7 @@ export const RUN_KINDS = [
   'statement_import',
   // A receipt read out of a message or an upload, recorded and matched.
   'read_receipt',
+  'tax_document',
   // An item a skill's watch found -- mail, a transaction, a mention --
   // judged.
   'watch',

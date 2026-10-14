@@ -124,7 +124,6 @@ type agentFinancePaystubModel struct {
 	ID                    string     `gorm:"column:id;primaryKey"`
 	AgentID               string     `gorm:"column:agent_id"`
 	AgentAttachmentID     string     `gorm:"column:agent_attachment_id"`
-	MailID                *string    `gorm:"column:mail_id"`
 	EmployerName          string     `gorm:"column:employer_name"`
 	EmployerTaxID         string     `gorm:"column:employer_tax_id"`
 	EmployeeName          string     `gorm:"column:employee_name"`
@@ -148,7 +147,7 @@ func (agentFinancePaystubModel) TableName() string { return "agent_finance_payst
 
 func (self *agentFinancePaystubModel) toModel() *models.FinancePaystub {
 	return &models.FinancePaystub{
-		ID: self.ID, AgentID: self.AgentID, AgentAttachmentID: self.AgentAttachmentID, MailID: optionalString(self.MailID),
+		ID: self.ID, AgentID: self.AgentID, AgentAttachmentID: self.AgentAttachmentID,
 		EmployerName: self.EmployerName, EmployerTaxID: self.EmployerTaxID, EmployeeName: self.EmployeeName, EmployeeTaxIDMask: self.EmployeeTaxIDMask,
 		PayDate: self.PayDate.Format(time.DateOnly), PeriodStartOn: formatOptionalDay(self.PeriodStartOn), PeriodEndOn: formatOptionalDay(self.PeriodEndOn),
 		CurrencyCode: self.CurrencyCode, GrossAmount: self.GrossAmount, YearToDateGrossAmount: optionalString(self.YearToDateGrossAmount),
@@ -197,7 +196,6 @@ type agentFinanceTaxFormModel struct {
 	ID                 string    `gorm:"column:id;primaryKey"`
 	AgentID            string    `gorm:"column:agent_id"`
 	AgentAttachmentID  string    `gorm:"column:agent_attachment_id"`
-	MailID             *string   `gorm:"column:mail_id"`
 	TaxFormKind        string    `gorm:"column:tax_form_kind"`
 	TaxYear            int       `gorm:"column:tax_year"`
 	IsCorrected        bool      `gorm:"column:is_corrected"`
@@ -213,7 +211,7 @@ func (agentFinanceTaxFormModel) TableName() string { return "agent_finance_tax_f
 
 func (self *agentFinanceTaxFormModel) toModel() *models.FinanceTaxForm {
 	return &models.FinanceTaxForm{
-		ID: self.ID, AgentID: self.AgentID, AgentAttachmentID: self.AgentAttachmentID, MailID: optionalString(self.MailID),
+		ID: self.ID, AgentID: self.AgentID, AgentAttachmentID: self.AgentAttachmentID,
 		TaxFormKind: models.TaxFormKind(self.TaxFormKind), TaxYear: self.TaxYear, IsCorrected: self.IsCorrected,
 		PayerName: self.PayerName, PayerTaxID: self.PayerTaxID, RecipientName: self.RecipientName, RecipientTaxIDMask: self.RecipientTaxIDMask,
 		TaxFormEntries: []*models.FinanceTaxFormEntry{},
@@ -315,7 +313,7 @@ func (self *transaction) PutFinancePaystub(paystub *models.FinancePaystub) (*mod
 		return nil, fmt.Errorf("%w: the pay date %q is not a day", ErrInvalidArguments, paystub.PayDate)
 	}
 	row := &agentFinancePaystubModel{
-		AgentID: paystub.AgentID, AgentAttachmentID: paystub.AgentAttachmentID, MailID: optionalID(paystub.MailID),
+		AgentID: paystub.AgentID, AgentAttachmentID: paystub.AgentAttachmentID,
 		EmployerName: paystub.EmployerName, EmployerTaxID: paystub.EmployerTaxID, EmployeeName: paystub.EmployeeName,
 		EmployeeTaxIDMask: paystub.EmployeeTaxIDMask, PayDate: payDate, CurrencyCode: strings.ToUpper(strings.TrimSpace(paystub.CurrencyCode)),
 		PaystubCheckState: string(paystub.PaystubCheckState), CheckDifferenceAmount: "0",
@@ -636,7 +634,7 @@ func (self *transaction) PutFinanceTaxForm(taxForm *models.FinanceTaxForm) (*mod
 		return nil, fmt.Errorf("%w: a tax form has at most %d boxes", ErrInvalidArguments, maximumTaxFormEntryCount)
 	}
 	row := &agentFinanceTaxFormModel{
-		AgentID: taxForm.AgentID, AgentAttachmentID: taxForm.AgentAttachmentID, MailID: optionalID(taxForm.MailID),
+		AgentID: taxForm.AgentID, AgentAttachmentID: taxForm.AgentAttachmentID,
 		TaxFormKind: string(taxForm.TaxFormKind), TaxYear: taxForm.TaxYear, IsCorrected: taxForm.IsCorrected,
 		PayerName: taxForm.PayerName, PayerTaxID: taxForm.PayerTaxID, RecipientName: taxForm.RecipientName, RecipientTaxIDMask: taxForm.RecipientTaxIDMask,
 	}

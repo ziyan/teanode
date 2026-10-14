@@ -1726,6 +1726,7 @@ export const ja: Catalog = {
   'agent.runKinds.categorize': '分類',
   'agent.runKinds.statement_import': '明細の取り込み',
   'agent.runKinds.read_receipt': 'レシートの読み取り',
+  'agent.runKinds.tax_document': '給与明細・W-2の読み取り',
   'agent.runKinds.watch': '見守り',
   'agent.runKinds.embed': '索引付け',
   'agent.runKinds.send': '送信',

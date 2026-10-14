@@ -1735,6 +1735,7 @@ export const en = {
   'agent.runKinds.categorize': 'Categorizing',
   'agent.runKinds.statement_import': 'Statement import',
   'agent.runKinds.read_receipt': 'Read a receipt',
+  'agent.runKinds.tax_document': 'Read a paystub or W-2',
   'agent.runKinds.watch': 'Watching',
   'agent.runKinds.embed': 'Indexing',
   'agent.runKinds.send': 'Sending',

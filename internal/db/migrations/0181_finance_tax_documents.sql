@@ -1,14 +1,12 @@
 -- One paycheck's pay statement, read out of an uploaded PDF or photo: what
 -- was earned, the taxes withheld and the deductions, this period and year
 -- to date, stored line by line as printed. A message's paystub is copied
--- into an upload before it is read, so every one has its file; mail_id
--- names the message it was copied from, with no foreign key, so the
--- paystub outlives the message. Reading the same upload again replaces it.
+-- into an upload before it is read, so every one has its file. Reading the
+-- same upload again replaces it.
 CREATE TABLE "agent_finance_paystub" (
     "id"                      character varying(32)    NOT NULL PRIMARY KEY,
     "agent_id"                character varying(32)    NOT NULL REFERENCES "agent" ("id") ON DELETE CASCADE,
     "agent_attachment_id"     character varying(32)    NOT NULL REFERENCES "agent_attachment" ("id") ON DELETE CASCADE,
-    "mail_id"                 character varying(32),
 
     "employer_name"           text                     NOT NULL DEFAULT '',
     -- The employer's identification number as printed: a business's, not
@@ -90,7 +88,6 @@ CREATE TABLE "agent_finance_tax_form" (
     "id"                     character varying(32)    NOT NULL PRIMARY KEY,
     "agent_id"               character varying(32)    NOT NULL REFERENCES "agent" ("id") ON DELETE CASCADE,
     "agent_attachment_id"    character varying(32)    NOT NULL REFERENCES "agent_attachment" ("id") ON DELETE CASCADE,
-    "mail_id"                character varying(32),
 
     "tax_form_kind"          character varying(20)    NOT NULL,
     "tax_year"               integer                  NOT NULL,

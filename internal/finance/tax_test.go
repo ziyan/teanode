@@ -89,11 +89,13 @@ func TestCheckPaystubRefuses(t *testing.T) {
 		"hours only": func(paystub *models.FinancePaystub) {
 			paystub.PaystubLines = append(paystub.PaystubLines, &models.FinancePaystubLine{PaystubLineKind: models.PaystubLineKindEarning, Description: "Worked Hours", Hours: "72"})
 		},
-		"an unknown tax":     func(paystub *models.FinancePaystub) { paystub.PaystubLines[1].PaystubTaxKind = "income" },
-		"a deduction kind":   func(paystub *models.FinancePaystub) { paystub.PaystubLines[5].PaystubDeductionKind = "" },
-		"a negative tax":     func(paystub *models.FinancePaystub) { paystub.PaystubLines[1].CurrentAmount = "-500.00" },
-		"too many places":    func(paystub *models.FinancePaystub) { paystub.GrossAmount = "4000.001" },
-		"a backwards period": func(paystub *models.FinancePaystub) { paystub.PeriodStartOn, paystub.PeriodEndOn = "2026-03-10", "2026-03-01" },
+		"an unknown tax":   func(paystub *models.FinancePaystub) { paystub.PaystubLines[1].PaystubTaxKind = "income" },
+		"a deduction kind": func(paystub *models.FinancePaystub) { paystub.PaystubLines[5].PaystubDeductionKind = "" },
+		"a negative tax":   func(paystub *models.FinancePaystub) { paystub.PaystubLines[1].CurrentAmount = "-500.00" },
+		"too many places":  func(paystub *models.FinancePaystub) { paystub.GrossAmount = "4000.001" },
+		"a backwards period": func(paystub *models.FinancePaystub) {
+			paystub.PeriodStartOn, paystub.PeriodEndOn = "2026-03-10", "2026-03-01"
+		},
 	} {
 		paystub := inventedPaystub("paystub-1", "2026-03-06", 5)
 		change(paystub)
