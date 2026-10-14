@@ -59,4 +59,13 @@ enum CallActivities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
+
+    /// Ends every call's activity. There is one call at a time, so when none
+    /// is on, a call's activity still showing is one left behind: an ended
+    /// call whose audio was started again after it ended.
+    static func endAll() async {
+        for activity in Activity<CallActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
 }

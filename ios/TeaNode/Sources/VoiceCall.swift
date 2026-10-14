@@ -179,10 +179,8 @@ final class VoiceCall: NSObject {
             NotificationCenter.default.removeObserver(routeObserver)
             self.routeObserver = nil
         }
-        if let callActivityId {
-            self.callActivityId = nil
-            Task { await CallActivities.end(callActivityId) }
-        }
+        callActivityId = nil
+        Task { await CallActivities.endAll() }
         if provider == nil {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } else {
@@ -222,7 +220,10 @@ final class VoiceCall: NSObject {
     // MARK: Audio and the socket
 
     private func startAudio() {
-        guard !isAudioRunning else { return }
+        // CallKit can say the audio is active after the call has ended (the
+        // recorder taking the microphone back, a late activation): an ended
+        // call starts nothing, least of all a Live Activity no one ends.
+        guard callState != .ended, !isAudioRunning else { return }
         guard startEngine() else { return }
         routeSound()
         showCallActivity()
