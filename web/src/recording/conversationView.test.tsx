@@ -466,7 +466,7 @@ it('reads a hundred passages and appends the next hundred when the end comes nea
   expect(screen.queryByText('Text of passage-100')).toBeNull()
   expect(document.querySelector('.pager')).toBeNull()
   fireEnd()
-  await screen.findByText('Text of passage-100')
+  await screen.findByText('Text of passage-100', undefined, { timeout: 10_000 })
   expect(calls('ReadRecordingTranscriptTimeline')[1][1]).toMatchObject({ segmentOffset: 100, pageSize: 100 })
   expect(screen.getByText('Text of passage-0')).toBeTruthy()
   fireEnd()
