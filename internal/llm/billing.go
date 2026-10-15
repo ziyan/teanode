@@ -1,11 +1,13 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,11 +32,12 @@ const (
 	// one days fit a page, so a few weeks never come close.
 	billingPageLimit = 20
 
-	// Fewer tokens than this in a day make that day's rate too noisy to
-	// trust: a cent of rounding in the bill moves the rate by a lot.
-	billingMinimumDayTokens      = 1_000_000
-	billingMinimumDayTokensSmall = 10_000
+	// A day with fewer tokens than this says little. The bill's amounts
+	// are not rounded to cents, so even a small day gives an exact rate;
+	// the floor only drops days with a handful of tokens.
+	billingMinimumDayTokens = 1_000
 
+	// How many days must come close to a price before it is believed.
 	billingMinimumDayCount = 2
 )
 
@@ -79,7 +82,8 @@ type BilledRate struct {
 	// figures.
 	PerMillion float64
 
-	// DayCount is the number of well-used days the price rests on.
+	// DayCount is the number of days whose rate came within five percent of
+	// the price before rounding.
 	DayCount int
 
 	// BilledAmount is what the window billed for this line item in all.
@@ -248,9 +252,9 @@ func parseLineItem(lineItem string) parsedLineItem {
 }
 
 // tokenKindAndCount says which kind of token a line item bills and how many
-// of those tokens the model used that day, or ok false for a line item with
+// of those tokens the model used that day, or isPriced false for a line item with
 // no price slot or no matching usage.
-func (parsed parsedLineItem) tokenKindAndCount(counts billedTokenCounts) (kind string, tokens float64, ok bool) {
+func (parsed parsedLineItem) tokenKindAndCount(counts billedTokenCounts) (kind string, tokens float64, isPriced bool) {
 	switch parsed.Kind {
 	case "input":
 		switch parsed.Medium {
@@ -280,15 +284,17 @@ func (parsed parsedLineItem) tokenKindAndCount(counts billedTokenCounts) (kind s
 // token that the bill shows.
 //
 // A day's amount divided by that day's tokens is not the list price: costs
-// and token counts are bucketed by different clocks, so a day's rate is a
-// few percent off either way, and a discounted day (free daily tokens) is
-// far below. Discounts only lower a rate, so the price is the highest rate
-// among days that used enough tokens to be steady, rounded to two
-// significant figures to shed the clock skew (0.1978 becomes 0.2, 0.2452
-// becomes 0.25). At least two such days are needed so one odd bucket
-// cannot set a price. Line items with no price slot (audio output, the
-// 12-hour cache writes) and models with no usage in the window yield
-// nothing.
+// and token counts are bucketed by different clocks, which puts a busy day's
+// rate a few percent under it, and a discounted day (free daily tokens) is
+// lower still by however much was free. Both only lower a rate, so the price
+// is the highest daily rate, rounded to two significant figures to shed the
+// few percent (0.1978 becomes 0.2, 0.2469 becomes 0.25). The highest rate
+// counts only when another day's rate is within five percent of it, so one
+// odd bucket cannot set a price; otherwise the next highest is tried. The
+// bill's amounts are not rounded to cents, so a small day gives a rate as
+// exact as a busy one, which matters for a model whose busy days were all
+// discounted. Line items with no price slot (audio output, the 12-hour
+// cache writes) and models with no usage in the window yield nothing.
 func (self *Billing) Rates() []BilledRate {
 	lineItems := map[string]bool{}
 	for _, amounts := range self.amounts {
@@ -300,8 +306,7 @@ func (self *Billing) Rates() []BilledRate {
 	for lineItem := range lineItems {
 		parsed := parseLineItem(lineItem)
 		var kind string
-		highestRate := 0.0
-		dayCount := 0
+		var dailyRates []float64
 		billedAmount := 0.0
 		for day, amounts := range self.amounts {
 			amount, isBilled := amounts[lineItem]
@@ -309,30 +314,27 @@ func (self *Billing) Rates() []BilledRate {
 				continue
 			}
 			billedAmount += amount
-			itemKind, tokens, ok := parsed.tokenKindAndCount(self.tokens[day][parsed.Model])
-			if !ok {
+			itemKind, tokens, isPriced := parsed.tokenKindAndCount(self.tokens[day][parsed.Model])
+			if !isPriced {
 				continue
 			}
 			kind = itemKind
-			minimumTokens := float64(billingMinimumDayTokens)
-			if kind == BilledTokenKindOutput || kind == BilledTokenKindAudioInput {
-				minimumTokens = billingMinimumDayTokensSmall
-			}
-			if tokens < minimumTokens {
+			if tokens < billingMinimumDayTokens || amount <= 0 {
 				continue
 			}
-			dayCount++
-			if rate := amount / tokens * 1e6; rate > highestRate {
-				highestRate = rate
-			}
+			dailyRates = append(dailyRates, amount/tokens*1e6)
 		}
-		if kind == "" || dayCount < billingMinimumDayCount {
+		if kind == "" {
+			continue
+		}
+		perMillion, dayCount := agreedHighestRate(dailyRates)
+		if dayCount < billingMinimumDayCount {
 			continue
 		}
 		rates = append(rates, BilledRate{
 			Model:        parsed.Model,
 			TokenKind:    kind,
-			PerMillion:   roundToSignificant(highestRate, 2),
+			PerMillion:   perMillion,
 			DayCount:     dayCount,
 			BilledAmount: billedAmount,
 		})
@@ -344,6 +346,30 @@ func (self *Billing) Rates() []BilledRate {
 		return rates[left].TokenKind < rates[right].TokenKind
 	})
 	return rates
+}
+
+// billingAgreement is how close another day's rate must be to the highest
+// for the highest to count.
+const billingAgreement = 0.05
+
+// agreedHighestRate is the highest daily rate that at least one other day
+// comes within five percent of, rounded to two significant figures, with
+// the number of days that close to it.
+func agreedHighestRate(dailyRates []float64) (float64, int) {
+	sorted := slices.Clone(dailyRates)
+	slices.SortFunc(sorted, func(left, right float64) int { return cmp.Compare(right, left) })
+	for index, highest := range sorted {
+		dayCount := 1
+		for _, other := range sorted[index+1:] {
+			if other >= highest*(1-billingAgreement) {
+				dayCount++
+			}
+		}
+		if dayCount >= billingMinimumDayCount {
+			return roundToSignificant(highest, 2), dayCount
+		}
+	}
+	return 0, 0
 }
 
 // DailyAmounts sums everything each model was billed per day, oldest day

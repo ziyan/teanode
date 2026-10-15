@@ -81,8 +81,8 @@ func billingUsageBucket(dayIndex int) map[string]any {
 
 // fakeBilling serves both reports, each over two pages, and counts the
 // requests so a test can see that both pages were read.
-func fakeBilling(t *testing.T, requestCount *int) *httptest.Server {
-	t.Helper()
+func fakeBilling(test *testing.T, requestCount *int) *httptest.Server {
+	test.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		*requestCount++
 		if request.Header.Get("Authorization") != "Bearer billing-key-1" {
@@ -92,19 +92,19 @@ func fakeBilling(t *testing.T, requestCount *int) *httptest.Server {
 		}
 		query := request.URL.Query()
 		if query.Get("bucket_width") != "1d" || query.Get("start_time") != "1000" || query.Get("limit") != "31" {
-			t.Errorf("unexpected query %q", request.URL.RawQuery)
+			test.Errorf("unexpected query %q", request.URL.RawQuery)
 		}
 		var bucket func(int) map[string]any
 		switch request.URL.Path {
 		case "/v1/organization/costs":
 			bucket = billingCostBucket
 			if query.Get("group_by") != "line_item" {
-				t.Errorf("costs grouped by %q", query.Get("group_by"))
+				test.Errorf("costs grouped by %q", query.Get("group_by"))
 			}
 		case "/v1/organization/usage/completions":
 			bucket = billingUsageBucket
 			if query.Get("group_by") != "model" {
-				t.Errorf("usage grouped by %q", query.Get("group_by"))
+				test.Errorf("usage grouped by %q", query.Get("group_by"))
 			}
 		default:
 			writer.WriteHeader(http.StatusNotFound)
@@ -120,27 +120,27 @@ func fakeBilling(t *testing.T, requestCount *int) *httptest.Server {
 		}
 		encoded, err := json.Marshal(map[string]any{"data": data, "has_more": nextPage != "", "next_page": nextPage})
 		if err != nil {
-			t.Error(err)
+			test.Error(err)
 		}
 		_, _ = writer.Write(encoded)
 	}))
 }
 
-func TestBillingRates(t *testing.T) {
+func TestBillingRates(test *testing.T) {
 	requestCount := 0
-	server := fakeBilling(t, &requestCount)
+	server := fakeBilling(test, &requestCount)
 	defer server.Close()
 
 	// A trailing slash on the base URL must not double up.
 	billing, err := ReadBilling(context.Background(), server.Client(), server.URL+"/v1/", "billing-key-1", time.Unix(1000, 0))
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	if requestCount != 4 {
-		t.Errorf("expected 4 requests (2 reports, 2 pages each), got %d", requestCount)
+		test.Errorf("expected 4 requests (2 reports, 2 pages each), got %d", requestCount)
 	}
 	if billing.Currency != "usd" {
-		t.Errorf("currency %q", billing.Currency)
+		test.Errorf("currency %q", billing.Currency)
 	}
 
 	rates := billing.Rates()
@@ -153,17 +153,17 @@ func TestBillingRates(t *testing.T) {
 	expected := []expectation{
 		{"chat-model-small", BilledTokenKindCacheWrite, 0.25, 5},
 		// The discounted days (0.164, 0.0003) do not lower the price.
-		{"chat-model-small", BilledTokenKindInput, 0.2, 5},
+		{"chat-model-small", BilledTokenKindInput, 0.2, 3},
 		{"chat-model-small", BilledTokenKindOutput, 1.2, 5},
 		{"transcribe-model", BilledTokenKindAudioInput, 6, 5},
 	}
 	if len(rates) != len(expected) {
-		t.Fatalf("expected %d rates, got %+v", len(expected), rates)
+		test.Fatalf("expected %d rates, got %+v", len(expected), rates)
 	}
 	for index, want := range expected {
 		got := rates[index]
 		if got.Model != want.model || got.TokenKind != want.tokenKind || got.PerMillion != want.perMillion || got.DayCount != want.dayCount {
-			t.Errorf("rate %d: want %+v, got %+v", index, want, got)
+			test.Errorf("rate %d: want %+v, got %+v", index, want, got)
 		}
 	}
 	wantInputAmount := 0.0
@@ -171,55 +171,55 @@ func TestBillingRates(t *testing.T) {
 		wantInputAmount += rate * billingInputTokens / 1e6
 	}
 	if math.Abs(rates[1].BilledAmount-wantInputAmount) > 1e-9 {
-		t.Errorf("input billed amount %v, want %v", rates[1].BilledAmount, wantInputAmount)
+		test.Errorf("input billed amount %v, want %v", rates[1].BilledAmount, wantInputAmount)
 	}
 }
 
-func TestBillingDailyAmounts(t *testing.T) {
+func TestBillingDailyAmounts(test *testing.T) {
 	requestCount := 0
-	server := fakeBilling(t, &requestCount)
+	server := fakeBilling(test, &requestCount)
 	defer server.Close()
 	billing, err := ReadBilling(context.Background(), server.Client(), server.URL+"/v1", "billing-key-1", time.Unix(1000, 0))
 	if err != nil {
-		t.Fatal(err)
+		test.Fatal(err)
 	}
 	days := billing.DailyAmounts()
 	// Per day: chat-model-small, single-day-model, text-embedding-3-small,
 	// transcribe-model.
 	if len(days) != 5*4 {
-		t.Fatalf("expected 20 model days, got %d", len(days))
+		test.Fatalf("expected 20 model days, got %d", len(days))
 	}
 	first := days[0]
 	wantChat := billingInputRates[0]*billingInputTokens/1e6 + billingCacheRates[0]*billingCacheTokens/1e6 + 0.01 + billingOutputRate*billingOutputTokens/1e6
 	if first.Model != "chat-model-small" || !first.Day.Equal(billingFirstDay) || first.Currency != "usd" || math.Abs(first.BilledAmount-wantChat) > 1e-9 {
-		t.Errorf("first model day %+v, want chat-model-small on %v with %v", first, billingFirstDay, wantChat)
+		test.Errorf("first model day %+v, want chat-model-small on %v with %v", first, billingFirstDay, wantChat)
 	}
 	transcribe := days[3]
 	wantTranscribe := billingAudioRate*billingAudioTokens/1e6 + 0.05
 	if transcribe.Model != "transcribe-model" || math.Abs(transcribe.BilledAmount-wantTranscribe) > 1e-9 {
-		t.Errorf("transcription model day %+v, want %v", transcribe, wantTranscribe)
+		test.Errorf("transcription model day %+v, want %v", transcribe, wantTranscribe)
 	}
 	if !days[4].Day.Equal(billingFirstDay.AddDate(0, 0, 1)) {
-		t.Errorf("model days are not ordered by day: %+v", days[4])
+		test.Errorf("model days are not ordered by day: %+v", days[4])
 	}
 }
 
-func TestBillingRefusedKey(t *testing.T) {
+func TestBillingRefusedKey(test *testing.T) {
 	requestCount := 0
-	server := fakeBilling(t, &requestCount)
+	server := fakeBilling(test, &requestCount)
 	defer server.Close()
 	_, err := ReadBilling(context.Background(), server.Client(), server.URL+"/v1", "sk-proj-wrong", time.Unix(1000, 0))
 	if err == nil {
-		t.Fatal("expected an error")
+		test.Fatal("expected an error")
 	}
 	for _, want := range []string{"billing key was refused", "Missing scopes: api.usage.read"} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q lacks %q", err, want)
+			test.Errorf("error %q lacks %q", err, want)
 		}
 	}
 }
 
-func TestBillingRefusedKeyNestedMessage(t *testing.T) {
+func TestBillingRefusedKeyNestedMessage(test *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusUnauthorized)
 		_, _ = writer.Write([]byte(`{"error": {"message": "Incorrect API key provided"}}`))
@@ -227,11 +227,11 @@ func TestBillingRefusedKeyNestedMessage(t *testing.T) {
 	defer server.Close()
 	_, err := ReadBilling(context.Background(), server.Client(), server.URL, "key", time.Unix(1000, 0))
 	if err == nil || !strings.Contains(err.Error(), "Incorrect API key provided") {
-		t.Errorf("unexpected error %v", err)
+		test.Errorf("unexpected error %v", err)
 	}
 }
 
-func TestParseLineItem(t *testing.T) {
+func TestParseLineItem(test *testing.T) {
 	cases := map[string]parsedLineItem{
 		"chat-model-small, input":               {"chat-model-small", "", "input"},
 		"chat-model-small text, output":         {"chat-model-small", "text", "output"},
@@ -241,12 +241,12 @@ func TestParseLineItem(t *testing.T) {
 	}
 	for lineItem, want := range cases {
 		if got := parseLineItem(lineItem); got != want {
-			t.Errorf("%q: want %+v, got %+v", lineItem, want, got)
+			test.Errorf("%q: want %+v, got %+v", lineItem, want, got)
 		}
 	}
 }
 
-func TestRoundToSignificant(t *testing.T) {
+func TestRoundToSignificant(test *testing.T) {
 	cases := []struct{ value, want float64 }{
 		{0.1978, 0.2},
 		{0.2452, 0.25},
@@ -258,7 +258,30 @@ func TestRoundToSignificant(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		if got := roundToSignificant(testCase.value, 2); got != testCase.want {
-			t.Errorf("roundToSignificant(%v, 2) = %v, want %v", testCase.value, got, testCase.want)
+			test.Errorf("roundToSignificant(%v, 2) = %v, want %v", testCase.value, got, testCase.want)
+		}
+	}
+}
+
+// A model whose busy days were all discounted is priced from its small days
+// billed in full, a single odd high day sets nothing, and rates that never
+// come close to one another give no price.
+func TestTheHighestRateAnotherDayAgreesWith(test *testing.T) {
+	for _, testCase := range []struct {
+		name           string
+		dailyRates     []float64
+		wantPerMillion float64
+		wantDayCount   int
+	}{
+		{"busy days discounted", []float64{0.115, 0.147, 0.309, 0.985, 1.639, 1.97, 2.0, 2.0, 2.0}, 2, 4},
+		{"one odd high day", []float64{5.0, 2.0, 1.99, 0.5}, 2, 2},
+		{"busy days a little under the list price", []float64{0.2469, 0.2452, 0.2441, 0.2409, 0.2387, 0.2338}, 0.25, 5},
+		{"no two days close", []float64{3.0, 1.0}, 0, 0},
+		{"one day", []float64{2.0}, 0, 0},
+	} {
+		perMillion, dayCount := agreedHighestRate(testCase.dailyRates)
+		if perMillion != testCase.wantPerMillion || dayCount != testCase.wantDayCount {
+			test.Errorf("%s: got %v over %d days, want %v over %d", testCase.name, perMillion, dayCount, testCase.wantPerMillion, testCase.wantDayCount)
 		}
 	}
 }
