@@ -4037,6 +4037,22 @@
         }
       }
     },
+    "An OpenAI admin key, used only to read what the organization was billed, so the prices below can follow the bill. Never sent with a model call.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI の管理者キーです。組織に請求された金額を読み取るためだけに使い、下の価格を請求額に合わせます。モデルの呼び出しには送信されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 管理员密钥，仅用于读取组织的账单金额，使下方的价格与账单保持一致。绝不会随模型调用发送。"
+          }
+        }
+      }
+    },
     "API key": {
       "localizations": {
         "ja": {
@@ -7649,6 +7665,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "除了总是需要确认的操作（发送、删除、任何外发），这里列出的工具每次都会先问你。"
+          }
+        }
+      }
+    },
+    "Billing key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求用キー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单密钥"
           }
         }
       }

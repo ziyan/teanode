@@ -97,6 +97,9 @@ type AgentProviderSettings struct {
 	Kind      string `json:"kind"`
 	BaseURL   string `json:"baseUrl"`
 	HasAPIKey bool   `json:"hasApiKey"`
+	// HasBillingAPIKey says the provider has a key that reads what the
+	// organization was billed.
+	HasBillingAPIKey bool `json:"hasBillingApiKey"`
 	// HasRefreshToken says a provider that is signed in to rather than
 	// keyed has been, and Account is the account it bills to.
 	HasRefreshToken   bool     `json:"hasRefreshToken"`
@@ -500,6 +503,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			Kind:              provider.Kind,
 			BaseURL:           provider.BaseURL,
 			HasAPIKey:         provider.APIKey != "",
+			HasBillingAPIKey:  provider.BillingAPIKey != "",
 			HasRefreshToken:   provider.RefreshToken != "",
 			Account:           provider.Account,
 			Enabled:           provider.IsEnabled(),
@@ -599,6 +603,10 @@ type AgentProviderParameters struct {
 	// Blank keeps the key already stored for this name — or for
 	// PreviousName, when the provider is being renamed.
 	APIKey string `json:"apiKey" graphapi:"nullable"`
+
+	// Blank keeps the billing key already stored, as APIKey does. Only an
+	// openai provider keeps one.
+	BillingAPIKey string `json:"billingApiKey" graphapi:"nullable"`
 
 	// PreviousName is what the provider was called until this save, so a
 	// rename carries its stored key along.
@@ -849,15 +857,16 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				kept = previous[before]
 			}
 			provider := config.AgentProvider{
-				Name:         strings.TrimSpace(given.Name),
-				Kind:         strings.TrimSpace(given.Kind),
-				BaseURL:      strings.TrimSpace(given.BaseURL),
-				APIKey:       kept.APIKey,
-				RefreshToken: kept.RefreshToken,
-				Account:      kept.Account,
-				Enabled:      &enabled,
-				Models:       config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
-				Pricing:      config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite, AudioInput: given.PricingAudioInput},
+				Name:          strings.TrimSpace(given.Name),
+				Kind:          strings.TrimSpace(given.Kind),
+				BaseURL:       strings.TrimSpace(given.BaseURL),
+				APIKey:        kept.APIKey,
+				BillingAPIKey: kept.BillingAPIKey,
+				RefreshToken:  kept.RefreshToken,
+				Account:       kept.Account,
+				Enabled:       &enabled,
+				Models:        config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
+				Pricing:       config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite, AudioInput: given.PricingAudioInput},
 			}
 			for _, priced := range given.ModelPricing {
 				if priced == nil || strings.TrimSpace(priced.Model) == "" {
@@ -869,6 +878,13 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 			}
 			if key := strings.TrimSpace(given.APIKey); key != "" && key != config.Redacted {
 				provider.APIKey = key
+			}
+			if key := strings.TrimSpace(given.BillingAPIKey); key != "" && key != config.Redacted {
+				provider.BillingAPIKey = key
+			}
+			// Only OpenAI has organization reports for a billing key to read.
+			if provider.Kind != config.AgentProviderKindOpenAI {
+				provider.BillingAPIKey = ""
 			}
 			// A provider changing kind keeps only the credential the new
 			// kind takes: a key is refused on a signed-in provider, and a

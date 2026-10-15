@@ -1629,6 +1629,9 @@ export const ja: Catalog = {
   'agentSettings.providerBaseUrl': 'ベース URL',
   'agentSettings.providerBaseUrlPlaceholder': '公開サービスなら空欄',
   'agentSettings.providerApiKey': 'API キー',
+  'agentSettings.providerBillingApiKey': '請求用キー',
+  'agentSettings.providerBillingApiKeyHint':
+    'OpenAI の管理者キーです。組織に請求された金額を読み取るためだけに使い、下の価格を請求額に合わせます。モデルの呼び出しには送信されません。',
   'agentSettings.providerAllow': '提供するモデル(パターン、カンマ区切り。空 = すべて)',
   'agentSettings.providerDeny': '隠すモデル',
   'agentSettings.pricingInput': '入力 100 万トークンあたりの価格',

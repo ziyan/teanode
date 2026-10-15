@@ -1586,6 +1586,9 @@ export const zh: Catalog = {
   'agentSettings.providerBaseUrl': '基础 URL',
   'agentSettings.providerBaseUrlPlaceholder': '公共服务留空',
   'agentSettings.providerApiKey': 'API 密钥',
+  'agentSettings.providerBillingApiKey': '账单密钥',
+  'agentSettings.providerBillingApiKeyHint':
+    'OpenAI 管理员密钥，仅用于读取组织的账单金额，使下方的价格与账单保持一致。绝不会随模型调用发送。',
   'agentSettings.providerAllow': '提供的模型（模式，逗号分隔；空 = 全部）',
   'agentSettings.providerDeny': '隐藏的模型',
   'agentSettings.pricingInput': '每百万输入 token 价格',

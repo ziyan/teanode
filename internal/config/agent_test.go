@@ -179,3 +179,21 @@ func TestSynthesizeFallsBackToResearchThenDefault(t *testing.T) {
 		t.Fatalf("the scan keeps its own model: %q", model)
 	}
 }
+
+// Only an openai provider takes a billing key: elsewhere it would be
+// quietly ignored, so a save that carries one is refused.
+func TestOnlyAnOpenAIProviderTakesABillingKey(t *testing.T) {
+	configuration := &Configuration{}
+	configuration.Agent.Providers = []AgentProvider{
+		{Name: "billed", Kind: AgentProviderKindOpenAI, APIKey: "a-key", BillingAPIKey: "an-admin-key"},
+	}
+	err := configuration.Validate()
+	if err != nil && strings.Contains(err.Error(), "billingApiKey") {
+		t.Fatalf("an openai provider was refused its billing key: %v", err)
+	}
+	configuration.Agent.Providers[0].Kind = AgentProviderKindAnthropic
+	err = configuration.Validate()
+	if err == nil || !strings.Contains(err.Error(), "agent.providers[0].billingApiKey") {
+		t.Fatalf("a billing key on an anthropic provider was accepted: %v", err)
+	}
+}

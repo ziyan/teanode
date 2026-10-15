@@ -1638,6 +1638,9 @@ export const en = {
   'agentSettings.providerBaseUrl': 'Base URL',
   'agentSettings.providerBaseUrlPlaceholder': 'empty for the public service',
   'agentSettings.providerApiKey': 'API key',
+  'agentSettings.providerBillingApiKey': 'Billing key',
+  'agentSettings.providerBillingApiKeyHint':
+    'An OpenAI admin key, used only to read what the organization was billed, so the prices below can follow the bill. Never sent with a model call.',
   'agentSettings.providerAllow': 'Models to offer (patterns, comma-separated; empty = all)',
   'agentSettings.providerDeny': 'Models to hide',
   'agentSettings.pricingInput': 'Price per million input tokens',

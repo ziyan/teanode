@@ -172,6 +172,14 @@ type AgentProvider struct {
 	// APIKey authenticates this server to the service. A secret.
 	APIKey string `yaml:"apiKey,omitempty" secret:"true"`
 
+	// BillingAPIKey is an OpenAI organization admin key that reads the
+	// organization's cost and usage reports, so the prices can follow what
+	// was billed. A secret. It is never sent with a model call: an admin key
+	// can manage the whole organization, and keeping it out of the request
+	// path limits what a leak of the calling key exposes. Only an openai
+	// provider takes one.
+	BillingAPIKey string `yaml:"billingApiKey,omitempty" secret:"true"`
+
 	// RefreshToken authenticates a service that is signed in to rather
 	// than keyed: the long half of the pair, traded for a short-lived
 	// access token before each run of requests. A secret.
@@ -1395,6 +1403,12 @@ func (self *Configuration) validateAgent(validator *validator) {
 		default:
 			validator.add(prefix+".kind",
 				`must be "openai" (also every compatible server), "anthropic", "gemini", "typesafe" or "openai-codex"`)
+		}
+		if provider.BillingAPIKey != "" && provider.Kind != AgentProviderKindOpenAI {
+			// Only OpenAI has organization reports to read; a key here on
+			// another kind would be quietly ignored, which is worse than
+			// being told.
+			validator.add(prefix+".billingApiKey", "only a provider of kind \"openai\" takes a billing key")
 		}
 		if provider.Kind == AgentProviderKindTypeSafe {
 			deciders[provider.Name] = true

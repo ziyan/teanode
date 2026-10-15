@@ -76,6 +76,8 @@ private struct SecretField: View {
     let label: LocalizedStringKey
     let isStored: Bool
     @Binding var typed: String
+    /// What the key is for, shown in the footer, when it is not obvious.
+    var hint: LocalizedStringKey?
     /// Whether clearing it is offered, and whether it is being cleared.
     var isClearing: Binding<Bool>?
 
@@ -95,6 +97,9 @@ private struct SecretField: View {
         } header: {
             Text(label)
         } footer: {
+            if let hint {
+                Text(hint)
+            }
             if isClearing?.wrappedValue == true {
                 Text("Cleared when you save.")
             } else if isStored {
@@ -3019,6 +3024,11 @@ struct AgentProviderForm: View {
                 } else {
                     SettingField(label: "Base URL", text: $draft.baseUrl, prompt: String(localized: "empty for the public service"))
                     SecretField(label: "API key", isStored: draft.hasApiKey, typed: $draft.apiKey)
+                    if draft.providerKind == "openai" {
+                        SecretField(
+                            label: "Billing key", isStored: draft.hasBillingApiKey, typed: $draft.billingApiKey,
+                            hint: "An OpenAI admin key, used only to read what the organization was billed, so the prices below can follow the bill. Never sent with a model call.")
+                    }
                 }
                 Section {
                     TextField("Models to offer", text: $draft.allowText, prompt: Text("Patterns, comma separated; empty offers all"))

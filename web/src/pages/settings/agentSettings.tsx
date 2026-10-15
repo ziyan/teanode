@@ -34,6 +34,7 @@ export type AgentProvider = {
   kind: string
   baseUrl: string
   hasApiKey: boolean
+  hasBillingApiKey: boolean
   // A provider that runs on a person's plan is signed in to, not keyed.
   hasRefreshToken: boolean
   account: string
@@ -179,7 +180,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+  providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
@@ -433,6 +434,8 @@ type ProviderDraft = {
   baseUrl: string
   apiKey: string
   hasApiKey: boolean
+  billingApiKey: string
+  hasBillingApiKey: boolean
   hasRefreshToken: boolean
   enabled: boolean
   allow: string
@@ -453,6 +456,8 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         baseUrl: provider.baseUrl,
         apiKey: '',
         hasApiKey: provider.hasApiKey,
+        billingApiKey: '',
+        hasBillingApiKey: provider.hasBillingApiKey,
         hasRefreshToken: provider.hasRefreshToken,
         enabled: provider.enabled,
         allow: list(provider.allow),
@@ -477,6 +482,8 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         baseUrl: '',
         apiKey: '',
         hasApiKey: false,
+        billingApiKey: '',
+        hasBillingApiKey: false,
         hasRefreshToken: false,
         enabled: true,
         allow: '',
@@ -503,6 +510,7 @@ function providerValues(provider: AgentProvider) {
     kind: provider.kind,
     baseUrl: provider.baseUrl,
     apiKey: '',
+    billingApiKey: '',
     enabled: provider.enabled,
     allow: provider.allow,
     deny: provider.deny,
@@ -521,6 +529,7 @@ function draftValues(draft: ProviderDraft) {
     kind: draft.kind,
     baseUrl: draft.baseUrl.trim(),
     apiKey: draft.apiKey,
+    billingApiKey: draft.billingApiKey,
     enabled: draft.enabled,
     allow: split(draft.allow),
     deny: split(draft.deny),
@@ -830,6 +839,22 @@ function ProviderDialog({
               onChange={(event) => set({ apiKey: event.target.value })}
             />
           </label>
+          {draft.kind === 'openai' ? (
+            <label>
+              <span>
+                {t('agentSettings.providerBillingApiKey')}
+                {draft.hasBillingApiKey ? <span className="muted"> {t('agentSettings.secretKept')}</span> : null}
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={draft.billingApiKey}
+                placeholder={draft.hasBillingApiKey ? '••••••••' : ''}
+                onChange={(event) => set({ billingApiKey: event.target.value })}
+              />
+              <small className="muted">{t('agentSettings.providerBillingApiKeyHint')}</small>
+            </label>
+          ) : null}
         </>
       )}
       <div className="row">

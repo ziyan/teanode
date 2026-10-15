@@ -366,6 +366,8 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(providers[0]["name"], .string("primary"))
         XCTAssertEqual(providers[0]["previousName"], .string("main"))
         XCTAssertEqual(providers[0]["apiKey"], .string(""), "a blank key keeps the stored one")
+        XCTAssertEqual(providers[0]["billingApiKey"], .string(""), "a blank billing key keeps the stored one")
+        XCTAssertFalse(draft.hasBillingApiKey, "the server sent no billing key flag")
         XCTAssertEqual(providers[0]["pricingAudioInput"], .number(6), "the audio input price is sent back")
         guard case .array(let sentPrices) = providers[0]["modelPricing"] else { return XCTFail("no model prices") }
         XCTAssertEqual(sentPrices[0]["audioInput"], .number(4.5))
