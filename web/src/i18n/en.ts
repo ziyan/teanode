@@ -1674,7 +1674,7 @@ export const en = {
   'agentSettings.work.ask': 'Conversations',
   'agentSettings.work.schedule': 'Scheduled runs',
   'agentSettings.work.compact': 'Compaction',
-  'agentSettings.work.scan': 'Reading and filing: the night, the ingest, the remember run',
+  'agentSettings.work.scan': 'Reading and filing: dreams, the ingest, the remember run',
   'agentSettings.modelChoices': 'Models a person may pick for their conversations (comma-separated; empty = none)',
   'agentSettings.features': 'What people may turn on',
   'agentSettings.featuresDescription':
@@ -1695,7 +1695,7 @@ export const en = {
   'agentSettings.feature.subagents': 'Subagents: a turn may hand a piece of work to a run of its own',
   'agentSettings.feature.remember': 'Remember: file what a conversation taught once it goes quiet',
   'agentSettings.feature.knowledge': 'Knowledge: read the sources people point their agent at',
-  'agentSettings.feature.dreaming': 'Dreaming: the nightly run that reads, files and tidies',
+  'agentSettings.feature.dreaming': 'Dreaming: the background runs that read, file and tidy',
   'agentSettings.limits': 'Limits',
   'agentSettings.limit.dailyTokensPerAgent': 'Tokens per person per day',
   'agentSettings.limit.dailyCostPerAgent': 'Daily cost per person',
@@ -1726,7 +1726,7 @@ export const en = {
   'agentSettings.limit.maxRoundsPerDream': 'Rounds per dream call',
   'agentSettings.limit.scanConcurrency': 'Reading calls at once',
   'agentSettings.limit.rewriteConcurrency': 'Page rewrites at once',
-  'agentSettings.limit.dreamShare': 'Share of the day the night may spend (0.3 by default)',
+  'agentSettings.limit.dreamShare': 'Share of the day dreams may spend (0.3 by default)',
   'agentSettings.limit.ingestChunksPerRun': 'Passages embedded per ingest run',
   'agentSettings.limit.embeddingTokensPerDay': 'Embedding tokens per day (0 for no cap)',
   'agentSettings.retentionRuns': 'Keep run transcripts for',
@@ -3098,7 +3098,7 @@ export const en = {
   'knowledge.unlinkFrom': 'Unlink from {name}',
   'knowledge.unlinkBody': 'Take back the link: {from} {relation} {to}. Neither page forgets anything else.',
   'knowledge.unlinked': 'Unlinked',
-  // A link the nightly run guessed from a walk across the graph. Making
+  // A link a dream guessed from a walk across the graph. Making
   // the same link yourself is what confirms it; unlinking drops it.
   'knowledge.proposedRelation': '{relation} (proposed)',
   'knowledge.under': 'Under this page',
@@ -3113,7 +3113,7 @@ export const en = {
   'knowledge.from.repository': 'from a repository',
   'knowledge.from.memory': 'from what it remembered before',
   'knowledge.from.person': 'you wrote it',
-  'knowledge.from.dream': 'from its own reasoning overnight',
+  'knowledge.from.dream': 'from its own reasoning in a dream',
   'knowledge.kind.self': 'You',
   'knowledge.kind.person': 'Person',
   'knowledge.kind.organization': 'Organization',
