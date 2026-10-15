@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.163.0] - 2026-10-15
+
+### Added
+
+- iPhone: Spending shows a month's spending day by day against the month before, and has a Year view with every year's cash flow and the year's saving, budgets and spending. (#500)
+
 ## [0.162.5] - 2026-10-15
 
 ### Fixed
