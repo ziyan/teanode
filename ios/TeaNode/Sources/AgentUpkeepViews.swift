@@ -3049,6 +3049,23 @@ struct ChatBotTokenEditor: View {
 
 // MARK: - Activity
 
+/// RunConversationView is a run's transcript opened from a list of runs. It
+/// is pushed on the list's own stack, so going back returns to the list as
+/// it was left, as the dashboard opens a run in its drawer over the list.
+struct RunConversationView: View {
+    let connection: Connection
+    let conversationId: String
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        // The kind is learned when the conversation loads.
+        ConversationView(
+            model: ConversationModel(
+                conversation: AgentConversation(id: conversationId, kind: "named", title: nil, summary: nil, lastAt: nil),
+                app: app, connection: connection))
+    }
+}
+
 /// AgentActivityView is the dashboard's Activity tab: the work the agent
 /// started in the background, each stopped or opened; every run it made,
 /// newest first, a page at a time, narrowed by kind or words or to one
@@ -3056,7 +3073,6 @@ struct ChatBotTokenEditor: View {
 /// person, a held reply cancelled.
 struct AgentActivityView: View {
     let connection: Connection
-    @Environment(AppModel.self) private var app
     @State private var dreamJobId: String?
     private let dreamStartedAt: String?
     @State private var works: [AgentBackgroundWork] = []
@@ -3067,6 +3083,8 @@ struct AgentActivityView: View {
     @State private var isLoadingMore = false
     @State private var replies: [AgentReply] = []
     @State private var openedWork: AgentBackgroundWork?
+    /// The run opened from this list, pushed over it.
+    @State private var openedRunId: String?
     @State private var stopping: AgentBackgroundWork?
     @State private var cancelling: AgentReply?
     @State private var isBusy = false
@@ -3135,9 +3153,20 @@ struct AgentActivityView: View {
         .sheet(item: $openedWork) { work in
             BackgroundWorkResultSheet(connection: connection, work: work) { runId in
                 openedWork = nil
-                app.openedConversationId = runId
+                openedRunId = runId
             }
         }
+        .navigationDestination(item: $openedRunId) { runId in
+            RunConversationView(connection: connection, conversationId: runId)
+        }
+        #if DEBUG
+            .task {
+                // `-TeaNodeScreen activity-run`: a run opened from the list, with the way back to it.
+                guard DemoServer.isRequested, DemoServer.screen == "activity-run" else { return }
+                try? await Task.sleep(for: .seconds(1))
+                openedRunId = "main"
+            }
+        #endif
         .toast(done: $doneText, problem: $problemText)
     }
 
@@ -3214,7 +3243,7 @@ struct AgentActivityView: View {
             }
             ForEach(runs ?? []) { run in
                 Button {
-                    app.openedConversationId = run.id
+                    openedRunId = run.id
                 } label: {
                     AgentRunRow(run: run)
                 }

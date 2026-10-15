@@ -2502,7 +2502,6 @@ private struct AgentUsageView: View {
 /// person and is logged.
 private struct AgentRunsAdminView: View {
     let connection: Connection
-    @Environment(AppModel.self) private var app
     @State private var overview: AgentAdminOverview?
     @State private var filter = ServerAgentRunFilter()
     @State private var runs: [ServerAgentRun]?
@@ -2510,6 +2509,8 @@ private struct AgentRunsAdminView: View {
     @State private var isLoadingMore = false
     @State private var doneText: String?
     @State private var problemText: String?
+    /// The run, or what a job given up on tried, opened from this list and pushed over it.
+    @State private var openedConversationId: String?
 
     private static let pageSize = 50
 
@@ -2540,6 +2541,9 @@ private struct AgentRunsAdminView: View {
         .refreshable {
             await loadOverview()
             await loadRuns()
+        }
+        .navigationDestination(item: $openedConversationId) { conversationId in
+            RunConversationView(connection: connection, conversationId: conversationId)
         }
         .toast(done: $doneText, problem: $problemText)
     }
@@ -2626,7 +2630,7 @@ private struct AgentRunsAdminView: View {
             }
             ForEach(runs ?? []) { run in
                 Button {
-                    app.openedConversationId = run.id
+                    openedConversationId = run.id
                 } label: {
                     runRow(run)
                 }
@@ -2714,7 +2718,7 @@ private struct AgentRunsAdminView: View {
     private func openConversation(_ job: AgentDeadJob) async {
         do {
             if let conversationId = try await connection.deadJobConversationId(job) {
-                app.openedConversationId = conversationId
+                openedConversationId = conversationId
             } else {
                 problemText = String(localized: "This job never got as far as a run.")
             }
