@@ -123,8 +123,8 @@ it('points the agent at the recording', async () => {
   }
 })
 
-// A link to a recording that was deleted says so on the page, not only in a
-// toast over an empty page.
+// A link to a recording that was deleted says so on the page, once: not in a
+// toast over an empty page, and not in the server's words beside it.
 it('says a deleted recording is not found', async () => {
   vi.mocked(graphql).mockResolvedValue({ ListRecordings: [] })
   vi.mocked(readRecording).mockRejectedValue(new Error('db: recording was deleted'))
@@ -150,4 +150,5 @@ it('says a deleted recording is not found', async () => {
     </TranslationProvider>,
   )
   expect(await screen.findByText('Not found.')).toBeTruthy()
+  expect(screen.queryByText(/recording was deleted/)).toBeNull()
 })

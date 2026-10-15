@@ -356,9 +356,16 @@ function AccountRecordingsPage() {
       {recordingMenu}
     </>
   )
+  // A recording that was deleted, or never was, is said once, as the page:
+  // the server's own words in a toast beside it only repeated it in a
+  // programmer's voice. Anything else that went wrong is still a toast.
+  const isRecordingGone =
+    !view &&
+    Boolean(detail.error) &&
+    /not found|was deleted/i.test(detail.error instanceof Error ? detail.error.message : String(detail.error))
   return (
     <div className="recording-page">
-      <ErrorMessage error={recordingId ? detail.error : library.error} />
+      <ErrorMessage error={recordingId ? (isRecordingGone ? null : detail.error) : library.error} />
       {!recordingId ? (
         <>
           <PageHeadingActions>
@@ -412,7 +419,7 @@ function AccountRecordingsPage() {
         </>
       ) : detail.loading && !view ? (
         <Loading />
-      ) : !view && detail.error ? (
+      ) : isRecordingGone ? (
         <p className="muted">{t('common.notFound')}</p>
       ) : (
         view && (
