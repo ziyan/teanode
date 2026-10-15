@@ -1373,8 +1373,12 @@ struct LinkedRecordRow: View {
     let link: KnowledgeRecordLink
     let onAct: (Action) -> Void
     @Environment(AppModel.self) private var app
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        // At the largest text sizes the relation, count, date and guess mark take a line each, so no word breaks mid-way.
+        let detailLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(spacing: 6))
         Button {
             app.openRecord(dashboardPath: link.dashboardPath)
         } label: {
@@ -1384,7 +1388,7 @@ struct LinkedRecordRow: View {
                 } else {
                     Text(link.recordTitle.isEmpty ? KnowledgeRecordWords.kind(link.recordKind) : link.recordTitle)
                 }
-                HStack(spacing: 6) {
+                detailLayout {
                     Text(KnowledgeRecordWords.relation(link.recordRelation))
                     if link.coveredPassageCount > 1 {
                         Text("\(link.coveredPassageCount) passages")
