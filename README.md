@@ -4,7 +4,7 @@
 
 <h1 align="center">TeaNode</h1>
 
-<p align="center">A mail server for your own domains, in one executable.</p>
+<p align="center">A personal assistant that lives on your own server.</p>
 
 <p align="center">
   <a href="https://teanode.com">teanode.com</a> ·
@@ -12,71 +12,72 @@
   <a href="https://teanode.com/doc/introduction">Documentation</a>
 </p>
 
-It receives mail over SMTP, checks that it is genuine (SPF, DKIM, DMARC, ARC),
-scores it for spam and optionally scans it for viruses, and then either files
-it in a mailbox here or hands it on — to an inbox you already read, to a
-webhook, or to another mail server. It also relays outbound mail from your own
-devices, signed with your domain's key so it arrives rather than landing in
-spam.
+It reads your mail, keeps your calendar, files your receipts and tax forms,
+writes up your meetings, keeps an eye on your coding sessions, and remembers
+what it learns about you. Talk to it from the iPhone app, from a browser, or
+by calling it. It is one program and one PostgreSQL database on your own
+hardware; point it at your own Ollama or vLLM and nothing leaves the machine.
 
-A mailbox is read in the dashboard or in any mail program over IMAP. An address
-that should not have a mailbox forwards instead, and one domain can do both.
-Each account also has a calendar, a reminders list and an address book, which
-a phone keeps in step over CalDAV and CardDAV.
+Each person on the server can turn on an agent of their own, pointed at a
+model the operator chose (OpenAI, Anthropic, Gemini, an Ollama or vLLM on the
+same machine, or a ChatGPT plan). It works with exactly that person's
+permissions and asks before anything it cannot undo. It is off until somebody
+turns it on.
 
-Each person can turn on an agent of their own, pointed at a model the operator
-chose (OpenAI, Anthropic, Gemini, an Ollama or vLLM on the same machine, or a
-ChatGPT plan). It sorts the mail that arrives, drafts replies, answers
-questions with exactly that person's permissions, keeps a memory of what it
-learns, and can read the banks and cards they link. You can call it from the
-dashboard and talk, and it can see and prompt the Claude Code and Codex
-sessions on your computers. It is off until somebody turns it on.
+It can also be the mail server for your domains, which is how it started. It
+receives mail over SMTP, checks that it is genuine (SPF, DKIM, DMARC, ARC),
+scores it for spam, and files it in a mailbox here or hands it on, and it
+relays outbound mail from your own devices signed with your domain's key. That
+part is optional: the assistant runs without a domain, MX records or mail
+ports.
 
-```mermaid
-flowchart LR
-    A["you@example.com"] --> T
-    B["hello@example.com"] --> T
-    C["anything else@example.com"] --> T
-    T["TeaNode<br/>SPF · DKIM · DMARC · ARC"]
-    T --> M["a mailbox here,<br/>and over IMAP"]
-    T --> D["you@example.net"]
-    T --> E["an HTTP endpoint"]
-    T --> F["another mail server"]
-```
+## The iPhone app
+
+![Four screens of the iPhone app: the conversation, the inbox, spending and a recorded meeting](docs/images/iphone.jpg)
+
+One app for every TeaNode server. Scan the code the dashboard shows and it
+connects as you, with nothing to type. It carries what the dashboard does,
+from mail and the calendar to finance and memory, in the system's own controls
+and at your text size.
+
+- **The conversation, everywhere.** Every card the dashboard's drawer shows,
+  including a coding session's question with its answers as buttons.
+- **Answer from the notification.** What needs you arrives as a notification
+  you can reply to; a running turn stays on the lock screen as a Live
+  Activity, and widgets show what is waiting and what is next.
+- **Call it, or ask Siri.** A real call you can cut into. Ask TeaNode and Call
+  TeaNode work from Siri, Shortcuts and Control Center.
+- **Share anything to it.** A picture, a file, a link or some words go to your
+  agent with a note. Paystubs and W-2s go straight to Taxes.
+- **Record a meeting.** The phone records, the server transcribes as it goes,
+  and an upload the network cut off carries on where it stopped.
+- **Mail, calendars and contacts too.** One profile adds them to the iPhone's
+  own apps.
+
+It is in TestFlight now, on its way to the App Store. Until then you can build
+it yourself from [`ios/`](ios/README.md). Notifications reach it through a
+relay that sees the address of the server calling it and a payload it cannot
+read.
 
 ## Why
 
-Running mail for a domain usually means either handing it to a provider, or
-assembling Postfix, Dovecot, OpenDKIM, OpenDMARC, SpamAssassin and a policy
-daemon and keeping them in agreement. This is one executable and a PostgreSQL
-database, with the authentication that decides whether your mail is trusted
-built in rather than bolted on.
+An assistant that reads your mail, your calendar and your bank accounts has to
+be trusted with all of them. This one runs on hardware you control, keeps
+everything in your own database, and can use a model on the same machine, so
+none of it has to leave.
+
+And running mail for a domain usually means either handing it to a provider,
+or assembling Postfix, Dovecot, OpenDKIM, OpenDMARC, SpamAssassin and a policy
+daemon and keeping them in agreement. Here it is the same executable, with the
+authentication that decides whether your mail is trusted built in rather than
+bolted on.
 
 ## What it looks like
 
-The dashboard is compiled into the binary; there is nothing else to deploy. It
-opens on your mailbox, and the pages that run the server are a mode behind
-**Manage**, which shows only what your permissions allow. Every picture here
-is of invented people and invented mail.
-
-![A mailbox, with a message open](docs/images/mailbox.jpg)
-
-Folders nest, search covers one folder or the whole mailbox, and a message is
-shown the way a mail program would show it.
-
-![The Priority view, with the agent's chips on each row](docs/images/priority.jpg)
-
-With the agent on, each message gets a category, a priority and a note of
-whether somebody is waiting on you, and Priority lists what needs you first.
-
-![A week of the calendar](docs/images/calendar.jpg)
-
-The calendar, with the reminders list a tab away. An invitation that arrives
-as mail becomes an event you can answer.
-
-![The address book](docs/images/contacts.jpg)
-
-The address book holds the people you keep, not everyone who ever wrote.
+The dashboard is compiled into the binary; there is nothing else to deploy.
+The pages that run the server are a mode behind **Manage**, which shows only
+what your permissions allow. Every picture here is of invented people, invented
+mail and invented money.
 
 ![The chat drawer open beside the mailbox](docs/images/drawer.jpg)
 
@@ -128,6 +129,25 @@ printed totals and matched to the charge it explains.
 Net worth counts the linked accounts, what you enter yourself, and estimates
 the agent makes where you allowed it.
 
+![A mailbox, with a message open](docs/images/mailbox.jpg)
+
+Folders nest, search covers one folder or the whole mailbox, and a message is
+shown the way a mail program would show it.
+
+![The Priority view, with the agent's chips on each row](docs/images/priority.jpg)
+
+With the agent on, each message gets a category, a priority and a note of
+whether somebody is waiting on you, and Priority lists what needs you first.
+
+![A week of the calendar](docs/images/calendar.jpg)
+
+The calendar, with the reminders list a tab away. An invitation that arrives
+as mail becomes an event you can answer.
+
+![The address book](docs/images/contacts.jpg)
+
+The address book holds the people you keep, not everyone who ever wrote.
+
 Behind **Manage** is the server: every message it has handled with what it
 decided about each one, the queue, DMARC reports, the domains, and who may do
 what.
@@ -145,15 +165,26 @@ see what is left rather than guessing.
 
 ## Getting started
 
-For a personal assistant without hosting email, use the
-[assistant compose file](deploy/docker-compose.assistant.yml) and
-[deployment guide](docs/reference/deployment.md#assistant-without-hosted-mail).
-Claim your account, choose services in Server > Setup, configure a model and
-enable the assistant. No mail domain, MX records or SMTP ports are needed.
-Calendar, reminders and contacts are independent choices. Existing mail
-installations retain their behavior when upgraded.
+### Just the assistant
 
-The instructions below configure hosted mail.
+No domain and no mail ports. The compose file runs the server and PostgreSQL
+and listens on 127.0.0.1:8080:
+
+    mkdir -p /opt/teanode && cd /opt/teanode
+    curl -LO https://raw.githubusercontent.com/ziyan/teanode/main/deploy/docker-compose.assistant.yml
+    echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" > .env
+    chmod 600 .env
+    docker compose -f docker-compose.assistant.yml up -d
+
+Open the dashboard, claim the first account, configure a model under
+**Server → Setup** and turn the assistant on. Put an HTTPS reverse proxy in
+front of it before the iPhone app or anything outside the machine reaches it.
+Calendar, reminders and contacts are separate choices, and mail can be added
+later without losing anything. [Assistant without hosted
+mail](docs/reference/deployment.md#assistant-without-hosted-mail) has the
+details.
+
+### With your own mail
 
 Download the two programs, describe the server, run it:
 
@@ -167,8 +198,8 @@ Download the two programs, describe the server, run it:
     teanode-server config env --preset mail --output .env \
       --hostname mail.example.com --domain example.com
 
-Edit `.env` — it needs a PostgreSQL you can reach and an address for the
-certificate authority to write to — then set the server up and start it:
+Edit `.env` (it needs a PostgreSQL you can reach and an address for the
+certificate authority to write to), then set the server up and start it:
 
     set -a; . ./.env; set +a
     teanode-server config init
@@ -205,17 +236,116 @@ translated.
 
 ## What you need
 
-- A domain, and the ability to edit its DNS
-- A host with a stable address, reachable on ports 25, 80, 443 and 587, and on
-  993 if mail programs are to read the mailboxes
-- PostgreSQL, for the settings, the mailboxes and the mail it has handled
+- A computer that stays on, with Docker and compose, or PostgreSQL for the
+  binaries
+- A model to think with: an API key, a ChatGPT plan you already pay for, or
+  your own Ollama or vLLM
+- An HTTPS address in front of it, for the iPhone app and for when you are out;
+  any reverse proxy will do
+- For your own mail, also a domain whose DNS you can edit, and a host with a
+  stable address reachable on ports 25, 80, 443 and 587, and on 993 if mail
+  programs are to read the mailboxes
 
-Nothing else. No AWS account. Certificates are obtained
-automatically over HTTP-01, so there is no DNS API to configure. An
-S3-compatible object store is optional, and only worth having if you run more
-than one instance: it is what lets them share the stored messages.
+Nothing else, and no account with us, because there is nothing to sign up to.
+For mail, certificates are obtained automatically over HTTP-01, so there is no
+DNS API to configure. An S3-compatible object store is optional, and only
+worth having if you run more than one instance: it is what lets them share the
+stored messages.
 
 ## What it does
+
+**Your agent.** Off until the operator configures a model and each person
+turns their own on, and blind to every mailbox until it is granted one. It
+sorts what arrives, summarizes long conversations, drafts replies in your
+voice, and can answer on your behalf under a policy you write. It answers
+questions in a drawer on every page or with `teanode agent ask`, through the
+same operations the dashboard uses, with your permissions. It can reach your
+calendar and contacts, your own computer and browser tab, the web, and servers
+you connect over the Model Context Protocol. It tells you, unasked, when mail
+shows something that cannot wait, within quiet hours and a daily limit you
+set. Operators cap what it may spend.
+
+**Talk to it.** A call in the drawer, on a laptop or a phone: what you say is
+transcribed as you say it, the answer is written for the ear and read back,
+and you can talk over it. The operator turns it on and the provider's key
+never leaves the server.
+
+**A memory that learns you.** The agent keeps what it learns as a graph of
+pages, each fact numbered and tied to the words it came from. It writes pages
+without being asked, reads the places you point it at (a code checkout, a chat
+archive, your notes, a wiki), and works over the graph while you are away.
+Nothing is deleted, and every change can be put back.
+
+**Finance.** Banks, cards, brokerages and lenders linked through Plaid or
+SimpleFIN, kept in your own database: transactions in your own categories,
+budgets that project the month, savings targets, and net worth over time.
+Accounts no provider reaches come in from an OFX statement or from
+screenshots, and receipts are kept line by line against their charges. The
+agent reads the same rows, so you can ask it how the month is going.
+
+**Taxes.** Paystubs, W-2s, 1099-INT, 1099-DIV, 1099-B and 1098s are read out
+of a PDF or a photo, handed in from the dashboard, the iPhone's share sheet, a
+tax document address of your own, or `teanode finance read-tax-document`. Each
+is checked as it arrives: Social Security and Medicare against the wages, each
+paystub against the one before, each W-2 against the year's last paystub, and
+withholding over the year's maximum. Only the last four digits of a taxpayer
+number are kept, and the file is kept without its text. The year is projected
+to December 31 at your own pay rhythm, investment income is previewed from the
+linked accounts before the 1099s arrive, and the estimate (brackets, itemizing
+when it beats the standard deduction, the rates on qualified dividends and
+long-term gains, the child tax credit and the dependent care credit) is set
+against what was withheld. It is a starting point for a return, not the
+return.
+
+**Meetings.** Record one on the iPhone, in the dashboard or with `teanode
+recording record`. It is transcribed in pieces while it goes on, so a long
+meeting does not mean a long wait; name a speaker once and every passage
+follows; correct a line and later passes never put it back. The summary is
+rewritten around your corrections, and what was decided lands on the pages of
+the people and projects involved, linked to the moment it was said.
+
+**Your coding sessions.** Through herdr on each attached computer, the agent
+lists your Claude Code and Codex sessions, reads them, types an instruction
+into one, answers the questions they ask, and tells you when one finishes.
+
+**Memory in your coding sessions.** `teanode hook install claude-code` (or
+`codex`) adds hooks that show each session what the agent knows about the
+checkout it runs in. When a session starts: the project's page and its facts
+most in use, and where the last session in that directory stopped (your last
+requests and the start of its last answer, read from the transcript). Before
+each prompt: what the prompt recalls and the lessons close to it, kept to the
+checkout's project so your mail and money stay out of the coding tool. After
+each answer: the computer's transcript source reads the session within a
+minute, so the next one knows where this one stopped. A hook that fails shows
+nothing and never stops the tool, and `teanode agent memory checkout` prints
+what a session would be shown. [Memory in coding
+sessions](https://teanode.com/doc/coding-memory) has the details.
+
+**Model Context Protocol, both ways.** An editor, a coding tool, or ChatGPT or
+Grok on your phone can use your agent's tools and ask it questions, so you can
+check on your coding sessions by voice from the car; approve it in your
+browser and there is no token to copy.
+
+**Calendar, reminders and contacts.** A calendar and a reminders list over
+CalDAV, and an address book over CardDAV, so a phone keeps them in step. An
+invitation that arrives by mail becomes an event you can accept or decline.
+The notes a phone keeps in the mail account show in the dashboard too.
+
+### The mail server
+
+All of this is off when the server runs without hosted mail.
+
+```mermaid
+flowchart LR
+    A["you@example.com"] --> T
+    B["hello@example.com"] --> T
+    C["anything else@example.com"] --> T
+    T["TeaNode<br/>SPF · DKIM · DMARC · ARC"]
+    T --> M["a mailbox here,<br/>and over IMAP"]
+    T --> D["you@example.net"]
+    T --> E["an HTTP endpoint"]
+    T --> F["another mail server"]
+```
 
 **Mailboxes.** Every account has one. Folders nest to any depth and can be
 renamed, moved and pinned; search covers one folder or the whole mailbox, with
@@ -238,61 +368,6 @@ mail keeps an ARC chain so it still passes at the far end.
 send the message to an address, an HTTP endpoint, or another mail server. An
 empty pattern is a catch-all, which receives whatever nothing else matched.
 
-**Calendar, reminders and contacts.** A calendar and a reminders list over
-CalDAV, and an address book over CardDAV, so a phone keeps them in step. An
-invitation that arrives by mail becomes an event you can accept or decline.
-The notes a phone keeps in the mail account show in the dashboard too.
-
-**A personal agent, if you want one.** Off until the operator configures a
-model and each person turns their own on, and blind to every mailbox until it
-is granted one. It sorts what arrives, summarizes long conversations, drafts
-replies in your voice, and can answer on your behalf under a policy you write.
-It answers questions in a drawer on every page or with `teanode agent ask`,
-through the same operations the dashboard uses, with your permissions. It can
-reach your calendar and contacts, your own computer and browser tab, the web,
-and servers you connect over the Model Context Protocol. It tells you, unasked, when mail shows something that cannot wait,
-within quiet hours and a daily limit you set. Operators cap what it may spend.
-
-**Talk to it.** A call in the drawer, on a laptop or a phone: what you say is
-transcribed as you say it, the answer is written for the ear and read back,
-and you can talk over it. The operator turns it on and the provider's key
-never leaves the server.
-
-**Your coding sessions.** Through herdr on each attached computer, the agent
-lists your Claude Code and Codex sessions, reads them, types an instruction
-into one, answers the questions they ask, and tells you when one finishes.
-
-**Memory in your coding sessions.** `teanode hook install claude-code` (or
-`codex`) adds hooks that show each session what the agent knows about the
-checkout it runs in. When a session starts: the project's page and its facts
-most in use, and where the last session in that directory stopped (your last
-requests and the start of its last answer, read from the transcript). Before
-each prompt: what the prompt recalls and the lessons close to it, kept to the
-checkout's project so your mail and money stay out of the coding tool. After
-each answer: the computer's transcript source reads the session within a
-minute, so the next one knows where this one stopped. A hook that fails shows
-nothing and never stops the tool, and `teanode agent memory checkout` prints
-what a session would be shown. [Memory in coding
-sessions](https://teanode.com/doc/coding-memory) has the details.
-
-**A memory that learns you.** The agent keeps what it learns as a graph of
-pages, each fact numbered and tied to the words it came from. It writes pages
-without being asked, reads the places you point it at (a code checkout, a chat
-archive, your notes, a wiki), and works over the graph while you are away.
-Nothing is deleted, and every change can be put back.
-
-**Finance.** Banks, cards, brokerages and lenders linked through Plaid or
-SimpleFIN, kept in your own database: transactions in your own categories,
-budgets that project the month, savings targets, and net worth over time.
-Accounts no provider reaches come in from an OFX statement or from
-screenshots, and receipts are kept line by line against their charges. The
-agent reads the same rows, so you can ask it how the month is going.
-
-**Model Context Protocol, both ways.** An editor, a coding tool, or ChatGPT or
-Grok on your phone can use your agent's tools and ask it questions, so you can
-check on your coding sessions by voice from the car; approve it in your
-browser and there is no token to copy.
-
 **Relays your outbound mail.** Per-device SMTP credentials on the submission
 port, each optionally restricted to one sender address.
 
@@ -308,19 +383,21 @@ recipient's mail program fetched them.
 **Reports on your domains.** Incoming DMARC aggregate reports are parsed and
 kept, which is how you find out somebody is forging your domain.
 
+**Scores spam without a second program.** The filter inside the server reads
+what it already established about a message (the authentication results, the
+sending host's confirmed reverse DNS name, the name it gave in HELO), consults
+public block lists over ordinary DNS, and applies a classifier trained on the
+mail you mark in the dashboard. An external SpamAssassin daemon is still
+supported for deployments that want one.
+
+### Running the server
+
 **People, groups and roles.** Permissions decide what each person sees:
 Administrator, Operator and Member come seeded and all of it is editable, and a
 group can be tied to a domain so its permissions reach only that far. Single
 sign-on through an OpenID Connect provider follows a group in your own
 directory. Every change to a user, group, role, domain, alias, credential or
 mailbox is in the audit log.
-
-**Scores spam without a second program.** The filter inside the server reads
-what it already established about a message — the authentication results, the
-sending host's confirmed reverse DNS name, the name it gave in HELO — consults
-public block lists over ordinary DNS, and applies a classifier trained on the
-mail you mark in the dashboard. An external SpamAssassin daemon is still
-supported for deployments that want one.
 
 **Optional extras, all off by default.** ClamAV, GeoIP, an S3 mirror of stored
 messages, an outbound SOCKS5 proxy for hosts whose address has a poor
@@ -361,8 +438,8 @@ Domains, aliases, credentials and accounts are rows, managed one at a time:
     teanode alias create example.com --pattern '^you$' --kind mailbox --mailbox <mailbox id>
     teanode alias create example.com --pattern '^hello$' --kind email --email you@example.net
 
-The settings — the listeners, TLS, the spam filter, single sign-on and the rest
-— are one document, which `teanode-server config show` prints and
+The settings (the listeners, TLS, the spam filter, single sign-on and the rest)
+are one document, which `teanode-server config show` prints and
 `teanode-server config import` reads, so a server's settings can be put under
 version control and loaded. Every field is documented in
 [Configuration](https://teanode.com/doc/configuration).
@@ -375,7 +452,10 @@ image, so there is nothing to build:
 
     docker compose up -d
 
-The image carries the dashboard and nothing else — no shell, no package
+`deploy/docker-compose.assistant.yml` is the same without the mail listeners,
+for a server that only runs the assistant.
+
+The image carries the dashboard and nothing else: no shell, no package
 manager. `docker compose build` still builds the checkout, which is what you
 want when the change you are running is one you just made.
 
