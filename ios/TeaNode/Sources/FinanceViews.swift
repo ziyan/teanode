@@ -660,6 +660,16 @@ struct SpendingView: View {
             .chartLegend(.hidden)
             .chartXSelection(value: $selectedYearKey)
             .keepsSidePanelClosed()
+            .chartXAxis {
+                // The years whole, never cut to "20…": at most five of them
+                // labelled, evenly spaced back from this one, so they fit
+                // at every text size.
+                AxisMarks(values: labelledYears(years.map(\.year))) { value in
+                    AxisValueLabel {
+                        if let text = value.as(String.self) { Text(verbatim: text).fixedSize() }
+                    }
+                }
+            }
             .chartYAxis {
                 AxisMarks { value in
                     AxisGridLine()
@@ -856,6 +866,14 @@ struct SpendingView: View {
                 incomeAmount: months.reduce(Decimal(0)) { $0 + (FinanceMoney.decimal($1.incomeAmount) ?? 0) },
                 spendingAmount: months.reduce(Decimal(0)) { $0 + (FinanceMoney.decimal($1.spendingAmount) ?? 0) })
         }
+    }
+
+    /// The years the chart of years labels: every year when there are at
+    /// most five, otherwise every second, third and so on, counted back
+    /// from this one so it is always labelled.
+    private func labelledYears(_ keys: [String]) -> [String] {
+        let step = max(1, Int((Double(keys.count) / 5).rounded(.up)))
+        return keys.reversed().enumerated().filter { $0.offset % step == 0 }.map(\.element)
     }
 
     /// The month a year's history starts in, when that is partway through
