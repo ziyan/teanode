@@ -461,6 +461,18 @@ it('corrects a bubble of two passages, saving only the passage that changed', as
 })
 
 // A fake IntersectionObserver the test can fire: the end of the transcript coming near the screen.
+// readUntil scrolls to the end until the text is shown. One signal can be
+// lost: a page read that a reload overtakes is dropped, and a browser then
+// reports the end again when the new sentinel is observed, which the stub
+// does not.
+const readUntil = (fireEnd: () => void, text: string) =>
+  waitFor(
+    () => {
+      fireEnd()
+      expect(screen.getByText(text)).toBeTruthy()
+    },
+    { timeout: 10_000 },
+  )
 function observeEnd() {
   const observers: { callback: IntersectionObserverCallback; isDisconnected: boolean }[] = []
   vi.stubGlobal(
@@ -500,12 +512,10 @@ it('reads a hundred passages and appends the next hundred when the end comes nea
   expect(calls('ReadRecordingTranscriptTimeline')[0][1]).toMatchObject({ segmentOffset: 0, pageSize: 100 })
   expect(screen.queryByText('Text of passage-100')).toBeNull()
   expect(document.querySelector('.pager')).toBeNull()
-  fireEnd()
-  await screen.findByText('Text of passage-100', undefined, { timeout: 10_000 })
+  await readUntil(fireEnd, 'Text of passage-100')
   expect(calls('ReadRecordingTranscriptTimeline')[1][1]).toMatchObject({ segmentOffset: 100, pageSize: 100 })
   expect(screen.getByText('Text of passage-0')).toBeTruthy()
-  fireEnd()
-  await screen.findByText('Text of passage-249', undefined, { timeout: 10_000 })
+  await readUntil(fireEnd, 'Text of passage-249')
   expect(calls('ReadRecordingTranscriptTimeline')).toHaveLength(3)
   // Nothing is left to read, so nothing more is asked for.
   expect(document.querySelector('.recording-more-sentinel')).toBeNull()
@@ -516,8 +526,7 @@ it("keeps one speaker's bubble together across the edge of two pages", async () 
   const fireEnd = observeEnd()
   show(manySegments(250))
   await screen.findByText('Text of passage-99', undefined, { timeout: 10_000 })
-  fireEnd()
-  await screen.findByText('Text of passage-102', undefined, { timeout: 10_000 })
+  await readUntil(fireEnd, 'Text of passage-102')
   const turn = bubbleOf('Text of passage-98').closest('.recording-turn') as HTMLElement
   for (const index of [98, 99, 100, 101, 102]) expect(within(turn).getByText(`Text of passage-${index}`)).toBeTruthy()
   // Pages arrive one after another; a loaded runner needs more than the default five seconds.
