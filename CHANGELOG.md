@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.162.5] - 2026-10-15
+
+### Fixed
+
+- iPhone: the Spending screen's month arrows move one month at a time instead of sticking on the month before. (#506)
+
 ## [0.162.4] - 2026-10-15
 
 ### Changed
