@@ -37,9 +37,9 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
 
 ## Progress
 
-- [ ] Milestone 1: the billing key on a provider (config, sealing,
+- [x] (2026-10-15) Milestone 1: the billing key on a provider (config, sealing,
   settings API, docs, dashboard, iPhone app).
-- [ ] Milestone 2: reading the bill and working out prices
+- [x] (2026-10-15) Milestone 2: reading the bill and working out prices
   (`internal/llm/billing.go`), tested against canned reports.
 - [ ] Milestone 3: the daily check that sets prices, audits and tells the
   operators; `teanode agent prices check`, the `settings` tool action,
@@ -77,15 +77,21 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
 ## Decision Log
 
 - Decision: the price of a model and kind of token is the highest daily
-  rate among days with at least a million tokens of that kind (ten
-  thousand for audio and output), rounded to two significant figures, and
-  only when at least two such days exist.
-  Rationale: discounts only lower a day's rate and clock skew moves it by
-  a few percent, so the highest well-used day is closest to the list
-  price, and rounding to two significant figures lands on it (0.1978 →
-  0.20, 0.2452 → 0.25, 1.186 → 1.2, 6.0 → 6.0). Two days guard against a
-  single odd bucket. Few tokens make a rate noisy, hence the floor.
-  Date/Author: 2026-10-15, Claude.
+  rate that at least one other day comes within five percent of, rounded
+  to two significant figures. Any day with at least a thousand tokens of
+  that kind counts.
+  Rationale: discounts only lower a day's rate, and clock skew puts a busy
+  day a few percent under the list price, never over it in the bills seen,
+  so the highest day is closest to the list price and rounding lands on it
+  (0.2469 becomes 0.25). Requiring a second day within five percent stops
+  one odd bucket from setting a price. The bill's amounts are not rounded
+  to cents, so a small day's rate is as exact as a busy one's.
+  Date/Author: 2026-10-15, Claude. Supersedes the first rule (highest rate
+  among days with a million tokens or more), which priced gpt-5.6-terra
+  output at 8.6 instead of 12: all its busy days were discounted and its
+  days billed in full were small. A second try, the rate most days agree
+  on, priced gpt-5.6-luna cache writes at 0.24 instead of 0.25, because
+  busy days sit a few percent under the list price.
 - Decision: a configured price is replaced only when it differs from the
   worked-out one by more than 5 percent, or is zero while the provider
   billed for that kind.
@@ -321,7 +327,13 @@ Removing the billing key stops the checks; existing prices stay.
 ## Artifacts and Notes
 
 Daily rates seen for gpt-5.6-luna (see Surprises) are the reason for the
-rule in the Decision Log.
+rule in the Decision Log. Run against thirty days of a real organization's
+reports, `Rates()` gives, per million tokens: gpt-5.6-luna input 0.2,
+cached input 0.02, cache writes 0.25, output 1.2; gpt-5.6-terra input 2,
+cached input 0.2, cache writes 2.5, output 12; gpt-4o-transcribe and
+gpt-4o-transcribe-diarize text input 2.5, audio input 6, output 10;
+gpt-4o-mini input 0.15, cached input 0.075. Every one is the provider's
+list price.
 
 ## Interfaces and Dependencies
 
