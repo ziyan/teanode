@@ -19,9 +19,13 @@ let expectedMarkersByScreen: [String: [String]] = [
     "conversation-long-message": ["thefirstlineofalongmessage", "showall"],
     "conversation-long-message-read": ["thewholemessage", "thefirstlineofalongmessage"],
 ]
-guard let expectedMarkers = expectedMarkersByScreen[screenName] else {
+guard var expectedMarkers = expectedMarkersByScreen[screenName] else {
     fputs("No rendered-content assertion for \(screenName).\n", stderr)
     exit(1)
+}
+// At the largest text the bubble's 30 lines run past the screen, so Show all is below what the top shows.
+if screenshotName.hasSuffix("-largest-text") {
+    expectedMarkers.removeAll { $0 == "showall" }
 }
 let recognitionRequest = VNRecognizeTextRequest()
 recognitionRequest.recognitionLevel = .accurate
