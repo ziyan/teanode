@@ -1357,6 +1357,7 @@ export const en = {
   'herdr.role.person': 'You',
   'herdr.role.agent': 'Agent',
   'herdr.role.tool': 'Tool',
+  'herdr.attach': 'Attach a file for the session to open',
   'herdr.send': 'Send',
   'herdr.sendPlaceholder': 'Type an instruction for this session',
   'herdr.sendDisabled': 'Answer its question first',

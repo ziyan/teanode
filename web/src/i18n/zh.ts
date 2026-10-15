@@ -1314,6 +1314,7 @@ export const zh: Catalog = {
   'herdr.role.person': '你',
   'herdr.role.agent': '编程助手',
   'herdr.role.tool': '工具',
+  'herdr.attach': '附加文件，供会话打开',
   'herdr.send': '发送',
   'herdr.sendPlaceholder': '给这个会话输入指令',
   'herdr.sendDisabled': '请先回答它的问题',

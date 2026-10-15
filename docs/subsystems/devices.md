@@ -249,6 +249,16 @@ enter for one that takes text, and the answer typed as the next message for a
 question Codex asked in its history. It carries the question's fingerprint and
 is refused when the question on screen is no longer that one.
 
+`send` can carry files: attachment ids on every surface (the tool takes this
+conversation's, the dashboard and `--attach` upload first). The server reads
+them out of storage, at most ten and 32 MiB together, and only a program that
+names the `herdr_files` feature is sent them. The program writes each into a
+directory of its own send under `~/.cache/teanode/herdr-files/`, its name kept
+to letters, digits, dots, dashes and underscores, clears out sends older than
+a week, and types the paths after the text. For Claude Code each path is
+named with `@`: it asks before it reads a file outside its directory, but
+reads one named that way into the message unasked. Codex reads a plain path.
+
 `open` starts Claude Code or Codex in a directory: in a new tab of the
 workspace named after the directory when there is one, labeled with the
 agent, or in a new workspace. A new pane refuses an agent until its shell is

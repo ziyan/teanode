@@ -3,9 +3,14 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/ziyan/teanode/internal/computer"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/storage"
 )
 
 // Computing is what a run offers the shell and filesystem tools: the
@@ -110,4 +115,47 @@ type Screen struct {
 	// Ended says the program finished, with Code; the screen is what it left.
 	Ended bool `json:"ended"`
 	Code  int  `json:"code"`
+}
+
+// HerdrFileBytes bounds the files one herdr send carries, together: they
+// cross to the computer in the request itself.
+const HerdrFileBytes = 32 << 20
+
+// HerdrFilesMost is how many files one herdr send carries.
+const HerdrFilesMost = 10
+
+// HerdrFilesOf reads the agent's files a herdr send carries, by attachment
+// id. With a conversation, only that conversation's files and those not
+// yet given to any are the agent's to send, as for the filesystem tool's
+// put; the person's own call names any of their agent's files.
+func HerdrFilesOf(ctx context.Context, database db.Database, files storage.Storage, agentId, conversationId string, attachmentIds []string) ([]*computer.HerdrFile, error) {
+	if len(attachmentIds) > HerdrFilesMost {
+		return nil, fmt.Errorf("a send carries at most %d files", HerdrFilesMost)
+	}
+	herdrFiles := make([]*computer.HerdrFile, 0, len(attachmentIds))
+	totalBytes := int64(0)
+	for _, attachmentId := range attachmentIds {
+		attachmentId = strings.TrimSpace(attachmentId)
+		var attachment *models.AgentAttachment
+		if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+			attachment, err = tx.GetAgentAttachment(attachmentId)
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		if attachment == nil || attachment.AgentID != agentId ||
+			(conversationId != "" && attachment.ConversationID != "" && attachment.ConversationID != conversationId) {
+			return nil, fmt.Errorf("there is no file %q in this conversation", attachmentId)
+		}
+		totalBytes += attachment.Size
+		if totalBytes > HerdrFileBytes {
+			return nil, fmt.Errorf("the files come to more than %d bytes; send fewer, or put them on the computer with the filesystem tool and name their paths", HerdrFileBytes)
+		}
+		content, err := files.GetFile(ctx, attachment.ID)
+		if err != nil {
+			return nil, err
+		}
+		herdrFiles = append(herdrFiles, &computer.HerdrFile{FileName: attachment.Name, FileContent: content})
+	}
+	return herdrFiles, nil
 }

@@ -113,8 +113,8 @@ const (
 			herdrSession { ` + HerdrSessionFields + ` } screenText
 		}
 	}`
-	DocumentSendAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $text: String!) {
-		SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text) { ` + HerdrSessionFields + ` }
+	DocumentSendAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $text: String, $attachmentIds: [String!]) {
+		SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, attachmentIds: $attachmentIds) { ` + HerdrSessionFields + ` }
 	}`
 	DocumentWaitAgentHerdrSession = `query ($computer: String, $paneId: String!, $waitSeconds: Int) {
 		WaitAgentHerdrSession(computer: $computer, paneId: $paneId, waitSeconds: $waitSeconds) {
@@ -193,12 +193,17 @@ func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, pan
 }
 
 // SendAgentHerdrSession types text into a session and presses enter; a
-// session at work takes it as a message in its turn.
-func SendAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId, text string) (*AgentHerdrSession, error) {
+// session at work takes it as a message in its turn. The agent's files
+// named by attachmentIds are written on the computer and their paths typed
+// after the text.
+func SendAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId, text string, attachmentIds []string) (*AgentHerdrSession, error) {
 	var result struct {
 		SendAgentHerdrSession *AgentHerdrSession `json:"SendAgentHerdrSession"`
 	}
 	variables := herdrVariables(computer, map[string]any{"paneId": paneId, "text": text})
+	if len(attachmentIds) > 0 {
+		variables["attachmentIds"] = attachmentIds
+	}
 	if err := connection.Execute(ctx, DocumentSendAgentHerdrSession, variables, &result); err != nil {
 		return nil, err
 	}

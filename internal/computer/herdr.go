@@ -48,6 +48,11 @@ import (
 // actions, and the herdr messages the program sends unasked.
 const FeatureHerdr = "herdr"
 
+// FeatureHerdrFiles is files sent with a herdr_send: written on this
+// computer, and their paths typed after the text. A program that predates
+// it would type the text alone.
+const FeatureHerdrFiles = "herdr_files"
+
 // The states of a herdr session, as this program decides them.
 const (
 	HerdrSessionStateIdle    = "idle"
@@ -157,6 +162,15 @@ type HerdrArguments struct {
 	// ShouldSkipPermissions starts it without asking before it acts: Claude
 	// Code with --dangerously-skip-permissions, Codex with --yolo.
 	ShouldSkipPermissions bool `json:"shouldSkipPermissions,omitempty"`
+	// HerdrFiles are sent with the text: each is written on this computer
+	// and its path typed after the text, for the coding agent to open.
+	HerdrFiles []*HerdrFile `json:"herdrFiles,omitempty"`
+}
+
+// HerdrFile is one file a send carries.
+type HerdrFile struct {
+	FileName    string `json:"fileName"`
+	FileContent []byte `json:"fileContent"`
 }
 
 // HerdrEvent is something the program says unasked: a question came, a
@@ -191,6 +205,8 @@ type HerdrScreenResult struct {
 type HerdrSendResult struct {
 	HerdrSession *HerdrSession `json:"herdrSession"`
 	IsSent       bool          `json:"isSent"`
+	// FilePaths are where the files sent with it were written.
+	FilePaths []string `json:"filePaths,omitempty"`
 }
 
 // HerdrWaitResult is a session once it stopped working, or when the wait
@@ -894,8 +910,8 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 }
 
 func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrSendResult, error) {
-	if strings.TrimSpace(arguments.Text) == "" {
-		return nil, errors.New("send needs text")
+	if strings.TrimSpace(arguments.Text) == "" && len(arguments.HerdrFiles) == 0 {
+		return nil, errors.New("send needs text, or a file")
 	}
 	if hasControlCharacters(arguments.Text, true) {
 		return nil, errors.New("the text holds control characters, which would press keys rather than type; send words")
@@ -913,10 +929,94 @@ func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	case session.HerdrAgentStatus == "blocked":
 		return nil, fmt.Errorf("%s shows something waiting for an answer that was not recognized; look at its screen", session.named())
 	}
-	if err := self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": arguments.Text}, nil); err != nil {
+	text := strings.TrimSpace(arguments.Text)
+	var filePaths []string
+	if len(arguments.HerdrFiles) > 0 {
+		filePaths, err = self.writeSentFiles(arguments.HerdrFiles)
+		if err != nil {
+			return nil, err
+		}
+		text = strings.TrimSpace(text + " " + herdrFileMentions(session.CodingAgentKind, filePaths))
+	}
+	if err := self.client.call(ctx, "agent.prompt", map[string]any{"target": session.PaneID, "text": text}, nil); err != nil {
 		return nil, fmt.Errorf("the text may not have been typed into %s; look at its screen before sending again: %w", session.named(), err)
 	}
-	return &HerdrSendResult{HerdrSession: session, IsSent: true}, nil
+	return &HerdrSendResult{HerdrSession: session, IsSent: true, FilePaths: filePaths}, nil
+}
+
+// herdrSentFilesPath is where the files sent with a send are written, a
+// directory for each send, under the person's home directory.
+var herdrSentFilesPath = filepath.Join(".cache", "teanode", "herdr-files")
+
+// herdrSentFilesKept is how long they are kept: the session reads one
+// when it gets to it, which may be a while after it was sent.
+const herdrSentFilesKept = 7 * 24 * time.Hour
+
+// writeSentFiles writes the files of one send into a directory of their
+// own, and clears out the directories of sends older than they are kept.
+func (self *Herdr) writeSentFiles(files []*HerdrFile) ([]string, error) {
+	root := filepath.Join(self.home, herdrSentFilesPath)
+	if entries, err := os.ReadDir(root); err == nil {
+		for _, entry := range entries {
+			if info, err := entry.Info(); err == nil && entry.IsDir() && time.Since(info.ModTime()) > herdrSentFilesKept {
+				_ = os.RemoveAll(filepath.Join(root, entry.Name()))
+			}
+		}
+	}
+	directory := filepath.Join(root, time.Now().UTC().Format("20060102-150405")+"-"+strings.ToLower(security.NewULID()[20:]))
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return nil, fmt.Errorf("the files could not be written: %w", err)
+	}
+	paths := make([]string, 0, len(files))
+	taken := map[string]bool{}
+	for index, file := range files {
+		name := herdrSentFileName(file.FileName, index)
+		if taken[name] {
+			name = strconv.Itoa(index+1) + "-" + name
+		}
+		taken[name] = true
+		path := filepath.Join(directory, name)
+		if err := os.WriteFile(path, file.FileContent, 0o600); err != nil {
+			return nil, fmt.Errorf("%s could not be written: %w", name, err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
+// herdrSentFileName is a sent file's name as written: its own, kept to
+// letters, digits, dots, dashes and underscores, since the path is typed
+// into a prompt where a space would end it.
+func herdrSentFileName(fileName string, index int) string {
+	var builder strings.Builder
+	for _, character := range filepath.Base(strings.ReplaceAll(fileName, "\\", "/")) {
+		switch {
+		case unicode.IsLetter(character) || unicode.IsDigit(character) || character == '.' || character == '-' || character == '_':
+			builder.WriteRune(character)
+		case builder.Len() > 0 && !strings.HasSuffix(builder.String(), "_"):
+			builder.WriteRune('_')
+		}
+	}
+	name := strings.Trim(builder.String(), "._")
+	if name == "" {
+		return "file-" + strconv.Itoa(index+1)
+	}
+	return name
+}
+
+// herdrFileMentions are the paths as the coding agent opens them unasked.
+// Claude Code asks before it reads a file outside its directory, but not
+// one named with @, which it reads into the message; Codex reads a path
+// as it is.
+func herdrFileMentions(codingAgentKind string, filePaths []string) string {
+	mentions := make([]string, 0, len(filePaths))
+	for _, path := range filePaths {
+		if codingAgentKind == CodingAgentKindClaude {
+			path = "@" + path
+		}
+		mentions = append(mentions, path)
+	}
+	return strings.Join(mentions, " ")
 }
 
 func (self *Herdr) wait(ctx context.Context, arguments *HerdrArguments) (*HerdrWaitResult, error) {

@@ -92,11 +92,14 @@ type ReadAgentHerdrScreenArguments struct {
 	LineCount int    `json:"lineCount" graphapi:"nullable"`
 }
 
-// SendAgentHerdrSessionArguments are the text and where it goes.
+// SendAgentHerdrSessionArguments are the text and where it goes, and the
+// agent's files to send with it: written on the computer, their paths
+// typed after the text.
 type SendAgentHerdrSessionArguments struct {
-	Computer string `json:"computer" graphapi:"nullable"`
-	PaneID   string `json:"paneId"`
-	Text     string `json:"text"`
+	Computer      string   `json:"computer" graphapi:"nullable"`
+	PaneID        string   `json:"paneId"`
+	Text          string   `json:"text" graphapi:"nullable"`
+	AttachmentIDs []string `json:"attachmentIds" graphapi:"nullable"`
 }
 
 // WaitAgentHerdrSessionArguments name a session, and how long to wait.
@@ -322,11 +325,11 @@ func (self *graph) SendAgentHerdrSession(ctx context.Context, arguments SendAgen
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	session, err := worker.SendHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.Text)
+	sent, err := worker.SendHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.Text, arguments.AttachmentIDs)
 	if err != nil {
 		return nil, err
 	}
-	return herdrSessionView(session.ComputerName, session.HerdrSession), nil
+	return herdrSessionView(sent.ComputerName, sent.HerdrSession.HerdrSession), nil
 }
 
 func (self *graph) WaitAgentHerdrSession(ctx context.Context, arguments WaitAgentHerdrSessionArguments) (*AgentHerdrWaitView, error) {
