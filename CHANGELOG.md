@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.166.0] - 2026-10-15
+
+### Added
+
+- Keyboard navigation across the dashboard: `g` then a letter goes to the inbox, the agent, calendar, knowledge, recordings, settings and more; `/` searches the page; `?` lists every key that works where you are. (#513)
+
 ## [0.165.0] - 2026-10-15
 
 ### Added
