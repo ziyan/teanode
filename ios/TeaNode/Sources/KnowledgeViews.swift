@@ -355,8 +355,26 @@ struct KnowledgePageView: View {
     }
 
     var body: some View {
+        #if DEBUG
+            ScrollViewReader { scroller in
+                pageList
+                    .task(id: model.recordLinks.count) {
+                        // `-TeaNodeScreen knowledge-records-recording`: the recording's row, with its passage count, on screen.
+                        guard DemoServer.isRequested, DemoServer.screen == "knowledge-records-recording",
+                            let recordingLink = model.recordLinks.first(where: { $0.recordKind == "recording_passage" })
+                        else { return }
+                        try? await Task.sleep(for: .seconds(1))
+                        scroller.scrollTo(recordingLink.id, anchor: .center)
+                    }
+            }
+        #else
+            pageList
+        #endif
+    }
+
+    private var pageList: some View {
         @Bindable var model = model
-        List {
+        return List {
             if let page = model.page, let node = page.node {
                 header(page, node)
                 linkedRecords(node)

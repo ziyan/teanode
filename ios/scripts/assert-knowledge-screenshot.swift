@@ -16,7 +16,8 @@ if let appearanceSuffix = appearanceSuffixes.first(where: { screenName.hasSuffix
     screenName = String(screenName.dropLast(appearanceSuffix.count))
 }
 let expectedMarkersByScreen: [String: [String]] = [
-    "knowledge-records": ["danafixture", "venueoptions", "aguess"]
+    "knowledge-records": ["danafixture", "venueoptions", "aguess"],
+    "knowledge-records-recording": ["designreview", "12passages"],
 ]
 guard let expectedMarkers = expectedMarkersByScreen[screenName] else {
     fputs("No rendered-content assertion for \(screenName).\n", stderr)
