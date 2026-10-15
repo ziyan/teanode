@@ -47,6 +47,7 @@ type RecordingTranscriptOperation interface {
 	DeleteRecordingBlobReference(recordingId, blobId string) error
 	CreateRecordingTranscriptionAttempt(userId, runId, chunkId string, claim RecordingWorkerClaim, currencyCode string, referenceBlobIds []string) (*models.RecordingTranscriptionAttempt, error)
 	ListRecordingTranscriptionAttempts(userId, runId string) ([]*models.RecordingTranscriptionAttempt, error)
+	GetRecordingTranscriptionAttempt(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error)
 	SubmitRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim) error
 	FinishRecordingTranscriptionAttempt(userId, attemptId string, claim RecordingWorkerClaim, finished *models.RecordingTranscriptionAttempt, segments []*models.RecordingTranscriptSegment) (bool, error)
 	ListRecordingTranscriptSegments(userId, runId string) ([]*models.RecordingTranscriptSegment, error)
@@ -837,6 +838,22 @@ func (self *transaction) ListRecordingTranscriptionAttempts(userId, runId string
 		attempts = append(attempts, recordingAttemptFromModel(&rows[index]))
 	}
 	return attempts, nil
+}
+
+// GetRecordingTranscriptionAttempt is one attempt, by its id, of a recording
+// the person owns.
+func (self *transaction) GetRecordingTranscriptionAttempt(userId, attemptId string) (*models.RecordingTranscriptionAttempt, error) {
+	var row recordingAttemptModel
+	if err := self.tx.Omit("provider_usage_json", "provider_response_json").Where("id = ?", attemptId).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	if _, err := self.GetRecordingTranscriptRun(userId, row.RecordingTranscriptRunID); err != nil {
+		return nil, err
+	}
+	return recordingAttemptFromModel(&row), nil
 }
 func (self *transaction) lockRecordingAttempt(userId, attemptId string, claim RecordingWorkerClaim) (*models.RecordingTranscriptionAttempt, *models.RecordingTranscriptRun, error) {
 	var row recordingAttemptModel

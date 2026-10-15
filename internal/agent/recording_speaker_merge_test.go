@@ -232,3 +232,45 @@ func TestALabelWithNoEarlierVoiceToChooseFromIsNotAsked(test *testing.T) {
 		}
 	})
 }
+
+// A label still waiting to be asked about once its piece is older than the
+// transcripts a curation looks at (one made before the check existed, or
+// whose check could not be made when it was new) is still asked about at the
+// next curation, from its own piece.
+func TestALabelFromAnOlderPieceIsStillAskedAbout(test *testing.T) {
+	fixture := newLiveRecordingFixture(test)
+	unsent := fiveVoiceCapture(test, fixture)
+	fixture.curate()
+	if len(fixture.provider.mergeCheckRequests()) != 1 {
+		test.Fatal("the new label was not asked about once", len(fixture.provider.mergeCheckRequests()))
+	}
+	// Later pieces, answered with the samples they are sent, make no new
+	// label and push the label's piece out of the latest transcripts.
+	fixture.provider.answer = func(requestIndex int, request fakeTranscriptionRequest) []fakeTranscriptionSegment {
+		names := slices.Clone(request.KnownSpeakerNames)
+		slices.Sort(names)
+		return []fakeTranscriptionSegment{{SpeakerLabel: names[0], StartMS: 200, EndMS: 4200, Text: "The first voice."}, {SpeakerLabel: names[1], StartMS: 4300, EndMS: 7400, Text: "The second voice."}}
+	}
+	for range recordingTemporaryCurationRuns {
+		fixture.transcribe(fixture.addPiece(8000, 0))
+		fixture.curate()
+	}
+	// As if it had never been asked.
+	dbtest.Exec(test, fixture.database, `UPDATE recording_temporary_speaker SET merge_checked_at = NULL WHERE speaker_label = 'Speaker 7'`)
+	fixture.provider.checkAnswer = func(request fakeTranscriptionRequest) []fakeTranscriptionSegment {
+		return []fakeTranscriptionSegment{{SpeakerLabel: unsent[0], StartMS: 100, EndMS: request.AudioDurationMS - 100, Text: "A voice."}}
+	}
+	fixture.curate()
+	if len(fixture.provider.mergeCheckRequests()) != 2 {
+		test.Fatal("the label from an older piece was not asked about", len(fixture.provider.mergeCheckRequests()))
+	}
+	isMerged := false
+	for _, segment := range fixture.timeline() {
+		if segment.MergedTemporarySpeakerLabel == "Speaker 7" && segment.EffectiveSpeakerName == unsent[0] {
+			isMerged = true
+		}
+	}
+	if !isMerged {
+		test.Fatal("the label from an older piece was not merged into the earlier one")
+	}
+}
