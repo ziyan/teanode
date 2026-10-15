@@ -48,7 +48,7 @@ Milestone 5, interface. Dashboard and iPhone: in a passage's menu, when `mergedT
 - [x] (2026-10-14) Milestone 2, projection and samples: `MergedTemporarySpeakerLabel`, merged labels read as their root, merged samples are not sent.
 - [x] (2026-10-14) Milestone 3, the check: `internal/agent/recording_speaker_merge.go`, run at the end of every curation. Tests in `internal/agent/recording_speaker_merge_test.go`.
 - [x] (2026-10-14) Milestone 4 (operations, CLI, tool, docs): GraphQL `SeparateRecordingTemporarySpeaker`, CLI and tool `speaker-separate`, `mergedTemporarySpeakerLabel` in the timeline document, `docs/reference/command-line.md`.
-- [ ] Milestone 5 (dashboard, iPhone, screenshots).
+- [x] (2026-10-14) Milestone 5 (dashboard, iPhone, screenshots): "Separate from <speaker>" in a bubble's menu on both. A SwiftUI context menu cannot be opened from a launch argument, so the iPhone screenshots show the merged passage in the `recording-capture-live` demo screen, not the open menu.
 - [ ] Review, deploy, watch the next real capture.
 
 ## Surprises & Discoveries

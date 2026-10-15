@@ -195,12 +195,13 @@ final class RecordingLiveConversationTests: XCTestCase {
     func testTheTimelineAndTheLiveSocketDecodeWhatTheServerSends() throws {
         let timelineJSON = """
             {"sourceGeneration":3,"segments":[{"id":"s1","recordingTranscriptRunId":"r","recordingTranscriptionAttemptId":"a","localSpeakerId":"A",\
-            "segmentStartMS":0,"segmentEndMS":1000,"transcriptText":"Hi.","temporarySpeakerLabel":"Speaker 1"}],"transcriptRuns":[],\
+            "segmentStartMS":0,"segmentEndMS":1000,"transcriptText":"Hi.","temporarySpeakerLabel":"Speaker 1","mergedTemporarySpeakerLabel":"Speaker 4"}],"transcriptRuns":[],\
             "temporarySpeakers":[{"speakerLabel":"Speaker 1","speakerIdentityId":""}],"segmentCount":1,"hasMoreSegments":false,\
             "liveUtterances":[{"utteranceId":"u1","utteranceStartMS":1500,"utteranceEndMS":2500,"transcriptText":"More."}]}
             """
         let timeline = try JSONDecoder().decode(RecordingTranscriptTimeline.self, from: Data(timelineJSON.utf8))
         XCTAssertEqual(timeline.segments[0].temporarySpeakerLabel, "Speaker 1")
+        XCTAssertEqual(timeline.segments[0].mergedTemporarySpeakerLabel, "Speaker 4")
         XCTAssertEqual(timeline.temporarySpeakers?.first?.speakerLabel, "Speaker 1")
         XCTAssertEqual(timeline.liveUtterances?.first?.utteranceEndMS, 2500)
         let oldJSON = #"{"sourceGeneration":3,"segments":[],"transcriptRuns":[],"segmentCount":0,"hasMoreSegments":false}"#

@@ -362,6 +362,33 @@ it('takes a naming back: Not me on your own bubble, Clear name on anyone else', 
   await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(2))
 })
 
+it('separates a merged speaker label from the bubble that shows the other speaker', async () => {
+  const { onChanged } = show([
+    segment('first', { temporarySpeakerLabel: 'Speaker 3', effectiveSpeakerName: 'Speaker 3' }),
+    segment('second', {
+      localSpeakerId: 'local-two',
+      temporarySpeakerLabel: 'Speaker 3',
+      effectiveSpeakerName: 'Speaker 3',
+      mergedTemporarySpeakerLabel: 'Speaker 9',
+    }),
+    segment('third', {
+      localSpeakerId: 'local-three',
+      temporarySpeakerLabel: 'Speaker 4',
+      effectiveSpeakerName: 'Speaker 4',
+    }),
+  ])
+  await screen.findByText('Text of third')
+  // Only the bubble with a merged passage offers it, naming the speaker it shows.
+  expect(within(bubbleOf('Text of third')).queryByRole('button', { name: /Separate from/ })).toBeNull()
+  fireEvent.click(within(bubbleOf('Text of second')).getByRole('button', { name: 'Separate from Speaker 3' }))
+  await waitFor(() => expect(calls('SeparateRecordingTemporarySpeaker')).toHaveLength(1))
+  expect(calls('SeparateRecordingTemporarySpeaker')[0][1]).toEqual({
+    recordingId: 'fixture-recording',
+    speakerLabel: 'Speaker 9',
+  })
+  await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1))
+})
+
 it('opens an exact older version read-only, without correction actions', async () => {
   show([segment('one')], '/?version=older-run&startMS=2500&endMS=3500')
   await screen.findByText('Text of one')
@@ -525,7 +552,11 @@ it('narrows the conversation to the speakers nobody has named, and says how many
   fireEvent.click(screen.getByRole('button', { name: 'Unnamed speakers' }))
   await screen.findByText('2 passages left to name')
   const timelineCalls = calls('ReadRecordingTranscriptTimeline')
-  expect(timelineCalls[timelineCalls.length - 1][1]).toMatchObject({ isUnnamedOnly: true, segmentOffset: 0, pageSize: 500 })
+  expect(timelineCalls[timelineCalls.length - 1][1]).toMatchObject({
+    isUnnamedOnly: true,
+    segmentOffset: 0,
+    pageSize: 500,
+  })
   expect(screen.queryByText('Text of named')).toBeNull()
   expect(screen.getByText('Text of unnamed-one')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Unnamed speakers' }).getAttribute('aria-pressed')).toBe('true')
