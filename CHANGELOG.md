@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.162.1] - 2026-10-15
+
+### Fixed
+
+- On the iPhone, a run opened from Activity or Runs goes back to the list where you left it. (#503)
+
 ## [0.162.0] - 2026-10-15
 
 ### Added
