@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.166.2] - 2026-10-15
+
+### Changed
+
+- The recording timeline lists which speaker labels were merged into which on every page, so the agent and the CLI find a merge without reading the whole transcript. (#515)
+
+### Fixed
+
+- Sharing a photo to TeaNode from the iPhone no longer closes the share sheet as it opens. (#516)
+
 ## [0.166.1] - 2026-10-15
 
 ### Fixed
