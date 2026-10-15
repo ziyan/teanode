@@ -172,6 +172,14 @@ type AgentProvider struct {
 	// APIKey authenticates this server to the service. A secret.
 	APIKey string `yaml:"apiKey,omitempty" secret:"true"`
 
+	// BillingAPIKey is an OpenAI organization admin key that reads the
+	// organization's cost and usage reports, so the prices can follow what
+	// was billed. A secret. It is never sent with a model call: an admin key
+	// can manage the whole organization, and keeping it out of the request
+	// path limits what a leak of the calling key exposes. Only an openai
+	// provider takes one.
+	BillingAPIKey string `yaml:"billingApiKey,omitempty" secret:"true"`
+
 	// RefreshToken authenticates a service that is signed in to rather
 	// than keyed: the long half of the pair, traded for a short-lived
 	// access token before each run of requests. A secret.
@@ -226,6 +234,17 @@ type AgentModelPricing struct {
 // PricingFor is what a model of this provider costs: the first entry
 // that names it, or the provider's own prices.
 func (self *AgentProvider) PricingFor(model string) AgentPricing {
+	if index := self.PricingEntryIndexFor(model); index >= 0 {
+		priced := &self.ModelPricing[index]
+		return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
+	}
+	return self.Pricing
+}
+
+// PricingEntryIndexFor is the position in ModelPricing of the entry that
+// PricingFor would use for a model, or -1 when none names it and the
+// provider's own prices apply.
+func (self *AgentProvider) PricingEntryIndexFor(model string) int {
 	// "text-embedding-3-small@512" is text-embedding-3-small at a width,
 	// which this program names that way to keep vectors of different
 	// widths apart. It is the same model at the same price, and matching
@@ -237,12 +256,11 @@ func (self *AgentProvider) PricingFor(model string) AgentPricing {
 		model = name
 	}
 	for index := range self.ModelPricing {
-		priced := &self.ModelPricing[index]
-		if matchesAny([]string{priced.Model}, model) {
-			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
+		if matchesAny([]string{self.ModelPricing[index].Model}, model) {
+			return index
 		}
 	}
-	return self.Pricing
+	return -1
 }
 
 // IsEnabled resolves the unset Enabled to on.
@@ -1395,6 +1413,12 @@ func (self *Configuration) validateAgent(validator *validator) {
 		default:
 			validator.add(prefix+".kind",
 				`must be "openai" (also every compatible server), "anthropic", "gemini", "typesafe" or "openai-codex"`)
+		}
+		if provider.BillingAPIKey != "" && provider.Kind != AgentProviderKindOpenAI {
+			// Only OpenAI has organization reports to read; a key here on
+			// another kind would be quietly ignored, which is worse than
+			// being told.
+			validator.add(prefix+".billingApiKey", "only a provider of kind \"openai\" takes a billing key")
 		}
 		if provider.Kind == AgentProviderKindTypeSafe {
 			deciders[provider.Name] = true

@@ -7,6 +7,15 @@
             #"{"enabled":true,"instructions":"","allowPrivateAddresses":[],"skipCertificateCheck":[],"providers":[],"models":{"default":"","fast":"","quick":"","embedding":"","triage":"","research":"","summarize":"","reply":"","ask":"","schedule":"","compact":"","scan":"","synthesize":"","decide":"","categorize":"","transcription":"demo:transcription","embeddingDimensions":0,"choices":[]},"features":{},"limits":{"maxBodyCharacters":0,"dailyTokensPerAgent":0,"monthlyTokensPerServer":0,"dailyCostPerAgent":0,"monthlyCostPerServer":0,"maxRoundsPerAsk":0,"maxRoundsPerResearch":0,"maxRoundsPerReply":0,"maxRoundsPerDream":0,"maxToolCallsPerRun":0,"concurrency":0,"scanConcurrency":0,"rewriteConcurrency":0,"dreamShare":0,"ingestChunksPerRun":0,"embeddingTokensPerDay":0,"maxRoundsPerSubagent":0,"goalTurnsPerDay":0,"goalTurnsAlone":0,"goalsInProgress":0,"backgroundWakesAlone":0,"requestTimeout":"2m","maxRecordingMediaBytes":"2GB","maxRecordingAccountBytes":"64GB"},"retention":{"runs":"720h","corrections":"2160h"},"currency":"USD","search":{"kind":"","hasApiKey":false},"tools":{"disabled":[],"confirm":[],"catalog":[]},"voice":{"enabled":false,"provider":"","transcriptionModel":"","silenceMS":0,"speechModel":"","speechVoice":"","askModel":""},"browser":{"enabled":false,"cdpEndpoint":"","attachTabs":true,"allowPrivateAddresses":[],"idleTimeout":"5m","maxContexts":4},"mcpServers":[],"finance":{"offeredProviders":[],"plaid":{"environment":"","clientId":"","hasSecret":false,"countryCodes":[],"products":[]}},"works":[],"families":[],"kinds":[]}"#
         static let providerPricesFixture =
             #""providers":[{"name":"openai","kind":"openai","baseUrl":"","hasApiKey":true,"hasRefreshToken":false,"account":"","enabled":true,"allow":[],"deny":[],"pricingInput":2.5,"pricingOutput":10,"pricingCacheRead":1.25,"pricingCacheWrite":0,"pricingAudioInput":6,"modelPricing":[{"model":"gpt-4o-transcribe*","input":2.5,"output":10,"cacheRead":0,"cacheWrite":0,"audioInput":6}],"planUsage":null}]"#
+        /// The provider of `provider-prices` with a billing key, for `provider-billing-check`.
+        static let providerBillingCheckFixture = Self.providerPricesFixture.replacingOccurrences(
+            of: #""hasApiKey":true"#, with: #""hasApiKey":true,"hasBillingApiKey":true"#)
+        /// One check of that provider: a cache-write price that was missing and is set from the bill, and an output price that already matched.
+        /// Checked three hours before the screenshot, so the line reads as a recent check rather than one dated in the demo's year.
+        static var billingCheckFixture: String {
+            let checkedAt = Date.now.addingTimeInterval(-3 * 60 * 60).formatted(.iso8601)
+            return #"{"providerName":"openai","checkedAt":""# + checkedAt + #"","errorMessage":"","compared":[{"model":"demo-large","tokenKind":"cacheWrite","configuredPerMillion":0,"billedPerMillion":0.25,"dayCount":6,"isPattern":false},{"model":"demo-large","tokenKind":"output","configuredPerMillion":10,"billedPerMillion":10,"dayCount":9,"isPattern":false}],"changed":[{"model":"demo-large","tokenKind":"cacheWrite","beforePerMillion":0,"afterPerMillion":0.25}]}"#
+        }
         static let recordingSourceFixture =
             #"{"id":"source-a","kind":"recording","name":"recording:recording-a","enabled":true,"documentCount":5,"chunkCount":7,"more":false,"lastError":"","cron":"17 3 * * *","specification":{"settings":{"recordingId":"recording-a","recordingTitle":"Choosing the second layout"}}}"#
         static let recordingFixture =
@@ -254,8 +263,17 @@
                 // `-TeaNodeScreen provider-prices`: one provider with a price of its own and a price for particular models.
                 let agentSettings =
                     Self.screen == "provider-prices"
-                    ? recordingAgentSettingsFixture.replacingOccurrences(of: #""providers":[]"#, with: providerPricesFixture) : recordingAgentSettingsFixture
+                    ? recordingAgentSettingsFixture.replacingOccurrences(of: #""providers":[]"#, with: providerPricesFixture)
+                    : Self.screen == "provider-billing-check"
+                        ? recordingAgentSettingsFixture.replacingOccurrences(of: #""providers":[]"#, with: providerBillingCheckFixture)
+                        : recordingAgentSettingsFixture
                 return "{\"data\":{\"GetSettings\":{\"agent\":\(agentSettings)}}}"
+            }
+            if query.contains("AgentBillingChecks") {
+                return "{\"data\":{\"AgentBillingChecks\":[\(billingCheckFixture)]}}"
+            }
+            if query.contains("CheckAgentProviderPrices") {
+                return "{\"data\":{\"CheckAgentProviderPrices\":[\(billingCheckFixture)]}}"
             }
             if query.contains("ListAgentModels") {
                 return

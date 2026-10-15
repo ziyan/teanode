@@ -61,7 +61,8 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 			current.Services = current.Services.Within(configuration.Services)
 			return &current
 		},
-		Instance: self.instance,
+		UpdateConfiguration: self.store.Update,
+		Instance:            self.instance,
 	})
 	if self.exchange != nil {
 		self.exchange.SetAgentHook(self.agentWorker)

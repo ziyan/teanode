@@ -178,6 +178,7 @@ type Transaction interface {
 	EmbeddingOperation
 	VectorOperation
 	PlanUsageOperation
+	AgentBillingOperation
 	OverviewSectionOperation
 	GraphOperation
 	KnowledgeOperation

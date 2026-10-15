@@ -94,3 +94,71 @@ func TestTheAudioInputPriceIsSavedAndReadBack(t *testing.T) {
 		t.Errorf("stored %+v", configuration.Agent.Providers[0])
 	}
 }
+
+// A billing key is stored on an openai provider, reported only as
+// hasBillingApiKey, kept when a save leaves it blank or sends back the
+// redacted marker, carried over a rename, replaced when a new one is given,
+// and dropped when the provider is no longer of kind openai.
+func TestABillingKeyIsStoredAndKeptOnAnOpenAIProvider(t *testing.T) {
+	configuration := &config.Configuration{}
+	providers := []*AgentProviderParameters{
+		{Name: "keyed", Kind: config.AgentProviderKindOpenAI, Enabled: true, BillingAPIKey: "an-admin-key"},
+	}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	if got := configuration.Agent.Providers[0].BillingAPIKey; got != "an-admin-key" {
+		t.Fatalf("the billing key was not stored: %q", got)
+	}
+	read := describeAgentSettings(configuration).Providers[0]
+	if !read.HasBillingAPIKey {
+		t.Errorf("the billing key was not reported: %+v", read)
+	}
+
+	// Blank and the redacted marker both keep it; a rename carries it.
+	for _, sent := range []string{"", config.Redacted} {
+		providers = []*AgentProviderParameters{
+			{Name: "renamed", PreviousName: "keyed", Kind: config.AgentProviderKindOpenAI, Enabled: true, BillingAPIKey: sent},
+		}
+		if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+			t.Fatal(err)
+		}
+		if got := configuration.Agent.Providers[0].BillingAPIKey; got != "an-admin-key" {
+			t.Fatalf("sending %q lost the billing key: %q", sent, got)
+		}
+		providers[0].Name, providers[0].PreviousName = "keyed", "renamed"
+		if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// A new one replaces it.
+	providers = []*AgentProviderParameters{
+		{Name: "keyed", Kind: config.AgentProviderKindOpenAI, Enabled: true, BillingAPIKey: "another-admin-key"},
+	}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	if got := configuration.Agent.Providers[0].BillingAPIKey; got != "another-admin-key" {
+		t.Fatalf("the billing key was not replaced: %q", got)
+	}
+
+	// A provider of another kind keeps none, even when one is sent.
+	providers = []*AgentProviderParameters{
+		{Name: "keyed", Kind: config.AgentProviderKindAnthropic, Enabled: true, BillingAPIKey: "another-admin-key"},
+		{Name: "fresh", Kind: config.AgentProviderKindGemini, Enabled: true, BillingAPIKey: "an-admin-key"},
+	}
+	if err := applyAgentSettings(configuration, &AgentParameters{Providers: &providers}); err != nil {
+		t.Fatal(err)
+	}
+	for _, saved := range configuration.Agent.Providers {
+		if saved.BillingAPIKey != "" {
+			t.Errorf("a provider that is not openai kept a billing key: %+v", saved)
+		}
+	}
+	for _, read := range describeAgentSettings(configuration).Providers {
+		if read.HasBillingAPIKey {
+			t.Errorf("a provider that is not openai reports a billing key: %+v", read)
+		}
+	}
+}

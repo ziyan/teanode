@@ -1206,6 +1206,9 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
     public let providerKind: String
     public let baseUrl: String
     public let hasApiKey: Bool
+    /// Whether a key that reads what the organization was billed is stored;
+    /// absent from a server older than the key.
+    public let hasBillingApiKey: Bool?
     /// A provider on a person's plan is signed in to, not keyed.
     public let hasRefreshToken: Bool
     public let account: String
@@ -1221,7 +1224,7 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
     public let planUsage: AgentPlanUsage?
 
     enum CodingKeys: String, CodingKey {
-        case name, baseUrl, hasApiKey, hasRefreshToken, account, allow, deny, pricingInput, pricingOutput, pricingCacheRead
+        case name, baseUrl, hasApiKey, hasBillingApiKey, hasRefreshToken, account, allow, deny, pricingInput, pricingOutput, pricingCacheRead
         case pricingCacheWrite, pricingAudioInput, modelPricing, planUsage
         case providerKind = "kind"
         case isEnabled = "enabled"
@@ -1232,6 +1235,7 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
         self.providerKind = providerKind
         self.baseUrl = ""
         self.hasApiKey = hasApiKey
+        self.hasBillingApiKey = false
         self.hasRefreshToken = false
         self.account = ""
         self.isEnabled = isEnabled
@@ -1260,6 +1264,7 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
     var storedParameters: [String: JSONValue] {
         [
             "name": .string(name), "kind": .string(providerKind), "baseUrl": .string(baseUrl), "apiKey": .string(""),
+            "billingApiKey": .string(""),
             "enabled": .bool(isEnabled), "allow": SettingsList.value(allow), "deny": SettingsList.value(deny),
             "pricingInput": .number(pricingInput), "pricingOutput": .number(pricingOutput),
             "pricingCacheRead": .number(pricingCacheRead), "pricingCacheWrite": .number(pricingCacheWrite),
@@ -1675,6 +1680,8 @@ public struct AgentProviderDraft: Hashable, Sendable {
     public var baseUrl = ""
     public var apiKey = ""
     public var hasApiKey = false
+    public var billingApiKey = ""
+    public var hasBillingApiKey = false
     public var hasRefreshToken = false
     public var isEnabled = true
     public var allowText = ""
@@ -1693,6 +1700,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
         providerKind = provider.providerKind
         baseUrl = provider.baseUrl
         hasApiKey = provider.hasApiKey
+        hasBillingApiKey = provider.hasBillingApiKey ?? false
         hasRefreshToken = provider.hasRefreshToken
         isEnabled = provider.isEnabled
         allowText = SettingsList.text(provider.allow)
@@ -1730,7 +1738,8 @@ public struct AgentProviderDraft: Hashable, Sendable {
         }
         return [
             "name": .string(name.trimmingCharacters(in: .whitespaces)), "kind": .string(providerKind),
-            "baseUrl": .string(baseUrl.trimmingCharacters(in: .whitespaces)), "apiKey": .string(apiKey), "enabled": .bool(isEnabled),
+            "baseUrl": .string(baseUrl.trimmingCharacters(in: .whitespaces)), "apiKey": .string(apiKey), "billingApiKey": .string(billingApiKey),
+            "enabled": .bool(isEnabled),
             "allow": SettingsList.value(SettingsList.lineItems(allowText)), "deny": SettingsList.value(SettingsList.lineItems(denyText)),
             "pricingInput": .number(SettingsList.number(pricingInputText)),
             "pricingOutput": .number(SettingsList.number(pricingOutputText)),
@@ -2195,17 +2204,24 @@ public struct AgentUsageRow: Codable, Hashable, Sendable {
     public let usageKey: String
     public let cost: Double
     public let currency: String?
+    /// What the provider billed for the same period, when the server has
+    /// read its bill; nil otherwise. In `billedCurrencyCode`, which is
+    /// not always the currency the estimate is written in.
+    public let billedAmount: Double?
+    public let billedCurrencyCode: String?
     public let totals: AgentUsageTotals
 
     enum CodingKeys: String, CodingKey {
-        case cost, currency, totals
+        case cost, currency, billedAmount, billedCurrencyCode, totals
         case usageKey = "key"
     }
 
-    public init(usageKey: String, cost: Double, currency: String? = nil, totals: AgentUsageTotals) {
+    public init(usageKey: String, cost: Double, currency: String? = nil, billedAmount: Double? = nil, billedCurrencyCode: String? = nil, totals: AgentUsageTotals) {
         self.usageKey = usageKey
         self.cost = cost
         self.currency = currency
+        self.billedAmount = billedAmount
+        self.billedCurrencyCode = billedCurrencyCode
         self.totals = totals
     }
 }
@@ -2329,6 +2345,10 @@ public struct AgentAdminOverview: Hashable, Sendable {
     public let agents: [AgentAdminSummary]
     public let usageRows: [AgentUsageRow]
     public let deadJobs: [AgentDeadJob]
+
+    /// Whether some row has a billed amount. The column and the callout
+    /// figure show only then, so a server with no billing key looks as before.
+    public var isBilledShown: Bool { usageRows.contains { $0.billedAmount != nil } }
 
     public init(agents: [AgentAdminSummary], usageRows: [AgentUsageRow], deadJobs: [AgentDeadJob]) {
         self.agents = agents
@@ -2577,7 +2597,7 @@ extension Documents {
     static let manageAgentSettingsFields = """
         agent {
           enabled instructions allowPrivateAddresses skipCertificateCheck
-          providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+          providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
           limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
@@ -2734,7 +2754,7 @@ extension Documents {
     public static let manageAgentAdmin = """
         query ($by: String, $since: DateTime, $until: DateTime) {
           ListAgents { \(manageAgentSummaryFields) }
-          AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
+          AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency billedAmount billedCurrencyCode totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
           ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
         }
         """

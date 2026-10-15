@@ -53,6 +53,12 @@ type Settings struct {
 	// change to a limit or a feature applies without a restart.
 	Configuration func() *config.Configuration
 
+	// UpdateConfiguration changes the stored configuration, as the
+	// configuration store's Update does. The daily check of model prices
+	// against the provider's bill sets prices through it. Nil in tests
+	// that never change a price, which then cannot.
+	UpdateConfiguration func(change func(*config.Configuration) error) error
+
 	// Instance names this server instance on the jobs it claims.
 	Instance string
 
@@ -113,6 +119,7 @@ type Agent struct {
 	lastRecordingMediaId                 string
 	lastRecordingReferenceReconciliation time.Time
 	lastDescribe                         time.Time
+	lastPriceCheck                       time.Time
 	lastRemember                         time.Time
 	lastIngest                           time.Time
 	lastDream                            time.Time
@@ -129,6 +136,7 @@ type Agent struct {
 	watchJudgements map[string]string
 	lastEvaluate    time.Time
 	describing      atomic.Bool
+	checkingPrices  atomic.Bool
 
 	// presence is who has a dashboard open; see presence.go.
 	presence presence
@@ -474,6 +482,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.surfaceGoals(ctx)
 	self.scavenge(ctx, now)
 	self.describeInBackground(ctx, now)
+	self.checkPricesInBackground(ctx, now)
 	self.queueRemembering(ctx, now)
 	self.queueIngestion(ctx, now)
 	self.queueRecordings(ctx)

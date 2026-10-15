@@ -10,6 +10,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 	"gopkg.in/yaml.v3"
 )
@@ -146,6 +147,35 @@ func init() {
 			},
 			settingsDescribeTool(),
 			{
+				Name: "settings_prices_show", Family: tools.FamilyServer, Risk: tools.RiskRead, Permissions: manage,
+				Description: "What the last check of the model prices against the provider's bill found, for each openai provider that has a billing key: when it ran, why it could not read the bill if it could not, every price it compared (the configured one beside the billed one, per million tokens) and every price it changed. A provider never checked is listed with no time.",
+				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+					result, err := operator.Execute(ctx, client.DocumentAgentBillingChecks, nil)
+					if err != nil {
+						return nil, err
+					}
+					return tools.JSONResult(result["AgentBillingChecks"])
+				},
+			},
+			{
+				// Outward, so it asks first: it sends the billing key, an
+				// organization admin key, to the provider, and it can change
+				// prices that every budget and cost on the server is worked
+				// out from. The daily check does the same unattended.
+				Name: "settings_prices_check", Family: tools.FamilyServer, Risk: tools.RiskOutward, Permissions: manage,
+				Description: "Compare the model prices of each openai provider that has a billing key with what its bill says now, instead of waiting for the daily check. A price that is missing or differs by more than five percent is changed, written to the audit log and told to the operators; a price from a pattern entry is reported and left alone. Answers with what was compared and changed.",
+				Preview: tools.PreviewOf(func(struct{}) string {
+					return "Check the model prices against the provider's bill, and change the ones that differ"
+				}),
+				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+					result, err := operator.Execute(ctx, client.DocumentCheckAgentProviderPrices, nil)
+					if err != nil {
+						return nil, err
+					}
+					return tools.JSONResult(result["CheckAgentProviderPrices"])
+				},
+			},
+			{
 				Name: "server_upgrade", Family: tools.FamilyServer, Risk: tools.RiskOutward, Permissions: manage,
 				Description: "Apply a newer release of the server, or restart it. The server goes away for a moment; it always asks first.",
 				Parameters:  tools.Object(map[string]any{"action": tools.EnumProperty("upgrade to the latest, or restart", "upgrade", "restart"), "version": tools.StringProperty("for upgrade: a version, the latest by default")}, "action"),
@@ -195,14 +225,18 @@ func init() {
 		},
 			// Reading the server's settings and changing them are one tool;
 			// changing them is still destructive, because a setting written
-			// wrongly is how a mail server stops receiving mail.
+			// wrongly is how a mail server stops receiving mail. The model
+			// prices checked against the provider's bill are here too, since
+			// they are settings the server changes itself.
 			tools.Group{
 				Name: "settings", Family: tools.FamilyServer,
-				Description: "This server's own configuration.",
+				Description: "This server's own configuration, and the model prices checked against the provider's bill.",
 				Members: []tools.Member{
 					{Action: "get", Tool: "settings_get"},
 					{Action: "describe", Tool: "settings_describe"},
 					{Action: "update", Tool: "settings_update"},
+					{Action: "prices_show", Tool: "settings_prices_show"},
+					{Action: "prices_check", Tool: "settings_prices_check"},
 				},
 			},
 		)

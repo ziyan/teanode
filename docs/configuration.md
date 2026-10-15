@@ -1197,6 +1197,12 @@ endpoint; a local server is `http://ollama:11434/v1`.
 **`apiKey`** — Authenticates this server to the service. A secret; shown
 redacted, kept when a settings update leaves it blank.
 
+**`billingApiKey`** — An OpenAI organization admin key that reads the
+organization's cost and usage reports, so the prices can follow what was
+billed. Only a provider of kind `openai` takes one. A secret; shown redacted,
+kept when a settings update leaves it blank. It is never sent with a model
+call.
+
 **`refreshToken`** — Authenticates a provider that is signed in to rather
 than keyed, which at present means `openai-codex`. A secret, shown redacted
 and kept when a settings update leaves it blank.

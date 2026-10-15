@@ -76,6 +76,8 @@ private struct SecretField: View {
     let label: LocalizedStringKey
     let isStored: Bool
     @Binding var typed: String
+    /// What the key is for, shown in the footer, when it is not obvious.
+    var hint: LocalizedStringKey?
     /// Whether clearing it is offered, and whether it is being cleared.
     var isClearing: Binding<Bool>?
 
@@ -95,6 +97,9 @@ private struct SecretField: View {
         } header: {
             Text(label)
         } footer: {
+            if let hint {
+                Text(hint)
+            }
             if isClearing?.wrappedValue == true {
                 Text("Cleared when you save.")
             } else if isStored {
@@ -2341,8 +2346,11 @@ private struct AgentLimitForm: View {
 /// AgentUsageView is what the agents used and cost over a range of days,
 /// added up by day, kind of run, model or person, drawn and then tabled. A
 /// table stays a table on a phone, scrolling sideways.
-private struct AgentUsageView: View {
+struct AgentUsageView: View {
     let connection: Connection
+    /// The table opens at its last columns, where the cost is, for a
+    /// screenshot of them; a person opens it at the first.
+    var isTableAtCost = false
     @State private var grouping = AgentUsageGrouping.day
     @State private var range = AgentUsageRange.lastThirtyDays()
     @State private var overview: AgentAdminOverview?
@@ -2395,6 +2403,14 @@ private struct AgentUsageView: View {
     private func keyLabel(_ usageKey: String, in overview: AgentAdminOverview) -> String {
         if usageKey.isEmpty { return String(localized: "Total") }
         if grouping == .agent { return overview.username(agentId: usageKey) }
+        // A day reads as "Oct 9": the whole "2026-10-09" is cut short under a
+        // narrow column of the chart.
+        if grouping == .day {
+            let parts = usageKey.split(separator: "-").compactMap { Int($0) }
+            if parts.count == 3, let day = Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)) {
+                return day.formatted(.dateTime.month(.abbreviated).day())
+            }
+        }
         return usageKey
     }
 
@@ -2426,11 +2442,7 @@ private struct AgentUsageView: View {
                     ChartSelectionRule(value: keyLabel(selectedRow.usageKey, in: overview)) {
                         ChartCallout(
                             title: keyLabel(selectedRow.usageKey, in: overview),
-                            figures: [
-                                ChartFigure(label: String(localized: "Tokens"), valueText: ServerWords.count(selectedRow.totals.totalTokenCount), color: barColor),
-                                ChartFigure(label: String(localized: "Cost"), valueText: UpkeepWords.money(selectedRow.cost, currency: selectedRow.currency)),
-                                ChartFigure(label: String(localized: "Calls"), valueText: selectedRow.totals.callCount.formatted()),
-                            ])
+                            figures: calloutFigures(selectedRow, isBilledShown: overview.isBilledShown, barColor: barColor))
                     }
                 }
             }
@@ -2450,6 +2462,25 @@ private struct AgentUsageView: View {
         }
     }
 
+    /// The figures a touched bar shows: the billed amount only for a row a bill was read for.
+    private func calloutFigures(_ selectedRow: AgentUsageRow, isBilledShown: Bool, barColor: Color) -> [ChartFigure] {
+        var figures = [
+            ChartFigure(label: String(localized: "Tokens"), valueText: ServerWords.count(selectedRow.totals.totalTokenCount), color: barColor),
+            ChartFigure(label: isBilledShown ? String(localized: "Estimated") : String(localized: "Cost"), valueText: UpkeepWords.money(selectedRow.cost, currency: selectedRow.currency)),
+        ]
+        if selectedRow.billedAmount != nil {
+            figures.append(ChartFigure(label: String(localized: "Billed"), valueText: Self.billedText(selectedRow)))
+        }
+        figures.append(ChartFigure(label: String(localized: "Calls"), valueText: selectedRow.totals.callCount.formatted()))
+        return figures
+    }
+
+    /// What the provider billed for a row, or a dash where no bill was read for it.
+    private static func billedText(_ usageRow: AgentUsageRow) -> String {
+        guard let billedAmount = usageRow.billedAmount else { return "-" }
+        return UpkeepWords.money(billedAmount, currency: usageRow.billedCurrencyCode?.uppercased())
+    }
+
     private func table(_ overview: AgentAdminOverview) -> some View {
         ScrollView(.horizontal) {
             Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 8) {
@@ -2459,7 +2490,8 @@ private struct AgentUsageView: View {
                     Text("Completion")
                     Text("Cached")
                     Text("Total")
-                    Text("Cost")
+                    if overview.isBilledShown { Text("Estimated") } else { Text("Cost") }
+                    if overview.isBilledShown { Text("Billed") }
                     Text("Calls")
                 }
                 .font(.caption.weight(.semibold))
@@ -2473,6 +2505,7 @@ private struct AgentUsageView: View {
                         Text(verbatim: ServerWords.count(usageRow.totals.cacheReadTokens))
                         Text(verbatim: ServerWords.count(usageRow.totals.totalTokenCount))
                         Text(verbatim: UpkeepWords.money(usageRow.cost, currency: usageRow.currency))
+                        if overview.isBilledShown { Text(verbatim: Self.billedText(usageRow)) }
                         Text(verbatim: usageRow.totals.callCount.formatted())
                     }
                     .font(.callout.monospacedDigit())
@@ -2481,6 +2514,7 @@ private struct AgentUsageView: View {
             }
             .padding(.vertical, 4)
         }
+        .defaultScrollAnchor(isTableAtCost ? .trailing : .leading)
     }
 
     private func load() async {
@@ -2984,12 +3018,19 @@ struct AgentProviderForm: View {
 
     /// The first model price's row, which the provider-prices screenshot scrolls to.
     static let modelPriceRowId = "model-price"
+    /// The line saying when the prices were last checked against the bill, which the provider-billing-check screenshot scrolls to.
+    static let billedPricesRowId = "billed-prices"
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft = AgentProviderDraft()
     @State private var isFilled = false
     @State private var isSaving = false
+    @State private var doneText: String?
     @State private var problemText: String?
+    /// The last check of this provider's prices against its bill, nil until
+    /// the server has answered or when it has no billing key.
+    @State private var billingCheck: AgentBillingCheck?
+    @State private var isCheckingPrices = false
 
     var body: some View {
         NavigationStack {
@@ -3019,6 +3060,11 @@ struct AgentProviderForm: View {
                 } else {
                     SettingField(label: "Base URL", text: $draft.baseUrl, prompt: String(localized: "empty for the public service"))
                     SecretField(label: "API key", isStored: draft.hasApiKey, typed: $draft.apiKey)
+                    if draft.providerKind == "openai" {
+                        SecretField(
+                            label: "Billing key", isStored: draft.hasBillingApiKey, typed: $draft.billingApiKey,
+                            hint: "An OpenAI admin key, used only to read what the organization was billed, so the prices below can follow the bill. Never sent with a model call.")
+                    }
                 }
                 Section {
                     TextField("Models to offer", text: $draft.allowText, prompt: Text("Patterns, comma separated; empty offers all"))
@@ -3034,6 +3080,7 @@ struct AgentProviderForm: View {
                     priceField("Audio input", text: $draft.pricingAudioInputText)
                 }
                 modelPricesSections
+                billedPricesSection
                 Section {
                     Toggle("Enabled", isOn: $draft.isEnabled)
                 }
@@ -3056,7 +3103,162 @@ struct AgentProviderForm: View {
                 }
                 isFilled = true
             }
-            .toast(done: .constant(nil), problem: $problemText)
+            .task { await loadBillingCheck() }
+            .toast(done: $doneText, problem: $problemText)
+        }
+    }
+
+    /// The name the provider has on the server, which is what a check is
+    /// read under; the draft's name may be one typed since.
+    private var storedProviderName: String? {
+        guard let providerIndex else { return nil }
+        return model.settings?.providers[safe: providerIndex]?.name
+    }
+
+    /// How the prices stand against the provider's bill, for a stored
+    /// provider with a billing key. The button is a plain row button, as an
+    /// action in a Form is.
+    @ViewBuilder
+    private var billedPricesSection: some View {
+        if draft.hasBillingApiKey, storedProviderName != nil {
+            Section {
+                billingCheckLine
+                    .id(Self.billedPricesRowId)
+                Button {
+                    Task { await checkPrices() }
+                } label: {
+                    HStack {
+                        Text(isCheckingPrices ? LocalizedStringKey("Checking…") : LocalizedStringKey("Check prices now"))
+                        if isCheckingPrices {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isCheckingPrices)
+                if let billingCheck, billingCheck.errorMessage.isEmpty {
+                    if billingCheck.compared.isEmpty, billingCheck.checkedDate != nil {
+                        Text("Nothing to compare: none of the models the agent used was billed in the last two weeks.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(billingCheck.compared) { price in
+                        LabeledContent {
+                            Text(verbatim: Self.comparedText(price, check: billingCheck))
+                                .monospacedDigit()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: price.model)
+                                Text(Self.kindText(price.tokenKind))
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                if price.isPattern {
+                                    Text("Pattern, not changed")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Prices from the bill")
+            } footer: {
+                Text("Per million tokens. An arrow is a price set from the bill; a price within five percent of the bill's is left as it is. A price from a pattern is shown and never changed.")
+            }
+        }
+    }
+
+    /// When the prices were last checked, or why the bill could not be read.
+    /// The refusal is red and carries a symbol, since red alone says nothing.
+    @ViewBuilder
+    private var billingCheckLine: some View {
+        if let billingCheck, billingCheck.checkedDate != nil {
+            if billingCheck.errorMessage.isEmpty {
+                let whenText = (billingCheck.checkedDate ?? .now).formatted(.relative(presentation: .named))
+                let changedText = billingCheck.changed.count.formatted()
+                Text("Prices checked against the bill \(whenText): \(changedText) changed")
+            } else {
+                Label(billingCheck.errorMessage, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+            }
+        } else {
+            Text("Not checked against the bill yet")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private static func priceText(_ price: Double) -> String {
+        price == 0 ? String(localized: "not set") : price.formatted()
+    }
+
+    /// A price the check set reads as the change; one that matches the bill
+    /// reads once, since an arrow between two equal figures looks like a
+    /// change; one left as it is (close enough, or a pattern) shows the
+    /// bill's figure beside it.
+    private static func comparedText(_ price: AgentBilledPrice, check: AgentBillingCheck) -> String {
+        if let change = check.changed.first(where: { $0.model == price.model && $0.tokenKind == price.tokenKind }) {
+            return "\(priceText(change.beforePerMillion)) → \(priceText(change.afterPerMillion))"
+        }
+        if price.configuredPerMillion == price.billedPerMillion {
+            return priceText(price.configuredPerMillion)
+        }
+        return String(localized: "\(priceText(price.configuredPerMillion)) (bill: \(priceText(price.billedPerMillion)))")
+    }
+
+    private static func kindText(_ tokenKind: String) -> String {
+        switch tokenKind {
+        case "input": String(localized: "Input")
+        case "cachedInput": String(localized: "Cached input")
+        case "cacheWrite": String(localized: "Cache writes")
+        case "output": String(localized: "Output")
+        case "audioInput": String(localized: "Audio input")
+        default: tokenKind
+        }
+    }
+
+    private func loadBillingCheck() async {
+        guard let storedProviderName, let providerIndex, model.settings?.providers[safe: providerIndex]?.hasBillingApiKey == true else { return }
+        do {
+            billingCheck = try await model.connection.agentBillingChecks().first { $0.providerName == storedProviderName }
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Checks the prices against the bill now. The server takes no provider
+    /// and checks them all. A check that changed this provider's prices has
+    /// changed it on the server, so the settings are read again and the
+    /// prices in the form are taken from them: saving the form with the old
+    /// ones would put them back.
+    private func checkPrices() async {
+        guard let storedProviderName else { return }
+        isCheckingPrices = true
+        defer { isCheckingPrices = false }
+        do {
+            let checks = try await model.connection.checkAgentProviderPrices()
+            guard let check = checks.first(where: { $0.providerName == storedProviderName }) else { return }
+            billingCheck = check
+            if !check.errorMessage.isEmpty {
+                problemText = check.errorMessage
+            } else if check.changed.isEmpty {
+                doneText = String(localized: "Prices checked against the bill: they match")
+            } else {
+                let changedText = check.changed.count.formatted()
+                doneText = String(localized: "Prices checked against the bill: \(changedText) changed")
+                await model.load()
+                if let providerIndex, let provider = model.settings?.providers[safe: providerIndex] {
+                    let refreshed = AgentProviderDraft(provider)
+                    draft.pricingInputText = refreshed.pricingInputText
+                    draft.pricingOutputText = refreshed.pricingOutputText
+                    draft.pricingCacheReadText = refreshed.pricingCacheReadText
+                    draft.pricingCacheWriteText = refreshed.pricingCacheWriteText
+                    draft.pricingAudioInputText = refreshed.pricingAudioInputText
+                    draft.modelPrices = refreshed.modelPrices
+                }
+            }
+        } catch {
+            problemText = error.localizedDescription
         }
     }
 
@@ -4592,12 +4794,15 @@ private struct SourceTypeGuideSheet: View {
 
 #if DEBUG
     /// `-TeaNodeScreen provider-prices`: the provider editor in a sheet, scrolled to the price of a particular model.
+    /// `-TeaNodeScreen provider-billing-check`: the same sheet for a provider with a billing key, scrolled to the prices from the bill.
     struct ProviderPricesDemoScreen: View {
         @State private var model: AgentAdminModel
         @State private var isShowingSheet = false
+        private let scrollTarget: String
 
-        init(connection: Connection) {
+        init(connection: Connection, scrollTarget: String = AgentProviderForm.modelPriceRowId) {
             _model = State(initialValue: AgentAdminModel(connection: connection))
+            self.scrollTarget = scrollTarget
         }
 
         var body: some View {
@@ -4612,7 +4817,7 @@ private struct SourceTypeGuideSheet: View {
                         AgentProviderForm(model: model, providerIndex: 0)
                             .task {
                                 try? await Task.sleep(for: .seconds(1))
-                                scroller.scrollTo(AgentProviderForm.modelPriceRowId, anchor: .center)
+                                scroller.scrollTo(scrollTarget, anchor: .center)
                             }
                     }
                 }

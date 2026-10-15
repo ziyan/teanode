@@ -50,6 +50,9 @@ type UsageRow = {
   key: string
   cost: number
   currency: string
+  // What the provider billed, when its bill was read for the period.
+  billedAmount?: number | null
+  billedCurrencyCode?: string | null
   totals: {
     promptTokens: number
     completionTokens: number
@@ -75,7 +78,7 @@ const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt daily
   totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }`
 const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   ListAgents ${SUMMARY}
-  AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
+  AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency billedAmount billedCurrencyCode totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
 }`
 const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int64, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
@@ -153,6 +156,9 @@ export function AgentAdminPage() {
   if (error) return <ErrorMessage error={error} />
   const agents = data!.ListAgents
   const usage = data!.AgentServerUsage
+  // The column shows only when a bill was read for some row, so a server with
+  // no billing key sees the table as before.
+  const isBilledShown = usage.some((row) => row.billedAmount != null)
   const dead = data!.ListAgentDeadLetters
 
   // keyLabel is a row's key as a person reads it: an agent by whose it
@@ -278,7 +284,8 @@ export function AgentAdminPage() {
                         <th className="numeric">{t('agentAdmin.completion')}</th>
                         <th className="numeric">{t('agentAdmin.cached')}</th>
                         <th className="numeric">{t('agentAdmin.total')}</th>
-                        <th className="numeric">{t('agentAdmin.cost')}</th>
+                        <th className="numeric">{t(isBilledShown ? 'agentAdmin.estimated' : 'agentAdmin.cost')}</th>
+                        {isBilledShown ? <th className="numeric">{t('agentAdmin.billed')}</th> : null}
                         <th className="numeric">{t('agentAdmin.calls')}</th>
                       </tr>
                     </thead>
@@ -291,6 +298,11 @@ export function AgentAdminPage() {
                           <td className="numeric">{formatCount(row.totals.cacheReadTokens)}</td>
                           <td className="numeric">{formatCount(total(row.totals))}</td>
                           <td className="numeric">{formatMoney(row.cost, row.currency)}</td>
+                          {isBilledShown ? (
+                            <td className="numeric">
+                              {row.billedAmount != null ? formatMoney(row.billedAmount, row.billedCurrencyCode) : ''}
+                            </td>
+                          ) : null}
                           <td className="numeric">{row.totals.calls}</td>
                         </tr>
                       ))}

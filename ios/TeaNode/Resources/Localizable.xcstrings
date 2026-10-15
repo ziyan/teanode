@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ (bill: %@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@(請求額: %2$@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（账单：%2$@）"
+          }
+        }
+      }
+    },
     "\"Confirm appointments and answer simple questions about opening hours; anything about money, wait for me.\"": {
       "localizations": {
         "ja": {
@@ -4037,6 +4053,22 @@
         }
       }
     },
+    "An OpenAI admin key, used only to read what the organization was billed, so the prices below can follow the bill. Never sent with a model call.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI の管理者キーです。組織に請求された金額を読み取るためだけに使い、下の価格を請求額に合わせます。モデルの呼び出しには送信されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI 管理员密钥，仅用于读取组织的账单金额，使下方的价格与账单保持一致。绝不会随模型调用发送。"
+          }
+        }
+      }
+    },
     "API key": {
       "localizations": {
         "ja": {
@@ -7653,6 +7685,22 @@
         }
       }
     },
+    "Billing key": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求用キー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单密钥"
+          }
+        }
+      }
+    },
     "Bond premium": {
       "localizations": {
         "ja": {
@@ -8037,6 +8085,22 @@
         }
       }
     },
+    "Cache writes": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュ書き込み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存写入"
+          }
+        }
+      }
+    },
     "Cached": {
       "localizations": {
         "ja": {
@@ -8049,6 +8113,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "缓存"
+          }
+        }
+      }
+    },
+    "Cached input": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャッシュ入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缓存输入"
           }
         }
       }
@@ -8961,6 +9041,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "立即检查"
+          }
+        }
+      }
+    },
+    "Check prices now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐ価格を照合"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即核对价格"
           }
         }
       }
@@ -10257,6 +10353,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "费用"
+          }
+        }
+      }
+    },
+    "Estimated": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見積もり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估算"
+          }
+        }
+      }
+    },
+    "Billed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单"
           }
         }
       }
@@ -13861,6 +13989,22 @@
         }
       }
     },
+    "Not checked against the bill yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ請求額と照合されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未与账单核对"
+          }
+        }
+      }
+    },
     "Not taxed": {
       "localizations": {
         "ja": {
@@ -13873,6 +14017,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "不征税"
+          }
+        }
+      }
+    },
+    "Nothing to compare: none of the models the agent used was billed in the last two weeks.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "比較するものがありません。エージェントが使ったモデルは、過去2週間に請求されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可比较的内容：智能体使用过的模型在最近两周内都没有出账。"
           }
         }
       }
@@ -26709,6 +26869,22 @@
         }
       }
     },
+    "Pattern, not changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パターンのため変更なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模式条目，未更改"
+          }
+        }
+      }
+    },
     "Patterns, comma separated": {
       "localizations": {
         "ja": {
@@ -26849,6 +27025,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "付款方"
+          }
+        }
+      }
+    },
+    "Per million tokens. An arrow is a price set from the bill; a price within five percent of the bill's is left as it is. A price from a pattern is shown and never changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100 万トークンあたり。矢印は請求額から設定した価格です。請求額との差が 5% 以内の価格はそのままにします。パターンの価格は表示するだけで、変更しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每百万 token。箭头表示按账单设置的价格；与账单相差不超过 5% 的价格保持不变。来自模式条目的价格只显示，不会更改。"
+          }
+        }
+      }
+    },
+    "Prices checked against the bill %@: %@ changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "価格を請求額と照合しました(%1$@):%2$@ 件を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将价格与账单核对（%1$@）：更改了 %2$@ 项"
+          }
+        }
+      }
+    },
+    "Prices checked against the bill: %@ changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "価格を請求額と照合しました:%@ 件を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将价格与账单核对：更改了 %@ 项"
+          }
+        }
+      }
+    },
+    "Prices checked against the bill: they match": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "価格を請求額と照合しました:一致しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将价格与账单核对：完全一致"
+          }
+        }
+      }
+    },
+    "Prices from the bill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求額から見た価格"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单中的价格"
           }
         }
       }

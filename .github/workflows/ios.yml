@@ -237,12 +237,22 @@ jobs:
           shoot provider-prices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
           shoot provider-prices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
           shoot provider-prices-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
+          # The same editor for a provider with a billing key, scrolled to the prices from the bill.
+          shoot provider-billing-check-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
+          shoot provider-billing-check-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
+          shoot provider-billing-check-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
           shoot dns-records-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
           shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
           shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions
           shoot devices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen devices
           shoot devices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen devices
           shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones
+          # The server's usage by day, with the provider's bill beside the estimate.
+          shoot agent-usage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
+          shoot agent-usage-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
+          shoot agent-usage-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
+          shoot agent-usage-cost-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
+          shoot agent-usage-cost-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules

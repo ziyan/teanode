@@ -13,6 +13,7 @@ import { useToast } from '../../components/toast'
 import { ToolPolicyAccordion } from '../../components/toolPolicy'
 import { Tooltip } from '../../components/tooltip'
 import { ProviderSignIn } from './providerSignIn'
+import { BillingCheck, PriceCheckDialog, PriceCheckLine, runPriceCheck, useBillingChecks } from './providerPriceCheck'
 import { PlanUsage, PlanUsageBars } from '../../components/planUsage'
 import { useTranslation } from '../../i18n/i18n'
 import { UPDATE, useSaver } from './integrations'
@@ -34,6 +35,7 @@ export type AgentProvider = {
   kind: string
   baseUrl: string
   hasApiKey: boolean
+  hasBillingApiKey: boolean
   // A provider that runs on a person's plan is signed in to, not keyed.
   hasRefreshToken: boolean
   account: string
@@ -179,7 +181,7 @@ export type Agent = {
 
 export const AGENT_SELECTION = `agent {
   enabled instructions allowPrivateAddresses skipCertificateCheck
-  providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+  providers { name kind baseUrl hasApiKey hasBillingApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
   models { default fast quick transcription embedding triage research summarize reply ask schedule compact scan synthesize decide categorize embeddingDimensions choices }
   features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
   limits { maxRecordingMediaBytes maxRecordingAccountBytes maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone }
@@ -433,6 +435,8 @@ type ProviderDraft = {
   baseUrl: string
   apiKey: string
   hasApiKey: boolean
+  billingApiKey: string
+  hasBillingApiKey: boolean
   hasRefreshToken: boolean
   enabled: boolean
   allow: string
@@ -453,6 +457,8 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         baseUrl: provider.baseUrl,
         apiKey: '',
         hasApiKey: provider.hasApiKey,
+        billingApiKey: '',
+        hasBillingApiKey: provider.hasBillingApiKey,
         hasRefreshToken: provider.hasRefreshToken,
         enabled: provider.enabled,
         allow: list(provider.allow),
@@ -477,6 +483,8 @@ function providerDraft(provider?: AgentProvider): ProviderDraft {
         baseUrl: '',
         apiKey: '',
         hasApiKey: false,
+        billingApiKey: '',
+        hasBillingApiKey: false,
         hasRefreshToken: false,
         enabled: true,
         allow: '',
@@ -503,6 +511,7 @@ function providerValues(provider: AgentProvider) {
     kind: provider.kind,
     baseUrl: provider.baseUrl,
     apiKey: '',
+    billingApiKey: '',
     enabled: provider.enabled,
     allow: provider.allow,
     deny: provider.deny,
@@ -521,6 +530,7 @@ function draftValues(draft: ProviderDraft) {
     kind: draft.kind,
     baseUrl: draft.baseUrl.trim(),
     apiKey: draft.apiKey,
+    billingApiKey: draft.billingApiKey,
     enabled: draft.enabled,
     allow: split(draft.allow),
     deny: split(draft.deny),
@@ -545,13 +555,44 @@ function draftValues(draft: ProviderDraft) {
 // ProvidersSection: the model services, a row each. The list is sent
 // whole whenever a row changes, because a list is what it is; the row
 // being edited is the one in the dialog.
-function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (names: string[]) => void }) {
+export function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (names: string[]) => void }) {
   const { t } = useTranslation()
   const toast = useToast()
   const { busy, save } = useSectionSave(onSaved)
   const [editing, setEditing] = useState<{ index: number; draft: ProviderDraft } | null>(null)
   const [removing, setRemoving] = useState<number | null>(null)
   const [testing, setTesting] = useState<string | null>(null)
+  const hasBillingKey = settings.providers.some((provider) => provider.hasBillingApiKey)
+  const { checks, setChecks } = useBillingChecks(hasBillingKey)
+  const [isChecking, setIsChecking] = useState(false)
+  const [priceChecked, setPriceChecked] = useState<string | null>(null)
+
+  // Checks the prices of every provider with a billing key now. A check
+  // that changed a price has changed the provider list on the server, so
+  // the rows are read again; the editor is not open meanwhile, which is why
+  // this is a row action and not a field in the editor: its draft would
+  // still hold the old prices and saving it would put them back.
+  async function checkPrices(name: string) {
+    setIsChecking(true)
+    try {
+      const answered = await runPriceCheck()
+      setChecks(answered)
+      const check = answered[name]
+      if (check?.errorMessage) {
+        toast.failed(check.errorMessage)
+      } else if (check && check.changed.length > 0) {
+        toast.done(t('agentSettings.priceCheckChangedToast', { count: String(check.changed.length) }))
+        await onSaved()
+      } else {
+        toast.done(t('agentSettings.priceCheckSameToast'))
+      }
+      if (check) setPriceChecked(name)
+    } catch (caught) {
+      toast.failed(messageOf(caught))
+    } finally {
+      setIsChecking(false)
+    }
+  }
 
   async function test(name: string) {
     setTesting(name)
@@ -619,11 +660,21 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
             subtitle={
               <>
                 {detail.join(' · ')}
+                {provider.hasBillingApiKey ? (
+                  <div>
+                    <PriceCheckLine check={checks[provider.name]} />
+                  </div>
+                ) : null}
                 {provider.planUsage ? <PlanUsageBars usage={provider.planUsage} /> : null}
               </>
             }
             actions={
               <>
+                {provider.hasBillingApiKey ? (
+                  <button type="button" disabled={busy || isChecking} onClick={() => void checkPrices(provider.name)}>
+                    {isChecking ? t('agentSettings.priceChecking') : t('agentSettings.priceCheckNow')}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={
@@ -728,6 +779,14 @@ function ProvidersSection({ settings, onSaved, onModels }: Props & { onModels: (
           }}
         />
       ) : null}
+      {priceChecked !== null && checks[priceChecked] ? (
+        <PriceCheckDialog
+          check={checks[priceChecked] as BillingCheck}
+          busy={isChecking}
+          onCheck={() => void checkPrices(priceChecked)}
+          onClose={() => setPriceChecked(null)}
+        />
+      ) : null}
       {removing !== null ? (
         <ConfirmDialog
           title={t('agentSettings.removeProvider')}
@@ -830,6 +889,22 @@ function ProviderDialog({
               onChange={(event) => set({ apiKey: event.target.value })}
             />
           </label>
+          {draft.kind === 'openai' ? (
+            <label>
+              <span>
+                {t('agentSettings.providerBillingApiKey')}
+                {draft.hasBillingApiKey ? <span className="muted"> {t('agentSettings.secretKept')}</span> : null}
+              </span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={draft.billingApiKey}
+                placeholder={draft.hasBillingApiKey ? '••••••••' : ''}
+                onChange={(event) => set({ billingApiKey: event.target.value })}
+              />
+              <small className="muted">{t('agentSettings.providerBillingApiKeyHint')}</small>
+            </label>
+          ) : null}
         </>
       )}
       <div className="row">

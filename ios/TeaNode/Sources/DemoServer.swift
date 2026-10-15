@@ -24,6 +24,8 @@
             let answer: String
             if let recordingAnswer = Self.recordingAnswer(query: query) {
                 answer = recordingAnswer
+            } else if query.contains("AgentServerUsage") {
+                answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
                 answer = #"{"data":{"ReadRecordingLimits":{"maximumMediaBytes":2147483648,"maximumAccountBytes":68719476736,"uploadPartBytes":8388608,"isTranscriptionAvailable":true,"transcriptionUnavailableMessage":"","transcriptionProviderModelName":"demo:transcription"}}}"#
             } else if query.contains("GetDeviceSetupCapabilities") {
@@ -405,6 +407,19 @@
               {"node":{"id":"projects","path":"projects","kind":"folder","name":"Projects","summary":""},"hint":"What you are building and planning","children":9},
               {"node":{"id":"home","path":"home","kind":"topic","name":"Home","summary":"The house, the garden and what needs doing."},"hint":"","children":3},
               {"node":{"id":"travel","path":"travel","kind":"topic","name":"Travel","summary":"Trips taken and planned."},"hint":"","children":0}]}}}
+            """#
+
+        /// The server's usage by day for the usage screen: invented tokens and
+        /// amounts, with a bill read for most days and none for the latest.
+        static let serverUsage = #"""
+            {"data":{"ListAgents":[],"ListAgentDeadLetters":[],"AgentServerUsage":[
+              {"key":"2026-10-09","cost":1.42,"currency":"USD","billedAmount":1.51,"billedCurrencyCode":"usd","totals":{"promptTokens":820000,"completionTokens":61000,"cacheReadTokens":410000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":96}},
+              {"key":"2026-10-10","cost":0.88,"currency":"USD","billedAmount":0.9,"billedCurrencyCode":"usd","totals":{"promptTokens":510000,"completionTokens":38000,"cacheReadTokens":250000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":58}},
+              {"key":"2026-10-11","cost":2.07,"currency":"USD","billedAmount":2.31,"billedCurrencyCode":"usd","totals":{"promptTokens":1260000,"completionTokens":97000,"cacheReadTokens":690000,"cacheWriteTokens":0,"audioInputTokens":42000,"calls":141}},
+              {"key":"2026-10-12","cost":1.19,"currency":"USD","billedAmount":1.22,"billedCurrencyCode":"usd","totals":{"promptTokens":700000,"completionTokens":52000,"cacheReadTokens":330000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":77}},
+              {"key":"2026-10-13","cost":0.64,"currency":"USD","billedAmount":0.61,"billedCurrencyCode":"usd","totals":{"promptTokens":390000,"completionTokens":29000,"cacheReadTokens":180000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":44}},
+              {"key":"2026-10-14","cost":1.73,"currency":"USD","totals":{"promptTokens":1010000,"completionTokens":80000,"cacheReadTokens":520000,"cacheWriteTokens":0,"audioInputTokens":0,"calls":112}}
+            ]}}
             """#
 
         /// A person's page with their records linked, for the screenshot
