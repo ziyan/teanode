@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import TeaNodeKit
 import UIKit
@@ -128,9 +129,7 @@ final class ShareModel: ObservableObject {
                     problemText = error.localizedDescription
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-                if let data = await Self.data(of: provider, type: UTType.image), let image = UIImage(data: data),
-                    let file = Self.picture(image, index: index)
-                {
+                if let data = await Self.data(of: provider, type: UTType.image), let file = Self.picture(data, index: index) {
                     files.append(file)
                 }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier),
@@ -302,17 +301,30 @@ final class ShareModel: ObservableObject {
         return (data, fileName, type.preferredMIMEType ?? "application/octet-stream")
     }
 
-    /// A picture as a JPEG at most 2048 points on its longest side, as the
-    /// app sends one.
-    private static func picture(_ image: UIImage, index: Int) -> SharedFile? {
-        let longest: CGFloat = 2048
-        let scale = min(1, longest / max(image.size.width, image.size.height))
-        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
-        guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { return nil }
-        return SharedFile(name: "picture-\(index + 1).jpg", contentType: "image/jpeg", data: jpeg, preview: resized)
+    /// A picture as a JPEG at most 2048 pixels on its longest side, as the
+    /// app sends one, with a small copy to show in the sheet.
+    ///
+    /// Read scaled down straight from the file, never decoded whole: a
+    /// share extension is killed past about 120 MB, and a photo from the
+    /// camera decodes to more than that, so the sheet closed as it opened.
+    private static func picture(_ data: Data, index: Int) -> SharedFile? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+            let sent = scaled(source, longestPixels: 2048), let jpeg = UIImage(cgImage: sent).jpegData(compressionQuality: 0.8)
+        else { return nil }
+        let preview = scaled(source, longestPixels: 264).map { UIImage(cgImage: $0) }
+        return SharedFile(name: "picture-\(index + 1).jpg", contentType: "image/jpeg", data: jpeg, preview: preview)
+    }
+
+    /// The picture at most longestPixels on its longest side, turned the
+    /// way it was taken.
+    private static func scaled(_ source: CGImageSource, longestPixels: Int) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: longestPixels,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
 
