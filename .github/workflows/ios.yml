@@ -187,6 +187,10 @@ jobs:
           shoot knowledge-records-light light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
           shoot knowledge-records-dark dark large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
           shoot knowledge-linked-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records
+          # The same page scrolled to the recording's row, with its passage count.
+          shoot knowledge-records-recording-light light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records-recording
+          shoot knowledge-records-recording-dark dark large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records-recording
+          shoot knowledge-records-recording-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen knowledge-records-recording
           shoot finance-light light large -TeaNodeDemo -TeaNodeTab finance
           shoot finance-menu-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeMenu
           # The finance charts: the donut and its rows, a touched month, slice
@@ -218,6 +222,10 @@ jobs:
           shoot domain-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
           shoot domain-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen domain
           shoot dns-records-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
+          # The provider editor, scrolled to the price of a particular model.
+          shoot provider-prices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
+          shoot provider-prices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
+          shoot provider-prices-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
           shoot dns-records-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
           shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
           shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions

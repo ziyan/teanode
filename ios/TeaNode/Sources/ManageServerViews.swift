@@ -2974,9 +2974,13 @@ extension Array {
 /// AgentProviderForm adds a provider or changes one. A provider that runs
 /// on a person's plan is signed in to rather than keyed, and the sign-in is
 /// what saves it.
-private struct AgentProviderForm: View {
+struct AgentProviderForm: View {
     let model: AgentAdminModel
     let providerIndex: Int?
+
+    /// The first model price's row, which the provider-prices screenshot scrolls to.
+    static let modelPriceRowId = "model-price"
+
     @Environment(\.dismiss) private var dismiss
     @State private var draft = AgentProviderDraft()
     @State private var isFilled = false
@@ -3071,6 +3075,7 @@ private struct AgentProviderForm: View {
                 TextField("Model", text: price.model, prompt: Text(verbatim: "model-name*"))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .id(Self.modelPriceRowId)
                 priceField("In", text: price.inputText)
                 priceField("Out", text: price.outputText)
                 priceField("Cached", text: price.cacheReadText)
@@ -4577,6 +4582,36 @@ private struct SourceTypeGuideSheet: View {
                     proxy.scrollTo(screen == "recording-model-settings" ? "recording-transcription" : "recording-quotas", anchor: .top)
                 }
             }
+        }
+    }
+#endif
+
+#if DEBUG
+    /// `-TeaNodeScreen provider-prices`: the provider editor in a sheet, scrolled to the price of a particular model.
+    struct ProviderPricesDemoScreen: View {
+        @State private var model: AgentAdminModel
+        @State private var isShowingSheet = false
+
+        init(connection: Connection) {
+            _model = State(initialValue: AgentAdminModel(connection: connection))
+        }
+
+        var body: some View {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+                .task {
+                    await model.load()
+                    isShowingSheet = model.settings != nil
+                }
+                .sheet(isPresented: $isShowingSheet) {
+                    ScrollViewReader { scroller in
+                        AgentProviderForm(model: model, providerIndex: 0)
+                            .task {
+                                try? await Task.sleep(for: .seconds(1))
+                                scroller.scrollTo(AgentProviderForm.modelPriceRowId, anchor: .center)
+                            }
+                    }
+                }
         }
     }
 #endif

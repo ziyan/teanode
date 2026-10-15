@@ -337,9 +337,10 @@ struct KnowledgeStack: View {
         }
         #if DEBUG
             // A screenshot of a page with its records linked
-            // (`-TeaNodeScreen knowledge-records`).
+            // (`-TeaNodeScreen knowledge-records`), or scrolled to the recording
+            // row with its passage count (`knowledge-records-recording`).
             .task {
-                if DemoServer.isRequested, DemoServer.screen == "knowledge-records", path.isEmpty {
+                if DemoServer.isRequested, ["knowledge-records", "knowledge-records-recording"].contains(DemoServer.screen), path.isEmpty {
                     path.append(KnowledgePlace.page("people/dana-fixture"))
                 }
             }
