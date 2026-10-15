@@ -753,6 +753,9 @@ button.conversation-tile:focus-visible {
      buttons, and sat on the row's top edge. */
   align-items: center;
   gap: var(--space-2);
+  /* More actions than a phone's width puts the far-side ones on a line of
+     their own, rather than off the screen's left edge. */
+  flex-wrap: wrap;
   margin-top: var(--space-4);
   /* Where the dialog is taller than the screen, Cancel and Save stay on it:
      they are the way out, and hunting for them by scrolling is not a way
@@ -775,6 +778,7 @@ button.conversation-tile:focus-visible {
   margin-right: auto;
   /* More than one button on the far side keeps the row's own spacing. */
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
