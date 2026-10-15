@@ -972,10 +972,18 @@ records, each read under the grant), `backlinks` (the pages linked to a
 record), `link` and `unlink` with `record`. `get` of a person's page
 includes the linked card when its book is granted. The same operations are
 in GraphQL (`ListAgentRecordLinks`, `ReadRecordMemoryLinks`,
-`LinkAgentRecord`, `UnlinkAgentRecord`, `SetAgentNodeContact`, and
-`recordLinks` and `evidenceRecords` on `AgentGraphPage`) and the command
-line (`teanode agent memory links|backlinks|link --record|unlink
---record|contact`).
+`LinkAgentRecord`, `UnlinkAgentRecord`, `ConfirmAgentRecord`,
+`SetAgentNodeContact`, and `recordLinks` and `evidenceRecords` on
+`AgentGraphPage`) and the command line (`teanode agent memory
+links|backlinks|link --record|unlink --record|confirm|contact`).
+
+A person's page holds one link per passage of a recording they spoke in, so a
+page lists a recording once per relation, not once per passage: the row is the
+first passage by start time, `passageCount` says how many the row stands for,
+and `recordLinkCount` counts rows. The grouping is
+`recordlink.GroupPassages`, shared by GraphQL and the memory tool's `links`.
+`UnlinkAgentRecord` and `ConfirmAgentRecord` with no passage range act on every
+passage of the row; a range narrows them to one.
 
 ## Traceable
 

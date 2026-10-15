@@ -2959,6 +2959,8 @@ export const en = {
   'memoryLinks.remove': 'Remove link',
   'memoryLinks.confirmed': 'Link confirmed',
   'memoryLinks.removed': 'Link removed',
+  'memoryLinks.passagesOne': '1 passage',
+  'memoryLinks.passagesOther': '{count} passages',
   'memoryLinks.removeBody': 'Remove the link to "{title}"? The agent will not make it again unless you do.',
   'memoryLinks.unavailable': 'No longer available',
   'memoryLinks.untitled': 'Untitled',

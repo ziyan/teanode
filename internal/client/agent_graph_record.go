@@ -27,6 +27,10 @@ type AgentRecordLink struct {
 	PassageEndMS    int64  `json:"passageEndMS"`
 	TranscriptRunID string `json:"transcriptRunId"`
 
+	// PassageCount is how many passage links of a recording the row stands
+	// for, the range above being the first; zero for any other kind.
+	PassageCount int `json:"passageCount"`
+
 	Note       string     `json:"note"`
 	HappenedAt *time.Time `json:"happenedAt"`
 	CreatedAt  time.Time  `json:"createdAt"`
@@ -44,7 +48,7 @@ type AgentRecordLinks struct {
 	NextOffset      int                `json:"nextOffset"`
 }
 
-const recordLinkFields = `{ id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable }`
+const recordLinkFields = `{ id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId passageCount note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable }`
 
 // The documents.
 const (
@@ -62,6 +66,9 @@ const (
 	}`
 	DocumentUnlinkAgentRecord = `mutation ($path: String!, $recordKind: String!, $recordId: String!, $recordRelation: String, $passageStartMS: Int64, $passageEndMS: Int64) {
 		UnlinkAgentRecord(path: $path, recordKind: $recordKind, recordId: $recordId, recordRelation: $recordRelation, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS)
+	}`
+	DocumentConfirmAgentRecord = `mutation ($path: String!, $recordKind: String!, $recordId: String!, $recordRelation: String, $passageStartMS: Int64, $passageEndMS: Int64) {
+		ConfirmAgentRecord(path: $path, recordKind: $recordKind, recordId: $recordId, recordRelation: $recordRelation, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS)
 	}`
 	DocumentSetAgentNodeContact = `mutation ($path: String!, $contactId: String) { SetAgentNodeContact(path: $path, contactId: $contactId) }`
 )
@@ -148,4 +155,24 @@ func SetAgentNodeContact(ctx context.Context, connection *Client, path, contactI
 		SetAgentNodeContact bool `json:"SetAgentNodeContact"`
 	}
 	return connection.Execute(ctx, DocumentSetAgentNodeContact, map[string]any{"path": path, "contactId": contactId}, &result)
+}
+
+// ConfirmAgentRecord states the agent's guesses at a page's links to a
+// record, every passage of a recording at once unless a range names one,
+// and says how many. No relation is every relation.
+func ConfirmAgentRecord(ctx context.Context, connection *Client, path, recordKind, recordId, recordRelation string, startMS, endMS int64) (int, error) {
+	var result struct {
+		ConfirmAgentRecord int `json:"ConfirmAgentRecord"`
+	}
+	variables := map[string]any{"path": path, "recordKind": recordKind, "recordId": recordId}
+	if recordRelation != "" {
+		variables["recordRelation"] = recordRelation
+	}
+	if startMS != 0 || endMS != 0 {
+		variables["passageStartMS"], variables["passageEndMS"] = startMS, endMS
+	}
+	if err := connection.Execute(ctx, DocumentConfirmAgentRecord, variables, &result); err != nil {
+		return 0, err
+	}
+	return result.ConfirmAgentRecord, nil
 }

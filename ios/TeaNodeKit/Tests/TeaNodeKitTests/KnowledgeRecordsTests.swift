@@ -6,14 +6,14 @@ import XCTest
 final class KnowledgeRecordsTests: XCTestCase {
     private func link(
         _ id: String, kind: String = "mail", relation: String = "wrote", status: String = "stated", path: String = "/mailbox/starred/item-1",
-        unavailable: Bool = false, node: String = "people/fixture-guest", start: Int = 0, end: Int = 0
+        unavailable: Bool = false, node: String = "people/fixture-guest", start: Int = 0, end: Int = 0, passageCount: String = ""
     ) throws -> KnowledgeRecordLink {
         try JSONDecoder().decode(
             KnowledgeRecordLink.self,
             from: Data(
                 """
                 {"id":"\(id)","nodePath":"\(node)","nodeName":"Fixture Guest","nodeKind":"person","recordKind":"\(kind)","recordId":"record-\(id)",
-                 "recordRelation":"\(relation)","linkStatus":"\(status)","passageStartMS":\(start),"passageEndMS":\(end),"transcriptRunId":"",
+                 "recordRelation":"\(relation)","linkStatus":"\(status)","passageStartMS":\(start),"passageEndMS":\(end),"transcriptRunId":"",\(passageCount)
                  "note":"","happenedAt":null,"createdAt":"2026-01-01T00:00:00Z","recordTitle":"Fixture subject",
                  "recordHappenedAt":"2026-03-04T10:00:00Z","dashboardPath":"\(path)","isUnavailable":\(unavailable)}
                 """.utf8))
@@ -26,6 +26,12 @@ final class KnowledgeRecordsTests: XCTestCase {
         ])
         XCTAssertEqual(groups.map(\.recordKind), ["contact", "mail", "recording_passage", "something_new"])
         XCTAssertEqual(groups[1].links.map(\.id), ["b", "d"])
+    }
+
+    func testARecordRowSaysHowManyPassagesItCoversAndAnOldServerSaysNothing() throws {
+        XCTAssertEqual(try link("a", kind: "recording_passage", passageCount: #""passageCount":37,"#).coveredPassageCount, 37)
+        XCTAssertEqual(try link("a", kind: "mail", passageCount: #""passageCount":0,"#).coveredPassageCount, 0)
+        XCTAssertEqual(try link("a", kind: "recording_passage").coveredPassageCount, 0)
     }
 
     func testAGuessIsProposedAndOnlyAnExistingRecordWithAPlaceOpens() throws {
@@ -103,6 +109,9 @@ final class KnowledgeRecordsTests: XCTestCase {
         XCTAssertTrue(Documents.readRecordMemoryLinks.contains("ReadRecordMemoryLinks("))
         XCTAssertTrue(Documents.linkKnowledgeRecord.contains("LinkAgentRecord("))
         XCTAssertTrue(Documents.unlinkKnowledgeRecord.contains("UnlinkAgentRecord("))
+        XCTAssertTrue(Documents.confirmKnowledgeRecord.contains("ConfirmAgentRecord("))
+        XCTAssertTrue(Documents.listKnowledgeRecordLinks.contains("recordLinks {"))
+        XCTAssertTrue(Documents.recordLinkFields.contains("passageCount"))
         XCTAssertTrue(Documents.setKnowledgeContact.contains("SetAgentNodeContact("))
         XCTAssertTrue(Documents.knowledgePage.contains("recordLinks {"))
         XCTAssertTrue(Documents.knowledgePage.contains("evidenceRecords {"))

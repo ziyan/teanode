@@ -67,6 +67,7 @@ struct ConversationsSheet: View {
     @State private var found: [AgentConversation]?
     @State private var isLoaded = false
     @State private var problemText: String?
+    @State private var toastProblemText: String?
     @State private var renaming: AgentConversation?
     @State private var newTitle = ""
     @State private var deleting: AgentConversation?
@@ -152,6 +153,7 @@ struct ConversationsSheet: View {
                     Task { archived = (try? await connection.conversations(isArchived: true))?.filter { !$0.isMain } ?? [] }
                 }
             }
+            .toast(done: .constant(nil), problem: $toastProblemText)
             .overlay {
                 if let problemText {
                     ContentUnavailableView("Cannot load conversations", systemImage: "wifi.exclamationmark", description: Text(problemText))
@@ -282,7 +284,17 @@ struct ConversationsSheet: View {
             }
             await load()
         } catch {
+            report(error)
+        }
+    }
+
+    /// A failure is the whole screen only while no conversation is shown.
+    /// With rows on screen they stay, and the failure is told as a toast.
+    private func report(_ error: Error) {
+        if conversations.isEmpty {
             problemText = app.describe(error)
+        } else {
+            toastProblemText = app.describe(error)
         }
     }
 
@@ -293,7 +305,7 @@ struct ConversationsSheet: View {
             // The list reads without it; only the marks are missing.
             waitingByConversation = (try? await connection.waiting(first: 50))?.countByConversation ?? [:]
         } catch {
-            problemText = app.describe(error)
+            report(error)
         }
         isLoaded = true
     }
@@ -302,7 +314,7 @@ struct ConversationsSheet: View {
         do {
             onChoose(try await connection.startConversation(title: nil))
         } catch {
-            problemText = app.describe(error)
+            report(error)
         }
     }
 }

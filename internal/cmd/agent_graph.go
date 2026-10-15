@@ -1075,11 +1075,25 @@ func runAgentGraphConfirmRecords(ctx context.Context, command *cli.Command) erro
 			if link.LinkStatus != string(models.EdgeProposed) {
 				continue
 			}
-			if reference != "" && (link.RecordKind != string(recordKind) || link.RecordID != recordId ||
-				(recordKind == models.RecordRecordingPassage && (startMS != 0 || endMS != 0) && (link.PassageStartMS != startMS || link.PassageEndMS != endMS))) {
+			isPassage := link.RecordKind == string(models.RecordRecordingPassage)
+			// A row of a recording stands for all its passages, so it is
+			// matched by the recording, and a range given narrows the
+			// confirmation on the server rather than the row.
+			if reference != "" && (link.RecordKind != string(recordKind) || link.RecordID != recordId) {
 				continue
 			}
 			if relation := command.String("relation"); relation != "" && link.RecordRelation != relation {
+				continue
+			}
+			if isPassage {
+				passageCount, err := client.ConfirmAgentRecord(ctx, connection, path, link.RecordKind, link.RecordID, link.RecordRelation, startMS, endMS)
+				if err != nil {
+					return describeError(command, err)
+				}
+				confirmed += passageCount
+				row := *link
+				row.PassageCount = 0
+				_, _ = fmt.Fprintf(command.Writer, "%s %s %s (%d %s confirmed)\n", path, link.RecordRelation, describeRecordLink(&row), passageCount, pluralPassages(passageCount))
 				continue
 			}
 			stated, err := client.LinkAgentRecord(ctx, connection, path, link.RecordKind, link.RecordID, link.RecordRelation, link.PassageStartMS, link.PassageEndMS, link.TranscriptRunID, "")
@@ -1102,6 +1116,13 @@ func runAgentGraphConfirmRecords(ctx context.Context, command *cli.Command) erro
 	return nil
 }
 
+func pluralPassages(count int) string {
+	if count == 1 {
+		return "passage"
+	}
+	return "passages"
+}
+
 func joinRecordRelations() string {
 	names := make([]string, 0, len(models.AgentRecordRelations))
 	for _, relation := range models.AgentRecordRelations {
@@ -1118,6 +1139,10 @@ func describeRecordLink(link *client.AgentRecordLink) string {
 		return reference + " (no longer available)"
 	}
 	line := reference
+	if link.PassageCount > 1 {
+		// The reference is the first passage; the page has this many.
+		line = fmt.Sprintf("%s (%d passages, the first shown)", reference, link.PassageCount)
+	}
 	if link.RecordTitle != "" {
 		line += "  " + link.RecordTitle
 	}

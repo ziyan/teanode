@@ -69,6 +69,7 @@ struct KnowledgeFolder: View {
     @State private var title = ""
     @State private var isLoaded = false
     @State private var problemText: String?
+    @State private var toastProblemText: String?
     @State private var searchText = ""
     @State private var found: KnowledgeSearch?
     @State private var foundNodes: [KnowledgeNode] = []
@@ -110,6 +111,7 @@ struct KnowledgeFolder: View {
         }
         .task { await load(isMore: false) }
         .refreshable { await load(isMore: false) }
+        .toast(done: .constant(nil), problem: $toastProblemText)
         .overlay {
             if let problemText {
                 ContentUnavailableView("This could not be read", systemImage: "exclamationmark.triangle", description: Text(problemText))
@@ -178,7 +180,17 @@ struct KnowledgeFolder: View {
             isLoaded = true
             problemText = nil
         } catch {
+            report(error)
+        }
+    }
+
+    /// A failure is the whole screen only while nothing is shown. With rows
+    /// on screen they stay, and the failure is told as a toast.
+    private func report(_ error: Error) {
+        if rows.isEmpty, foundNodes.isEmpty, foundFacts.isEmpty {
             problemText = error.localizedDescription
+        } else {
+            toastProblemText = error.localizedDescription
         }
     }
 
@@ -190,8 +202,9 @@ struct KnowledgeFolder: View {
             foundNodes = (isMore ? foundNodes : []) + read.nodes.compactMap { $0 }
             foundFacts = (isMore ? foundFacts : []) + read.facts.compactMap { $0 }
             found = read
+            problemText = nil
         } catch {
-            problemText = error.localizedDescription
+            report(error)
         }
     }
 }
@@ -475,7 +488,7 @@ struct KnowledgePageView: View {
                                 switch action {
                                 case .confirm:
                                     _ = await model.act(saying: String(localized: "Link confirmed")) {
-                                        try await model.connection.linkKnowledgeRecord(pagePath, link: link)
+                                        try await model.connection.confirmKnowledgeRecord(pagePath, link: link)
                                     }
                                 case .remove:
                                     _ = await model.act(saying: String(localized: "Link removed")) {
@@ -1355,6 +1368,9 @@ struct LinkedRecordRow: View {
                 }
                 HStack(spacing: 6) {
                     Text(KnowledgeRecordWords.relation(link.recordRelation))
+                    if link.coveredPassageCount > 1 {
+                        Text("\(link.coveredPassageCount) passages")
+                    }
                     if let date = link.date {
                         Text(date.formatted(date: .abbreviated, time: .omitted))
                     }

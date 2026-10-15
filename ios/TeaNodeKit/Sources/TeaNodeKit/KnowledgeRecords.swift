@@ -19,6 +19,10 @@ public struct KnowledgeRecordLink: Codable, Hashable, Sendable, Identifiable {
     public let passageStartMS: Int64
     public let passageEndMS: Int64
     public let transcriptRunId: String
+    /// How many passage links of one recording this row stands for, the
+    /// range above being the first of them; zero for any other kind, and
+    /// missing from a server that lists every passage on its own.
+    public let passageCount: Int?
     public let note: String
     public let happenedAt: String?
     public let createdAt: String
@@ -28,6 +32,9 @@ public struct KnowledgeRecordLink: Codable, Hashable, Sendable, Identifiable {
     public let dashboardPath: String
     /// The record is gone: the link can only be removed.
     public let isUnavailable: Bool
+
+    /// How many passages of the recording the row covers, else zero.
+    public var coveredPassageCount: Int { passageCount ?? 0 }
 
     /// The agent only guessed this link; the person confirms or removes it.
     public var isProposed: Bool { linkStatus == "proposed" }
@@ -176,7 +183,7 @@ public enum RecordTarget: Hashable, Sendable {
 extension Documents {
     /// What a query selects of a link.
     static let recordLinkFields = """
-        id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable
+        id nodePath nodeName nodeKind recordKind recordId recordRelation linkStatus passageStartMS passageEndMS transcriptRunId passageCount note happenedAt createdAt recordTitle recordHappenedAt dashboardPath isUnavailable
         """
     public static let readRecordMemoryLinks = """
         query ($recordKind: String!, $recordId: String!, $passageStartMS: Int64, $passageEndMS: Int64) {
@@ -199,6 +206,11 @@ extension Documents {
     public static let unlinkKnowledgeRecord = """
         mutation ($path: String!, $recordKind: String!, $recordId: String!, $recordRelation: String, $passageStartMS: Int64, $passageEndMS: Int64) {
           UnlinkAgentRecord(path: $path, recordKind: $recordKind, recordId: $recordId, recordRelation: $recordRelation, passageStartMS: $passageStartMS, passageEndMS: $passageEndMS)
+        }
+        """
+    public static let confirmKnowledgeRecord = """
+        mutation ($path: String!, $recordKind: String!, $recordId: String!, $recordRelation: String) {
+          ConfirmAgentRecord(path: $path, recordKind: $recordKind, recordId: $recordId, recordRelation: $recordRelation)
         }
         """
     public static let setKnowledgeContact = """
@@ -250,6 +262,19 @@ extension Connection {
         _ = try await execute(Documents.linkKnowledgeRecord, variables: variables, as: Answer.self)
     }
 
+    /// States the agent's guesses at a page's links to one record: every
+    /// passage of a recording the row stands for, or the one link of any
+    /// other kind. Stating a link again is how the person confirms it.
+    public func confirmKnowledgeRecord(_ path: String, link: KnowledgeRecordLink) async throws {
+        struct Answer: Decodable, Sendable { let ConfirmAgentRecord: Int }
+        _ = try await execute(
+            Documents.confirmKnowledgeRecord,
+            variables: [
+                "path": .string(path), "recordKind": .string(link.recordKind), "recordId": .string(link.recordId),
+                "recordRelation": .string(link.recordRelation),
+            ], as: Answer.self)
+    }
+
     /// Takes one relation of a page to a record away. The automatic passes
     /// do not make it again.
     public func unlinkKnowledgeRecord(_ path: String, link: KnowledgeRecordLink) async throws {
@@ -258,10 +283,8 @@ extension Connection {
             "path": .string(path), "recordKind": .string(link.recordKind), "recordId": .string(link.recordId),
             "recordRelation": .string(link.recordRelation),
         ]
-        if link.recordKind == "recording_passage" {
-            variables["passageStartMS"] = .number(Double(link.passageStartMS))
-            variables["passageEndMS"] = .number(Double(link.passageEndMS))
-        }
+        // A row of a recording stands for every passage the page is linked
+        // to in that relation, so no range is named and all of them go.
         _ = try await execute(Documents.unlinkKnowledgeRecord, variables: variables, as: Answer.self)
     }
 

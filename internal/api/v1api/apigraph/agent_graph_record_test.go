@@ -451,3 +451,107 @@ func TestLinkingAPassageChecksItsTranscriptRun(t *testing.T) {
 		}
 	})
 }
+
+// A person's page holds a link per passage they spoke in. The page lists
+// the recording once, with how many passages it covers; removing or
+// confirming that row acts on every passage, and a range narrows it.
+func TestAPageListsARecordingOnceHoweverManyPassagesLinkIt(t *testing.T) {
+	t.Parallel()
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	resolver := &graph{database: database}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := aRecordWorld(t, tx)
+		ctx := world.ownContext(tx)
+		put := func(recordId string, relation models.AgentRecordRelation, status models.AgentEdgeStatus, startMS int64) {
+			t.Helper()
+			if _, err := tx.PutAgentRecordLink(&models.AgentRecordLink{
+				AgentID: world.agent.ID, NodeID: world.page.ID, RecordKind: models.RecordRecordingPassage, RecordID: recordId,
+				RecordRelation: relation, LinkStatus: status, PassageStartMS: startMS, PassageEndMS: startMS + 500,
+				Evidence: []models.Evidence{{Kind: models.EvidencePerson}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for index := int64(0); index < 40; index++ {
+			put("fixture-recording", models.RecordRelationSpokeIn, models.EdgeProposed, 10000-index*100)
+		}
+		put("fixture-recording", models.RecordRelationMentionedIn, models.EdgeStated, 500)
+		put("other-recording", models.RecordRelationSpokeIn, models.EdgeStated, 0)
+		if _, err := tx.PutAgentRecordLink(&models.AgentRecordLink{
+			AgentID: world.agent.ID, NodeID: world.page.ID, RecordKind: models.RecordContact, RecordID: world.ownCard.ID,
+			RecordRelation: models.RecordRelationIsContact, LinkStatus: models.EdgeStated,
+			Evidence: []models.Evidence{{Kind: models.EvidencePerson}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+
+		list, err := resolver.ListAgentRecordLinks(ctx, ListAgentRecordLinksArguments{Path: "people/fixture-friend"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if list.RecordLinkCount != 4 || len(list.RecordLinks) != 4 {
+			t.Fatalf("a recording per relation and the card are four rows, got %d (%d shown)", list.RecordLinkCount, len(list.RecordLinks))
+		}
+		var spoke *AgentRecordLinkView
+		for _, view := range list.RecordLinks {
+			if view.RecordID == "fixture-recording" && view.RecordRelation == models.RecordRelationSpokeIn {
+				spoke = view
+			}
+			if view.RecordKind == models.RecordContact && view.PassageCount != 0 {
+				t.Errorf("a card has no passages: %d", view.PassageCount)
+			}
+		}
+		if spoke == nil || spoke.PassageCount != 40 {
+			t.Fatalf("the recording the person spoke in covers 40 passages: %+v", spoke)
+		}
+		if spoke.PassageStartMS != 6100 || spoke.LinkStatus != models.EdgeProposed {
+			t.Errorf("the row opens at the first passage and is still a guess: %d %s", spoke.PassageStartMS, spoke.LinkStatus)
+		}
+
+		page, err := resolver.AgentGraphPage(ctx, AgentGraphPageReadArguments{Path: "people/fixture-friend"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.RecordLinkCount != 4 {
+			t.Errorf("the page read counts rows too, got %d", page.RecordLinkCount)
+		}
+
+		// A range confirms one passage; none confirms the rest.
+		confirmed, err := resolver.ConfirmAgentRecord(ctx, ConfirmAgentRecordArguments{
+			Path: "people/fixture-friend", RecordKind: "recording_passage", RecordID: "fixture-recording",
+			RecordRelation: "spoke_in", PassageStartMS: 6100, PassageEndMS: 6600,
+		})
+		if err != nil || confirmed != 1 {
+			t.Fatalf("one passage confirmed: %d %v", confirmed, err)
+		}
+		confirmed, err = resolver.ConfirmAgentRecord(ctx, ConfirmAgentRecordArguments{
+			Path: "people/fixture-friend", RecordKind: "recording_passage", RecordID: "fixture-recording", RecordRelation: "spoke_in",
+		})
+		if err != nil || confirmed != 39 {
+			t.Fatalf("every other guess confirmed: %d %v", confirmed, err)
+		}
+		list, err = resolver.ListAgentRecordLinks(ctx, ListAgentRecordLinksArguments{Path: "people/fixture-friend"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, view := range list.RecordLinks {
+			if view.LinkStatus != models.EdgeStated {
+				t.Errorf("%s %s is still a guess", view.RecordID, view.RecordRelation)
+			}
+		}
+
+		// Remove takes every passage of the recording in that relation.
+		wasRemoved, err := resolver.UnlinkAgentRecord(ctx, UnlinkAgentRecordArguments{
+			Path: "people/fixture-friend", RecordKind: "recording_passage", RecordID: "fixture-recording", RecordRelation: "spoke_in",
+		})
+		if err != nil || !wasRemoved {
+			t.Fatalf("remove: %v %v", wasRemoved, err)
+		}
+		list, err = resolver.ListAgentRecordLinks(ctx, ListAgentRecordLinksArguments{Path: "people/fixture-friend"})
+		if err != nil || list.RecordLinkCount != 3 {
+			t.Fatalf("three rows are left, the other relation among them: %d %v", list.RecordLinkCount, err)
+		}
+	})
+}

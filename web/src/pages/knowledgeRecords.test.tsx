@@ -31,6 +31,7 @@ function link(overrides: Partial<RecordLink> = {}): RecordLink {
     passageStartMS: 0,
     passageEndMS: 0,
     transcriptRunId: '',
+    passageCount: 0,
     note: '',
     createdAt: '2026-01-01T00:00:00Z',
     recordTitle: 'Fixture subject',
@@ -153,29 +154,63 @@ it('takes a guess away at once, and asks before taking away what somebody stated
   })
 })
 
-it('names a recording passage by its range when it confirms it', async () => {
-  vi.mocked(graphql).mockResolvedValue({ LinkAgentRecord: { id: 'x' } } as never)
-  show([
-    link({
-      id: 'passage',
-      recordKind: 'recording_passage',
-      recordId: 'recording-1',
-      recordRelation: 'spoke_in',
-      linkStatus: 'proposed',
-      passageStartMS: 1500,
-      passageEndMS: 4000,
-      transcriptRunId: 'run-1',
-      recordTitle: 'Fixture review',
-      dashboardPath: '/recordings/recording-1?startMS=1500&endMS=4000&version=run-1',
-    }),
-  ])
+function recordingRow(overrides: Partial<RecordLink> = {}): RecordLink {
+  return link({
+    id: 'passage',
+    recordKind: 'recording_passage',
+    recordId: 'recording-1',
+    recordRelation: 'spoke_in',
+    linkStatus: 'proposed',
+    passageStartMS: 1500,
+    passageEndMS: 4000,
+    passageCount: 37,
+    transcriptRunId: 'run-1',
+    recordTitle: 'Fixture review',
+    dashboardPath: '/recordings/recording-1?startMS=1500&endMS=4000&version=run-1',
+    ...overrides,
+  })
+}
+
+it('lists a recording once with how many passages it covers, opening at the first', () => {
+  show([recordingRow()])
+  expect(screen.getAllByText('Fixture review')).toHaveLength(1)
+  expect(screen.getByText('Spoke in · 37 passages')).toBeTruthy()
+  expect(screen.getByText('Fixture review').closest('a')?.getAttribute('href')).toBe(
+    '/recordings/recording-1?startMS=1500&endMS=4000&version=run-1',
+  )
+})
+
+it('says nothing of passages for a recording linked at one', () => {
+  show([recordingRow({ passageCount: 1 })])
+  expect(screen.getByText('Spoke in')).toBeTruthy()
+})
+
+it('confirms every passage of a recording with one call that names no range', async () => {
+  vi.mocked(graphql).mockResolvedValue({ ConfirmAgentRecord: 37 } as never)
+  show([recordingRow()])
   fireEvent.click(screen.getByRole('button', { name: 'Fixture review: Confirm link' }))
+  await waitFor(() => expect(vi.mocked(graphql)).toHaveBeenCalled())
+  const [document, variables] = vi.mocked(graphql).mock.calls[0]
+  expect(document).toContain('ConfirmAgentRecord')
+  expect(variables).toEqual({
+    path: 'people/fixture-guest',
+    recordKind: 'recording_passage',
+    recordId: 'recording-1',
+    recordRelation: 'spoke_in',
+  })
+})
+
+it('removes every passage of a recording with one call that names no range', async () => {
+  vi.mocked(graphql).mockResolvedValue({ UnlinkAgentRecord: true } as never)
+  show([recordingRow()])
+  fireEvent.click(screen.getByRole('button', { name: 'Fixture review: Remove link' }))
   await waitFor(() => expect(vi.mocked(graphql)).toHaveBeenCalled())
   expect(vi.mocked(graphql).mock.calls[0][1]).toMatchObject({
     recordKind: 'recording_passage',
-    passageStartMS: 1500,
-    passageEndMS: 4000,
-    transcriptRunId: 'run-1',
+    recordId: 'recording-1',
+    recordRelation: 'spoke_in',
+    passageStartMS: null,
+    passageEndMS: null,
   })
 })
 

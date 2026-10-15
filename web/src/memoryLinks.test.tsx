@@ -37,6 +37,7 @@ function link(overrides: Partial<RecordLink> = {}): RecordLink {
     passageStartMS: 0,
     passageEndMS: 0,
     transcriptRunId: '',
+    passageCount: 0,
     note: '',
     createdAt: '2026-01-01T00:00:00Z',
     recordTitle: 'Fixture subject',

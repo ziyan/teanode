@@ -12,6 +12,7 @@ import { Tooltip } from '../components/tooltip'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
 import {
+  CONFIRM_RECORD,
   LINK_RECORD,
   LIST_RECORD_LINKS,
   RecordKindIcon,
@@ -20,6 +21,7 @@ import {
   canOpen,
   groupLinksByKind,
   isProposed,
+  isRecordingRow,
   recordLinkDate,
   useRecordKindLabel,
   useRecordRelationLabel,
@@ -63,7 +65,7 @@ export function LinkedRecords({
   onDone: (said: string) => void
   onFailed: (caught: unknown) => void
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const kindLabel = useRecordKindLabel()
   const relationLabel = useRecordRelationLabel()
   const listing = usePageInAddress({
@@ -116,26 +118,41 @@ export function LinkedRecords({
     }
   }
 
-  const reference = (link: RecordLink) => ({
-    path,
-    recordKind: link.recordKind,
-    recordId: link.recordId,
-    passageStartMS: link.recordKind === 'recording_passage' ? link.passageStartMS : null,
-    passageEndMS: link.recordKind === 'recording_passage' ? link.passageEndMS : null,
-  })
+  // A row of a recording stands for every passage of it the page is linked
+  // to in that relation, so confirming or removing it names no range and the
+  // server acts on all of them.
   const confirm = (link: RecordLink) =>
     act(
       () =>
-        graphql(LINK_RECORD, {
-          ...reference(link),
-          recordRelation: link.recordRelation,
-          transcriptRunId: link.transcriptRunId || null,
-        }),
+        isRecordingRow(link)
+          ? graphql(CONFIRM_RECORD, {
+              path,
+              recordKind: link.recordKind,
+              recordId: link.recordId,
+              recordRelation: link.recordRelation,
+            })
+          : graphql(LINK_RECORD, {
+              path,
+              recordKind: link.recordKind,
+              recordId: link.recordId,
+              passageStartMS: null,
+              passageEndMS: null,
+              recordRelation: link.recordRelation,
+              transcriptRunId: link.transcriptRunId || null,
+            }),
       t('memoryLinks.confirmed'),
     )
   const remove = (link: RecordLink) =>
     act(
-      () => graphql(UNLINK_RECORD, { ...reference(link), recordRelation: link.recordRelation }),
+      () =>
+        graphql(UNLINK_RECORD, {
+          path,
+          recordKind: link.recordKind,
+          recordId: link.recordId,
+          recordRelation: link.recordRelation,
+          passageStartMS: null,
+          passageEndMS: null,
+        }),
       t('memoryLinks.removed'),
     )
 
@@ -181,7 +198,13 @@ export function LinkedRecords({
                   )
                 }
                 badge={isProposed(link) ? <Tag value={t('memoryLinks.perhaps')} tone="warn" /> : null}
-                subtitle={[relationLabel(link.recordRelation), date ? date.toLocaleDateString() : '']
+                subtitle={[
+                  relationLabel(link.recordRelation),
+                  link.passageCount > 1
+                    ? plural(link.passageCount, { one: 'memoryLinks.passagesOne', other: 'memoryLinks.passagesOther' })
+                    : '',
+                  date ? date.toLocaleDateString() : '',
+                ]
                   .filter(Boolean)
                   .join(' · ')}
                 actions={
