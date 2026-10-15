@@ -1651,7 +1651,6 @@ export const en = {
   'agentSettings.priceCheckSameToast': 'Prices checked against the bill: they match',
   'agentSettings.priceCheckTitle': 'Prices from the bill: {name}',
   'agentSettings.priceCheckPerMillion': 'Prices are per million tokens.',
-  'agentSettings.priceCheckKind': 'Kind',
   'agentSettings.priceCheckConfigured': 'Configured',
   'agentSettings.priceCheckBilled': 'Billed',
   'agentSettings.priceCheckDays': 'Days',

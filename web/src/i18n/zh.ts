@@ -1599,7 +1599,6 @@ export const zh: Catalog = {
   'agentSettings.priceCheckSameToast': '已将价格与账单核对：完全一致',
   'agentSettings.priceCheckTitle': '账单中的价格：{name}',
   'agentSettings.priceCheckPerMillion': '价格均为每百万 token。',
-  'agentSettings.priceCheckKind': '类型',
   'agentSettings.priceCheckConfigured': '已设置',
   'agentSettings.priceCheckBilled': '账单价',
   'agentSettings.priceCheckDays': '天数',

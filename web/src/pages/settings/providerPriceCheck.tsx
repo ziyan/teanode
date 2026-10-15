@@ -139,11 +139,10 @@ export function PriceCheckDialog({
         <p className="muted">{t('agentSettings.priceCheckEmpty')}</p>
       ) : (
         <div className="table-wrap">
-          <table className="numbers-table">
+          <table className="numbers-table price-check-table">
             <thead>
               <tr>
                 <th>{t('agentSettings.pricingModel')}</th>
-                <th>{t('agentSettings.priceCheckKind')}</th>
                 <th className="numeric">{t('agentSettings.priceCheckConfigured')}</th>
                 <th className="numeric">{t('agentSettings.priceCheckBilled')}</th>
                 <th className="numeric">{t('agentSettings.priceCheckDays')}</th>
@@ -152,13 +151,16 @@ export function PriceCheckDialog({
             <tbody>
               {check.compared.map((compared) => (
                 <tr key={`${compared.model}/${compared.tokenKind}`}>
+                  {/* The kind of token under the model, as the iPhone shows it:
+                      a column of its own made the table too wide for the
+                      dialog on a desktop. */}
                   <td>
                     {compared.model}
-                    {compared.isPattern ? (
-                      <small className="muted"> {t('agentSettings.priceCheckPattern')}</small>
-                    ) : null}
+                    <small className="muted price-check-kind">
+                      {kindText(compared.tokenKind)}
+                      {compared.isPattern ? ` · ${t('agentSettings.priceCheckPattern')}` : null}
+                    </small>
                   </td>
-                  <td>{kindText(compared.tokenKind)}</td>
                   <td className="numeric">{priceText(compared.configuredPerMillion)}</td>
                   <td className="numeric">{priceText(compared.billedPerMillion)}</td>
                   <td className="numeric">{compared.dayCount}</td>
@@ -168,7 +170,7 @@ export function PriceCheckDialog({
           </table>
         </div>
       )}
-      <p className="muted field-hint">{t('agentSettings.priceCheckPerMillion')}</p>
+      <p className="muted table-note">{t('agentSettings.priceCheckPerMillion')}</p>
       {check.changed.length > 0 ? (
         <ul>
           {check.changed.map((changed) => (

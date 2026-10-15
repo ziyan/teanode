@@ -7706,6 +7706,26 @@ button.agent-reaction:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* The prices compared with the bill keep their words whole: in the
+   dialog a heading broke mid-word ("Configur" over "ed"). The table scrolls
+   inside .table-wrap where it does not fit. */
+.price-check-table th,
+.price-check-table td {
+  white-space: nowrap;
+}
+
+/* The kind of token, on its own line under the model. */
+.price-check-kind {
+  display: block;
+}
+
+/* A line under a table saying how to read it: apart from the table's last
+   rule, where .field-hint, made to sit under a field, pulls itself up. */
+.table-note {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-label);
+}
+
 /* A table wider than its panel scrolls sideways inside it, staying a
    table. Without this the usage table pushed its card, and then the whole
    page, wider than the window. */

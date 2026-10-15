@@ -1642,7 +1642,6 @@ export const ja: Catalog = {
   'agentSettings.priceCheckSameToast': '価格を請求額と照合しました:一致しています',
   'agentSettings.priceCheckTitle': '請求額から見た価格:{name}',
   'agentSettings.priceCheckPerMillion': '価格は100万トークンあたりです。',
-  'agentSettings.priceCheckKind': '種類',
   'agentSettings.priceCheckConfigured': '設定値',
   'agentSettings.priceCheckBilled': '請求額',
   'agentSettings.priceCheckDays': '日数',
