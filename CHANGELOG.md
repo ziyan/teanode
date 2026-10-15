@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.162.2] - 2026-10-15
+
+### Fixed
+
+- On the iPhone, a very long message in a conversation shows its beginning and a Show all button that opens the whole of it. (#502)
+
 ## [0.162.1] - 2026-10-15
 
 ### Fixed
