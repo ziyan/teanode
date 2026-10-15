@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.162.4] - 2026-10-15
+
+### Changed
+
+- The agent settings call the background memory runs dreams, as the rest of the dashboard does. (#505)
+
 ## [0.162.3] - 2026-10-15
 
 ### Fixed
