@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.165.0] - 2026-10-15
+
+### Added
+
+- An OpenAI provider can take a billing key, an organization admin key. With it the server checks the model prices against the provider's bill once a day, sets the ones that are missing or wrong, records each change in the audit log and tells the operators. The usage pages show what was billed beside the estimate. (#512)
+
 ## [0.164.2] - 2026-10-15
 
 ### Fixed
