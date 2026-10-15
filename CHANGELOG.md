@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.164.2] - 2026-10-15
+
+### Fixed
+
+- A speaker label in a long recording whose same-voice check could not run when it was new is now checked at the next curation, instead of never. (#511)
+
 ## [0.164.1] - 2026-10-15
 
 ### Fixed
