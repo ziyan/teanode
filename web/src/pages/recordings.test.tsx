@@ -122,3 +122,32 @@ it('points the agent at the recording', async () => {
     window.removeEventListener(AGENT_ASK_EVENT, listener)
   }
 })
+
+// A link to a recording that was deleted says so on the page, not only in a
+// toast over an empty page.
+it('says a deleted recording is not found', async () => {
+  vi.mocked(graphql).mockResolvedValue({ ListRecordings: [] })
+  vi.mocked(readRecording).mockRejectedValue(new Error('db: recording was deleted'))
+  render(
+    <TranslationProvider>
+      <SessionProvider
+        value={{
+          userId: 'fixture-owner',
+          authenticated: true,
+          authenticationRequired: true,
+          username: 'fixture',
+          passkeysEnabled: false,
+        }}
+      >
+        <ToastProvider>
+          <MemoryRouter initialEntries={['/recordings/fixture-deleted-recording']}>
+            <Routes>
+              <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
+            </Routes>
+          </MemoryRouter>
+        </ToastProvider>
+      </SessionProvider>
+    </TranslationProvider>,
+  )
+  expect(await screen.findByText('Not found.')).toBeTruthy()
+})

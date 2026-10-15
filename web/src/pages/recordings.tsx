@@ -412,6 +412,8 @@ function AccountRecordingsPage() {
         </>
       ) : detail.loading && !view ? (
         <Loading />
+      ) : !view && detail.error ? (
+        <p className="muted">{t('common.notFound')}</p>
       ) : (
         view && (
           <div className="recording-detail">
