@@ -205,7 +205,57 @@ struct MonthStepper: View {
     }
 }
 
+/// YearStepper moves between years: back to the first with money in or
+/// out, forward never past this one.
+struct YearStepper: View {
+    @Binding var year: Int
+    let firstYear: Int
+    let currentYear: Int
+
+    var body: some View {
+        HStack {
+            Button {
+                year -= 1
+            } label: {
+                Image(systemName: "chevron.backward").frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Earlier")
+            .disabled(year <= firstYear)
+            Spacer()
+            Text(verbatim: String(year))
+                .font(.headline)
+                .contentTransition(.numericText())
+            Spacer()
+            Button {
+                year += 1
+            } label: {
+                Image(systemName: "chevron.forward").frame(minWidth: 44, minHeight: 44)
+            }
+            .accessibilityLabel("Later")
+            .disabled(year >= currentYear)
+        }
+        // In a list row every button fires on any tap in the row unless
+        // the buttons are borderless.
+        .buttonStyle(.borderless)
+    }
+}
+
 // MARK: Spending
+
+/// SpendingPeriodKind is what the Spending screen shows: a month or a year.
+enum SpendingPeriodKind: Hashable {
+    case month, year
+}
+
+/// YearCashFlow is a year's income, spending and what was left, added up
+/// from its months as the server counted each.
+struct YearCashFlow: Identifiable {
+    let year: String
+    let incomeAmount: Decimal
+    let spendingAmount: Decimal
+    var netAmount: Decimal { incomeAmount - spendingAmount }
+    var id: String { year }
+}
 
 /// SpendingLine is one row of "Where it went".
 struct SpendingLine: Identifiable {
@@ -230,18 +280,32 @@ struct SpendingSlice: Identifiable {
     var amountValue: Double { NSDecimalNumber(decimal: amount).doubleValue }
 }
 
-/// SpendingView is a month as the dashboard's Spending tab shows it: the
-/// year's cash flow, the month's saving, its budgets and where it went.
+/// SpendingView is a month or a year as the dashboard's Spending tab shows
+/// it. A month: twelve months of cash flow to it, its spending day by day
+/// against the month before, its saving, its budgets and where it went. A
+/// year: every year's cash flow, and the chosen year's saving, budgets and
+/// where it went, added up over the whole of it.
 struct SpendingView: View {
     @Environment(FinanceModel.self) private var finance
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var periodKind = SpendingPeriodKind.month
     @State private var month = Date()
+    @State private var year = Calendar.current.component(.year, from: Date())
     @State private var cashFlow: CashFlow?
+    /// Every month's cash flow back twenty years, read once Year is first
+    /// shown: the years the chart of years draws.
+    @State private var history: CashFlow?
+    @State private var byDay: SpendingByDay?
     @State private var saving: SavingSummary?
     @State private var budgets: BudgetStatus?
     @State private var summary: SpendingSummary?
     @State private var groupBy = "spendingCategory"
     /// The month touched on the cash flow chart, as "2026-03".
     @State private var selectedCashFlowMonth: String?
+    /// The day of the month touched on the day by day chart, as "7".
+    @State private var selectedDayKey: String?
+    /// The year touched on the chart of years, as "2025".
+    @State private var selectedYearKey: String?
     /// Where a touch on the donut is, as Swift Charts reports it: a running
     /// total from the start of the first slice.
     @State private var selectedRunningTotal: Double?
@@ -262,7 +326,7 @@ struct SpendingView: View {
         .navigationDestination(item: $openedLink) { link in
             TransactionsView(filter: link.filter)
         }
-        .task(id: "\(finance.month(month))-\(groupBy)") {
+        .task(id: "\(periodKind)-\(finance.month(month))-\(year)-\(groupBy)") {
             selectedSliceId = nil
             await load()
         }
@@ -275,12 +339,35 @@ struct SpendingView: View {
     private var spendingList: some View {
         List {
             Section {
-                MonthStepper(month: $month, dates: finance.dates)
-            }
-            if let months = cashFlow?.cashFlowMonths?.compactMap({ $0 }), !months.isEmpty {
-                Section("Cash flow") {
-                    cashFlowChart(months)
+                Picker("Show a month or a year", selection: periodKindChoice) {
+                    Text("Month").tag(SpendingPeriodKind.month)
+                    Text("Year").tag(SpendingPeriodKind.year)
                 }
+                .pickerStyle(.segmented)
+                if periodKind == .month {
+                    MonthStepper(month: $month, dates: finance.dates)
+                } else {
+                    YearStepper(year: $year, firstYear: firstYear, currentYear: currentYear)
+                }
+            }
+            if periodKind == .month {
+                if let months = cashFlow?.cashFlowMonths?.compactMap({ $0 }), !months.isEmpty {
+                    Section("Cash flow") {
+                        cashFlowChart(months)
+                    }
+                }
+                if let byDay {
+                    Section {
+                        dayChart(byDay)
+                    } header: {
+                        Text("Day by day against the month before")
+                    } footer: {
+                        Text("Spending in the chosen month, day by day, against where the month before stood on the same day. Transfers are left out; amounts are in your reporting currency.")
+                    }
+                    .id(Self.dayByDayId)
+                }
+            } else if history != nil {
+                yearSection
             }
             if let saving {
                 Section("Saving") {
@@ -313,7 +400,10 @@ struct SpendingView: View {
                 .id(Self.whereItWentId)
                 let lines = spendingLines
                 if lines.isEmpty {
-                    Text("No spending this month.").foregroundStyle(.secondary)
+                    Group {
+                        if periodKind == .month { Text("No spending this month.") } else { Text("No spending this year.") }
+                    }
+                    .foregroundStyle(.secondary)
                 } else {
                     let slices = spendingSlices(lines)
                     let total = lines.reduce(Decimal(0)) { $0 + $1.amount }
@@ -348,6 +438,8 @@ struct SpendingView: View {
         let spendingColor = ChartPalette.seriesColor(at: 1)
         let currencyCode = cashFlow?.reportingCurrencyCode.flatMap { $0.isEmpty ? nil : $0 } ?? finance.reportingCurrency
         let selectedFlow = months.first { $0.cashFlowMonth == selectedCashFlowMonth }
+        // The month shown below stands out until another is touched.
+        let standingOutMonth = selectedFlow?.cashFlowMonth ?? finance.month(month)
         return VStack(alignment: .leading, spacing: 8) {
             // The legend's line is tall enough for the callout of a touched
             // month to take its place rather than cover the row above.
@@ -356,7 +448,7 @@ struct SpendingView: View {
                 .opacity(selectedFlow == nil ? 1 : 0)
             Chart {
                 ForEach(months, id: \.cashFlowMonth) { flow in
-                    let opacity = ChartPalette.markOpacity(isChosen: flow.cashFlowMonth == selectedFlow?.cashFlowMonth, isAnyChosen: selectedFlow != nil)
+                    let opacity = ChartPalette.markOpacity(isChosen: flow.cashFlowMonth == standingOutMonth, isAnyChosen: true)
                     BarMark(x: .value("Month", flow.cashFlowMonth), y: .value("Amount", amount(flow.incomeAmount)))
                         .foregroundStyle(by: .value("Kind", incomeWord))
                         .position(by: .value("Kind", incomeWord))
@@ -390,6 +482,195 @@ struct SpendingView: View {
                 AxisMarks { value in
                     AxisValueLabel {
                         if let text = value.as(String.self) { Text(verbatim: monthLetter(text)) }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let number = value.as(Double.self) { Text(verbatim: FinanceMoney.axisText(number, currencyCode: currencyCode)) }
+                    }
+                }
+            }
+            .frame(height: 180)
+        }
+    }
+
+    /// The chosen month's spending added up day by day as columns, and
+    /// where the month before stood on the same day as a line, one slot for
+    /// every day of the month whether or not it has come yet. Touching a
+    /// day shows both and the difference in words.
+    private func dayChart(_ answer: SpendingByDay) -> some View {
+        let monthText = finance.month(month)
+        let compareText = answer.compareMonth ?? previousMonthText(monthText)
+        let monthWord = monthName(monthText)
+        let compareWord = monthName(compareText)
+        let monthColor = ChartPalette.seriesColor(at: 0)
+        let compareColor = ChartPalette.seriesColor(at: 1)
+        let currencyCode = answer.reportingCurrencyCode.flatMap { $0.isEmpty ? nil : $0 } ?? finance.reportingCurrency
+        let monthTotals = runningTotals(answer.monthDays)
+        let compareTotals = runningTotals(answer.compareMonthDays)
+        let keys = (1...dayCount(monthText)).map(String.init)
+        let hasSpending = ((answer.monthDays ?? []) + (answer.compareMonthDays ?? [])).compactMap { $0 }.contains { amount($0.spendingAmount) != 0 }
+        let selectedKey = selectedDayKey.flatMap { keys.contains($0) ? $0 : nil }
+        return VStack(alignment: .leading, spacing: 8) {
+            if !hasSpending {
+                Text("No spending this month.").foregroundStyle(.secondary)
+            } else {
+                ChartKey(entries: [ChartKeyEntry(label: monthWord, color: monthColor), ChartKeyEntry(label: compareWord, color: compareColor)])
+                    .frame(minHeight: 44, alignment: .bottomLeading)
+                    .opacity(selectedKey == nil ? 1 : 0)
+                Chart {
+                    ForEach(keys, id: \.self) { key in
+                        if let spent = monthTotals[key] {
+                            BarMark(x: .value("Day", key), y: .value("Amount", spent))
+                                .foregroundStyle(by: .value("Month", monthWord))
+                                .opacity(ChartPalette.markOpacity(isChosen: key == selectedKey, isAnyChosen: selectedKey != nil))
+                                .accessibilityLabel(Text(verbatim: "\(dayTitle(monthText, key)), \(monthWord)"))
+                                .accessibilityValue(Text(verbatim: moneyText(Decimal(spent), currencyCode: currencyCode)))
+                        }
+                        if let spentBefore = compareTotals[key] {
+                            LineMark(x: .value("Day", key), y: .value("Amount", spentBefore), series: .value("Month", compareWord))
+                                .foregroundStyle(by: .value("Month", compareWord))
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+                                .accessibilityLabel(Text(verbatim: "\(dayTitle(monthText, key)), \(compareWord)"))
+                                .accessibilityValue(Text(verbatim: moneyText(Decimal(spentBefore), currencyCode: currencyCode)))
+                        }
+                    }
+                    if let selectedKey {
+                        ChartSelectionRule(value: selectedKey) {
+                            ChartCallout(
+                                title: dayTitle(monthText, selectedKey),
+                                figures: dayFigures(
+                                    spent: monthTotals[selectedKey], spentBefore: compareTotals[selectedKey], monthWord: monthWord, compareWord: compareWord,
+                                    monthColor: monthColor, compareColor: compareColor, currencyCode: currencyCode))
+                        }
+                    }
+                }
+                .chartForegroundStyleScale(domain: [monthWord, compareWord], range: [monthColor, compareColor])
+                .chartLegend(.hidden)
+                .chartXScale(domain: keys)
+                .chartXSelection(value: $selectedDayKey)
+                .keepsSidePanelClosed()
+                .chartXAxis {
+                    AxisMarks(values: ["1", "8", "15", "22", "29"].filter { keys.contains($0) }) { value in
+                        AxisValueLabel {
+                            if let text = value.as(String.self) { Text(verbatim: text) }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            if let number = value.as(Double.self) { Text(verbatim: FinanceMoney.axisText(number, currencyCode: currencyCode)) }
+                        }
+                    }
+                }
+                .frame(height: 180)
+            }
+        }
+    }
+
+    /// What a touched day says: each month's total to it, and the
+    /// difference in words on a day both months have, so the reader does
+    /// not subtract the two.
+    private func dayFigures(
+        spent: Double?, spentBefore: Double?, monthWord: String, compareWord: String, monthColor: Color, compareColor: Color, currencyCode: String
+    ) -> [ChartFigure] {
+        var figures: [ChartFigure] = []
+        if let spent { figures.append(ChartFigure(label: monthWord, valueText: moneyText(Decimal(spent), currencyCode: currencyCode), color: monthColor)) }
+        if let spentBefore {
+            figures.append(ChartFigure(label: compareWord, valueText: moneyText(Decimal(spentBefore), currencyCode: currencyCode), color: compareColor))
+        }
+        if let spent, let spentBefore {
+            let difference = Decimal(spent) - Decimal(spentBefore)
+            let differenceAmount = moneyText(abs(difference), currencyCode: currencyCode)
+            let differenceText =
+                difference > 0
+                ? String(localized: "\(differenceAmount) more") : difference < 0 ? String(localized: "\(differenceAmount) less") : String(localized: "The same")
+            figures.append(ChartFigure(label: String(localized: "Difference"), valueText: differenceText))
+        }
+        return figures
+    }
+
+    /// Every year's cash flow, a pair of columns a year, the chosen year
+    /// standing out, and under it the chosen year's figures.
+    private var yearSection: some View {
+        let years = cashFlowYears
+        let chosenKey = String(year)
+        let chosen = years.first { $0.year == chosenKey }
+        let currencyCode = history?.reportingCurrencyCode.flatMap { $0.isEmpty ? nil : $0 } ?? finance.reportingCurrency
+        let hasCashFlow = years.contains { $0.incomeAmount != 0 || $0.spendingAmount != 0 }
+        return Section {
+            if !hasCashFlow {
+                Text("No income or spending yet.").foregroundStyle(.secondary)
+            } else {
+                yearChart(years, chosenKey: chosenKey, currencyCode: currencyCode)
+                Text(verbatim: yearTitle(chosenKey))
+                    .font(.subheadline.weight(.semibold))
+                LabeledContent("Income") { Text(verbatim: moneyText(chosen?.incomeAmount ?? 0, currencyCode: currencyCode)).monospacedDigit() }
+                LabeledContent("Spending") { Text(verbatim: moneyText(chosen?.spendingAmount ?? 0, currencyCode: currencyCode)).monospacedDigit() }
+                LabeledContent("Net") { Text(verbatim: moneyText(chosen?.netAmount ?? 0, currencyCode: currencyCode)).monospacedDigit() }
+            }
+        } header: {
+            Text("Cash flow for the year")
+        } footer: {
+            if hasCashFlow, let footer = yearFooter(chosenKey) { Text(verbatim: footer) }
+        }
+    }
+
+    private func yearChart(_ years: [YearCashFlow], chosenKey: String, currencyCode: String) -> some View {
+        let incomeWord = String(localized: "Income")
+        let spendingWord = String(localized: "Spending")
+        let incomeColor = ChartPalette.seriesColor(at: 0)
+        let spendingColor = ChartPalette.seriesColor(at: 1)
+        let selectedFlow = years.first { $0.year == selectedYearKey }
+        let standingOutYear = selectedFlow?.year ?? chosenKey
+        return VStack(alignment: .leading, spacing: 8) {
+            ChartKey(entries: [ChartKeyEntry(label: incomeWord, color: incomeColor), ChartKeyEntry(label: spendingWord, color: spendingColor)])
+                .frame(minHeight: 44, alignment: .bottomLeading)
+                .opacity(selectedFlow == nil ? 1 : 0)
+            Chart {
+                ForEach(years) { flow in
+                    let opacity = ChartPalette.markOpacity(isChosen: flow.year == standingOutYear, isAnyChosen: true)
+                    BarMark(x: .value("Year", flow.year), y: .value("Amount", NSDecimalNumber(decimal: flow.incomeAmount).doubleValue))
+                        .foregroundStyle(by: .value("Kind", incomeWord))
+                        .position(by: .value("Kind", incomeWord))
+                        .opacity(opacity)
+                        .accessibilityLabel(Text(verbatim: "\(yearTitle(flow.year)), \(incomeWord)"))
+                        .accessibilityValue(Text(verbatim: moneyText(flow.incomeAmount, currencyCode: currencyCode)))
+                    BarMark(x: .value("Year", flow.year), y: .value("Amount", NSDecimalNumber(decimal: flow.spendingAmount).doubleValue))
+                        .foregroundStyle(by: .value("Kind", spendingWord))
+                        .position(by: .value("Kind", spendingWord))
+                        .opacity(opacity)
+                        .accessibilityLabel(Text(verbatim: "\(yearTitle(flow.year)), \(spendingWord)"))
+                        .accessibilityValue(Text(verbatim: moneyText(flow.spendingAmount, currencyCode: currencyCode)))
+                }
+                if let selectedFlow {
+                    ChartSelectionRule(value: selectedFlow.year) {
+                        ChartCallout(
+                            title: yearTitle(selectedFlow.year),
+                            figures: [
+                                ChartFigure(label: incomeWord, valueText: moneyText(selectedFlow.incomeAmount, currencyCode: currencyCode), color: incomeColor),
+                                ChartFigure(label: spendingWord, valueText: moneyText(selectedFlow.spendingAmount, currencyCode: currencyCode), color: spendingColor),
+                                ChartFigure(label: String(localized: "Net"), valueText: moneyText(selectedFlow.netAmount, currencyCode: currencyCode)),
+                            ])
+                    }
+                }
+            }
+            .chartForegroundStyleScale(domain: [incomeWord, spendingWord], range: [incomeColor, spendingColor])
+            .chartLegend(.hidden)
+            .chartXSelection(value: $selectedYearKey)
+            .keepsSidePanelClosed()
+            .chartXAxis {
+                // The years whole, never cut to "20…": at most five of them
+                // labelled, evenly spaced back from this one, so they fit
+                // at every text size.
+                AxisMarks(values: labelledYears(years.map(\.year))) { value in
+                    AxisValueLabel {
+                        if let text = value.as(String.self) { Text(verbatim: text).fixedSize() }
                     }
                 }
             }
@@ -531,6 +812,173 @@ struct SpendingView: View {
     }
 
     private static let whereItWentId = "whereItWent"
+    private static let dayByDayId = "dayByDay"
+
+    /// Changing between Month and Year keeps the time being read: a month
+    /// goes to its year, and a year to its latest month begun.
+    private var periodKindChoice: Binding<SpendingPeriodKind> {
+        Binding {
+            periodKind
+        } set: { chosen in
+            guard chosen != periodKind else { return }
+            if chosen == .year {
+                year = finance.dates.component(.year, from: month)
+            } else if year != currentYear {
+                month = finance.dates.date(from: DateComponents(year: year, month: 12, day: 15)) ?? month
+            } else {
+                month = Date()
+            }
+            // A month's figures under a year's heading would be wrong
+            // until the year's arrive.
+            saving = nil
+            budgets = nil
+            summary = nil
+            periodKind = chosen
+        }
+    }
+
+    private var currentYear: Int { finance.dates.component(.year, from: Date()) }
+
+    private var historyMonths: [CashFlow.Month] { (history?.cashFlowMonths ?? []).compactMap { $0 } }
+
+    /// The earliest month with any income or spending.
+    private var firstCashFlowMonth: String? {
+        historyMonths.filter { amount($0.incomeAmount) != 0 || amount($0.spendingAmount) != 0 }.map(\.cashFlowMonth).min()
+    }
+
+    /// The earliest month with any income. It can begin later than
+    /// spending: a card's statements may reach further back than the bank
+    /// account the pay goes into.
+    private var firstIncomeMonth: String? {
+        historyMonths.filter { amount($0.incomeAmount) != 0 }.map(\.cashFlowMonth).min()
+    }
+
+    /// The first year the year stepper goes back to: the first with cash
+    /// flow, or twenty years back until the history has been read.
+    private var firstYear: Int {
+        guard history != nil else { return currentYear - Self.historyYearCount + 1 }
+        return firstCashFlowMonth.flatMap { Int($0.prefix(4)) }.map { min($0, currentYear) } ?? currentYear
+    }
+
+    /// Every year from the first with cash flow to this one, oldest first.
+    private var cashFlowYears: [YearCashFlow] {
+        (firstYear...currentYear).map { yearNumber in
+            let key = String(yearNumber)
+            let months = historyMonths.filter { $0.cashFlowMonth.hasPrefix("\(key)-") }
+            return YearCashFlow(
+                year: key,
+                incomeAmount: months.reduce(Decimal(0)) { $0 + (FinanceMoney.decimal($1.incomeAmount) ?? 0) },
+                spendingAmount: months.reduce(Decimal(0)) { $0 + (FinanceMoney.decimal($1.spendingAmount) ?? 0) })
+        }
+    }
+
+    /// The years the chart of years labels: every year when there are at
+    /// most five (two at the accessibility text sizes), otherwise every
+    /// second, third and so on, counted back from this one so it is
+    /// always labelled.
+    private func labelledYears(_ keys: [String]) -> [String] {
+        let labelCount = dynamicTypeSize.isAccessibilitySize ? 2.0 : 5.0
+        let step = max(1, Int((Double(keys.count) / labelCount).rounded(.up)))
+        return keys.reversed().enumerated().filter { $0.offset % step == 0 }.map(\.element)
+    }
+
+    /// The month a year's history starts in, when that is partway through
+    /// it: the first year's, when its first money came after January.
+    private func partialYearStartMonth(_ key: String) -> String? {
+        guard let first = firstCashFlowMonth, first.hasPrefix("\(key)-"), !first.hasSuffix("-01") else { return nil }
+        return first
+    }
+
+    /// The month income starts in, when that falls partway through the
+    /// year: a year that reads as spending with nothing coming in only
+    /// because the income was not yet known.
+    private func incomeStartMonth(_ key: String) -> String? {
+        guard let first = firstIncomeMonth, first.hasPrefix("\(key)-"), !first.hasSuffix("-01") else { return nil }
+        return first
+    }
+
+    /// A year as the chart of years names it: so far for this one, and from
+    /// the month its money or its income starts in when that is partway.
+    private func yearTitle(_ key: String) -> String {
+        let isCurrent = key == String(currentYear)
+        if let start = partialYearStartMonth(key) {
+            let month = monthShortName(start)
+            return isCurrent ? String(localized: "\(key) from \(month), so far") : String(localized: "\(key), from \(month)")
+        }
+        if let start = incomeStartMonth(key) {
+            let month = monthShortName(start)
+            return isCurrent ? String(localized: "\(key) so far, income from \(month)") : String(localized: "\(key), income from \(month)")
+        }
+        return isCurrent ? String(localized: "\(key) so far") : key
+    }
+
+    /// The chosen year's days when they are not the whole of it, and when
+    /// its income is known only from partway.
+    private func yearFooter(_ key: String) -> String? {
+        var parts: [String] = []
+        let start = partialYearStartMonth(key)
+        let from = dayName((start ?? key + "-01") + "-01")
+        if key == String(currentYear) {
+            parts.append(String(localized: "\(from) to today"))
+        } else if start != nil {
+            let to = dayName(key + "-12-31")
+            parts.append(String(localized: "\(from) to \(to)"))
+        }
+        if let incomeStart = incomeStartMonth(key) {
+            let incomeFrom = dayName(incomeStart + "-01")
+            parts.append(String(localized: "Income is known only from \(incomeFrom): none of the accounts that receive it reach further back."))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    /// Each day's running total by its day of the month, "7".
+    private func runningTotals(_ days: [SpendingByDay.Day?]?) -> [String: Double] {
+        var totals: [String: Double] = [:]
+        for day in (days ?? []).compactMap({ $0 }) {
+            guard let dayNumber = Int(day.spentOn.suffix(2)) else { continue }
+            totals[String(dayNumber)] = amount(day.cumulativeSpendingAmount)
+        }
+        return totals
+    }
+
+    private func dayCount(_ monthText: String) -> Int {
+        guard let date = cashFlowDate(monthText) else { return 31 }
+        return Calendar.current.range(of: .day, in: .month, for: date)?.count ?? 31
+    }
+
+    private func previousMonthText(_ monthText: String) -> String {
+        guard let date = cashFlowDate(monthText), let before = Calendar.current.date(byAdding: .month, value: -1, to: date) else { return monthText }
+        let parts = Calendar.current.dateComponents([.year, .month], from: before)
+        return String(format: "%04d-%02d", parts.year ?? 0, parts.month ?? 0)
+    }
+
+    private func monthName(_ monthText: String) -> String {
+        cashFlowDate(monthText)?.formatted(.dateTime.month(.wide)) ?? monthText
+    }
+
+    private func monthShortName(_ monthText: String) -> String {
+        cashFlowDate(monthText)?.formatted(.dateTime.month(.abbreviated)) ?? monthText
+    }
+
+    /// A day, "2026-03-07", without its year, as "Mar 7".
+    private func dayName(_ dayText: String) -> String {
+        let parts = dayText.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, let date = Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)) else {
+            return dayText
+        }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    private func dayTitle(_ monthText: String, _ key: String) -> String {
+        dayName("\(monthText)-\(key)")
+    }
+
+    private func moneyText(_ amount: Decimal, currencyCode: String) -> String {
+        FinanceMoney.shown(NSDecimalNumber(decimal: amount).stringValue, currencyCode: currencyCode)
+    }
+
+    /// How many years, this one included, Year reads cash flow over.
+    private static let historyYearCount = 20
 
     #if DEBUG
         /// The state a screenshot names (`-TeaNodeScreen`): the donut
@@ -543,6 +991,10 @@ struct SpendingView: View {
             case "spending-groups", "spending-chosen":
                 scrollProxy.scrollTo(Self.whereItWentId, anchor: .top)
                 if screen == "spending-chosen" { selectedSliceId = spendingSlices(spendingLines).first?.id }
+            case "spending-day":
+                scrollProxy.scrollTo(Self.dayByDayId, anchor: .top)
+            case "spending-year":
+                periodKindChoice.wrappedValue = .year
             case "cash-flow-chosen":
                 let months = (cashFlow?.cashFlowMonths ?? []).compactMap { $0 }
                 if months.count > 3 { selectedCashFlowMonth = months[months.count - 4].cashFlowMonth }
@@ -560,28 +1012,55 @@ struct SpendingView: View {
         FinanceMoney.decimal(text).map { NSDecimalNumber(decimal: $0).doubleValue } ?? 0
     }
 
-    /// The days the month covers: its first, and today or its last.
+    /// The days the period covers: the month's or the year's first, and
+    /// today or its last.
     private var range: (from: String, to: String) {
         let dates = finance.dates
-        let start = dates.date(from: dates.dateComponents([.year, .month], from: month)) ?? month
-        let end = dates.date(byAdding: DateComponents(month: 1, day: -1), to: start) ?? start
+        let start: Date
+        let end: Date
+        if periodKind == .year {
+            start = dates.date(from: DateComponents(year: year, month: 1, day: 1)) ?? Date()
+            end = dates.date(from: DateComponents(year: year, month: 12, day: 31)) ?? start
+        } else {
+            start = dates.date(from: dates.dateComponents([.year, .month], from: month)) ?? month
+            end = dates.date(byAdding: DateComponents(month: 1, day: -1), to: start) ?? start
+        }
         return (finance.day(start), finance.day(min(end, Date())))
     }
 
     private func load() async {
         let connection = finance.connection
-        let monthText = finance.month(month)
         let span = range
         let grouping = groupBy
-        let toMonth = finance.month(Date())
-        let fromMonth = finance.month(finance.dates.date(byAdding: .month, value: -11, to: Date()) ?? Date())
-        async let flow = connection.cashFlow(fromMonth: fromMonth, toMonth: toMonth)
-        async let saved = connection.savingSummary(month: monthText)
-        async let status = connection.budgetStatus(month: monthText)
         async let spent = connection.spendingSummary(from: span.from, to: span.to, groupBy: grouping)
-        cashFlow = try? await flow
-        saving = try? await saved
-        budgets = try? await status
+        if periodKind == .year {
+            let yearText = String(year)
+            async let saved = connection.savingSummary(year: yearText)
+            async let status = connection.budgetStatus(year: yearText)
+            if history == nil {
+                let fromMonth = "\(currentYear - Self.historyYearCount + 1)-01"
+                history = try? await connection.cashFlow(fromMonth: fromMonth, toMonth: finance.month(Date()))
+            }
+            saving = try? await saved
+            budgets = try? await status
+        } else {
+            let monthText = finance.month(month)
+            // Twelve months to this one, or to the month chosen when it is
+            // further back than that.
+            let earliestDefault = finance.dates.date(byAdding: .month, value: -11, to: Date()) ?? Date()
+            let earliestDefaultStart = finance.dates.date(from: finance.dates.dateComponents([.year, .month], from: earliestDefault)) ?? earliestDefault
+            let toDate = month < earliestDefaultStart ? month : Date()
+            let toMonth = finance.month(toDate)
+            let fromMonth = finance.month(finance.dates.date(byAdding: .month, value: -11, to: toDate) ?? toDate)
+            async let flow = connection.cashFlow(fromMonth: fromMonth, toMonth: toMonth)
+            async let saved = connection.savingSummary(month: monthText)
+            async let status = connection.budgetStatus(month: monthText)
+            async let days = connection.spendingByDay(month: monthText, compareMonth: previousMonthText(monthText))
+            cashFlow = try? await flow
+            saving = try? await saved
+            budgets = try? await status
+            byDay = try? await days
+        }
         summary = try? await spent
     }
 

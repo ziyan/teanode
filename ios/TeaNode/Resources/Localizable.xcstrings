@@ -225,6 +225,22 @@
         }
       }
     },
+    "%@ from %@, so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（%2$@から今日まで）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（自%2$@起至今）"
+          }
+        }
+      }
+    },
     "%@ has to be a whole number": {
       "localizations": {
         "ja": {
@@ -401,6 +417,22 @@
         }
       }
     },
+    "%@ less": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 少ない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "少 %@"
+          }
+        }
+      }
+    },
     "%@ messages learned, contributing": {
       "localizations": {
         "ja": {
@@ -445,6 +477,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 个模型，例如 %@"
+          }
+        }
+      }
+    },
+    "%@ more": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 多い"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多 %@"
           }
         }
       }
@@ -753,6 +801,38 @@
         }
       }
     },
+    "%@ so far": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@年（今日まで）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@年至今"
+          }
+        }
+      }
+    },
+    "%@ so far, income from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（今日まで、収入は%2$@から）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年至今（收入自%2$@起）"
+          }
+        }
+      }
+    },
     "%@ stops being able to sign in. Your password still works, so this does not lock you out.": {
       "localizations": {
         "ja": {
@@ -797,6 +877,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ 至 %2$@"
+          }
+        }
+      }
+    },
+    "%@ to today": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@から今日まで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@至今天"
           }
         }
       }
@@ -893,6 +989,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ · %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%@, from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（%2$@から）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（自%2$@起）"
+          }
+        }
+      }
+    },
+    "%@, income from %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（収入は%2$@から）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@年（收入自%2$@起）"
           }
         }
       }
@@ -8277,6 +8405,22 @@
         }
       }
     },
+    "Cash flow for the year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年間のキャッシュフロー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全年现金流"
+          }
+        }
+      }
+    },
     "Cash liquidation distributions": {
       "localizations": {
         "ja": {
@@ -10549,6 +10693,22 @@
         }
       }
     },
+    "Day by day against the month before": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日ごとの前月比較"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "逐日对比上月"
+          }
+        }
+      }
+    },
     "Delete form": {
       "localizations": {
         "ja": {
@@ -10577,6 +10737,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "要删除这份表格吗？"
+          }
+        }
+      }
+    },
+    "Difference": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "差额"
           }
         }
       }
@@ -13349,6 +13525,22 @@
         }
       }
     },
+    "Income is known only from %@: none of the accounts that receive it reach further back.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収入は%@からしかわかりません。入金先の口座にそれより前の記録がありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收入仅从%@起可知：收款的账户都没有更早的记录。"
+          }
+        }
+      }
+    },
     "Interest": {
       "localizations": {
         "ja": {
@@ -13601,6 +13793,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "净投资收入税"
+          }
+        }
+      }
+    },
+    "No income or spending yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ収入も支出もありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有收入或支出。"
+          }
+        }
+      }
+    },
+    "No spending this year.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この年の支出はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一年没有支出。"
           }
         }
       }
@@ -26629,6 +26853,38 @@
         }
       }
     },
+    "Show a month or a year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月ごとか年ごとかを選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按月或按年显示"
+          }
+        }
+      }
+    },
+    "Spending in the chosen month, day by day, against where the month before stood on the same day. Transfers are left out; amounts are in your reporting currency.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選んだ月の支出を日ごとに、前の月の同じ日までの支出と比べます。振替は除き、金額は集計通貨です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选月份每天的支出，对比上个月同一天的累计。不含转账，金额以汇总货币计。"
+          }
+        }
+      }
+    },
     "Tax documents mailed in": {
       "localizations": {
         "ja": {
@@ -35973,6 +36229,22 @@
         }
       }
     },
+    "The same": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相同"
+          }
+        }
+      }
+    },
     "The TeaNode app on your phones, and what each is told about.": {
       "localizations": {
         "ja": {
@@ -43444,6 +43716,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "撰写"
+          }
+        }
+      }
+    },
+    "Year": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "年"
           }
         }
       }

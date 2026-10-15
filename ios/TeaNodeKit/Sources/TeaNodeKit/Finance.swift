@@ -317,6 +317,24 @@ public struct CashFlow: Codable, Hashable, Sendable {
     public let cashFlowMonths: [Month?]?
 }
 
+/// SpendingByDay is a month's spending day by day, each day with the
+/// running total to it, beside the month it is compared with, in the
+/// reporting currency.
+public struct SpendingByDay: Codable, Hashable, Sendable {
+    public struct Day: Codable, Hashable, Sendable {
+        public let spentOn: String
+        public let spendingAmount: String?
+        public let cumulativeSpendingAmount: String?
+    }
+
+    public let month: String?
+    public let compareMonth: String?
+    public let reportingCurrencyCode: String?
+    public let unconvertedCurrencyCodes: [String]?
+    public let monthDays: [Day?]?
+    public let compareMonthDays: [Day?]?
+}
+
 public struct SpendingRule: Codable, Hashable, Sendable, Identifiable {
     public let id: String
     public let matchText: String
@@ -606,6 +624,15 @@ extension Documents {
         query ($fromMonth: String, $toMonth: String) {
           CashFlow(fromMonth: $fromMonth, toMonth: $toMonth) { reportingCurrencyCode unconvertedCurrencyCodes
             cashFlowMonths { cashFlowMonth incomeAmount spendingAmount netAmount } }
+        }
+        """
+    public static let spendingByDay = """
+        query ($month: String, $compareMonth: String) {
+          SpendingByDay(month: $month, compareMonth: $compareMonth) {
+            month compareMonth reportingCurrencyCode unconvertedCurrencyCodes
+            monthDays { spentOn spendingAmount cumulativeSpendingAmount }
+            compareMonthDays { spentOn spendingAmount cumulativeSpendingAmount }
+          }
         }
         """
     public static let spendingCategories = """
@@ -932,9 +959,29 @@ extension Connection {
         return try await execute(Documents.budgetStatus, variables: ["month": .string(month)], as: Answer.self).BudgetStatus
     }
 
+    /// A year's budgets, each adding up the months that had it as it was
+    /// then, over the year so far or the whole of a year that is over.
+    public func budgetStatus(year: String) async throws -> BudgetStatus? {
+        struct Answer: Decodable, Sendable { let BudgetStatus: BudgetStatus? }
+        return try await execute(Documents.budgetStatus, variables: ["year": .string(year)], as: Answer.self).BudgetStatus
+    }
+
     public func savingSummary(month: String) async throws -> SavingSummary? {
         struct Answer: Decodable, Sendable { let SavingSummary: SavingSummary? }
         return try await execute(Documents.savingSummary, variables: ["month": .string(month)], as: Answer.self).SavingSummary
+    }
+
+    /// A year's saving, its months added up as each was budgeted.
+    public func savingSummary(year: String) async throws -> SavingSummary? {
+        struct Answer: Decodable, Sendable { let SavingSummary: SavingSummary? }
+        return try await execute(Documents.savingSummary, variables: ["year": .string(year)], as: Answer.self).SavingSummary
+    }
+
+    /// A month's spending day by day, beside the month it is compared with.
+    public func spendingByDay(month: String, compareMonth: String) async throws -> SpendingByDay? {
+        struct Answer: Decodable, Sendable { let SpendingByDay: SpendingByDay? }
+        return try await execute(Documents.spendingByDay, variables: ["month": .string(month), "compareMonth": .string(compareMonth)], as: Answer.self)
+            .SpendingByDay
     }
 
     public func cashFlow(fromMonth: String, toMonth: String) async throws -> CashFlow? {
