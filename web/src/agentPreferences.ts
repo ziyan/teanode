@@ -38,7 +38,7 @@ function remember(key: string, value: string) {
 
 export function readAgentPreferences(): AgentPreferences {
   return {
-    showTools: remembered(TOOLS_KEY) !== '0',
+    showTools: remembered(TOOLS_KEY) === '1',
     showUsage: remembered(USAGE_KEY) === '1',
     showWorkingNotes: remembered(NOTES_KEY) === '1',
   }

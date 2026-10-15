@@ -50,7 +50,7 @@ struct StatusSheet: View {
     let status: StatusModel
     let connection: Connection
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(TranscriptPreference.showToolCalls) private var isShowingToolCalls = true
+    @AppStorage(TranscriptPreference.showToolCalls) private var isShowingToolCalls = false
     @AppStorage(TranscriptPreference.showUsage) private var isShowingUsage = false
     @AppStorage(TranscriptPreference.showWorkingNotes) private var isShowingWorkingNotes = false
 

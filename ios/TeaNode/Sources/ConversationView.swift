@@ -22,7 +22,7 @@ struct ConversationView: View {
     @State var model: ConversationModel
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage(TranscriptPreference.showToolCalls) private var isShowingToolCalls = true
+    @AppStorage(TranscriptPreference.showToolCalls) private var isShowingToolCalls = false
     @AppStorage(TranscriptPreference.showUsage) private var isShowingUsage = false
     @AppStorage(TranscriptPreference.showWorkingNotes) private var isShowingWorkingNotes = false
     @State private var isAtEnd = true
