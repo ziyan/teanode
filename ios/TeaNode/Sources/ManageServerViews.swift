@@ -2346,7 +2346,7 @@ private struct AgentLimitForm: View {
 /// AgentUsageView is what the agents used and cost over a range of days,
 /// added up by day, kind of run, model or person, drawn and then tabled. A
 /// table stays a table on a phone, scrolling sideways.
-private struct AgentUsageView: View {
+struct AgentUsageView: View {
     let connection: Connection
     @State private var grouping = AgentUsageGrouping.day
     @State private var range = AgentUsageRange.lastThirtyDays()
@@ -2431,11 +2431,7 @@ private struct AgentUsageView: View {
                     ChartSelectionRule(value: keyLabel(selectedRow.usageKey, in: overview)) {
                         ChartCallout(
                             title: keyLabel(selectedRow.usageKey, in: overview),
-                            figures: [
-                                ChartFigure(label: String(localized: "Tokens"), valueText: ServerWords.count(selectedRow.totals.totalTokenCount), color: barColor),
-                                ChartFigure(label: String(localized: "Cost"), valueText: UpkeepWords.money(selectedRow.cost, currency: selectedRow.currency)),
-                                ChartFigure(label: String(localized: "Calls"), valueText: selectedRow.totals.callCount.formatted()),
-                            ])
+                            figures: calloutFigures(selectedRow, isBilledShown: overview.isBilledShown, barColor: barColor))
                     }
                 }
             }
@@ -2455,6 +2451,25 @@ private struct AgentUsageView: View {
         }
     }
 
+    /// The figures a touched bar shows: the billed amount only for a row a bill was read for.
+    private func calloutFigures(_ selectedRow: AgentUsageRow, isBilledShown: Bool, barColor: Color) -> [ChartFigure] {
+        var figures = [
+            ChartFigure(label: String(localized: "Tokens"), valueText: ServerWords.count(selectedRow.totals.totalTokenCount), color: barColor),
+            ChartFigure(label: isBilledShown ? String(localized: "Estimated") : String(localized: "Cost"), valueText: UpkeepWords.money(selectedRow.cost, currency: selectedRow.currency)),
+        ]
+        if selectedRow.billedAmount != nil {
+            figures.append(ChartFigure(label: String(localized: "Billed"), valueText: Self.billedText(selectedRow)))
+        }
+        figures.append(ChartFigure(label: String(localized: "Calls"), valueText: selectedRow.totals.callCount.formatted()))
+        return figures
+    }
+
+    /// What the provider billed for a row, or a dash where no bill was read for it.
+    private static func billedText(_ usageRow: AgentUsageRow) -> String {
+        guard let billedAmount = usageRow.billedAmount else { return "-" }
+        return UpkeepWords.money(billedAmount, currency: usageRow.billedCurrencyCode?.uppercased())
+    }
+
     private func table(_ overview: AgentAdminOverview) -> some View {
         ScrollView(.horizontal) {
             Grid(alignment: .trailing, horizontalSpacing: 16, verticalSpacing: 8) {
@@ -2464,7 +2479,8 @@ private struct AgentUsageView: View {
                     Text("Completion")
                     Text("Cached")
                     Text("Total")
-                    Text("Cost")
+                    if overview.isBilledShown { Text("Estimated") } else { Text("Cost") }
+                    if overview.isBilledShown { Text("Billed") }
                     Text("Calls")
                 }
                 .font(.caption.weight(.semibold))
@@ -2478,6 +2494,7 @@ private struct AgentUsageView: View {
                         Text(verbatim: ServerWords.count(usageRow.totals.cacheReadTokens))
                         Text(verbatim: ServerWords.count(usageRow.totals.totalTokenCount))
                         Text(verbatim: UpkeepWords.money(usageRow.cost, currency: usageRow.currency))
+                        if overview.isBilledShown { Text(verbatim: Self.billedText(usageRow)) }
                         Text(verbatim: usageRow.totals.callCount.formatted())
                     }
                     .font(.callout.monospacedDigit())

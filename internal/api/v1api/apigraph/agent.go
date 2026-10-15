@@ -462,7 +462,74 @@ func (self *graph) pricedUsage(tx db.Transaction, agentId string, arguments Agen
 	for _, key := range order {
 		result = append(result, *priced[key])
 	}
+	// The bill is the account's, not a person's, so only the server-wide
+	// totals carry it.
+	if agentId == "" {
+		if err := addBilledAmounts(tx, result, arguments); err != nil {
+			return nil, translateError(err)
+		}
+	}
 	return result, nil
+}
+
+// addBilledAmounts sets what the providers billed on the rows grouped by
+// nothing, day or model, from the days the daily price check kept. A row it
+// finds nothing for is left without one, as is a row whose days were billed in
+// more than one currency, which cannot be added. A day is a UTC day in the
+// bill; the usage's days are the database's, so a row at the edge of a day can
+// differ by what was used in the hours between.
+func addBilledAmounts(tx db.Transaction, rows []models.AgentUsageRow, arguments AgentUsageArguments) error {
+	by := usageBy(arguments.By)
+	if by != "" && by != "day" && by != "model" {
+		return nil
+	}
+	days, err := tx.ListAgentBilledDays(usageSince(arguments.Since), usageUntil(arguments.Until))
+	if err != nil {
+		return err
+	}
+	type billed struct {
+		amount       float64
+		currencyCode string
+		isMixed      bool
+	}
+	sums := map[string]*billed{}
+	for _, day := range days {
+		key := ""
+		switch by {
+		case "day":
+			key = day.BilledOn.Format("2006-01-02")
+		case "model":
+			key = day.ProviderName + ":" + day.Model
+		}
+		sum, isSeen := sums[key]
+		if !isSeen {
+			sum = &billed{currencyCode: day.CurrencyCode}
+			sums[key] = sum
+		}
+		sum.isMixed = sum.isMixed || sum.currencyCode != day.CurrencyCode
+		sum.amount += day.BilledAmount
+	}
+	isModelBilledOnce := map[string]bool{}
+	for index := range rows {
+		key := rows[index].Key
+		if by == "model" {
+			// An embedding is used under "provider:model@width" and billed
+			// under the model alone, so only the first width carries it.
+			key, _, _ = strings.Cut(key, "@")
+			if isModelBilledOnce[key] {
+				continue
+			}
+			isModelBilledOnce[key] = true
+		}
+		sum := sums[key]
+		if sum == nil || sum.isMixed {
+			continue
+		}
+		amount := sum.amount
+		rows[index].BilledAmount = &amount
+		rows[index].BilledCurrencyCode = sum.currencyCode
+	}
+	return nil
 }
 
 func usageSince(since *time.Time) time.Time {

@@ -247,6 +247,10 @@ jobs:
           shoot devices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen devices
           shoot devices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen devices
           shoot phones-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen phones
+          # The server's usage by day, with the provider's bill beside the estimate.
+          shoot agent-usage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
+          shoot agent-usage-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
+          shoot agent-usage-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules

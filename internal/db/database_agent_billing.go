@@ -25,6 +25,20 @@ type AgentBillingOperation interface {
 	// that the check changed. The configuration itself is saved through
 	// the configuration store, not here; this is only the record of it.
 	RecordAgentPriceChange(providerName, model string, before, after any) error
+
+	// PutAgentBilledDays writes what a provider billed per model and day,
+	// replacing a row already there for the same provider, day and model.
+	// The days' ProviderName is ignored; providerName says whose they are.
+	PutAgentBilledDays(providerName string, days []models.AgentBilledDay) error
+
+	// DeleteAgentBilledDaysBefore removes billed days before the UTC day
+	// the time falls on.
+	DeleteAgentBilledDaysBefore(day time.Time) error
+
+	// ListAgentBilledDays is the billed days from the UTC day since falls
+	// on up to, not including, the UTC day until falls on; a zero until
+	// has no end. Oldest first.
+	ListAgentBilledDays(since, until time.Time) ([]*models.AgentBilledDay, error)
 }
 
 type agentBillingCheckModel struct {
@@ -94,4 +108,57 @@ func (self *transaction) RecordAgentPriceChange(providerName, model string, befo
 	return self.applyMutation(models.AuditResourceConfiguration, resourceId, models.AuditActionUpdate, before, after, func(*gorm.DB) error {
 		return nil
 	})
+}
+
+type agentBilledDayModel struct {
+	ProviderName string    `gorm:"column:provider_name;primaryKey"`
+	BilledOn     time.Time `gorm:"column:billed_on;primaryKey"`
+	Model        string    `gorm:"column:model;primaryKey"`
+	BilledAmount float64   `gorm:"column:billed_amount"`
+	CurrencyCode string    `gorm:"column:currency_code"`
+}
+
+func (agentBilledDayModel) TableName() string { return "agent_billed_day" }
+
+func (self *transaction) PutAgentBilledDays(providerName string, days []models.AgentBilledDay) error {
+	if providerName == "" {
+		return fmt.Errorf("db: billed days need a provider")
+	}
+	for _, day := range days {
+		if err := self.tx.Exec(
+			`INSERT INTO "agent_billed_day" ("provider_name", "billed_on", "model", "billed_amount", "currency_code")
+			VALUES (?, (? AT TIME ZONE 'UTC')::date, ?, ?, ?)
+			ON CONFLICT ("provider_name", "billed_on", "model") DO UPDATE SET
+			"billed_amount" = EXCLUDED."billed_amount", "currency_code" = EXCLUDED."currency_code"`,
+			providerName, day.BilledOn.UTC(), day.Model, day.BilledAmount, day.CurrencyCode).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (self *transaction) DeleteAgentBilledDaysBefore(day time.Time) error {
+	return self.tx.Exec(`DELETE FROM "agent_billed_day" WHERE "billed_on" < (? AT TIME ZONE 'UTC')::date`, day.UTC()).Error
+}
+
+func (self *transaction) ListAgentBilledDays(since, until time.Time) ([]*models.AgentBilledDay, error) {
+	query := self.tx.Model(&agentBilledDayModel{}).Where(`"billed_on" >= (? AT TIME ZONE 'UTC')::date`, since.UTC())
+	if !until.IsZero() {
+		query = query.Where(`"billed_on" < (? AT TIME ZONE 'UTC')::date`, until.UTC())
+	}
+	var rows []agentBilledDayModel
+	if err := query.Order(`"billed_on", "provider_name", "model"`).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	days := make([]*models.AgentBilledDay, 0, len(rows))
+	for _, row := range rows {
+		days = append(days, &models.AgentBilledDay{
+			ProviderName: row.ProviderName,
+			BilledOn:     time.Date(row.BilledOn.Year(), row.BilledOn.Month(), row.BilledOn.Day(), 0, 0, 0, 0, time.UTC),
+			Model:        row.Model,
+			BilledAmount: row.BilledAmount,
+			CurrencyCode: row.CurrencyCode,
+		})
+	}
+	return days, nil
 }

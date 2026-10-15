@@ -51,7 +51,7 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
   (`web/src/pages/settings/providerPriceCheck.tsx`), the iPhone "Prices from
   the bill" section (`ios/TeaNodeKit/Sources/TeaNodeKit/AgentBilling.swift`,
   `AgentProviderForm`). The iPhone half is unbuilt here; CI builds it.
-- [ ] Milestone 4: what was billed, kept per day and shown beside the
+- [x] (2026-10-15) Milestone 4: what was billed, kept per day and shown beside the
   estimate (usage tab, `teanode agent usage --server`, `agent_usage`
   tool, iPhone usage screen).
 - [ ] Deploy, set the billing key on the server, run a check, confirm the
@@ -173,6 +173,26 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
 - Decision (Milestone 3b): the `settings` tool's `prices_check` is an outward
   action, so it asks first: it sends the billing key to the provider and can
   change prices every budget is worked out from. `prices_show` only reads.
+- Decision (Milestone 4): `billedAmount` (with `billedCurrencyCode`, not
+  `currency`, because the bill's currency need not be the configured one) is
+  a nullable field on each `AgentUsageRow` of `AgentServerUsage`, not a
+  separate list. It is filled only for grouping by nothing, day or model, and
+  only on the server-wide query (the bill is the account's, so a person's own
+  `AgentUsage` never carries it). A row with no stored days, or days in more
+  than one currency, has none. An embedding used as `provider:model@width`
+  is billed under the model alone, so only the first width's row carries it.
+- Decision (Milestone 4): the stored day is a UTC date and the usage's day is
+  the database session's, so at the edge of a day a row can differ by the
+  hours between. A day billed but not used (no usage row) is not shown.
+- Decision (Milestone 4): billed days are stored only for models TeaNode used
+  in the check's window, under TeaNode's undated name, summed when the report
+  names a model both ways on one day; the check deletes days older than 400.
+  Every surface shows the Billed column only when some row has a bill, and
+  then the cost column reads "Estimated" instead of "Cost".
+- Decision (Milestone 4): the iPhone `agent-usage` demo screen is new
+  (`-TeaNodeScreen agent-usage`, three screenshots in `ios.yml`); the Swift
+  was not compiled where this was written (no toolchain), so CI is the first
+  build of it.
 
 ## Outcomes & Retrospective
 

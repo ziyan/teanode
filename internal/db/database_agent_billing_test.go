@@ -62,3 +62,54 @@ func TestAgentBillingCheckIsReplacedByTheNext(test *testing.T) {
 		test.Errorf("compared prices did not survive the round trip: %+v", found.Compared)
 	}
 }
+
+// A day is written once per provider and model: writing it again replaces the
+// amount, days are listed from the day since falls on up to but not including
+// the day until falls on, and older days can be deleted.
+func TestAgentBilledDaysAreReplacedListedAndDeleted(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+
+	firstDay := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	days := []models.AgentBilledDay{
+		{BilledOn: firstDay, Model: "chat-model", BilledAmount: 1.25, CurrencyCode: "usd"},
+		{BilledOn: firstDay.AddDate(0, 0, 1), Model: "chat-model", BilledAmount: 2.5, CurrencyCode: "usd"},
+		{BilledOn: firstDay.AddDate(0, 0, 2), Model: "chat-model", BilledAmount: 0.125, CurrencyCode: "usd"},
+	}
+	var listed []*models.AgentBilledDay
+	if err := database.Transaction(func(tx db.Transaction) (err error) {
+		if err = tx.PutAgentBilledDays("first", days); err != nil {
+			return err
+		}
+		if err = tx.PutAgentBilledDays("second", days[:1]); err != nil {
+			return err
+		}
+		days[0].BilledAmount = 1.5
+		if err = tx.PutAgentBilledDays("first", days[:1]); err != nil {
+			return err
+		}
+		listed, err = tx.ListAgentBilledDays(firstDay.Add(5*time.Hour), firstDay.AddDate(0, 0, 2).Add(time.Hour))
+		return err
+	}); err != nil {
+		test.Fatal(err)
+	}
+	// 2026-03-01 and 2026-03-02 for the first provider, 2026-03-01 for the second.
+	if len(listed) != 3 || listed[0].ProviderName != "first" || listed[0].BilledAmount != 1.5 ||
+		listed[1].ProviderName != "second" || listed[1].BilledAmount != 1.25 ||
+		listed[2].ProviderName != "first" || !listed[2].BilledOn.Equal(firstDay.AddDate(0, 0, 1)) || listed[2].CurrencyCode != "usd" {
+		test.Errorf("billed days listed wrongly: %+v", listed)
+	}
+
+	if err := database.Transaction(func(tx db.Transaction) (err error) {
+		if err = tx.DeleteAgentBilledDaysBefore(firstDay.AddDate(0, 0, 2).Add(3 * time.Hour)); err != nil {
+			return err
+		}
+		listed, err = tx.ListAgentBilledDays(firstDay, time.Time{})
+		return err
+	}); err != nil {
+		test.Fatal(err)
+	}
+	if len(listed) != 1 || !listed[0].BilledOn.Equal(firstDay.AddDate(0, 0, 2)) {
+		test.Errorf("older days were not deleted: %+v", listed)
+	}
+}

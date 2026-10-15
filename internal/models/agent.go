@@ -754,6 +754,13 @@ type AgentUsageRow struct {
 	// leaves both alone: only what knows the prices fills them in.
 	Cost     float64 `json:"cost"`
 	Currency string  `json:"currency,omitempty"`
+
+	// BilledAmount is what the provider billed for the same period, in
+	// BilledCurrencyCode, when the daily check has read its bill for it.
+	// Nil when it has not, or when the grouping is not one a bill is kept
+	// for (only none, day and model are).
+	BilledAmount       *float64 `json:"billedAmount,omitempty"`
+	BilledCurrencyCode string   `json:"billedCurrencyCode,omitempty"`
 }
 
 // AgentUsageModelRow is totals under one key for one model, which is

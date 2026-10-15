@@ -43,6 +43,11 @@ const (
 	priceCheckLockKey int64 = 0x707269636562696c
 
 	priceCheckClientTimeout = 45 * time.Second
+
+	// billedDayRetention is how long the billed amounts are kept: a year
+	// of spending to compare with, and a margin for a year view that starts
+	// a few weeks back.
+	billedDayRetention = 400 * 24 * time.Hour
 )
 
 // snapshotDateSuffix is the date a report adds to a model's name, as in
@@ -162,6 +167,15 @@ func (self *Agent) checkProviderPrices(ctx context.Context, tx db.Transaction, n
 		return nil, err
 	}
 	check.Compared, check.Changed = comparePrices(provider, billing.Rates(), usedModels)
+
+	// The bill is kept per day beside the estimate, whether or not a price
+	// changed. A failure here fails the check: it shares this transaction.
+	if err := tx.PutAgentBilledDays(providerName, billedDaysOfUsedModels(billing.DailyAmounts(), usedModels)); err != nil {
+		return nil, err
+	}
+	if err := tx.DeleteAgentBilledDaysBefore(now.Add(-billedDayRetention)); err != nil {
+		return nil, err
+	}
 
 	if len(check.Changed) > 0 {
 		if self.settings.UpdateConfiguration == nil {
@@ -306,6 +320,41 @@ func comparePrices(provider *config.AgentProvider, rates []llm.BilledRate, usedM
 		}
 	}
 	return compared, changed
+}
+
+// billedDaysOfUsedModels keeps the days billed for models TeaNode used, under
+// TeaNode's name for each (a report's snapshot date removed), matched as
+// comparePrices matches. An exact name and a dated one on the same day are
+// the same model billed twice, so they are added. The account's other
+// programs bill other models, and are left out.
+func billedDaysOfUsedModels(billed []llm.BilledDay, usedModels map[string]bool) []models.AgentBilledDay {
+	type key struct {
+		day   time.Time
+		model string
+	}
+	sums := map[key]*models.AgentBilledDay{}
+	var order []key
+	for _, day := range billed {
+		model := day.Model
+		if !usedModels[model] {
+			model = snapshotDateSuffix.ReplaceAllString(day.Model, "")
+			if model == day.Model || !usedModels[model] {
+				continue
+			}
+		}
+		at := key{day.Day, model}
+		if sum, isSeen := sums[at]; isSeen {
+			sum.BilledAmount += day.BilledAmount
+			continue
+		}
+		sums[at] = &models.AgentBilledDay{BilledOn: day.Day, Model: model, BilledAmount: day.BilledAmount, CurrencyCode: day.Currency}
+		order = append(order, at)
+	}
+	result := make([]models.AgentBilledDay, 0, len(order))
+	for _, at := range order {
+		result = append(result, *sums[at])
+	}
+	return result
 }
 
 // isPriceWrong says the configured price is missing while the provider
