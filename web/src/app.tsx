@@ -23,6 +23,7 @@ import { PasskeyNudge } from './components/passkeyNudge'
 import { SessionProvider, hasAnywhere } from './session'
 import { firstManagementPath } from './components/sidebar'
 import { AgentDrawer } from './components/agentDrawer'
+import { NavigationShortcuts } from './components/navigationShortcuts'
 import { RecordingBar } from './recording/recordingBar'
 import { MailboxesProvider } from './mailboxes'
 import { homePath } from './services'
@@ -531,6 +532,8 @@ export function App() {
             {session.username && <AgentDrawer />}
             {/* Above the agent's button while a recording is made or sent. */}
             {session.username && <RecordingBar />}
+            {/* The keys that work on every page, and the list of them on ?. */}
+            <NavigationShortcuts onToggleSidebar={desktop ? toggleSidebar : undefined} />
           </div>
         </BreadcrumbProvider>
       </MailboxesProvider>
