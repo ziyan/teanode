@@ -34,11 +34,12 @@ type openAI struct {
 	systemFirst map[string]bool
 }
 
-const openAIDefaultBaseURL = "https://api.openai.com/v1"
+// OpenAIDefaultBaseURL is the API root of an openai provider that names none.
+const OpenAIDefaultBaseURL = "https://api.openai.com/v1"
 
 func newOpenAI(baseUrl, apiKey string, client *http.Client) *openAI {
 	if baseUrl == "" {
-		baseUrl = openAIDefaultBaseURL
+		baseUrl = OpenAIDefaultBaseURL
 	}
 	made := &openAI{baseUrl: strings.TrimRight(baseUrl, "/"), apiKey: apiKey, client: client}
 	made.speaksResponses = made.official()

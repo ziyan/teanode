@@ -234,6 +234,17 @@ type AgentModelPricing struct {
 // PricingFor is what a model of this provider costs: the first entry
 // that names it, or the provider's own prices.
 func (self *AgentProvider) PricingFor(model string) AgentPricing {
+	if index := self.PricingEntryIndexFor(model); index >= 0 {
+		priced := &self.ModelPricing[index]
+		return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
+	}
+	return self.Pricing
+}
+
+// PricingEntryIndexFor is the position in ModelPricing of the entry that
+// PricingFor would use for a model, or -1 when none names it and the
+// provider's own prices apply.
+func (self *AgentProvider) PricingEntryIndexFor(model string) int {
 	// "text-embedding-3-small@512" is text-embedding-3-small at a width,
 	// which this program names that way to keep vectors of different
 	// widths apart. It is the same model at the same price, and matching
@@ -245,12 +256,11 @@ func (self *AgentProvider) PricingFor(model string) AgentPricing {
 		model = name
 	}
 	for index := range self.ModelPricing {
-		priced := &self.ModelPricing[index]
-		if matchesAny([]string{priced.Model}, model) {
-			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
+		if matchesAny([]string{self.ModelPricing[index].Model}, model) {
+			return index
 		}
 	}
-	return self.Pricing
+	return -1
 }
 
 // IsEnabled resolves the unset Enabled to on.

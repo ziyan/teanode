@@ -41,9 +41,12 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
   settings API, docs, dashboard, iPhone app).
 - [x] (2026-10-15) Milestone 2: reading the bill and working out prices
   (`internal/llm/billing.go`), tested against canned reports.
-- [ ] Milestone 3: the daily check that sets prices, audits and tells the
-  operators; `teanode agent prices check`, the `settings` tool action,
-  the dashboard and iPhone "Check prices now".
+- [x] (2026-10-15) Milestone 3, server half: the daily check that sets
+  prices, audits and tells the operators (`internal/agent/billing_prices.go`,
+  table `agent_billing_check`, GraphQL `AgentBillingChecks` and
+  `CheckAgentProviderPrices`, client functions).
+- [ ] Milestone 3b: `teanode agent prices check` and `show`, the `settings`
+  tool action, the dashboard and iPhone "Check prices now".
 - [ ] Milestone 4: what was billed, kept per day and shown beside the
   estimate (usage tab, `teanode agent usage --server`, `agent_usage`
   tool, iPhone usage screen).
@@ -129,6 +132,33 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
   Rationale: an admin key can manage the whole organization; keeping it
   out of the request path limits what a leak of the calling key exposes,
   and the operator can see at a glance which provider is checked.
+
+- Decision (Milestone 3): the check holds one PostgreSQL advisory lock
+  (`priceCheckLockKey`) for a single transaction that covers all providers,
+  because the lock lasts as long as the transaction. The bill is read inside
+  it. The audit events and the stored check are written in that same
+  transaction; the configuration is saved through the store, outside it, so a
+  failure between the two leaves a changed price with no audit event until the
+  next check, which finds nothing to change. Accepted: the check runs once a day.
+- Decision (Milestone 3): the throttle is a time kept in memory
+  (`lastPriceCheck`) and, per provider, the `checked_at` of its stored check,
+  so a restart or a second server does not check again the same day. A stored
+  check counts for 23 hours, so a tick a few seconds late does not skip a day.
+  A refused key is stored as a check too, so it is retried once a day and not
+  every tick. A forced check ignores both.
+- Decision (Milestone 3): the query lists every openai provider that has a
+  billing key, with an empty time for one never checked, and the mutation takes
+  no provider argument (it checks all of them), unlike the sketch in the Plan
+  of Work.
+- Decision (Milestone 3): models used are read with the existing
+  `QueryAgentUsageByModel` (no new query), and the embedding width suffix
+  (`@512`) is removed from the used name before matching, as `PricingFor` does.
+- Decision (Milestone 3): `config.AgentProvider.PricingEntryIndexFor` was
+  split out of `PricingFor`, so the check edits the same entry that pricing
+  would use. `llm.OpenAIDefaultBaseURL` was exported for the default API root.
+- Decision (Milestone 3): `agent.Settings` gained `UpdateConfiguration` (the
+  store's `Update`), wired in `internal/cmd/server/agent.go`; without it a
+  check that would change a price records an error and changes nothing.
 
 ## Outcomes & Retrospective
 

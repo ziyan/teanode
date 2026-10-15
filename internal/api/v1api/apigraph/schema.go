@@ -58,6 +58,7 @@ type Query interface {
 	AgentChannelQuery
 	AgentPhoneQuery
 	AgentTabQuery
+	AgentBillingQuery
 	RecordingTextCorrectionQuery
 	RecordingSpeakerQuery
 	RecordingQuery
@@ -132,6 +133,7 @@ type Mutation interface {
 	AgentReachMutation
 	AgentSkillMutation
 	AgentProviderSignInMutation
+	AgentBillingMutation
 	AgentSourceTypeMutation
 	AgentSourceSecretMutation
 	AgentChannelMutation

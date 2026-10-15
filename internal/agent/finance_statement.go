@@ -1026,15 +1026,23 @@ func (self *Agent) tellStatementImport(ctx context.Context, run *Run, result *mo
 // import addresses, as tellStatementImport says it: checkIn marks it as
 // the agent's own, and summary is what the person reads.
 func (self *Agent) tellMailImport(ctx context.Context, run *Run, checkIn, summary string) error {
+	return self.tellAgent(ctx, run.Database(), run.Agent.ID, checkIn, summary)
+}
+
+// tellAgent appends a pair of messages to the main conversation of an agent
+// and publishes them: checkIn, an alert-marked user line saying why the
+// agent is speaking, and summary, what the agent says. It is written while
+// no turn runs, errTurnRunning when one does.
+func (self *Agent) tellAgent(ctx context.Context, database db.Database, agentId, checkIn, summary string) error {
 	var conversation *models.AgentConversation
-	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		conversation, err = scheduleConversation(tx, run.Agent.ID, "")
+	if err := database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		conversation, err = scheduleConversation(tx, agentId, "")
 		return err
 	}); err != nil {
 		return err
 	}
 	isWritten, err := self.whileNoTurnRuns(conversation.ID, func() error {
-		return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		return database.TransactionContext(ctx, func(tx db.Transaction) error {
 			if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversation.ID, Role: "user", Content: checkIn}); err != nil {
 				return err
 			}
