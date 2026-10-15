@@ -1942,7 +1942,6 @@ function Reader({
   // from another mail program already has in their fingers. Everything here
   // is something the toolbar can do: a shortcut for something with no button
   // is a feature only its author knows about.
-  const [showingKeys, setShowingKeys] = useState(false)
   const shortcuts = useMemo<Shortcut[]>(() => {
     // Derived here rather than read from below: everything under the early
     // returns runs only once there is a conversation to show, and a hook has
@@ -1978,7 +1977,6 @@ function Reader({
       },
       { key: '!', shift: true, label: t('shortcuts.junk'), run: () => onJunk(acting, folder.kind === 'junk') },
       { key: '#', shift: true, label: t('shortcuts.delete'), run: () => onDelete(acting) },
-      { key: '?', shift: true, label: t('shortcuts.help'), run: () => setShowingKeys(true) },
     ]
     if (archive) {
       list.splice(1, 0, { key: 'e', label: t('shortcuts.archive'), run: () => onMove(acting, archive.id) })
@@ -2174,28 +2172,6 @@ function Reader({
           onClick={() => onDelete(acting)}
         />
       </div>
-
-      {showingKeys && (
-        <ConfirmDialog
-          title={t('shortcuts.title')}
-          body={
-            <>
-              <p className="muted">{t('shortcuts.intro')}</p>
-              <dl className="shortcut-list">
-                {shortcuts.map((shortcut) => (
-                  <div key={shortcut.key}>
-                    <dt>
-                      <kbd>{shortcut.key}</kbd>
-                    </dt>
-                    <dd>{shortcut.label}</dd>
-                  </div>
-                ))}
-              </dl>
-            </>
-          }
-          onClose={() => setShowingKeys(false)}
-        />
-      )}
 
       <div className="mailbox-pane-head">
         <h2>{view.subject || t('mailbox.noSubject')}</h2>

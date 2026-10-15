@@ -944,6 +944,16 @@ export function InfoIcon(props: IconProps) {
   )
 }
 
+// KeyboardIcon is a keyboard seen from above: the list of shortcuts.
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+    </Icon>
+  )
+}
+
 // ReceiptIcon is a slip of paper with a torn foot and printed lines: a
 // receipt kept with a charge.
 export function ReceiptIcon(props: IconProps) {

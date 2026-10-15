@@ -10,11 +10,13 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   GridIcon,
+  KeyboardIcon,
   LogoutIcon,
   SettingsIcon,
   ShieldIcon,
 } from './icons'
 import { MenuButton } from './menuButton'
+import { showShortcuts } from './navigationShortcuts'
 import { ThemeItems } from './theme'
 import { SETTINGS_LANDING } from '../pages/settings/nav'
 import { useSession } from '../session'
@@ -136,6 +138,19 @@ export function AccountMenu({
                       control did the same thing twice. */}
                   {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
                   {collapsed ? t('nav.expand') : t('nav.collapse')}
+                </button>
+                {/* With the rail's control because both are only on a
+                    wide screen, where there is a keyboard to use them. */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    showShortcuts()
+                  }}
+                >
+                  <KeyboardIcon />
+                  {t('shortcuts.title')}
                 </button>
                 <div className="menu-separator" role="separator" />
               </>

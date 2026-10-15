@@ -8693,7 +8693,32 @@ p.notice.domain-logo-note {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--space-2) var(--space-3);
-  margin: var(--space-3) 0 0;
+  align-items: center;
+  margin: var(--space-2) 0 0;
+}
+/* One list per kind of key: this page's, going somewhere, and anywhere. */
+.shortcut-section {
+  margin-top: var(--space-4);
+}
+/* The places and the page's own keys, two to a line where there is room: a
+   dozen of each one under another pushed the rest out of the dialog. */
+@media (min-width: 700px) {
+  .shortcut-section-go .shortcut-list,
+  .shortcut-section-page .shortcut-list {
+    grid-template-columns: auto 1fr auto 1fr;
+  }
+}
+.shortcut-section h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+/* Between the two keys of g then i, small enough that the keys stay what
+   the eye finds. */
+.shortcut-then {
+  margin: 0 var(--space-1);
+  color: var(--muted);
+  font-size: 12px;
 }
 .shortcut-list > div {
   display: contents;
