@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.162.3] - 2026-10-15
+
+### Fixed
+
+- On the dashboard, a link to a deleted recording says it is not found instead of showing an empty page. (#504)
+
 ## [0.162.2] - 2026-10-15
 
 ### Fixed
