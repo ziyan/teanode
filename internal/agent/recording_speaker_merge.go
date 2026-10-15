@@ -57,13 +57,43 @@ func (self *Agent) checkRecordingTemporarySpeakerMerges(ctx context.Context, use
 			}
 			segments = append(segments, runSegments...)
 		}
+		// A label from a piece older than the latest transcripts is one
+		// whose check could not be made when its piece was new, or one
+		// that predates the check: its piece is read on its own, so it is
+		// still asked about rather than left out for good.
+		loadedRunIds := map[string]bool{}
+		for _, transcriptRun := range transcriptRuns {
+			loadedRunIds[transcriptRun.ID] = true
+		}
+		for _, temporarySpeaker := range temporarySpeakers {
+			if !isRecordingMergeCheckDue(temporarySpeaker) || attemptsByID[temporarySpeaker.SourceAttemptID] != nil {
+				continue
+			}
+			attempt, err := transaction.GetRecordingTranscriptionAttempt(userId, temporarySpeaker.SourceAttemptID)
+			if errors.Is(err, db.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			attemptsByID[attempt.ID] = attempt
+			if loadedRunIds[attempt.RecordingTranscriptRunID] {
+				continue
+			}
+			loadedRunIds[attempt.RecordingTranscriptRunID] = true
+			runSegments, err := transaction.ListRecordingTranscriptSegments(userId, attempt.RecordingTranscriptRunID)
+			if err != nil {
+				return err
+			}
+			segments = append(segments, runSegments...)
+		}
 		return transaction.ProjectRecordingSpeakerCorrections(userId, segments)
 	}); err != nil {
 		return err
 	}
 	var speakersToCheck []*models.RecordingTemporarySpeaker
 	for _, temporarySpeaker := range temporarySpeakers {
-		if temporarySpeaker.RecordingBlobID != "" && temporarySpeaker.SpeakerIdentityID == "" && temporarySpeaker.MergedIntoTemporarySpeakerID == "" && temporarySpeaker.MergeCheckedAt == nil {
+		if isRecordingMergeCheckDue(temporarySpeaker) {
 			speakersToCheck = append(speakersToCheck, temporarySpeaker)
 		}
 	}
@@ -108,6 +138,12 @@ func (self *Agent) checkRecordingTemporarySpeakerMerges(ctx context.Context, use
 		}
 	}
 	return nil
+}
+
+// isRecordingMergeCheckDue is a label with a sample that nobody named, not
+// merged, and not yet asked about.
+func isRecordingMergeCheckDue(temporarySpeaker *models.RecordingTemporarySpeaker) bool {
+	return temporarySpeaker.RecordingBlobID != "" && temporarySpeaker.SpeakerIdentityID == "" && temporarySpeaker.MergedIntoTemporarySpeakerID == "" && temporarySpeaker.MergeCheckedAt == nil
 }
 
 // checkRecordingTemporarySpeakerMerge is one label's check. It returns false,
