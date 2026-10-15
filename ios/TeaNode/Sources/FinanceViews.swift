@@ -284,6 +284,7 @@ struct SpendingSlice: Identifiable {
 /// where it went, added up over the whole of it.
 struct SpendingView: View {
     @Environment(FinanceModel.self) private var finance
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var periodKind = SpendingPeriodKind.month
     @State private var month = Date()
     @State private var year = Calendar.current.component(.year, from: Date())
@@ -869,10 +870,12 @@ struct SpendingView: View {
     }
 
     /// The years the chart of years labels: every year when there are at
-    /// most five, otherwise every second, third and so on, counted back
-    /// from this one so it is always labelled.
+    /// most five (two at the accessibility text sizes), otherwise every
+    /// second, third and so on, counted back from this one so it is
+    /// always labelled.
     private func labelledYears(_ keys: [String]) -> [String] {
-        let step = max(1, Int((Double(keys.count) / 5).rounded(.up)))
+        let labelCount = dynamicTypeSize.isAccessibilitySize ? 2.0 : 5.0
+        let step = max(1, Int((Double(keys.count) / labelCount).rounded(.up)))
         return keys.reversed().enumerated().filter { $0.offset % step == 0 }.map(\.element)
     }
 
