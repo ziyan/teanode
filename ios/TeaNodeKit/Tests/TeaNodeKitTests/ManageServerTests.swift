@@ -525,7 +525,7 @@ final class ManageServerTests: XCTestCase {
                     "sources":[{"mailboxId":"mailbox-1","name":"Inbox","policy":{"granted":true}},{"mailboxId":"mailbox-2","name":"Shared","policy":null}],
                     "today":{"used":1200,"limit":0,"resetsAt":"2030-01-02T00:00:00Z","cost":0.4,"costLimit":1.5,"currency":"USD"},
                     "totals":{"promptTokens":10,"completionTokens":20,"cacheReadTokens":30,"cacheWriteTokens":40,"audioInputTokens":5,"calls":3}}],
-                  "AgentServerUsage":[{"key":"2030-01-01","cost":0.25,"currency":"USD","totals":{"promptTokens":100,"completionTokens":50,"cacheReadTokens":0,"cacheWriteTokens":0,"audioInputTokens":0,"calls":2}}],
+                  "AgentServerUsage":[{"key":"2030-01-01","cost":0.25,"currency":"USD","billedAmount":0.5,"billedCurrencyCode":"usd","totals":{"promptTokens":100,"completionTokens":50,"cacheReadTokens":0,"cacheWriteTokens":0,"audioInputTokens":0,"calls":2}}],
                   "ListAgentDeadLetters":[{"id":"job-1","agentId":"agent-1","mailboxId":null,"kind":"remember","subjectId":"conversation-1","attempts":3,"error":"timed out","finishedAt":"2030-01-01T01:00:00Z"}]
                 }}
                 """#)
@@ -542,6 +542,10 @@ final class ManageServerTests: XCTestCase {
         XCTAssertEqual(agent.deadJobCount, 1)
         XCTAssertEqual(agent.totals.totalTokenCount, 105, "audio input counts with the rest")
         XCTAssertEqual(overview.usageRows[0].totals.callCount, 2)
+        XCTAssertEqual(overview.usageRows[0].billedAmount, 0.5)
+        XCTAssertEqual(overview.usageRows[0].billedCurrencyCode, "usd")
+        XCTAssertTrue(overview.isBilledShown)
+        XCTAssertFalse(AgentAdminOverview(agents: [], usageRows: [AgentUsageRow(usageKey: "", cost: 1, totals: AgentUsageTotals(promptTokens: 1, completionTokens: 1))], deadJobs: []).isBilledShown, "no bill read, no column")
         XCTAssertEqual(overview.deadJobs[0].jobKind, "remember")
         XCTAssertEqual(overview.username(agentId: "agent-1"), "person-one")
         XCTAssertEqual(overview.username(agentId: "agent-9"), "agent-9")

@@ -2204,17 +2204,24 @@ public struct AgentUsageRow: Codable, Hashable, Sendable {
     public let usageKey: String
     public let cost: Double
     public let currency: String?
+    /// What the provider billed for the same period, when the server has
+    /// read its bill; nil otherwise. In `billedCurrencyCode`, which is
+    /// not always the currency the estimate is written in.
+    public let billedAmount: Double?
+    public let billedCurrencyCode: String?
     public let totals: AgentUsageTotals
 
     enum CodingKeys: String, CodingKey {
-        case cost, currency, totals
+        case cost, currency, billedAmount, billedCurrencyCode, totals
         case usageKey = "key"
     }
 
-    public init(usageKey: String, cost: Double, currency: String? = nil, totals: AgentUsageTotals) {
+    public init(usageKey: String, cost: Double, currency: String? = nil, billedAmount: Double? = nil, billedCurrencyCode: String? = nil, totals: AgentUsageTotals) {
         self.usageKey = usageKey
         self.cost = cost
         self.currency = currency
+        self.billedAmount = billedAmount
+        self.billedCurrencyCode = billedCurrencyCode
         self.totals = totals
     }
 }
@@ -2338,6 +2345,10 @@ public struct AgentAdminOverview: Hashable, Sendable {
     public let agents: [AgentAdminSummary]
     public let usageRows: [AgentUsageRow]
     public let deadJobs: [AgentDeadJob]
+
+    /// Whether some row has a billed amount. The column and the callout
+    /// figure show only then, so a server with no billing key looks as before.
+    public var isBilledShown: Bool { usageRows.contains { $0.billedAmount != nil } }
 
     public init(agents: [AgentAdminSummary], usageRows: [AgentUsageRow], deadJobs: [AgentDeadJob]) {
         self.agents = agents
@@ -2743,7 +2754,7 @@ extension Documents {
     public static let manageAgentAdmin = """
         query ($by: String, $since: DateTime, $until: DateTime) {
           ListAgents { \(manageAgentSummaryFields) }
-          AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
+          AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency billedAmount billedCurrencyCode totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
           ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
         }
         """

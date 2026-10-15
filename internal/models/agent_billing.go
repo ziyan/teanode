@@ -45,3 +45,15 @@ type AgentBillingCheck struct {
 	Compared []AgentBilledPrice `json:"compared"`
 	Changed  []AgentPriceChange `json:"changed"`
 }
+
+// AgentBilledDay is what a provider billed for one model on one day (UTC).
+// Model is TeaNode's name for it, without a snapshot date.
+type AgentBilledDay struct {
+	ProviderName string    `json:"providerName"`
+	BilledOn     time.Time `json:"billedOn"`
+	Model        string    `json:"model"`
+
+	// BilledAmount is in CurrencyCode and is not rounded to cents.
+	BilledAmount float64 `json:"billedAmount"`
+	CurrencyCode string  `json:"currencyCode"`
+}

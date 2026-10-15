@@ -1091,6 +1091,12 @@ func printUsage(command *cli.Command, rows []*client.AgentUsageRow, by string) e
 		return PrintJSON(rows)
 	}
 	table := [][]string{}
+	// The billed column appears only when a bill was read for some row, so
+	// a person's own usage and a server with no billing key print as before.
+	isBilledShown := false
+	for _, row := range rows {
+		isBilledShown = isBilledShown || row.BilledAmount != nil
+	}
 	for _, row := range rows {
 		key := row.Key
 		if key == "" {
@@ -1101,13 +1107,25 @@ func printUsage(command *cli.Command, rows []*client.AgentUsageRow, by string) e
 		if row.Currency == "" {
 			cost = fmt.Sprintf("%.2f", row.Cost)
 		}
-		table = append(table, []string{key, strconv.FormatInt(row.Totals.PromptTokens, 10), strconv.FormatInt(row.Totals.CompletionTokens, 10), strconv.FormatInt(row.Totals.CacheReadTokens, 10), strconv.FormatInt(total, 10), cost, strconv.FormatInt(row.Totals.Calls, 10)})
+		columns := []string{key, strconv.FormatInt(row.Totals.PromptTokens, 10), strconv.FormatInt(row.Totals.CompletionTokens, 10), strconv.FormatInt(row.Totals.CacheReadTokens, 10), strconv.FormatInt(total, 10), cost}
+		if isBilledShown {
+			billed := "-"
+			if row.BilledAmount != nil {
+				billed = fmt.Sprintf("%.2f %s", *row.BilledAmount, strings.ToUpper(row.BilledCurrencyCode))
+			}
+			columns = append(columns, billed)
+		}
+		table = append(table, append(columns, strconv.FormatInt(row.Totals.Calls, 10)))
 	}
 	header := strings.ToUpper(by)
 	if header == "" {
 		header = "PERIOD"
 	}
-	return printTable([]string{header, "PROMPT", "COMPLETION", "CACHED", "TOTAL", "COST", "CALLS"}, table)
+	headers := []string{header, "PROMPT", "COMPLETION", "CACHED", "TOTAL", "COST"}
+	if isBilledShown {
+		headers = append(headers, "BILLED")
+	}
+	return printTable(append(headers, "CALLS"), table)
 }
 
 func runAgentUsage(ctx context.Context, command *cli.Command) error {

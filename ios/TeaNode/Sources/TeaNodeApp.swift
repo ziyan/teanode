@@ -520,6 +520,7 @@ struct SettingsForm: View {
                 case "dreams": DreamsView(connection: connection)
                 case "activity-run": AgentActivityView(connection: connection)
                 case "schedules": SchedulesView(connection: connection)
+                case "agent-usage": AgentUsageView(connection: connection)
                 default: EmptyView()
                 }
             }

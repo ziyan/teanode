@@ -10293,6 +10293,38 @@
         }
       }
     },
+    "Estimated": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見積もり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "估算"
+          }
+        }
+      }
+    },
+    "Billed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求額"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单"
+          }
+        }
+      }
+    },
     "Cost basis": {
       "localizations": {
         "ja": {

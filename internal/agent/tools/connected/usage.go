@@ -22,7 +22,7 @@ func init() {
 					"since": tools.StringProperty("the start, as a date or a moment; thirty days ago by default"),
 					"until": tools.StringProperty("the end; now by default"),
 				}),
-				Guidance: "agent_usage: money is what the person can act on, so lead with it and give tokens only when asked. Grouping by model is what shows where the cost is; grouping by kind shows which work is spending it.",
+				Guidance: "agent_usage: on the server view, billed is what the provider charged and cost is the estimate from the configured prices; give both when both are present. Money is what the person can act on, so lead with it and give tokens only when asked. Grouping by model is what shows where the cost is; grouping by kind shows which work is spending it.",
 				Run:      runUsage,
 			},
 		}
@@ -41,7 +41,7 @@ const documentMine = `query ($since: DateTime, $until: DateTime, $by: String) {
 	ReadAgent { budget { used limit cost costLimit currency resetsAt } } }`
 
 const documentServer = `query ($since: DateTime, $until: DateTime, $by: String) {
-	AgentServerUsage(since: $since, until: $until, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } } }`
+	AgentServerUsage(since: $since, until: $until, by: $by) { key cost currency billedAmount billedCurrencyCode totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } } }`
 
 func runUsage(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	arguments, err := tools.DecodeArguments[usageRequest](call)
@@ -89,10 +89,15 @@ func runUsage(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 }
 
 type usageRow struct {
-	Key      string                  `json:"key"`
-	Cost     float64                 `json:"cost"`
-	Currency string                  `json:"currency"`
-	Totals   models.AgentUsageTotals `json:"totals"`
+	Key      string  `json:"key"`
+	Cost     float64 `json:"cost"`
+	Currency string  `json:"currency"`
+
+	// BilledAmount is what the provider billed, when a bill was read.
+	BilledAmount       *float64 `json:"billedAmount"`
+	BilledCurrencyCode string   `json:"billedCurrencyCode"`
+
+	Totals models.AgentUsageTotals `json:"totals"`
 }
 
 // describeBudget names what each number is in, because a budget carries
@@ -146,6 +151,12 @@ func describeRows(rows []*usageRow) []map[string]any {
 		// cost is high can see how much of the count was audio.
 		if row.Totals.AudioInputTokens > 0 {
 			entry["audio_input_tokens"] = row.Totals.AudioInputTokens
+		}
+		// Beside the estimate so a gap between them is seen; the estimate
+		// follows the configured prices, the bill is what was charged.
+		if row.BilledAmount != nil {
+			entry["billed"] = fmt.Sprintf("%.2f", *row.BilledAmount)
+			entry["billed_currency"] = strings.ToUpper(row.BilledCurrencyCode)
 		}
 		if row.Key != "" {
 			entry["key"] = row.Key

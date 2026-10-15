@@ -60,7 +60,12 @@ type AgentUsageRow struct {
 	Key      string  `json:"key"`
 	Cost     float64 `json:"cost"`
 	Currency string  `json:"currency"`
-	Totals   struct {
+
+	// BilledAmount is what the provider billed, in BilledCurrencyCode;
+	// nil when no bill was read for the period. Only the server's usage has it.
+	BilledAmount       *float64 `json:"billedAmount"`
+	BilledCurrencyCode string   `json:"billedCurrencyCode"`
+	Totals             struct {
 		PromptTokens     int64 `json:"promptTokens"`
 		CompletionTokens int64 `json:"completionTokens"`
 		CacheReadTokens  int64 `json:"cacheReadTokens"`
@@ -168,7 +173,7 @@ const (
 	DocumentListAgents = `query { ListAgents ` + agentSummarySelection + ` }`
 
 	DocumentAgentServerUsage = `query ($since: DateTime, $by: String) {
-		AgentServerUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
+		AgentServerUsage(since: $since, by: $by) { key cost currency billedAmount billedCurrencyCode totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
 	}`
 
 	DocumentListAgentDeadLetters = `query { ListAgentDeadLetters ` + agentJobSelection + ` }`

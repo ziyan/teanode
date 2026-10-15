@@ -1573,6 +1573,8 @@ export const ja: Catalog = {
   'agentAdmin.total': '合計',
   'agentAdmin.calls': '呼び出し',
   'agentAdmin.cost': '金額',
+  'agentAdmin.estimated': '見積もり',
+  'agentAdmin.billed': '請求額',
   'agentAdmin.noUsage': 'まだありません。',
   'agentAdmin.agents': 'エージェント',
   'agentAdmin.agentsHint':

@@ -1582,6 +1582,8 @@ export const en = {
   'agentAdmin.total': 'Total',
   'agentAdmin.calls': 'Calls',
   'agentAdmin.cost': 'Cost',
+  'agentAdmin.estimated': 'Estimated',
+  'agentAdmin.billed': 'Billed',
   'agentAdmin.noUsage': 'Nothing yet.',
   'agentAdmin.agents': 'Agents',
   'agentAdmin.agentsHint':

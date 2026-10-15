@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -244,6 +245,13 @@ func (self *billingFixture) auditedPrices(test *testing.T) []*models.AuditEvent 
 
 func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 	fixture := newBillingFixture(test)
+	// A day older than the 400 kept is removed by the check.
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		old := []models.AgentBilledDay{{BilledOn: time.Now().UTC().AddDate(0, 0, -500), Model: "alpha-model", BilledAmount: 9, CurrencyCode: "usd"}}
+		if err := tx.PutAgentBilledDays("openai-test", old); err != nil {
+			test.Fatalf("PutAgentBilledDays: %s", err)
+		}
+	})
 	checks, err := fixture.worker.CheckProviderPrices(context.Background(), false)
 	if err != nil {
 		test.Fatalf("CheckProviderPrices: %s", err)
@@ -363,6 +371,28 @@ func TestCheckProviderPricesFollowsTheBill(test *testing.T) {
 		}
 		if missing, err := tx.GetAgentBillingCheck("no-such-provider"); err != nil || missing != nil {
 			test.Errorf("a provider never checked answered %+v, %v", missing, err)
+		}
+	})
+
+	// What was billed is kept per day and model, only for the models the
+	// agent used, the dated name under the undated one.
+	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
+		days, err := tx.ListAgentBilledDays(time.Now().AddDate(-2, 0, 0), time.Time{})
+		if err != nil {
+			test.Fatalf("ListAgentBilledDays: %s", err)
+		}
+		// alpha: 0.2 input + 0.25 cache writes + 0.13 output a day.
+		wantAmounts := map[string]float64{"alpha-model": 0.58, "beta-model": 1.8, "delta-one": 0.3, "gamma-model": 1}
+		counts := map[string]int{}
+		for _, day := range days {
+			counts[day.Model]++
+			want, isUsed := wantAmounts[day.Model]
+			if !isUsed || day.ProviderName != "openai-test" || day.CurrencyCode != "usd" || math.Abs(day.BilledAmount-want) > 1e-9 {
+				test.Errorf("unexpected billed day %+v", day)
+			}
+		}
+		if len(days) != 12 || counts["alpha-model"] != 3 || counts["gamma-model"] != 3 {
+			test.Errorf("expected three days of four models, got %d rows: %v", len(days), counts)
 		}
 	})
 

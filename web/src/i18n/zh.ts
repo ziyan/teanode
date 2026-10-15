@@ -1532,6 +1532,8 @@ export const zh: Catalog = {
   'agentAdmin.total': '合计',
   'agentAdmin.calls': '调用',
   'agentAdmin.cost': '金额',
+  'agentAdmin.estimated': '估算',
+  'agentAdmin.billed': '账单',
   'agentAdmin.noUsage': '暂无。',
   'agentAdmin.agents': '助手',
   'agentAdmin.agentsHint': '所有拥有助手的人：它能访问什么、花费多少。仅有 token 与计数——助手读写的内容属于本人。',
