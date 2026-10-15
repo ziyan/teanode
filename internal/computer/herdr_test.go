@@ -274,6 +274,67 @@ func TestSendIsRefusedWhileAskingAndReachesASessionAtWork(t *testing.T) {
 	}
 }
 
+func TestFilesSentWithTextAreWrittenAndNamedTheWayEachAgentOpensThem(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	fake.setAgent("w1:p2", CodingAgentKindCodex, "idle", "", readHerdrFixture(t, "codex-idle"))
+	fake.setAgent("w1:p3", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-single"))
+	herdr := NewHerdr(home)
+	ctx := context.Background()
+	// A send of an earlier week, long since read.
+	stale := filepath.Join(home, herdrSentFilesPath, "20000101-000000-abcdef")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(stale, time.Now().Add(-8*24*time.Hour), time.Now().Add(-8*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Claude Code asks before it reads a path outside its directory, but
+	// not one named with @; a space in a name would end the path.
+	sent, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p1", Text: "what is wrong here?",
+		HerdrFiles: []*HerdrFile{{FileName: "error screen.png", FileContent: []byte("picture")}, {FileName: "../notes.txt", FileContent: []byte("notes")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filePaths := sent.(*HerdrSendResult).FilePaths
+	if len(filePaths) != 2 || filepath.Base(filePaths[0]) != "error_screen.png" || filepath.Base(filePaths[1]) != "notes.txt" ||
+		filepath.Dir(filePaths[0]) != filepath.Dir(filePaths[1]) || !strings.HasPrefix(filePaths[0], filepath.Join(home, herdrSentFilesPath)+"/") {
+		t.Fatalf("written at %v", filePaths)
+	}
+	if content, err := os.ReadFile(filePaths[0]); err != nil || string(content) != "picture" {
+		t.Errorf("%q, %v", content, err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("the old send is kept: %v", err)
+	}
+	// Codex reads a path as it is; the file alone is a send too.
+	sent, err = RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p2", HerdrFiles: []*HerdrFile{{FileName: "", FileContent: []byte("x")}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	codexPath := sent.(*HerdrSendResult).FilePaths[0]
+	if filepath.Base(codexPath) != "file-1" {
+		t.Errorf("unnamed file written as %s", codexPath)
+	}
+	_, _, prompted := fake.recorded()
+	if want := []string{"what is wrong here? @" + filePaths[0] + " @" + filePaths[1], codexPath}; !slices.Equal(prompted, want) {
+		t.Errorf("prompted %q, want %q", prompted, want)
+	}
+	// Nothing is written for a session that asks.
+	before, _ := os.ReadDir(filepath.Join(home, herdrSentFilesPath))
+	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p3", HerdrFiles: []*HerdrFile{{FileName: "a.png", FileContent: []byte("x")}}}); err == nil {
+		t.Error("a session that asks took the files")
+	}
+	if after, _ := os.ReadDir(filepath.Join(home, herdrSentFilesPath)); len(after) != len(before) {
+		t.Errorf("%d sends written, then %d", len(before), len(after))
+	}
+	if _, err := RunHerdr(ctx, herdr, "herdr_send", &HerdrArguments{PaneID: "w1:p1"}); err == nil {
+		t.Error("a send of nothing was typed")
+	}
+}
+
 func TestAnAnswerToAQuestionThatChangedPressesNothing(t *testing.T) {
 	home := t.TempDir()
 	fake := startFakeHerdr(t, home)

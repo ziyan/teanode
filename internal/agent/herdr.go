@@ -246,16 +246,35 @@ func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, p
 
 // SendHerdrSession types text into a session, followed by enter; a session
 // at work takes it as a message in its turn.
-func (self *Agent) SendHerdrSession(ctx context.Context, agentId, computerName, paneId, text string) (*HerdrSession, error) {
+func (self *Agent) SendHerdrSession(ctx context.Context, agentId, computerName, paneId, text string, attachmentIds []string) (*HerdrSent, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrSendResult](ctx, attached, "herdr_send", &computer.HerdrArguments{PaneID: paneId, Text: text}, herdrActionWait)
+	asked := &computer.HerdrArguments{PaneID: paneId, Text: text}
+	wait := herdrActionWait
+	if len(attachmentIds) > 0 {
+		if !attached.HasFeature(computer.FeatureHerdrFiles) {
+			return nil, fmt.Errorf("the program on %s is too old to send files with; update teanode there and restart it", attached.name)
+		}
+		asked.HerdrFiles, err = tools.HerdrFilesOf(ctx, self.settings.Database, self.settings.Storage, agentId, "", attachmentIds)
+		if err != nil {
+			return nil, err
+		}
+		wait = 2 * time.Minute
+	}
+	result, err := askHerdr[computer.HerdrSendResult](ctx, attached, "herdr_send", asked, wait)
 	if err != nil {
 		return nil, err
 	}
-	return &HerdrSession{ComputerName: attached.name, HerdrSession: result.HerdrSession}, nil
+	return &HerdrSent{HerdrSession: HerdrSession{ComputerName: attached.name, HerdrSession: result.HerdrSession}, FilePaths: result.FilePaths}, nil
+}
+
+// HerdrSent is a session once something was sent to it, and where the
+// files sent with it were written.
+type HerdrSent struct {
+	HerdrSession
+	FilePaths []string
 }
 
 // HerdrWait is a session once it stopped working, or when the wait ran out.

@@ -56,8 +56,9 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "send",
 				Usage:     "type text into a session and press enter; one at work reads it in its turn",
 				ArgsUsage: "<pane> <text>",
-				Flags:     []cli.Flag{computerFlag, JSONFlag()},
-				Action:    runComputerHerdrSend,
+				Flags: []cli.Flag{computerFlag, &cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the session with the text, written on its computer and its path typed after the text; repeatable"},
+					JSONFlag()},
+				Action: runComputerHerdrSend,
 			},
 			{
 				Name:      "wait",
@@ -275,8 +276,9 @@ func runComputerHerdrScreen(ctx context.Context, command *cli.Command) error {
 }
 
 func runComputerHerdrSend(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() < 2 || strings.TrimSpace(command.Args().Get(0)) == "" {
-		return usage("what to type, and where? usage: teanode computer herdr send <pane> <text>")
+	attached := command.StringSlice("attach")
+	if strings.TrimSpace(command.Args().Get(0)) == "" || (command.Args().Len() < 2 && len(attached) == 0) {
+		return usage("what to type, and where? usage: teanode computer herdr send <pane> <text> [--attach <file>]")
 	}
 	paneId := strings.TrimSpace(command.Args().Get(0))
 	text := strings.Join(command.Args().Slice()[1:], " ")
@@ -284,7 +286,19 @@ func runComputerHerdrSend(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	session, err := client.SendAgentHerdrSession(ctx, connection, command.String("computer"), paneId, text)
+	attachmentIds := []string{}
+	for _, path := range attached {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("cannot read %s: %w", path, err)
+		}
+		attachment, err := client.UploadAgentAttachment(ctx, connection, filepath.Base(path), content)
+		if err != nil {
+			return describeError(command, err)
+		}
+		attachmentIds = append(attachmentIds, attachment.ID)
+	}
+	session, err := client.SendAgentHerdrSession(ctx, connection, command.String("computer"), paneId, text, attachmentIds)
 	if err != nil {
 		return describeError(command, err)
 	}

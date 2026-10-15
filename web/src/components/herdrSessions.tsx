@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { graphql } from '../api'
-import { ErrorMessage, Loading, Tag } from './common'
-import { CheckIcon } from './icons'
+import { ErrorMessage, Loading, Tag, formatBytes } from './common'
+import { CheckIcon, CloseIcon, PaperclipIcon } from './icons'
 import { ConfirmDialog, FormDialog } from './dialog'
 import { SettingsEmpty, SettingsSection } from './settingsList'
 import { Tabs } from './tabs'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 import { useTranslation } from '../i18n/i18n'
+import { uploadFiles } from '../upload'
+import { Tooltip } from './tooltip'
 
 // The person's herdr sessions: the Claude Code and Codex sessions they keep
 // in herdr's panes, on each attached computer, which their agent works in
@@ -87,8 +89,8 @@ export const HERDR_DOCUMENTS = {
   ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int) {
     ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) { herdrSession { ${SESSION_FIELDS} } screenText }
   }`,
-  SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String!) {
-    SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text) { ${SESSION_FIELDS} }
+  SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String, $attachmentIds: [String!]) {
+    SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, attachmentIds: $attachmentIds) { ${SESSION_FIELDS} }
   }`,
   WaitAgentHerdrSession: `query ($computer: String, $paneId: String!, $waitSeconds: Int) {
     WaitAgentHerdrSession(computer: $computer, paneId: $paneId, waitSeconds: $waitSeconds) { herdrSession { ${SESSION_FIELDS} } isTimedOut }
@@ -350,7 +352,7 @@ function chosenOf(question: HerdrQuestion, answeredWith: string): { chosenNumber
 
 // HerdrSessionDialog is one session: what it asks, its last turns or its
 // screen, and a box to type into it.
-function HerdrSessionDialog({
+export function HerdrSessionDialog({
   session,
   onChanged,
   onClose,
@@ -364,6 +366,10 @@ function HerdrSessionDialog({
   const [view, setView] = useState<'turns' | 'screen'>('turns')
   const [current, setCurrent] = useState(session)
   const [text, setText] = useState('')
+  // Files to hand the session with the text: written on its computer, and
+  // their paths typed after the text.
+  const [pending, setPending] = useState<File[]>([])
+  const filePicker = useRef<HTMLInputElement>(null)
   const [isSending, setSending] = useState(false)
   const [readCount, setReadCount] = useState(0)
   const { data: read, error: readError } = useQuery(
@@ -396,16 +402,26 @@ function HerdrSessionDialog({
   // asks, which is answered first.
   const isSendable = current.herdrSessionState !== 'asking'
 
+  const isSendReady = text.trim() !== '' || pending.length > 0
   const send = async () => {
     setSending(true)
     try {
+      let attachmentIds: string[] = []
+      if (pending.length > 0) {
+        const uploaded = (await uploadFiles('POST', '/api/v1/agent/attachments', pending, () => undefined).promise) as {
+          attachments: { id: string }[]
+        }
+        attachmentIds = uploaded.attachments.map((attachment) => attachment.id)
+      }
       const response = await graphql<{ SendAgentHerdrSession: HerdrSession }>(HERDR_DOCUMENTS.SendAgentHerdrSession, {
         computer: current.computer,
         paneId: current.paneId,
         text,
+        attachmentIds,
       })
       setCurrent(response.SendAgentHerdrSession)
       setText('')
+      setPending([])
       toast.done(t('herdr.sent', { pane: paneNameOf(current) }))
       onChanged()
     } catch (caught) {
@@ -537,13 +553,53 @@ function HerdrSessionDialog({
               ))}
             </ol>
           )}
+          {pending.length > 0 && (
+            <div className="agent-attachments">
+              {pending.map((file, index) => (
+                <span key={`${file.name}-${index}`} className="agent-attachment-chip">
+                  <PaperclipIcon size={12} /> {file.name} <span className="muted">{formatBytes(file.size)}</span>
+                  <button
+                    type="button"
+                    className="icon-action"
+                    title={t('agentDrawer.remove')}
+                    aria-label={`${file.name}: ${t('agentDrawer.remove')}`}
+                    onClick={() => setPending((previous) => previous.filter((_, at) => at !== index))}
+                  >
+                    <CloseIcon size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <form
             className="herdr-send"
             onSubmit={(event) => {
               event.preventDefault()
-              if (text.trim()) void send()
+              if (isSendReady) void send()
             }}
           >
+            <input
+              ref={filePicker}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                const chosen = Array.from(event.target.files ?? [])
+                setPending((previous) => [...previous, ...chosen])
+                event.target.value = ''
+              }}
+            />
+            <Tooltip label={t('herdr.attach')}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t('herdr.attach')}
+                disabled={!isSendable || isSending}
+                onClick={() => filePicker.current?.click()}
+              >
+                <PaperclipIcon size={16} />
+              </button>
+            </Tooltip>
             <textarea
               rows={2}
               value={text}
@@ -552,7 +608,7 @@ function HerdrSessionDialog({
               aria-label={t('herdr.sendPlaceholder')}
               onChange={(event) => setText(event.target.value)}
             />
-            <button type="submit" disabled={!isSendable || isSending || !text.trim()}>
+            <button type="submit" disabled={!isSendable || isSending || !isSendReady}>
               {t('herdr.send')}
             </button>
           </form>

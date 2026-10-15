@@ -2,7 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { graphql } from '../api'
-import { HERDR_DOCUMENTS, HerdrQuestionAnswer, type HerdrQuestion, type HerdrSession } from './herdrSessions'
+import { uploadFiles } from '../upload'
+import {
+  HERDR_DOCUMENTS,
+  HerdrQuestionAnswer,
+  HerdrSessionDialog,
+  type HerdrQuestion,
+  type HerdrSession,
+} from './herdrSessions'
 
 const notices = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn(), failure: vi.fn() }))
 vi.mock('../api', () => ({ graphql: vi.fn() }))
@@ -11,10 +18,13 @@ vi.mock('../i18n/i18n', () => ({
   Trans: ({ k }: { k: string }) => k,
 }))
 vi.mock('./toast', () => ({ useToast: () => notices }))
+vi.mock('../upload', () => ({ uploadFiles: vi.fn() }))
 const execute = vi.mocked(graphql)
+const upload = vi.mocked(uploadFiles)
 
 beforeEach(() => {
   execute.mockReset()
+  upload.mockReset()
   notices.done.mockClear()
   notices.failure.mockClear()
 })
@@ -113,4 +123,35 @@ it('marks the option answered even when its label holds a comma', () => {
   render(<HerdrQuestionAnswer session={session} question={approval} answeredWith="2. Yes, and don't ask again" />)
   const pressed = screen.getAllByRole('button').filter((button) => button.getAttribute('aria-pressed') === 'true')
   expect(pressed.map((button) => button.textContent)).toEqual(["2. Yes, and don't ask again"])
+})
+
+it('uploads the files chosen and sends them with the text', async () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  upload.mockReturnValue({
+    promise: Promise.resolve({ attachments: [{ id: 'attachment-1' }] }),
+    abort: vi.fn(),
+  } as unknown as ReturnType<typeof uploadFiles>)
+  execute.mockImplementation((document: string) =>
+    Promise.resolve(
+      document === HERDR_DOCUMENTS.SendAgentHerdrSession
+        ? { SendAgentHerdrSession: idle }
+        : { ReadAgentHerdrSession: { herdrSession: idle, turns: [], isTruncated: false } },
+    ),
+  )
+  const { container } = render(<HerdrSessionDialog session={idle} onChanged={vi.fn()} onClose={vi.fn()} />)
+  const picture = new File(['picture'], 'error.png', { type: 'image/png' })
+  const picker = container.ownerDocument.querySelector('.herdr-send input[type="file"]') as HTMLInputElement
+  fireEvent.change(picker, { target: { files: [picture] } })
+  expect(screen.getByText('error.png')).toBeTruthy()
+  // A file alone is something to send.
+  fireEvent.click(screen.getByRole('button', { name: 'herdr.send' }))
+  await waitFor(() => expect(notices.done).toHaveBeenCalled())
+  expect(upload).toHaveBeenCalledWith('POST', '/api/v1/agent/attachments', [picture], expect.any(Function))
+  expect(execute).toHaveBeenCalledWith(HERDR_DOCUMENTS.SendAgentHerdrSession, {
+    computer: 'laptop',
+    paneId: 'w1:p2',
+    text: '',
+    attachmentIds: ['attachment-1'],
+  })
+  expect(screen.queryByText('error.png')).toBeNull()
 })

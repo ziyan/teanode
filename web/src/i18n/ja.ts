@@ -1351,6 +1351,7 @@ export const ja: Catalog = {
   'herdr.role.person': 'あなた',
   'herdr.role.agent': 'コーディングエージェント',
   'herdr.role.tool': 'ツール',
+  'herdr.attach': 'セッションに開かせるファイルを添付',
   'herdr.send': '送信',
   'herdr.sendPlaceholder': 'このセッションへの指示を入力',
   'herdr.sendDisabled': '先に質問に答えてください',
