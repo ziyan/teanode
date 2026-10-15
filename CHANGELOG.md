@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.164.1] - 2026-10-15
+
+### Fixed
+
+- On a phone, a dialog with several buttons shows all of them instead of cutting off the first. (#510)
+
 ## [0.164.0] - 2026-10-15
 
 ### Added
