@@ -81,7 +81,7 @@ func TestASessionTellsUtterancesInTheOrderSpoken(t *testing.T) {
 			{"type": "conversation.item.input_audio_transcription.delta", "item_id": "first", "delta": "What is"},
 			{"type": "input_audio_buffer.committed", "item_id": "second", "previous_item_id": "first"},
 			{"type": "conversation.item.input_audio_transcription.completed", "item_id": "second", "transcript": " Also the plumber. ", "usage": map[string]any{"input_tokens": 20, "output_tokens": 5}},
-			{"type": "conversation.item.input_audio_transcription.completed", "item_id": "first", "transcript": "What is on tomorrow?", "usage": map[string]any{"input_tokens": 30, "output_tokens": 8}},
+			{"type": "conversation.item.input_audio_transcription.completed", "item_id": "first", "transcript": "What is on tomorrow?", "usage": map[string]any{"input_tokens": 30, "output_tokens": 8, "input_token_details": map[string]any{"text_tokens": 6, "audio_tokens": 24}}},
 			// Said again: told once, and paid for once.
 			{"type": "conversation.item.input_audio_transcription.completed", "item_id": "first", "transcript": "What is on tomorrow?", "usage": map[string]any{"input_tokens": 30, "output_tokens": 8}},
 		} {
@@ -118,7 +118,7 @@ func TestASessionTellsUtterancesInTheOrderSpoken(t *testing.T) {
 	if told[4].UtteranceSequence != 1 || told[5].UtteranceSequence != 2 {
 		t.Fatalf("numbered in the order spoken: %+v %+v", told[4], told[5])
 	}
-	if len(costs) != 2 || costs[0].InputTokens != 20 || costs[1].InputTokens != 30 {
+	if len(costs) != 2 || costs[0].InputTokens != 20 || costs[0].AudioInputTokens != 0 || costs[1].InputTokens != 6 || costs[1].AudioInputTokens != 24 {
 		t.Fatalf("each transcription's cost: %+v", costs)
 	}
 	provider.mutex.Lock()

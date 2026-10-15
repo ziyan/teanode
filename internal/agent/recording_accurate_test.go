@@ -97,7 +97,9 @@ func TestTheSecondPassReplacesTheWordsOfEachTurnAndKeepsSpeakersAndTimes(test *t
 		test.Fatalf("the second turn was not sent the end of the first: %q", plain[1].Prompt)
 	}
 	totals := fixture.usage()
-	if totals.Calls != 3 || totals.PromptTokens != 200 || totals.CompletionTokens != 20 {
+	// Each of the two calls reported 90 audio and 10 text input tokens, kept
+	// apart because audio is priced apart.
+	if totals.Calls != 3 || totals.PromptTokens != 20 || totals.AudioInputTokens != 180 || totals.CompletionTokens != 20 {
 		test.Fatalf("usage is %+v, want the first pass and two turns", totals)
 	}
 }

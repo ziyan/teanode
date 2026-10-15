@@ -276,7 +276,7 @@ func (self *graph) voiceView(response http.ResponseWriter, request *http.Request
 	read := make(chan error, 1)
 	go func() {
 		read <- session.Read(func(event *voice.Event) { _ = socket.say(event) }, func(usage *voice.Usage) {
-			agent.RecordUsage(self.database, found.ID, "", usageModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, CompletionTokens: usage.OutputTokens})
+			agent.RecordUsage(self.database, found.ID, "", usageModel, "voice", llm.Usage{PromptTokens: usage.InputTokens, AudioInputTokens: usage.AudioInputTokens, CompletionTokens: usage.OutputTokens})
 		})
 	}()
 	go func() {

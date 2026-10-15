@@ -235,7 +235,14 @@ func decodeTranscription(request *TranscriptionRequest, responseBytes []byte, ca
 			if reported.InputTokens == nil || reported.OutputTokens == nil {
 				return nil, fmt.Errorf("llm: transcription returned incomplete token usage")
 			}
-			normalized.TranscriptionUsage.Usage = Usage{PromptTokens: *reported.InputTokens, CompletionTokens: *reported.OutputTokens}
+			// Audio input is billed apart from text input, so the two are
+			// recorded apart. A provider that reports no breakdown has all
+			// of its input counted as text, as before.
+			audioInputTokens := reported.InputTokenDetails.AudioTokens
+			// A paid answer is not thrown away over a breakdown that does not
+			// add up; the audio is capped at the input the provider counted.
+			audioInputTokens = min(audioInputTokens, *reported.InputTokens)
+			normalized.TranscriptionUsage.Usage = Usage{PromptTokens: *reported.InputTokens - audioInputTokens, CompletionTokens: *reported.OutputTokens, AudioInputTokens: audioInputTokens}
 			normalized.TranscriptionUsage.InputAudioTokens = reported.InputTokenDetails.AudioTokens
 			normalized.TranscriptionUsage.InputTextTokens = reported.InputTokenDetails.TextTokens
 			normalized.TranscriptionUsage.HasProviderUsage = true

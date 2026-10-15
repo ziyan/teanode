@@ -214,12 +214,13 @@ type AgentModelPricing struct {
 	// Model is the name after the provider's, or a pattern for it.
 	Model string `yaml:"model"`
 
-	// Input, Output, CacheRead and CacheWrite, per million tokens, as on
-	// a provider.
+	// Input, Output, CacheRead, CacheWrite and AudioInput, per million
+	// tokens, as on a provider.
 	Input      float64 `yaml:"input,omitempty"`
 	Output     float64 `yaml:"output,omitempty"`
 	CacheRead  float64 `yaml:"cacheRead,omitempty"`
 	CacheWrite float64 `yaml:"cacheWrite,omitempty"`
+	AudioInput float64 `yaml:"audioInput,omitempty"`
 }
 
 // PricingFor is what a model of this provider costs: the first entry
@@ -238,7 +239,7 @@ func (self *AgentProvider) PricingFor(model string) AgentPricing {
 	for index := range self.ModelPricing {
 		priced := &self.ModelPricing[index]
 		if matchesAny([]string{priced.Model}, model) {
-			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite}
+			return AgentPricing{Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput}
 		}
 	}
 	return self.Pricing
@@ -327,6 +328,11 @@ type AgentPricing struct {
 	// Left at zero it costs nothing, which is right for a service that
 	// does not charge for it and wrong for one that does.
 	CacheWrite float64 `yaml:"cacheWrite,omitempty"`
+
+	// AudioInput is what a million audio input tokens cost, which a
+	// transcription model bills apart from text input. Left at zero, audio
+	// is priced as text input.
+	AudioInput float64 `yaml:"audioInput,omitempty"`
 }
 
 // AgentModels assigns work to models. Every value is "provider:model".
@@ -1255,17 +1261,22 @@ func (self *Agent) CurrencyOf() string {
 
 // CostOf is what a call cost, from the prices per million tokens that
 // the model's own entry gives, or its provider's where it has none:
-// input, output, cached input and writing to the cache priced apart,
-// since a service that charges for one rarely charges the same for the
-// others. Zero where neither prices it.
-func (self *Agent) CostOf(model string, promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) float64 {
+// input, audio input, output, cached input and writing to the cache priced
+// apart, since a service that charges for one rarely charges the same for
+// the others. Zero where neither prices it.
+func (self *Agent) CostOf(model string, promptTokens, audioInputTokens, completionTokens, cacheReadTokens, cacheWriteTokens int) float64 {
 	name, rest, _ := strings.Cut(model, ":")
 	provider := self.Provider(name)
 	if provider == nil {
 		return 0
 	}
 	pricing := provider.PricingFor(rest)
+	audioInputPrice := pricing.AudioInput
+	if audioInputPrice == 0 {
+		audioInputPrice = pricing.Input
+	}
 	return (float64(promptTokens)*pricing.Input +
+		float64(audioInputTokens)*audioInputPrice +
 		float64(completionTokens)*pricing.Output +
 		float64(cacheReadTokens)*pricing.CacheRead +
 		float64(cacheWriteTokens)*pricing.CacheWrite) / 1e6

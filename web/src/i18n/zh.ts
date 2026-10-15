@@ -1599,6 +1599,8 @@ export const zh: Catalog = {
   'agentSettings.pricingCached': '缓存',
   'agentSettings.pricingCaching': '写缓存',
   'agentSettings.pricingCacheWrite': '……写入缓存',
+  'agentSettings.pricingAudioInput': '……音频输入',
+  'agentSettings.pricingAudio': '音频',
   'agentSettings.addModelPricing': '添加模型价格',
   'agentSettings.secretKept': '（已设置；留空则保留）',
   'agentSettings.test': '测试',

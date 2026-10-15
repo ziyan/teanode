@@ -74,7 +74,7 @@ func TestTranscriptionUsesRegistryAndPreservesAudioSegmentsAndUsage(test *testin
 	if len(answer.Segments) != 1 || answer.Segments[0].SpeakerID != "confirmed-speaker" || answer.Segments[0].StartMS != 125 || answer.Segments[0].EndMS != 2750 {
 		test.Fatalf("segments: %+v", answer.Segments)
 	}
-	if answer.TranscriptionUsage.Usage.PromptTokens != 14 || answer.TranscriptionUsage.InputAudioTokens != 12 || answer.TranscriptionUsage.InputTextTokens != 2 || !answer.TranscriptionUsage.HasProviderUsage {
+	if answer.TranscriptionUsage.Usage.PromptTokens != 2 || answer.TranscriptionUsage.Usage.AudioInputTokens != 12 || answer.TranscriptionUsage.InputAudioTokens != 12 || answer.TranscriptionUsage.InputTextTokens != 2 || !answer.TranscriptionUsage.HasProviderUsage {
 		test.Fatal("reported usage was lost")
 	}
 	if !strings.Contains(string(answer.ProviderResponseJSON), "provider-segment") || answer.MediaDurationMS == nil || *answer.MediaDurationMS != 5000 {
@@ -117,6 +117,38 @@ func TestTranscriptionNeverDowngradesRequiredCapabilities(test *testing.T) {
 	}
 	if _, err := registry.TranscribingFor("transcripts:gpt-transcribe", false, true); err == nil {
 		test.Fatal("registry silently dropped references")
+	}
+}
+
+// Audio and text input are billed at different prices, so the client
+// keeps them apart: PromptTokens holds only the text.
+func TestTranscriptionSplitsAudioInputFromTextInput(test *testing.T) {
+	request := transcriptionFixture()
+	capabilities := newOpenAI("", "", nil).TranscriptionCapabilities(request.Model)
+	transcript := `{"text":"words","segments":[{"speaker":"A","start":0,"end":1,"text":"words"}],"usage":`
+	answer, err := decodeTranscription(request, []byte(transcript+`{"type":"tokens","input_tokens":903,"output_tokens":922,"input_token_details":{"text_tokens":114,"audio_tokens":789}}}`), capabilities)
+	if err != nil {
+		test.Fatal(err)
+	}
+	usage := answer.TranscriptionUsage
+	if usage.Usage.PromptTokens != 114 || usage.Usage.AudioInputTokens != 789 || usage.Usage.CompletionTokens != 922 || usage.InputAudioTokens != 789 || usage.InputTextTokens != 114 {
+		test.Fatalf("audio and text input were not split: %+v", usage)
+	}
+	// No breakdown: all of the input is text, as before.
+	answer, err = decodeTranscription(request, []byte(transcript+`{"type":"tokens","input_tokens":50,"output_tokens":7}}`), capabilities)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if usage := answer.TranscriptionUsage.Usage; usage.PromptTokens != 50 || usage.AudioInputTokens != 0 {
+		test.Fatalf("input with no breakdown must stay text: %+v", usage)
+	}
+	// A breakdown larger than the input is capped rather than going negative.
+	answer, err = decodeTranscription(request, []byte(transcript+`{"type":"tokens","input_tokens":10,"output_tokens":1,"input_token_details":{"audio_tokens":30}}}`), capabilities)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if usage := answer.TranscriptionUsage.Usage; usage.PromptTokens != 0 || usage.AudioInputTokens != 10 {
+		test.Fatalf("audio must be capped at the input: %+v", usage)
 	}
 }
 

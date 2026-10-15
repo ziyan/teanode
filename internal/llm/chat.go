@@ -129,12 +129,16 @@ type ChatResponse struct {
 // Usage is what a call cost, in tokens. Cache counts are what the provider
 // reported reading from and writing to its prompt cache, and are already
 // included in or excluded from PromptTokens the way that provider counts
-// them; Total adds them all.
+// them; Total adds them all. AudioInputTokens are input tokens that were
+// audio, counted apart from PromptTokens (which then holds only the text
+// input) because a transcription model bills them at another price.
 type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
 	CacheReadTokens  int
 	CacheWriteTokens int
+
+	AudioInputTokens int
 }
 
 // Add sums two usages.
@@ -144,12 +148,13 @@ func (self Usage) Add(other Usage) Usage {
 		CompletionTokens: self.CompletionTokens + other.CompletionTokens,
 		CacheReadTokens:  self.CacheReadTokens + other.CacheReadTokens,
 		CacheWriteTokens: self.CacheWriteTokens + other.CacheWriteTokens,
+		AudioInputTokens: self.AudioInputTokens + other.AudioInputTokens,
 	}
 }
 
 // Total is every token the call touched.
 func (self Usage) Total() int {
-	return self.PromptTokens + self.CompletionTokens + self.CacheReadTokens + self.CacheWriteTokens
+	return self.PromptTokens + self.CompletionTokens + self.CacheReadTokens + self.CacheWriteTokens + self.AudioInputTokens
 }
 
 // StreamEventKind is what a streamed event carries.

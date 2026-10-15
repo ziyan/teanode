@@ -1190,13 +1190,15 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
         public let output: Double
         public let cacheRead: Double
         public let cacheWrite: Double
+        public let audioInput: Double
 
-        public init(model: String, input: Double, output: Double, cacheRead: Double = 0, cacheWrite: Double = 0) {
+        public init(model: String, input: Double, output: Double, cacheRead: Double = 0, cacheWrite: Double = 0, audioInput: Double = 0) {
             self.model = model
             self.input = input
             self.output = output
             self.cacheRead = cacheRead
             self.cacheWrite = cacheWrite
+            self.audioInput = audioInput
         }
     }
 
@@ -1214,12 +1216,13 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
     public let pricingOutput: Double
     public let pricingCacheRead: Double
     public let pricingCacheWrite: Double
+    public let pricingAudioInput: Double
     public let modelPricing: [ModelPrice]?
     public let planUsage: AgentPlanUsage?
 
     enum CodingKeys: String, CodingKey {
         case name, baseUrl, hasApiKey, hasRefreshToken, account, allow, deny, pricingInput, pricingOutput, pricingCacheRead
-        case pricingCacheWrite, modelPricing, planUsage
+        case pricingCacheWrite, pricingAudioInput, modelPricing, planUsage
         case providerKind = "kind"
         case isEnabled = "enabled"
     }
@@ -1238,6 +1241,7 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
         self.pricingOutput = 0
         self.pricingCacheRead = 0
         self.pricingCacheWrite = 0
+        self.pricingAudioInput = 0
         self.modelPricing = []
         self.planUsage = nil
     }
@@ -1259,6 +1263,7 @@ public struct AgentProviderSettings: Codable, Hashable, Sendable {
             "enabled": .bool(isEnabled), "allow": SettingsList.value(allow), "deny": SettingsList.value(deny),
             "pricingInput": .number(pricingInput), "pricingOutput": .number(pricingOutput),
             "pricingCacheRead": .number(pricingCacheRead), "pricingCacheWrite": .number(pricingCacheWrite),
+            "pricingAudioInput": .number(pricingAudioInput),
             "modelPricing": .array((modelPricing ?? []).map(AgentProviderDraft.priceValue)),
         ]
     }
@@ -1648,6 +1653,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
         public var outputText = ""
         public var cacheReadText = ""
         public var cacheWriteText = ""
+        public var audioInputText = ""
 
         public init() {
             id = UUID()
@@ -1660,6 +1666,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
             outputText = SettingsList.text(price.output)
             cacheReadText = SettingsList.text(price.cacheRead)
             cacheWriteText = SettingsList.text(price.cacheWrite)
+            audioInputText = SettingsList.text(price.audioInput)
         }
     }
 
@@ -1676,6 +1683,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
     public var pricingOutputText = ""
     public var pricingCacheReadText = ""
     public var pricingCacheWriteText = ""
+    public var pricingAudioInputText = ""
     public var modelPrices: [ModelPriceDraft] = []
 
     public init() {}
@@ -1693,6 +1701,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
         pricingOutputText = SettingsList.text(provider.pricingOutput)
         pricingCacheReadText = SettingsList.text(provider.pricingCacheRead)
         pricingCacheWriteText = SettingsList.text(provider.pricingCacheWrite)
+        pricingAudioInputText = SettingsList.text(provider.pricingAudioInput)
         modelPrices = (provider.modelPricing ?? []).map(ModelPriceDraft.init)
     }
 
@@ -1708,6 +1717,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
         .object([
             "model": .string(price.model), "input": .number(price.input), "output": .number(price.output),
             "cacheRead": .number(price.cacheRead), "cacheWrite": .number(price.cacheWrite),
+            "audioInput": .number(price.audioInput),
         ])
     }
 
@@ -1716,7 +1726,7 @@ public struct AgentProviderDraft: Hashable, Sendable {
             AgentProviderSettings.ModelPrice(
                 model: row.model.trimmingCharacters(in: .whitespaces), input: SettingsList.number(row.inputText),
                 output: SettingsList.number(row.outputText), cacheRead: SettingsList.number(row.cacheReadText),
-                cacheWrite: SettingsList.number(row.cacheWriteText))
+                cacheWrite: SettingsList.number(row.cacheWriteText), audioInput: SettingsList.number(row.audioInputText))
         }
         return [
             "name": .string(name.trimmingCharacters(in: .whitespaces)), "kind": .string(providerKind),
@@ -1725,7 +1735,9 @@ public struct AgentProviderDraft: Hashable, Sendable {
             "pricingInput": .number(SettingsList.number(pricingInputText)),
             "pricingOutput": .number(SettingsList.number(pricingOutputText)),
             "pricingCacheRead": .number(SettingsList.number(pricingCacheReadText)),
-            "pricingCacheWrite": .number(SettingsList.number(pricingCacheWriteText)), "modelPricing": .array(prices.map(Self.priceValue)),
+            "pricingCacheWrite": .number(SettingsList.number(pricingCacheWriteText)),
+            "pricingAudioInput": .number(SettingsList.number(pricingAudioInputText)),
+            "modelPricing": .array(prices.map(Self.priceValue)),
         ]
     }
 
@@ -2155,23 +2167,25 @@ public struct AgentUsageTotals: Codable, Hashable, Sendable {
     public let completionTokens: Int
     public let cacheReadTokens: Int
     public let cacheWriteTokens: Int
+    public let audioInputTokens: Int
     public let callCount: Int
 
     enum CodingKeys: String, CodingKey {
-        case promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens
+        case promptTokens, completionTokens, cacheReadTokens, cacheWriteTokens, audioInputTokens
         case callCount = "calls"
     }
 
-    public init(promptTokens: Int, completionTokens: Int, cacheReadTokens: Int = 0, cacheWriteTokens: Int = 0, callCount: Int = 0) {
+    public init(promptTokens: Int, completionTokens: Int, cacheReadTokens: Int = 0, cacheWriteTokens: Int = 0, audioInputTokens: Int = 0, callCount: Int = 0) {
         self.promptTokens = promptTokens
         self.completionTokens = completionTokens
         self.cacheReadTokens = cacheReadTokens
         self.cacheWriteTokens = cacheWriteTokens
+        self.audioInputTokens = audioInputTokens
         self.callCount = callCount
     }
 
-    /// Every token, read, written and cached.
-    public var totalTokenCount: Int { promptTokens + completionTokens + cacheReadTokens + cacheWriteTokens }
+    /// Every token, read, written, cached and audio.
+    public var totalTokenCount: Int { promptTokens + completionTokens + cacheReadTokens + cacheWriteTokens + audioInputTokens }
 }
 
 /// AgentUsageRow is one row of the server's usage: a day, a kind of run, a
@@ -2563,7 +2577,7 @@ extension Documents {
     static let manageAgentSettingsFields = """
         agent {
           enabled instructions allowPrivateAddresses skipCertificateCheck
-          providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite modelPricing { model input output cacheRead cacheWrite } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
+          providers { name kind baseUrl hasApiKey hasRefreshToken account enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } planUsage { planName observedAt windows { usedPercent windowMinutes resetsAt } } }
           models { default fast quick embedding triage research summarize reply ask schedule compact scan synthesize decide categorize transcription embeddingDimensions choices }
           features { triage summaries draftReplies search research autoReply ask schedules browser connectedServers computer chatApps skills subagents remember knowledge dreaming }
           limits { maxBodyCharacters dailyTokensPerAgent monthlyTokensPerServer dailyCostPerAgent monthlyCostPerServer maxRoundsPerAsk maxRoundsPerResearch maxRoundsPerReply maxRoundsPerDream maxToolCallsPerRun requestTimeout concurrency scanConcurrency rewriteConcurrency dreamShare ingestChunksPerRun embeddingTokensPerDay maxRoundsPerSubagent goalTurnsPerDay goalTurnsAlone goalsInProgress backgroundWakesAlone maxRecordingMediaBytes maxRecordingAccountBytes }
@@ -2585,7 +2599,7 @@ extension Documents {
         agentId userId username name enabled operatorDisabledAt dailyTokens dailyCost dead queued lastRunAt
         sources { mailboxId name policy { granted } }
         today { used limit resetsAt cost costLimit currency }
-        totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls }
+        totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls }
         """
     /// What every read of an installed skill answers with.
     static let manageSkillFields = """
@@ -2720,7 +2734,7 @@ extension Documents {
     public static let manageAgentAdmin = """
         query ($by: String, $since: DateTime, $until: DateTime) {
           ListAgents { \(manageAgentSummaryFields) }
-          AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+          AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
           ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
         }
         """

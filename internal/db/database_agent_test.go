@@ -128,6 +128,35 @@ func TestAgentQueueAndUsage(t *testing.T) {
 		if _, err := tx.QueryAgentUsage("", now, time.Time{}, "planet"); err == nil {
 			t.Fatal("an unknown grouping must be refused")
 		}
+		if totals.AudioInputTokens != 0 {
+			t.Fatalf("rows written with five values have no audio input: %+v", totals)
+		}
+	})
+
+	// Audio input is the sixth value. A row written before it existed has
+	// five, and adding a row with six to it must keep the audio and leave
+	// the five untouched, in either order.
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		now := time.Now()
+		for _, values := range [][]uint64{{10, 0, 0, 0, 1}, {5, 2, 0, 0, 1, 25}, {0, 0, 0, 0, 1, 15}, {1, 0, 0, 0, 1}} {
+			if err := tx.PutAgentUsage(&db.AgentUsage{AgentID: agent.ID, Model: "p:audio", Kind: "voice", At: now, Values: values}); err != nil {
+				t.Fatalf("PutAgentUsage: %s", err)
+			}
+		}
+		byModel, err := tx.QueryAgentUsageByModel(agent.ID, now.Add(-24*time.Hour), time.Time{}, "kind")
+		if err != nil {
+			t.Fatalf("QueryAgentUsageByModel: %s", err)
+		}
+		for _, row := range byModel {
+			if row.Key != "voice" {
+				continue
+			}
+			if row.Totals.PromptTokens != 16 || row.Totals.CompletionTokens != 2 || row.Totals.AudioInputTokens != 40 || row.Totals.Calls != 4 || row.Totals.Total() != 58 {
+				t.Fatalf("audio input must sum with old rows: %+v", row.Totals)
+			}
+			return
+		}
+		t.Fatalf("no voice row: %+v", byModel)
 	})
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {

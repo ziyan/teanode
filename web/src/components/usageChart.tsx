@@ -37,6 +37,7 @@ export type UsageChartRow = {
     completionTokens: number
     cacheReadTokens: number
     cacheWriteTokens: number
+    audioInputTokens: number
     calls: number
   }
 }
@@ -55,7 +56,7 @@ const RANKED = 8
 function partsOf(row: UsageChartRow | undefined): Record<Part, number> {
   if (!row) return { input: 0, cached: 0, output: 0 }
   return {
-    input: row.totals.promptTokens,
+    input: row.totals.promptTokens + row.totals.audioInputTokens,
     cached: row.totals.cacheReadTokens + row.totals.cacheWriteTokens,
     output: row.totals.completionTokens,
   }

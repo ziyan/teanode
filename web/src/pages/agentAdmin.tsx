@@ -42,6 +42,7 @@ type Summary = {
     completionTokens: number
     cacheReadTokens: number
     cacheWriteTokens: number
+    audioInputTokens: number
     calls: number
   }
 }
@@ -54,6 +55,7 @@ type UsageRow = {
     completionTokens: number
     cacheReadTokens: number
     cacheWriteTokens: number
+    audioInputTokens: number
     calls: number
   }
 }
@@ -70,10 +72,10 @@ type Job = {
 
 const SUMMARY = `{ agentId userId username name enabled operatorDisabledAt dailyTokens dailyCost dead queued lastRunAt
   sources { mailboxId name policy { granted } } today { used limit resetsAt cost costLimit currency }
-  totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }`
+  totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }`
 const ADMIN = `query ($by: String, $since: DateTime, $until: DateTime) {
   ListAgents ${SUMMARY}
-  AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+  AgentServerUsage(by: $by, since: $since, until: $until) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
   ListAgentDeadLetters { id agentId mailboxId kind subjectId attempts error finishedAt }
 }`
 const SET_LIMIT = `mutation ($agentId: String!, $dailyTokens: Int64, $dailyCost: Float) { SetAgentLimit(agentId: $agentId, dailyTokens: $dailyTokens, dailyCost: $dailyCost) ${SUMMARY} }`
@@ -87,7 +89,7 @@ function dayOf(date: Date): string {
 }
 
 function total(totals: UsageRow['totals']): number {
-  return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens
+  return totals.promptTokens + totals.completionTokens + totals.cacheReadTokens + totals.cacheWriteTokens + totals.audioInputTokens
 }
 
 // The tabs of /manage/agent. Everyone's agents and their limits, what they cost,

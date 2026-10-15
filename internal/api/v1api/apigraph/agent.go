@@ -454,8 +454,9 @@ func (self *graph) pricedUsage(tx db.Transaction, agentId string, arguments Agen
 		into.Totals.CompletionTokens += row.Totals.CompletionTokens
 		into.Totals.CacheReadTokens += row.Totals.CacheReadTokens
 		into.Totals.CacheWriteTokens += row.Totals.CacheWriteTokens
+		into.Totals.AudioInputTokens += row.Totals.AudioInputTokens
 		into.Totals.Calls += row.Totals.Calls
-		into.Cost += configuration.Agent.CostOf(row.Model, int(row.Totals.PromptTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
+		into.Cost += configuration.Agent.CostOf(row.Model, int(row.Totals.PromptTokens), int(row.Totals.AudioInputTokens), int(row.Totals.CompletionTokens), int(row.Totals.CacheReadTokens), int(row.Totals.CacheWriteTokens))
 	}
 	result := make([]models.AgentUsageRow, 0, len(order))
 	for _, key := range order {

@@ -65,6 +65,7 @@ type AgentUsageRow struct {
 		CompletionTokens int64 `json:"completionTokens"`
 		CacheReadTokens  int64 `json:"cacheReadTokens"`
 		CacheWriteTokens int64 `json:"cacheWriteTokens"`
+		AudioInputTokens int64 `json:"audioInputTokens"`
 		Calls            int64 `json:"calls"`
 	} `json:"totals"`
 }
@@ -161,13 +162,13 @@ const (
 	DocumentRunAgentBriefNow = `mutation { RunAgentBriefNow ` + scheduleFields + ` }`
 
 	DocumentAgentUsage = `query ($since: DateTime, $by: String) {
-		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+		AgentUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
 	}`
 
 	DocumentListAgents = `query { ListAgents ` + agentSummarySelection + ` }`
 
 	DocumentAgentServerUsage = `query ($since: DateTime, $by: String) {
-		AgentServerUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens calls } }
+		AgentServerUsage(since: $since, by: $by) { key cost currency totals { promptTokens completionTokens cacheReadTokens cacheWriteTokens audioInputTokens calls } }
 	}`
 
 	DocumentListAgentDeadLetters = `query { ListAgentDeadLetters ` + agentJobSelection + ` }`

@@ -115,3 +115,48 @@ func TestBudgetInMoney(t *testing.T) {
 		}
 	})
 }
+
+// Audio input is priced at its own price in the day's cost, and a row
+// written before audio was counted, with five values, still reads as no
+// audio at all.
+func TestBudgetPricesAudioInputApart(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	configuration := config.Default()
+	configuration.Agent.Enabled = true
+	configuration.Agent.Providers = []config.AgentProvider{
+		{Name: "one", Kind: "openai", BaseURL: "http://x.example", APIKey: "k", Pricing: config.AgentPricing{Input: 2.5, Output: 10, AudioInput: 6}},
+	}
+	configuration.Agent.Limits.DailyTokensPerAgent = 0
+	configuration.Agent.Limits.DailyCostPerAgent = 100
+
+	var owner *models.User
+	var found *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if owner, err = tx.CreateUser(&models.User{Username: "alice", Name: "Alice Example"}); err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if found, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		// A million text input tokens in an old five-value row, and a
+		// million audio input tokens in a new one: 2.5 + 6.
+		for _, values := range [][]uint64{{1_000_000, 0, 0, 0, 1}, {0, 0, 0, 0, 1, 1_000_000}} {
+			if err := tx.PutAgentUsage(&db.AgentUsage{AgentID: found.ID, Model: "one:transcriber", Kind: "recording", At: time.Now(), Values: values}); err != nil {
+				t.Fatalf("PutAgentUsage: %s", err)
+			}
+		}
+		budget, err := agent.CheckBudget(tx, configuration, found, owner, time.Now())
+		if err != nil {
+			t.Fatalf("CheckBudget: %s", err)
+		}
+		if budget.Cost < 8.49 || budget.Cost > 8.51 {
+			t.Fatalf("text and audio input priced apart: %v", budget.Cost)
+		}
+	})
+}

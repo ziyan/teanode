@@ -941,6 +941,8 @@ func totalsFromOrdinals(rows []struct {
 			total.CacheReadTokens += row.Value
 		case models.AgentUsageCacheWriteTokens:
 			total.CacheWriteTokens += row.Value
+		case models.AgentUsageAudioInputTokens:
+			total.AudioInputTokens += row.Value
 		case models.AgentUsageCalls:
 			total.Calls += row.Value
 		}
@@ -960,6 +962,7 @@ func (self *transaction) SumAgentUsage(agentId string, since time.Time) (models.
 		totals.CompletionTokens += row.Totals.CompletionTokens
 		totals.CacheReadTokens += row.Totals.CacheReadTokens
 		totals.CacheWriteTokens += row.Totals.CacheWriteTokens
+		totals.AudioInputTokens += row.Totals.AudioInputTokens
 		totals.Calls += row.Totals.Calls
 	}
 	return totals, nil
@@ -1067,6 +1070,8 @@ func (self *transaction) QueryAgentUsageByModel(agentId string, since, until tim
 			total.CacheReadTokens += row.Value
 		case models.AgentUsageCacheWriteTokens:
 			total.CacheWriteTokens += row.Value
+		case models.AgentUsageAudioInputTokens:
+			total.AudioInputTokens += row.Value
 		case models.AgentUsageCalls:
 			total.Calls += row.Value
 		}

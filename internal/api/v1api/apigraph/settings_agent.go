@@ -108,6 +108,7 @@ type AgentProviderSettings struct {
 	PricingOutput     float64  `json:"pricingOutput"`
 	PricingCacheRead  float64  `json:"pricingCacheRead"`
 	PricingCacheWrite float64  `json:"pricingCacheWrite"`
+	PricingAudioInput float64  `json:"pricingAudioInput"`
 
 	// PlanUsage is what a provider paid for by subscription last said of
 	// its allowance; absent for one paid by the token, and until the plan
@@ -125,6 +126,7 @@ type AgentModelPricingSettings struct {
 	Output     float64 `json:"output"`
 	CacheRead  float64 `json:"cacheRead"`
 	CacheWrite float64 `json:"cacheWrite"`
+	AudioInput float64 `json:"audioInput"`
 }
 
 // modelPricingSettings is a provider's per-model prices as they are read
@@ -132,7 +134,7 @@ type AgentModelPricingSettings struct {
 func modelPricingSettings(priced []config.AgentModelPricing) []*AgentModelPricingSettings {
 	settings := []*AgentModelPricingSettings{}
 	for _, entry := range priced {
-		settings = append(settings, &AgentModelPricingSettings{Model: entry.Model, Input: entry.Input, Output: entry.Output, CacheRead: entry.CacheRead, CacheWrite: entry.CacheWrite})
+		settings = append(settings, &AgentModelPricingSettings{Model: entry.Model, Input: entry.Input, Output: entry.Output, CacheRead: entry.CacheRead, CacheWrite: entry.CacheWrite, AudioInput: entry.AudioInput})
 	}
 	return settings
 }
@@ -507,6 +509,7 @@ func describeAgentSettings(configuration *config.Configuration) *AgentSettings {
 			PricingOutput:     provider.Pricing.Output,
 			PricingCacheRead:  provider.Pricing.CacheRead,
 			PricingCacheWrite: provider.Pricing.CacheWrite,
+			PricingAudioInput: provider.Pricing.AudioInput,
 			ModelPricing:      modelPricingSettings(provider.ModelPricing),
 		})
 	}
@@ -608,6 +611,7 @@ type AgentProviderParameters struct {
 	PricingOutput     float64                      `json:"pricingOutput" graphapi:"nullable"`
 	PricingCacheRead  float64                      `json:"pricingCacheRead" graphapi:"nullable"`
 	PricingCacheWrite float64                      `json:"pricingCacheWrite" graphapi:"nullable"`
+	PricingAudioInput float64                      `json:"pricingAudioInput" graphapi:"nullable"`
 	ModelPricing      []*AgentModelPricingSettings `json:"modelPricing" graphapi:"nullable"`
 }
 
@@ -853,14 +857,14 @@ func applyAgentSettings(configuration *config.Configuration, parameters *AgentPa
 				Account:      kept.Account,
 				Enabled:      &enabled,
 				Models:       config.AgentProviderModels{Allow: trimmed(given.Allow), Deny: trimmed(given.Deny)},
-				Pricing:      config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite},
+				Pricing:      config.AgentPricing{Input: given.PricingInput, Output: given.PricingOutput, CacheRead: given.PricingCacheRead, CacheWrite: given.PricingCacheWrite, AudioInput: given.PricingAudioInput},
 			}
 			for _, priced := range given.ModelPricing {
 				if priced == nil || strings.TrimSpace(priced.Model) == "" {
 					continue
 				}
 				provider.ModelPricing = append(provider.ModelPricing, config.AgentModelPricing{
-					Model: strings.TrimSpace(priced.Model), Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite,
+					Model: strings.TrimSpace(priced.Model), Input: priced.Input, Output: priced.Output, CacheRead: priced.CacheRead, CacheWrite: priced.CacheWrite, AudioInput: priced.AudioInput,
 				})
 			}
 			if key := strings.TrimSpace(given.APIKey); key != "" && key != config.Redacted {
