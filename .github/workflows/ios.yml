@@ -113,6 +113,7 @@ jobs:
           swiftc scripts/assert-recording-screenshot.swift -o build/assert-recording-screenshot
           swiftc scripts/assert-device-setup-screenshot.swift -o build/assert-device-setup-screenshot
           swiftc scripts/assert-knowledge-screenshot.swift -o build/assert-knowledge-screenshot
+          swiftc scripts/assert-conversation-screenshot.swift -o build/assert-conversation-screenshot
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
@@ -123,12 +124,13 @@ jobs:
             sleep 8
             xcrun simctl io "$device" screenshot "screenshots/$name.png"
             case "$name" in
-              recordings-*|recording-*|device-setup-*|knowledge-records-*)
+              recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*)
                 # The screen may still be loading its demo answers: look
                 # again a few times before calling it wrong.
                 case "$name" in
                   device-setup-*) assertion=build/assert-device-setup-screenshot ;;
                   knowledge-records-*) assertion=build/assert-knowledge-screenshot ;;
+                  conversation-long-message-*) assertion=build/assert-conversation-screenshot ;;
                   *) assertion=build/assert-recording-screenshot ;;
                 esac
                 is_setup_ready=false
@@ -162,6 +164,10 @@ jobs:
           fi
           shoot conversation-dark dark large -TeaNodeDemo
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
+          shoot conversation-long-message-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message
+          shoot conversation-long-message-dark dark large -TeaNodeDemo -TeaNodeScreen conversation-long-message
+          shoot conversation-long-message-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen conversation-long-message
+          shoot conversation-long-message-read-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message-read
           shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
           shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
           shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar

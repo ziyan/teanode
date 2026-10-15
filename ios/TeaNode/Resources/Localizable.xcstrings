@@ -35989,6 +35989,22 @@
         }
       }
     },
+    "The whole message": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ全文"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整消息"
+          }
+        }
+      }
+    },
     "This Month": {
       "localizations": {
         "ja": {

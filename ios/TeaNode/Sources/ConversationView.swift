@@ -86,6 +86,9 @@ struct ConversationView: View {
             .sheet(item: Binding(get: { model.selectingText.map(SelectingText.init) }, set: { model.selectingText = $0?.text })) { selecting in
                 SelectTextSheet(text: selecting.text)
             }
+            .sheet(item: Binding(get: { model.readingText.map(SelectingText.init) }, set: { model.readingText = $0?.text })) { reading in
+                SelectTextSheet(text: reading.text, title: "The whole message")
+            }
     }
 
     /// The messages, scrolling, with the jump to the end.
@@ -153,6 +156,19 @@ struct ConversationView: View {
             .onAppear {
                 if model.isLoaded { scrollPosition.scrollTo(edge: .bottom) }
             }
+            #if DEBUG
+                .task(id: model.isLoaded) {
+                    // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts;
+                    // `conversation-long-message-read`: the whole of it open.
+                    guard DemoServer.isRequested, let screen = DemoServer.screen, screen.hasPrefix("conversation-long-message"), model.isLoaded
+                    else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    scrollPosition.scrollTo(edge: .top)
+                    if screen == "conversation-long-message-read" {
+                        model.readingText = model.transcript.lines.first(where: { $0.kind == .person })?.text
+                    }
+                }
+            #endif
         }
     }
 
@@ -569,7 +585,7 @@ struct ConversationItemView: View {
         case .line(let line):
             switch line.kind {
             case .person:
-                PersonBubble(line: line)
+                PersonBubble(line: line) { model.readingText = line.text }
                     .onLongPressGesture(minimumDuration: 0.35) {
                         MessageActionsPresenter.present(line: line, model: model)
                     }
@@ -863,12 +879,13 @@ struct SelectingText: Identifiable {
 /// bubble's long press cannot: it opens the menu.
 struct SelectTextSheet: View {
     let text: String
+    var title: LocalizedStringKey = "Select text"
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             SelectableText(text: text)
-                .navigationTitle("Select text")
+                .navigationTitle(title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -989,6 +1006,19 @@ enum UsageWords {
 /// with what it replies to above it.
 struct PersonBubble: View {
     let line: TranscriptLine
+    /// Opens the whole of a message too long to show in the bubble.
+    var onShowAll: () -> Void = {}
+
+    /// The most of a message the bubble shows. One many screens tall, such
+    /// as the instruction an activity conversation starts with, is not drawn
+    /// whole: a text view that tall leaves the list blank or its first lines
+    /// out of reach, so it opens in a sheet that scrolls any length.
+    private static let shownLineCount = 30
+    private static let shownCharacterCount = 3000
+
+    private var isTooLong: Bool {
+        line.text.count > Self.shownCharacterCount || line.text.split(separator: "\n", omittingEmptySubsequences: false).count > Self.shownLineCount
+    }
 
     var body: some View {
         HStack {
@@ -1014,17 +1044,26 @@ struct PersonBubble: View {
                     AttachmentView(attachment: attachment)
                 }
                 if !line.text.isEmpty {
-                    Text(line.text)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        // The person's side in the accent's tint, the agent's in
-                        // grey, so whose each bubble is shows at a glance.
-                        .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
-                        .overlay(alignment: .bottomLeading) {
-                            ReactionBadges(reactions: line.reactions)
-                                .offset(x: -10, y: 18)
+                    VStack(alignment: .leading, spacing: 8) {
+                        if isTooLong {
+                            Text(String(line.text.prefix(Self.shownCharacterCount)))
+                                .lineLimit(Self.shownLineCount)
+                            Button("Show all", action: onShowAll)
+                                .font(.subheadline.weight(.semibold))
+                        } else {
+                            Text(line.text)
                         }
-                        .padding(.bottom, line.reactions.isEmpty ? 0 : 18)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    // The person's side in the accent's tint, the agent's in
+                    // grey, so whose each bubble is shows at a glance.
+                    .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+                    .overlay(alignment: .bottomLeading) {
+                        ReactionBadges(reactions: line.reactions)
+                            .offset(x: -10, y: 18)
+                    }
+                    .padding(.bottom, line.reactions.isEmpty ? 0 : 18)
                 }
             }
         }
