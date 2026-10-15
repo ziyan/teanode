@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.164.0] - 2026-10-15
+
+### Added
+
+- Send files with a message to a Claude Code or Codex session through herdr: the agent's `herdr` tool, the attach button on the session, and `teanode computer herdr send --attach`. (#509)
+
 ## [0.163.0] - 2026-10-15
 
 ### Added
