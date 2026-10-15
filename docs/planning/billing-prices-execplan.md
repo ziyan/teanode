@@ -14,8 +14,9 @@ model the agent starts using has no price, so it is costed at the
 provider's fallback price; a kind of token the operator never filled in
 (cache writes, audio) costs nothing; a provider that changes its prices is
 not followed. The budgets, the usage page and every cost the agent reports
-are then wrong, sometimes by a factor of ten: on one server a month's bill
-was about $296 while a third of it, cache writes, was costed at zero.
+are then wrong, sometimes by a factor of ten: cache writes, a kind of token
+no price was entered for, can be a third of a month's bill and are costed
+at zero.
 
 After this change an operator can give an OpenAI provider a billing key, an
 OpenAI organization admin key, which can read the organization's cost and
