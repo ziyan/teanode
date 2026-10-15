@@ -11,8 +11,11 @@
         static let providerBillingCheckFixture = Self.providerPricesFixture.replacingOccurrences(
             of: #""hasApiKey":true"#, with: #""hasApiKey":true,"hasBillingApiKey":true"#)
         /// One check of that provider: a cache-write price that was missing and is set from the bill, and an output price that already matched.
-        static let billingCheckFixture =
-            #"{"providerName":"openai","checkedAt":"2030-01-02T03:04:05Z","errorMessage":"","compared":[{"model":"demo-large","tokenKind":"cacheWrite","configuredPerMillion":0,"billedPerMillion":0.25,"dayCount":6,"isPattern":false},{"model":"demo-large","tokenKind":"output","configuredPerMillion":10,"billedPerMillion":10,"dayCount":9,"isPattern":false}],"changed":[{"model":"demo-large","tokenKind":"cacheWrite","beforePerMillion":0,"afterPerMillion":0.25}]}"#
+        /// Checked three hours before the screenshot, so the line reads as a recent check rather than one dated in the demo's year.
+        static var billingCheckFixture: String {
+            let checkedAt = Date.now.addingTimeInterval(-3 * 60 * 60).formatted(.iso8601)
+            return #"{"providerName":"openai","checkedAt":""# + checkedAt + #"","errorMessage":"","compared":[{"model":"demo-large","tokenKind":"cacheWrite","configuredPerMillion":0,"billedPerMillion":0.25,"dayCount":6,"isPattern":false},{"model":"demo-large","tokenKind":"output","configuredPerMillion":10,"billedPerMillion":10,"dayCount":9,"isPattern":false}],"changed":[{"model":"demo-large","tokenKind":"cacheWrite","beforePerMillion":0,"afterPerMillion":0.25}]}"#
+        }
         static let recordingSourceFixture =
             #"{"id":"source-a","kind":"recording","name":"recording:recording-a","enabled":true,"documentCount":5,"chunkCount":7,"more":false,"lastError":"","cron":"17 3 * * *","specification":{"settings":{"recordingId":"recording-a","recordingTitle":"Choosing the second layout"}}}"#
         static let recordingFixture =

@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ (bill: %@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@(請求額: %2$@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（账单：%2$@）"
+          }
+        }
+      }
+    },
     "\"Confirm appointments and answer simple questions about opening hours; anything about money, wait for me.\"": {
       "localizations": {
         "ja": {
@@ -27013,18 +27029,18 @@
         }
       }
     },
-    "Per million tokens: the price in the settings, then the price the bill implies. A price from a pattern is shown and never changed.": {
+    "Per million tokens. An arrow is a price set from the bill; a price within five percent of the bill's is left as it is. A price from a pattern is shown and never changed.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "100 万トークンあたり:設定の価格、続いて請求額から求めた価格です。パターンの価格は表示するだけで、変更しません。"
+            "value": "100 万トークンあたり。矢印は請求額から設定した価格です。請求額との差が 5% 以内の価格はそのままにします。パターンの価格は表示するだけで、変更しません。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "每百万 token：先是设置中的价格，再是由账单得出的价格。来自模式条目的价格只显示，不会更改。"
+            "value": "每百万 token。箭头表示按账单设置的价格；与账单相差不超过 5% 的价格保持不变。来自模式条目的价格只显示，不会更改。"
           }
         }
       }

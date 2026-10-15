@@ -251,6 +251,8 @@ jobs:
           shoot agent-usage-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
           shoot agent-usage-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
           shoot agent-usage-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage
+          shoot agent-usage-cost-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
+          shoot agent-usage-cost-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen agent-usage-cost
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules

@@ -2348,6 +2348,9 @@ private struct AgentLimitForm: View {
 /// table stays a table on a phone, scrolling sideways.
 struct AgentUsageView: View {
     let connection: Connection
+    /// The table opens at its last columns, where the cost is, for a
+    /// screenshot of them; a person opens it at the first.
+    var isTableAtCost = false
     @State private var grouping = AgentUsageGrouping.day
     @State private var range = AgentUsageRange.lastThirtyDays()
     @State private var overview: AgentAdminOverview?
@@ -2400,6 +2403,14 @@ struct AgentUsageView: View {
     private func keyLabel(_ usageKey: String, in overview: AgentAdminOverview) -> String {
         if usageKey.isEmpty { return String(localized: "Total") }
         if grouping == .agent { return overview.username(agentId: usageKey) }
+        // A day reads as "Oct 9": the whole "2026-10-09" is cut short under a
+        // narrow column of the chart.
+        if grouping == .day {
+            let parts = usageKey.split(separator: "-").compactMap { Int($0) }
+            if parts.count == 3, let day = Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)) {
+                return day.formatted(.dateTime.month(.abbreviated).day())
+            }
+        }
         return usageKey
     }
 
@@ -2503,6 +2514,7 @@ struct AgentUsageView: View {
             }
             .padding(.vertical, 4)
         }
+        .defaultScrollAnchor(isTableAtCost ? .trailing : .leading)
     }
 
     private func load() async {
@@ -3132,7 +3144,7 @@ struct AgentProviderForm: View {
                     }
                     ForEach(billingCheck.compared) { price in
                         LabeledContent {
-                            Text(verbatim: "\(Self.priceText(price.configuredPerMillion)) → \(Self.priceText(price.billedPerMillion))")
+                            Text(verbatim: Self.comparedText(price, check: billingCheck))
                                 .monospacedDigit()
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
@@ -3152,7 +3164,7 @@ struct AgentProviderForm: View {
             } header: {
                 Text("Prices from the bill")
             } footer: {
-                Text("Per million tokens: the price in the settings, then the price the bill implies. A price from a pattern is shown and never changed.")
+                Text("Per million tokens. An arrow is a price set from the bill; a price within five percent of the bill's is left as it is. A price from a pattern is shown and never changed.")
             }
         }
     }
@@ -3178,6 +3190,20 @@ struct AgentProviderForm: View {
 
     private static func priceText(_ price: Double) -> String {
         price == 0 ? String(localized: "not set") : price.formatted()
+    }
+
+    /// A price the check set reads as the change; one that matches the bill
+    /// reads once, since an arrow between two equal figures looks like a
+    /// change; one left as it is (close enough, or a pattern) shows the
+    /// bill's figure beside it.
+    private static func comparedText(_ price: AgentBilledPrice, check: AgentBillingCheck) -> String {
+        if let change = check.changed.first(where: { $0.model == price.model && $0.tokenKind == price.tokenKind }) {
+            return "\(priceText(change.beforePerMillion)) → \(priceText(change.afterPerMillion))"
+        }
+        if price.configuredPerMillion == price.billedPerMillion {
+            return priceText(price.configuredPerMillion)
+        }
+        return String(localized: "\(priceText(price.configuredPerMillion)) (bill: \(priceText(price.billedPerMillion)))")
     }
 
     private static func kindText(_ tokenKind: String) -> String {

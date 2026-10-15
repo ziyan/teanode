@@ -522,6 +522,7 @@ struct SettingsForm: View {
                 case "activity-run": AgentActivityView(connection: connection)
                 case "schedules": SchedulesView(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
+                case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 default: EmptyView()
                 }
             }
