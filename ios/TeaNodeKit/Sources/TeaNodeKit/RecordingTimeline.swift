@@ -17,6 +17,8 @@ public struct RecordingTranscriptTimeline: Codable, Hashable, Sendable {
 public struct RecordingTemporarySpeaker: Codable, Hashable, Sendable {
     public let speakerLabel: String
     public let speakerIdentityId: String?
+    // The label this one was merged into, when the server found it was the same voice.
+    public var mergedIntoSpeakerLabel: String? = nil
 }
 
 extension Documents {
@@ -27,7 +29,7 @@ extension Documents {
         recordingTranscriptionAttemptId localSpeakerId segmentStartMS segmentEndMS transcriptText effectiveTranscriptText
         appliedTextCorrectionId hasUnalignedTextCorrection effectiveSpeakerIdentityId effectiveSpeakerName hasUserConfirmedSpeaker isRecognizedSpeaker
         isAccountOwner hasUnalignedSpeakerCorrection appliedSpeakerCorrectionId temporarySpeakerLabel mergedTemporarySpeakerLabel isFiller } transcriptRuns { id recordingId recordingMediaId versionNumber
-        recordingProcessingState providerModelName processingErrorMessage createdAt } temporarySpeakers { speakerLabel speakerIdentityId } segmentCount
+        recordingProcessingState providerModelName processingErrorMessage createdAt } temporarySpeakers { speakerLabel speakerIdentityId mergedIntoSpeakerLabel } segmentCount
         hasMoreSegments liveUtterances { utteranceId utteranceStartMS utteranceEndMS transcriptText } } }
         """
 }
