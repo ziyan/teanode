@@ -199,6 +199,9 @@ struct MonthStepper: View {
             .accessibilityLabel("Later")
             .disabled(dates.isDate(month, equalTo: Date(), toGranularity: .month))
         }
+        // In a list row every button fires on any tap in the row unless
+        // the buttons are borderless.
+        .buttonStyle(.borderless)
     }
 }
 
