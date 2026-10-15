@@ -234,6 +234,9 @@ struct YearStepper: View {
             .accessibilityLabel("Later")
             .disabled(year >= currentYear)
         }
+        // In a list row every button fires on any tap in the row unless
+        // the buttons are borderless.
+        .buttonStyle(.borderless)
     }
 }
 
