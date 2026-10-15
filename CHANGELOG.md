@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.161.1] - 2026-10-15
+
+### Changed
+
+- Chat hides tool calls until you turn them on, on the dashboard and the iPhone; usage and working notes stay hidden by default too. (#497)
+
+### Fixed
+
+- Knowledge: a page lists each recording once, with how many passages link to it, instead of once per passage. (#498)
+- iPhone: a failed refresh no longer draws an error over the Knowledge list and the conversations list. (#498)
+
 ## [0.161.0] - 2026-10-15
 
 ### Added
