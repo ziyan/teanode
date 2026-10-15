@@ -76,7 +76,7 @@ export interface TranscriptTimeline {
   sourceGeneration: number
   segments: TranscriptSegment[]
   transcriptRuns: TranscriptRun[]
-  temporarySpeakers?: { speakerLabel: string; speakerIdentityId: string }[]
+  temporarySpeakers?: { speakerLabel: string; speakerIdentityId: string; mergedIntoSpeakerLabel?: string }[]
   segmentCount: number
   hasMoreSegments: boolean
 }

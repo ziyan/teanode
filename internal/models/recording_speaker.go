@@ -64,6 +64,9 @@ type RecordingTemporarySpeaker struct {
 	// MergedIntoTemporarySpeakerID is the speaker this label was found to be
 	// the voice of, when the provider said so; empty for a label that stands on its own.
 	MergedIntoTemporarySpeakerID string `json:"-"`
+	// MergedIntoSpeakerLabel is the label of that speaker, filled when listed
+	// for the timeline, so a reader finds every merge on its first page.
+	MergedIntoSpeakerLabel string `json:"mergedIntoSpeakerLabel" gorm:"-"`
 	// MergeCheckedAt is when the provider was asked whether this label is an
 	// earlier one, set whether or not it said so, so each label is asked once.
 	MergeCheckedAt *time.Time `json:"-"`

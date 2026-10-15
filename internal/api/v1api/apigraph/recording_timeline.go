@@ -76,6 +76,7 @@ func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, argument
 	if err != nil {
 		return nil, translateError(err)
 	}
+	labelMergedTemporarySpeakers(temporarySpeakers)
 	liveUtterances := []*models.RecordingLiveUtterance{}
 	if arguments.SegmentOffset == 0 && !isUnnamedOnly {
 		if liveUtterances, err = transaction.ListRecordingLiveUtterances(owner.ID, source.ID); err != nil {
@@ -83,4 +84,17 @@ func (self *graph) ReadRecordingTranscriptTimeline(ctx context.Context, argument
 		}
 	}
 	return &RecordingTranscriptTimelineView{SourceGeneration: source.SourceGeneration, Segments: segments, TranscriptRuns: transcriptRuns, TemporarySpeakers: temporarySpeakers, SegmentCount: segmentCount, HasMoreSegments: int64(arguments.SegmentOffset)+int64(len(segments)) < segmentCount, LiveUtterances: liveUtterances}, nil
+}
+
+// labelMergedTemporarySpeakers says, on each label that was merged, which label
+// it was merged into: the list is on every page, and a long recording's merges
+// would otherwise be found only by reading every passage for one.
+func labelMergedTemporarySpeakers(temporarySpeakers []*models.RecordingTemporarySpeaker) {
+	labelsByID := map[string]string{}
+	for _, temporarySpeaker := range temporarySpeakers {
+		labelsByID[temporarySpeaker.ID] = temporarySpeaker.SpeakerLabel
+	}
+	for _, temporarySpeaker := range temporarySpeakers {
+		temporarySpeaker.MergedIntoSpeakerLabel = labelsByID[temporarySpeaker.MergedIntoTemporarySpeakerID]
+	}
 }
