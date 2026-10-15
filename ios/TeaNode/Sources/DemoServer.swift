@@ -37,7 +37,7 @@
             } else if query.contains("GetServiceCapabilities") {
                 answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
-                answer = Self.conversation
+                answer = Self.screen == "conversation-long-message" ? Self.longMessageConversation : Self.conversation
             } else if query.contains("ListAgentConversations") {
                 answer = Self.conversations
             } else if query.contains("ListMailboxes") {
@@ -403,6 +403,28 @@
               {"id":"taxes","kind":"named","title":"Receipts for the year","summary":null,"lastAt":"2026-10-02T12:00:00Z"}
             ]}}
             """#
+
+        /// `-TeaNodeScreen conversation-long-message`: a message many screens
+        /// tall, opened at its first line, so a screenshot shows the top of it
+        /// can be reached.
+        static var longMessageConversation: String {
+            let sentences = (1...400).map { "Sentence \($0) of the long message runs on to fill the screen." }
+            let content = (["The first line of a long message."] + sentences).joined(separator: "\\n")
+            return #"""
+                {"data":{
+                  "ReadAgentConversation":{
+                    "conversation":{"id":"main","kind":"main","title":null,"summary":null,"lastAt":"2026-10-10T09:05:00Z"},
+                    "todos":[],
+                    "messages":[
+                      {"id":"1","createdAt":"2026-10-10T09:00:00Z","role":"user","content":"\#(content)"},
+                      {"id":"2","createdAt":"2026-10-10T09:00:05Z","role":"assistant","content":"Read all of it."}
+                    ],
+                    "total":2
+                  },
+                  "ListAgentInteractions":[]
+                }}
+                """#
+        }
 
         static let conversation = #"""
             {"data":{

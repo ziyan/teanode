@@ -153,6 +153,14 @@ struct ConversationView: View {
             .onAppear {
                 if model.isLoaded { scrollPosition.scrollTo(edge: .bottom) }
             }
+            #if DEBUG
+                .task(id: model.isLoaded) {
+                    // `-TeaNodeScreen conversation-long-message`: scrolled back to the top, where the long message starts.
+                    guard DemoServer.isRequested, DemoServer.screen == "conversation-long-message", model.isLoaded else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    scrollPosition.scrollTo(edge: .top)
+                }
+            #endif
         }
     }
 
