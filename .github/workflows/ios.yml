@@ -235,6 +235,8 @@ jobs:
           shoot rules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen rules
           shoot dreams-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dreams
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
+          shoot activity-run-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
+          shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
 
           # The App Store's set: the largest iPhone, which its listing needs,
           # with the status bar Apple's own screenshots show.
