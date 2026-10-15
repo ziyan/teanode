@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.162.0] - 2026-10-15
+
+### Added
+
+- Recordings: a passage whose speaker was merged automatically can be separated from its menu, on the dashboard and the iPhone. (#496)
+
 ## [0.161.1] - 2026-10-15
 
 ### Changed
