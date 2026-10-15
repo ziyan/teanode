@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.161.0] - 2026-10-15
+
+### Added
+
+- Model prices can set an audio input price, so transcription is costed at what the provider bills for audio. (#494)
+
 ## [0.160.0] - 2026-10-14
 
 ### Added
