@@ -37,7 +37,7 @@
             } else if query.contains("GetServiceCapabilities") {
                 answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
-                answer = Self.screen == "conversation-long-message" ? Self.longMessageConversation : Self.conversation
+                answer = Self.screen?.hasPrefix("conversation-long-message") == true ? Self.longMessageConversation : Self.conversation
             } else if query.contains("ListAgentConversations") {
                 answer = Self.conversations
             } else if query.contains("ListMailboxes") {

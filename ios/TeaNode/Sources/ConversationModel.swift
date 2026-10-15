@@ -47,6 +47,8 @@ final class ConversationModel {
     var references: [AgentReference] = []
     /// A message opened to select part of its words, from its menu.
     var selectingText: String?
+    /// The whole of a message too long for its bubble, open to read.
+    var readingText: String?
 
     /// The message replied to, of the references: one at most.
     var replyingTo: AgentReference? {

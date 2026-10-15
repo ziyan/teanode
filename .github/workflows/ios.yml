@@ -166,6 +166,8 @@ jobs:
           shoot conversation-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo
           shoot conversation-long-message-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message
           shoot conversation-long-message-dark dark large -TeaNodeDemo -TeaNodeScreen conversation-long-message
+          shoot conversation-long-message-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen conversation-long-message
+          shoot conversation-long-message-read-light light large -TeaNodeDemo -TeaNodeScreen conversation-long-message-read
           shoot mail-light light large -TeaNodeDemo -TeaNodeTab mail
           shoot mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
           shoot calendar-light light large -TeaNodeDemo -TeaNodeTab calendar
