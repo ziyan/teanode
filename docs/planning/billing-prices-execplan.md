@@ -55,8 +55,12 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
 - [x] (2026-10-15) Milestone 4: what was billed, kept per day and shown beside the
   estimate (usage tab, `teanode agent usage --server`, `agent_usage`
   tool, iPhone usage screen).
-- [ ] Deploy, set the billing key on the server, run a check, confirm the
-  audit rows and the told message, screenshots of every changed screen.
+- [x] (2026-10-15) Deployed with migrations 0189 and 0190 after a
+  verified backup, set the billing key, ran `teanode agent prices check`:
+  six transcription prices compared, all already right, nothing changed;
+  billed days stored for four models.
+- [ ] Screenshots of every changed screen (CI for the iPhone, the live
+  dashboard for the web).
 
 ## Surprises & Discoveries
 
@@ -81,6 +85,19 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
 - Observation: a project key (`sk-proj-…`) and a service account key
   (`sk-svcacct-…`) are both refused by the reports with "Missing scopes:
   api.usage.read"; an organization admin key (`sk-admin-…`) is answered.
+
+- Observation: on a real server the estimate for gpt-4o-transcribe-diarize
+  came to about 1.6 times what was billed, with the prices matching the
+  bill exactly. Each response's usage reports roughly as many output tokens
+  as input (375 out for 317 audio tokens in), while the organization's
+  usage report counts about a quarter of that for the same requests (433
+  requests either way). TeaNode records what the response reports; the
+  Billed column is the figure to trust for this model.
+- Observation: speech (gpt-4o-mini-tts) is billed for audio output, which
+  has no price slot, so its estimate stays zero while Billed shows the
+  amount. Embeddings are billed but read from a report this check does not
+  fetch (`/organization/usage/embeddings`), so their price is not checked;
+  their billed amount is still stored.
 
 ## Decision Log
 

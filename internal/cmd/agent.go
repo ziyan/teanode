@@ -1124,7 +1124,9 @@ func printUsage(command *cli.Command, rows []*client.AgentUsageRow, by string) e
 	}
 	headers := []string{header, "PROMPT", "COMPLETION", "CACHED", "TOTAL", "COST"}
 	if isBilledShown {
-		headers = append(headers, "BILLED")
+		// Beside what was billed the cost is the estimate, and says so, as
+		// the dashboard and the iPhone app do.
+		headers = []string{header, "PROMPT", "COMPLETION", "CACHED", "TOTAL", "ESTIMATED", "BILLED"}
 	}
 	return printTable(append(headers, "CALLS"), table)
 }
