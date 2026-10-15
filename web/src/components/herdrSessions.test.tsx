@@ -126,7 +126,7 @@ it('marks the option answered even when its label holds a comma', () => {
 })
 
 it('uploads the files chosen and sends them with the text', async () => {
-  const idle = { ...session, herdrSessionState: 'idle' }
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
   upload.mockReturnValue({
     promise: Promise.resolve({ attachments: [{ id: 'attachment-1' }] }),
     abort: vi.fn(),
