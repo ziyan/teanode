@@ -1022,7 +1022,12 @@ struct PersonBubble: View {
                     AttachmentView(attachment: attachment)
                 }
                 if !line.text.isEmpty {
+                    // Its whole height, as the agent's paragraphs take theirs:
+                    // a message many screens tall otherwise draws past the
+                    // space the list gives it, and its first lines sit above
+                    // where scrolling stops.
                     Text(line.text)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         // The person's side in the accent's tint, the agent's in
