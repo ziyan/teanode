@@ -505,6 +505,7 @@ struct SettingsForm: View {
                 case "device-setup-mail", "device-setup-profile", "device-setup-expired", "device-setup-receipt-unavailable": DeviceSetupView(connection: connection, preselectedMailboxId: "mailbox-demo")
                 case "agent-settings": AgentSettingsView(connection: connection)
                 case "provider-prices": ProviderPricesDemoScreen(connection: connection)
+                case "provider-billing-check": ProviderPricesDemoScreen(connection: connection, scrollTarget: AgentProviderForm.billedPricesRowId)
                 case "manage": ManageOverviewView(connection: connection)
                 case "domain": DemoDomainScreen(connection: connection, isShowingRecords: false)
                 case "dns-records": DemoDomainScreen(connection: connection, isShowingRecords: true)

@@ -53,6 +53,7 @@ func NewAgentCommand() *cli.Command {
 			newAgentSettingsCommand(),
 			newAgentSourceCommand(),
 			newAgentBriefCommand(),
+			newAgentPricesCommand(),
 			{
 				Name:  "speak-first",
 				Usage: "have your agent start a conversation now, as it would on its own: onboarding, phone_tour, memory_check or idea",

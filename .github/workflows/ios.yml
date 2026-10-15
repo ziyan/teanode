@@ -237,6 +237,10 @@ jobs:
           shoot provider-prices-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
           shoot provider-prices-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
           shoot provider-prices-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-prices
+          # The same editor for a provider with a billing key, scrolled to the prices from the bill.
+          shoot provider-billing-check-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
+          shoot provider-billing-check-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
+          shoot provider-billing-check-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen provider-billing-check
           shoot dns-records-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen dns-records
           shoot server-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen server
           shoot sessions-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen sessions

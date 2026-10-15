@@ -45,8 +45,12 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
   prices, audits and tells the operators (`internal/agent/billing_prices.go`,
   table `agent_billing_check`, GraphQL `AgentBillingChecks` and
   `CheckAgentProviderPrices`, client functions).
-- [ ] Milestone 3b: `teanode agent prices check` and `show`, the `settings`
-  tool action, the dashboard and iPhone "Check prices now".
+- [x] (2026-10-15) Milestone 3b: `teanode agent prices check` and `show`
+  (`internal/cmd/agent_prices.go`), the `settings` tool actions `prices_show`
+  and `prices_check`, the dashboard row button and table
+  (`web/src/pages/settings/providerPriceCheck.tsx`), the iPhone "Prices from
+  the bill" section (`ios/TeaNodeKit/Sources/TeaNodeKit/AgentBilling.swift`,
+  `AgentProviderForm`). The iPhone half is unbuilt here; CI builds it.
 - [ ] Milestone 4: what was billed, kept per day and shown beside the
   estimate (usage tab, `teanode agent usage --server`, `agent_usage`
   tool, iPhone usage screen).
@@ -159,6 +163,16 @@ shows the change; the usage tab shows "Billed" beside "Estimated".
 - Decision (Milestone 3): `agent.Settings` gained `UpdateConfiguration` (the
   store's `Update`), wired in `internal/cmd/server/agent.go`; without it a
   check that would change a price records an error and changes nothing.
+
+- Decision (Milestone 3b): "Check prices now" is a button on the provider's
+  row in the dashboard (with the compared table in a dialog it opens), not a
+  field in the provider editor, because the editor's draft holds the prices as
+  they were when it opened and saving it after a check would put them back. The
+  iPhone form has the section inside the editor, so after a check that changed
+  prices it reads the settings again and replaces the prices in the draft.
+- Decision (Milestone 3b): the `settings` tool's `prices_check` is an outward
+  action, so it asks first: it sends the billing key to the provider and can
+  change prices every budget is worked out from. `prices_show` only reads.
 
 ## Outcomes & Retrospective
 
