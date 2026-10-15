@@ -203,6 +203,11 @@ jobs:
           # and day, and the net worth line.
           shoot finance-dark dark large -TeaNodeDemo -TeaNodeTab finance
           shoot cash-flow-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen cash-flow-chosen
+          shoot spending-day-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-day
+          shoot spending-day-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-day
+          shoot spending-year-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-year
+          shoot spending-year-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-year
+          shoot spending-year-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-year
           shoot spending-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
           shoot spending-chosen-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-chosen
           shoot spending-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups

@@ -50,8 +50,10 @@
                 answer = #"{"data":{"FinanceProviders":[{"providerKind":"simplefin","isBrowserRequired":false}],"FinanceSources":[{"id":"bank"}]}}"#
             } else if query.contains("FinanceSpendingSummary") {
                 answer = Self.spendingSummary
+            } else if query.contains("SpendingByDay") {
+                answer = Self.spendingByDay()
             } else if query.contains("CashFlow") {
-                answer = Self.cashFlow()
+                answer = Self.cashFlow(answering: request.httpBody)
             } else if query.contains("NetWorth") {
                 answer = Self.netWorth(answering: request.httpBody)
             } else if query.contains("SpendingCategories") {
@@ -176,22 +178,65 @@
             ]}}}
             """#
 
-        /// An invented year of income and spending, ending this month,
-        /// which is only partly through.
-        static func cashFlow() -> String {
+        /// Invented income and spending, a month at a time, ending this
+        /// month, which is only partly through. The same year repeats back
+        /// to the March two years before, so the chart of years has a
+        /// first year that starts partway; a shorter window asked for is
+        /// cut to it.
+        static func cashFlow(answering body: Data?) -> String {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
             let incomeAmounts = [6400, 6400, 6400, 6400, 6400, 8900, 6400, 6400, 6650, 6400, 6400, 3200]
             let spendingAmounts = [4820, 5110, 4390, 6240, 4675, 5030, 4510, 5880, 4720, 4955, 5310, 3204]
-            let months = (0..<12).map { index -> String in
-                let date = calendar.date(byAdding: .month, value: index - 11, to: Date()) ?? Date()
+            var fromMonth = ""
+            if let body, let request = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+                let variables = request["variables"] as? [String: Any], let text = variables["fromMonth"] as? String
+            {
+                fromMonth = text
+            }
+            let currentYear = calendar.component(.year, from: Date())
+            let firstMonth = String(format: "%04d-03", currentYear - 2)
+            let months = (0..<36).compactMap { index -> String? in
+                let date = calendar.date(byAdding: .month, value: index - 35, to: Date()) ?? Date()
                 let parts = calendar.dateComponents([.year, .month], from: date)
                 let cashFlowMonth = String(format: "%04d-%02d", parts.year ?? 2026, parts.month ?? 1)
-                let incomeAmount = incomeAmounts[index]
-                let spendingAmount = spendingAmounts[index]
+                guard cashFlowMonth >= fromMonth, cashFlowMonth >= firstMonth else { return nil }
+                let incomeAmount = incomeAmounts[index % 12]
+                let spendingAmount = spendingAmounts[index % 12]
                 return #"{"cashFlowMonth":"\#(cashFlowMonth)","incomeAmount":"\#(incomeAmount).00","spendingAmount":"\#(spendingAmount).00","netAmount":"\#(incomeAmount - spendingAmount).00"}"#
             }
             return #"{"data":{"CashFlow":{"reportingCurrencyCode":"USD","unconvertedCurrencyCodes":[],"cashFlowMonths":["# + months.joined(separator: ",") + "]}}}"
+        }
+
+        /// Invented spending day by day: this month to today, and all of
+        /// the month before, each day with its running total.
+        static func spendingByDay() -> String {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            let today = Date()
+            let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today)) ?? today
+            let compareStart = calendar.date(byAdding: .month, value: -1, to: monthStart) ?? monthStart
+            let spendingAmounts = [42, 0, 118, 23, 64, 0, 0, 310, 18, 51, 9, 0, 140, 27, 0, 76, 33, 12, 0, 95, 41, 0, 260, 15, 38, 0, 57, 22, 0, 84, 19]
+            func days(from start: Date, through end: Date) -> (String, [String]) {
+                var total = 0
+                var answers: [String] = []
+                var day = start
+                while day <= end {
+                    let parts = calendar.dateComponents([.year, .month, .day], from: day)
+                    let spentAmount = spendingAmounts[((parts.day ?? 1) - 1) % spendingAmounts.count] + (start == compareStart ? 6 : 0)
+                    total += spentAmount
+                    let spentOn = String(format: "%04d-%02d-%02d", parts.year ?? 2026, parts.month ?? 1, parts.day ?? 1)
+                    answers.append(#"{"spentOn":"\#(spentOn)","spendingAmount":"\#(spentAmount).00","cumulativeSpendingAmount":"\#(total).00"}"#)
+                    day = calendar.date(byAdding: .day, value: 1, to: day) ?? end.addingTimeInterval(86_400)
+                }
+                let parts = calendar.dateComponents([.year, .month], from: start)
+                return (String(format: "%04d-%02d", parts.year ?? 2026, parts.month ?? 1), answers)
+            }
+            let (month, monthDays) = days(from: monthStart, through: today)
+            let compareEnd = calendar.date(byAdding: .day, value: -1, to: monthStart) ?? monthStart
+            let (compareMonth, compareDays) = days(from: compareStart, through: compareEnd)
+            return #"{"data":{"SpendingByDay":{"month":"\#(month)","compareMonth":"\#(compareMonth)","reportingCurrencyCode":"USD","unconvertedCurrencyCodes":[],"monthDays":["#
+                + monthDays.joined(separator: ",") + #"],"compareMonthDays":["# + compareDays.joined(separator: ",") + "]}}}"
         }
 
         /// An invented net worth for each day asked for: a slow climb with
