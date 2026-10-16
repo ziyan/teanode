@@ -26,8 +26,12 @@ export function isPathAvailable(pathname: string, services?: ServiceCapabilities
 }
 
 export function homePath(session: Session): string {
+  // A new server's first operator: straight to the one page that starts the
+  // assistant, unless mail was chosen, whose next step is a domain.
   if (!session.services?.hasCompletedSetup && hasPermission(session.permissions, 'server:manage'))
-    return '/manage/server/setup'
+    return !session.services?.hasModelProvider && !session.services?.isMailRoutingEnabled
+      ? '/welcome'
+      : '/manage/server/setup'
   if (session.services?.isMailboxEnabled !== false && session.userId && hasPermission(session.permissions, 'mail:read'))
     return '/mailbox'
   if (session.services?.isAssistantEnabled && hasPermission(session.permissions, 'agent:use')) return '/agent'

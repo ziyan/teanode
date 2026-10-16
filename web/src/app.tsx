@@ -6,6 +6,7 @@ import { Session, framedDrawer, getSession, logout, signInWithToken } from './ap
 import { LoginPage } from './pages/login'
 import { AuthorizePage } from './pages/authorize'
 import { ConnectPage } from './pages/connect'
+import { WelcomePage } from './pages/welcome'
 import { MailPage } from './pages/mail'
 import { MailboxPage } from './pages/mailbox'
 import { SetupAccountPage } from './pages/setupAccount'
@@ -170,7 +171,18 @@ export function App() {
       // The server is unreachable. Show the login form rather than a blank
       // page; trying again is the only useful thing a reader can do. Without
       // a server there is nobody to answer a passkey, so none is offered.
-      setSession({ authenticated: false, authenticationRequired: true, username: '', passkeysEnabled: false })
+      // Somebody already signed in keeps their page: a server restarting
+      // under it is away for a moment, and the page waiting for it would
+      // otherwise give way to a login form.
+      setSession(
+        (previous) =>
+          (previous?.authenticated ? previous : null) ?? {
+            authenticated: false,
+            authenticationRequired: true,
+            username: '',
+            passkeysEnabled: false,
+          },
+      )
     }
   }, [])
 
@@ -268,6 +280,20 @@ export function App() {
         {corner}
         <Suspense fallback={<Loading />}>
           <AuthorizePage />
+        </Suspense>
+      </div>
+    )
+  }
+
+  // Starting the assistant on a new server: one question and one button,
+  // drawn the same way, so the first thing a new operator sees is not every
+  // page there is.
+  if (location.pathname === '/welcome') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <Suspense fallback={<Loading />}>
+          <WelcomePage />
         </Suspense>
       </div>
     )

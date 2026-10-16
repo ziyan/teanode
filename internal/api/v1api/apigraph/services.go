@@ -28,6 +28,9 @@ type ServiceCapabilities struct {
 	IsAssistantEnabled       bool `json:"isAssistantEnabled"`
 	HasPendingServiceRestart bool `json:"hasPendingServiceRestart"`
 	HasCompletedSetup        bool `json:"hasCompletedSetup"`
+	// HasModelProvider says a provider and a default model are configured,
+	// which is what the assistant needs before it can be started.
+	HasModelProvider bool `json:"hasModelProvider"`
 }
 
 type UpdateServicesArguments struct {
@@ -72,7 +75,9 @@ func (self *graph) serviceCapabilities() *ServiceCapabilities {
 			pending = pending || selected.IsEnabled(service) != self.settings.RunningServices.IsEnabled(service)
 		}
 	}
+	agentSettings := self.config.Current().Agent
 	return &ServiceCapabilities{
+		HasModelProvider:     len(agentSettings.Providers) > 0 && agentSettings.Models.Default != "",
 		IsMailRoutingEnabled: self.isServiceEnabled(models.ServiceMailRouting), IsMailboxEnabled: self.isServiceEnabled(models.ServiceMailboxes),
 		IsCalendarEnabled: self.isServiceEnabled(models.ServiceCalendar), IsRemindersEnabled: self.isServiceEnabled(models.ServiceReminders),
 		IsContactsEnabled: self.isServiceEnabled(models.ServiceContacts), IsAssistantEnabled: self.config.Current().Agent.Enabled && self.settings != nil && self.agentWorker() != nil,

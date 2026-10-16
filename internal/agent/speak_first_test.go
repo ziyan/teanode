@@ -168,6 +168,26 @@ func TestTheAgentIntroducesItselfInAConversationNobodyHasSpokenIn(t *testing.T) 
 	})
 }
 
+// Somebody who arrives just after the agent looked is greeted at the next
+// tick, not a minute later: the page that reloads after the restart that
+// switched the agent on reports itself a moment after the first look.
+func TestTheAgentGreetsSomebodyWhoArrivesWithoutWaitingAMinute(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	world.tick(t)
+	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
+		t.Fatalf("nobody there, nobody greeted: %+v", jobs)
+	}
+	later := time.Now().Add(5 * time.Second)
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, later)
+	if err := world.worker.TickAt(context.Background(), later); err != nil {
+		t.Fatalf("Tick: %s", err)
+	}
+	world.worker.Wait()
+	if jobs := world.speakFirstJobs(t); len(jobs) != 1 || jobs[0].SubjectID != agent.SpeakFirstOnboarding {
+		t.Fatalf("greeted at the next tick: %+v", jobs)
+	}
+}
+
 // Nobody there, nobody greeted.
 func TestTheAgentDoesNotSpeakFirstToSomebodyWhoIsAway(t *testing.T) {
 	world := newSpeakFirstWorld(t)

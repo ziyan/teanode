@@ -103,6 +103,13 @@ readonly ALLOWED_HOSTS=(
   chatgpt.com
   auth.openai.com
 
+  # Where each model service hands out API keys, which the welcome page
+  # links to from the key field: a public page of each service, needed by
+  # somebody who has just been asked for a key they do not have yet.
+  platform.openai.com
+  console.anthropic.com
+  aistudio.google.com
+
   # Apple's public services, which the iPhone app's plan and README name:
   # the developer site, App Store Connect, and the push service the relay
   # sends to.

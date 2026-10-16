@@ -34,6 +34,11 @@ type presenceReport struct {
 type presence struct {
 	mutex   sync.Mutex
 	reports map[string]map[string]presenceReport
+	// hasArrival says somebody came into view since the agent last looked
+	// for whom to speak to first, so it looks again without waiting out its
+	// minute: somebody who has just switched their agent on, and whose page
+	// reloaded after the restart that took, is greeted while they are there.
+	hasArrival bool
 }
 
 // ReportPresence records one tab's or one phone's report for a person:
@@ -77,7 +82,30 @@ func (self *Agent) ReportPresence(userId, reporterId string, isVisible bool, idl
 		}
 		delete(reporters, oldestName)
 	}
+	if isVisible && !hasVisibleReport(reporters, now) {
+		self.presence.hasArrival = true
+	}
 	reporters[reporterId] = presenceReport{reportedAt: now, isVisible: isVisible, idleSeconds: max(idleSeconds, 0)}
+}
+
+// hasVisibleReport says whether any of a person's tabs or phones reported
+// itself shown lately.
+func hasVisibleReport(reporters map[string]presenceReport, now time.Time) bool {
+	for _, report := range reporters {
+		if report.isVisible && now.Sub(report.reportedAt) <= presenceFresh {
+			return true
+		}
+	}
+	return false
+}
+
+// takeArrival says whether somebody came into view since it was last asked.
+func (self *Agent) takeArrival() bool {
+	self.presence.mutex.Lock()
+	defer self.presence.mutex.Unlock()
+	hasArrival := self.presence.hasArrival
+	self.presence.hasArrival = false
+	return hasArrival
 }
 
 // isPresent says whether the person has a visible dashboard tab or the app

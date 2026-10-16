@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -371,5 +372,76 @@ func TestAgentConversationGoalIsStoredAndListedWhenDue(t *testing.T) {
 		if goals[0].GoalNote != "waiting for the build" {
 			t.Fatalf("the note should come back with it: %q", goals[0].GoalNote)
 		}
+	})
+}
+
+// Asked for at once from several requests, the main conversation is made
+// once: a page that has just loaded asks from several places together, and
+// each finding none and making one left an agent with four.
+func TestTheMainConversationIsMadeOnceWhenAskedForTogether(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var agent *models.Agent
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		user, err := tx.CreateUser(&models.User{Username: "together"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		if agent, err = tx.CreateAgent(&models.Agent{UserID: user.ID, Enabled: true}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+
+	// Every asker is inside its own transaction before any of them asks, so
+	// each would find none if nothing made them take turns.
+	together := func(name string, ask func(db.Transaction) (*models.AgentConversation, error)) map[string]bool {
+		const askers = 8
+		found := make(chan string, askers)
+		var group, inside sync.WaitGroup
+		inside.Add(askers)
+		for range askers {
+			group.Add(1)
+			go func() {
+				defer group.Done()
+				if err := database.Transaction(func(tx db.Transaction) error {
+					if _, err := tx.GetAgent(agent.ID); err != nil {
+						return err
+					}
+					inside.Done()
+					inside.Wait()
+					conversation, err := ask(tx)
+					if err == nil {
+						found <- conversation.ID
+					}
+					return err
+				}); err != nil {
+					t.Errorf("%s: %s", name, err)
+				}
+			}()
+		}
+		group.Wait()
+		close(found)
+		distinct := map[string]bool{}
+		for conversationId := range found {
+			distinct[conversationId] = true
+		}
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			main, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
+			if err != nil || len(main) != 1 {
+				t.Fatalf("%s: one main conversation stored: %d %v", name, len(main), err)
+			}
+		})
+		return distinct
+	}
+	if distinct := together("MainAgentConversation", func(tx db.Transaction) (*models.AgentConversation, error) {
+		return tx.MainAgentConversation(agent.ID, "")
+	}); len(distinct) != 1 {
+		t.Fatalf("one main conversation, found %d", len(distinct))
+	}
+	// Starting afresh at once from several places still leaves one main
+	// conversation, each of the others kept as a named one.
+	together("FreshMainAgentConversation", func(tx db.Transaction) (*models.AgentConversation, error) {
+		return tx.FreshMainAgentConversation(agent.ID, "")
 	})
 }

@@ -87,6 +87,7 @@ var _ Query = &graph{}
 
 // Mutation is every write operation.
 type Mutation interface {
+	AssistantSetupMutation
 	ServiceMutation
 	SyncMutation
 	DeviceSetupMutation

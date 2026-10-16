@@ -660,6 +660,12 @@ function remembered(key: string): string {
   }
 }
 
+// openDrawerOnNextLoad has the drawer open when the page next loads, for a
+// page that is about to reload into a conversation.
+export function openDrawerOnNextLoad() {
+  remember(OPEN_KEY, '1')
+}
+
 function remember(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
