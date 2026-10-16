@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.166.3] - 2026-10-16
+
+### Fixed
+
+- Your agent imports an OFX statement you attach in the chat directly, instead of working around it through a computer. (#517)
+
 ## [0.166.2] - 2026-10-15
 
 ### Changed
