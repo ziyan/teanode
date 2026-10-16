@@ -74,6 +74,47 @@ func (self *Agent) browserFor(ctx context.Context, run *AskRun) (*browser.Contex
 	return page, nil
 }
 
+// renderingPage is a page of its own for one read, in its own connection
+// and context, counted under the same cap as the turns' pages. The function
+// closes both and gives the place back.
+func (self *Agent) renderingPage(ctx context.Context) (*browser.Context, func(), error) {
+	configuration := self.settings.Configuration()
+	if !configuration.Agent.Browser.Enabled || configuration.Agent.Browser.CDPEndpoint == "" {
+		return nil, nil, fmt.Errorf("no browser is configured on this server")
+	}
+	if !self.reserveContext(configuration) {
+		return nil, nil, fmt.Errorf("the browser is busy with other runs; try again in a moment")
+	}
+	opened, err := browser.Connect(ctx, &browser.Settings{
+		Endpoint:     configuration.Agent.Browser.CDPEndpoint,
+		AllowPrivate: configuration.Agent.PrivateAddressesAllowed(),
+		ProxyListen:  configuration.Agent.Browser.ProxyListen,
+	})
+	if err != nil {
+		self.releaseContext()
+		return nil, nil, err
+	}
+	page, err := opened.NewContext(ctx)
+	if err != nil {
+		_ = opened.Close()
+		self.releaseContext()
+		return nil, nil, err
+	}
+	return page, func() {
+		_ = opened.Close()
+		self.releaseContext()
+	}, nil
+}
+
+// releaseContext gives back a place reserveContext took.
+func (self *Agent) releaseContext() {
+	self.contextsMutex.Lock()
+	defer self.contextsMutex.Unlock()
+	if self.contextsOpen > 0 {
+		self.contextsOpen--
+	}
+}
+
 // reserveContext takes a place under the operator's cap, or says there is
 // none: counted in the same breath as checked, so that several turns
 // opening their first page at once cannot all find room.

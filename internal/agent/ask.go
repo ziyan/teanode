@@ -729,6 +729,9 @@ func (self *AskRun) Enqueue(tx db.Transaction, kind models.AgentJobKind, mailbox
 func (self *AskRun) BrowserPage(ctx context.Context) (*browser.Context, error) {
 	return self.agent.browserFor(ctx, self)
 }
+func (self *AskRun) RenderingPage(ctx context.Context) (*browser.Context, func(), error) {
+	return self.agent.renderingPage(ctx)
+}
 func (self *AskRun) AttachedTab() tools.Tab {
 	if tab := self.agent.tabFor(self.settings.Agent.ID); tab != nil {
 		return tab
