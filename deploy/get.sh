@@ -2,7 +2,7 @@
 # Installs TeaNode with the assistant alone, which needs no domain and no
 # mail ports:
 #
-#     curl -fsSL https://teanode.com/install.sh | sh
+#     curl -fsSL https://teanode.com/get.sh | sh
 #
 # It puts the compose file and a fresh database password in a folder
 # (/opt/teanode as root, ~/teanode otherwise, or TEANODE_DIRECTORY), starts

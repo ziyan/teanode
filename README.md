@@ -170,9 +170,9 @@ see what is left rather than guessing.
 No domain and no mail ports. One command installs Docker where it is
 missing, starts the server and PostgreSQL, and listens on 127.0.0.1:8080:
 
-    curl -fsSL https://teanode.com/install.sh | sh
+    curl -fsSL https://teanode.com/get.sh | sh
 
-It is [deploy/install.sh](deploy/install.sh), which fetches the assistant
+It is [deploy/get.sh](deploy/get.sh), which fetches the assistant
 compose file and makes a database password; read it first if you like, or
 run the same steps by hand:
 

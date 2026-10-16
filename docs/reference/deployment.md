@@ -336,9 +336,9 @@ capabilities.
 
 1. Install and start it:
 
-       curl -fsSL https://teanode.com/install.sh | sh
+       curl -fsSL https://teanode.com/get.sh | sh
 
-   That is `deploy/install.sh`. It installs Docker on Linux where it is
+   That is `deploy/get.sh`. It installs Docker on Linux where it is
    missing, puts the compose file and a random database password in
    `/opt/teanode` (`~/teanode` when not run as root, or `TEANODE_DIRECTORY`),
    starts the containers and waits for the dashboard. Running it again keeps
