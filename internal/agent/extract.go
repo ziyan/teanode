@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +27,11 @@ import (
 // the reader draws a card from it with the fields filled in and the line they
 // came from quoted underneath. Adding it is a press.
 //
-// That it proposes rather than writes is the whole design. A message is a
+// That it proposes rather than writes is the whole design for the diary and
+// the address book. A follow-up is different. It goes on the agent's own list
+// of what is due, on its way or coming up (models.AgentFollowUp), which
+// changes nothing the person owns, so it is written at once: a card for every
+// parcel would be the hassle the list exists to remove. A message is a
 // stranger's words; putting an appointment in somebody's diary because those
 // words mentioned a day is how a calendar stops being trusted. It is the same
 // reasoning as the hold window on an automatic reply.
@@ -40,8 +46,54 @@ var extractTools = map[string]bool{
 
 // ExtractAnswer is the object the run answers with.
 type ExtractAnswer struct {
-	Events   []ExtractedEvent   `json:"events"`
-	Contacts []ExtractedContact `json:"contacts"`
+	Events    []ExtractedEvent    `json:"events"`
+	Contacts  []ExtractedContact  `json:"contacts"`
+	FollowUps []ExtractedFollowUp `json:"follow_ups"`
+}
+
+// ExtractedAmount is an amount as the model wrote it, a number or the text
+// of one such as "1,234.00", which is read when the follow-up is.
+type ExtractedAmount string
+
+// UnmarshalJSON accepts a JSON number or string.
+func (self *ExtractedAmount) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*self = ExtractedAmount(text)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	*self = ExtractedAmount(number.String())
+	return nil
+}
+
+// ExtractedFollowUp is something the message says is due, on its way or
+// coming up, or says is done.
+type ExtractedFollowUp struct {
+	Kind           string          `json:"kind"`
+	Title          string          `json:"title"`
+	Payee          string          `json:"payee"`
+	Carrier        string          `json:"carrier"`
+	Amount         ExtractedAmount `json:"amount"`
+	CurrencyCode   string          `json:"currency_code"`
+	TrackingNumber string          `json:"tracking_number"`
+	DueOn          string          `json:"due_on"`
+	Place          string          `json:"place"`
+	Key            string          `json:"key"`
+	Resolves       bool            `json:"resolves"`
+	Because        string          `json:"because"`
+}
+
+// FollowUpFinding is a follow-up the answer carried that is usable: the
+// follow-up to keep, or, when Resolves, the one to close and the words that
+// say why.
+type FollowUpFinding struct {
+	FollowUp models.AgentFollowUp
+	Resolves bool
+	Because  string
 }
 
 // ExtractedEvent is an appointment the words describe.
@@ -128,13 +180,26 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		return nil
 	}
 	proposals := InterpretExtraction(&answer)
-	if len(proposals) == 0 {
+	findings := InterpretFollowUps(&answer, run.Agent.ID, mail.ID)
+	if len(proposals) == 0 && len(findings) == 0 {
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %q: nothing to add", mail.Subject))
 		return nil
 	}
-	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Found %s in %q", describeProposals(proposals), mail.Subject))
+	found := describeProposals(proposals)
+	if len(findings) > 0 {
+		if found != "" {
+			found += " and "
+		}
+		found += plural(len(findings), "something to follow up", "%d things to follow up")
+	}
+	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Found %s in %q", found, mail.Subject))
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.ReplaceMailProposals(run.Mailbox.ID, mail.ID, proposals)
+		if len(proposals) > 0 {
+			if err := tx.ReplaceMailProposals(run.Mailbox.ID, mail.ID, proposals); err != nil {
+				return err
+			}
+		}
+		return StoreFollowUps(tx, findings)
 	})
 }
 
@@ -178,6 +243,130 @@ func InterpretExtraction(answer *ExtractAnswer) []models.MailProposal {
 	return proposals
 }
 
+// InterpretFollowUps turns the model's answer into follow-ups for the agent,
+// refusing what is not usable: an unknown kind, one with no key, a bill with
+// no amount that can be read, a bill, deadline or event with no day. Those
+// are guesses, and a guessed bill is worse than a missing one. A follow-up
+// that resolves is held to less, since a receipt or a delivery notice often
+// leaves out the amount and the day, and only has to name what it closes.
+//
+// The key is made here and not left to the model's spelling: the kind in
+// front, the rest in lower case with its spaces gathered, so a later message
+// about the same parcel or bill finds the same row.
+func InterpretFollowUps(answer *ExtractAnswer, agentId, mailId string) []FollowUpFinding {
+	findings := []FollowUpFinding{}
+	for _, followUp := range answer.FollowUps {
+		kind := models.AgentFollowUpKind(strings.ToLower(strings.TrimSpace(followUp.Kind)))
+		if !kind.IsValid() {
+			continue
+		}
+		trackingNumber := cut(strings.TrimSpace(followUp.TrackingNumber), 100)
+		key := followUp.Key
+		if strings.TrimSpace(key) == "" && kind == models.AgentFollowUpParcel {
+			key = trackingNumber
+		}
+		key = strings.Join(strings.Fields(strings.ToLower(key)), " ")
+		if key == "" {
+			continue
+		}
+		finding := FollowUpFinding{
+			Resolves: followUp.Resolves,
+			Because:  cut(strings.TrimSpace(followUp.Because), 300),
+			FollowUp: models.AgentFollowUp{
+				AgentID: agentId, FollowUpKind: kind, FollowUpKey: cut(string(kind)+":"+key, 300),
+				FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{mailId},
+			},
+		}
+		if followUp.Resolves {
+			findings = append(findings, finding)
+			continue
+		}
+		title := cut(strings.TrimSpace(followUp.Title), 200)
+		if title == "" {
+			continue
+		}
+		dueOn := ""
+		if day, err := time.Parse(time.DateOnly, strings.TrimSpace(followUp.DueOn)); err == nil {
+			dueOn = day.Format(time.DateOnly)
+		}
+		if dueOn == "" && kind != models.AgentFollowUpParcel {
+			continue
+		}
+		amount := ""
+		if kind == models.AgentFollowUpBill {
+			if amount = parseFollowUpAmount(string(followUp.Amount)); amount == "" {
+				continue
+			}
+		}
+		finding.FollowUp.FollowUpTitle = title
+		finding.FollowUp.Payee = cut(strings.TrimSpace(followUp.Payee), 200)
+		finding.FollowUp.Carrier = cut(strings.TrimSpace(followUp.Carrier), 100)
+		finding.FollowUp.Amount = amount
+		finding.FollowUp.CurrencyCode = cut(strings.ToUpper(strings.TrimSpace(followUp.CurrencyCode)), 3)
+		finding.FollowUp.TrackingNumber = trackingNumber
+		finding.FollowUp.DueOn = dueOn
+		finding.FollowUp.Place = cut(strings.TrimSpace(followUp.Place), 200)
+		findings = append(findings, finding)
+	}
+	return findings
+}
+
+// parseFollowUpAmount reads an amount the way a bill writes it, with a
+// currency sign or a thousands separator, as a decimal with two places, or
+// "" when it is not a positive number.
+func parseFollowUpAmount(text string) string {
+	cleaned := strings.Map(func(character rune) rune {
+		if (character >= '0' && character <= '9') || character == '.' {
+			return character
+		}
+		return -1
+	}, text)
+	amount, err := strconv.ParseFloat(cleaned, 64)
+	if err != nil || amount <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(amount, 'f', 2, 64)
+}
+
+// StoreFollowUps writes what InterpretFollowUps found. A finding that
+// resolves closes the open follow-up with its key, and when there is none
+// writes nothing: a delivery notice for a parcel nobody was told was coming
+// is not something to follow. The others are kept by key, so the same
+// message read twice, or a third notice about one parcel, changes one row.
+func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
+	for _, finding := range findings {
+		followUp := finding.FollowUp
+		if !finding.Resolves {
+			if _, _, err := tx.UpsertAgentFollowUp(&followUp); err != nil {
+				return err
+			}
+			continue
+		}
+		open, err := tx.ListOpenAgentFollowUps(followUp.AgentID)
+		if err != nil {
+			return err
+		}
+		for _, candidate := range open {
+			if candidate.FollowUpKey != followUp.FollowUpKey {
+				continue
+			}
+			closedReason := finding.Because
+			if closedReason == "" {
+				closedReason = "a later message says it is done"
+			}
+			if _, err := tx.UpdateAgentFollowUp(candidate.ID, func(locked *models.AgentFollowUp) error {
+				locked.FollowUpState = models.AgentFollowUpClosed
+				locked.ClosedReason = closedReason
+				locked.SourceItemIDs = append(locked.SourceItemIDs, followUp.SourceItemIDs...)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func trimmed(values []string) []string {
 	kept := []string{}
 	for _, value := range values {
@@ -206,6 +395,9 @@ func describeProposals(proposals []models.MailProposal) string {
 		}
 	}
 	parts := []string{}
+	if events+contacts == 0 {
+		return ""
+	}
 	if events > 0 {
 		parts = append(parts, plural(events, "an appointment", "%d appointments"))
 	}

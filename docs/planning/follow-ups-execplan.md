@@ -13,7 +13,7 @@ To see it working on the development server: deliver to a mailbox the agent tria
 ## Progress
 
 - [x] (2026-10-16) Surveyed alerts, triage, extract, watched items, finance and the person's controls; wrote this plan.
-- [ ] Milestone 1: the follow-up record and its extraction from mail (migration, `agent_follow_up`, extract returns `follow_ups`, triage flags mail that carries one).
+- [x] (2026-10-16) Milestone 1: the follow-up record and its extraction from mail: migration 0191 (`agent_follow_up`), `models.AgentFollowUp`, the four database functions in `internal/db/database_alert.go`, extract's `follow_ups` with `InterpretFollowUps` and `StoreFollowUps` in `internal/agent/extract.go`, triage's widened `extract`, and tests.
 - [ ] Milestone 2: closing follow-ups from later mail and from finance transactions.
 - [ ] Milestone 3: the daily sweep that turns due, overdue, stalled and coming follow-ups into alert candidates, and the weekly coming-up roundup.
 - [ ] Milestone 4: control on every surface: the agent's tool, the command line, the dashboard's Alerts card, the iPhone app; muting a kind.
@@ -59,6 +59,13 @@ To see it working on the development server: deliver to a mailbox the agent tria
   Rationale: a weekly message worth reading is short; a research run without bounds costs and repeats itself.
   Date/Author: 2026-10-16.
 
+- Decision: the stored key is the kind, a colon, and the model's key in lower case with its spaces gathered (`parcel:tn-48151623`), made in code, and a repeat message never changes a follow-up's state: only the sweep, a closing payment or message, and the person do.
+  Rationale: a model's spelling of a key varies in case and spacing, and a tracking number must not collide with another kind's key; a reminder mail arriving after a bill went overdue must not make it look open again.
+  Date/Author: 2026-10-16.
+- Decision: the event exclusion is "an event a business holds to sell something", not "an event nobody in the household is part of".
+  Rationale: the second would have excluded the street fairs and neighborhood events the person asked for.
+  Date/Author: 2026-10-16.
+
 ## Outcomes & Retrospective
 
 Nothing yet.
@@ -75,7 +82,7 @@ Migrations are numbered SQL files in `internal/db/migrations/` (the newest is `0
 
 ## Plan of Work
 
-Milestone 1 adds `models.AgentFollowUp` and its table, `agent_follow_up`, with: id, agent id, kind, key, title (one line, in the person's language), payee or carrier, amount and currency (bills), tracking number (parcels), due or expected date, place (events), state (`open`, `closed`, `overdue`, `stalled`, `expired`, `stopped`), closed reason, the message ids it came from, and the times it was last told about and last updated. `internal/db` gains create-or-update by (agent, key), list open by agent, and close. `prompts/extract.txt` gains a `follow_ups` list with the four kinds, their fields, the key rules, and what does not count (marketing, an event nobody in the household is part of, a bill the message says is already paid); triage's description of `extract` widens to bills, shipments, deadlines and dated notices from a school, a club or the neighborhood. `extract.go` writes them. The test is a table of invented messages (a tax bill, a shipping notice and its delivery, a permission slip, a street fair, a promotion with a "sale ends Friday") run through the parsing and storing code with the model's answer given, plus one prompt test on sol that the extraction of the five gives the expected kinds.
+Milestone 1 adds `models.AgentFollowUp` and its table, `agent_follow_up`, with: id, agent id, kind, key, title (one line, in the person's language), payee or carrier, amount and currency (bills), tracking number (parcels), due or expected date, place (events), state (`open`, `closed`, `overdue`, `stalled`, `expired`, `stopped`), closed reason, the message ids it came from, and the times it was last told about and last updated. `internal/db` gains create-or-update by (agent, key), list open by agent, and close. `prompts/extract.txt` gains a `follow_ups` list with the four kinds, their fields, the key rules, and what does not count (marketing and sales deadlines, an event a business holds to sell something, a bill the message says is already paid); triage's description of `extract` widens to bills, shipments, deadlines and dated notices from a school, a club or the neighborhood. `extract.go` writes them. The test is a table of invented messages (a tax bill, a shipping notice and its delivery, a permission slip, a street fair, a promotion with a "sale ends Friday") run through the parsing and storing code with the model's answer given, plus one prompt test on sol that the extraction of the five gives the expected kinds.
 
 Milestone 2 closes follow-ups: extract's answer for a message whose key matches an open follow-up updates it (out for delivery, delivered, payment received); `ingest_finance.go` calls a matcher over open bills after each sync. Tests: invented transactions that match and that miss by a cent, by payee and by date.
 
@@ -120,7 +127,7 @@ In `internal/models/follow_up.go`:
     type AgentFollowUpState string // "open", "closed", "overdue", "stalled", "expired", "stopped"
     type AgentFollowUp struct { ID, AgentID string; Kind AgentFollowUpKind; Key, Title string; ... }
 
-In `internal/db`: `UpsertAgentFollowUp(*models.AgentFollowUp) (*models.AgentFollowUp, bool, error)`, `ListOpenAgentFollowUps(agentId string) ([]*models.AgentFollowUp, error)`, `UpdateAgentFollowUp(id string, update func(*models.AgentFollowUp) error) error`.
+In `internal/db`: `UpsertAgentFollowUp(*models.AgentFollowUp) (*models.AgentFollowUp, bool, error)`, `ListOpenAgentFollowUps(agentId string) ([]*models.AgentFollowUp, error)`, `UpdateAgentFollowUp(id string, update func(*models.AgentFollowUp) error) (*models.AgentFollowUp, error)`, and `ListAgentFollowUps(agentId string, limit int) ([]*models.AgentFollowUp, error)`.
 
 In `internal/agent`: `sweepFollowUps(tx db.Transaction, agent *models.Agent, now time.Time) ([]*models.AgentAlertCandidate, error)` and `matchFollowUpPayments(tx db.Transaction, agentId string, transactions []*models.FinanceTransaction) error`.
 

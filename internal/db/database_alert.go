@@ -95,6 +95,27 @@ type AlertOperation interface {
 	// under it as its subject key: the code that finds crossings after
 	// every sync writes each one once.
 	HasAgentBudgetAlert(agentId, budgetKey string) (bool, error)
+
+	// UpsertAgentFollowUp keeps a follow-up, new or by the agent and key it
+	// already has, and says whether it was created. An update keeps the id,
+	// the time it was created and the state, takes the
+	// fields the message gave and leaves alone those it left empty, and
+	// adds the message ids to those it came from.
+	UpsertAgentFollowUp(followUp *models.AgentFollowUp) (*models.AgentFollowUp, bool, error)
+
+	// ListOpenAgentFollowUps is the agent's follow-ups still being watched
+	// (open, overdue, stalled), the nearest date first and those with none
+	// last.
+	ListOpenAgentFollowUps(agentId string) ([]*models.AgentFollowUp, error)
+
+	// ListAgentFollowUps is the agent's follow-ups in any state, newest
+	// first.
+	ListAgentFollowUps(agentId string, limit int) ([]*models.AgentFollowUp, error)
+
+	// UpdateAgentFollowUp changes one follow-up under a lock, so two runs
+	// that close or tell it take turns. ErrNotFound when there is none; an
+	// error from the function leaves it as it was.
+	UpdateAgentFollowUp(id string, update func(*models.AgentFollowUp) error) (*models.AgentFollowUp, error)
 }
 
 type agentAlertCandidateModel struct {
@@ -489,4 +510,221 @@ func (self *transaction) HasAgentBudgetAlert(agentId, budgetKey string) (bool, e
 		OR EXISTS (SELECT 1 FROM "agent_alert" WHERE "agent_id" = ? AND "subject_key" = ?)`, agentId, budgetKey, agentId, budgetKey).
 		Scan(&isFound).Error
 	return isFound, err
+}
+
+type agentFollowUpModel struct {
+	ID             string     `gorm:"column:id;primaryKey"`
+	AgentID        string     `gorm:"column:agent_id"`
+	FollowUpKind   string     `gorm:"column:follow_up_kind"`
+	FollowUpKey    string     `gorm:"column:follow_up_key"`
+	FollowUpTitle  string     `gorm:"column:follow_up_title"`
+	Payee          string     `gorm:"column:payee"`
+	Carrier        string     `gorm:"column:carrier"`
+	Amount         *string    `gorm:"column:amount"`
+	CurrencyCode   string     `gorm:"column:currency_code"`
+	TrackingNumber string     `gorm:"column:tracking_number"`
+	DueOn          *time.Time `gorm:"column:due_on"`
+	Place          string     `gorm:"column:place"`
+	FollowUpState  string     `gorm:"column:follow_up_state"`
+	ClosedReason   string     `gorm:"column:closed_reason"`
+	SourceItemIDs  []byte     `gorm:"column:source_item_ids;type:jsonb"`
+	ToldState      string     `gorm:"column:told_state"`
+	ToldAt         *time.Time `gorm:"column:told_at"`
+	CreatedAt      time.Time  `gorm:"column:created_at"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at"`
+}
+
+func (agentFollowUpModel) TableName() string { return "agent_follow_up" }
+
+func (self *agentFollowUpModel) toModel() (*models.AgentFollowUp, error) {
+	followUp := &models.AgentFollowUp{
+		ID: self.ID, AgentID: self.AgentID, FollowUpKind: models.AgentFollowUpKind(self.FollowUpKind),
+		FollowUpKey: self.FollowUpKey, FollowUpTitle: self.FollowUpTitle, Payee: self.Payee, Carrier: self.Carrier,
+		Amount: optionalString(self.Amount), CurrencyCode: self.CurrencyCode, TrackingNumber: self.TrackingNumber,
+		DueOn: formatOptionalDay(self.DueOn), Place: self.Place,
+		FollowUpState: models.AgentFollowUpState(self.FollowUpState), ClosedReason: self.ClosedReason,
+		SourceItemIDs: []string{}, ToldState: models.AgentFollowUpState(self.ToldState), ToldAt: localTime(self.ToldAt),
+		CreatedAt: self.CreatedAt.In(time.Local), UpdatedAt: self.UpdatedAt.In(time.Local),
+	}
+	if err := decodeJSON(self.SourceItemIDs, &followUp.SourceItemIDs); err != nil {
+		return nil, fmt.Errorf("db: cannot read the messages of follow-up %q: %w", self.ID, err)
+	}
+	return followUp, nil
+}
+
+// agentFollowUpModelFrom is the row for a follow-up, refusing one that
+// could not be kept: the check constraints would refuse it too, but with a
+// message about a constraint.
+func agentFollowUpModelFrom(followUp *models.AgentFollowUp) (*agentFollowUpModel, error) {
+	if followUp.AgentID == "" || strings.TrimSpace(followUp.FollowUpKey) == "" {
+		return nil, fmt.Errorf("%w: a follow-up needs an agent and a key", ErrInvalidArguments)
+	}
+	if !followUp.FollowUpKind.IsValid() {
+		return nil, fmt.Errorf("%w: %q is not a kind of follow-up", ErrInvalidArguments, followUp.FollowUpKind)
+	}
+	followUpState := followUp.FollowUpState
+	if followUpState == "" {
+		followUpState = models.AgentFollowUpOpen
+	}
+	if !followUpState.IsValid() || (followUp.ToldState != "" && !followUp.ToldState.IsValid()) {
+		return nil, fmt.Errorf("%w: %q is not a state of follow-up", ErrInvalidArguments, followUpState)
+	}
+	dueOn, err := parseOptionalDay(followUp.DueOn)
+	if err != nil {
+		return nil, err
+	}
+	model := &agentFollowUpModel{
+		ID: followUp.ID, AgentID: followUp.AgentID, FollowUpKind: string(followUp.FollowUpKind),
+		FollowUpKey: strings.TrimSpace(followUp.FollowUpKey), FollowUpTitle: followUp.FollowUpTitle,
+		Payee: followUp.Payee, Carrier: followUp.Carrier, CurrencyCode: followUp.CurrencyCode,
+		TrackingNumber: followUp.TrackingNumber, Place: followUp.Place, FollowUpState: string(followUpState),
+		ClosedReason: followUp.ClosedReason, ToldState: string(followUp.ToldState), ToldAt: followUp.ToldAt,
+		CreatedAt: followUp.CreatedAt, UpdatedAt: followUp.UpdatedAt,
+	}
+	if followUp.Amount != "" {
+		amount := followUp.Amount
+		model.Amount = &amount
+	}
+	if dueOn != "" {
+		due, err := time.Parse(time.DateOnly, dueOn)
+		if err != nil {
+			return nil, err
+		}
+		model.DueOn = &due
+	}
+	if model.SourceItemIDs, err = encodeStrings(uniqueStrings(followUp.SourceItemIDs)); err != nil {
+		return nil, err
+	}
+	return model, nil
+}
+
+func (self *transaction) UpsertAgentFollowUp(followUp *models.AgentFollowUp) (*models.AgentFollowUp, bool, error) {
+	incoming, err := agentFollowUpModelFrom(followUp)
+	if err != nil {
+		return nil, false, err
+	}
+	now := time.Now()
+	// Two runs that read the same message, or two messages about one
+	// parcel, can arrive together: the second one's insert is dropped by the
+	// unique index and it then updates the row the first one made.
+	for attempt := 0; attempt < 2; attempt++ {
+		var found []agentFollowUpModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("\"agent_id\" = ? AND \"follow_up_key\" = ?", incoming.AgentID, incoming.FollowUpKey).
+			Limit(1).Find(&found).Error; err != nil {
+			return nil, false, err
+		}
+		if len(found) == 0 {
+			incoming.ID, incoming.CreatedAt, incoming.UpdatedAt = newID(), now, now
+			created := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(incoming)
+			if created.Error != nil {
+				return nil, false, created.Error
+			}
+			if created.RowsAffected == 0 {
+				continue
+			}
+			kept, err := incoming.toModel()
+			return kept, err == nil, err
+		}
+		existing := &found[0]
+		var knownIDs []string
+		if err := decodeJSON(existing.SourceItemIDs, &knownIDs); err != nil {
+			return nil, false, fmt.Errorf("db: cannot read the messages of follow-up %q: %w", existing.ID, err)
+		}
+		var newIDs []string
+		if err := decodeJSON(incoming.SourceItemIDs, &newIDs); err != nil {
+			return nil, false, err
+		}
+		sourceItemIds, err := encodeStrings(uniqueStrings(append(knownIDs, newIDs...)))
+		if err != nil {
+			return nil, false, err
+		}
+		changes := map[string]any{"source_item_ids": sourceItemIds, "updated_at": now}
+		for column, value := range map[string]string{
+			"follow_up_title": incoming.FollowUpTitle, "payee": incoming.Payee, "carrier": incoming.Carrier,
+			"currency_code": incoming.CurrencyCode, "tracking_number": incoming.TrackingNumber, "place": incoming.Place,
+		} {
+			if value != "" {
+				changes[column] = value
+			}
+		}
+		if incoming.Amount != nil {
+			changes["amount"] = *incoming.Amount
+		}
+		if incoming.DueOn != nil {
+			changes["due_on"] = *incoming.DueOn
+		}
+		// The state is left as it is. A reminder that arrives after the bill
+		// went overdue, or after the person stopped it, is not a reason to
+		// call it open again; what changes a state is the sweep, a payment
+		// or delivery that closes it, or the person.
+		if err := self.tx.Model(&agentFollowUpModel{}).Where("\"id\" = ?", existing.ID).Updates(changes).Error; err != nil {
+			return nil, false, err
+		}
+		var reread agentFollowUpModel
+		if err := self.tx.Where("\"id\" = ?", existing.ID).Take(&reread).Error; err != nil {
+			return nil, false, err
+		}
+		kept, err := reread.toModel()
+		return kept, false, err
+	}
+	return nil, false, fmt.Errorf("db: the follow-up %q was not kept", incoming.FollowUpKey)
+}
+
+func (self *transaction) ListOpenAgentFollowUps(agentId string) ([]*models.AgentFollowUp, error) {
+	var found []agentFollowUpModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"follow_up_state\" IN ('open', 'overdue', 'stalled')", agentId).
+		Order("\"due_on\" ASC NULLS LAST, \"created_at\" ASC, \"id\" ASC").Find(&found).Error; err != nil {
+		return nil, err
+	}
+	return agentFollowUpsFrom(found)
+}
+
+func (self *transaction) ListAgentFollowUps(agentId string, limit int) ([]*models.AgentFollowUp, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var found []agentFollowUpModel
+	if err := self.tx.Where("\"agent_id\" = ?", agentId).
+		Order("\"created_at\" DESC, \"id\" DESC").Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	return agentFollowUpsFrom(found)
+}
+
+func agentFollowUpsFrom(found []agentFollowUpModel) ([]*models.AgentFollowUp, error) {
+	followUps := make([]*models.AgentFollowUp, 0, len(found))
+	for index := range found {
+		followUp, err := found[index].toModel()
+		if err != nil {
+			return nil, err
+		}
+		followUps = append(followUps, followUp)
+	}
+	return followUps, nil
+}
+
+func (self *transaction) UpdateAgentFollowUp(id string, update func(*models.AgentFollowUp) error) (*models.AgentFollowUp, error) {
+	var locked agentFollowUpModel
+	if err := lockRow(self.tx, &locked, id); err != nil {
+		return nil, err
+	}
+	followUp, err := locked.toModel()
+	if err != nil {
+		return nil, err
+	}
+	if err := update(followUp); err != nil {
+		return nil, err
+	}
+	// The identity of a follow-up is not the function's to change.
+	followUp.ID, followUp.AgentID, followUp.CreatedAt = locked.ID, locked.AgentID, locked.CreatedAt
+	changed, err := agentFollowUpModelFrom(followUp)
+	if err != nil {
+		return nil, err
+	}
+	changed.UpdatedAt = time.Now()
+	if err := self.tx.Save(changed).Error; err != nil {
+		return nil, err
+	}
+	return changed.toModel()
 }

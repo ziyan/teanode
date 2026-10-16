@@ -21,7 +21,7 @@ research is true only when looking something up — on the web, in the mailbox, 
 {{range .ResearchNotes}}- {{.}}
 {{end}}{{else}}. There are no research notes, so answer false unless the message plainly asks for a fact the person does not have.{{end}}
 
-extract is true when the message's words carry an appointment or somebody's details: "shall we say Thursday at four", "my new number is", a signature with a number on it. Not an invitation that arrives as a calendar attachment, which is read without you; not a marketing calendar or a webinar nobody agreed to attend. When it is true a second run reads the message and offers what it finds, so say true only when there is something to offer.
+extract is true when the message's words carry an appointment or somebody's details: "shall we say Thursday at four", "my new number is", a signature with a number on it. It is also true for a bill or payment due, a shipment or delivery notice, a form or reply due by a date, and a dated notice from a school, a club or the neighborhood, so that the agent can keep track of it. Not an invitation that arrives as a calendar attachment, which is read without you; not a marketing calendar, a sale that ends on a date or a webinar nobody agreed to attend. When it is true a second run reads the message and offers what it finds, so say true only when there is something to offer.
 
 action_items are the things the message asks the person to do, each a short imperative line, in {{.Language}}; empty when there are none.
 
