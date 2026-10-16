@@ -97,11 +97,22 @@ jobs:
   # while the app builds; the simulators boot after it, since a booting
   # simulator's first-run setup took the CPU and made the build four times
   # slower (23 minutes against 5).
+  #
+  # They are split across three machines, each taking every third screen in
+  # the list, since a hundred and sixty screens one after another took most
+  # of an hour. The App Store's set is the first machine's.
   screenshots:
-    name: Screenshots
+    name: Screenshots (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    env:
+      SHARD: ${{ matrix.shard }}
+      SHARD_COUNT: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -155,19 +166,22 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           # The largest phone, for the App Store's set at the end, boots
-          # while the screens below are taken.
-          xcrun simctl boot "$LARGEST_PHONE" &
+          # while the screens below are taken, on the machine that takes it.
+          if [ "$SHARD" = 0 ]; then
+            xcrun simctl boot "$LARGEST_PHONE" &
+          fi
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
           # A screen is taken once it has stopped changing: two looks a
-          # second apart that are the same, after two seconds at least and
-          # twelve at most. It was a fixed eight seconds, most of a shot.
+          # second apart that are the same, after six seconds at least and
+          # twelve at most. Not sooner: the launch screen is blank and holds
+          # still, and two seconds took it for the app's.
           settle() {
             target=$1
             previous="$RUNNER_TEMP/settle-previous.png"
-            sleep 2
+            sleep 5
             xcrun simctl io "$device" screenshot "$previous" >/dev/null 2>&1
-            for look in {1..10}; do
+            for look in {1..7}; do
               sleep 1
               xcrun simctl io "$device" screenshot "$target" >/dev/null 2>&1
               if cmp -s "$previous" "$target"; then
@@ -179,9 +193,15 @@ jobs:
           # The appearance and the text size are set only when they change:
           # each change redraws the whole simulator.
           shown_appearance="" shown_size=""
+          shot_index=0
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
+            # Every third screen is this machine's.
+            shot_index=$((shot_index + 1))
+            if [ $(((shot_index - 1) % SHARD_COUNT)) != "$SHARD" ]; then
+              return 0
+            fi
             if [ "$appearance" != "$shown_appearance" ]; then
               xcrun simctl ui "$device" appearance "$appearance"
               shown_appearance=$appearance
@@ -224,11 +244,11 @@ jobs:
           shoot connect-dark dark large
           shoot connect-largest-text light accessibility-extra-extra-extra-large
           shoot conversation-light light large -TeaNodeDemo
-          if build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
+          if [ -f screenshots/conversation-light.png ] && build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
             echo "Recording content assertion accepted the conversation screen."
             exit 1
           fi
-          if build/assert-device-setup-screenshot device-setup-light screenshots/conversation-light.png; then
+          if [ -f screenshots/conversation-light.png ] && build/assert-device-setup-screenshot device-setup-light screenshots/conversation-light.png; then
             echo "Device setup assertion accepted the conversation screen."
             exit 1
           fi
@@ -330,7 +350,12 @@ jobs:
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
 
           # The App Store's set: the largest iPhone, which its listing needs,
-          # with the status bar Apple's own screenshots show.
+          # with the status bar Apple's own screenshots show. The first
+          # machine's, every screen of it.
+          if [ "$SHARD" != 0 ]; then
+            exit 0
+          fi
+          SHARD_COUNT=1 SHARD=0
           xcrun simctl shutdown "$device"
           device=$LARGEST_PHONE
           shown_appearance="" shown_size=""
@@ -349,7 +374,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: screenshots
+          name: screenshots-${{ matrix.shard }}
           path: ios/screenshots
 
   # Signs the app and uploads it to App Store Connect, where it appears in
