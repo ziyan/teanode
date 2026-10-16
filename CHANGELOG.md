@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.167.0] - 2026-10-16
+
+### Added
+
+- A new server's first operator starts the assistant from one page: a model service, its key, one button. `teanode services assistant` does the same from a terminal. (#519)
+
+### Fixed
+
+- A new agent's first greeting no longer lands in a second main conversation the chat does not show. (#519)
+- The agent greets somebody who has just switched it on without waiting a minute. (#519)
+
 ## [0.166.4] - 2026-10-16
 
 ### Changed
