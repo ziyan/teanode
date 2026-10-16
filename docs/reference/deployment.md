@@ -331,17 +331,45 @@ the import refuses rather than replacing them.
 
 The assistant compose file runs the database, file storage and HTTP server
 on a private Docker network. Only loopback port 8080 is published. It does
-not require SMTP or IMAP ports, host networking or privileged-port capabilities.
-Set a random POSTGRES_PASSWORD in an untracked environment file, then run:
+not require a domain, SMTP or IMAP ports, host networking or privileged-port
+capabilities.
 
-    docker compose -f deploy/docker-compose.assistant.yml up -d
+1. Fetch the compose file, give the database a random password in an
+   untracked environment file, and start it:
 
-Put port 8080 behind a TLS reverse proxy for remote access. Set trusted proxy
-addresses in the dashboard so secure cookies and profile downloads use the
-correct origin. Open the loopback dashboard and claim the first account before allowing
-remote access. In Server > Setup, choose services, configure and test a model provider,
-select a default model, enable the assistant, and try a conversation. Mail DNS
-checks appear only for hosted mail.
+       mkdir -p /opt/teanode && cd /opt/teanode
+       curl -LO https://raw.githubusercontent.com/ziyan/teanode/main/deploy/docker-compose.assistant.yml
+       echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" > .env
+       chmod 600 .env
+       docker compose -f docker-compose.assistant.yml up -d
+
+2. Open http://127.0.0.1:8080/. On a server rather than the computer in
+   front of you, reach it through a tunnel first
+   (`ssh -L 8080:127.0.0.1:8080 <server>`). The first visitor creates the
+   account, an administrator, so do this before allowing remote access.
+3. Open **Manage → Server → Setup**. The assistant compose file has
+   already chosen **Personal assistant**, so work down the list under it,
+   which says which steps are done:
+   - **Connect a model provider and test it** (Manage → Agents → Models):
+     add a provider with its API key, or the address of your own Ollama or
+     vLLM, press **Test**, then choose a **Default** model and save. A
+     small, inexpensive model from your provider is a good start; the
+     dropdown has a box to narrow its list.
+   - **Enable the assistant** (Manage → Agents → General): turn on
+     **Enabled** and save.
+   - **Restart this instance**: the provider, the models and Enabled are
+     read when the server starts. The toast after saving them has a
+     **Restart…** button, or use **Manage → Server → About**.
+   - **Turn on your own agent**: each person turns on their own agent, and
+     this button turns on yours (others do it under Settings → Your agent).
+4. **Open your personal assistant** and say something. The agent introduces
+   itself first.
+
+For remote access, put port 8080 behind a TLS reverse proxy and set its
+addresses as trusted proxies, so that secure cookies and profile downloads
+use the right origin. The iPhone app needs that HTTPS address. Mail DNS
+checks appear only for hosted mail, and mail can be added later in
+Server → Setup without losing anything.
 
 For a binary with your own database, generate an HTTP-only starter file:
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { CheckIcon, CopyIcon, ShieldIcon } from './icons'
 import { Tooltip } from './tooltip'
@@ -258,6 +258,9 @@ export function ErrorMessage({ error }: { error: unknown }) {
 // used to say "takes effect when this instance restarts", which was true of
 // a provider key and false of a limit, and nobody could tell which.
 const PENDING_RESTART = `{ GetServerStatus { pendingRestart } }`
+
+// Where the restart button is.
+export const RESTART_PATH = '/manage/server/about'
 let lastPending: string[] | null = null
 
 async function readPendingRestart(): Promise<string[]> {
@@ -271,14 +274,22 @@ async function readPendingRestart(): Promise<string[]> {
 
 // announceSaved says what a save did: in effect now, or waiting for a
 // restart, naming what waits. Judged by what the server reports as pending
-// after the save against what it reported before.
-export async function announceSaved(toast: ReturnType<typeof useToast>, t: ReturnType<typeof useTranslation>['t']) {
+// after the save against what it reported before. A save that waits carries
+// the way to the restart, which is on another page.
+export async function announceSaved(
+  toast: ReturnType<typeof useToast>,
+  t: ReturnType<typeof useTranslation>['t'],
+  openRestart: () => void,
+) {
   const before = lastPending ?? []
   const after = await readPendingRestart()
   lastPending = after
   const added = after.filter((name) => !before.includes(name))
   if (added.length > 0) {
-    toast.done(t('common.savedPending', { settings: added.join(', ') }))
+    toast.done(t('common.savedPending', { settings: added.join(', ') }), {
+      label: t('common.restartAction'),
+      run: openRestart,
+    })
   } else {
     toast.done(t('common.savedLive'))
   }
@@ -286,6 +297,7 @@ export async function announceSaved(toast: ReturnType<typeof useToast>, t: Retur
 
 export function useSaySaved(saved: boolean) {
   const toast = useToast()
+  const navigate = useNavigate()
   const { t } = useTranslation()
   const said = useRef(false)
   // Primed once, so the first save has something to compare against.
@@ -298,10 +310,10 @@ export function useSaySaved(saved: boolean) {
   }, [])
   useEffect(() => {
     if (saved && !said.current) {
-      void announceSaved(toast, t)
+      void announceSaved(toast, t, () => navigate(RESTART_PATH))
     }
     said.current = saved
-  }, [saved, toast, t])
+  }, [saved, toast, t, navigate])
 }
 
 export function SaveRow({

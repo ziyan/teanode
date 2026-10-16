@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../../api'
-import { SaveRow, announceSaved } from '../../components/common'
+import { RESTART_PATH, SaveRow, announceSaved } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
@@ -268,12 +269,13 @@ function messageOf(caught: unknown): string {
 function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
   const { t } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   async function save(values: Record<string, unknown>): Promise<boolean> {
     setBusy(true)
     try {
       await graphql(UPDATE, { agent: values })
-      await announceSaved(toast, t)
+      await announceSaved(toast, t, () => navigate(RESTART_PATH))
       await onSaved()
       return true
     } catch (caught) {

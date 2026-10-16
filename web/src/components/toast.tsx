@@ -45,7 +45,7 @@ const MOST = 3
 
 type Speak = {
   done: (message: string, action?: ToastAction) => void
-  failed: (message: string) => void
+  failed: (message: string, action?: ToastAction) => void
   // Whatever went wrong, said in the words it arrived with. Anything that is
   // not an Error has no message worth showing, so it gets the general one.
   failure: (caught: unknown, fallback: string) => void
@@ -69,7 +69,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const speak = useMemo<Speak>(
     () => ({
       done: (message, action) => add('done', message, action),
-      failed: (message) => add('failed', message),
+      failed: (message, action) => add('failed', message, action),
       failure: (caught, fallback) =>
         add('failed', caught instanceof Error && caught.message ? caught.message : fallback),
     }),
