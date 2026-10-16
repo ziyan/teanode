@@ -4689,7 +4689,7 @@ export const ja: Catalog = {
   'welcome.working': 'アシスタントを起動しています。1 分もかかりません。',
   'welcome.checking': 'キーを確かめてモデルを選ぶ',
   'welcome.chose': '{model}。「管理」の「エージェント」の「モデル」で変えられます',
-  'welcome.choseWithFast': '{model}、短いやりとりには {fast}。「管理」の「エージェント」の「モデル」で変えられます',
+  'welcome.choseWithFast': '{model}、裏での小さな仕事には {fast}。「管理」の「エージェント」の「モデル」で変えられます',
   'welcome.starting': 'アシスタントを起動する',
   'welcome.opening': '会話を開く',
   'welcome.restartFailed': 'TeaNode がひとりでに戻ってきませんでした。動いている場所で再起動してから（たとえばそのフォルダーで docker compose restart）、続けてください。',

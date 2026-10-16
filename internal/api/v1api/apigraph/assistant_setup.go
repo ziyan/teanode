@@ -48,7 +48,7 @@ type AssistantSetup struct {
 	// EmbeddingModel is the model memory is searched by meaning with, or
 	// empty when the service has none or one was already chosen.
 	EmbeddingModel string `json:"embeddingModel"`
-	// FastModel is the smaller model typed turns start on and the cheap
+	// FastModel is the smaller model the cheap background work runs on
 	// work runs on, or empty when the service has none worth choosing or
 	// one was already chosen; everything then runs on the default.
 	FastModel string `json:"fastModel"`
@@ -155,12 +155,13 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 			result.EmbeddingModel = name + ":" + chosenModels.embeddingModel
 			configuration.Agent.Models.Embedding = result.EmbeddingModel
 		}
-		// A typed turn starts on the fast model and hands anything that
-		// needs reasoning to the default; the cheap work runs on it too.
-		if chosenModels.fastModel != "" && chosenModels.fastModel != defaultModel && configuration.Agent.Models.Fast == "" && configuration.Agent.Models.Quick == "" {
+		// The cheap background work runs on the fast model. Typed turns stay
+		// on the default: started on the fast one, a turn on a new server
+		// with nothing remembered wandered through tool after tool and spent
+		// the day's budget without answering.
+		if chosenModels.fastModel != "" && chosenModels.fastModel != defaultModel && configuration.Agent.Models.Fast == "" {
 			result.FastModel = name + ":" + chosenModels.fastModel
 			configuration.Agent.Models.Fast = result.FastModel
-			configuration.Agent.Models.Quick = result.FastModel
 		}
 		configuration.Agent.Enabled = true
 		// A mail server's setup goes on to its domain; the assistant's is done.

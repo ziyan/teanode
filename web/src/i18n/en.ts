@@ -4737,7 +4737,7 @@ export const en = {
   'welcome.working': 'Starting your assistant. This takes under a minute.',
   'welcome.checking': 'Checking the key and choosing a model',
   'welcome.chose': '{model}, which you can change under Manage, Agents, Models',
-  'welcome.choseWithFast': '{model}, and {fast} for quick turns, which you can change under Manage, Agents, Models',
+  'welcome.choseWithFast': '{model}, and {fast} for small background jobs, which you can change under Manage, Agents, Models',
   'welcome.starting': 'Starting the assistant',
   'welcome.opening': 'Opening your conversation',
   'welcome.restartFailed': 'TeaNode did not come back by itself. Restart it where it runs, for example with docker compose restart in its folder, then continue.',
