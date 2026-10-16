@@ -1774,6 +1774,7 @@ export const en = {
   'agent.runKinds.tax_document': 'Read a paystub, W-2, 1099 or 1098',
   'agent.runKinds.tax_mail': 'Tax documents mailed in',
   'agent.runKinds.watch': 'Watching',
+  'agent.runKinds.follow_up_sweep': 'Check follow-ups',
   'agent.runKinds.embed': 'Indexing',
   'agent.runKinds.send': 'Sending',
   'agent.runKinds.backfill': 'Catching up',

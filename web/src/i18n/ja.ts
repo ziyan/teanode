@@ -1764,6 +1764,7 @@ export const ja: Catalog = {
   'agent.runKinds.tax_document': '給与明細・W-2・1099・1098の読み取り',
   'agent.runKinds.tax_mail': 'メールで届いた税務書類',
   'agent.runKinds.watch': '見守り',
+  'agent.runKinds.follow_up_sweep': 'フォローアップの確認',
   'agent.runKinds.embed': '索引付け',
   'agent.runKinds.send': '送信',
   'agent.runKinds.backfill': '追いつき',

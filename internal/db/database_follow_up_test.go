@@ -144,3 +144,81 @@ func TestAgentFollowUpRefusals(t *testing.T) {
 		}
 	})
 }
+
+// A candidate about follow-ups keeps which follow-ups, what is told and its
+// subject key, writes one per subject key and agent however many sweeps find
+// it, and is refused without them. Follow-ups are read back by id for their
+// own agent only.
+func TestFollowUpAlertCandidateIsWrittenOnce(t *testing.T) {
+	database, releaseDatabase := dbtest.AcquireDatabase(t)
+	defer releaseDatabase()
+	fixture := createFinanceFixture(t, database, "follow-up-candidate")
+	stranger := createFinanceFixture(t, database, "follow-up-candidate-stranger")
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		bill, _, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
+			AgentID: fixture.agentId, FollowUpKind: models.AgentFollowUpBill, FollowUpKey: "bill:hillside gas 2026-10-21",
+			FollowUpTitle: "Gas", Payee: "Hillside Gas", Amount: "90.00", DueOn: "2026-10-21",
+		})
+		if err != nil {
+			t.Fatalf("UpsertAgentFollowUp: %s", err)
+		}
+		theirs, _, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
+			AgentID: stranger.agentId, FollowUpKind: models.AgentFollowUpBill, FollowUpKey: "bill:hillside gas 2026-10-21", FollowUpTitle: "Theirs",
+		})
+		if err != nil {
+			t.Fatalf("UpsertAgentFollowUp: %s", err)
+		}
+
+		candidate := func(agentId string, followUpIds ...string) *models.AgentAlertCandidate {
+			return &models.AgentAlertCandidate{
+				AgentID: agentId, CandidateKind: models.AlertCandidateFollowUp, AlertSignal: models.AlertSignalSoon, CandidateReason: "due in 3 days",
+				FollowUpIDs: followUpIds, FollowUpToldState: models.AgentFollowUpToldReminded, FollowUpSubjectKey: "bill:hillside gas 2026-10-21:reminded",
+			}
+		}
+		first, err := tx.CreateAgentAlertCandidate(candidate(fixture.agentId, bill.ID))
+		if err != nil || first == nil {
+			t.Fatalf("CreateAgentAlertCandidate: %v %+v", err, first)
+		}
+		if first.CandidateKind != models.AlertCandidateFollowUp || len(first.FollowUpIDs) != 1 || first.FollowUpIDs[0] != bill.ID ||
+			first.FollowUpToldState != models.AgentFollowUpToldReminded || first.FollowUpSubjectKey != "bill:hillside gas 2026-10-21:reminded" {
+			t.Fatalf("the candidate keeps what it is about: %+v", first)
+		}
+		if again, err := tx.CreateAgentAlertCandidate(candidate(fixture.agentId, bill.ID)); err != nil || again != nil {
+			t.Fatalf("the same subject key is not written twice: %v %+v", err, again)
+		}
+		if other, err := tx.CreateAgentAlertCandidate(candidate(stranger.agentId, theirs.ID)); err != nil || other == nil {
+			t.Fatalf("another agent has its own: %v %+v", err, other)
+		}
+		for name, invalid := range map[string]*models.AgentAlertCandidate{
+			"no follow-ups":    candidate(fixture.agentId),
+			"no subject key":   {AgentID: fixture.agentId, CandidateKind: models.AlertCandidateFollowUp, FollowUpIDs: []string{bill.ID}, FollowUpToldState: models.AgentFollowUpToldOverdue},
+			"no told state":    {AgentID: fixture.agentId, CandidateKind: models.AlertCandidateFollowUp, FollowUpIDs: []string{bill.ID}, FollowUpSubjectKey: "bill:x:y"},
+			"an unknown state": {AgentID: fixture.agentId, CandidateKind: models.AlertCandidateFollowUp, FollowUpIDs: []string{bill.ID}, FollowUpToldState: "lost", FollowUpSubjectKey: "bill:x:y"},
+		} {
+			if _, err := tx.CreateAgentAlertCandidate(invalid); err == nil {
+				t.Errorf("%s: refused", name)
+			}
+		}
+
+		waiting, err := tx.ListWaitingAgentAlertCandidates(fixture.agentId, 10)
+		if err != nil || len(waiting) != 1 || waiting[0].ID != first.ID || len(waiting[0].FollowUpIDs) != 1 {
+			t.Fatalf("ListWaitingAgentAlertCandidates: %v %+v", err, waiting)
+		}
+		found, err := tx.GetAgentFollowUps(fixture.agentId, []string{bill.ID, theirs.ID, "gone"})
+		if err != nil || len(found) != 1 || found[0].ID != bill.ID {
+			t.Fatalf("GetAgentFollowUps reads the agent's own: %v %+v", err, found)
+		}
+		if none, err := tx.GetAgentFollowUps(fixture.agentId, nil); err != nil || len(none) != 0 {
+			t.Fatalf("GetAgentFollowUps with no ids: %v %+v", err, none)
+		}
+
+		// What was told is one of the five, kept apart from the state.
+		if _, err := tx.UpdateAgentFollowUp(bill.ID, func(locked *models.AgentFollowUp) error {
+			locked.ToldState = "open"
+			return nil
+		}); err == nil {
+			t.Errorf("a follow-up state is not a told state")
+		}
+	})
+}

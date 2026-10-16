@@ -41,6 +41,8 @@ export const RUN_KINDS = [
   // An item a skill's watch found -- mail, a transaction, a mention --
   // judged.
   'watch',
+  // The daily look at bills, parcels, deadlines and coming events.
+  'follow_up_sweep',
 ]
 
 // runKindLabel is a run's kind in the reader's words. A kind this dashboard

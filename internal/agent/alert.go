@@ -12,6 +12,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/finance"
 	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
@@ -59,6 +60,10 @@ const (
 	// alertStaleReason is what a candidate is dropped with when the job
 	// comes to it, or to its message, past the freshness bound.
 	alertStaleReason = "older than a day when the alert job came to it, and no longer news"
+
+	// alertFollowUpGoneReason is what a follow-up candidate is dropped with
+	// when what it would tell is no longer so.
+	alertFollowUpGoneReason = "the follow-up it is about is gone, or was closed since it was written"
 
 	// alertAfterTurn is how long the job waits when a turn is running in
 	// the main conversation, before it looks again: the same minute a
@@ -111,6 +116,9 @@ type labeledCandidate struct {
 	// facts are who it is from and what it is about, as a mute reads them
 	// and as the alert that tells it records them.
 	facts *alertFacts
+
+	// followUps are the follow-ups a follow_up candidate is about.
+	followUps []*models.AgentFollowUp
 }
 
 // AlertPrompt renders the decision's prompt. The mail, and everything the
@@ -124,7 +132,7 @@ func AlertPrompt(input *AlertInput) (string, error) {
 	}
 	candidates := make([]string, 0, len(input.Candidates))
 	for _, labeled := range input.Candidates {
-		candidates = append(candidates, renderAlertCandidate(labeled))
+		candidates = append(candidates, renderAlertCandidate(labeled, input.Now.In(location)))
 	}
 	return render("alert.txt", map[string]any{
 		"PersonName":   personName(input.Owner),
@@ -138,8 +146,9 @@ func AlertPrompt(input *AlertInput) (string, error) {
 }
 
 // renderAlertCandidate is one candidate in the prompt: its label and kind
-// outside the fence, and everything that came from the mail inside it.
-func renderAlertCandidate(labeled *labeledCandidate) string {
+// outside the fence, and everything that came from the mail inside it. now
+// is the moment in the person's zone, for the days a follow-up is away.
+func renderAlertCandidate(labeled *labeledCandidate, now time.Time) string {
 	candidate := labeled.candidate
 	header := ""
 	var inside []string
@@ -149,6 +158,16 @@ func renderAlertCandidate(labeled *labeledCandidate) string {
 		// finance transactions, and the spending category's name is the
 		// person's own. Nothing a stranger wrote, so nothing to fence.
 		return fmt.Sprintf("Candidate %s: a budget crossing the server computed after a sync of their finance accounts, not a message.\nWhat the numbers say: %s", labeled.label, candidate.CandidateReason)
+	case models.AlertCandidateFollowUp:
+		// Kept by the server from mail the agent read: what it says comes
+		// from a stranger's message, so the follow-ups are inside the
+		// fence, and the reason the server computed beside them.
+		header = fmt.Sprintf("Candidate %s: %s", labeled.label, followUpCandidateHeader(candidate))
+		inside = append(inside, "What the server saw: "+candidate.CandidateReason)
+		for _, followUp := range labeled.followUps {
+			inside = append(inside, renderAlertFollowUp(followUp, now))
+		}
+		return header + "\n" + fenced(strings.Join(inside, "\n\n"))
 	case models.AlertCandidateWatched:
 		// Found by a skill's watch: the item as the judgement saw it is on
 		// the candidate -- mail, a transaction, a mention -- and is text
@@ -174,6 +193,64 @@ func renderAlertCandidate(labeled *labeledCandidate) string {
 		inside = append(inside, "(the message is no longer stored)")
 	}
 	return header + "\n" + fenced(strings.Join(inside, "\n\n"))
+}
+
+// followUpCandidateHeader says what a follow-up candidate is, outside the
+// fence: the server's own words and the told state.
+func followUpCandidateHeader(candidate *models.AgentAlertCandidate) string {
+	if candidate.FollowUpToldState == models.AgentFollowUpToldRoundup {
+		return "the week's roundup of coming events and deadlines, from the follow-ups the server keeps from their mail, not a message. Say all of them in one alert."
+	}
+	return fmt.Sprintf("a follow-up the server keeps from their mail, not a message. What to tell about it: %s.", candidate.FollowUpToldState)
+}
+
+// renderAlertFollowUp is one follow-up as the decision reads it, with what it
+// is, who it is with, the amount, the day and how far the day is from now.
+func renderAlertFollowUp(followUp *models.AgentFollowUp, now time.Time) string {
+	parts := []string{string(followUp.FollowUpKind) + ": " + followUp.FollowUpTitle}
+	if followUp.Payee != "" {
+		parts = append(parts, "payee "+followUp.Payee)
+	}
+	if followUp.Amount != "" {
+		amount := followUp.Amount
+		if parsed, err := finance.ParseAmount(amount); err == nil {
+			amount = displayAmount(parsed)
+		}
+		parts = append(parts, "amount "+strings.TrimSpace(amount+" "+followUp.CurrencyCode))
+	}
+	if followUp.DueOn != "" {
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		dueWords := "due"
+		switch followUp.FollowUpKind {
+		case models.AgentFollowUpParcel:
+			dueWords = "expected"
+		case models.AgentFollowUpEvent:
+			dueWords = "on"
+		}
+		parts = append(parts, fmt.Sprintf("%s %s (%s)", dueWords, followUp.DueOn, followUpDayDistance(followUp.DueOn, today)))
+	}
+	if followUp.Place != "" {
+		parts = append(parts, "place "+followUp.Place)
+	}
+	if followUp.Carrier != "" {
+		parts = append(parts, "carrier "+followUp.Carrier)
+	}
+	if followUp.ToldState != "" {
+		parts = append(parts, "told "+string(followUp.ToldState))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// followUpDayDistance is how far a day is from today, in words.
+func followUpDayDistance(dueOn string, today time.Time) string {
+	days, hasDay := followUpDaysUntil(dueOn, today)
+	switch {
+	case !hasDay:
+		return "no day"
+	case days < 0:
+		return followUpDayWords(days) + " ago"
+	}
+	return followUpDueWords(days)
 }
 
 // runAlert is the handler for an alert job.
@@ -206,6 +283,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	var mutes []*models.AgentAlertMute
 	mailsById := map[string]*models.Mail{}
 	categoriesByMail := map[string]string{}
+	followUpsById := map[string]*models.AgentFollowUp{}
 	var gone []string
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if err := RequireBudget(tx, configuration, run.Agent, run.Owner, now); err != nil {
@@ -228,8 +306,12 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		isAllowedByMailbox := map[string]bool{}
 		mailIds := make([]string, 0, len(waiting))
 		mailIdsByMailbox := map[string][]string{}
+		var followUpIds []string
 		for _, candidate := range waiting {
-			if candidate.CandidateKind == models.AlertCandidateBudget || candidate.CandidateKind == models.AlertCandidateWatched {
+			if candidate.CandidateKind == models.AlertCandidateFollowUp {
+				followUpIds = append(followUpIds, candidate.FollowUpIDs...)
+			}
+			if candidate.CandidateKind == models.AlertCandidateBudget || candidate.CandidateKind == models.AlertCandidateWatched || candidate.CandidateKind == models.AlertCandidateFollowUp {
 				continue
 			}
 			isAllowed, isKnown := isAllowedByMailbox[candidate.MailboxID]
@@ -247,6 +329,13 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 			}
 			mailIds = append(mailIds, candidate.MailID)
 			mailIdsByMailbox[candidate.MailboxID] = append(mailIdsByMailbox[candidate.MailboxID], candidate.MailID)
+		}
+		followUps, err := tx.GetAgentFollowUps(run.Agent.ID, followUpIds)
+		if err != nil {
+			return err
+		}
+		for _, followUp := range followUps {
+			followUpsById[followUp.ID] = followUp
 		}
 		found, err := tx.GetMails(mailIds, nil)
 		if err != nil {
@@ -276,6 +365,7 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 	}
 
 	var labeled []*labeledCandidate
+	var followUpGoneIds []string
 	var mutedIds []string
 	var staleIds []string
 	for _, candidate := range waiting {
@@ -286,6 +376,24 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 				continue
 			}
 			labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, facts: facts})
+			continue
+		}
+		if candidate.CandidateKind == models.AlertCandidateFollowUp {
+			// Like a budget crossing, from the server and not a mailbox. A
+			// follow-up that is gone, or one that went on to something
+			// that makes the telling untrue, such as a bill paid since the
+			// reminder was written, is not told.
+			followUps := followUpsOf(candidate, followUpsById)
+			if len(followUps) == 0 || !isFollowUpStillToBeTold(candidate, followUps) {
+				followUpGoneIds = append(followUpGoneIds, candidate.ID)
+				continue
+			}
+			facts := candidateFacts(candidate, "", "")
+			if mutedBy(mutes, facts) != nil {
+				mutedIds = append(mutedIds, candidate.ID)
+				continue
+			}
+			labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, facts: facts, followUps: followUps})
 			continue
 		}
 		if candidate.CandidateKind == models.AlertCandidateWatched {
@@ -330,12 +438,15 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		}
 		labeled = append(labeled, &labeledCandidate{label: fmt.Sprintf("c%d", len(labeled)+1), candidate: candidate, message: message, facts: facts})
 	}
-	if len(gone) > 0 || len(mutedIds) > 0 || len(staleIds) > 0 {
+	if len(gone) > 0 || len(mutedIds) > 0 || len(staleIds) > 0 || len(followUpGoneIds) > 0 {
 		if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
 			if err := tx.DropAgentAlertCandidates(gone, "its message or its mailbox is gone, or the mailbox no longer alerts", now); err != nil {
 				return err
 			}
 			if err := tx.DropAgentAlertCandidates(staleIds, alertStaleReason, now); err != nil {
+				return err
+			}
+			if err := tx.DropAgentAlertCandidates(followUpGoneIds, alertFollowUpGoneReason, now); err != nil {
 				return err
 			}
 			return tx.DropAgentAlertCandidates(mutedIds, alertMutedReason, now)
@@ -400,6 +511,36 @@ func (self *Agent) runAlert(ctx context.Context, run *Run) error {
 		}
 	}
 	return self.alertFollowUp(ctx, run, labeled, plan, now, location, bounds)
+}
+
+// followUpsOf is the follow-ups a candidate is about that are still stored,
+// in the order the candidate lists them.
+func followUpsOf(candidate *models.AgentAlertCandidate, followUpsById map[string]*models.AgentFollowUp) []*models.AgentFollowUp {
+	followUps := make([]*models.AgentFollowUp, 0, len(candidate.FollowUpIDs))
+	for _, followUpId := range candidate.FollowUpIDs {
+		if followUp := followUpsById[followUpId]; followUp != nil {
+			followUps = append(followUps, followUp)
+		}
+	}
+	return followUps
+}
+
+// isFollowUpStillToBeTold says what a follow-up candidate would tell is
+// still so by the time the alert job reads it: a reminder or an overdue
+// notice for a bill that a payment closed since is not, nor is a stalled
+// parcel that was delivered. What a candidate that has been told is about
+// (delivered) and a roundup are told as written.
+func isFollowUpStillToBeTold(candidate *models.AgentAlertCandidate, followUps []*models.AgentFollowUp) bool {
+	switch candidate.FollowUpToldState {
+	case models.AgentFollowUpToldReminded, models.AgentFollowUpToldOverdue, models.AgentFollowUpToldStalled:
+		for _, followUp := range followUps {
+			if followUp.FollowUpState.IsOpen() {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // alertConversation is the main conversation alerts are said in, made
@@ -476,6 +617,9 @@ func (self *Agent) alertPages(ctx context.Context, run *Run, labeled []*labeledC
 		if entry.candidate.CandidateKind == models.AlertCandidateWatched {
 			words = append(words, entry.candidate.WatchedSender, entry.candidate.WatchedTitle)
 			continue
+		}
+		for _, followUp := range entry.followUps {
+			words = append(words, followUp.Payee, followUp.FollowUpTitle)
 		}
 		if entry.message == nil {
 			continue
@@ -748,6 +892,11 @@ func alertSubjectKey(subjectKey string, candidate *models.AgentAlertCandidate) s
 	// told, a second time.
 	if candidate.CandidateKind == models.AlertCandidateBudget && candidate.BudgetKey != "" {
 		return candidate.BudgetKey
+	}
+	// A follow-up's key and what is told about it, for the same reason:
+	// it is what keeps a bill from being reminded twice.
+	if candidate.CandidateKind == models.AlertCandidateFollowUp && candidate.FollowUpSubjectKey != "" {
+		return candidate.FollowUpSubjectKey
 	}
 	subjectKey = normalizedSubjectKey(subjectKey)
 	if subjectKey == "" {

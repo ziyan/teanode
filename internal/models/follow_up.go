@@ -61,6 +61,32 @@ func (self AgentFollowUpState) IsOpen() bool {
 	return false
 }
 
+// AgentFollowUpToldState is what the person was last told about a follow-up,
+// kept apart from the follow-up's own state: a bill is reminded while it is
+// still open, and a delivered parcel is told about as it closes.
+type AgentFollowUpToldState string
+
+// The things told: a bill or deadline reminded before its day, a bill
+// overdue, a parcel stalled, a parcel delivered, and an event or deadline
+// that went out in the Sunday roundup. A follow-up is told about each of
+// them once.
+const (
+	AgentFollowUpToldReminded  AgentFollowUpToldState = "reminded"
+	AgentFollowUpToldOverdue   AgentFollowUpToldState = "overdue"
+	AgentFollowUpToldStalled   AgentFollowUpToldState = "stalled"
+	AgentFollowUpToldDelivered AgentFollowUpToldState = "delivered"
+	AgentFollowUpToldRoundup   AgentFollowUpToldState = "roundup"
+)
+
+// IsValid says the told state is one of the five.
+func (self AgentFollowUpToldState) IsValid() bool {
+	switch self {
+	case AgentFollowUpToldReminded, AgentFollowUpToldOverdue, AgentFollowUpToldStalled, AgentFollowUpToldDelivered, AgentFollowUpToldRoundup:
+		return true
+	}
+	return false
+}
+
 // AgentFollowUp is a thing mail said is due, on its way or coming up, kept
 // until something closes it.
 type AgentFollowUp struct {
@@ -94,10 +120,10 @@ type AgentFollowUp struct {
 	// SourceItemIDs are the messages it came from, newest last.
 	SourceItemIDs []string `json:"sourceItemIds"`
 
-	// ToldState is the state the person was last told about, empty when
+	// ToldState is what the person was last told about it, empty when
 	// never, and ToldAt when.
-	ToldState AgentFollowUpState `json:"toldState,omitempty"`
-	ToldAt    *time.Time         `json:"toldAt,omitempty"`
+	ToldState AgentFollowUpToldState `json:"toldState,omitempty"`
+	ToldAt    *time.Time             `json:"toldAt,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

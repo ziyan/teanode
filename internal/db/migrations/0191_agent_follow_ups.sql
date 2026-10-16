@@ -32,8 +32,9 @@ CREATE TABLE "agent_follow_up" (
     -- The messages it came from, newest last.
     "source_item_ids"  jsonb                    NOT NULL DEFAULT '[]',
 
-    -- The state the person was last told about, and when, so a state is
-    -- said once.
+    -- What the person was last told about it (reminded, overdue, stalled,
+    -- delivered or roundup), and when, so each is said once. Kept apart
+    -- from follow_up_state: a bill is reminded while it is still open.
     "told_state"       character varying(20)    NOT NULL DEFAULT '',
     "told_at"          timestamp with time zone,
 
@@ -41,8 +42,21 @@ CREATE TABLE "agent_follow_up" (
     "updated_at"       timestamp with time zone NOT NULL,
 
     CHECK ("follow_up_kind" IN ('bill', 'parcel', 'deadline', 'event')),
-    CHECK ("follow_up_state" IN ('open', 'closed', 'overdue', 'stalled', 'expired', 'stopped'))
+    CHECK ("follow_up_state" IN ('open', 'closed', 'overdue', 'stalled', 'expired', 'stopped')),
+    CHECK ("told_state" IN ('', 'reminded', 'overdue', 'stalled', 'delivered', 'roundup'))
 );
 CREATE UNIQUE INDEX "agent_follow_up_key" ON "agent_follow_up" ("agent_id", "follow_up_key");
 CREATE INDEX "agent_follow_up_open" ON "agent_follow_up" ("agent_id", "due_on")
     WHERE "follow_up_state" IN ('open', 'overdue', 'stalled');
+
+-- A follow-up that is due to be told is an alert candidate of kind
+-- follow_up (candidate_kind has no check, so the kind needs no widening): the
+-- follow-ups it is about (one, or several for the Sunday roundup), what is
+-- being told about them, and the key of the alert that tells it, the
+-- follow-up's key and the told state, or follow-up-roundup:<the Sunday's
+-- date>. Unique, so two sweeps running together cannot both write it.
+ALTER TABLE "agent_alert_candidate"
+    ADD COLUMN "follow_up_ids"         jsonb                 NOT NULL DEFAULT '[]',
+    ADD COLUMN "follow_up_told_state"  character varying(20) NOT NULL DEFAULT '',
+    ADD COLUMN "follow_up_subject_key" text                  NOT NULL DEFAULT '';
+CREATE UNIQUE INDEX "agent_alert_candidate_follow_up" ON "agent_alert_candidate" ("agent_id", "follow_up_subject_key") WHERE "follow_up_subject_key" <> '';

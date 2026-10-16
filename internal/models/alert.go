@@ -16,13 +16,17 @@ type AlertCandidateKind string
 // The kinds: one message the sorting judged worth telling, a burst of
 // messages alike that a count noticed, which no single message's sorting
 // can see, a budget or savings target crossing that code computed after a
-// sync, and an item a skill's watch found and judged worth telling: mail
-// in a mailbox this server does not host, a transaction, a mention.
+// sync, an item a skill's watch found and judged worth telling: mail
+// in a mailbox this server does not host, a transaction, a mention, and a
+// follow-up (a bill, a parcel, a deadline, coming events) that the daily
+// sweep or a closing parcel found due to be told.
 const (
 	AlertCandidateMessage AlertCandidateKind = "message"
 	AlertCandidateBurst   AlertCandidateKind = "burst"
 	AlertCandidateBudget  AlertCandidateKind = "budget"
 	AlertCandidateWatched AlertCandidateKind = "watched"
+
+	AlertCandidateFollowUp AlertCandidateKind = "follow_up"
 )
 
 // AgentAlertCandidate is something that might be worth telling the person
@@ -66,6 +70,16 @@ type AgentAlertCandidate struct {
 	WatchedItemAt    *time.Time `json:"watchedItemAt,omitempty"`
 	WatchedItemText  string     `json:"watchedItemText,omitempty"`
 	WatchedItemURL   string     `json:"watchedItemUrl,omitempty"`
+
+	// What a follow_up candidate is about: the follow-ups (one, or several
+	// for the Sunday roundup), what is being told about them, and the
+	// subject key of the alert that tells it, which is the follow-up's key
+	// and the told state (for a roundup "follow-up-roundup:" and the
+	// Sunday's date). The subject key is written once per agent, so the
+	// same thing is never made a candidate twice.
+	FollowUpIDs        []string               `json:"followUpIds,omitempty"`
+	FollowUpToldState  AgentFollowUpToldState `json:"followUpToldState,omitempty"`
+	FollowUpSubjectKey string                 `json:"followUpSubjectKey,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 
@@ -145,6 +159,11 @@ const AlertKindBurst = "burst"
 // AlertKindBudget is the kind a mute names to silence every budget and
 // savings target alert.
 const AlertKindBudget = "budget"
+
+// AlertKindFollowUp is the kind a mute names to silence every alert about a
+// follow-up; the kind of follow-up (bill, parcel, deadline, event) silences
+// those alone.
+const AlertKindFollowUp = "follow_up"
 
 // AgentAlertMute is the person's "don't tell me about these": a candidate
 // or an alert that matches it is dropped, saying it was muted.

@@ -126,7 +126,8 @@ func TestTriageThroughTheWorker(t *testing.T) {
 	worker.Wait()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		jobs, _ := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: found.ID}, nil)
+		// Of triage alone: a tick also queues the day's follow-up sweep.
+		jobs, _ := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: found.ID, Kinds: []models.AgentJobKind{models.AgentJobTriage}}, nil)
 		if len(jobs) != 1 || jobs[0].Status != models.AgentJobDone {
 			t.Fatalf("the triage job should be done: %+v", jobs)
 		}

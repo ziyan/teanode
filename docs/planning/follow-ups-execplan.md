@@ -14,8 +14,9 @@ To see it working on the development server: deliver to a mailbox the agent tria
 
 - [x] (2026-10-16) Surveyed alerts, triage, extract, watched items, finance and the person's controls; wrote this plan.
 - [x] (2026-10-16) Milestone 1: the follow-up record and its extraction from mail: migration 0191 (`agent_follow_up`), `models.AgentFollowUp`, the four database functions in `internal/db/database_alert.go`, extract's `follow_ups` with `InterpretFollowUps` and `StoreFollowUps` in `internal/agent/extract.go`, triage's widened `extract`, and tests.
-- [ ] Milestone 2: closing follow-ups from later mail and from finance transactions.
-- [ ] Milestone 3: the daily sweep that turns due, overdue, stalled and coming follow-ups into alert candidates, and the weekly coming-up roundup.
+- [x] (2026-10-16) Milestone 2: closing follow-ups from later mail and finance transactions: `matchFollowUpPayments` and the pure `isFollowUpPaidBy` in `internal/agent/follow_up_payment.go`, run after every sync and before every sweep; a delivered parcel writes a candidate (`noteParcelDelivered` in `extract.go`).
+- [x] (2026-10-16) Milestone 3: `sweepFollowUps` and the `follow_up_sweep` job in `internal/agent/follow_up_sweep.go`, queued from the worker's tick by slot (08:00 daily, Sunday 18:00 in the person's zone); candidate kind `follow_up` with `follow_up_ids`, `follow_up_told_state` and a unique `follow_up_subject_key` (migration 0191, changed in place before any deploy); `AgentFollowUpToldState`; the alert prompt and its rendering of follow-ups.
+- [ ] Not done in Milestone 3: telling a parcel is out for delivery, which needs a delivery status on the follow-up.
 - [ ] Milestone 4: control on every surface: the agent's tool, the command line, the dashboard's Alerts card, the iPhone app; muting a kind.
 - [ ] Milestone 4b: the weekly "around you" research run (home area from memory or asked once, `web_search` and `web_fetch`, bounded), feeding events, places and important dates into the Sunday roundup.
 - [ ] Milestone 5: a backfill over the last 45 days of mail, so the list is useful the day it ships; docs; deploy; the scenario above.
@@ -64,6 +65,19 @@ To see it working on the development server: deliver to a mailbox the agent tria
   Date/Author: 2026-10-16.
 - Decision: the event exclusion is "an event a business holds to sell something", not "an event nobody in the household is part of".
   Rationale: the second would have excluded the street fairs and neighborhood events the person asked for.
+  Date/Author: 2026-10-16.
+
+- Decision: what the person was told is its own enum, `AgentFollowUpToldState` (reminded, overdue, stalled, delivered, roundup), apart from the follow-up's state; each is told once, and the candidate's unique subject key (the follow-up key and the told state) is the backstop.
+  Rationale: a bill is reminded while it is still open, so "told" cannot be a state of the follow-up.
+  Date/Author: 2026-10-16.
+- Decision: the payment matcher counts transfers, and extract skips a bill the message says is paid automatically.
+  Rationale: paying a card's bill moves money between the person's own accounts and is filed as a transfer; excluding transfers would have called every card bill overdue. An autopay statement needs no follow-up.
+  Date/Author: 2026-10-16.
+- Decision: a bill first found more than 14 days past its day is let go as expired without a word, and a parcel more than 30 days late is let go too.
+  Rationale: the 45-day look back over old mail would otherwise announce a run of "overdue" bills that were paid in ways the linked accounts do not show (escrow, another bank), and a parcel a month late has been dealt with some other way.
+  Date/Author: 2026-10-16.
+- Decision: the sweep is queued by slot (`<date>T08`, `<date>T18` on Sunday) as the job's subject, from the worker tick every ten minutes, and the job first matches payments, then sweeps, then queues the alert job; it calls no model.
+  Rationale: a slot as the subject survives a restart and makes a missed sweep run at the next look; matching first keeps a bill whose payment is already stored from being reminded.
   Date/Author: 2026-10-16.
 
 ## Outcomes & Retrospective

@@ -75,6 +75,9 @@ func candidateFacts(candidate *models.AgentAlertCandidate, from, category string
 	if candidate.CandidateKind == models.AlertCandidateBudget {
 		return budgetCandidateFacts(candidate)
 	}
+	if candidate.CandidateKind == models.AlertCandidateFollowUp {
+		return followUpCandidateFacts(candidate)
+	}
 	// A watched message is not stored: who sent it and what the sorting
 	// called it travel on the candidate.
 	if candidate.CandidateKind == models.AlertCandidateWatched {
@@ -102,6 +105,24 @@ func budgetCandidateFacts(candidate *models.AgentAlertCandidate) *alertFacts {
 		kinds:              []string{models.AlertKindBudget},
 		spendingCategoryId: spendingCategoryOfBudgetKey(candidate.BudgetKey),
 	}
+}
+
+// followUpCandidateFacts are the facts of a follow-up candidate: its subject
+// key, the kind every follow-up alert shares, and the kind of follow-up
+// (bill, parcel, deadline, event) its subject key starts with, so that
+// "stop telling me about parcels" holds. A roundup lists events and
+// deadlines together and is kept from muted kinds when it is written
+// (roundupFollowUps), so it carries only the shared kind.
+func followUpCandidateFacts(candidate *models.AgentAlertCandidate) *alertFacts {
+	facts := &alertFacts{
+		subjectKeys: []string{candidate.FollowUpSubjectKey},
+		kinds:       []string{models.AlertKindFollowUp},
+	}
+	followUpKind, _, _ := strings.Cut(candidate.FollowUpSubjectKey, ":")
+	if models.AgentFollowUpKind(followUpKind).IsValid() {
+		facts.kinds = append(facts.kinds, followUpKind)
+	}
+	return facts
 }
 
 // coveredTerms is what an alert was about in the terms a mute names.

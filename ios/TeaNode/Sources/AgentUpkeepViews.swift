@@ -188,6 +188,7 @@ enum UpkeepWords {
         case "tax_document": String(localized: "Read a tax document")
         case "tax_mail": String(localized: "Tax documents mailed in")
         case "watch": String(localized: "Watching")
+        case "follow_up_sweep": String(localized: "Check follow-ups")
         default: jobKind
         }
     }

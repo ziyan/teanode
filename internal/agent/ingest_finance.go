@@ -234,8 +234,8 @@ func (self *Agent) financeCredential(ctx context.Context, source *models.AgentKn
 // the last week (or the whole history when isWholeHistory), the person's
 // spending rules, the provider category mapping for what is still
 // uncategorized, a categorize job for what is left, the receipts that
-// were waiting for a charge the sync brought, and budget alert
-// candidates.
+// were waiting for a charge the sync brought, the bills a payment
+// closes, and budget alert candidates.
 func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, applied *db.FinanceSyncApplied, syncedOn string, isWholeHistory, isRemappingDue bool) error {
 	agentId := source.AgentID
 	today, err := time.Parse(time.DateOnly, syncedOn)
@@ -288,6 +288,18 @@ func (self *Agent) afterFinanceSync(ctx context.Context, run *Run, source *model
 		return err
 	}); err != nil {
 		log.Warningf("cannot match waiting receipts for agent %q: %s", agentId, err)
+	}
+	// Also in a transaction of its own, and also after the receipts: a
+	// payment that could not be matched leaves the bill open, which the
+	// sweep then says is overdue, and the next sync looks again.
+	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
+		closedCount, err := matchFollowUpPayments(tx, agentId, today)
+		if closedCount > 0 {
+			log.Infof("closed %d bills the transactions of a sync paid for agent %q", closedCount, agentId)
+		}
+		return err
+	}); err != nil {
+		log.Warningf("cannot match bills to payments for agent %q: %s", agentId, err)
 	}
 	return self.noteBudgetCandidates(ctx, run, time.Now())
 }

@@ -233,7 +233,8 @@ func TestSortingWillNotFileProseAsAnInsight(t *testing.T) {
 		t.Fatalf("no call was made for sorting outside the loop, got %d", *world.directCalls)
 	}
 	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
-		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.agent.ID}, nil)
+		// Of triage alone: a tick also queues the day's follow-up sweep.
+		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: world.agent.ID, Kinds: []models.AgentJobKind{models.AgentJobTriage}}, nil)
 		if err != nil {
 			t.Fatalf("ListAgentJobs: %s", err)
 		}

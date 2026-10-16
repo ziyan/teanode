@@ -1720,6 +1720,7 @@ export const zh: Catalog = {
   'agent.runKinds.tax_document': '读取工资单、W-2、1099 或 1098',
   'agent.runKinds.tax_mail': '邮件送来的税务文件',
   'agent.runKinds.watch': '关注',
+  'agent.runKinds.follow_up_sweep': '检查跟进事项',
   'agent.runKinds.embed': '建立索引',
   'agent.runKinds.send': '发送',
   'agent.runKinds.backfill': '补齐',

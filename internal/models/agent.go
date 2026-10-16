@@ -680,6 +680,13 @@ const (
 	// tools, judges each new item and makes alert candidates of what
 	// deserves one. Its subject is "skill/watch".
 	AgentJobWatch AgentJobKind = "watch"
+
+	// AgentJobFollowUpSweep reads the agent's open follow-ups against the
+	// day and writes the alert candidates for the bills, parcels, deadlines
+	// and coming events that are due to be told. Its subject is the day and
+	// the hour it belongs to, so a sweep is queued once; it makes no model
+	// call.
+	AgentJobFollowUpSweep AgentJobKind = "follow_up_sweep"
 )
 
 // AgentJobStatus is where a job is.

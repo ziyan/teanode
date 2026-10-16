@@ -234,3 +234,96 @@ func TestInterpretFollowUpsRefusesWhatIsNotUsable(t *testing.T) {
 		}
 	}
 }
+
+// A message that says the parcel was delivered closes it and makes one alert
+// candidate that it arrived, since the person was waiting for it. A bill a
+// message says is paid closes with none. A person who muted parcels, or an
+// agent with alerts off, gets no waiting candidate, and a delivery notice
+// read twice makes no second one.
+func TestClosingAParcelWritesADeliveredCandidate(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	type person struct {
+		agentId string
+		isMuted bool
+		isOff   bool
+	}
+	people := map[string]*person{"alerted": {}, "muted": {isMuted: true}, "off": {isOff: true}}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for name, each := range people {
+			owner, err := tx.CreateUser(&models.User{Username: "delivered-" + name, Name: "Alice Example"})
+			if err != nil {
+				t.Fatalf("CreateUser: %s", err)
+			}
+			created, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+			if err != nil {
+				t.Fatalf("CreateAgent: %s", err)
+			}
+			each.agentId = created.ID
+			if each.isOff {
+				if _, err := tx.UpdateAgent(created.ID, func(locked *models.Agent) error {
+					locked.IsAlertsEnabled = false
+					return nil
+				}); err != nil {
+					t.Fatalf("UpdateAgent: %s", err)
+				}
+			}
+			if each.isMuted {
+				if _, err := tx.CreateAgentAlertMute(&models.AgentAlertMute{AgentID: created.ID, MuteScope: models.AlertMuteKind, MuteTarget: "parcel"}); err != nil {
+					t.Fatalf("CreateAgentAlertMute: %s", err)
+				}
+			}
+		}
+	})
+	read := func(agentId, mailId, answer string) {
+		t.Helper()
+		parsed, err := llm.Extract[agent.ExtractAnswer](answer)
+		if err != nil {
+			t.Fatalf("the answer is not an object: %s", err)
+		}
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			if err := agent.StoreFollowUps(tx, agent.InterpretFollowUps(&parsed, agentId, mailId)); err != nil {
+				t.Fatalf("StoreFollowUps: %s", err)
+			}
+		})
+	}
+	for _, each := range people {
+		read(each.agentId, "mail-shipped", `{"follow_ups":[{"kind":"parcel","title":"Garden hose","carrier":"Fast Freight","tracking_number":"TN-48151623","due_on":"2026-10-21","key":"TN-48151623"},{"kind":"bill","title":"Gas","payee":"Hillside Gas","amount":"90.00","due_on":"2026-10-30","key":"hillside gas"}]}`)
+		read(each.agentId, "mail-delivered", `{"follow_ups":[{"kind":"parcel","tracking_number":"TN-48151623","key":"TN-48151623","resolves":true,"because":"Your package was delivered."}]}`)
+		read(each.agentId, "mail-receipt", `{"follow_ups":[{"kind":"bill","key":"hillside gas","resolves":true,"because":"Payment received."}]}`)
+		read(each.agentId, "mail-delivered-again", `{"follow_ups":[{"kind":"parcel","tracking_number":"TN-48151623","key":"TN-48151623","resolves":true,"because":"Delivered."}]}`)
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		for name, each := range people {
+			waiting, err := tx.ListWaitingAgentAlertCandidates(each.agentId, 10)
+			if err != nil {
+				t.Fatalf("%s: ListWaitingAgentAlertCandidates: %s", name, err)
+			}
+			jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: each.agentId, Kinds: []models.AgentJobKind{models.AgentJobAlert}}, nil)
+			if err != nil {
+				t.Fatalf("%s: ListAgentJobs: %s", name, err)
+			}
+			if each.isMuted || each.isOff {
+				if len(waiting) != 0 || len(jobs) != 0 {
+					t.Errorf("%s: nothing waits and no alert is queued: %+v %+v", name, waiting, jobs)
+				}
+				continue
+			}
+			if len(waiting) != 1 || len(jobs) != 1 {
+				t.Fatalf("%s: one candidate and the alert job: %+v %+v", name, waiting, jobs)
+			}
+			candidate := waiting[0]
+			parcels, err := tx.GetAgentFollowUps(each.agentId, candidate.FollowUpIDs)
+			if err != nil || len(parcels) != 1 {
+				t.Fatalf("%s: GetAgentFollowUps: %v %+v", name, err, parcels)
+			}
+			if candidate.CandidateKind != models.AlertCandidateFollowUp || candidate.FollowUpToldState != models.AgentFollowUpToldDelivered ||
+				candidate.FollowUpSubjectKey != "parcel:tn-48151623:delivered" || parcels[0].FollowUpKey != "parcel:tn-48151623" ||
+				parcels[0].FollowUpState != models.AgentFollowUpClosed || parcels[0].ToldState != models.AgentFollowUpToldDelivered {
+				t.Errorf("%s: %+v %+v", name, candidate, parcels[0])
+			}
+		}
+	})
+}

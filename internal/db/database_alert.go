@@ -15,8 +15,9 @@ import (
 // and what they were told.
 type AlertOperation interface {
 	// CreateAgentAlertCandidate adds a candidate, waiting. A budget
-	// candidate whose budget key the agent already has is not added, and
-	// answers nil with no error.
+	// candidate whose budget key the agent already has is not added, nor
+	// is a follow-up candidate whose subject key it has; both answer nil
+	// with no error.
 	CreateAgentAlertCandidate(candidate *models.AgentAlertCandidate) (*models.AgentAlertCandidate, error)
 
 	// ListWaitingAgentAlertCandidates is the candidates neither told nor
@@ -112,6 +113,10 @@ type AlertOperation interface {
 	// first.
 	ListAgentFollowUps(agentId string, limit int) ([]*models.AgentFollowUp, error)
 
+	// GetAgentFollowUps is the agent's follow-ups with these ids, in any
+	// state, the nearest day first; one that is gone is left out.
+	GetAgentFollowUps(agentId string, followUpIds []string) ([]*models.AgentFollowUp, error)
+
 	// UpdateAgentFollowUp changes one follow-up under a lock, so two runs
 	// that close or tell it take turns. ErrNotFound when there is none; an
 	// error from the function leaves it as it was.
@@ -143,12 +148,16 @@ type agentAlertCandidateModel struct {
 	WatchedItemAt    *time.Time `gorm:"column:watched_item_at"`
 	WatchedItemText  string     `gorm:"column:watched_item_text"`
 	WatchedItemURL   string     `gorm:"column:watched_item_url"`
+
+	FollowUpIDs        []byte `gorm:"column:follow_up_ids;type:jsonb"`
+	FollowUpToldState  string `gorm:"column:follow_up_told_state"`
+	FollowUpSubjectKey string `gorm:"column:follow_up_subject_key"`
 }
 
 func (agentAlertCandidateModel) TableName() string { return "agent_alert_candidate" }
 
 func (self *agentAlertCandidateModel) toModel() *models.AgentAlertCandidate {
-	return &models.AgentAlertCandidate{
+	candidate := &models.AgentAlertCandidate{
 		ID: self.ID, AgentID: self.AgentID, MailboxID: self.MailboxID, MailID: self.MailID,
 		CandidateKind: models.AlertCandidateKind(self.CandidateKind), AlertSignal: self.AlertSignal, CandidateReason: self.CandidateReason,
 		BurstKey: self.BurstKey, BurstCount: self.BurstCount, BudgetKey: self.BudgetKey, CreatedAt: self.CreatedAt.In(time.Local),
@@ -156,7 +165,14 @@ func (self *agentAlertCandidateModel) toModel() *models.AgentAlertCandidate {
 		WatchedSkillName: self.WatchedSkillName, WatchedWatchName: self.WatchedWatchName, WatchedItemID: self.WatchedItemID, WatchedSender: self.WatchedSender,
 		WatchedTitle: self.WatchedTitle, WatchedCategory: self.WatchedCategory, WatchedItemAt: localTime(self.WatchedItemAt),
 		WatchedItemText: self.WatchedItemText, WatchedItemURL: self.WatchedItemURL,
+		FollowUpToldState: models.AgentFollowUpToldState(self.FollowUpToldState), FollowUpSubjectKey: self.FollowUpSubjectKey,
 	}
+	// A list that cannot be read is no list: the candidate is still told,
+	// from the subject key it carries.
+	if err := decodeJSON(self.FollowUpIDs, &candidate.FollowUpIDs); err != nil {
+		candidate.FollowUpIDs = nil
+	}
+	return candidate
 }
 
 func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertCandidate) (*models.AgentAlertCandidate, error) {
@@ -169,6 +185,14 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 	if candidate.CandidateKind == models.AlertCandidateWatched && (candidate.WatchedSkillName == "" || candidate.WatchedWatchName == "" || candidate.WatchedItemID == "") {
 		return nil, fmt.Errorf("db: a watched alert candidate needs its skill, its watch and its item")
 	}
+	if candidate.CandidateKind == models.AlertCandidateFollowUp &&
+		(len(candidate.FollowUpIDs) == 0 || candidate.FollowUpSubjectKey == "" || !candidate.FollowUpToldState.IsValid()) {
+		return nil, fmt.Errorf("db: a follow-up alert candidate needs its follow-ups, what is told and its subject key")
+	}
+	followUpIds, err := encodeStrings(candidate.FollowUpIDs)
+	if err != nil {
+		return nil, err
+	}
 	alertSignal := candidate.AlertSignal
 	if alertSignal == "" {
 		alertSignal = models.AlertSignalNone
@@ -180,16 +204,18 @@ func (self *transaction) CreateAgentAlertCandidate(candidate *models.AgentAlertC
 		WatchedSkillName: candidate.WatchedSkillName, WatchedWatchName: candidate.WatchedWatchName, WatchedItemID: candidate.WatchedItemID, WatchedSender: candidate.WatchedSender,
 		WatchedTitle: candidate.WatchedTitle, WatchedCategory: candidate.WatchedCategory, WatchedItemAt: candidate.WatchedItemAt,
 		WatchedItemText: candidate.WatchedItemText, WatchedItemURL: candidate.WatchedItemURL,
+		FollowUpIDs: followUpIds, FollowUpToldState: string(candidate.FollowUpToldState), FollowUpSubjectKey: candidate.FollowUpSubjectKey,
 	}
-	if model.BudgetKey == "" {
+	if model.BudgetKey == "" && model.FollowUpSubjectKey == "" {
 		if err := self.tx.Create(model).Error; err != nil {
 			return nil, err
 		}
 		return model.toModel(), nil
 	}
-	// A budget key is written once per agent, by a unique index: two syncs
-	// of one person that find the same crossing together both look before
-	// either writes, and the second one's write is dropped here.
+	// A budget key, and a follow-up's subject key, are written once per
+	// agent, by a unique index: two syncs of one person that find the same
+	// crossing together both look before either writes, and the second
+	// one's write is dropped here.
 	created := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(model)
 	if created.Error != nil {
 		return nil, created.Error
@@ -543,7 +569,7 @@ func (self *agentFollowUpModel) toModel() (*models.AgentFollowUp, error) {
 		Amount: optionalString(self.Amount), CurrencyCode: self.CurrencyCode, TrackingNumber: self.TrackingNumber,
 		DueOn: formatOptionalDay(self.DueOn), Place: self.Place,
 		FollowUpState: models.AgentFollowUpState(self.FollowUpState), ClosedReason: self.ClosedReason,
-		SourceItemIDs: []string{}, ToldState: models.AgentFollowUpState(self.ToldState), ToldAt: localTime(self.ToldAt),
+		SourceItemIDs: []string{}, ToldState: models.AgentFollowUpToldState(self.ToldState), ToldAt: localTime(self.ToldAt),
 		CreatedAt: self.CreatedAt.In(time.Local), UpdatedAt: self.UpdatedAt.In(time.Local),
 	}
 	if err := decodeJSON(self.SourceItemIDs, &followUp.SourceItemIDs); err != nil {
@@ -687,6 +713,18 @@ func (self *transaction) ListAgentFollowUps(agentId string, limit int) ([]*model
 	var found []agentFollowUpModel
 	if err := self.tx.Where("\"agent_id\" = ?", agentId).
 		Order("\"created_at\" DESC, \"id\" DESC").Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	return agentFollowUpsFrom(found)
+}
+
+func (self *transaction) GetAgentFollowUps(agentId string, followUpIds []string) ([]*models.AgentFollowUp, error) {
+	if len(followUpIds) == 0 {
+		return []*models.AgentFollowUp{}, nil
+	}
+	var found []agentFollowUpModel
+	if err := self.tx.Where("\"agent_id\" = ? AND \"id\" IN ?", agentId, followUpIds).
+		Order("\"due_on\" ASC NULLS LAST, \"created_at\" ASC, \"id\" ASC").Find(&found).Error; err != nil {
 		return nil, err
 	}
 	return agentFollowUpsFrom(found)

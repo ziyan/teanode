@@ -333,7 +333,13 @@ func parseFollowUpAmount(text string) string {
 // writes nothing: a delivery notice for a parcel nobody was told was coming
 // is not something to follow. The others are kept by key, so the same
 // message read twice, or a third notice about one parcel, changes one row.
+//
+// A parcel that closes this way is also a candidate for an alert saying it
+// was delivered, since that is the news the person was waiting for; a bill
+// or a deadline that a message closes is not, they only wanted to hear of
+// it going wrong.
 func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
+	now := time.Now()
 	for _, finding := range findings {
 		followUp := finding.FollowUp
 		if !finding.Resolves {
@@ -354,17 +360,52 @@ func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
 			if closedReason == "" {
 				closedReason = "a later message says it is done"
 			}
-			if _, err := tx.UpdateAgentFollowUp(candidate.ID, func(locked *models.AgentFollowUp) error {
+			isTold := candidate.FollowUpKind == models.AgentFollowUpParcel
+			closed, err := tx.UpdateAgentFollowUp(candidate.ID, func(locked *models.AgentFollowUp) error {
 				locked.FollowUpState = models.AgentFollowUpClosed
 				locked.ClosedReason = closedReason
 				locked.SourceItemIDs = append(locked.SourceItemIDs, followUp.SourceItemIDs...)
+				if isTold {
+					locked.ToldState, locked.ToldAt = models.AgentFollowUpToldDelivered, &now
+				}
 				return nil
-			}); err != nil {
+			})
+			if err != nil {
 				return err
+			}
+			if isTold {
+				if err := noteParcelDelivered(tx, closed, now); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// noteParcelDelivered writes the alert candidate that a parcel arrived and
+// queues the alert job, for an agent that has alerts on.
+func noteParcelDelivered(tx db.Transaction, parcel *models.AgentFollowUp, now time.Time) error {
+	agent, err := tx.GetAgent(parcel.AgentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil || !agent.Active() || !agent.IsAlertsEnabled {
+		return nil
+	}
+	mutes, err := tx.ListAgentAlertMutes(agent.ID)
+	if err != nil {
+		return err
+	}
+	candidate, err := writeFollowUpCandidate(tx, mutes, &models.AgentAlertCandidate{
+		AgentID: agent.ID, CandidateKind: models.AlertCandidateFollowUp, AlertSignal: models.AlertSignalSoon,
+		CandidateReason: "a message says it was delivered", FollowUpIDs: []string{parcel.ID},
+		FollowUpToldState: models.AgentFollowUpToldDelivered, FollowUpSubjectKey: parcel.FollowUpKey + ":" + string(models.AgentFollowUpToldDelivered),
+	}, now)
+	if err != nil || candidate == nil {
+		return err
+	}
+	return queueAlert(tx, agent.ID, false, now)
 }
 
 func trimmed(values []string) []string {
