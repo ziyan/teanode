@@ -340,7 +340,7 @@ func TestMuteScopeIsReadFromTheTarget(t *testing.T) {
 // and it matches only the follow-up candidates of that kind (or all of
 // them, for follow_up).
 func TestFollowUpKindsAreKindsToMute(t *testing.T) {
-	for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event"} {
+	for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event", "nearby"} {
 		normalized, err := NormalizeAlertMute(models.AlertMuteKind, " "+strings.ToUpper(target))
 		if err != nil || normalized != target {
 			t.Fatalf("%s: %q %v", target, normalized, err)

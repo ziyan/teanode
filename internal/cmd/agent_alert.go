@@ -37,7 +37,8 @@ func newAgentAlertCommand() *cli.Command {
 					"all at once with --scope kind --target budget, or for one spending category with\n" +
 					"--scope spendingCategory and its id (teanode finance spending-categories). What\n" +
 					"your agent follows (teanode agent follow list) is muted all at once with --scope\n" +
-					"kind --target follow_up, or by kind: bill, parcel, deadline or event.\n\n" +
+					"kind --target follow_up, or by kind: bill, parcel, deadline or event. The weekly\n" +
+					"look around your town is stopped with --scope kind --target nearby.\n\n" +
 					"  teanode agent alert mute 0f3c9a --scope domain\n" +
 					"  teanode agent alert mute --scope sender --target alerts@shop.example.com\n" +
 					"  teanode agent alert mute --scope kind --target burst\n" +
@@ -46,7 +47,7 @@ func newAgentAlertCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "scope", Usage: "sender, domain, subjectKey, kind or spendingCategory; by default what the alert was about, or what the target reads as"},
-					&cli.StringFlag{Name: "target", Usage: "the address, domain, subject key, kind (burst, budget, follow_up, bill, parcel, deadline, event, or a category such as notification) or spending category id"},
+					&cli.StringFlag{Name: "target", Usage: "the address, domain, subject key, kind (burst, budget, follow_up, bill, parcel, deadline, event, nearby, or a category such as notification) or spending category id"},
 				},
 				Action: runAgentAlertMute,
 			},

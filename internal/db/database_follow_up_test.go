@@ -49,6 +49,23 @@ func TestUpsertAgentFollowUpKeepsOneRowPerKey(t *testing.T) {
 			t.Fatalf("created_at is kept: %v %v", first.CreatedAt, second.CreatedAt)
 		}
 
+		// The page a follow-up was found on is kept, and a later notice
+		// that names none leaves it.
+		withPage, _, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
+			AgentID: fixture.agentId, FollowUpKind: models.AgentFollowUpEvent, FollowUpKey: "event:nearby:https://events.example.org/fair 2026-10-24",
+			FollowUpTitle: "Harvest fair", DueOn: "2026-10-24", SourceURL: "https://events.example.org/fair",
+		})
+		if err != nil || withPage.SourceURL != "https://events.example.org/fair" {
+			t.Fatalf("the page is kept: %v %+v", err, withPage)
+		}
+		sameWithoutPage, _, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
+			AgentID: fixture.agentId, FollowUpKind: models.AgentFollowUpEvent, FollowUpKey: "event:nearby:https://events.example.org/fair 2026-10-24",
+			FollowUpTitle: "Harvest fair on the green",
+		})
+		if err != nil || sameWithoutPage.SourceURL != "https://events.example.org/fair" || sameWithoutPage.FollowUpTitle != "Harvest fair on the green" {
+			t.Fatalf("a notice with no page keeps the page: %v %+v", err, sameWithoutPage)
+		}
+
 		if _, isCreated, err := tx.UpsertAgentFollowUp(&models.AgentFollowUp{
 			AgentID: stranger.agentId, FollowUpKind: models.AgentFollowUpParcel, FollowUpKey: "parcel:tn-1001", FollowUpTitle: "Theirs",
 		}); err != nil || !isCreated {

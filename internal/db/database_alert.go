@@ -551,6 +551,7 @@ type agentFollowUpModel struct {
 	TrackingNumber string     `gorm:"column:tracking_number"`
 	DueOn          *time.Time `gorm:"column:due_on"`
 	Place          string     `gorm:"column:place"`
+	SourceURL      string     `gorm:"column:source_url"`
 	FollowUpState  string     `gorm:"column:follow_up_state"`
 	ClosedReason   string     `gorm:"column:closed_reason"`
 	SourceItemIDs  []byte     `gorm:"column:source_item_ids;type:jsonb"`
@@ -567,7 +568,7 @@ func (self *agentFollowUpModel) toModel() (*models.AgentFollowUp, error) {
 		ID: self.ID, AgentID: self.AgentID, FollowUpKind: models.AgentFollowUpKind(self.FollowUpKind),
 		FollowUpKey: self.FollowUpKey, FollowUpTitle: self.FollowUpTitle, Payee: self.Payee, Carrier: self.Carrier,
 		Amount: optionalString(self.Amount), CurrencyCode: self.CurrencyCode, TrackingNumber: self.TrackingNumber,
-		DueOn: formatOptionalDay(self.DueOn), Place: self.Place,
+		DueOn: formatOptionalDay(self.DueOn), Place: self.Place, SourceURL: self.SourceURL,
 		FollowUpState: models.AgentFollowUpState(self.FollowUpState), ClosedReason: self.ClosedReason,
 		SourceItemIDs: []string{}, ToldState: models.AgentFollowUpToldState(self.ToldState), ToldAt: localTime(self.ToldAt),
 		CreatedAt: self.CreatedAt.In(time.Local), UpdatedAt: self.UpdatedAt.In(time.Local),
@@ -603,7 +604,7 @@ func agentFollowUpModelFrom(followUp *models.AgentFollowUp) (*agentFollowUpModel
 		ID: followUp.ID, AgentID: followUp.AgentID, FollowUpKind: string(followUp.FollowUpKind),
 		FollowUpKey: strings.TrimSpace(followUp.FollowUpKey), FollowUpTitle: followUp.FollowUpTitle,
 		Payee: followUp.Payee, Carrier: followUp.Carrier, CurrencyCode: followUp.CurrencyCode,
-		TrackingNumber: followUp.TrackingNumber, Place: followUp.Place, FollowUpState: string(followUpState),
+		TrackingNumber: followUp.TrackingNumber, Place: followUp.Place, SourceURL: followUp.SourceURL, FollowUpState: string(followUpState),
 		ClosedReason: followUp.ClosedReason, ToldState: string(followUp.ToldState), ToldAt: followUp.ToldAt,
 		CreatedAt: followUp.CreatedAt, UpdatedAt: followUp.UpdatedAt,
 	}
@@ -668,7 +669,7 @@ func (self *transaction) UpsertAgentFollowUp(followUp *models.AgentFollowUp) (*m
 		changes := map[string]any{"source_item_ids": sourceItemIds, "updated_at": now}
 		for column, value := range map[string]string{
 			"follow_up_title": incoming.FollowUpTitle, "payee": incoming.Payee, "carrier": incoming.Carrier,
-			"currency_code": incoming.CurrencyCode, "tracking_number": incoming.TrackingNumber, "place": incoming.Place,
+			"currency_code": incoming.CurrencyCode, "tracking_number": incoming.TrackingNumber, "place": incoming.Place, "source_url": incoming.SourceURL,
 		} {
 			if value != "" {
 				changes[column] = value

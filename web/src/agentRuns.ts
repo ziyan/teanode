@@ -43,6 +43,8 @@ export const RUN_KINDS = [
   'watch',
   // The daily look at bills, parcels, deadlines and coming events.
   'follow_up_sweep',
+  // The weekly look at what is on near the person.
+  'nearby',
 ]
 
 // runKindLabel is a run's kind in the reader's words. A kind this dashboard

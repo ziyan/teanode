@@ -232,6 +232,9 @@ func renderAlertFollowUp(followUp *models.AgentFollowUp, now time.Time) string {
 	if followUp.Place != "" {
 		parts = append(parts, "place "+followUp.Place)
 	}
+	if followUp.SourceURL != "" {
+		parts = append(parts, "page "+followUp.SourceURL)
+	}
 	if followUp.Carrier != "" {
 		parts = append(parts, "carrier "+followUp.Carrier)
 	}
@@ -722,6 +725,7 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 	for _, decidedAlert := range alerts {
 		var covered []*models.AgentAlertCandidate
 		var coveredFacts []*alertFacts
+		var keptLinks []string
 		for _, label := range decidedAlert.CandidateIDs {
 			entry := byLabel[strings.TrimSpace(label)]
 			if entry == nil || decided[entry.candidate.ID] {
@@ -730,11 +734,14 @@ func planAlerts(decision *AlertDecision, labeled []*labeledCandidate, recent []*
 			decided[entry.candidate.ID] = true
 			covered = append(covered, entry.candidate)
 			coveredFacts = append(coveredFacts, entry.facts)
+			for _, followUp := range entry.followUps {
+				keptLinks = append(keptLinks, followUp.SourceURL)
+			}
 		}
 		if len(covered) == 0 {
 			continue
 		}
-		alertText := cleanAlertText(decidedAlert.AlertText)
+		alertText := cleanAlertTextKeeping(decidedAlert.AlertText, keptLinks)
 		if alertText == "" {
 			drop(covered, "the decision had nothing to say about it")
 			continue
@@ -853,6 +860,29 @@ const (
 // word, and a link, an address or a number to call in it that came from a
 // phishing message is the phishing message delivered by the agent.
 func cleanAlertText(alertText string) string {
+	return cleanAlertTextKeeping(alertText, nil)
+}
+
+// cleanAlertTextKeeping is cleanAlertText that leaves alone the web
+// addresses it is given: the page a follow-up the alert is about was found
+// on, which the server stored and the decision was shown. They are set
+// aside before the cleaning and put back after the cut, so that an address
+// is never cut in half, and no other address gets through.
+func cleanAlertTextKeeping(alertText string, keptLinks []string) string {
+	placeholders := map[string]string{}
+	for _, link := range keptLinks {
+		if link = strings.TrimSpace(link); link == "" || !strings.Contains(alertText, link) {
+			continue
+		}
+		if _, isSet := placeholders[link]; isSet {
+			continue
+		}
+		placeholder := fmt.Sprintf("⟦%d⟧", len(placeholders)+1)
+		placeholders[link] = placeholder
+		// A link written in Markdown keeps its words and its address.
+		alertText = strings.ReplaceAll(alertText, "]("+link+")", "] "+placeholder)
+		alertText = strings.ReplaceAll(alertText, link, placeholder)
+	}
 	alertText = markdownLink.ReplaceAllString(alertText, "$1")
 	alertText = webAddress.ReplaceAllString(alertText, alertLinkRemoved)
 	alertText = emailAddress.ReplaceAllString(alertText, alertAddressRemoved)
@@ -864,7 +894,11 @@ func cleanAlertText(alertText string) string {
 		return found
 	})
 	alertText = extraSpace.ReplaceAllString(alertText, " ")
-	return cutRunes(strings.TrimSpace(alertText), alertTextCharacters)
+	alertText = cutRunes(strings.TrimSpace(alertText), alertTextCharacters)
+	for link, placeholder := range placeholders {
+		alertText = strings.ReplaceAll(alertText, placeholder, link)
+	}
+	return alertText
 }
 
 // isPhoneNumber says whether digits written with spaces, dots, dashes or

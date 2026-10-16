@@ -572,7 +572,7 @@
               {"id":"follow2","followUpKind":"parcel","followUpTitle":"Garden shears","payee":null,"carrier":"Example Post","amount":null,"currencyCode":null,"trackingNumber":"EX123456789","dueOn":"2026-10-06","place":null,"followUpState":"stalled"},
               {"id":"follow3","followUpKind":"deadline","followUpTitle":"Return the permission slip","payee":null,"carrier":null,"amount":null,"currencyCode":null,"trackingNumber":null,"dueOn":"2026-10-16","place":null,"followUpState":"open"},
               {"id":"follow4","followUpKind":"bill","followUpTitle":"Water bill","payee":"Example Water","carrier":null,"amount":"84.20","currencyCode":"USD","trackingNumber":null,"dueOn":"2026-10-21","place":null,"followUpState":"open"},
-              {"id":"follow5","followUpKind":"event","followUpTitle":"Street fair","payee":null,"carrier":null,"amount":null,"currencyCode":null,"trackingNumber":null,"dueOn":"2026-10-31","place":"Elm Street","followUpState":"open"}
+              {"id":"follow5","followUpKind":"event","followUpTitle":"Street fair","payee":null,"carrier":null,"amount":null,"currencyCode":null,"trackingNumber":null,"dueOn":"2026-10-31","place":"Elm Street","sourceUrl":"https://events.example.org/street-fair","followUpState":"open"}
             ]}}
             """#
 

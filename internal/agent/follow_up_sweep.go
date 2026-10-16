@@ -194,7 +194,8 @@ func followUpDueWords(days int) string {
 // and deadlines due from tomorrow through the week, that no roundup has
 // listed. Only once a Sunday, by its subject key, and none on any other day
 // or before the evening. A kind the person muted is left out of it, so that
-// muting events leaves the deadlines.
+// muting events leaves the deadlines, and so is what the look around found
+// when nearby is muted.
 func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.AgentAlertMute, followUps []*models.AgentFollowUp, local, today, now time.Time) (*models.AgentAlertCandidate, error) {
 	if local.Weekday() != time.Sunday || local.Hour() < followUpRoundupHour {
 		return nil, nil
@@ -208,7 +209,13 @@ func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.Ag
 		if !hasDay || followUp.FollowUpState != models.AgentFollowUpOpen || days < 1 || days > followUpRoundupDays || followUp.ToldState == models.AgentFollowUpToldRoundup {
 			continue
 		}
-		if mutedBy(mutes, &alertFacts{kinds: []string{models.AlertKindFollowUp, string(followUp.FollowUpKind)}}) != nil {
+		kinds := []string{models.AlertKindFollowUp, string(followUp.FollowUpKind)}
+		// What the look around wrote is muted by its own kind too, so that
+		// "no more of what is on near me" leaves the school's events.
+		if isNearbyFollowUp(followUp) {
+			kinds = append(kinds, models.AlertKindNearby)
+		}
+		if mutedBy(mutes, &alertFacts{kinds: kinds}) != nil {
 			continue
 		}
 		coming = append(coming, followUp)

@@ -1008,14 +1008,24 @@ public struct AgentFollowUp: Codable, Hashable, Sendable, Identifiable {
     /// A day written YYYY-MM-DD.
     public let dueOn: String?
     public let place: String?
+    /// The page a follow-up found on the web came from, nil for what mail said.
+    public let sourceUrl: String?
     public let followUpState: String
 
     /// The kinds a person can mute, all of them first, as the server's kind
     /// mutes name them.
-    public static let muteKinds = ["follow_up", "bill", "parcel", "deadline", "event"]
+    public static let muteKinds = ["follow_up", "bill", "parcel", "deadline", "event", "nearby"]
 
     public var isOverdue: Bool { followUpState == "overdue" }
     public var isStalled: Bool { followUpState == "stalled" }
+
+    /// The page it was found on, when it is a web page: only http and https
+    /// are linked, since the address came from a stranger's page.
+    public var sourcePageURL: URL? {
+        guard let sourceUrl, let address = URL(string: sourceUrl), let scheme = address.scheme?.lowercased(),
+              scheme == "https" || scheme == "http", address.host != nil else { return nil }
+        return address
+    }
 
     /// The day it is due as the start of that day in the calendar given, nil
     /// when it has none. Built from its parts rather than parsed, since a
@@ -1164,7 +1174,7 @@ public struct AgentRunSummary: Codable, Hashable, Sendable, Identifiable {
     public static let jobKinds = [
         "triage", "reply", "research", "summarize", "remember", "ingest", "recording", "dream", "schedule", "extract", "draft", "describe", "compact",
         "evaluate", "survey", "subagent", "mcp", "goal", "background", "speak_first", "alert", "categorize", "statement_import",
-        "read_receipt", "tax_document", "tax_mail", "watch", "follow_up_sweep",
+        "read_receipt", "tax_document", "tax_mail", "watch", "follow_up_sweep", "nearby",
     ]
 
     /// Every token it used: read fresh, read from the cache, and written.
@@ -1540,7 +1550,7 @@ extension Documents {
         """
     public static let agentFollowUps = """
         query {
-          ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place followUpState }
+          ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place sourceUrl followUpState }
         }
         """
     public static let stopAgentFollowUp = """

@@ -111,6 +111,17 @@ type AskSettings struct {
 	Headless  bool
 	MaxRounds int
 
+	// CallLimits is how many times the turn may call each named tool. A
+	// call past the limit is answered with an error and does not run, so a
+	// run that is paid for by the search or the page has a bound the model
+	// cannot talk its way past. A tool not named has none. See
+	// withToolCallLimits.
+	CallLimits map[string]int
+
+	// IsPersonOmitted leaves the person's own page and the index of what
+	// the agent knows out of the prompt; see withPersonOmitted.
+	IsPersonOmitted bool
+
 	// PreApproved is the calls the person approved on a card whose turn
 	// had ended, by tool name and arguments: this turn may make each once
 	// without asking again. See interaction.go.
@@ -322,6 +333,12 @@ type AskRun struct {
 	// waiting on is closed with it. A turn ended any other way -- a
 	// deploy, a deadline -- leaves its cards open for later.
 	isStoppedByPerson atomic.Bool
+
+	// callCounts is how many times each tool in settings.CallLimits has
+	// been called, under callCountsMutex since the calls of a round run
+	// together.
+	callCounts      map[string]int
+	callCountsMutex sync.Mutex
 
 	mutex        sync.Mutex
 	events       []Event
@@ -1844,6 +1861,9 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 		}
 		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "there is no tool named %s"}`, toolCall.Name))}
 	}
+	if !self.takeCallAllowance(tool.Name) {
+		return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "this run may call %s at most %d times and has used them all; answer with what you have"}`, tool.Name, self.settings.CallLimits[tool.Name]))}
+	}
 	call := &Call{ID: toolCall.ID, Arguments: json.RawMessage(toolCall.Arguments)}
 	if self.recordingEvidenceRestricted() && !recordingLookupAllowed(tool) {
 		return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "passive recording evidence permits only memory, knowledge and recording lookups"}`)}
@@ -2161,7 +2181,10 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 	// first round, so a prompt read afresh each round differed from the
 	// second round on and the whole of it was paid for again every time.
 	if self.promptData == nil {
-		knowledge, selfLines := self.personSnapshot(ctx)
+		var knowledge, selfLines []string
+		if !settings.IsPersonOmitted {
+			knowledge, selfLines = self.personSnapshot(ctx)
+		}
 		self.promptData = &turnPromptData{
 			situation: self.situation(ctx, configuration),
 			knowledge: knowledge,

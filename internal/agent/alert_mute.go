@@ -255,7 +255,8 @@ func normalizedSubjectKey(subjectKey string) string {
 // matched in: an address or a domain in lower case, a subject key as the
 // alerts keep them, a kind as a word. The kinds are burst, budget,
 // follow_up (every alert about a follow-up), bill, parcel, deadline and event
-// (those follow-ups alone), and the categories of the sorting such as
+// (those follow-ups alone), nearby (the weekly look around the person's town,
+// and what it found), and the categories of the sorting such as
 // notification.
 func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (string, error) {
 	if !muteScope.IsValid() {
@@ -281,7 +282,7 @@ func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (str
 	case models.AlertMuteKind:
 		muteTarget = strings.ToLower(muteTarget)
 		if strings.ContainsAny(muteTarget, " @") {
-			return "", fmt.Errorf("%q is not a kind: burst, budget, follow_up, bill, parcel, deadline, event, or a category such as notification", muteTarget)
+			return "", fmt.Errorf("%q is not a kind: burst, budget, follow_up, bill, parcel, deadline, event, nearby, or a category such as notification", muteTarget)
 		}
 	case models.AlertMuteSpendingCategory:
 		// A spending category's id, as the budget alerts name it, in lower

@@ -165,6 +165,10 @@ const AlertKindBudget = "budget"
 // those alone.
 const AlertKindFollowUp = "follow_up"
 
+// AlertKindNearby is the kind a mute names to stop the weekly look around
+// the person's town; the follow-ups read out of mail are left alone.
+const AlertKindNearby = "nearby"
+
 // AgentAlertMute is the person's "don't tell me about these": a candidate
 // or an alert that matches it is dropped, saying it was muted.
 type AgentAlertMute struct {

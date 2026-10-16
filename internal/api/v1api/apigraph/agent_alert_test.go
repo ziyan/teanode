@@ -227,7 +227,7 @@ func TestFollowUpKindsAreMuted(t *testing.T) {
 	database, resolver, principal, _ := alertAPIFixture(t)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		ctx := asListener(principal, tx)
-		for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event"} {
+		for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event", "nearby"} {
 			mute, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{MuteScope: "kind", MuteTarget: " " + strings.ToUpper(target)})
 			if err != nil || mute.MuteScope != models.AlertMuteKind || mute.MuteTarget != target {
 				t.Fatalf("%s: %+v %v", target, mute, err)

@@ -275,6 +275,19 @@ Following list on the Alerts card and in the iPhone app's alert settings,
 kind mutes `follow_up` (all of them), `bill`, `parcel`, `deadline` or `event`,
 and the mute offered on an alert about a follow-up is its kind.
 
+**The look around.** Once a week, Saturday at 21:00 in the person's zone, each
+agent with alerts on is queued a `nearby` job (`nearby.go`, subject the slot,
+like the sweep). It reads the person's town and household from the self page
+and the place pages (one model call that is told to leave out any street
+address; `cleanHomeArea` strips what is left), and with a town runs one turn
+with nobody present that has only `web_search` and `web_fetch`, at most 12
+searches and 10 page reads (`AskSettings.CallLimits`: the loop refuses the
+call past them). What it finds is written as `event` and `deadline`
+follow-ups with `source_url`, the page, and appears in the Sunday roundup. When
+memory gives no town the run searches nothing and offers the person one idea,
+once (`nearby_home_area`), asking which town to look around. The kind mute
+`nearby` stops the run and keeps what it wrote out of the roundup.
+
 ## Runs
 
 Everything a model does happens inside a *run*. There are two shapes.

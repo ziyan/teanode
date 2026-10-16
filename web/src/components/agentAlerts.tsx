@@ -55,6 +55,7 @@ export type FollowUp = {
   trackingNumber: string | null
   dueOn: string | null
   place: string | null
+  sourceUrl: string | null
   followUpState: 'open' | 'overdue' | 'stalled'
 }
 
@@ -65,7 +66,7 @@ const ALERTS = `query {
     covered { mailId subject fromAddress candidateKind mailCategory }
     muteChoices { muteScope muteTarget } }
   ListAgentAlertMutes { id muteScope muteTarget createdAt }
-  ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place followUpState }
+  ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place sourceUrl followUpState }
 }`
 
 const MUTE_ALERT = `mutation ($alertId: String, $muteScope: String) {
@@ -94,7 +95,7 @@ export function muteTargets(alert: AgentAlert): MuteChoice[] {
 
 // The kinds of alert about what the agent follows that a person can mute,
 // all of them first.
-export const FOLLOW_UP_MUTE_KINDS = ['follow_up', 'bill', 'parcel', 'deadline', 'event'] as const
+export const FOLLOW_UP_MUTE_KINDS = ['follow_up', 'bill', 'parcel', 'deadline', 'event', 'nearby'] as const
 
 // orderedFollowUps is the nearest day first, with the ones that have no day
 // last, and the server's order within a day.
@@ -135,6 +136,21 @@ export function followUpDetails(followUp: FollowUp): string[] {
   if (carrier) details.push(carrier)
   if (followUp.place) details.push(followUp.place)
   return details
+}
+
+// followUpLink is the page a follow-up found on the web came from, as an
+// address to open and the site's name to show, or null for what mail said.
+// Only a web address is linked: the page was written by strangers, and
+// anything else (javascript:, data:) would run when it was clicked.
+export function followUpLink(followUp: FollowUp): { href: string; label: string } | null {
+  if (!followUp.sourceUrl) return null
+  try {
+    const address = new URL(followUp.sourceUrl)
+    if (address.protocol !== 'https:' && address.protocol !== 'http:') return null
+    return { href: address.href, label: address.hostname }
+  } catch {
+    return null
+  }
 }
 
 export function AlertsCard() {
@@ -262,11 +278,23 @@ export function AlertsCard() {
                   />
                 ) : undefined
               }
-              subtitle={[
-                t(`alerts.followUpKind.${followUp.followUpKind}` as Key),
-                followUp.dueOn ? followUpDay(followUp.dueOn) : t('alerts.followUpNoDay'),
-                ...followUpDetails(followUp),
-              ].join(' · ')}
+              subtitle={
+                <>
+                  {[
+                    t(`alerts.followUpKind.${followUp.followUpKind}` as Key),
+                    followUp.dueOn ? followUpDay(followUp.dueOn) : t('alerts.followUpNoDay'),
+                    ...followUpDetails(followUp),
+                  ].join(' · ')}
+                  {followUpLink(followUp) ? (
+                    <>
+                      {' · '}
+                      <a href={followUpLink(followUp)!.href} target="_blank" rel="noopener noreferrer nofollow">
+                        {followUpLink(followUp)!.label}
+                      </a>
+                    </>
+                  ) : null}
+                </>
+              }
               actions={
                 <button
                   type="button"

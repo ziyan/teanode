@@ -687,6 +687,12 @@ const (
 	// the hour it belongs to, so a sweep is queued once; it makes no model
 	// call.
 	AgentJobFollowUpSweep AgentJobKind = "follow_up_sweep"
+
+	// AgentJobNearby is the weekly look around the person's town: a run
+	// with nobody present that searches the web for what is on in the week
+	// ahead, and writes what it finds as follow-ups. Its subject is the
+	// day and the hour it belongs to, so a week's run is queued once.
+	AgentJobNearby AgentJobKind = "nearby"
 )
 
 // AgentJobStatus is where a job is.

@@ -9,6 +9,8 @@ import {
   FollowUp,
   followUpDay,
   followUpDetails,
+  FOLLOW_UP_MUTE_KINDS,
+  followUpLink,
   muteTargets,
   orderedFollowUps,
 } from './agentAlerts'
@@ -55,7 +57,7 @@ it('offers nothing when the server has nothing to offer', () => {
   expect(muteTargets(alert([]))).toEqual([])
 })
 
-const followUp = (fields: Partial<FollowUp>): FollowUp => ({
+const followUp = (fields: Partial<FollowUp> = {}): FollowUp => ({
   id: 'follow-1',
   followUpKind: 'bill',
   followUpTitle: 'Water bill',
@@ -66,6 +68,7 @@ const followUp = (fields: Partial<FollowUp>): FollowUp => ({
   trackingNumber: null,
   dueOn: null,
   place: null,
+  sourceUrl: null,
   followUpState: 'open',
   ...fields,
 })
@@ -90,6 +93,35 @@ it('says what a kind has beyond its title', () => {
   expect(followUpDetails(followUp({ followUpKind: 'event', place: 'Elm Street' }))).toEqual(['Elm Street'])
   // No currency to format by: the number as it came.
   expect(followUpDetails(followUp({ amount: '84.20' }))).toEqual(['84.20'])
+})
+
+it('links the page a follow-up came from, and only a web page', () => {
+  expect(followUpLink(followUp({ sourceUrl: 'https://events.example.org/fair?year=2026' }))).toEqual({
+    href: 'https://events.example.org/fair?year=2026',
+    label: 'events.example.org',
+  })
+  expect(followUpLink(followUp())).toBeNull()
+  expect(followUpLink(followUp({ sourceUrl: 'javascript:alert(1)' }))).toBeNull()
+  expect(followUpLink(followUp({ sourceUrl: 'not an address' }))).toBeNull()
+})
+
+it('shows a link beside a follow-up found on the web', async () => {
+  vi.mocked(graphql).mockImplementation(async () => ({
+    ListAgentAlerts: [],
+    ListAgentAlertMutes: [],
+    ListAgentFollowUps: [
+      followUp({
+        followUpKind: 'event',
+        followUpTitle: 'Harvest market',
+        dueOn: '2026-10-24',
+        place: 'Elm Street',
+        sourceUrl: 'https://events.example.org/market',
+      }),
+    ],
+  }))
+  renderCard()
+  const link = await screen.findByRole('link', { name: 'events.example.org' })
+  expect(link.getAttribute('href')).toBe('https://events.example.org/market')
 })
 
 it('writes a day in the reader calendar, not the evening before', () => {
@@ -171,4 +203,15 @@ it('mutes a kind of follow-up by its plain name', async () => {
     }),
   )
   expect(await screen.findByText('Muted: all follow-ups')).toBeTruthy()
+})
+
+it('names the weekly look around plainly in the list of what is muted', async () => {
+  expect(FOLLOW_UP_MUTE_KINDS).toContain('nearby')
+  vi.mocked(graphql).mockImplementation(async () => ({
+    ListAgentAlerts: [],
+    ListAgentAlertMutes: [{ id: 'mute-1', muteScope: 'kind', muteTarget: 'nearby', createdAt: '2026-10-16T10:00:00Z' }],
+    ListAgentFollowUps: [],
+  }))
+  renderCard()
+  expect(await screen.findByText('Anything of this kind: what is on near you')).toBeTruthy()
 })

@@ -324,12 +324,14 @@ final class AgentUpkeepTests: XCTestCase {
                   {"id":"bill-1","followUpKind":"bill","followUpTitle":"Power bill","payee":"Example Power","carrier":null,"amount":"61.00",
                    "currencyCode":"USD","trackingNumber":null,"dueOn":"2030-01-20","place":null,"followUpState":"overdue"},
                   {"id":"event-1","followUpKind":"event","followUpTitle":"Street fair","payee":null,"carrier":null,"amount":null,
-                   "currencyCode":null,"trackingNumber":null,"dueOn":"2030-01-05","place":"Elm Street","followUpState":"open"}
+                   "currencyCode":null,"trackingNumber":null,"dueOn":"2030-01-05","place":"Elm Street","sourceUrl":"https://events.example.org/fair","followUpState":"open"}
                 ]}}
                 """#)
         let followUps = try await connection.agentFollowUps()
         XCTAssertEqual(followUps.map(\.id), ["event-1", "bill-1", "parcel-1"])
         XCTAssertTrue(followUps[1].isOverdue)
+        XCTAssertEqual(followUps[0].sourcePageURL?.host, "events.example.org")
+        XCTAssertNil(followUps[1].sourcePageURL)
         XCTAssertFalse(followUps[0].isStalled)
         XCTAssertNil(followUps[2].dueDate())
         let day = try XCTUnwrap(followUps[0].dueDate(calendar: Calendar(identifier: .gregorian)))

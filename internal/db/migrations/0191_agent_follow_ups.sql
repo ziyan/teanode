@@ -26,6 +26,10 @@ CREATE TABLE "agent_follow_up" (
     "due_on"           date,
     "place"            text                     NOT NULL DEFAULT '',
 
+    -- The page an event or deadline found on the web came from, so every
+    -- surface can link to it. Empty for what mail said.
+    "source_url"       text                     NOT NULL DEFAULT '',
+
     "follow_up_state"  character varying(20)    NOT NULL DEFAULT 'open',
     "closed_reason"    text                     NOT NULL DEFAULT '',
 

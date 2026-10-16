@@ -92,10 +92,11 @@ func followUpAmountWords(followUp *client.AgentFollowUp) string {
 }
 
 // followUpDetailWords is who a follow-up is with or where: the payee of a
-// bill, the carrier and tracking number of a parcel, the place of an event.
+// bill, the carrier and tracking number of a parcel, the place of an event,
+// and the page one found on the web came from.
 func followUpDetailWords(followUp *client.AgentFollowUp) string {
 	parts := []string{}
-	for _, part := range []string{followUp.Payee, followUp.Carrier, followUp.TrackingNumber, followUp.Place} {
+	for _, part := range []string{followUp.Payee, followUp.Carrier, followUp.TrackingNumber, followUp.Place, followUp.SourceURL} {
 		if part != "" {
 			parts = append(parts, part)
 		}

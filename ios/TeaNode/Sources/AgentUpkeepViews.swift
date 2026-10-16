@@ -189,6 +189,7 @@ enum UpkeepWords {
         case "tax_mail": String(localized: "Tax documents mailed in")
         case "watch": String(localized: "Watching")
         case "follow_up_sweep": String(localized: "Check follow-ups")
+        case "nearby": String(localized: "Look around town")
         default: jobKind
         }
     }
@@ -2406,6 +2407,11 @@ struct MutedAlertsView: View {
                         }
                     }
                     Text(verbatim: followUpLine(followUp)).font(.footnote).foregroundStyle(.secondary)
+                    if let page = followUp.sourcePageURL, let host = page.host {
+                        Link(destination: page) {
+                            Label(host, systemImage: "link").font(.footnote)
+                        }
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .swipeActions {
@@ -2482,6 +2488,7 @@ struct MutedAlertsView: View {
         case ("parcel", false): return String(localized: "parcels")
         case ("deadline", false): return String(localized: "deadlines")
         case ("event", false): return String(localized: "events")
+        case ("nearby", _): return String(localized: "what is on near you")
         case ("follow_up", _): return String(localized: "all follow-ups")
         default: return kind
         }

@@ -23,6 +23,7 @@ type AgentFollowUp struct {
 	TrackingNumber string    `json:"trackingNumber"`
 	DueOn          string    `json:"dueOn"`
 	Place          string    `json:"place"`
+	SourceURL      string    `json:"sourceUrl"`
 	FollowUpState  string    `json:"followUpState"`
 	ClosedReason   string    `json:"closedReason"`
 	ToldState      string    `json:"toldState"`
@@ -43,7 +44,7 @@ type NewAgentFollowUp struct {
 	Place          string
 }
 
-const agentFollowUpFields = `{ id followUpKind followUpKey followUpTitle payee carrier amount currencyCode trackingNumber dueOn place followUpState closedReason toldState createdAt updatedAt }`
+const agentFollowUpFields = `{ id followUpKind followUpKey followUpTitle payee carrier amount currencyCode trackingNumber dueOn place sourceUrl followUpState closedReason toldState createdAt updatedAt }`
 
 const (
 	DocumentListAgentFollowUps = `query ($isOpenOnly: Boolean) { ListAgentFollowUps(isOpenOnly: $isOpenOnly) ` + agentFollowUpFields + ` }`

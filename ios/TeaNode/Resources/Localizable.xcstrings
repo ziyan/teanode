@@ -4021,6 +4021,22 @@
         }
       }
     },
+    "what is on near you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近所のできごと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你附近有什么"
+          }
+        }
+      }
+    },
     "An estimate from your documents and this year's settings: %@ taxable after %@ of itemized deductions (mortgage interest %@, state and local taxes %@, gifts %@). A state's tax on investment income is not counted.": {
       "localizations": {
         "ja": {
@@ -9105,6 +9121,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "检查跟进事项"
+          }
+        }
+      }
+    },
+    "Look around town": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近所の情報を調べる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看附近动态"
           }
         }
       }

@@ -114,6 +114,11 @@ type AgentFollowUp struct {
 	DueOn string `json:"dueOn,omitempty" graphapi:"nullable"`
 	Place string `json:"place,omitempty" graphapi:"nullable"`
 
+	// SourceURL is the web page an event or deadline was found on by the
+	// weekly look around, so every surface can link to it. Empty for what
+	// mail said.
+	SourceURL string `json:"sourceUrl,omitempty" graphapi:"nullable"`
+
 	FollowUpState AgentFollowUpState `json:"followUpState"`
 	ClosedReason  string             `json:"closedReason,omitempty" graphapi:"nullable"`
 
