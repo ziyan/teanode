@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.168.2] - 2026-10-16
+
+### Changed
+
+- The agent reads pages built by scripts, lists the videos, sounds and pictures on a page, and reads a long page a part at a time. (#524)
+
 ## [0.168.1] - 2026-10-16
 
 ### Fixed
