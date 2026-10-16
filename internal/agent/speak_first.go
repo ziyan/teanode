@@ -110,7 +110,11 @@ func (self *Agent) speakFirstReasonNamed(name string) (speakFirstReason, bool) {
 // nothing of this kind already queued, no turn running in the main
 // conversation, the person quiet for half an hour, and not snoozed.
 func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
-	if now.Sub(self.lastSpeak) < speakFirstEvery || self.settings.Registry == nil {
+	if self.settings.Registry == nil {
+		return
+	}
+	hasArrival := self.takeArrival()
+	if now.Sub(self.lastSpeak) < speakFirstEvery && !hasArrival {
 		return
 	}
 	if !FeatureAllowed(self.settings.Configuration(), "ask") {
