@@ -265,15 +265,15 @@ func InterpretFollowUps(answer *ExtractAnswer, agentId, mailId string) []FollowU
 		if strings.TrimSpace(key) == "" && kind == models.AgentFollowUpParcel {
 			key = trackingNumber
 		}
-		key = strings.Join(strings.Fields(strings.ToLower(key)), " ")
-		if key == "" {
+		followUpKey := FollowUpKeyOf(kind, key)
+		if followUpKey == "" {
 			continue
 		}
 		finding := FollowUpFinding{
 			Resolves: followUp.Resolves,
 			Because:  cut(strings.TrimSpace(followUp.Because), 300),
 			FollowUp: models.AgentFollowUp{
-				AgentID: agentId, FollowUpKind: kind, FollowUpKey: cut(string(kind)+":"+key, 300),
+				AgentID: agentId, FollowUpKind: kind, FollowUpKey: followUpKey,
 				FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{mailId},
 			},
 		}
@@ -309,6 +309,18 @@ func InterpretFollowUps(answer *ExtractAnswer, agentId, mailId string) []FollowU
 		findings = append(findings, finding)
 	}
 	return findings
+}
+
+// FollowUpKeyOf is the stored key of a follow-up: the kind in front, then
+// the key in lower case with its spaces gathered, or "" when the key says
+// nothing. Extract and the people who add a follow-up by hand make it the
+// same way, so a later message about a bill someone added finds that row.
+func FollowUpKeyOf(kind models.AgentFollowUpKind, key string) string {
+	key = strings.Join(strings.Fields(strings.ToLower(key)), " ")
+	if key == "" {
+		return ""
+	}
+	return cut(string(kind)+":"+key, 300)
 }
 
 // parseFollowUpAmount reads an amount the way a bill writes it, with a

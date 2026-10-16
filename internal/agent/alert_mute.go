@@ -113,6 +113,10 @@ func budgetCandidateFacts(candidate *models.AgentAlertCandidate) *alertFacts {
 // "stop telling me about parcels" holds. A roundup lists events and
 // deadlines together and is kept from muted kinds when it is written
 // (roundupFollowUps), so it carries only the shared kind.
+//
+// The mail category is the kind of follow-up too (a roundup's is event, what
+// it is mostly of), so that a Mute of the alert offers the kind and the
+// person can say "no more parcels" from the alert about one.
 func followUpCandidateFacts(candidate *models.AgentAlertCandidate) *alertFacts {
 	facts := &alertFacts{
 		subjectKeys: []string{candidate.FollowUpSubjectKey},
@@ -121,6 +125,9 @@ func followUpCandidateFacts(candidate *models.AgentAlertCandidate) *alertFacts {
 	followUpKind, _, _ := strings.Cut(candidate.FollowUpSubjectKey, ":")
 	if models.AgentFollowUpKind(followUpKind).IsValid() {
 		facts.kinds = append(facts.kinds, followUpKind)
+		facts.mailCategory = followUpKind
+	} else if strings.HasPrefix(candidate.FollowUpSubjectKey, followUpRoundupKeyPrefix) {
+		facts.mailCategory = string(models.AgentFollowUpEvent)
 	}
 	return facts
 }
@@ -246,7 +253,10 @@ func normalizedSubjectKey(subjectKey string) string {
 
 // NormalizeAlertMute checks a scope and puts its target in the form it is
 // matched in: an address or a domain in lower case, a subject key as the
-// alerts keep them, a kind as a word.
+// alerts keep them, a kind as a word. The kinds are burst, budget,
+// follow_up (every alert about a follow-up), bill, parcel, deadline and event
+// (those follow-ups alone), and the categories of the sorting such as
+// notification.
 func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (string, error) {
 	if !muteScope.IsValid() {
 		return "", fmt.Errorf("%q is not sender, domain, subjectKey, kind or spendingCategory", muteScope)
@@ -271,7 +281,7 @@ func NormalizeAlertMute(muteScope models.AlertMuteScope, muteTarget string) (str
 	case models.AlertMuteKind:
 		muteTarget = strings.ToLower(muteTarget)
 		if strings.ContainsAny(muteTarget, " @") {
-			return "", fmt.Errorf("%q is not a kind: burst, budget, or a category such as notification", muteTarget)
+			return "", fmt.Errorf("%q is not a kind: burst, budget, follow_up, bill, parcel, deadline, event, or a category such as notification", muteTarget)
 		}
 	case models.AlertMuteSpendingCategory:
 		// A spending category's id, as the budget alerts name it, in lower
@@ -437,6 +447,9 @@ func defaultAlertMuteScopeOf(alert *models.AgentAlert, terms *coveredTerms) mode
 		}
 		return models.AlertMuteKind
 	}
+	if isFollowUpAlert(alert) && len(terms.mailCategories) > 0 {
+		return models.AlertMuteKind
+	}
 	if len(terms.burstKeys) == 0 && len(terms.senderAddresses) > 0 {
 		return models.AlertMuteSender
 	}
@@ -479,6 +492,22 @@ func muteTargetsOf(alert *models.AgentAlert, terms *coveredTerms, muteScope mode
 		return terms.mailCategories
 	}
 	return nil
+}
+
+// isFollowUpAlert says an alert told a follow-up or the week's roundup,
+// whose subject key is the follow-up's key and what was told about it. A
+// mail alert has a sender, which a follow-up alert has not, and that is what
+// tells a follow-up's subject key from a model's wording that happens to
+// start with a kind.
+func isFollowUpAlert(alert *models.AgentAlert) bool {
+	if alert == nil || len(alert.CoveredSenderAddresses) > 0 || len(alert.CoveredBurstKeys) > 0 {
+		return false
+	}
+	if strings.HasPrefix(alert.SubjectKey, followUpRoundupKeyPrefix) {
+		return true
+	}
+	followUpKind, _, found := strings.Cut(alert.SubjectKey, ":")
+	return found && models.AgentFollowUpKind(followUpKind).IsValid()
 }
 
 // isBudgetAlert says an alert told a budget or savings target crossing,

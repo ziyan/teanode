@@ -246,10 +246,13 @@ func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.Ag
 	return candidate, nil
 }
 
+// followUpRoundupKeyPrefix starts the subject key of every roundup.
+const followUpRoundupKeyPrefix = "follow-up-roundup:"
+
 // followUpRoundupSubjectKey is the subject key of the roundup of the Sunday
 // given.
 func followUpRoundupSubjectKey(sunday time.Time) string {
-	return "follow-up-roundup:" + sunday.Format(time.DateOnly)
+	return followUpRoundupKeyPrefix + sunday.Format(time.DateOnly)
 }
 
 // writeFollowUpCandidate writes a follow_up candidate, and answers it when

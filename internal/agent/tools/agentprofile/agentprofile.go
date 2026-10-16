@@ -3,7 +3,9 @@
 // lines the person wants added to its standing instructions. It is also
 // where the person's word about the agent starting conversations on its
 // own is kept: its introduction done, not now, no more ideas, no more
-// memory checks, no alerts, and "don't tell me about these".
+// memory checks, no alerts, and "don't tell me about these". It is also where
+// the person asks to see, add or stop what the agent follows: a bill, a
+// parcel, a deadline, a coming event.
 package agentprofile
 
 import (
@@ -34,16 +36,27 @@ func init() {
 		return []*tools.Tool{
 			{
 				Name: "agent_profile", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
-				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, the voice your answers are read aloud in on a voice call (speech_voice; warm and calm: marin, cedar; bright: coral, nova, shimmer; deeper: ash, onyx, echo; empty for the server's), or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. For the person's own name use account_update.",
+				Description: "Your own profile, as the person tells it to you. `set` changes your name, the language you talk to them in, the voice your answers are read aloud in on a voice call (speech_voice; warm and calm: marin, cedar; bright: coral, nova, shimmer; deeper: ash, onyx, echo; empty for the server's), or adds a line to your standing instructions (never replaces them). `onboarding_done` ends your introduction. `not_now` keeps you from starting a conversation on your own for a day. `no_more_ideas` and `no_more_memory_checks` switch those off, only when they say they never want them; stopping one check or dismissing one idea is not that. `ideas_on` and `memory_checks_on` switch them back on. `no_alerts` stops you telling them unasked what their mail says they should know, only when they want none at all; `alerts_on` starts it again. When they say not to be told about something like an alert again, `mute_alert`: by default what the alert was about (the burst, or the sender of a single message), or by mute_scope its subject, its sender, the sender's domain or its kind; the alert whose id they answered (each alert's line names it), else the latest; or give mute_target to name the address, domain, subject or kind (burst, budget, or a category such as notification) yourself, whose scope is read from it when left out. A budget alert mutes by default its spending category (mute_scope spendingCategory, mute_target the spending category's id); kind budget mutes every budget and savings target alert. `unmute_alert` takes one back, by mute_scope and mute_target. `unattended` says what you may do without their word when they are not there (outward: speak for them, such as sending mail; money: spend or move their money; destructive: what cannot be undone; granting: giving somebody access; listed: tools on their ask-me-first list); `set_unattended` replaces that list with unattended_allowed_risks, only when they ask, and they confirm it. `list_follow_ups` shows what you are following for them (bills, parcels, deadlines and coming events you read out of their mail; is_open_only false adds what is over); use it when they ask what is due, on its way or coming up, and to find an id. `add_follow_up` when they ask you to keep track of something (\"track this parcel\", \"remind me when the water bill is due\"): follow_up_kind bill, parcel, deadline or event, follow_up_title, and due_on as YYYY-MM-DD (a parcel may leave it out; a bill also needs amount, with payee and currency_code if known; a parcel its tracking_number and carrier; an event its place); work out the day from what they said, ask if you cannot. `stop_follow_up` when they say to stop following something (\"stop following that bill\", \"I already dealt with it\"): by follow_up_id from list_follow_ups, or by words of its follow_up_title. Stopping keeps it on record and nothing more is said about it; to stop being told about a whole kind (\"no more parcel alerts\"), mute_alert with mute_scope kind and mute_target bill, parcel, deadline or event, or follow_up for all of them. For the person's own name use account_update.",
 				Parameters: tools.Object(map[string]any{
-					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert", "unattended", "set_unattended"),
+					"action":          tools.EnumProperty("what to do", "set", "onboarding_done", "not_now", "no_more_ideas", "no_more_memory_checks", "ideas_on", "memory_checks_on", "no_alerts", "alerts_on", "mute_alert", "unmute_alert", "list_follow_ups", "add_follow_up", "stop_follow_up", "unattended", "set_unattended"),
 					"agent_name":      tools.StringProperty("for set: what they want to call you"),
 					"language":        tools.StringProperty("for set: the language to talk to them in, as a tag: en, ja, zh"),
 					"speech_voice":    tools.StringProperty("for set: the voice to read your answers aloud in on a voice call, one of " + strings.Join(config.VoiceSpeechVoices, ", ") + "; \"default\" for the server's"),
 					"add_instruction": tools.StringProperty("for set: one line to add to your standing instructions, in their words: what they want help with, how they like to be written to"),
 					"alert_id":        tools.StringProperty("for mute_alert: the alert to mute from; the latest when left out"),
 					"mute_scope":      tools.EnumProperty("for mute_alert and unmute_alert: what to match; for mute_alert, left out, what the alert was about, or what mute_target reads as", string(models.AlertMuteSubjectKey), string(models.AlertMuteSender), string(models.AlertMuteDomain), string(models.AlertMuteKind), string(models.AlertMuteSpendingCategory)),
-					"mute_target":     tools.StringProperty("for mute_alert: the address, domain, subject key or kind, when not taken from the alert; for unmute_alert: the one to take back"),
+					"mute_target":     tools.StringProperty("for mute_alert: the address, domain, subject key or kind (burst, budget, follow_up, bill, parcel, deadline, event, or a category such as notification), when not taken from the alert; for unmute_alert: the one to take back"),
+					"follow_up_id":    tools.StringProperty("for stop_follow_up: the id list_follow_ups gave"),
+					"follow_up_kind":  tools.EnumProperty("for add_follow_up: what sort of thing it is", string(models.AgentFollowUpBill), string(models.AgentFollowUpParcel), string(models.AgentFollowUpDeadline), string(models.AgentFollowUpEvent)),
+					"follow_up_title": tools.StringProperty("for add_follow_up: one line saying what it is, in the person's language; for stop_follow_up, instead of follow_up_id: words of the title"),
+					"due_on":          tools.StringProperty("for add_follow_up: the day it is due, arrives or happens, YYYY-MM-DD"),
+					"payee":           tools.StringProperty("for add_follow_up of a bill: who is to be paid"),
+					"amount":          tools.StringProperty("for add_follow_up of a bill: how much, such as 84.20"),
+					"currency_code":   tools.StringProperty("for add_follow_up of a bill: the currency code, such as USD"),
+					"carrier":         tools.StringProperty("for add_follow_up of a parcel: who carries it"),
+					"tracking_number": tools.StringProperty("for add_follow_up of a parcel: its tracking number"),
+					"place":           tools.StringProperty("for add_follow_up of an event: where"),
+					"is_open_only":    tools.BooleanProperty("for list_follow_ups: true (the default) leaves out what is over; false adds the closed, expired and stopped"),
 					"unattended_allowed_risks": map[string]any{
 						"type":        "array",
 						"description": "for set_unattended: every kind of action you may take without their word when they are not there; an empty list allows none",
@@ -59,7 +72,7 @@ func init() {
 						return ""
 					}
 					switch strings.ToLower(strings.TrimSpace(asked.Action)) {
-					case "unattended":
+					case "unattended", "list_follow_ups":
 						return tools.RiskRead
 					case "set_unattended":
 						return tools.RiskGranting
@@ -106,6 +119,15 @@ func init() {
 						return "Stop the agent telling you about these"
 					case "unmute_alert":
 						return "Let the agent tell you about these again"
+					case "list_follow_ups":
+						return "Show what the agent is following"
+					case "add_follow_up":
+						if title := strings.TrimSpace(call.FollowUpTitle); title != "" {
+							return "Follow " + title
+						}
+						return "Follow something for you"
+					case "stop_follow_up":
+						return "Stop following something"
 					case "unattended":
 						return "Say what the agent may do when you are not there"
 					case "set_unattended":
@@ -132,6 +154,18 @@ type arguments struct {
 	AlertID        string `json:"alert_id"`
 	MuteScope      string `json:"mute_scope"`
 	MuteTarget     string `json:"mute_target"`
+
+	FollowUpID     string `json:"follow_up_id"`
+	FollowUpKind   string `json:"follow_up_kind"`
+	FollowUpTitle  string `json:"follow_up_title"`
+	DueOn          string `json:"due_on"`
+	Payee          string `json:"payee"`
+	Amount         string `json:"amount"`
+	CurrencyCode   string `json:"currency_code"`
+	Carrier        string `json:"carrier"`
+	TrackingNumber string `json:"tracking_number"`
+	Place          string `json:"place"`
+	IsOpenOnly     *bool  `json:"is_open_only"`
 
 	// UnattendedAllowedRisks is the new list for set_unattended.
 	UnattendedAllowedRisks []string `json:"unattended_allowed_risks"`
@@ -224,8 +258,14 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return muteAlert(ctx, asked)
 	case "unmute_alert":
 		return unmuteAlert(ctx, asked)
+	case "list_follow_ups":
+		return listFollowUps(ctx, asked)
+	case "add_follow_up":
+		return addFollowUp(ctx, asked)
+	case "stop_follow_up":
+		return stopFollowUp(ctx, asked)
 	default:
-		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_ideas, no_more_memory_checks, ideas_on, memory_checks_on, no_alerts, alerts_on, mute_alert or unmute_alert", action)
+		return nil, fmt.Errorf("%q is not set, onboarding_done, not_now, no_more_ideas, no_more_memory_checks, ideas_on, memory_checks_on, no_alerts, alerts_on, mute_alert, unmute_alert, list_follow_ups, add_follow_up or stop_follow_up", action)
 	}
 }
 
@@ -300,6 +340,148 @@ func unmuteAlert(ctx context.Context, asked arguments) (*tools.Result, error) {
 		return nil, fmt.Errorf("nothing is muted")
 	}
 	return nil, fmt.Errorf("no mute matches %q; muted are: %s", muteTarget, strings.Join(names, ", "))
+}
+
+// followUp is a follow-up as the operations return it.
+type followUp struct {
+	ID             string `json:"id"`
+	FollowUpKind   string `json:"followUpKind"`
+	FollowUpTitle  string `json:"followUpTitle"`
+	Payee          string `json:"payee"`
+	Carrier        string `json:"carrier"`
+	Amount         string `json:"amount"`
+	CurrencyCode   string `json:"currencyCode"`
+	TrackingNumber string `json:"trackingNumber"`
+	DueOn          string `json:"dueOn"`
+	Place          string `json:"place"`
+	FollowUpState  string `json:"followUpState"`
+	ClosedReason   string `json:"closedReason"`
+}
+
+// line is a follow-up in a line the model can read and quote: the day, the
+// kind and the title, then what the kind has, and the id to stop it by.
+func (self followUp) line() string {
+	parts := []string{}
+	for _, part := range []string{self.Payee, strings.TrimSpace(self.Amount + " " + self.CurrencyCode), self.Carrier, self.TrackingNumber, self.Place} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	line := self.DueOn
+	if line == "" {
+		line = "no day"
+	}
+	line += " " + self.FollowUpKind + ": " + self.FollowUpTitle
+	if len(parts) > 0 {
+		line += " (" + strings.Join(parts, ", ") + ")"
+	}
+	if self.FollowUpState != "open" {
+		line += " [" + self.FollowUpState
+		if self.ClosedReason != "" {
+			line += ": " + self.ClosedReason
+		}
+		line += "]"
+	}
+	return line + " id " + self.ID
+}
+
+// listedFollowUps is what the agent follows, as the same operation the
+// Following list and the command line read gives it.
+func listedFollowUps(ctx context.Context, isOpenOnly bool) ([]followUp, error) {
+	var listed struct {
+		ListAgentFollowUps []followUp `json:"ListAgentFollowUps"`
+	}
+	if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentListAgentFollowUps, map[string]any{"isOpenOnly": isOpenOnly}, &listed); err != nil {
+		return nil, err
+	}
+	return listed.ListAgentFollowUps, nil
+}
+
+// listFollowUps says what the agent is following, one line each.
+func listFollowUps(ctx context.Context, asked arguments) (*tools.Result, error) {
+	isOpenOnly := asked.IsOpenOnly == nil || *asked.IsOpenOnly
+	listed, err := listedFollowUps(ctx, isOpenOnly)
+	if err != nil {
+		return nil, err
+	}
+	if len(listed) == 0 {
+		if isOpenOnly {
+			return noted("you are not following anything for them: no bill, parcel, deadline or event is open"), nil
+		}
+		return noted("you have never followed anything for them"), nil
+	}
+	lines := make([]string, 0, len(listed))
+	for _, each := range listed {
+		lines = append(lines, each.line())
+	}
+	return &tools.Result{Content: strings.Join(lines, "\n")}, nil
+}
+
+// addFollowUp follows what the person named, through the same operation as
+// the dashboard's and the command line's.
+func addFollowUp(ctx context.Context, asked arguments) (*tools.Result, error) {
+	variables := map[string]any{"followUpKind": strings.TrimSpace(asked.FollowUpKind), "followUpTitle": strings.TrimSpace(asked.FollowUpTitle)}
+	for name, given := range map[string]string{
+		"dueOn": asked.DueOn, "payee": asked.Payee, "amount": asked.Amount, "currencyCode": asked.CurrencyCode,
+		"carrier": asked.Carrier, "trackingNumber": asked.TrackingNumber, "place": asked.Place,
+	} {
+		if given = strings.TrimSpace(given); given != "" {
+			variables[name] = given
+		}
+	}
+	var added struct {
+		AddAgentFollowUp followUp `json:"AddAgentFollowUp"`
+	}
+	if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentAddAgentFollowUp, variables, &added); err != nil {
+		return nil, err
+	}
+	return noted("following " + added.AddAgentFollowUp.line() + ": you will remind them as its day comes, and the person can stop it on the agent page"), nil
+}
+
+// stopFollowUp stops following one, by its id or by words of its title.
+// Asked "stop following that bill", the model has no id in front of it, so
+// the title is matched against what is open; more than one match is
+// listed and none is stopped.
+func stopFollowUp(ctx context.Context, asked arguments) (*tools.Result, error) {
+	followUpId := strings.TrimSpace(asked.FollowUpID)
+	if followUpId == "" {
+		words := strings.ToLower(strings.TrimSpace(asked.FollowUpTitle))
+		if words == "" {
+			return nil, fmt.Errorf("say which: give follow_up_id from list_follow_ups, or words of its follow_up_title")
+		}
+		listed, err := listedFollowUps(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		matches := []followUp{}
+		for _, each := range listed {
+			if strings.Contains(strings.ToLower(each.FollowUpTitle), words) {
+				matches = append(matches, each)
+			}
+		}
+		switch len(matches) {
+		case 0:
+			return nil, fmt.Errorf("nothing you are following has %q in its title; list_follow_ups shows what is open", words)
+		case 1:
+			followUpId = matches[0].ID
+		default:
+			lines := make([]string, 0, len(matches))
+			for _, each := range matches {
+				lines = append(lines, each.line())
+			}
+			return nil, fmt.Errorf("more than one matches %q; ask which, or give follow_up_id: %s", words, strings.Join(lines, "; "))
+		}
+	}
+	var stopped struct {
+		StopAgentFollowUp followUp `json:"StopAgentFollowUp"`
+	}
+	if err := tools.MustRun(ctx).Operations().Execute(ctx, client.DocumentStopAgentFollowUp, map[string]any{"followUpId": followUpId}, &stopped); err != nil {
+		return nil, err
+	}
+	if stopped.StopAgentFollowUp.FollowUpState != "stopped" {
+		return noted("it was already " + stopped.StopAgentFollowUp.FollowUpState + ", so there was nothing to stop: " + stopped.StopAgentFollowUp.line()), nil
+	}
+	return noted("stopped following " + stopped.StopAgentFollowUp.FollowUpTitle + ": you will say nothing more about it"), nil
 }
 
 // set changes the profile through the same mutation the settings page

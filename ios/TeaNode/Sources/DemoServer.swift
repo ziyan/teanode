@@ -67,6 +67,10 @@
             } else if query.contains("ReadAgentVoice") {
                 // No voice, so the conversation shows no call button.
                 answer = #"{"data":{"ReadAgentVoice":{"isVoiceAvailable":false,"sampleRate":null}}}"#
+            } else if query.contains("ListAgentAlerts") {
+                answer = Self.alerts
+            } else if query.contains("ListAgentFollowUps") {
+                answer = Self.followUps
             } else if query.contains("ReadAgent") {
                 answer = Self.agent
             } else if query.contains("ListAgentDreams") {
@@ -548,6 +552,28 @@
               "allowed":{"enabled":true,"triage":true,"summaries":true,"draftReplies":true,"search":true,"research":true,"autoReply":true,"ask":true,"schedules":true,"browser":true,"connectedServers":true},
               "budget":null,"choices":["standard","thorough"],"timezone":"UTC","language":"en","knowledgeLanguage":"en",
               "categories":["personal","work","newsletter","notification","receipt","promotion","social","invitation","phishing","junk","other","home","travel"]}}}
+            """#
+
+        /// The alerts screen: one thing the agent said, and one mute.
+        static let alerts = #"""
+            {"data":{
+              "ListAgentAlerts":[{"id":"alert1","alertText":"The water bill is due in three days and no payment has been seen.","sentAt":"2026-10-10T08:00:00Z",
+                "subjectKey":"bill:example water 2026-10-13:reminded","isUrgent":false,
+                "covered":[{"mailId":"","subject":"Your water bill is ready","fromAddress":"billing@water.example.com"}],
+                "muteChoices":[{"muteScope":"kind","muteTarget":"bill"},{"muteScope":"subjectKey","muteTarget":"bill:example water 2026-10-13:reminded"}]}],
+              "ListAgentAlertMutes":[{"id":"mute1","muteScope":"kind","muteTarget":"event","createdAt":"2026-10-02T18:30:00Z"}]}}
+            """#
+
+        /// What the agent is following, as invented as everything here: an
+        /// overdue bill, a stalled parcel, a deadline, a bill and an event.
+        static let followUps = #"""
+            {"data":{"ListAgentFollowUps":[
+              {"id":"follow1","followUpKind":"bill","followUpTitle":"Gas bill","payee":"Example Gas","carrier":null,"amount":"61.00","currencyCode":"USD","trackingNumber":null,"dueOn":"2026-10-08","place":null,"followUpState":"overdue"},
+              {"id":"follow2","followUpKind":"parcel","followUpTitle":"Garden shears","payee":null,"carrier":"Example Post","amount":null,"currencyCode":null,"trackingNumber":"EX123456789","dueOn":"2026-10-06","place":null,"followUpState":"stalled"},
+              {"id":"follow3","followUpKind":"deadline","followUpTitle":"Return the permission slip","payee":null,"carrier":null,"amount":null,"currencyCode":null,"trackingNumber":null,"dueOn":"2026-10-16","place":null,"followUpState":"open"},
+              {"id":"follow4","followUpKind":"bill","followUpTitle":"Water bill","payee":"Example Water","carrier":null,"amount":"84.20","currencyCode":"USD","trackingNumber":null,"dueOn":"2026-10-21","place":null,"followUpState":"open"},
+              {"id":"follow5","followUpKind":"event","followUpTitle":"Street fair","payee":null,"carrier":null,"amount":null,"currencyCode":null,"trackingNumber":null,"dueOn":"2026-10-31","place":"Elm Street","followUpState":"open"}
+            ]}}
             """#
 
         static let dreams = #"""

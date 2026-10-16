@@ -258,6 +258,10 @@ jobs:
           shoot schedules-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen schedules
           shoot activity-run-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
+          # The alert settings, with what the agent is following.
+          shoot alerts-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen alerts
+          shoot alerts-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen alerts
+          shoot alerts-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen alerts
 
           # The App Store's set: the largest iPhone, which its listing needs,
           # with the status bar Apple's own screenshots show.

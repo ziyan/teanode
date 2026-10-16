@@ -335,3 +335,47 @@ func TestMuteScopeIsReadFromTheTarget(t *testing.T) {
 		})
 	}
 }
+
+// A kind of follow-up is a kind to mute, in the words the surfaces offer,
+// and it matches only the follow-up candidates of that kind (or all of
+// them, for follow_up).
+func TestFollowUpKindsAreKindsToMute(t *testing.T) {
+	for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event"} {
+		normalized, err := NormalizeAlertMute(models.AlertMuteKind, " "+strings.ToUpper(target))
+		if err != nil || normalized != target {
+			t.Fatalf("%s: %q %v", target, normalized, err)
+		}
+	}
+	candidate := &models.AgentAlertCandidate{CandidateKind: models.AlertCandidateFollowUp, FollowUpSubjectKey: "parcel:ex123456789:delivered"}
+	facts := candidateFacts(candidate, "", "")
+	for target, isMuted := range map[string]bool{"parcel": true, "follow_up": true, "bill": false, "event": false} {
+		mutes := []*models.AgentAlertMute{{MuteScope: models.AlertMuteKind, MuteTarget: target}}
+		if got := mutedBy(mutes, facts) != nil; got != isMuted {
+			t.Fatalf("muting %s of a parcel's alert: %v", target, got)
+		}
+	}
+}
+
+// A Mute of an alert about a parcel offers the parcel kind and makes it the
+// default, rather than the one reminder's subject key, which would silence
+// nothing that is said next; and one about the week's roundup offers event.
+func TestMuteOfAFollowUpAlertOffersItsKind(t *testing.T) {
+	for subjectKey, wanted := range map[string]string{
+		"parcel:ex123456789:delivered":          "parcel",
+		"bill:example water 2026-11-03:overdue": "bill",
+		"follow-up-roundup:2026-11-01":          "event",
+	} {
+		candidate := &models.AgentAlertCandidate{CandidateKind: models.AlertCandidateFollowUp, FollowUpSubjectKey: subjectKey}
+		terms := coveredTermsOf([]*alertFacts{candidateFacts(candidate, "", "")})
+		alert := &models.AgentAlert{SubjectKey: subjectKey}
+		choices := alertMuteChoices(alert, terms)
+		if len(choices) < 2 || choices[0].MuteScope != models.AlertMuteKind || choices[0].MuteTarget != wanted || choices[1].MuteScope != models.AlertMuteSubjectKey {
+			t.Fatalf("%s: %+v", subjectKey, choices)
+		}
+	}
+	mailAlert := &models.AgentAlert{SubjectKey: "bill: photo shop receipt", CoveredSenderAddresses: []string{"orders@shop.example.com"}}
+	terms := &coveredTerms{senderAddresses: []string{"orders@shop.example.com"}, mailCategories: []string{"receipt"}}
+	if scope := defaultAlertMuteScopeOf(mailAlert, terms); scope != models.AlertMuteSender {
+		t.Fatalf("a mail alert whose wording starts with a kind is still muted by its sender: %s", scope)
+	}
+}

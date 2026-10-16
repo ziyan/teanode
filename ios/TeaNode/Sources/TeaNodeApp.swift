@@ -519,6 +519,7 @@ struct SettingsForm: View {
                         MailRulesView(mail: mail, mailboxId: mail.mailbox?.id ?? "")
                     }
                 case "dreams": DreamsView(connection: connection)
+                case "alerts": MutedAlertsView(connection: connection)
                 case "activity-run": AgentActivityView(connection: connection)
                 case "schedules": SchedulesView(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)

@@ -17,7 +17,7 @@ To see it working on the development server: deliver to a mailbox the agent tria
 - [x] (2026-10-16) Milestone 2: closing follow-ups from later mail and finance transactions: `matchFollowUpPayments` and the pure `isFollowUpPaidBy` in `internal/agent/follow_up_payment.go`, run after every sync and before every sweep; a delivered parcel writes a candidate (`noteParcelDelivered` in `extract.go`).
 - [x] (2026-10-16) Milestone 3: `sweepFollowUps` and the `follow_up_sweep` job in `internal/agent/follow_up_sweep.go`, queued from the worker's tick by slot (08:00 daily, Sunday 18:00 in the person's zone); candidate kind `follow_up` with `follow_up_ids`, `follow_up_told_state` and a unique `follow_up_subject_key` (migration 0191, changed in place before any deploy); `AgentFollowUpToldState`; the alert prompt and its rendering of follow-ups.
 - [ ] Not done in Milestone 3: telling a parcel is out for delivery, which needs a delivery status on the follow-up.
-- [ ] Milestone 4: control on every surface: the agent's tool, the command line, the dashboard's Alerts card, the iPhone app; muting a kind.
+- [x] (2026-10-16) Milestone 4: control on every surface: `ListAgentFollowUps`, `StopAgentFollowUp` and `AddAgentFollowUp` (apigraph `agent_alert.go`, `FollowUpKeyOf` and `internal/agent/follow_up.go`), `agent_profile`'s `list_follow_ups`, `add_follow_up` and `stop_follow_up`, `teanode agent follow list|add|stop`, the Following list on the dashboard's Alerts card and in the iPhone app's alert settings, and the follow-up kinds as kinds to mute. Not done: `teanode agent follow sweep --as-of`, which the scenario under Purpose uses and which waits for Milestone 5.
 - [ ] Milestone 4b: the weekly "around you" research run (home area from memory or asked once, `web_search` and `web_fetch`, bounded), feeding events, places and important dates into the Sunday roundup.
 - [ ] Milestone 5: a backfill over the last 45 days of mail, so the list is useful the day it ships; docs; deploy; the scenario above.
 
@@ -78,6 +78,10 @@ To see it working on the development server: deliver to a mailbox the agent tria
   Date/Author: 2026-10-16.
 - Decision: the sweep is queued by slot (`<date>T08`, `<date>T18` on Sunday) as the job's subject, from the worker tick every ten minutes, and the job first matches payments, then sweeps, then queues the alert job; it calls no model.
   Rationale: a slot as the subject survives a restart and makes a missed sweep run at the next look; matching first keeps a bill whose payment is already stored from being reminded.
+  Date/Author: 2026-10-16.
+
+- Decision: the surfaces share the alert mutations' permission (agent:use) and live beside them (`AgentAlertQuery`, `AgentAlertMutation`), and the tool actions sit in `agent_profile` next to `mute_alert` rather than in a tool of their own. A person-added follow-up that already exists and is over (closed, expired or stopped) is opened again and told about again; one still being watched is left as it is. A Mute of an alert about a follow-up offers the follow-up's kind, by giving the candidate's facts the kind as their mail category.
+  Rationale: "stop following that" and "no more parcel alerts" are said in the same breath as muting an alert, and a neighbor tool for one more small noun would be a second place to look.
   Date/Author: 2026-10-16.
 
 ## Outcomes & Retrospective

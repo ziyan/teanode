@@ -988,6 +988,57 @@ public struct AgentAlertMute: Codable, Hashable, Sendable, Identifiable {
     public let createdAt: String
 }
 
+// MARK: - Follow-ups
+
+/// AgentFollowUp is something the agent keeps track of from the person's
+/// mail until something closes it: a bill, a parcel, a deadline or a coming
+/// event. What a kind does not use is nil. Only the ones still being watched
+/// are listed, so followUpState is open, overdue or stalled.
+public struct AgentFollowUp: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    /// bill, parcel, deadline or event.
+    public let followUpKind: String
+    public let followUpTitle: String
+    public let payee: String?
+    public let carrier: String?
+    /// A decimal such as "84.20", in currencyCode.
+    public let amount: String?
+    public let currencyCode: String?
+    public let trackingNumber: String?
+    /// A day written YYYY-MM-DD.
+    public let dueOn: String?
+    public let place: String?
+    public let followUpState: String
+
+    /// The kinds a person can mute, all of them first, as the server's kind
+    /// mutes name them.
+    public static let muteKinds = ["follow_up", "bill", "parcel", "deadline", "event"]
+
+    public var isOverdue: Bool { followUpState == "overdue" }
+    public var isStalled: Bool { followUpState == "stalled" }
+
+    /// The day it is due as the start of that day in the calendar given, nil
+    /// when it has none. Built from its parts rather than parsed, since a
+    /// bare date read as UTC midnight is the evening before anywhere west of
+    /// Greenwich.
+    public func dueDate(calendar: Calendar = .current) -> Date? {
+        guard let dueOn else { return nil }
+        let parts = dueOn.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    }
+
+    /// The nearest day first, the ones with no day last, and the server's
+    /// order within a day.
+    public static func ordered(_ followUps: [AgentFollowUp]) -> [AgentFollowUp] {
+        followUps.enumerated().sorted { left, right in
+            let leftDay = left.element.dueOn ?? "9999-12-31"
+            let rightDay = right.element.dueOn ?? "9999-12-31"
+            return leftDay == rightDay ? left.offset < right.offset : leftDay < rightDay
+        }.map(\.element)
+    }
+}
+
 // MARK: - Connections
 
 /// AgentConnectedServer is a server the operator connected for everyone,
@@ -1487,6 +1538,19 @@ extension Documents {
     public static let unmuteAgentAlert = """
         mutation ($muteId: String!) { UnmuteAgentAlert(muteId: $muteId) }
         """
+    public static let agentFollowUps = """
+        query {
+          ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place followUpState }
+        }
+        """
+    public static let stopAgentFollowUp = """
+        mutation ($followUpId: String!) { StopAgentFollowUp(followUpId: $followUpId) { id followUpState } }
+        """
+    public static let muteAgentAlertKind = """
+        mutation ($muteTarget: String) {
+          MuteAgentAlert(muteScope: "kind", muteTarget: $muteTarget) { id muteScope muteTarget }
+        }
+        """
 
     public static let learnedFacts = """
         query ($days: Int, $first: Int) {
@@ -1825,6 +1889,28 @@ extension Connection {
     public func unmuteAgentAlert(_ muteId: String) async throws {
         struct Answer: Decodable, Sendable { let UnmuteAgentAlert: JSONValue? }
         _ = try await execute(Documents.unmuteAgentAlert, variables: ["muteId": .string(muteId)], as: Answer.self)
+    }
+
+    /// What the agent is following for the person, the nearest day first:
+    /// bills, parcels, deadlines and coming events, only those still being
+    /// watched.
+    public func agentFollowUps() async throws -> [AgentFollowUp] {
+        struct Answer: Decodable, Sendable { let ListAgentFollowUps: [AgentFollowUp?] }
+        let answer = try await execute(Documents.agentFollowUps, as: Answer.self)
+        return AgentFollowUp.ordered(answer.ListAgentFollowUps.compactMap { $0 })
+    }
+
+    /// Stops following one: it is kept, and nothing more is said about it.
+    public func stopAgentFollowUp(_ followUpId: String) async throws {
+        struct Answer: Decodable, Sendable { let StopAgentFollowUp: JSONValue? }
+        _ = try await execute(Documents.stopAgentFollowUp, variables: ["followUpId": .string(followUpId)], as: Answer.self)
+    }
+
+    /// Stops the alerts about a kind of follow-up: one of
+    /// AgentFollowUp.muteKinds.
+    public func muteAgentAlertKind(_ muteTarget: String) async throws {
+        struct Answer: Decodable, Sendable { let MuteAgentAlert: JSONValue? }
+        _ = try await execute(Documents.muteAgentAlertKind, variables: ["muteTarget": .string(muteTarget)], as: Answer.self)
     }
 
     /// What the agent filed in the last so many days, newest first.

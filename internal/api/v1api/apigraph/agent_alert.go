@@ -15,6 +15,11 @@ import (
 // alert and the agent's own agent_profile tool all call these, so the
 // three cannot drift. The switches and the night are UpdateAgent's and
 // GrantAgentMailbox's.
+//
+// The agent's follow-ups (a bill, a parcel, a deadline, a coming event, kept
+// from mail until something closes them) are read and stopped here too, with
+// the same permission: what the agent says about them is alerts, and
+// "stop following that" and "don't tell me about parcels" go together.
 
 // AgentAlertQuery reads the caller's alerts and mutes.
 type AgentAlertQuery interface {
@@ -26,6 +31,13 @@ type AgentAlertQuery interface {
 	// What the caller asked not to be told about, newest first. Needs
 	// agent:use.
 	ListAgentAlertMutes(ctx context.Context) ([]*models.AgentAlertMute, error)
+
+	// What the caller's agent is following: bills, parcels, deadlines and
+	// coming events. With isOpenOnly true or left out, only those still
+	// being watched (open, overdue or stalled), by their day, the nearest
+	// first; with false, the newest of any state, the closed and stopped
+	// too. Needs agent:use.
+	ListAgentFollowUps(ctx context.Context, arguments ListAgentFollowUpsArguments) ([]*models.AgentFollowUp, error)
 }
 
 // AgentAlertMutation changes the mutes.
@@ -41,6 +53,45 @@ type AgentAlertMutation interface {
 	// Take a mute back: what it matched may be told again. Needs
 	// agent:use.
 	UnmuteAgentAlert(ctx context.Context, arguments UnmuteAgentAlertArguments) (bool, error)
+
+	// Stop following one of the caller's agent's follow-ups: it is kept,
+	// in the state stopped, and nothing more is said about it. One that is
+	// already over is returned as it is. Not found when it is not the
+	// caller's agent's. Needs agent:use.
+	StopAgentFollowUp(ctx context.Context, arguments StopAgentFollowUpArguments) (*models.AgentFollowUp, error)
+
+	// Follow something the caller names: a bill with an amount and a day,
+	// a parcel, a deadline or an event with a day. The same one named
+	// again, or one the agent already found, stays one follow-up, and one
+	// that was over is followed again. Needs agent:use.
+	AddAgentFollowUp(ctx context.Context, arguments AddAgentFollowUpArguments) (*models.AgentFollowUp, error)
+}
+
+// ListAgentFollowUpsArguments bound the listing.
+type ListAgentFollowUpsArguments struct {
+	// IsOpenOnly leaves out what is over; true when left out.
+	IsOpenOnly *bool `json:"isOpenOnly" graphapi:"nullable"`
+}
+
+// StopAgentFollowUpArguments name the follow-up.
+type StopAgentFollowUpArguments struct {
+	FollowUpID string `json:"followUpId"`
+}
+
+// AddAgentFollowUpArguments describe a follow-up the caller names. The
+// kind says which of the other fields matter: a bill needs an amount, a
+// parcel a tracking number or a title, and a bill, deadline or event a day
+// written YYYY-MM-DD.
+type AddAgentFollowUpArguments struct {
+	FollowUpKind   string `json:"followUpKind"`
+	FollowUpTitle  string `json:"followUpTitle"`
+	DueOn          string `json:"dueOn" graphapi:"nullable"`
+	Payee          string `json:"payee" graphapi:"nullable"`
+	Amount         string `json:"amount" graphapi:"nullable"`
+	CurrencyCode   string `json:"currencyCode" graphapi:"nullable"`
+	Carrier        string `json:"carrier" graphapi:"nullable"`
+	TrackingNumber string `json:"trackingNumber" graphapi:"nullable"`
+	Place          string `json:"place" graphapi:"nullable"`
 }
 
 // ListAgentAlertsArguments bound the listing.
@@ -110,4 +161,45 @@ func (self *graph) UnmuteAgentAlert(ctx context.Context, arguments UnmuteAgentAl
 		return false, api.ErrNotFound
 	}
 	return true, nil
+}
+
+func (self *graph) ListAgentFollowUps(ctx context.Context, arguments ListAgentFollowUpsArguments) ([]*models.AgentFollowUp, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return agent.ListFollowUps(self.transaction(ctx), found.ID, arguments.IsOpenOnly == nil || *arguments.IsOpenOnly)
+}
+
+func (self *graph) StopAgentFollowUp(ctx context.Context, arguments StopAgentFollowUpArguments) (*models.AgentFollowUp, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	followUp, err := agent.StopFollowUp(self.writing(ctx), found.ID, arguments.FollowUpID)
+	if err != nil {
+		return nil, err
+	}
+	if followUp == nil {
+		return nil, api.ErrNotFound
+	}
+	log.Noticef("%s stopped following %s %q", operatorName(ctx), followUp.FollowUpKind, followUp.FollowUpTitle)
+	return followUp, nil
+}
+
+func (self *graph) AddAgentFollowUp(ctx context.Context, arguments AddAgentFollowUpArguments) (*models.AgentFollowUp, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	followUp, err := agent.AddFollowUp(self.writing(ctx), found.ID, agent.NewFollowUp{
+		FollowUpKind: models.AgentFollowUpKind(arguments.FollowUpKind), FollowUpTitle: arguments.FollowUpTitle, DueOn: arguments.DueOn,
+		Payee: arguments.Payee, Amount: arguments.Amount, CurrencyCode: arguments.CurrencyCode,
+		Carrier: arguments.Carrier, TrackingNumber: arguments.TrackingNumber, Place: arguments.Place,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+	}
+	log.Noticef("%s follows %s %q", operatorName(ctx), followUp.FollowUpKind, followUp.FollowUpTitle)
+	return followUp, nil
 }

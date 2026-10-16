@@ -30,6 +30,12 @@ func (self *alertOperations) Execute(_ context.Context, document string, variabl
 	self.sent = append(self.sent, sentDocument{document: document, variables: variables})
 	answer := `{}`
 	switch {
+	case strings.Contains(document, "ListAgentFollowUps"):
+		answer = `{"ListAgentFollowUps":[{"id":"follow-water","followUpKind":"bill","followUpTitle":"Water bill","payee":"Example Water","amount":"84.20","currencyCode":"USD","dueOn":"2026-11-03","followUpState":"open"},{"id":"follow-power","followUpKind":"bill","followUpTitle":"Power bill","amount":"61.00","dueOn":"2026-11-05","followUpState":"overdue"},{"id":"follow-shears","followUpKind":"parcel","followUpTitle":"Garden shears","carrier":"Example Post","trackingNumber":"EX123456789","dueOn":"2026-10-24","followUpState":"open"}]}`
+	case strings.Contains(document, "StopAgentFollowUp"):
+		answer = `{"StopAgentFollowUp":{"id":"follow-shears","followUpKind":"parcel","followUpTitle":"Garden shears","followUpState":"stopped"}}`
+	case strings.Contains(document, "AddAgentFollowUp"):
+		answer = `{"AddAgentFollowUp":{"id":"follow-fair","followUpKind":"event","followUpTitle":"Street fair","place":"Elm Street","dueOn":"2026-10-31","followUpState":"open"}}`
 	case strings.Contains(document, "ListAgentAlertMutes"):
 		answer = `{"ListAgentAlertMutes":[{"id":"mute-1","muteScope":"domain","muteTarget":"shop.example.com"}]}`
 	case strings.Contains(document, "ListAgentAlerts"):
@@ -118,5 +124,76 @@ func TestAgentProfileAlertActions(t *testing.T) {
 	operations = &alertOperations{}
 	if _, err := profile.Run(tools.WithRun(context.Background(), &profileRun{operations: operations}), &tools.Call{ID: "c1", Arguments: []byte(`{"action":"unmute_alert","mute_target":"nothing.example.org"}`)}); err == nil || !strings.Contains(err.Error(), "shop.example.com") {
 		t.Fatalf("a target nothing matches says what is muted: %v", err)
+	}
+}
+
+// What the person asks about what the agent follows reaches the same
+// operations as the Following list and the command line: the list is
+// quoted back with ids, "track this" sends only what was said, and "stop
+// following that bill" finds the one bill by words of its title, and asks
+// when two match.
+func TestAgentProfileFollowUpActions(t *testing.T) {
+	var profile *tools.Tool
+	for _, each := range tools.Build().All() {
+		if each.Name == "agent_profile" {
+			profile = each
+		}
+	}
+	if profile == nil {
+		t.Fatal("agent_profile is not registered")
+	}
+	call := func(arguments string) (*alertOperations, *tools.Result, error) {
+		t.Helper()
+		operations := &alertOperations{}
+		result, err := profile.Run(tools.WithRun(context.Background(), &profileRun{operations: operations}), &tools.Call{ID: "c1", Arguments: []byte(arguments)})
+		return operations, result, err
+	}
+
+	operations, result, err := call(`{"action":"list_follow_ups"}`)
+	if err != nil || len(operations.sent) != 1 || operations.sent[0].variables["isOpenOnly"] != true {
+		t.Fatalf("list_follow_ups asks for what is open: %+v %v", operations.sent, err)
+	}
+	for _, wanted := range []string{"2026-11-03 bill: Water bill (Example Water, 84.20 USD) id follow-water", "[overdue]", "parcel: Garden shears (Example Post, EX123456789) id follow-shears"} {
+		if !strings.Contains(result.Content, wanted) {
+			t.Fatalf("the list says %q: %s", wanted, result.Content)
+		}
+	}
+	operations, _, _ = call(`{"action":"list_follow_ups","is_open_only":false}`)
+	if operations.sent[0].variables["isOpenOnly"] != false {
+		t.Fatalf("and all of them when asked: %+v", operations.sent)
+	}
+	if profile.RiskOf == nil || profile.RiskOf([]byte(`{"action":"list_follow_ups"}`)) != tools.RiskRead || profile.RiskOf([]byte(`{"action":"add_follow_up"}`)) != "" {
+		t.Fatal("listing is a read; adding is the tool's own write")
+	}
+
+	operations, result, err = call(`{"action":"add_follow_up","follow_up_kind":"event","follow_up_title":"Street fair","due_on":"2026-10-31","place":"Elm Street"}`)
+	if err != nil || len(operations.sent) != 1 {
+		t.Fatalf("add_follow_up: %+v %v", operations.sent, err)
+	}
+	variables := operations.sent[0].variables
+	if variables["followUpKind"] != "event" || variables["followUpTitle"] != "Street fair" || variables["dueOn"] != "2026-10-31" || variables["place"] != "Elm Street" || variables["payee"] != nil || variables["amount"] != nil {
+		t.Fatalf("add_follow_up sends what was said and nothing else: %+v", variables)
+	}
+	if !strings.Contains(result.Content, "Street fair") {
+		t.Fatalf("and says what it follows: %q", result.Content)
+	}
+
+	operations, result, err = call(`{"action":"stop_follow_up","follow_up_id":"follow-shears"}`)
+	if err != nil || len(operations.sent) != 1 || operations.sent[0].variables["followUpId"] != "follow-shears" || !strings.Contains(result.Content, "stopped following Garden shears") {
+		t.Fatalf("stop_follow_up by id: %+v %v %v", operations.sent, result, err)
+	}
+	operations, _, err = call(`{"action":"stop_follow_up","follow_up_title":"shears"}`)
+	if err != nil || len(operations.sent) != 2 || operations.sent[1].variables["followUpId"] != "follow-shears" {
+		t.Fatalf("stop_follow_up by words of the title: %+v %v", operations.sent, err)
+	}
+	operations, _, err = call(`{"action":"stop_follow_up","follow_up_title":"bill"}`)
+	if err == nil || !strings.Contains(err.Error(), "follow-water") || !strings.Contains(err.Error(), "follow-power") || len(operations.sent) != 1 {
+		t.Fatalf("two bills match, so it asks which and stops neither: %+v %v", operations.sent, err)
+	}
+	if _, _, err = call(`{"action":"stop_follow_up","follow_up_title":"sofa"}`); err == nil {
+		t.Fatal("nothing matches")
+	}
+	if _, _, err = call(`{"action":"stop_follow_up"}`); err == nil {
+		t.Fatal("which one?")
 	}
 }

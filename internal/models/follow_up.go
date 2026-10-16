@@ -101,29 +101,29 @@ type AgentFollowUp struct {
 	FollowUpKey   string `json:"followUpKey"`
 	FollowUpTitle string `json:"followUpTitle"`
 
-	Payee   string `json:"payee,omitempty"`
-	Carrier string `json:"carrier,omitempty"`
+	Payee   string `json:"payee,omitempty" graphapi:"nullable"`
+	Carrier string `json:"carrier,omitempty" graphapi:"nullable"`
 
 	// Amount is a decimal number as a string, such as "1234.00", in
 	// CurrencyCode, as FinanceTransaction.Amount is.
-	Amount         string `json:"amount,omitempty"`
-	CurrencyCode   string `json:"currencyCode,omitempty"`
-	TrackingNumber string `json:"trackingNumber,omitempty"`
+	Amount         string `json:"amount,omitempty" graphapi:"nullable"`
+	CurrencyCode   string `json:"currencyCode,omitempty" graphapi:"nullable"`
+	TrackingNumber string `json:"trackingNumber,omitempty" graphapi:"nullable"`
 
 	// DueOn is a day written 2006-01-02, empty when the message gave none.
-	DueOn string `json:"dueOn,omitempty"`
-	Place string `json:"place,omitempty"`
+	DueOn string `json:"dueOn,omitempty" graphapi:"nullable"`
+	Place string `json:"place,omitempty" graphapi:"nullable"`
 
 	FollowUpState AgentFollowUpState `json:"followUpState"`
-	ClosedReason  string             `json:"closedReason,omitempty"`
+	ClosedReason  string             `json:"closedReason,omitempty" graphapi:"nullable"`
 
 	// SourceItemIDs are the messages it came from, newest last.
 	SourceItemIDs []string `json:"sourceItemIds"`
 
 	// ToldState is what the person was last told about it, empty when
 	// never, and ToldAt when.
-	ToldState AgentFollowUpToldState `json:"toldState,omitempty"`
-	ToldAt    *time.Time             `json:"toldAt,omitempty"`
+	ToldState AgentFollowUpToldState `json:"toldState,omitempty" graphapi:"nullable"`
+	ToldAt    *time.Time             `json:"toldAt,omitempty" graphapi:"nullable"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

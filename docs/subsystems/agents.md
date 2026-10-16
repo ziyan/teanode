@@ -253,6 +253,28 @@ set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and
 `unmute_alert`, which the agent calls when the person answers an alert with
 "stop telling me about these".
 
+**Follow-ups.** Some of what mail says is not one moment but a situation that
+unfolds: a bill due on a day, a parcel on its way, a form to return, an event
+coming up. The agent keeps these in its own list, `agent_follow_up`
+(`models.AgentFollowUp`), with a kind (`bill`, `parcel`, `deadline`, `event`),
+a title, a day, and what the kind has (payee and amount, carrier and tracking
+number, place). The extract job writes them from mail the sorting flagged
+(`internal/agent/extract.go`), one row per situation, found again by a key
+that `FollowUpKeyOf` makes the same way for mail and for people. Later mail or
+a matching bank transaction closes one (`follow_up_payment.go`), and a daily
+sweep (`follow_up_sweep.go`) marks a bill overdue or a parcel stalled and
+writes `follow_up` candidates for what is due to be said, plus a roundup of
+the week's events and deadlines on Sunday evening; those pass through the
+same bounds and mutes as every other candidate. The person sees and changes
+the list through `ListAgentFollowUps`, `AddAgentFollowUp` and
+`StopAgentFollowUp` (the same permission as the alert mutations): the
+Following list on the Alerts card and in the iPhone app's alert settings,
+`teanode agent follow list|add|stop`, and `agent_profile`'s `list_follow_ups`,
+`add_follow_up` and `stop_follow_up`. Stopping one keeps its row, in the state
+`stopped`, and nothing more is said about it. A kind of them is muted with the
+kind mutes `follow_up` (all of them), `bill`, `parcel`, `deadline` or `event`,
+and the mute offered on an alert about a follow-up is its kind.
+
 ## Runs
 
 Everything a model does happens inside a *run*. There are two shapes.
