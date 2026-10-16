@@ -1,6 +1,7 @@
 package apigraph
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -165,7 +165,7 @@ func (self *graph) agentAttachmentView(response http.ResponseWriter, request *ht
 	// names this one file, and expires. A chat app hands it to a browser
 	// that has no session here, and so does the drawer framed into another
 	// site, which cannot put a header on a picture or a framed page.
-	if share := request.URL.Query().Get("share"); share != "" && request.Method == http.MethodGet {
+	if share := request.URL.Query().Get("share"); share != "" && (request.Method == http.MethodGet || request.Method == http.MethodHead) {
 		worker := self.agentWorker()
 		if worker == nil || !worker.SharedAttachment(attachmentId, share) {
 			writeJSON(response, http.StatusNotFound, map[string]string{"error": "the link is not good, or no longer"})
@@ -223,6 +223,13 @@ func (self *graph) serveAgentAttachment(response http.ResponseWriter, request *h
 		writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "failed to read the file"})
 		return
 	}
+	writeAgentAttachment(response, request, attachment, content)
+}
+
+// writeAgentAttachment writes a file already read, whole or the byte range
+// asked for. A phone's video player asks for ranges, and will not play from
+// a server that answers every one with the whole file.
+func writeAgentAttachment(response http.ResponseWriter, request *http.Request, attachment *models.AgentAttachment, content []byte) {
 	contentType := attachment.ContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -245,12 +252,12 @@ func (self *graph) serveAgentAttachment(response http.ResponseWriter, request *h
 		contentType = "application/octet-stream"
 	}
 	response.Header().Set("Content-Type", contentType)
-	response.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	response.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, attachment.Name))
 	response.Header().Set("X-Content-Type-Options", "nosniff")
 	response.Header().Set("Cache-Control", "private, max-age=3600")
-	response.WriteHeader(http.StatusOK)
-	_, _ = response.Write(content)
+	// The length, a range, HEAD and If-Modified-Since. The name is left out
+	// so the type set above is the one sent.
+	http.ServeContent(response, request, "", attachment.CreatedAt, bytes.NewReader(content))
 }
 
 // hostName is what a host header may look like to be written into a policy:
