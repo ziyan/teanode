@@ -418,14 +418,7 @@ func (self *graph) requireAgentPerson(ctx context.Context) (*api.Principal, *mod
 // mainConversation is the one continuous conversation, made the first
 // time it is needed.
 func (self *graph) mainConversation(tx db.Transaction, found *models.Agent) (*models.AgentConversation, error) {
-	conversations, err := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationMain}, &db.Options{Limit: 1})
-	if err != nil {
-		return nil, err
-	}
-	if len(conversations) > 0 {
-		return conversations[0], nil
-	}
-	return tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationMain, Title: "", LastAt: time.Now()})
+	return tx.MainAgentConversation(found.ID, "")
 }
 
 // ownConversation is one of the caller's conversations; a run's transcript
