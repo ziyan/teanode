@@ -48,9 +48,9 @@ type AssistantSetup struct {
 	// EmbeddingModel is the model memory is searched by meaning with, or
 	// empty when the service has none or one was already chosen.
 	EmbeddingModel string `json:"embeddingModel"`
-	// FastModel is the smaller model the cheap background work runs on
-	// work runs on, or empty when the service has none worth choosing or
-	// one was already chosen; everything then runs on the default.
+	// FastModel is the smaller model the cheap background work runs on, or
+	// empty when the service has none worth choosing or one was already
+	// chosen; everything then runs on the default.
 	FastModel string `json:"fastModel"`
 	// IsAgentOn says the caller's own agent is on.
 	IsAgentOn bool `json:"isAgentOn"`
