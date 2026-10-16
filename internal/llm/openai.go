@@ -27,6 +27,10 @@ type openAI struct {
 
 	mu          sync.Mutex
 	noReasoning map[string]bool
+	// mustReason is the models that refuse function tools while they reason
+	// on chat completions and refuse an effort of "none" too, so a turn with
+	// tools goes to the Responses endpoint, asking for low.
+	mustReason map[string]bool
 	// systemFirst is the models whose chat template takes one system
 	// message and only at the front: llama.cpp with a Qwen template
 	// answers 500 to a second one, and the loop sends what is true now
@@ -107,6 +111,12 @@ func reasoningRefused(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "reasoning_effort")
 }
 
+// noReasoningRefused says whether an error is a model refusing an effort of
+// "none": "'reasoning_effort' does not support 'none' with this model".
+func noReasoningRefused(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "does not support 'none'")
+}
+
 func (self *openAI) refusesReasoning(model string) bool {
 	self.mu.Lock()
 	defer self.mu.Unlock()
@@ -155,6 +165,21 @@ func systemsMerged(request *ChatRequest) *ChatRequest {
 	}
 	merged.Messages = append([]ChatMessage{{Role: RoleSystem, Content: strings.Join(system, "\n\n"), CacheBreakpoint: true}}, kept...)
 	return &merged
+}
+
+func (self *openAI) rememberMustReason(model string) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.mustReason == nil {
+		self.mustReason = map[string]bool{}
+	}
+	self.mustReason[model] = true
+}
+
+func (self *openAI) isMustReason(model string) bool {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	return self.mustReason[model]
 }
 
 func (self *openAI) rememberRefusal(model string) {
@@ -294,6 +319,10 @@ func (self *openAI) Chat(ctx context.Context, request *ChatRequest) (*ChatRespon
 		body.ReasoningEffort = "none"
 		err = doJSON(ctx, self.client, http.MethodPost, self.baseUrl+"/chat/completions", self.headers(), body, &response)
 	}
+	if len(body.Tools) > 0 && self.speaksResponses && noReasoningRefused(err) {
+		self.rememberMustReason(request.Model)
+		return self.Chat(ctx, request)
+	}
 	if err != nil && systemRefused(err) {
 		self.rememberSystemFirst(request.Model)
 		body = self.encode(systemsMerged(request), false)
@@ -386,6 +415,10 @@ func (self *openAI) ChatStream(ctx context.Context, request *ChatRequest) (<-cha
 		self.rememberRefusal(request.Model)
 		encoded.ReasoningEffort = "none"
 		body, err = openStream(ctx, self.client, self.baseUrl+"/chat/completions", self.headers(), encoded)
+	}
+	if len(encoded.Tools) > 0 && self.speaksResponses && noReasoningRefused(err) {
+		self.rememberMustReason(request.Model)
+		return self.ChatStream(ctx, request)
 	}
 	if err != nil && systemRefused(err) {
 		self.rememberSystemFirst(request.Model)
@@ -562,14 +595,25 @@ func (self *openAI) Embed(ctx context.Context, request EmbedRequest) ([][]float3
 // OpenAI itself. Chat completions refuses function tools while a newer
 // model reasons, so every turn with tools went out with reasoning "none",
 // and the agent answered from the first thing a search turned up. The
-// Responses endpoint takes both.
+// Responses endpoint takes both. A model that refuses "none" as well goes
+// there with tools even when no reasoning was asked for.
 func (self *openAI) reasonsThroughResponses(request *ChatRequest) bool {
-	return request.ReasoningEffort != "" && self.speaksResponses
+	if !self.speaksResponses {
+		return false
+	}
+	return request.ReasoningEffort != "" || (len(request.Tools) > 0 && self.isMustReason(request.Model))
 }
 
 // responses sends a request to the Responses endpoint, in the same shape
 // the ChatGPT sign-in speaks, and reads the answer as it streams.
 func (self *openAI) responses(ctx context.Context, request *ChatRequest) (<-chan StreamEvent, error) {
+	if request.ReasoningEffort == "" {
+		// Here only for a model that will not take tools without reasoning:
+		// the least it takes, as close as it allows to the none asked for.
+		lowest := *request
+		lowest.ReasoningEffort = EffortLow
+		request = &lowest
+	}
 	wire := &codex{doesTakeOutputLimit: true}
 	body, err := wire.encode(request)
 	if err != nil {
