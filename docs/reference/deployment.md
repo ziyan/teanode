@@ -347,26 +347,18 @@ capabilities.
    front of you, reach it through a tunnel first
    (`ssh -L 8080:127.0.0.1:8080 <server>`). The first visitor creates the
    account, an administrator, so do this before allowing remote access.
-3. Open **Manage → Server → Setup**. The assistant compose file has
-   already chosen **Personal assistant**, so work down the list under it,
-   which says which steps are done:
-   - **Connect a model provider and test it** (Manage → Agents → Models):
-     **Add a provider** with any **Name** and your key in **API key**, or
-     the address of your own Ollama or vLLM (**Billing key** is for
-     something else), save it, press **Test**, then choose a **Default** model and save. A
-     small, inexpensive model from your provider is a good start (on OpenAI,
-     `gpt-5-mini`); type part of a name to narrow the list. An
-     **Embedding** model (on OpenAI, `text-embedding-3-small`) is optional
-     and lets memory be searched by meaning.
-   - **Enable the assistant** (Manage → Agents → General): turn on
-     **Enabled** and save. Each of these saves says it waits for a restart;
-     restart once, at the next step.
-   - **Restart this instance**: the provider, the models and Enabled are
-     read when the server starts. Press **Restart now** on this step.
-   - **Turn on your own agent**: each person turns on their own agent, and
-     this button turns on yours (others do it under Settings → Your agent).
-4. Say hello: **Open your personal assistant** at the end of the list, or
-   the round chat button in the bottom corner of any page.
+3. TeaNode then asks one thing: the model service the assistant thinks
+   with. Choose OpenAI, Anthropic or Gemini and paste its API key, or
+   choose **Your own server** and give the address of an Ollama or vLLM as
+   this server reaches it, and press **Start my assistant**. It checks the
+   key, chooses a model (on OpenAI, `gpt-5-mini`, and an embedding model
+   where the service has one), enables the assistant, turns on your own
+   agent, restarts itself and opens the conversation. The same from a
+   terminal: `teanode services assistant --kind openai --restart`.
+
+What it chose can be changed under Manage → Agents → Models; a ChatGPT plan
+is signed in to there too. Other people on the server turn on their own
+agent under Settings → Your agent.
 
 For remote access, put port 8080 behind a TLS reverse proxy and set its
 addresses as trusted proxies, so that secure cookies and profile downloads

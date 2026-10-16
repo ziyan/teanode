@@ -35,3 +35,24 @@ func (self *Client) UpdateServices(ctx context.Context, selectedServices map[str
 	}
 	return &response.UpdateServices, nil
 }
+
+const DocumentSetUpAssistant = `mutation ($kind: String!, $apiKey: String, $baseUrl: String, $model: String) { SetUpAssistant(kind: $kind, apiKey: $apiKey, baseUrl: $baseUrl, model: $model) { provider defaultModel embeddingModel isAgentOn needsRestart } }`
+
+// AssistantSetup is what setting up the assistant in one step did.
+type AssistantSetup struct {
+	Provider       string `json:"provider"`
+	DefaultModel   string `json:"defaultModel"`
+	EmbeddingModel string `json:"embeddingModel"`
+	IsAgentOn      bool   `json:"isAgentOn"`
+	NeedsRestart   bool   `json:"needsRestart"`
+}
+
+func (self *Client) SetUpAssistant(ctx context.Context, variables map[string]any) (*AssistantSetup, error) {
+	var response struct {
+		SetUpAssistant AssistantSetup `json:"SetUpAssistant"`
+	}
+	if err := self.Execute(ctx, DocumentSetUpAssistant, variables, &response); err != nil {
+		return nil, err
+	}
+	return &response.SetUpAssistant, nil
+}

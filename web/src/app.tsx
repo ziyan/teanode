@@ -6,6 +6,7 @@ import { Session, framedDrawer, getSession, logout, signInWithToken } from './ap
 import { LoginPage } from './pages/login'
 import { AuthorizePage } from './pages/authorize'
 import { ConnectPage } from './pages/connect'
+import { WelcomePage } from './pages/welcome'
 import { MailPage } from './pages/mail'
 import { MailboxPage } from './pages/mailbox'
 import { SetupAccountPage } from './pages/setupAccount'
@@ -268,6 +269,20 @@ export function App() {
         {corner}
         <Suspense fallback={<Loading />}>
           <AuthorizePage />
+        </Suspense>
+      </div>
+    )
+  }
+
+  // Starting the assistant on a new server: one question and one button,
+  // drawn the same way, so the first thing a new operator sees is not every
+  // page there is.
+  if (location.pathname === '/welcome') {
+    return (
+      <div className="auth-page">
+        {corner}
+        <Suspense fallback={<Loading />}>
+          <WelcomePage />
         </Suspense>
       </div>
     )

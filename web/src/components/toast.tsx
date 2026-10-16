@@ -50,6 +50,9 @@ type Speak = {
   // Whatever went wrong, said in the words it arrived with. Anything that is
   // not an Error has no message worth showing, so it gets the general one.
   failure: (caught: unknown, fallback: string) => void
+  // Takes every toast down at once, for a page starting over whose earlier
+  // failure no longer applies.
+  clear: () => void
 }
 
 const Context = createContext<Speak | null>(null)
@@ -73,6 +76,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       failed: (message, action) => add('failed', message, action),
       failure: (caught, fallback) =>
         add('failed', caught instanceof Error && caught.message ? caught.message : fallback),
+      clear: () => setToasts([]),
     }),
     [add],
   )
