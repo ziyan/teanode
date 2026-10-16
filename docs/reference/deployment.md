@@ -351,8 +351,9 @@ capabilities.
    already chosen **Personal assistant**, so work down the list under it,
    which says which steps are done:
    - **Connect a model provider and test it** (Manage → Agents → Models):
-     add a provider with its API key, or the address of your own Ollama or
-     vLLM, press **Test**, then choose a **Default** model and save. A
+     **Add a provider** with any **Name** and your key in **API key**, or
+     the address of your own Ollama or vLLM (**Billing key** is for
+     something else), save it, press **Test**, then choose a **Default** model and save. A
      small, inexpensive model from your provider is a good start (on OpenAI,
      `gpt-5-mini`); type part of a name to narrow the list. An
      **Embedding** model (on OpenAI, `text-embedding-3-small`) is optional

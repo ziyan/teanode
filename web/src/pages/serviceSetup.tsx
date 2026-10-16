@@ -70,6 +70,10 @@ export function SetupPage() {
   if (loading || !choices || !data) return <Loading />
   const setup = data.GetServiceSetup
   const pendingRestart = data.GetServerStatus?.pendingRestart ?? []
+  // Nothing waiting for a restart is only the restart done once the steps
+  // before it are; until then it is a step still to come.
+  const hasNothingToRestart = pendingRestart.length === 0 && !setup.runningServices.hasPendingServiceRestart
+  const isReadyToRun = setup.hasModelProvider && setup.selectedServices.isAssistantEnabled
   const readAgent = agentQuery.data?.ReadAgent
   const isAgentOn = readAgent?.agent?.enabled === true
   const canTurnOnAgent = setup.runningServices.isAssistantEnabled && readAgent?.allowed.enabled === true
@@ -273,7 +277,8 @@ export function SetupPage() {
             )}
           />
           <SetupStep
-            isDone={pendingRestart.length === 0 && !setup.runningServices.hasPendingServiceRestart}
+            isDone={hasNothingToRestart && isReadyToRun}
+            isWaiting={hasNothingToRestart && !isReadyToRun}
             title={<Link to="/manage/server/about">{t('services.restartStep')}</Link>}
             note={
               pendingRestart.length > 0
