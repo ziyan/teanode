@@ -6,6 +6,19 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.166.4] - 2026-10-16
+
+### Changed
+
+- Server → Setup shows which steps are done and can restart the server and turn on your own agent in place. (#518)
+- Model pickers offer only models that fit the slot. (#518)
+
+### Fixed
+
+- The agent's first greeting in a new conversation no longer fails with a database error. (#518)
+- Turning your agent on makes the chat usable without reloading the page. (#518)
+- The agent no longer describes itself as a mail server on a server without mail. (#518)
+
 ## [0.166.3] - 2026-10-16
 
 ### Fixed
