@@ -437,11 +437,11 @@ var operations = map[string]*financeOperation{
 	"repair":            {risk: tools.RiskRead, arguments: []string{"source_id"}, required: []string{"source_id"}},
 	"link_simplefin":    {risk: tools.RiskRead},
 	"import_credential": {risk: tools.RiskRead},
-	// ImportStatement with a message's OFX attachments only: a file the
-	// person hands over in conversation carries no id the model is shown,
-	// so the tool takes the message, which mail_search and mail_read name.
+	// ImportStatement with a file the person hands over in conversation, by
+	// the agent_attachment_id the conversation names it with, or with a
+	// message's OFX attachments, which mail_search and mail_read name.
 	"import_statement": {
-		risk: tools.RiskWrite, arguments: []string{"mailbox_item_id"}, required: []string{"mailbox_item_id"},
+		risk: tools.RiskWrite, arguments: []string{"agent_attachment_id", "mailbox_item_id"},
 		preview: func(*previewLookup, map[string]any) string {
 			return "Import the OFX statements attached to a message into their finance accounts"
 		},
@@ -707,7 +707,7 @@ const description = "The person's money: their finance sources (logins at banks,
 	"Totals come per currency and converted into the reporting currency (`reporting_currency` says which), or into `currency_code` where given, each amount at its own day's exchange rate, naming any currency left out for want of a rate; never add different currencies yourself.\n" +
 	"Linking: `providers` says what the server offers. `link_plaid` gives an address for the person to open in their browser, signed in to the dashboard; `repair` gives the address that signs a finance source in again when `sources` says isSignInRequired. " +
 	"A SimpleFIN setup token, or the credential of an existing provider connection (a Plaid access token, a SimpleFIN access URL), is never taken in conversation: `link_simplefin` and `import_credential` say where to give it.`sync`, `disable_source`, `enable_source` and `delete_source` act on a finance source by source_id; a switched-off source is switched on with enable_source before it syncs.\n" +
-	"Statements: for an account no provider reaches (a card that only exports OFX, .ofx, .qfx or .qbo), `statement_import` gives the person's statement import address, where mailing the exported file imports it (from a phone's wallet: Export Transactions, then share to Mail), and what the last import did. `import_statement` imports the OFX attachments of a message in their mailbox by mailbox_item_id; a transaction already imported is updated, never added twice. `regenerate_statement_import_address` ends the old address and makes a new one, only when the person asks.\n" +
+	"Statements: for an account no provider reaches (a card that only exports OFX, .ofx, .qfx or .qbo), `statement_import` gives the person's statement import address, where mailing the exported file imports it (from a phone's wallet: Export Transactions, then share to Mail), and what the last import did. `import_statement` imports an OFX file the person sends in the chat (agent_attachment_id, as the conversation names the file) or the OFX attachments of a message in their mailbox (mailbox_item_id), one of the two; a transaction already imported is updated, never added twice. `regenerate_statement_import_address` ends the old address and makes a new one, only when the person asks.\n" +
 	"Pictures of transactions: when the person shares screenshots of a bank's or card issuer's app (or a photo of a statement), `import_transactions` imports what you read, one account per call. " +
 	"You see pictures only in the turn they are sent, at most eight of them, so read and import in that turn, and ask for more than eight in another message. " +
 	"Read every row of every picture yourself and send each transaction once, even where two screenshots overlap. " +
@@ -785,7 +785,7 @@ func init() {
 					"source_id":               tools.StringProperty("a finance source, by the id sources gives"),
 					"mailbox_item_id":         tools.StringProperty("for import_statement: the message whose OFX attachments (.ofx, .qfx, .qbo) to import; for record_receipt and preview_record_receipt: the message the receipt was read from; for read_receipt: the message to read it from; for read_tax_document: the message whose PDFs and pictures to read as paystubs, W-2s, 1099s or 1098s; by the item_id mail_search or mail_read gives"),
 					"gmail_message_id":        tools.StringProperty("for record_receipt and preview_record_receipt: the Gmail message the receipt was read from, by the id the Gmail skill gives"),
-					"agent_attachment_id":     tools.StringProperty("for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub, W-2, 1099 or 1098 to read; for record_paystub and record_tax_form: the file it was read from; by the agent_attachment_id the conversation names the file with, never invented"),
+					"agent_attachment_id":     tools.StringProperty("for import_statement: the OFX file (.ofx, .qfx, .qbo) the person sent in the chat; for record_receipt and preview_record_receipt: the uploaded photo or PDF the receipt was read from; for read_tax_document: the paystub, W-2, 1099 or 1098 to read; for record_paystub and record_tax_form: the file it was read from; by the agent_attachment_id the conversation names the file with, never invented"),
 					"annotation":              tools.StringProperty("for annotate_transaction: what the transaction was for, in the person's words; empty takes it away"),
 					"receipt_id":              tools.StringProperty("a receipt, by the id receipts gives"),
 					"is_unmatched":            tools.BooleanProperty("for receipts: only those matched to no transaction"),
@@ -1323,18 +1323,28 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "read_tax_document":
 		return readTaxDocument(ctx, executor, name, asked)
 	case "import_statement":
-		// Only a message in a mailbox the person granted, as mail_read
-		// reads: a mailbox kept back from the agent stays kept back.
+		// A file sent in the chat, which the server finds among this
+		// agent's own uploads, or a message in a mailbox the person granted,
+		// as mail_read reads: a mailbox kept back from the agent stays kept
+		// back.
+		attachmentId := text(asked, "agent_attachment_id")
 		itemId := text(asked, "mailbox_item_id")
-		views, err := mailbox.GrantedMailboxes(ctx, executor)
-		if err != nil {
-			return nil, err
+		if (attachmentId == "") == (itemId == "") {
+			return nil, fmt.Errorf("%s needs the file sent in the chat (agent_attachment_id) or the message it came on (mailbox_item_id), one of the two", name)
 		}
-		if _, _, err := mailbox.MailboxOfItem(ctx, executor, views, itemId); err != nil {
-			return nil, err
+		variables := map[string]any{"agentAttachmentId": attachmentId}
+		if itemId != "" {
+			views, err := mailbox.GrantedMailboxes(ctx, executor)
+			if err != nil {
+				return nil, err
+			}
+			if _, _, err := mailbox.MailboxOfItem(ctx, executor, views, itemId); err != nil {
+				return nil, err
+			}
+			variables = map[string]any{"mailboxItemId": itemId}
 		}
 		var imported any
-		if err := client.RunFinance(ctx, executor, "ImportStatement", map[string]any{"mailboxItemId": itemId}, &imported); err != nil {
+		if err := client.RunFinance(ctx, executor, "ImportStatement", variables, &imported); err != nil {
 			return nil, err
 		}
 		result, err := tools.JSONResult(map[string]any{name: imported})
