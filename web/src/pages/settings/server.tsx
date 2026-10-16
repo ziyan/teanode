@@ -6,6 +6,7 @@ import { ConfirmDialog } from '../../components/dialog'
 import { SettingsSection } from '../../components/settingsList'
 import { useQuery } from '../../components/useQuery'
 import { useToast } from '../../components/toast'
+import { restartServer, waitForRestart } from '../../components/serverRestart'
 import { Markdown } from '../../components/markdown'
 import { RelativeTime } from '../../components/relativeTime'
 import { useTranslation } from '../../i18n/i18n'
@@ -17,8 +18,6 @@ const STATUS = `
       pendingRestart supervision restarting
     }
   }`
-
-const RESTART = `mutation { RestartServer { started instance supervision } }`
 
 const UPGRADE = `
   query ($check: Boolean) {
@@ -64,13 +63,8 @@ type ServerStatus = {
   restarting: boolean
 }
 
-// RESTART_TIMEOUT_MS bounds the wait afterwards. A server that has not
-// answered in this long is not coming back on its own, and saying so is more
-// use than a spinner that never stops.
-const RESTART_TIMEOUT_MS = 90_000
-
 // UPGRADE_TIMEOUT_MS bounds the wait for the download and the swap, which
-// happen before the restart the wait above covers. Generous, because it is a
+// happen before the restart that waitForRestart covers. Generous, because it is a
 // forty-five megabyte download over whatever link the server has.
 const UPGRADE_TIMEOUT_MS = 15 * 60_000
 
@@ -119,42 +113,28 @@ export function ServerAboutPage() {
     setProblem(null)
     setConfirming(false)
     setRestarting(true)
-
     try {
-      await graphql(RESTART)
+      await cameBack(await restartServer())
     } catch (caught) {
-      // The server answers and then shuts down, so a connection that closes
-      // mid-reply is a success that looks like a failure. Whether it worked is
-      // decided by the wait below, not by this.
-      void caught
+      // A refusal, such as a server not started in a way that lets it
+      // restart itself.
+      setRestarting(false)
+      setProblem(caught instanceof Error ? caught.message : String(caught))
     }
-
-    await waitForServer()
   }
 
-  // The server goes away and is looked for again. Shared by the restart button
-  // and the upgrade button, because an upgrade ends in a restart and the two
-  // waits were the same wait.
-  async function waitForServer() {
-    const deadline = Date.now() + RESTART_TIMEOUT_MS
-    for (;;) {
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-      try {
-        await graphql(STATUS)
-        setRestarting(false)
-        toast.done(t('server.cameBack'))
-        await reload()
-        await upgrade.reload()
-        return
-      } catch (caught) {
-        void caught
-      }
-      if (Date.now() > deadline) {
-        setRestarting(false)
-        setProblem(t('server.didNotComeBack'))
-        return
-      }
+  // Says whether the server came back and shows the one that did. Shared by
+  // the restart button and the upgrade button, because an upgrade ends in a
+  // restart and the two waits were the same wait.
+  async function cameBack(isBack: boolean) {
+    setRestarting(false)
+    if (!isBack) {
+      setProblem(t('server.didNotComeBack'))
+      return
     }
+    toast.done(t('server.cameBack'))
+    await reload()
+    await upgrade.reload()
   }
 
   // The check runs in the background — the request that asks for one cannot
@@ -225,6 +205,9 @@ export function ServerAboutPage() {
   // A refusal is different: it answers before anything is downloaded, and it
   // is the reply the reader needs.
   async function applyUpgrade(version?: string) {
+    // The process answering now, which the one after the upgrade is told
+    // apart from.
+    const startedBefore = status?.startedAt ?? ''
     setProblem(null)
     setUpgrading(true)
     try {
@@ -324,7 +307,7 @@ export function ServerAboutPage() {
     }
 
     setRestarting(true)
-    await waitForServer()
+    await cameBack(await waitForRestart(startedBefore))
     setUpgrading(false)
   }
 
