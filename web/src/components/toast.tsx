@@ -38,6 +38,7 @@ type Toast = {
 // How long each kind stays. A failure is read; something that worked is only
 // noticed, and a reader who was not looking has lost nothing.
 const LINGER: Record<ToastKind, number> = { done: 4500, failed: 9000 }
+const ACTION_LINGER = 12000
 
 // A burst of them — a rule applied to fifty messages, a page of failures —
 // must not fill the window. The oldest go.
@@ -131,9 +132,11 @@ function ToastRow({
     if (held) {
       return
     }
-    const timer = window.setTimeout(() => dismissRef.current(), LINGER[toast.kind])
+    // A toast with something to press stays long enough to be pressed.
+    const linger = toast.action ? Math.max(LINGER[toast.kind], ACTION_LINGER) : LINGER[toast.kind]
+    const timer = window.setTimeout(() => dismissRef.current(), linger)
     return () => window.clearTimeout(timer)
-  }, [held, toast.kind])
+  }, [held, toast.kind, toast.action])
 
   return (
     <div

@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { AGENT_TURNED_EVENT } from '../agentPreferences'
 import { graphql, type ServiceCapabilities } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
+import { restartServer } from '../components/serverRestart'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
@@ -56,6 +58,7 @@ export function SetupPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [problem, setProblem] = useState<unknown>()
   const [isSaved, setIsSaved] = useState(false)
+  const [isRestarting, setIsRestarting] = useState(false)
   useEffect(() => {
     if (data) {
       setChoices(data.GetServiceSetup.selectedServices)
@@ -69,11 +72,29 @@ export function SetupPage() {
   const readAgent = agentQuery.data?.ReadAgent
   const isAgentOn = readAgent?.agent?.enabled === true
   const canTurnOnAgent = setup.runningServices.isAssistantEnabled && readAgent?.allowed.enabled === true
+  async function restart() {
+    setIsRestarting(true)
+    try {
+      if (await restartServer()) {
+        toast.done(t('server.cameBack'))
+        await reload()
+        await agentQuery.reload()
+        window.dispatchEvent(new Event('focus'))
+      } else {
+        toast.failed(t('server.didNotComeBack'))
+      }
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setIsRestarting(false)
+    }
+  }
   async function turnOnAgent() {
     setIsSaving(true)
     try {
       await graphql(TURN_ON_AGENT)
       toast.done(t('services.turnedOnMine'))
+      window.dispatchEvent(new Event(AGENT_TURNED_EVENT))
       await agentQuery.reload()
       window.dispatchEvent(new Event('focus'))
     } catch (caught) {
@@ -99,6 +120,16 @@ export function SetupPage() {
     isRemindersEnabled: t('services.reminders'),
     isContactsEnabled: t('services.contacts'),
   }
+  // Which of the two presets the choices on screen are, if either: the
+  // assistant alone has no hosted service, and mail is routing and mailboxes
+  // and nothing else.
+  const hasOnlyMail =
+    choices.isMailRoutingEnabled &&
+    choices.isMailboxEnabled &&
+    !choices.isCalendarEnabled &&
+    !choices.isRemindersEnabled &&
+    !choices.isContactsEnabled
+  const chosenPreset = !hostedKeys.some((serviceKey) => choices[serviceKey]) ? 'assistant' : hasOnlyMail ? 'mail' : null
   function preset(isMailSelected: boolean) {
     setChoices(
       (previous) =>
@@ -138,13 +169,27 @@ export function SetupPage() {
     <>
       <section className="card">
         <h2>{t('services.choose')}</h2>
+        <p className="muted">{t('services.chooseHint')}</p>
         <div className="page-actions">
-          <button type="button" onClick={() => preset(false)} disabled={isSaving}>
+          <button
+            type="button"
+            aria-pressed={chosenPreset === 'assistant'}
+            onClick={() => preset(false)}
+            disabled={isSaving}
+          >
             {t('services.assistant')}
           </button>
-          <button type="button" onClick={() => preset(true)} disabled={isSaving}>
+          <button type="button" aria-pressed={chosenPreset === 'mail'} onClick={() => preset(true)} disabled={isSaving}>
             {t('services.mail')}
           </button>
+          {chosenPreset && (
+            <Tag
+              value={t('services.chosen', {
+                name: t(chosenPreset === 'assistant' ? 'services.assistant' : 'services.mail'),
+              })}
+              tone="good"
+            />
+          )}
         </div>
         <h3>{t('services.custom')}</h3>
         {hostedKeys.map((serviceKey) => (
@@ -234,6 +279,13 @@ export function SetupPage() {
                     ? t('services.restart')
                     : t('services.restartNone')
               }
+              action={
+                (pendingRestart.length > 0 || setup.runningServices.hasPendingServiceRestart) && (
+                  <button type="button" className="primary" disabled={isRestarting} onClick={() => void restart()}>
+                    {isRestarting ? t('server.restarting') : t('services.restartNow')}
+                  </button>
+                )
+              }
             />
             <SetupStep
               isDone={isAgentOn}
@@ -276,6 +328,7 @@ export function SetupPage() {
             <Link to="/agent">{t('services.try')}</Link>
           </p>
         )}
+        <p className="muted">{t('services.finishHint')}</p>
         <button
           type="button"
           disabled={isSaving || hasUnsavedChoices || setup.runningServices.hasPendingServiceRestart}

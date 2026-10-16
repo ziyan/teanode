@@ -23,6 +23,7 @@ import {
 } from '../components/backgroundCommands'
 import { HerdrSessionsCard } from '../components/herdrSessions'
 import { BackgroundWorkCard } from '../components/backgroundWork'
+import { AGENT_TURNED_EVENT } from '../agentPreferences'
 import { AlertsCard } from '../components/agentAlerts'
 import { PencilIcon, RefreshIcon, ToggleOffIcon, ToggleOnIcon, TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
@@ -274,6 +275,7 @@ export function AgentPage() {
       await graphql(UPDATE_AGENT, variables)
       toast.done(done)
       await reload()
+      if ('enabled' in variables) window.dispatchEvent(new Event(AGENT_TURNED_EVENT))
     } catch (caught) {
       toast.failed(messageOf(caught))
     } finally {

@@ -353,17 +353,15 @@ capabilities.
    - **Connect a model provider and test it** (Manage → Agents → Models):
      add a provider with its API key, or the address of your own Ollama or
      vLLM, press **Test**, then choose a **Default** model and save. A
-     small, inexpensive model from your provider is a good start; the
-     dropdown has a box to narrow its list.
+     small, inexpensive model from your provider is a good start (on OpenAI,
+     `gpt-5-mini`); the dropdown has a box to narrow its list.
    - **Enable the assistant** (Manage → Agents → General): turn on
      **Enabled** and save.
    - **Restart this instance**: the provider, the models and Enabled are
-     read when the server starts. The toast after saving them has a
-     **Restart…** button, or use **Manage → Server → About**.
+     read when the server starts. Press **Restart now** on this step.
    - **Turn on your own agent**: each person turns on their own agent, and
      this button turns on yours (others do it under Settings → Your agent).
-4. **Open your personal assistant** and say something. The agent introduces
-   itself first.
+4. **Open your personal assistant** and say hello.
 
 For remote access, put port 8080 behind a TLS reverse proxy and set its
 addresses as trusted proxies, so that secure cookies and profile downloads
