@@ -167,8 +167,14 @@ see what is left rather than guessing.
 
 ### Just the assistant
 
-No domain and no mail ports. The compose file runs the server and PostgreSQL
-and listens on 127.0.0.1:8080:
+No domain and no mail ports. One command installs Docker where it is
+missing, starts the server and PostgreSQL, and listens on 127.0.0.1:8080:
+
+    curl -fsSL https://teanode.com/get.sh | sh
+
+It is [deploy/get.sh](deploy/get.sh), which fetches the assistant
+compose file and makes a database password; read it first if you like, or
+run the same steps by hand:
 
     mkdir -p /opt/teanode && cd /opt/teanode
     curl -LO https://raw.githubusercontent.com/ziyan/teanode/main/deploy/docker-compose.assistant.yml
@@ -176,8 +182,9 @@ and listens on 127.0.0.1:8080:
     chmod 600 .env
     docker compose -f docker-compose.assistant.yml up -d
 
-Open the dashboard, claim the first account, configure a model under
-**Server → Setup** and turn the assistant on. Put an HTTPS reverse proxy in
+Open the dashboard, claim the first account, then paste a key from OpenAI,
+Anthropic or Gemini (or give the address of your own Ollama or vLLM) and
+press **Start my assistant**. Put an HTTPS reverse proxy in
 front of it before the iPhone app or anything outside the machine reaches it.
 Calendar, reminders and contacts are separate choices, and mail can be added
 later without losing anything. [Assistant without hosted

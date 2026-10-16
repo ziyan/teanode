@@ -334,8 +334,15 @@ on a private Docker network. Only loopback port 8080 is published. It does
 not require a domain, SMTP or IMAP ports, host networking or privileged-port
 capabilities.
 
-1. Fetch the compose file, give the database a random password in an
-   untracked environment file, and start it:
+1. Install and start it:
+
+       curl -fsSL https://teanode.com/get.sh | sh
+
+   That is `deploy/get.sh`. It installs Docker on Linux where it is
+   missing, puts the compose file and a random database password in
+   `/opt/teanode` (`~/teanode` when not run as root, or `TEANODE_DIRECTORY`),
+   starts the containers and waits for the dashboard. Running it again keeps
+   the password and the data. By hand, the same is:
 
        mkdir -p /opt/teanode && cd /opt/teanode
        curl -LO https://raw.githubusercontent.com/ziyan/teanode/main/deploy/docker-compose.assistant.yml
