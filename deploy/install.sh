@@ -64,9 +64,9 @@ ensure_docker() {
 		case "$(uname -s)" in
 		Linux)
 			step "Installing Docker"
-			download https://get.docker.com "${TMPDIR:-/tmp}/get-docker.sh"
-			as_root sh "${TMPDIR:-/tmp}/get-docker.sh"
-			rm -f "${TMPDIR:-/tmp}/get-docker.sh"
+			download https://get.docker.com "${TMPDIR:-/tmp}/teanode-get-docker"
+			as_root sh "${TMPDIR:-/tmp}/teanode-get-docker"
+			rm -f "${TMPDIR:-/tmp}/teanode-get-docker"
 			;;
 		*)
 			fail "TeaNode runs in Docker. Install Docker Desktop from https://docs.docker.com/get-docker/, start it, and run this again."
