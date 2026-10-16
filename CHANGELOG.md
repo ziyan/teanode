@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.168.0] - 2026-10-16
+
+### Added
+
+- One command installs the assistant: `curl -fsSL https://teanode.com/get.sh | sh`. (#521)
+
 ## [0.167.2] - 2026-10-16
 
 ### Changed
