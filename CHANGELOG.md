@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.167.1] - 2026-10-16
+
+### Fixed
+
+- Restarting or upgrading from Server → About says the server came back only once the restarted server answers. (#522)
+
 ## [0.167.0] - 2026-10-16
 
 ### Added
