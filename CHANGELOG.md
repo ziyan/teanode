@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.167.2] - 2026-10-16
+
+### Changed
+
+- A new assistant on OpenAI thinks with the newest sol model and runs its small background jobs on the newest luna, instead of gpt-5-mini. (#520)
+
+### Fixed
+
+- A model that will not drop its reasoning can still call tools. (#520)
+
 ## [0.167.1] - 2026-10-16
 
 ### Fixed
