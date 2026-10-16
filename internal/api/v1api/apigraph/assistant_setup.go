@@ -48,6 +48,10 @@ type AssistantSetup struct {
 	// EmbeddingModel is the model memory is searched by meaning with, or
 	// empty when the service has none or one was already chosen.
 	EmbeddingModel string `json:"embeddingModel"`
+	// FastModel is the smaller model typed turns start on and the cheap
+	// work runs on, or empty when the service has none worth choosing or
+	// one was already chosen; everything then runs on the default.
+	FastModel string `json:"fastModel"`
 	// IsAgentOn says the caller's own agent is on.
 	IsAgentOn bool `json:"isAgentOn"`
 	// NeedsRestart says the running process is not using these yet; the
@@ -102,7 +106,8 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 			names = append(names, model.Model)
 		}
 	}
-	defaultModel, embeddingModel := chooseAssistantModels(kind, isOwnServer, names)
+	chosenModels := chooseAssistantModels(kind, isOwnServer, names)
+	defaultModel := chosenModels.defaultModel
 	if chosen := strings.TrimSpace(valueOf(arguments.Model)); chosen != "" {
 		// Checked against what the key reaches, like the key itself: a
 		// misspelled model would otherwise be saved and fail every turn.
@@ -121,7 +126,7 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 	if err := self.config.Update(func(configuration *config.Configuration) error {
 		// Update runs this again when the configuration changed under it,
 		// so nothing from an earlier attempt is kept.
-		result.EmbeddingModel = ""
+		result.EmbeddingModel, result.FastModel = "", ""
 		before := []any{configuration.Agent.Enabled, append([]config.AgentProvider(nil), configuration.Agent.Providers...), configuration.Agent.Models}
 		replaced := false
 		for index := range configuration.Agent.Providers {
@@ -146,9 +151,16 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 			configuration.Agent.Providers = append(configuration.Agent.Providers, provider)
 		}
 		configuration.Agent.Models.Default = result.DefaultModel
-		if embeddingModel != "" && configuration.Agent.Models.Embedding == "" {
-			result.EmbeddingModel = name + ":" + embeddingModel
+		if chosenModels.embeddingModel != "" && configuration.Agent.Models.Embedding == "" {
+			result.EmbeddingModel = name + ":" + chosenModels.embeddingModel
 			configuration.Agent.Models.Embedding = result.EmbeddingModel
+		}
+		// A typed turn starts on the fast model and hands anything that
+		// needs reasoning to the default; the cheap work runs on it too.
+		if chosenModels.fastModel != "" && chosenModels.fastModel != defaultModel && configuration.Agent.Models.Fast == "" && configuration.Agent.Models.Quick == "" {
+			result.FastModel = name + ":" + chosenModels.fastModel
+			configuration.Agent.Models.Fast = result.FastModel
+			configuration.Agent.Models.Quick = result.FastModel
 		}
 		configuration.Agent.Enabled = true
 		// A mail server's setup goes on to its domain; the assistant's is done.
@@ -187,9 +199,15 @@ func valueOf(value *string) string {
 // to leave running. A pattern ending in * takes the newest of that family,
 // by name. They are a start; the settings page changes them.
 var assistantPreferences = map[string][]string{
-	config.AgentProviderKindOpenAI:    {"gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini"},
+	config.AgentProviderKindOpenAI:    {"gpt-*-sol", "gpt-5-mini", "gpt-4.1-mini", "gpt-4o-mini"},
 	config.AgentProviderKindAnthropic: {"claude-sonnet-*", "claude-*-sonnet-*", "claude-haiku-*", "claude-*-haiku-*"},
 	config.AgentProviderKindGemini:    {"gemini-*-flash", "gemini-*-flash-*"},
+}
+
+// fastPreferences are the smaller models typed turns start on, where the
+// service has one that hands off to the default well.
+var fastPreferences = map[string][]string{
+	config.AgentProviderKindOpenAI: {"gpt-*-luna"},
 }
 
 var embeddingPreferences = map[string][]string{
@@ -197,36 +215,46 @@ var embeddingPreferences = map[string][]string{
 	config.AgentProviderKindGemini: {"gemini-embedding-*", "text-embedding-*"},
 }
 
-// chooseAssistantModels picks the default and embedding models from the
-// names a key reaches. A server of one's own has no list of preferences:
-// its first model that is not for embedding is the default, and its first
-// that is, the embedding model.
-func chooseAssistantModels(kind string, isOwnServer bool, names []string) (string, string) {
+// assistantModels are the models a new assistant starts on, by name
+// without the provider.
+type assistantModels struct {
+	defaultModel   string
+	fastModel      string
+	embeddingModel string
+}
+
+// chooseAssistantModels picks the models from the names a key reaches. A
+// server of one's own has no list of preferences: its first model that is
+// not for embedding is the default, and its first that is, the embedding
+// model.
+func chooseAssistantModels(kind string, isOwnServer bool, names []string) assistantModels {
 	isEmbedding := func(name string) bool { return strings.Contains(strings.ToLower(name), "embed") }
+	var chosen assistantModels
 	if isOwnServer {
-		defaultModel, embeddingModel := "", ""
 		for _, name := range names {
 			if isEmbedding(name) {
-				if embeddingModel == "" {
-					embeddingModel = name
+				if chosen.embeddingModel == "" {
+					chosen.embeddingModel = name
 				}
-			} else if defaultModel == "" && !isNotConversation(name) {
-				defaultModel = name
+			} else if chosen.defaultModel == "" && !isNotConversation(name) {
+				chosen.defaultModel = name
 			}
 		}
-		return defaultModel, embeddingModel
+		return chosen
 	}
-	defaultModel := choosePreferred(assistantPreferences[kind], names, isEmbedding)
-	if defaultModel == "" {
+	chosen.defaultModel = choosePreferred(assistantPreferences[kind], names, isEmbedding)
+	if chosen.defaultModel == "" {
 		// None of the preferences is offered: the first that talks.
 		for _, name := range names {
 			if !isNotConversation(name) {
-				defaultModel = name
+				chosen.defaultModel = name
 				break
 			}
 		}
 	}
-	return defaultModel, choosePreferred(embeddingPreferences[kind], names, func(string) bool { return false })
+	chosen.fastModel = choosePreferred(fastPreferences[kind], names, isEmbedding)
+	chosen.embeddingModel = choosePreferred(embeddingPreferences[kind], names, func(string) bool { return false })
+	return chosen
 }
 
 // choosePreferred is the first preference any name matches; for a family

@@ -36,13 +36,14 @@ func (self *Client) UpdateServices(ctx context.Context, selectedServices map[str
 	return &response.UpdateServices, nil
 }
 
-const DocumentSetUpAssistant = `mutation ($kind: String!, $apiKey: String, $baseUrl: String, $model: String) { SetUpAssistant(kind: $kind, apiKey: $apiKey, baseUrl: $baseUrl, model: $model) { provider defaultModel embeddingModel isAgentOn needsRestart } }`
+const DocumentSetUpAssistant = `mutation ($kind: String!, $apiKey: String, $baseUrl: String, $model: String) { SetUpAssistant(kind: $kind, apiKey: $apiKey, baseUrl: $baseUrl, model: $model) { provider defaultModel embeddingModel fastModel isAgentOn needsRestart } }`
 
 // AssistantSetup is what setting up the assistant in one step did.
 type AssistantSetup struct {
 	Provider       string `json:"provider"`
 	DefaultModel   string `json:"defaultModel"`
 	EmbeddingModel string `json:"embeddingModel"`
+	FastModel      string `json:"fastModel"`
 	IsAgentOn      bool   `json:"isAgentOn"`
 	NeedsRestart   bool   `json:"needsRestart"`
 }
