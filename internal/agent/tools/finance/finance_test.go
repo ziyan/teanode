@@ -891,6 +891,10 @@ func TestFinanceToolImportsAStatementSentInTheChat(test *testing.T) {
 	}
 	if sent := operations.variables[0]; len(sent) != 1 || sent["agentAttachmentId"] != "attachment-one" {
 		test.Errorf("sent %v", sent)
+	}	// The card says where the file came from: the chat, not a message.
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: &fakeOperations{}})
+	if card := financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"import_statement","agent_attachment_id":"attachment-one"}`)); !strings.Contains(card, "sent in the chat") {
+		test.Errorf("the card says %q", card)
 	}
 }
 

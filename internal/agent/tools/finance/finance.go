@@ -442,7 +442,10 @@ var operations = map[string]*financeOperation{
 	// message's OFX attachments, which mail_search and mail_read name.
 	"import_statement": {
 		risk: tools.RiskWrite, arguments: []string{"agent_attachment_id", "mailbox_item_id"},
-		preview: func(*previewLookup, map[string]any) string {
+		preview: func(_ *previewLookup, call map[string]any) string {
+			if text(call, "agent_attachment_id") != "" {
+				return "Import the OFX statement sent in the chat into its finance account"
+			}
 			return "Import the OFX statements attached to a message into their finance accounts"
 		},
 	},
