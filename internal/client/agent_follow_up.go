@@ -51,6 +51,8 @@ const (
 
 	DocumentStopAgentFollowUp = `mutation ($followUpId: String!) { StopAgentFollowUp(followUpId: $followUpId) ` + agentFollowUpFields + ` }`
 
+	DocumentBackfillAgentFollowUps = `mutation { BackfillAgentFollowUps { queuedMessageCount } }`
+
 	DocumentAddAgentFollowUp = `mutation ($followUpKind: String!, $followUpTitle: String!, $dueOn: String, $payee: String, $amount: String, $currencyCode: String, $carrier: String, $trackingNumber: String, $place: String) {
   AddAgentFollowUp(followUpKind: $followUpKind, followUpTitle: $followUpTitle, dueOn: $dueOn, payee: $payee, amount: $amount, currencyCode: $currencyCode, carrier: $carrier, trackingNumber: $trackingNumber, place: $place) ` + agentFollowUpFields + `
 }`
@@ -98,4 +100,19 @@ func AddAgentFollowUp(ctx context.Context, connection *Client, followUp NewAgent
 		return nil, err
 	}
 	return result.AddAgentFollowUp, nil
+}
+
+// BackfillAgentFollowUps has the agent look back over the last 45 days of
+// mail for bills, parcels and notices, and answers how many messages it
+// queued to be read.
+func BackfillAgentFollowUps(ctx context.Context, connection *Client) (int, error) {
+	var result struct {
+		BackfillAgentFollowUps struct {
+			QueuedMessageCount int `json:"queuedMessageCount"`
+		} `json:"BackfillAgentFollowUps"`
+	}
+	if err := connection.Execute(ctx, DocumentBackfillAgentFollowUps, nil, &result); err != nil {
+		return 0, err
+	}
+	return result.BackfillAgentFollowUps.QueuedMessageCount, nil
 }

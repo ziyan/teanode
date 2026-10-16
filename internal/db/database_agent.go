@@ -24,6 +24,14 @@ type AgentOperation interface {
 	// MarkAgentSpokeFirst records when the agent last spoke first, when its
 	// onboarding ended and until when it keeps quiet; nil leaves one alone.
 	MarkAgentSpokeFirst(agentId string, spokeFirstAt, onboardedAt, snoozedUntil *time.Time) error
+
+	// ClaimAgentFollowUpBackfill writes that the look back over past mail
+	// for follow-ups runs now, and answers whether this call is the one
+	// that made it: false when it already ran, so it never runs twice.
+	// MarkAgentFollowUpBackfilled writes it without asking, for the person
+	// who has it run again.
+	ClaimAgentFollowUpBackfill(agentId string, at time.Time) (bool, error)
+	MarkAgentFollowUpBackfilled(agentId string, at time.Time) error
 	DeleteAgent(agentId string) error
 	ListAgents(options *Options) ([]*models.Agent, error)
 
@@ -160,6 +168,8 @@ type agentModel struct {
 	DreamedAt      *time.Time `gorm:"column:dreamed_at"`
 	DreamBootstrap bool       `gorm:"column:dream_bootstrap"`
 
+	FollowUpBackfilledAt *time.Time `gorm:"column:follow_up_backfilled_at"`
+
 	SpokeFirstAt           *time.Time `gorm:"column:spoke_first_at"`
 	OnboardedAt            *time.Time `gorm:"column:onboarded_at"`
 	IsMemoryCheckEnabled   bool       `gorm:"column:is_memory_check_enabled"`
@@ -271,6 +281,10 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		at := model.DecayedAt.In(time.Local)
 		agent.DecayedAt = &at
 	}
+	if model.FollowUpBackfilledAt != nil {
+		at := model.FollowUpBackfilledAt.In(time.Local)
+		agent.FollowUpBackfilledAt = &at
+	}
 	if model.OperatorDisabledAt != nil {
 		at := model.OperatorDisabledAt.In(time.Local)
 		agent.OperatorDisabledAt = &at
@@ -328,6 +342,7 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		IsIdeasEnabled:         agent.IsIdeasEnabled,
 		SpeakFirstSnoozedUntil: agent.SpeakFirstSnoozedUntil,
 		DecayedAt:              agent.DecayedAt,
+		FollowUpBackfilledAt:   agent.FollowUpBackfilledAt,
 		IsAlertsEnabled:        agent.IsAlertsEnabled,
 		AlertQuietStart:        agent.AlertQuietStart,
 		AlertQuietEnd:          agent.AlertQuietEnd,
@@ -561,6 +576,15 @@ func (self *transaction) MarkAgentSpokeFirst(agentId string, spokeFirstAt, onboa
 		return nil
 	}
 	return self.tx.Model(&agentModel{}).Where(`"id" = ?`, agentId).Updates(updates).Error
+}
+
+func (self *transaction) ClaimAgentFollowUpBackfill(agentId string, at time.Time) (bool, error) {
+	result := self.tx.Model(&agentModel{}).Where(`"id" = ? AND "follow_up_backfilled_at" IS NULL`, agentId).Update("follow_up_backfilled_at", at)
+	return result.RowsAffected > 0, result.Error
+}
+
+func (self *transaction) MarkAgentFollowUpBackfilled(agentId string, at time.Time) error {
+	return self.tx.Model(&agentModel{}).Where(`"id" = ?`, agentId).Update("follow_up_backfilled_at", at).Error
 }
 
 func (self *transaction) DeleteAgent(agentId string) error {

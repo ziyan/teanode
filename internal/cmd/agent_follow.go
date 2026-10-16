@@ -49,6 +49,17 @@ func newAgentFollowCommand() *cli.Command {
 				Action: runAgentFollowAdd,
 			},
 			{
+				Name:  "backfill",
+				Usage: "have your agent look back over the last 45 days of mail for bills, parcels and notices",
+				Description: "This runs by itself once, after follow-ups ship, for an agent with alerts on. Run it\n" +
+					"yourself if you turned alerts on later, or want it to look again. It queues at\n" +
+					"most 150 messages your agent already sorted, newest first, to be read for\n" +
+					"follow-ups, a few seconds apart; they appear in `teanode agent follow list` as\n" +
+					"they are read. Reading a message twice changes nothing.",
+				Flags:  []cli.Flag{JSONFlag()},
+				Action: runAgentFollowBackfill,
+			},
+			{
 				Name:      "stop",
 				Usage:     "stop following one; it is kept, and nothing more is said about it",
 				ArgsUsage: "<follow-up-id>",
@@ -123,6 +134,26 @@ func runAgentFollowAdd(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(followUp)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: following %s %q\n", followUp.ID, followUp.FollowUpKind, followUp.FollowUpTitle)
+	return nil
+}
+
+func runAgentFollowBackfill(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	queuedMessageCount, err := client.BackfillAgentFollowUps(ctx, connection)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]int{"queuedMessageCount": queuedMessageCount})
+	}
+	if queuedMessageCount == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "nothing to look at: no sorted message of the last 45 days looks like a bill, a parcel or a notice")
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Writer, "queued %d messages to be read for follow-ups; agent follow list shows what is found\n", queuedMessageCount)
 	return nil
 }
 

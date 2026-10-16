@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
@@ -65,6 +66,15 @@ type AgentAlertMutation interface {
 	// again, or one the agent already found, stays one follow-up, and one
 	// that was over is followed again. Needs agent:use.
 	AddAgentFollowUp(ctx context.Context, arguments AddAgentFollowUpArguments) (*models.AgentFollowUp, error)
+
+	// Look back over the last 45 days of the caller's mail that the agent
+	// already sorted, and queue the messages that look like a bill, a
+	// parcel, a form or a dated notice (at most 150, the newest first) to
+	// be read for follow-ups. It runs by itself once for an agent with
+	// alerts on, after follow-ups ship; this runs it again on demand, for
+	// someone who turned alerts on later. Reading the same message twice
+	// changes nothing. Needs agent:use.
+	BackfillAgentFollowUps(ctx context.Context) (*agent.FollowUpBackfillView, error)
 }
 
 // ListAgentFollowUpsArguments bound the listing.
@@ -202,4 +212,17 @@ func (self *graph) AddAgentFollowUp(ctx context.Context, arguments AddAgentFollo
 	}
 	log.Noticef("%s follows %s %q", operatorName(ctx), followUp.FollowUpKind, followUp.FollowUpTitle)
 	return followUp, nil
+}
+
+func (self *graph) BackfillAgentFollowUps(ctx context.Context) (*agent.FollowUpBackfillView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	queuedMessageCount, err := agent.BackfillFollowUps(self.writing(ctx), found, time.Now(), true)
+	if err != nil {
+		return nil, err
+	}
+	log.Noticef("%s had their agent look back over past mail for follow-ups, %d messages queued", operatorName(ctx), queuedMessageCount)
+	return &agent.FollowUpBackfillView{QueuedMessageCount: queuedMessageCount}, nil
 }

@@ -19,7 +19,8 @@ To see it working on the development server: deliver to a mailbox the agent tria
 - [ ] Not done in Milestone 3: telling a parcel is out for delivery, which needs a delivery status on the follow-up.
 - [x] (2026-10-16) Milestone 4: control on every surface: `ListAgentFollowUps`, `StopAgentFollowUp` and `AddAgentFollowUp` (apigraph `agent_alert.go`, `FollowUpKeyOf` and `internal/agent/follow_up.go`), `agent_profile`'s `list_follow_ups`, `add_follow_up` and `stop_follow_up`, `teanode agent follow list|add|stop`, the Following list on the dashboard's Alerts card and in the iPhone app's alert settings, and the follow-up kinds as kinds to mute. Not done: `teanode agent follow sweep --as-of`, which the scenario under Purpose uses and which waits for Milestone 5.
 - [x] (2026-10-16) Milestone 4b: the weekly "around you" run: the `nearby` job (`models.AgentJobNearby`, `internal/agent/nearby.go`) queued Saturday 21:00 in the person's zone by slot (`queueNearbyRuns`), the home area and household read from the self and place pages (`nearby_home.txt`, `cleanHomeArea`), asked once as the idea `nearby_home_area` when memory has none, one turn with only `web_search` and `web_fetch` held to 12 searches and 10 page reads by the loop (`AskSettings.CallLimits`, `tool_call_limits.go`) with `prompts/nearby.txt`, items written as `event` and `deadline` follow-ups with a new `source_url` column (migration 0191, changed in place) shown as a link on the dashboard, the iPhone app, the command line and the agent tool, the kind mute `nearby`, and the alert text allowed to carry a follow-up's stored page address.
-- [ ] Milestone 5: a backfill over the last 45 days of mail, so the list is useful the day it ships; docs; deploy; the scenario above.
+- [x] (2026-10-16) Milestone 5, the backfill: `internal/agent/follow_up_backfill.go` (`BackfillFollowUps`, `chooseFollowUpBackfill`, `looksLikeFollowUp`, `queueFollowUpBackfills`), `agent.follow_up_backfilled_at` (migration 0191, changed in place), `db.ListMailInsightHeads`, `ClaimAgentFollowUpBackfill` and `MarkAgentFollowUpBackfilled`, a parcel more than a week late let go by the sweep, `ReplaceMailProposals` no longer re-offers what was decided, the `BackfillAgentFollowUps` mutation and `teanode agent follow backfill`, and the docs in `docs/subsystems/agents.md` and `docs/reference/command-line.md`.
+- [ ] Milestone 5, what remains: `teanode agent follow sweep --as-of` (named under Purpose, not built), a deploy with a backup (migration 0191 adds a table and columns), and the end-to-end scenario under Purpose on the development server, which also shows the backfill queuing the first extract jobs.
 
 ## Surprises & Discoveries
 
@@ -106,6 +107,29 @@ To see it working on the development server: deliver to a mailbox the agent tria
   Rationale: "stop following that" and "no more parcel alerts" are said in the same breath as muting an alert, and a neighbor tool for one more small noun would be a second place to look.
   Date/Author: 2026-10-16.
 
+- Decision: the backfill chooses messages from stored insights without a model: those with the extract flag, plus those whose category is `invitation` or whose category or subject has a word of a short list in code (bill, invoice, statement, payment, due, tax, parcel, shipped, delivery, form, permission slip, RSVP, school, club, neighborhood, concert, meeting, fair and a few more), never a category `phishing`, `junk` or `promotion`, never a message with an item in Junk or Trash, none received more than 45 days ago, at most 150 over all the agent's granted mailboxes, newest first. Triage is not run again.
+  Rationale: the list is a net that may catch too much, because the extract run reads the whole message and keeps only a usable follow-up; a model to choose would cost more than the reading it saves.
+  Date/Author: 2026-10-16.
+- Decision: that the backfill ran is the column `agent.follow_up_backfilled_at`, claimed with `UPDATE ... WHERE follow_up_backfilled_at IS NULL` (`ClaimAgentFollowUpBackfill`), by a worker look every ten minutes (`queueFollowUpBackfills`) for active agents with alerts on, once there is a model to read with and a granted mailbox. The on-demand run writes the time anew without asking.
+  Rationale: a job subject would need a new job kind with its names on the dashboard and the iPhone app, and jobs are the wrong record of a thing that must outlive them; a column is claimed atomically, survives restarts and a second worker, and an agent that turns alerts on later is picked up by the same look with no extra code. It is not set for an agent with no granted mailbox, so the look still happens once there is one.
+  Date/Author: 2026-10-16.
+- Decision: the extract jobs are ordinary `extract` jobs, queued with `NotBefore` 20 seconds apart (the first at once), not a new priority.
+  Rationale: the queue has no priority except putting ingest, dream and backfill jobs last, and has `NotBefore`; a job not yet due is not claimed, so what arrives in the next hour is claimed ahead of the later ones. 150 jobs take about 50 minutes at that pace.
+  Date/Author: 2026-10-16.
+- Decision: a parcel first seen more than 7 days past its expected day, and not yet told as stalled, is let go without a word (`followUpParcelStaleDays`), as a bill more than 14 days past already was. An event or deadline whose day went already expired silently.
+  Rationale: without it a parcel found by the backfill 5 to 30 days late would have been announced as stalled; a live parcel is stalled on the third day by the daily sweep, so a week is far past anything the sweep would have missed but a server down for a week.
+  Date/Author: 2026-10-16.
+- Decision: `ReplaceMailProposals` now leaves out a new proposal that says what a proposal the person already accepted or dismissed says (the same event summary and start, or a person sharing an address or number), and still replaces the offers waiting.
+  Rationale: before this it kept the decided ones and appended every new one, so reading a message a second time put the event the person had dismissed back in front of them, which the comment on `MailProposalDismissed` says never happens; the backfill reads messages that live triage already queued for extract, so it would have done so.
+  Date/Author: 2026-10-16.
+- Decision: the on-demand run is the mutation `BackfillAgentFollowUps` (agent:use, beside the follow-up mutations) and `teanode agent follow backfill`; it queues the same way, works with alerts off, and answers how many messages it queued. No dashboard or iPhone button.
+  Rationale: asked for on the command line; the person who needs it is one who turned alerts on later, and the worker's look already covers them.
+  Date/Author: 2026-10-16.
+
+- Decision: a message received more than seven days ago offers no event or contact cards when it is read, and no message offers an appointment whose time has come (an all-day one lasts until its day is over); its follow-ups are still kept.
+  Rationale: the look back over past mail reruns extract on messages up to 45 days old, which would otherwise put cards for meetings long over in front of the person; the same is true of a live message about something already past.
+  Date/Author: 2026-10-16.
+
 ## Outcomes & Retrospective
 
 Nothing yet.
@@ -172,5 +196,7 @@ In `internal/db`: `UpsertAgentFollowUp(*models.AgentFollowUp) (*models.AgentFoll
 In `internal/agent`: `sweepFollowUps(tx db.Transaction, agent *models.Agent, owner *models.User, now time.Time) ([]*models.AgentAlertCandidate, error)` (the owner's zone says which day it is), `matchFollowUpPayments(tx db.Transaction, agentId string, today time.Time) (int, error)` (it reads the stored transactions itself and answers how many bills it closed), and for the look around `(*Agent).lookAround(ctx, run, now) error`, `nearbySlot(now, location) string`, `interpretNearbyItems(items, agentId, today, seen) []*models.AgentFollowUp`, `cleanHomeArea(text) string` and `withToolCallLimits(ctx, limits) context.Context`.
 
 `models.AgentFollowUp` has `SourceURL` (`source_url`, GraphQL `sourceUrl`), the page an event or deadline found on the web came from.
+
+In `internal/agent/follow_up_backfill.go`: `BackfillFollowUps(tx db.Transaction, agent *models.Agent, now time.Time, isForced bool) (int, error)` (answers how many messages it queued), `chooseFollowUpBackfill(heads []*db.MailInsightHead, limit int) []*db.MailInsightHead`, `looksLikeFollowUp(category, subject string) bool`, `(*Agent).queueFollowUpBackfills(ctx, now)`, and `FollowUpBackfillView{QueuedMessageCount}`. In `internal/db`: `ListMailInsightHeads(mailboxId string, since time.Time, leftOutCategories []string, limit int) ([]*MailInsightHead, error)`, `ClaimAgentFollowUpBackfill(agentId string, at time.Time) (bool, error)` and `MarkAgentFollowUpBackfilled(agentId string, at time.Time) error`. `models.Agent.FollowUpBackfilledAt`. GraphQL `BackfillAgentFollowUps` returning `{ queuedMessageCount }`; `client.BackfillAgentFollowUps`.
 
 Revision 2026-10-16: the person asked that the agent also use web search to learn about where they live and what is on there; the mail-only decision was superseded, and Milestone 4b and three decisions were added.

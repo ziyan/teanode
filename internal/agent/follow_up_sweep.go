@@ -31,6 +31,12 @@ const (
 	followUpParcelStalledDays = 3
 	followUpParcelGoneDays    = 30
 
+	// followUpParcelStaleDays is how far past its expected day a parcel may
+	// be when the sweep first sees it and still be called stalled. A parcel
+	// found by the look back over past mail is already that late, was most
+	// likely dealt with, and is let go without a word, as a bill is.
+	followUpParcelStaleDays = 7
+
 	// followUpBillStaleDays is how far past its day a bill may be when it is
 	// first seen overdue and still be told. Older ones, as a look back over
 	// past mail finds, were most likely paid in a way the linked accounts do
@@ -116,7 +122,7 @@ func sweepFollowUps(tx db.Transaction, agent *models.Agent, owner *models.User, 
 				reason = fmt.Sprintf("due %s, %s, and no payment has been seen", followUp.DueOn, followUpDueWords(days))
 			}
 		case models.AgentFollowUpParcel:
-			if -days > followUpParcelGoneDays {
+			if -days > followUpParcelGoneDays || (-days > followUpParcelStaleDays && followUp.ToldState != models.AgentFollowUpToldStalled) {
 				followUpState = models.AgentFollowUpExpired
 			} else if -days >= followUpParcelStalledDays && followUp.FollowUpState == models.AgentFollowUpOpen {
 				followUpState, toldState = models.AgentFollowUpStalled, models.AgentFollowUpToldStalled

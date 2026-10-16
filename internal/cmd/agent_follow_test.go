@@ -28,6 +28,8 @@ func followUpServer(test *testing.T) (*httptest.Server, func() []map[string]any)
 		sent = append(sent, document.Variables)
 		response.Header().Set("Content-Type", "application/json")
 		switch {
+		case strings.Contains(document.Query, "BackfillAgentFollowUps"):
+			_, _ = response.Write([]byte(`{"data":{"BackfillAgentFollowUps":{"queuedMessageCount":12}}}`))
 		case strings.Contains(document.Query, "StopAgentFollowUp"):
 			_, _ = response.Write([]byte(`{"data":{"StopAgentFollowUp":{"id":"follow-1","followUpKind":"bill","followUpTitle":"Water bill","followUpState":"stopped"}}}`))
 		case strings.Contains(document.Query, "AddAgentFollowUp"):
@@ -74,5 +76,18 @@ func TestTheFollowCommandsSendWhatTheDashboardWould(test *testing.T) {
 	}
 	if variables[2]["isOpenOnly"] != true || variables[3]["isOpenOnly"] != false {
 		test.Errorf("list sent %+v %+v", variables[2], variables[3])
+	}
+}
+
+// The look back is asked for by name and says how many messages it queued.
+func TestTheBackfillCommandAsksForTheLookBack(test *testing.T) {
+	test.Parallel()
+	server, sent := followUpServer(test)
+	if printed := runAgainst(test, server, "follow", "backfill"); !strings.Contains(printed, "queued 12 messages") {
+		test.Errorf("backfill printed %q", printed)
+	}
+	runAgainst(test, server, "follow", "backfill", "--json")
+	if variables := sent(); len(variables) != 2 {
+		test.Errorf("sent %+v", variables)
 	}
 }

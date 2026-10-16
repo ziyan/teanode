@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
@@ -265,4 +266,53 @@ func TestTheSpeakingVoiceIsThePersons(t *testing.T) {
 	if got := speechVoiceOf(resolver.config.Current(), &models.Agent{}); got != config.VoiceSpeechVoiceDefault {
 		t.Fatalf("the server's voice: %s", got)
 	}
+}
+
+// The look back over past mail runs for the caller's own agent, on demand
+// and as often as asked: it queues the extract runs of the sorted messages
+// that look like follow-ups and answers how many, and it needs the agent
+// permission.
+func TestBackfillAgentFollowUpsThroughTheAPI(t *testing.T) {
+	database, resolver, principal, created := alertAPIFixture(t)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: created.UserID, Name: "Personal", Agent: &models.AgentMailbox{Granted: true, Triage: &models.AgentTriage{Enabled: true}}})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || inbox == nil {
+			t.Fatalf("GetFolderByKind: %v %v", inbox, err)
+		}
+		mail, err := tx.CreateMail(&models.Mail{Subject: "Your water statement is ready", Kind: models.MailKindIncoming, ReceivedAt: time.Now().Add(-48 * time.Hour)}, nil)
+		if err != nil {
+			t.Fatalf("CreateMail: %s", err)
+		}
+		if _, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
+			t.Fatalf("AddItem: %s", err)
+		}
+		if err := tx.PutMailInsight(&models.MailInsight{MailboxID: mailbox.ID, MailID: mail.ID, AgentID: created.ID, Category: "notification", Priority: "low"}); err != nil {
+			t.Fatalf("PutMailInsight: %s", err)
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := asListener(principal, tx)
+		for round := 1; round <= 2; round++ {
+			view, err := resolver.BackfillAgentFollowUps(ctx)
+			if err != nil || view.QueuedMessageCount != 1 {
+				t.Fatalf("round %d: one message queued, even though it ran before: %+v %v", round, view, err)
+			}
+		}
+		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: created.ID, Kinds: []models.AgentJobKind{models.AgentJobExtract}}, nil)
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("one extract job, not two: %+v %v", jobs, err)
+		}
+		found, err := tx.GetAgent(created.ID)
+		if err != nil || found.FollowUpBackfilledAt == nil {
+			t.Fatalf("the time is written: %+v %v", found, err)
+		}
+		stranger := &api.Principal{User: principal.User}
+		if _, err := resolver.BackfillAgentFollowUps(asListener(stranger, tx)); err == nil {
+			t.Fatalf("without the agent permission it is refused")
+		}
+	})
 }

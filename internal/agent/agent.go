@@ -126,6 +126,7 @@ type Agent struct {
 	lastSpeak                            time.Time
 	lastWatch                            time.Time
 	lastFollowUpSweep                    time.Time
+	lastFollowUpBackfill                 time.Time
 	lastNearbyQueue                      time.Time
 
 	// watchesQueuedAt is when a look was last queued for each person's
@@ -497,6 +498,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueSpeakingFirst(ctx, now)
 	self.queueWatching(ctx, now)
 	self.queueFollowUpSweeps(ctx, now)
+	self.queueFollowUpBackfills(ctx, now)
 	self.queueNearbyRuns(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)

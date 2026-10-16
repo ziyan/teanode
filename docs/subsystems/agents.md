@@ -275,6 +275,23 @@ Following list on the Alerts card and in the iPhone app's alert settings,
 kind mutes `follow_up` (all of them), `bill`, `parcel`, `deadline` or `event`,
 and the mute offered on an alert about a follow-up is its kind.
 
+**The look back.** So the list is useful the day follow-ups ship, the worker
+looks, every ten minutes, for an active agent with alerts on whose
+`agent.follow_up_backfilled_at` is empty (`follow_up_backfill.go`). It claims
+that column with one conditional update, so it runs once per agent, and
+queues ordinary `extract` jobs, 20 seconds apart, for at most 150 messages of
+the last 45 days that triage already stored an insight for, newest first, in
+mailboxes the agent reads: those with the extract flag, plus those whose
+category or subject has a bill, shipment, form, RSVP or notice word (a net
+for this alone, no model), never junk, phishing, promotions or anything in
+Junk or Trash. Nothing is triaged again. Reading a message twice is safe:
+follow-ups are found again by key, and `ReplaceMailProposals` replaces the
+waiting offers and leaves out any the person already accepted or dismissed.
+A parcel more than a week late, an event or deadline whose day went, and a
+bill long past are let go by the sweep without a word.
+`BackfillAgentFollowUps` and `teanode agent follow backfill` run it again on
+demand, for someone who turned alerts on later.
+
 **The look around.** Once a week, Saturday at 21:00 in the person's zone, each
 agent with alerts on is queued a `nearby` job (`nearby.go`, subject the slot,
 like the sweep). It reads the person's town and household from the self page

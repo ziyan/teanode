@@ -36,6 +36,14 @@ type InsightOperation interface {
 	// backfill.
 	ListMailWithoutInsight(mailboxId string, limit int) ([]string, error)
 
+	// ListMailInsightHeads is the newest messages of a mailbox received
+	// since the moment given that have an insight, with just enough of it
+	// to choose from: the category, whether sorting asked for an extract,
+	// and the subject. Only messages still in a folder that is not Junk,
+	// Trash, Drafts or Sent, and whose category is not one of those left
+	// out. For the one look back over past mail for follow-ups.
+	ListMailInsightHeads(mailboxId string, since time.Time, leftOutCategories []string, limit int) ([]*MailInsightHead, error)
+
 	// DeleteMailInsights forgets everything a mailbox was told.
 	DeleteMailInsights(mailboxId string) (int64, error)
 
@@ -437,6 +445,58 @@ func (self *transaction) ListMailWithoutInsight(mailboxId string, limit int) ([]
 		ids = []string{}
 	}
 	return ids, err
+}
+
+// MailInsightHead is the part of a message and its insight that a choice
+// among past messages reads.
+type MailInsightHead struct {
+	MailID         string
+	MailboxID      string
+	Category       string
+	Subject        string
+	IsExtractAsked bool
+	ReceivedAt     time.Time
+}
+
+func (self *transaction) ListMailInsightHeads(mailboxId string, since time.Time, leftOutCategories []string, limit int) ([]*MailInsightHead, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	// An empty list in IN is NULL to the database, which leaves nothing.
+	leftOutClause, leftOutArguments := "", []any{}
+	if len(leftOutCategories) > 0 {
+		leftOutClause, leftOutArguments = ` AND LOWER("mail_insight"."category") NOT IN ?`, []any{leftOutCategories}
+	}
+	type row struct {
+		MailID       string    `gorm:"column:mail_id"`
+		Category     string    `gorm:"column:category"`
+		Subject      string    `gorm:"column:subject"`
+		ExtractAsked bool      `gorm:"column:extract_asked"`
+		ReceivedAt   time.Time `gorm:"column:received_at"`
+	}
+	var rows []row
+	err := self.tx.Raw(`SELECT "mail_insight"."mail_id" AS mail_id, "mail_insight"."category" AS category, "mail"."subject" AS subject,
+			"mail_insight"."extract_asked" AS extract_asked, "mail"."received_at" AS received_at
+		FROM "mail_insight"
+		JOIN "mail" ON "mail"."id" = "mail_insight"."mail_id"
+		WHERE "mail_insight"."mailbox_id" = ? AND "mail"."kind" <> 'note' AND "mail"."received_at" >= ?
+		  `+leftOutClause+`
+		  AND EXISTS (SELECT 1 FROM "mailbox_item" JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
+			WHERE "mailbox_item"."mail_id" = "mail_insight"."mail_id" AND "mailbox_folder"."mailbox_id" = ? AND "mailbox_item"."deleted" = false)
+		  AND NOT EXISTS (SELECT 1 FROM "mailbox_item" JOIN "mailbox_folder" ON "mailbox_folder"."id" = "mailbox_item"."folder_id"
+			WHERE "mailbox_item"."mail_id" = "mail_insight"."mail_id" AND "mailbox_folder"."mailbox_id" = ? AND "mailbox_folder"."kind" IN ('junk', 'trash', 'drafts', 'sent'))
+		ORDER BY "mail"."received_at" DESC LIMIT ?`, append(append([]any{mailboxId, since}, leftOutArguments...), mailboxId, mailboxId, limit)...).Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	heads := make([]*MailInsightHead, 0, len(rows))
+	for _, found := range rows {
+		heads = append(heads, &MailInsightHead{
+			MailID: found.MailID, MailboxID: mailboxId, Category: found.Category, Subject: found.Subject,
+			IsExtractAsked: found.ExtractAsked, ReceivedAt: found.ReceivedAt,
+		})
+	}
+	return heads, nil
 }
 
 func (self *transaction) DeleteMailInsights(mailboxId string) (int64, error) {
@@ -1195,11 +1255,47 @@ func (self *transaction) ReplaceMailProposals(mailboxId, mailId string, proposal
 			kept = append(kept, proposal)
 		}
 	}
-	encoded, err := json.Marshal(append(kept, proposals...))
+	// An offer the person already accepted or dismissed is not made again:
+	// a second reading of the same message (a look back over past mail
+	// reads the ones sorting flagged long ago) would otherwise put a card
+	// beside the decision, and a dismissed one back in front of them.
+	for _, proposal := range proposals {
+		if !hasDecidedProposal(kept, &proposal) {
+			kept = append(kept, proposal)
+		}
+	}
+	encoded, err := json.Marshal(kept)
 	if err != nil {
 		return err
 	}
 	return self.tx.Model(&mailInsightModel{}).Where("mailbox_id = ? AND mail_id = ?", mailboxId, mailId).Update("proposals", encoded).Error
+}
+
+// hasDecidedProposal says the list holds a proposal the person decided that
+// says the same thing as the one given: the same appointment (summary and
+// start), or a person with an address or number in common.
+func hasDecidedProposal(decided []models.MailProposal, proposal *models.MailProposal) bool {
+	for index := range decided {
+		other := &decided[index]
+		if other.Status == models.MailProposalOffered || other.Kind != proposal.Kind {
+			continue
+		}
+		switch proposal.Kind {
+		case models.MailProposalEvent:
+			if strings.EqualFold(strings.TrimSpace(other.Summary), strings.TrimSpace(proposal.Summary)) && other.Starts == proposal.Starts {
+				return true
+			}
+		case models.MailProposalContact:
+			for _, value := range append(append([]string{}, proposal.Emails...), proposal.Phones...) {
+				for _, known := range append(append([]string{}, other.Emails...), other.Phones...) {
+					if strings.EqualFold(value, known) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (self *transaction) RedactAgentConversationMessages(conversationId string, redact func(string) string) (int, error) {

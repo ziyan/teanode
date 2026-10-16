@@ -64,3 +64,9 @@ ALTER TABLE "agent_alert_candidate"
     ADD COLUMN "follow_up_told_state"  character varying(20) NOT NULL DEFAULT '',
     ADD COLUMN "follow_up_subject_key" text                  NOT NULL DEFAULT '';
 CREATE UNIQUE INDEX "agent_alert_candidate_follow_up" ON "agent_alert_candidate" ("agent_id", "follow_up_subject_key") WHERE "follow_up_subject_key" <> '';
+
+-- When the one look back over the last 45 days of mail ran for this agent, so
+-- that bills and parcels already in flight are on the list the day it ships
+-- and the look never runs twice. NULL until it has. Claimed with a single
+-- conditional update, so two workers cannot both run it.
+ALTER TABLE "agent" ADD COLUMN "follow_up_backfilled_at" timestamp with time zone;

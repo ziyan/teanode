@@ -115,12 +115,14 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentFollowUps": client.DocumentListAgentFollowUps,
 		"StopAgentFollowUp":  client.DocumentStopAgentFollowUp,
 		"AddAgentFollowUp":   client.DocumentAddAgentFollowUp,
-		"ListAgentRuns":      client.DocumentListAgentRuns,
-		"ListAllAgentRuns":   client.DocumentListAllAgentRuns,
-		"StopAgentRun":       client.DocumentStopAgentRun,
-		"ListAgentSchedules": client.DocumentListAgentSchedules,
-		"SaveAgentSchedule":  client.DocumentSaveAgentSchedule,
-		"SaveAgentNode":      client.DocumentSaveAgentNode,
+		// The look back over past mail, run again on demand.
+		"BackfillAgentFollowUps": client.DocumentBackfillAgentFollowUps,
+		"ListAgentRuns":          client.DocumentListAgentRuns,
+		"ListAllAgentRuns":       client.DocumentListAllAgentRuns,
+		"StopAgentRun":           client.DocumentStopAgentRun,
+		"ListAgentSchedules":     client.DocumentListAgentSchedules,
+		"SaveAgentSchedule":      client.DocumentSaveAgentSchedule,
+		"SaveAgentNode":          client.DocumentSaveAgentNode,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
 		"AgentGraphPage": client.DocumentAgentGraphPage,

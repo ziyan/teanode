@@ -101,6 +101,11 @@ type Agent struct {
 	// first pass, which fades nothing and only writes this down.
 	DecayedAt *time.Time `json:"decayedAt,omitempty" graphapi:"nullable"`
 
+	// FollowUpBackfilledAt is when the one look back over the last 45 days
+	// of mail for bills, parcels and notices ran, empty until it has. See
+	// internal/agent/follow_up_backfill.go.
+	FollowUpBackfilledAt *time.Time `json:"followUpBackfilledAt,omitempty" graphapi:"nullable"`
+
 	// DreamBootstrap says the night runs again as soon as it can, with
 	// wider limits, until nothing waits to be read: what a first ingest
 	// needs. The night clears it itself.

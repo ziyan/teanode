@@ -179,7 +179,7 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		log.Warningf("the extract run for %q did not answer with an object: %s", mail.ID, err)
 		return nil
 	}
-	proposals := InterpretExtraction(&answer)
+	proposals := currentProposals(InterpretExtraction(&answer), mail.ReceivedAt, time.Now(), Location(run.Owner))
 	findings := InterpretFollowUps(&answer, run.Agent.ID, mail.ID)
 	if len(proposals) == 0 && len(findings) == 0 {
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %q: nothing to add", mail.Subject))
@@ -241,6 +241,47 @@ func InterpretExtraction(answer *ExtractAnswer) []models.MailProposal {
 		})
 	}
 	return proposals
+}
+
+// proposalCardDays is how old a message may be and still have its offers
+// shown: a card for a meeting or a signature from a message weeks old, as a
+// look back over past mail reads them, would only surprise the person. Its
+// follow-ups are still kept.
+const proposalCardDays = 7
+
+// currentProposals are the offers still worth a card: none for a message
+// received more than proposalCardDays ago, and no appointment that has
+// already started, whatever the message's age.
+func currentProposals(proposals []models.MailProposal, receivedAt, now time.Time, location *time.Location) []models.MailProposal {
+	if !receivedAt.IsZero() && now.Sub(receivedAt) > proposalCardDays*24*time.Hour {
+		return nil
+	}
+	kept := []models.MailProposal{}
+	for _, proposal := range proposals {
+		if proposal.Kind == models.MailProposalEvent && hasProposalStarted(&proposal, now, location) {
+			continue
+		}
+		kept = append(kept, proposal)
+	}
+	return kept
+}
+
+// hasProposalStarted says an appointment's time has come: its start for one
+// with a time, the end of its day for one that lasts all day or gives only
+// a date.
+func hasProposalStarted(proposal *models.MailProposal, now time.Time, location *time.Location) bool {
+	day, err := time.ParseInLocation(time.DateOnly, proposal.Starts, location)
+	if err != nil {
+		starts, err := time.ParseInLocation("2006-01-02T15:04", proposal.Starts, location)
+		if err != nil {
+			return false
+		}
+		if !proposal.AllDay {
+			return starts.Before(now)
+		}
+		day = time.Date(starts.Year(), starts.Month(), starts.Day(), 0, 0, 0, 0, location)
+	}
+	return !day.AddDate(0, 0, 1).After(now)
 }
 
 // InterpretFollowUps turns the model's answer into follow-ups for the agent,
