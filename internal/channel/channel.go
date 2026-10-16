@@ -589,15 +589,8 @@ func (self *chatState) person(channel *models.AgentChannel) (*models.Agent, *mod
 func (self *chatState) mainConversation(found *models.Agent) (*models.AgentConversation, error) {
 	var conversation *models.AgentConversation
 	err := self.manager.settings.Database.Transaction(func(tx db.Transaction) error {
-		conversations, err := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationMain}, &db.Options{Limit: 1})
-		if err != nil {
-			return err
-		}
-		if len(conversations) > 0 {
-			conversation = conversations[0]
-			return nil
-		}
-		conversation, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		var err error
+		conversation, err = tx.MainAgentConversation(found.ID, "")
 		return err
 	})
 	return conversation, err

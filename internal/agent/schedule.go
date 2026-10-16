@@ -252,16 +252,9 @@ func scheduleConversation(tx db.Transaction, agentId, conversationId string) (*m
 			return found, nil
 		}
 	}
-	main, err := tx.ListAgentConversations(agentId, []models.AgentConversationKind{models.AgentConversationMain}, &db.Options{Limit: 1})
-	if err != nil {
-		return nil, err
-	}
-	if len(main) > 0 {
-		return main[0], nil
-	}
 	// Made with the drawer as its surface, which is where the person reads
 	// it; left empty, the schedule's own turn would have named it.
-	return tx.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, Surface: "drawer", LastAt: time.Now()})
+	return tx.MainAgentConversation(agentId, "drawer")
 }
 
 // finishOnce ends a schedule that has no time left, now that its last run

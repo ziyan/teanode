@@ -50,6 +50,9 @@ type InsightOperation interface {
 	DeleteThreadSummaries(mailboxId string) (int64, error)
 
 	CreateAgentConversation(conversation *models.AgentConversation) (*models.AgentConversation, error)
+	// MainAgentConversation is the agent's one continuous conversation,
+	// made with the given surface the first time it is needed.
+	MainAgentConversation(agentId string, surface string) (*models.AgentConversation, error)
 	GetAgentConversation(conversationId string) (*models.AgentConversation, error)
 
 	// FindAgentConversationBySubject is the newest conversation of a kind
@@ -491,6 +494,24 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		conversation.DescribedAt = &at
 	}
 	return conversation
+}
+
+// MainAgentConversation finds the main conversation, or makes it, with the
+// agent's row locked first: a page that has just loaded asks for it from
+// several places at once, and each of them finding none and making one left
+// an agent with four, and its first greeting in one the drawer did not show.
+func (self *transaction) MainAgentConversation(agentId string, surface string) (*models.AgentConversation, error) {
+	if err := lockRow(self.tx, &agentModel{}, agentId); err != nil {
+		return nil, err
+	}
+	conversations, err := self.ListAgentConversations(agentId, []models.AgentConversationKind{models.AgentConversationMain}, &Options{Limit: 1})
+	if err != nil {
+		return nil, err
+	}
+	if len(conversations) > 0 {
+		return conversations[0], nil
+	}
+	return self.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, Surface: surface, LastAt: time.Now()})
 }
 
 func (self *transaction) CreateAgentConversation(conversation *models.AgentConversation) (*models.AgentConversation, error) {
