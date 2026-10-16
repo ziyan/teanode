@@ -171,7 +171,18 @@ export function App() {
       // The server is unreachable. Show the login form rather than a blank
       // page; trying again is the only useful thing a reader can do. Without
       // a server there is nobody to answer a passkey, so none is offered.
-      setSession({ authenticated: false, authenticationRequired: true, username: '', passkeysEnabled: false })
+      // Somebody already signed in keeps their page: a server restarting
+      // under it is away for a moment, and the page waiting for it would
+      // otherwise give way to a login form.
+      setSession(
+        (previous) =>
+          (previous?.authenticated ? previous : null) ?? {
+            authenticated: false,
+            authenticationRequired: true,
+            username: '',
+            passkeysEnabled: false,
+          },
+      )
     }
   }, [])
 

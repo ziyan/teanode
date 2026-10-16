@@ -91,7 +91,12 @@ export function WelcomePage() {
     }
     if (done.needsRestart) {
       setStage('starting')
-      const isBack = await restartServer().catch(() => false)
+      // A refusal says why, such as a server not started in a way that lets
+      // it restart; a server that did not come back has nothing to say.
+      const isBack = await restartServer().catch((caught: unknown) => {
+        setProblem(caught)
+        return false
+      })
       if (!isBack) {
         setStage('restartFailed')
         return
@@ -123,7 +128,7 @@ export function WelcomePage() {
               <span className="welcome-progress-mark" aria-hidden="true">
                 {index < reached ? (
                   <CheckIcon size={14} />
-                ) : index === reached ? (
+                ) : index === reached && stage !== 'restartFailed' ? (
                   <span className="welcome-spinner" />
                 ) : null}
               </span>
@@ -140,7 +145,10 @@ export function WelcomePage() {
         </ol>
         {stage === 'restartFailed' && (
           <>
-            <p className="error">{t('welcome.restartFailed')}</p>
+            <ErrorMessage error={problem} />
+            <p className="error" role="alert">
+              {t('welcome.restartFailed')}
+            </p>
             <button className="primary auth-button" type="button" onClick={open}>
               {t('welcome.restarted')}
             </button>
@@ -173,6 +181,8 @@ export function WelcomePage() {
               onClick={() => {
                 setServiceId(each.id)
                 setProblem(null)
+                // One service's key is never sent to another.
+                setApiKey('')
               }}
             >
               {each.name || t('welcome.ownServer')}
