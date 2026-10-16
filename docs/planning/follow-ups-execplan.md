@@ -17,6 +17,7 @@ To see it working on the development server: deliver to a mailbox the agent tria
 - [ ] Milestone 2: closing follow-ups from later mail and from finance transactions.
 - [ ] Milestone 3: the daily sweep that turns due, overdue, stalled and coming follow-ups into alert candidates, and the weekly coming-up roundup.
 - [ ] Milestone 4: control on every surface: the agent's tool, the command line, the dashboard's Alerts card, the iPhone app; muting a kind.
+- [ ] Milestone 4b: the weekly "around you" research run (home area from memory or asked once, `web_search` and `web_fetch`, bounded), feeding events, places and important dates into the Sunday roundup.
 - [ ] Milestone 5: a backfill over the last 45 days of mail, so the list is useful the day it ships; docs; deploy; the scenario above.
 
 ## Surprises & Discoveries
@@ -48,8 +49,14 @@ To see it working on the development server: deliver to a mailbox the agent tria
 - Decision: on by default for every agent with alerts on; a person mutes a kind ("stop telling me about neighborhood events") with the existing `mute_alert` and a new mute scope `followUpKind`, or one follow-up with `stop`.
   Rationale: asked for in so many words: the agent should start, and the person should be able to stop it.
   Date/Author: 2026-10-16.
-- Decision: neighborhood events come only from mail the person receives (an association's newsletter, a council notice, a community list), never from searching the web about where they live.
-  Rationale: what arrives in their mail is theirs to have read; searching the web about their address is a different thing they did not ask for, and would put their location in queries to strangers.
+- Decision: superseded the same day. At first neighborhood events were to come only from the person's mail. The person asked for more: the agent may use `web_search` and `web_fetch` to learn about where they live and what is on there. So once a week an "around you" research run looks outward: events, places and restaurants worth knowing (new ones especially), weekend activities that fit the household (children's ages, interests, food the person likes or avoids, all from memory), and dates that matter (public and school holidays, daylight saving, election and registration deadlines, tax deadlines). What it finds is written as follow-ups of kind `event` or `deadline` with the page it came from, and goes in the Sunday roundup.
+  Rationale: asked for in so many words; mail alone misses most of what is on nearby. Searches name the town or neighborhood the person lives in, never a street address, so what goes to a search provider is what anyone might search for.
+  Date/Author: 2026-10-16.
+- Decision: the home area is read from the agent's memory (the person's self page and the places it knows). When memory does not say, the agent asks once, the way it speaks first today, and keeps the answer as a fact; until then the run is skipped.
+  Rationale: there is no home-location field anywhere in the model, and the person has usually said where they live already; asking once is cheaper than a setting nobody fills in.
+  Date/Author: 2026-10-16.
+- Decision: the run is bounded: one a week, Saturday night before the Sunday roundup, at most 12 searches and 10 page reads, at most 8 items in the roundup from it, and nothing it already said in the last four weeks. It is muted like any kind (`nearby`).
+  Rationale: a weekly message worth reading is short; a research run without bounds costs and repeats itself.
   Date/Author: 2026-10-16.
 
 ## Outcomes & Retrospective
@@ -75,6 +82,8 @@ Milestone 2 closes follow-ups: extract's answer for a message whose key matches 
 Milestone 3 adds the sweep: a job that runs at 08:00 in the person's zone and on demand, looks at open follow-ups against today, sets overdue, stalled and expired, and writes `follow_up` candidates for what is due to be said, plus on Sundays at 18:00 the roundup candidate with the coming week's events and deadlines. `prompts/alert.txt` learns the new kind and how to phrase a roundup. The test drives the sweep with a fixed clock through a week.
 
 Milestone 4 gives control everywhere at once, as the repository requires (`CONTRIBUTING.md`): a `follow_up` tool for the agent (list, add from what the person says, stop), `teanode agent follow list|stop|sweep`, a Following list on the dashboard's Alerts card with Stop on each row, the same in the iPhone app's alert settings, and the `followUpKind` mute scope on all of them.
+
+Milestone 4b adds the "around you" run: a background job (`models.AgentJobNearby`) queued Saturday at 21:00 in the person's zone. It reads the home area and the household from memory; when there is no home area it writes one speak-first question instead and stops. Otherwise it runs a research turn (the same loop a conversation uses, with nobody present, read-only tools, `web_search` and `web_fetch` only, the bounds above) with a prompt `prompts/nearby.txt` that asks for the coming week's and coming weekend's events, new or notable places, activities that suit the household, and dates that matter, each with its page, as JSON. The job writes them as follow-ups with a key of the page and date, skipping what was told in the last four weeks, and the Sunday roundup includes them. The test gives the run fixed search results through a fake `web_search` and checks the follow-ups written and the bounds.
 
 Milestone 5 backfills: one job per agent over the last 45 days of triaged mail that triage would now flag, through extract, so bills and parcels already in flight are on the list on day one; then the docs (`docs/subsystems/agents.md` alerts section, `docs/reference/command-line.md`), a deploy with a backup, and the scenario under Purpose.
 
@@ -114,3 +123,5 @@ In `internal/models/follow_up.go`:
 In `internal/db`: `UpsertAgentFollowUp(*models.AgentFollowUp) (*models.AgentFollowUp, bool, error)`, `ListOpenAgentFollowUps(agentId string) ([]*models.AgentFollowUp, error)`, `UpdateAgentFollowUp(id string, update func(*models.AgentFollowUp) error) error`.
 
 In `internal/agent`: `sweepFollowUps(tx db.Transaction, agent *models.Agent, now time.Time) ([]*models.AgentAlertCandidate, error)` and `matchFollowUpPayments(tx db.Transaction, agentId string, transactions []*models.FinanceTransaction) error`.
+
+Revision 2026-10-16: the person asked that the agent also use web search to learn about where they live and what is on there; the mail-only decision was superseded, and Milestone 4b and three decisions were added.
