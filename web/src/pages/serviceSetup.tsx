@@ -4,6 +4,7 @@ import { AGENT_TURNED_EVENT } from '../agentPreferences'
 import { graphql, type ServiceCapabilities } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { restartServer } from '../components/serverRestart'
+import { SettingsRow } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
@@ -159,6 +160,9 @@ export function SetupPage() {
       setIsReviewing(false)
       await reload()
       window.dispatchEvent(new Event('focus'))
+      // Finishing changes nothing on this page; it changes where signing in
+      // lands, which is said, since nothing here would show it.
+      if (hasCompletedSetup) toast.done(t('services.finished'))
     } catch (caught) {
       setProblem(caught)
     } finally {
@@ -255,60 +259,58 @@ export function SetupPage() {
       <section className="card">
         <h2>{t('services.next')}</h2>
         <p className="muted">{t('services.stepsIntro')}</p>
-        <table>
-          <tbody>
-            <SetupStep
-              isDone={setup.hasModelProvider}
-              title={<Link to="/manage/agent/models">{t('services.model')}</Link>}
-              note={t(setup.hasModelProvider ? 'services.providerReady' : 'services.providerMissing')}
-            />
-            <SetupStep
-              isDone={setup.selectedServices.isAssistantEnabled}
-              title={<Link to="/manage/agent/general">{t('services.enableAssistant')}</Link>}
-              note={t(
-                setup.selectedServices.isAssistantEnabled ? 'services.assistantReady' : 'services.assistantMissing',
-              )}
-            />
-            <SetupStep
-              isDone={pendingRestart.length === 0 && !setup.runningServices.hasPendingServiceRestart}
-              title={<Link to="/manage/server/about">{t('services.restartStep')}</Link>}
-              note={
-                pendingRestart.length > 0
-                  ? t('services.restartPending', { settings: pendingRestart.join(', ') })
-                  : setup.runningServices.hasPendingServiceRestart
-                    ? t('services.restart')
-                    : t('services.restartNone')
-              }
-              action={
-                (pendingRestart.length > 0 || setup.runningServices.hasPendingServiceRestart) && (
-                  <button type="button" className="primary" disabled={isRestarting} onClick={() => void restart()}>
-                    {isRestarting ? t('server.restarting') : t('services.restartNow')}
-                  </button>
-                )
-              }
-            />
-            <SetupStep
-              isDone={isAgentOn}
-              isWaiting={!isAgentOn && !canTurnOnAgent}
-              title={t('services.yourAgent')}
-              note={t(
-                isAgentOn
-                  ? 'services.yourAgentReady'
-                  : canTurnOnAgent
-                    ? 'services.yourAgentMissing'
-                    : 'services.yourAgentWaiting',
-              )}
-              action={
-                !isAgentOn &&
-                canTurnOnAgent && (
-                  <button type="button" className="primary" disabled={isSaving} onClick={() => void turnOnAgent()}>
-                    {t('services.turnOnMine')}
-                  </button>
-                )
-              }
-            />
-          </tbody>
-        </table>
+        <div>
+          <SetupStep
+            isDone={setup.hasModelProvider}
+            title={<Link to="/manage/agent/models">{t('services.model')}</Link>}
+            note={t(setup.hasModelProvider ? 'services.providerReady' : 'services.providerMissing')}
+          />
+          <SetupStep
+            isDone={setup.selectedServices.isAssistantEnabled}
+            title={<Link to="/manage/agent/general">{t('services.enableAssistant')}</Link>}
+            note={t(
+              setup.selectedServices.isAssistantEnabled ? 'services.assistantReady' : 'services.assistantMissing',
+            )}
+          />
+          <SetupStep
+            isDone={pendingRestart.length === 0 && !setup.runningServices.hasPendingServiceRestart}
+            title={<Link to="/manage/server/about">{t('services.restartStep')}</Link>}
+            note={
+              pendingRestart.length > 0
+                ? t('services.restartPending', { settings: pendingRestart.join(', ') })
+                : setup.runningServices.hasPendingServiceRestart
+                  ? t('services.restart')
+                  : t('services.restartNone')
+            }
+            action={
+              (pendingRestart.length > 0 || setup.runningServices.hasPendingServiceRestart) && (
+                <button type="button" className="primary" disabled={isRestarting} onClick={() => void restart()}>
+                  {isRestarting ? t('server.restarting') : t('services.restartNow')}
+                </button>
+              )
+            }
+          />
+          <SetupStep
+            isDone={isAgentOn}
+            isWaiting={!isAgentOn && !canTurnOnAgent}
+            title={t('services.yourAgent')}
+            note={t(
+              isAgentOn
+                ? 'services.yourAgentReady'
+                : canTurnOnAgent
+                  ? 'services.yourAgentMissing'
+                  : 'services.yourAgentWaiting',
+            )}
+            action={
+              !isAgentOn &&
+              canTurnOnAgent && (
+                <button type="button" className="primary" disabled={isSaving} onClick={() => void turnOnAgent()}>
+                  {t('services.turnOnMine')}
+                </button>
+              )
+            }
+          />
+        </div>
         <p className="muted">{t('services.modelDetail')}</p>
         {setup.selectedServices.isMailRoutingEnabled && (
           <p role="status">
@@ -342,9 +344,11 @@ export function SetupPage() {
   )
 }
 
-// SetupStep is one row of the list of what is left: the step, what it found,
-// and whether it is done. A step that cannot start until an earlier one is
-// done says so rather than counting as left to do.
+// SetupStep is one step of the list of what is left: the step, what it
+// found, and whether it is done. A step that cannot start until an earlier
+// one is done says so rather than counting as left to do. A row of the
+// settings list rather than of a table, because on a phone the note wraps
+// under the step instead of pushing its state out of sight.
 function SetupStep({
   isDone,
   isWaiting = false,
@@ -360,21 +364,19 @@ function SetupStep({
 }) {
   const { t } = useTranslation()
   return (
-    <tr>
-      <td>
-        <strong>{title}</strong>
-        <div className="muted cell-note">{note}</div>
-        {action && <div className="page-actions">{action}</div>}
-      </td>
-      <td className="shrink">
-        {isDone ? (
+    <SettingsRow
+      title={title}
+      subtitle={note}
+      badge={
+        isDone ? (
           <Tag value={t('services.done')} tone="good" />
         ) : isWaiting ? (
           <Tag value={t('services.later')} />
         ) : (
           <Tag value={t('services.toDo')} tone="warn" />
-        )}
-      </td>
-    </tr>
+        )
+      }
+      actions={action || undefined}
+    />
   )
 }

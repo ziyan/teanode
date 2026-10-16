@@ -4721,6 +4721,7 @@ export const en = {
   'services.revoke': 'Revoke',
   'services.syncDescription': "Device passwords synchronize only the collections you select. They cannot open your mail or sign in to the dashboard.",
   'services.mailHostname': "Mail server hostname",
+  'services.finished': 'Setup finished. Signing in now opens your usual home page.',
   'services.restartNow': 'Restart now',
   'services.chooseHint': 'Personal assistant runs the assistant alone, with no mail. Mail server adds mail at your domains. Pick one, or the services below, then review and apply your choices.',
   'services.chosen': 'Chosen: {name}',

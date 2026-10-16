@@ -4673,6 +4673,7 @@ export const ja: Catalog = {
   'services.revoke': '失効',
   'services.syncDescription': '端末パスワードは選択した項目だけを同期します。メールや管理画面にはアクセスできません。',
   'services.mailHostname': "メールサーバーのホスト名",
+  'services.finished': 'セットアップを完了しました。これからはサインインするといつものホームが開きます。',
   'services.restartNow': '今すぐ再起動',
   'services.chooseHint': '「パーソナルアシスタント」はメールなしでアシスタントだけを動かします。「メールサーバー」は自分のドメインのメールを加えます。どちらかを選ぶか下のサービスを個別に選び、確認して適用してください。',
   'services.chosen': '選択中：{name}',

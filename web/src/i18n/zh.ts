@@ -4579,6 +4579,7 @@ export const zh: Catalog = {
   'services.revoke': '撤销',
   'services.syncDescription': '设备密码只能同步你选择的内容，不能访问邮件或登录管理页面。',
   'services.mailHostname': "邮件服务器主机名",
+  'services.finished': '设置已完成。现在登录后会打开你平常的首页。',
   'services.restartNow': '立即重启',
   'services.chooseHint': '“个人助手”只运行助手，没有邮件；“邮件服务器”会加上你自己域名的邮件。选一个，或者在下面逐项选择，然后检查并应用你的选择。',
   'services.chosen': '已选：{name}',

@@ -356,12 +356,14 @@ capabilities.
      small, inexpensive model from your provider is a good start (on OpenAI,
      `gpt-5-mini`); the dropdown has a box to narrow its list.
    - **Enable the assistant** (Manage → Agents → General): turn on
-     **Enabled** and save.
+     **Enabled** and save. Each of these saves says it waits for a restart;
+     restart once, at the next step.
    - **Restart this instance**: the provider, the models and Enabled are
      read when the server starts. Press **Restart now** on this step.
    - **Turn on your own agent**: each person turns on their own agent, and
      this button turns on yours (others do it under Settings → Your agent).
-4. **Open your personal assistant** and say hello.
+4. Say hello: **Open your personal assistant** at the end of the list, or
+   the round chat button in the bottom corner of any page.
 
 For remote access, put port 8080 behind a TLS reverse proxy and set its
 addresses as trusted proxies, so that secure cookies and profile downloads
