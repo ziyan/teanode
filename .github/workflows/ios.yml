@@ -98,9 +98,10 @@ jobs:
   # simulator's first-run setup took the CPU and made the build four times
   # slower (23 minutes against 5).
   #
-  # They are split across three machines, each taking every third screen in
-  # the list, since a hundred and sixty screens one after another took most
-  # of an hour. The App Store's set is the first machine's.
+  # They are split across four machines, since a hundred and sixty screens
+  # one after another took most of an hour: three take every third screen
+  # of the list, and the fourth takes the App Store's set, which needs a
+  # simulator of its own to boot.
   screenshots:
     name: Screenshots (${{ matrix.shard }})
     needs: changes
@@ -109,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2]
+        shard: [0, 1, 2, 3]
     env:
       SHARD: ${{ matrix.shard }}
       SHARD_COUNT: 3
@@ -162,14 +163,15 @@ jobs:
         run: |
           app=build/Build/Products/Debug-iphonesimulator/TeaNode.app
           bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
+          # The machine for the App Store's set boots only the largest phone,
+          # and takes none of the screens of the list (its shard matches no
+          # third of it).
           device=$PHONE
+          if [ "$SHARD" = 3 ]; then
+            device=$LARGEST_PHONE
+          fi
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
-          # The largest phone, for the App Store's set at the end, boots
-          # while the screens below are taken, on the machine that takes it.
-          if [ "$SHARD" = 0 ]; then
-            xcrun simctl boot "$LARGEST_PHONE" &
-          fi
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
           # A screen is taken once it has stopped changing: two looks a
@@ -350,17 +352,12 @@ jobs:
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
 
           # The App Store's set: the largest iPhone, which its listing needs,
-          # with the status bar Apple's own screenshots show. The first
+          # with the status bar Apple's own screenshots show. The fourth
           # machine's, every screen of it.
-          if [ "$SHARD" != 0 ]; then
+          if [ "$SHARD" != 3 ]; then
             exit 0
           fi
           SHARD_COUNT=1 SHARD=0
-          xcrun simctl shutdown "$device"
-          device=$LARGEST_PHONE
-          shown_appearance="" shown_size=""
-          xcrun simctl bootstatus "$device" -b
-          xcrun simctl install "$device" "$app"
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store
           shoot store/1-conversation light large -TeaNodeDemo
