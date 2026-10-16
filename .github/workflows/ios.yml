@@ -93,8 +93,10 @@ jobs:
           -quiet
 
   # The screens, in a job of their own beside the build, so that TestFlight
-  # waits only for the build and the tests. The simulators boot and the
-  # screenshot checks compile while the app builds.
+  # waits only for the build and the tests. The screenshot checks compile
+  # while the app builds; the simulators boot after it, since a booting
+  # simulator's first-run setup took the CPU and made the build four times
+  # slower (23 minutes against 5).
   screenshots:
     name: Screenshots
     needs: changes
@@ -103,7 +105,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Boot the simulators and compile the checks
+      - name: Pick the simulators and compile the checks
         working-directory: ios
         run: |
           pick() {
@@ -118,8 +120,6 @@ jobs:
           largest=$(pick " Pro Max")
           echo "PHONE=$phone" >> "$GITHUB_ENV"
           echo "LARGEST_PHONE=$largest" >> "$GITHUB_ENV"
-          xcrun simctl boot "$phone"
-          xcrun simctl boot "$largest"
           mkdir -p build
           for check in recording device-setup knowledge conversation; do
             swiftc "scripts/assert-$check-screenshot.swift" -o "build/assert-$check-screenshot" &
@@ -152,7 +152,11 @@ jobs:
           app=build/Build/Products/Debug-iphonesimulator/TeaNode.app
           bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
           device=$PHONE
+          xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
+          # The largest phone, for the App Store's set at the end, boots
+          # while the screens below are taken.
+          xcrun simctl boot "$LARGEST_PHONE" &
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
           # A screen is taken once it has stopped changing: two looks a
