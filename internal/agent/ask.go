@@ -991,7 +991,10 @@ func (self *AskRun) turn() error {
 		}
 		_, err = tx.UpdateAgentConversation(settings.Conversation.ID, func(conversation *models.AgentConversation) error {
 			conversation.LastAt = time.Now()
-			if conversation.Surface == "" {
+			// The conversation keeps where its person talks to it. A turn the
+			// agent starts on its own is not that, and its surface would not
+			// fit the column either.
+			if conversation.Surface == "" && !strings.HasPrefix(settings.Surface, speakFirstSurfacePrefix) {
 				conversation.Surface = settings.Surface
 			}
 			return nil
