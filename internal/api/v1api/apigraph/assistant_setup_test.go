@@ -30,6 +30,8 @@ func TestAnAssistantStartsOnAModelWorthTalkingTo(t *testing.T) {
 		{"openai without sol", config.AgentProviderKindOpenAI, false,
 			[]string{"babbage-002", "gpt-4o-mini", "gpt-4o-mini-tts", "gpt-5-mini", "gpt-5-mini-2025-08-07", "text-embedding-3-small"},
 			assistantModels{defaultModel: "gpt-5-mini", embeddingModel: "text-embedding-3-small"}},
+		{"openai with luna and no sol", config.AgentProviderKindOpenAI, false,
+			[]string{"gpt-5-mini", "gpt-6-luna"}, assistantModels{defaultModel: "gpt-5-mini"}},
 		{"openai without the first preferences", config.AgentProviderKindOpenAI, false,
 			[]string{"gpt-4.1-mini", "gpt-4o-mini"}, assistantModels{defaultModel: "gpt-4.1-mini"}},
 		{"openai with none of them", config.AgentProviderKindOpenAI, false,

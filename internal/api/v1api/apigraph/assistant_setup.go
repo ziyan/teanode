@@ -243,6 +243,12 @@ func chooseAssistantModels(kind string, isOwnServer bool, names []string) assist
 		return chosen
 	}
 	chosen.defaultModel = choosePreferred(assistantPreferences[kind], names, isEmbedding)
+	// The fast model hands off to the default, so it is chosen only beside
+	// the default it was chosen for, the service's first preference; a key
+	// that reaches only an older default runs on that alone.
+	if preferences := assistantPreferences[kind]; len(preferences) > 0 && chosen.defaultModel != "" && matchesPattern(preferences[0], chosen.defaultModel) {
+		chosen.fastModel = choosePreferred(fastPreferences[kind], names, isEmbedding)
+	}
 	if chosen.defaultModel == "" {
 		// None of the preferences is offered: the first that talks.
 		for _, name := range names {
@@ -252,7 +258,6 @@ func chooseAssistantModels(kind string, isOwnServer bool, names []string) assist
 			}
 		}
 	}
-	chosen.fastModel = choosePreferred(fastPreferences[kind], names, isEmbedding)
 	chosen.embeddingModel = choosePreferred(embeddingPreferences[kind], names, func(string) bool { return false })
 	return chosen
 }

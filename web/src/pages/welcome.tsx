@@ -13,7 +13,7 @@ import { useTranslation } from '../i18n/i18n'
 const SET_UP = `
   mutation ($kind: String!, $apiKey: String, $baseUrl: String) {
     SetUpAssistant(kind: $kind, apiKey: $apiKey, baseUrl: $baseUrl) {
-      provider defaultModel embeddingModel isAgentOn needsRestart
+      provider defaultModel embeddingModel fastModel isAgentOn needsRestart
     }
   }`
 
@@ -21,10 +21,16 @@ const SET_UP = `
 // AssistantKeyRefused in internal/api/v1api/apigraph/assistant_setup.go.
 const KEY_REFUSED = 'the service refused the key'
 
+// modelName is a chosen model without the provider it is saved under.
+function modelName(chosen: string): string {
+  return chosen.split(':').slice(1).join(':')
+}
+
 type AssistantSetup = {
   provider: string
   defaultModel: string
   embeddingModel: string
+  fastModel: string
   isAgentOn: boolean
   needsRestart: boolean
 }
@@ -136,7 +142,12 @@ export function WelcomePage() {
                 {step.label}
                 {step.stage === 'checking' && setup && (
                   <span className="muted welcome-progress-note">
-                    {t('welcome.chose', { model: setup.defaultModel.split(':').slice(1).join(':') })}
+                    {setup.fastModel
+                      ? t('welcome.choseWithFast', {
+                          model: modelName(setup.defaultModel),
+                          fast: modelName(setup.fastModel),
+                        })
+                      : t('welcome.chose', { model: modelName(setup.defaultModel) })}
                   </span>
                 )}
               </span>
