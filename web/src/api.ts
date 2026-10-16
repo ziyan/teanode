@@ -1116,6 +1116,12 @@ export function openAgentConversation(conversationId: string, draft?: string): b
   return detail.handled
 }
 
+// openAgentDrawer opens the drawer on the conversation it shows, the way
+// its own button does, for a page that offers to talk to the agent.
+export function openAgentDrawer(): boolean {
+  return openAgentConversation('')
+}
+
 // sendToAgentConversation opens a conversation in the drawer and sends a
 // message there as the person's own, so the turn is running when it opens.
 export function sendToAgentConversation(conversationId: string, message: string): boolean {

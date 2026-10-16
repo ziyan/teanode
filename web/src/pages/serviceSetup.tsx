@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { AGENT_TURNED_EVENT } from '../agentPreferences'
-import { graphql, type ServiceCapabilities } from '../api'
+import { graphql, openAgentDrawer, type ServiceCapabilities } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { restartServer } from '../components/serverRestart'
 import { SettingsRow } from '../components/settingsList'
@@ -327,7 +327,16 @@ export function SetupPage() {
         )}
         {setup.runningServices.isAssistantEnabled && isAgentOn && (
           <p>
-            <Link to="/agent">{t('services.try')}</Link>
+            <Link
+              to="/agent"
+              onClick={(event) => {
+                // The drawer is where the conversation is; the agent's page
+                // is only for a server where the drawer is not there.
+                if (openAgentDrawer()) event.preventDefault()
+              }}
+            >
+              {t('services.try')}
+            </Link>
           </p>
         )}
         <p className="muted">{t('services.finishHint')}</p>

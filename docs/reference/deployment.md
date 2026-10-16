@@ -354,7 +354,9 @@ capabilities.
      add a provider with its API key, or the address of your own Ollama or
      vLLM, press **Test**, then choose a **Default** model and save. A
      small, inexpensive model from your provider is a good start (on OpenAI,
-     `gpt-5-mini`); the dropdown has a box to narrow its list.
+     `gpt-5-mini`); type part of a name to narrow the list. An
+     **Embedding** model (on OpenAI, `text-embedding-3-small`) is optional
+     and lets memory be searched by meaning.
    - **Enable the assistant** (Manage → Agents → General): turn on
      **Enabled** and save. Each of these saves says it waits for a restart;
      restart once, at the next step.

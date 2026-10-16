@@ -2795,8 +2795,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
-      if (!available || !detail?.conversationId) return
+      if (!available || !detail) return
       detail.handled = true
+      // Asked to open with no conversation named: open on the one it shows.
+      if (!detail.conversationId) {
+        setOpen(true)
+        remember(OPEN_KEY, '1')
+        setTimeout(() => input.current?.focus(), 50)
+        return
+      }
       if (detail.draft) {
         remember(draftKey(detail.conversationId), detail.draft)
         draftLoadedFor.current = ''
