@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 
@@ -61,7 +62,8 @@ type AssistantSetupMutation interface {
 }
 
 func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantArguments) (*AssistantSetup, error) {
-	if _, err := self.requirePermission(ctx, models.PermissionServerManage); err != nil {
+	principal, err := self.requirePermission(ctx, models.PermissionServerManage)
+	if err != nil {
 		return nil, err
 	}
 	kind := strings.TrimSpace(arguments.Kind)
@@ -102,7 +104,13 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 	}
 	defaultModel, embeddingModel := chooseAssistantModels(kind, isOwnServer, names)
 	if chosen := strings.TrimSpace(valueOf(arguments.Model)); chosen != "" {
-		defaultModel = strings.TrimPrefix(chosen, name+":")
+		// Checked against what the key reaches, like the key itself: a
+		// misspelled model would otherwise be saved and fail every turn.
+		chosen = strings.TrimPrefix(chosen, name+":")
+		if !slices.Contains(names, chosen) {
+			return nil, fmt.Errorf("%w: %s does not offer %s", api.ErrInvalidArguments, name, chosen)
+		}
+		defaultModel = chosen
 	}
 	if defaultModel == "" {
 		return nil, fmt.Errorf("%w: %s offers no model to talk to", api.ErrInvalidArguments, name)
@@ -111,14 +119,26 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 	result := &AssistantSetup{Provider: name, DefaultModel: name + ":" + defaultModel}
 	isChanged := false
 	if err := self.config.Update(func(configuration *config.Configuration) error {
+		// Update runs this again when the configuration changed under it,
+		// so nothing from an earlier attempt is kept.
+		result.EmbeddingModel = ""
 		before := []any{configuration.Agent.Enabled, append([]config.AgentProvider(nil), configuration.Agent.Providers...), configuration.Agent.Models}
 		replaced := false
 		for index := range configuration.Agent.Providers {
 			if configuration.Agent.Providers[index].Name == name {
-				// What is not asked here, such as prices or the models it may
-				// offer, is kept from the provider already saved.
+				// Prices are kept from the provider already saved. Whatever
+				// could stop the chosen model from being used is not: the
+				// provider switched off, a filter that hides the model, or
+				// a sign-in or billing key that belonged to another kind.
 				saved := &configuration.Agent.Providers[index]
+				if saved.Kind != provider.Kind {
+					saved.BillingAPIKey, saved.RefreshToken, saved.Account = "", "", ""
+				}
 				saved.Kind, saved.BaseURL, saved.APIKey = provider.Kind, provider.BaseURL, provider.APIKey
+				saved.Enabled = nil
+				if !saved.Models.Admits(defaultModel) {
+					saved.Models = config.AgentProviderModels{}
+				}
 				replaced = true
 			}
 		}
@@ -145,8 +165,11 @@ func (self *graph) SetUpAssistant(ctx context.Context, arguments SetUpAssistantA
 
 	// Somebody who may run the server but not use an agent still sets one up
 	// for everybody else; theirs is simply not turned on.
-	enabled := true
-	if _, err := self.UpdateAgent(ctx, UpdateAgentArguments{Enabled: &enabled}); err == nil {
+	if principal.Permissions.Has(models.PermissionAgentUse) {
+		enabled := true
+		if _, err := self.UpdateAgent(ctx, UpdateAgentArguments{Enabled: &enabled}); err != nil {
+			return nil, err
+		}
 		result.IsAgentOn = true
 	}
 	return result, nil
@@ -222,7 +245,7 @@ func choosePreferred(preferences []string, names []string, isSkipped func(string
 		}
 		var matches []string
 		for _, name := range names {
-			if !isSkipped(name) && matchesPattern(preference, name) && !strings.Contains(name, "preview") && !strings.Contains(name, "exp") {
+			if !isSkipped(name) && matchesPattern(preference, name) && !strings.Contains(name, "preview") && !strings.Contains(name, "-exp") {
 				matches = append(matches, name)
 			}
 		}

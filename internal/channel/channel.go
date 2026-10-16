@@ -600,20 +600,7 @@ func (self *chatState) mainConversation(found *models.Agent) (*models.AgentConve
 // named one, due for a title.
 func (self *chatState) freshMain(found *models.Agent) error {
 	return self.manager.settings.Database.Transaction(func(tx db.Transaction) error {
-		conversations, err := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationMain}, &db.Options{Limit: 1})
-		if err != nil {
-			return err
-		}
-		for _, previous := range conversations {
-			if _, err := tx.UpdateAgentConversation(previous.ID, func(conversation *models.AgentConversation) error {
-				conversation.Kind = models.AgentConversationNamed
-				conversation.DescribedAt = nil
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		_, err = tx.CreateAgentConversation(&models.AgentConversation{AgentID: found.ID, Kind: models.AgentConversationMain, LastAt: time.Now()})
+		_, err := tx.FreshMainAgentConversation(found.ID, "")
 		return err
 	})
 }

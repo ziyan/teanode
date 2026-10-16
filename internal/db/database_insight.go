@@ -53,6 +53,9 @@ type InsightOperation interface {
 	// MainAgentConversation is the agent's one continuous conversation,
 	// made with the given surface the first time it is needed.
 	MainAgentConversation(agentId string, surface string) (*models.AgentConversation, error)
+	// FreshMainAgentConversation starts a new main conversation; the old one
+	// becomes a named one, due for a title.
+	FreshMainAgentConversation(agentId string, surface string) (*models.AgentConversation, error)
 	GetAgentConversation(conversationId string) (*models.AgentConversation, error)
 
 	// FindAgentConversationBySubject is the newest conversation of a kind
@@ -510,6 +513,28 @@ func (self *transaction) MainAgentConversation(agentId string, surface string) (
 	}
 	if len(conversations) > 0 {
 		return conversations[0], nil
+	}
+	return self.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, Surface: surface, LastAt: time.Now()})
+}
+
+// FreshMainAgentConversation takes the same lock as MainAgentConversation,
+// so two at once cannot each demote the old main and leave two new ones.
+func (self *transaction) FreshMainAgentConversation(agentId string, surface string) (*models.AgentConversation, error) {
+	if err := lockRow(self.tx, &agentModel{}, agentId); err != nil {
+		return nil, err
+	}
+	conversations, err := self.ListAgentConversations(agentId, []models.AgentConversationKind{models.AgentConversationMain}, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, previous := range conversations {
+		if _, err := self.UpdateAgentConversation(previous.ID, func(conversation *models.AgentConversation) error {
+			conversation.Kind = models.AgentConversationNamed
+			conversation.DescribedAt = nil
+			return nil
+		}); err != nil {
+			return nil, err
+		}
 	}
 	return self.CreateAgentConversation(&models.AgentConversation{AgentID: agentId, Kind: models.AgentConversationMain, Surface: surface, LastAt: time.Now()})
 }

@@ -395,43 +395,53 @@ func TestTheMainConversationIsMadeOnceWhenAskedForTogether(t *testing.T) {
 
 	// Every asker is inside its own transaction before any of them asks, so
 	// each would find none if nothing made them take turns.
-	const askers = 8
-	found := make(chan string, askers)
-	var group, inside sync.WaitGroup
-	inside.Add(askers)
-	for range askers {
-		group.Add(1)
-		go func() {
-			defer group.Done()
-			if err := database.Transaction(func(tx db.Transaction) error {
-				if _, err := tx.GetAgent(agent.ID); err != nil {
+	together := func(name string, ask func(db.Transaction) (*models.AgentConversation, error)) map[string]bool {
+		const askers = 8
+		found := make(chan string, askers)
+		var group, inside sync.WaitGroup
+		inside.Add(askers)
+		for range askers {
+			group.Add(1)
+			go func() {
+				defer group.Done()
+				if err := database.Transaction(func(tx db.Transaction) error {
+					if _, err := tx.GetAgent(agent.ID); err != nil {
+						return err
+					}
+					inside.Done()
+					inside.Wait()
+					conversation, err := ask(tx)
+					if err == nil {
+						found <- conversation.ID
+					}
 					return err
+				}); err != nil {
+					t.Errorf("%s: %s", name, err)
 				}
-				inside.Done()
-				inside.Wait()
-				conversation, err := tx.MainAgentConversation(agent.ID, "")
-				if err == nil {
-					found <- conversation.ID
-				}
-				return err
-			}); err != nil {
-				t.Errorf("MainAgentConversation: %s", err)
+			}()
+		}
+		group.Wait()
+		close(found)
+		distinct := map[string]bool{}
+		for conversationId := range found {
+			distinct[conversationId] = true
+		}
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			main, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
+			if err != nil || len(main) != 1 {
+				t.Fatalf("%s: one main conversation stored: %d %v", name, len(main), err)
 			}
-		}()
+		})
+		return distinct
 	}
-	group.Wait()
-	close(found)
-	distinct := map[string]bool{}
-	for conversationId := range found {
-		distinct[conversationId] = true
-	}
-	if len(distinct) != 1 {
+	if distinct := together("MainAgentConversation", func(tx db.Transaction) (*models.AgentConversation, error) {
+		return tx.MainAgentConversation(agent.ID, "")
+	}); len(distinct) != 1 {
 		t.Fatalf("one main conversation, found %d", len(distinct))
 	}
-	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		main, err := tx.ListAgentConversations(agent.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
-		if err != nil || len(main) != 1 {
-			t.Fatalf("one main conversation stored: %d %v", len(main), err)
-		}
+	// Starting afresh at once from several places still leaves one main
+	// conversation, each of the others kept as a named one.
+	together("FreshMainAgentConversation", func(tx db.Transaction) (*models.AgentConversation, error) {
+		return tx.FreshMainAgentConversation(agent.ID, "")
 	})
 }

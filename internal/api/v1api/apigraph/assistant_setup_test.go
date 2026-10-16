@@ -63,7 +63,7 @@ func TestTheAssistantIsSetUpInOneStep(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(writer).Encode(map[string]any{"object": "list", "data": []map[string]any{
-			{"id": "nomic-embed-text", "object": "model"}, {"id": "llama3.2", "object": "model"},
+			{"id": "nomic-embed-text", "object": "model"}, {"id": "llama3.2", "object": "model"}, {"id": "qwen2.5", "object": "model"},
 		}})
 	}))
 	defer modelServer.Close()
@@ -89,6 +89,12 @@ func TestTheAssistantIsSetUpInOneStep(t *testing.T) {
 		}
 		principal := &api.Principal{User: user, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionServerManage}, {Permission: models.PermissionAgentUse}})}
 		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(t.Context(), principal), transaction)
+
+		// Only somebody who may run the server sets it up.
+		visitor := &api.Principal{User: user, Permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}})}
+		if _, err := resolver.SetUpAssistant(api.ContextWithTransaction(api.ContextWithPrincipal(t.Context(), visitor), transaction), SetUpAssistantArguments{Kind: config.AgentProviderKindOpenAI, BaseURL: &address}); err == nil {
+			t.Fatal("somebody without server:manage set up the assistant")
+		}
 
 		if _, err := resolver.SetUpAssistant(ctx, SetUpAssistantArguments{Kind: config.AgentProviderKindOpenAI, BaseURL: &address, APIKey: &refused}); err == nil || !strings.Contains(err.Error(), AssistantKeyRefused) {
 			t.Fatalf("a refused key was not reported as refused: %v", err)
@@ -123,6 +129,35 @@ func TestTheAssistantIsSetUpInOneStep(t *testing.T) {
 		}
 		if current := store.Current().Agent; len(current.Providers) != 1 || current.Models.Default != "local:qwen2.5" {
 			t.Errorf("setting up again gave %+v", current)
+		}
+
+		// A model the server does not offer is refused, not saved.
+		misspelled := "qwen9"
+		if _, err := resolver.SetUpAssistant(ctx, SetUpAssistantArguments{Kind: config.AgentProviderKindOpenAI, BaseURL: &address, Model: &misspelled}); err == nil {
+			t.Error("a model the server does not offer was accepted")
+		}
+
+		// A saved provider that was switched off, with a filter hiding the
+		// model, is switched back on and the filter dropped; its prices stay.
+		// Agents and its models were switched off with it, as the
+		// configuration requires.
+		if err := store.Update(func(configuration *config.Configuration) error {
+			saved := &configuration.Agent.Providers[0]
+			saved.Enabled = new(false)
+			saved.Models = config.AgentProviderModels{Allow: []string{"nomic-*"}}
+			saved.Pricing.Input = 1
+			configuration.Agent.Enabled = false
+			configuration.Agent.Models = config.AgentModels{}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := resolver.SetUpAssistant(ctx, SetUpAssistantArguments{Kind: config.AgentProviderKindOpenAI, BaseURL: &address}); err != nil {
+			t.Fatal(err)
+		}
+		saved := store.Current().Agent.Providers[0]
+		if !saved.IsEnabled() || len(saved.Models.Allow) != 0 || saved.Pricing.Input != 1 {
+			t.Errorf("the saved provider became %+v", saved)
 		}
 	})
 }
