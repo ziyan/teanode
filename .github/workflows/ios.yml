@@ -92,6 +92,57 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           -quiet
 
+  # The screens, in a job of their own beside the build, so that TestFlight
+  # waits only for the build and the tests. The simulators boot and the
+  # screenshot checks compile while the app builds.
+  screenshots:
+    name: Screenshots
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Boot the simulators and compile the checks
+        working-directory: ios
+        run: |
+          pick() {
+            xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                    if device["name"].startswith("iPhone") and device["name"].endswith(sys.argv[1])]
+          print(phones[-1]["udid"])' "$1"
+          }
+          phone=$(pick " Pro")
+          largest=$(pick " Pro Max")
+          echo "PHONE=$phone" >> "$GITHUB_ENV"
+          echo "LARGEST_PHONE=$largest" >> "$GITHUB_ENV"
+          xcrun simctl boot "$phone"
+          xcrun simctl boot "$largest"
+          mkdir -p build
+          for check in recording device-setup knowledge conversation; do
+            swiftc "scripts/assert-$check-screenshot.swift" -o "build/assert-$check-screenshot" &
+          done
+          wait
+
+      - name: Generate the project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build for the simulator
+        working-directory: ios
+        run: >
+          xcodebuild build
+          -project TeaNode.xcodeproj
+          -scheme TeaNode
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+
       # What the screens look like, for the review ios/DESIGN.md asks for:
       # the connect screen, and a conversation of invented data from the
       # debug build's demo server, in light, dark and the largest text size.
@@ -100,29 +151,44 @@ jobs:
         run: |
           app=build/Build/Products/Debug-iphonesimulator/TeaNode.app
           bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
-          device=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          runtimes = json.load(sys.stdin)["devices"]
-          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
-                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro")]
-          print(phones[-1]["udid"])')
-          xcrun simctl boot "$device"
+          device=$PHONE
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
-          swiftc scripts/assert-recording-screenshot.swift -o build/assert-recording-screenshot
-          swiftc scripts/assert-device-setup-screenshot.swift -o build/assert-device-setup-screenshot
-          swiftc scripts/assert-knowledge-screenshot.swift -o build/assert-knowledge-screenshot
-          swiftc scripts/assert-conversation-screenshot.swift -o build/assert-conversation-screenshot
+          # A screen is taken once it has stopped changing: two looks a
+          # second apart that are the same, after two seconds at least and
+          # twelve at most. It was a fixed eight seconds, most of a shot.
+          settle() {
+            target=$1
+            previous="$RUNNER_TEMP/settle-previous.png"
+            sleep 2
+            xcrun simctl io "$device" screenshot "$previous" >/dev/null 2>&1
+            for look in {1..10}; do
+              sleep 1
+              xcrun simctl io "$device" screenshot "$target" >/dev/null 2>&1
+              if cmp -s "$previous" "$target"; then
+                return
+              fi
+              cp "$target" "$previous"
+            done
+          }
+          # The appearance and the text size are set only when they change:
+          # each change redraws the whole simulator.
+          shown_appearance="" shown_size=""
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
-            xcrun simctl ui "$device" appearance "$appearance"
-            xcrun simctl ui "$device" content_size "$size"
+            if [ "$appearance" != "$shown_appearance" ]; then
+              xcrun simctl ui "$device" appearance "$appearance"
+              shown_appearance=$appearance
+            fi
+            if [ "$size" != "$shown_size" ]; then
+              xcrun simctl ui "$device" content_size "$size"
+              shown_size=$size
+            fi
             xcrun simctl terminate "$device" "$bundle" 2>/dev/null || true
             xcrun simctl launch "$device" "$bundle" "$@"
-            sleep 8
-            xcrun simctl io "$device" screenshot "screenshots/$name.png"
+            settle "screenshots/$name.png"
             case "$name" in
               recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*)
                 # The screen may still be loading its demo answers: look
@@ -262,13 +328,8 @@ jobs:
           # The App Store's set: the largest iPhone, which its listing needs,
           # with the status bar Apple's own screenshots show.
           xcrun simctl shutdown "$device"
-          device=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          runtimes = json.load(sys.stdin)["devices"]
-          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
-                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro Max")]
-          print(phones[-1]["udid"])')
-          xcrun simctl boot "$device"
+          device=$LARGEST_PHONE
+          shown_appearance="" shown_size=""
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
