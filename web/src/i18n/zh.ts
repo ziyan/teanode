@@ -4595,6 +4595,7 @@ export const zh: Catalog = {
   'welcome.working': '正在启动你的助手，不到一分钟。',
   'welcome.checking': '检查密钥并选择模型',
   'welcome.chose': '{model}，可以在“管理”的“助手”下的“模型”里更改',
+  'welcome.choseWithFast': '{model}，后台的小任务用 {fast}，可以在“管理”的“助手”下的“模型”里更改',
   'welcome.starting': '启动助手',
   'welcome.opening': '打开你的对话',
   'welcome.restartFailed': 'TeaNode 没有自己重新启动。请在它运行的地方重启它，例如在它的目录里运行 docker compose restart，然后继续。',

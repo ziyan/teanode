@@ -105,6 +105,9 @@ func runServicesAssistant(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(setup)
 	}
 	fmt.Printf("provider    %s\ndefault     %s\n", setup.Provider, setup.DefaultModel)
+	if setup.FastModel != "" {
+		fmt.Printf("fast        %s\n", setup.FastModel)
+	}
 	if setup.EmbeddingModel != "" {
 		fmt.Printf("embedding   %s\n", setup.EmbeddingModel)
 	}

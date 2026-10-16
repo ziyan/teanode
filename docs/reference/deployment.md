@@ -351,9 +351,10 @@ capabilities.
    with. Choose OpenAI, Anthropic or Gemini and paste its API key, or
    choose **Your own server** and give the address of an Ollama or vLLM as
    this server reaches it, and press **Start my assistant**. It checks the
-   key, chooses a model (on OpenAI, `gpt-5-mini`, and an embedding model
-   where the service has one), enables the assistant, turns on your own
-   agent, restarts itself and opens the conversation. The same from a
+   key, chooses the models (on OpenAI, the newest `sol` to think with, the
+   newest `luna` for small background jobs, and an embedding model where
+   the service has one), enables the assistant, turns on your own agent,
+   restarts itself and opens the conversation. The same from a
    terminal: `teanode services assistant --kind openai --restart`.
 
 What it chose can be changed under Manage → Agents → Models; a ChatGPT plan

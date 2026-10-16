@@ -18,33 +18,36 @@ import (
 // long list, and on an embedding model where it has one.
 func TestAnAssistantStartsOnAModelWorthTalkingTo(t *testing.T) {
 	cases := []struct {
-		name           string
-		kind           string
-		isOwnServer    bool
-		names          []string
-		defaultModel   string
-		embeddingModel string
+		name        string
+		kind        string
+		isOwnServer bool
+		names       []string
+		want        assistantModels
 	}{
 		{"openai", config.AgentProviderKindOpenAI, false,
-			[]string{"babbage-002", "gpt-4o-mini", "gpt-4o-mini-tts", "gpt-5-mini", "gpt-5-mini-2025-08-07", "text-embedding-3-large", "text-embedding-3-small"},
-			"gpt-5-mini", "text-embedding-3-small"},
-		{"openai without the first preference", config.AgentProviderKindOpenAI, false,
-			[]string{"gpt-4.1-mini", "gpt-4o-mini"}, "gpt-4.1-mini", ""},
+			[]string{"babbage-002", "gpt-5-mini", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "text-embedding-3-large", "text-embedding-3-small"},
+			assistantModels{defaultModel: "gpt-6.1-sol", fastModel: "gpt-6-luna", embeddingModel: "text-embedding-3-small"}},
+		{"openai without sol", config.AgentProviderKindOpenAI, false,
+			[]string{"babbage-002", "gpt-4o-mini", "gpt-4o-mini-tts", "gpt-5-mini", "gpt-5-mini-2025-08-07", "text-embedding-3-small"},
+			assistantModels{defaultModel: "gpt-5-mini", embeddingModel: "text-embedding-3-small"}},
+		{"openai with luna and no sol", config.AgentProviderKindOpenAI, false,
+			[]string{"gpt-5-mini", "gpt-6-luna"}, assistantModels{defaultModel: "gpt-5-mini"}},
+		{"openai without the first preferences", config.AgentProviderKindOpenAI, false,
+			[]string{"gpt-4.1-mini", "gpt-4o-mini"}, assistantModels{defaultModel: "gpt-4.1-mini"}},
 		{"openai with none of them", config.AgentProviderKindOpenAI, false,
-			[]string{"babbage-002", "gpt-4o-mini-tts", "some-chat-model"}, "some-chat-model", ""},
+			[]string{"babbage-002", "gpt-4o-mini-tts", "some-chat-model"}, assistantModels{defaultModel: "some-chat-model"}},
 		{"anthropic", config.AgentProviderKindAnthropic, false,
 			[]string{"claude-haiku-4-5-20251001", "claude-sonnet-4-20250514", "claude-sonnet-4-5-20250929"},
-			"claude-sonnet-4-5-20250929", ""},
+			assistantModels{defaultModel: "claude-sonnet-4-5-20250929"}},
 		{"gemini", config.AgentProviderKindGemini, false,
 			[]string{"gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-preview-05-20", "gemini-2.5-pro", "gemini-embedding-001"},
-			"gemini-2.5-flash", "gemini-embedding-001"},
+			assistantModels{defaultModel: "gemini-2.5-flash", embeddingModel: "gemini-embedding-001"}},
 		{"a server of one's own", config.AgentProviderKindOpenAI, true,
-			[]string{"nomic-embed-text", "llama3.2", "qwen2.5"}, "llama3.2", "nomic-embed-text"},
+			[]string{"nomic-embed-text", "llama3.2", "qwen2.5"}, assistantModels{defaultModel: "llama3.2", embeddingModel: "nomic-embed-text"}},
 	}
 	for _, each := range cases {
-		defaultModel, embeddingModel := chooseAssistantModels(each.kind, each.isOwnServer, each.names)
-		if defaultModel != each.defaultModel || embeddingModel != each.embeddingModel {
-			t.Errorf("%s: chose %q and %q, want %q and %q", each.name, defaultModel, embeddingModel, each.defaultModel, each.embeddingModel)
+		if chosen := chooseAssistantModels(each.kind, each.isOwnServer, each.names); chosen != each.want {
+			t.Errorf("%s: chose %+v, want %+v", each.name, chosen, each.want)
 		}
 	}
 }
