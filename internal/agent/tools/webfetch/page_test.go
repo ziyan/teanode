@@ -88,6 +88,23 @@ func TestALongPageComesAPartAtATime(t *testing.T) {
 	}
 }
 
+// A page read as sent that runs scripts says they may add more, so a video
+// they add is asked for rather than missed; one without scripts, or asked
+// not to run them, says nothing.
+func TestAPageReadAsSentSaysItsScriptsMayAddMore(t *testing.T) {
+	withScripts := readHTML(`<html><head><script type="module" src="/start.js"></script></head><body><p>Every step is written here.</p></body></html>`, nil)
+	without := readHTML(`<html><body><p>Every step is written here.</p></body></html>`, nil)
+	if note := asSentNote("auto", withScripts); !strings.Contains(note, "render always") {
+		t.Errorf("with scripts: %q", note)
+	}
+	if note := asSentNote("never", withScripts); note != "" {
+		t.Errorf("asked never: %q", note)
+	}
+	if note := asSentNote("auto", without); note != "" {
+		t.Errorf("without scripts: %q", note)
+	}
+}
+
 // Through a computer the scripts are not run, and the answer says so
 // rather than passing off the empty page as all there is.
 func TestThroughAComputerAPageOfScriptsSaysSo(t *testing.T) {

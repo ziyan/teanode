@@ -143,6 +143,11 @@ func runWebFetch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 				}
 			}
 		}
+		if result["rendered"] == nil && result["render_note"] == nil && through == "" {
+			if note := asSentNote(arguments.Render, read); note != "" {
+				result["render_note"] = note
+			}
+		}
 		result["title"] = read.title
 		if len(read.media) > 0 {
 			result["media"] = read.media

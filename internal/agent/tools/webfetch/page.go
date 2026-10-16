@@ -155,6 +155,16 @@ func wantsRendering(render string, read readPage) bool {
 	return read.hasScripts && utf8.RuneCountInString(read.text) < thinTextCharacters
 }
 
+// asSentNote is what to say of a page read as sent that runs scripts: they
+// may add more than it sent, a video, a gallery, the rest of an article.
+// Empty when it runs none, or when asked not to run them.
+func asSentNote(render string, read readPage) string {
+	if !read.hasScripts || render == "never" {
+		return ""
+	}
+	return "read as the server sent it; the page runs scripts, and render always reads what they add, such as a video"
+}
+
 // renderPage opens an address in a page of its own in the server's
 // headless browser, waits for its scripts to settle, and is the HTML they
 // built and the address it ended on.
