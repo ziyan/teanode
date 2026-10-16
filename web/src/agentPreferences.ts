@@ -51,15 +51,15 @@ export function writeAgentPreferences(next: Partial<AgentPreferences>) {
   window.dispatchEvent(new Event(CHANGED))
 }
 
+// AGENT_TURNED_EVENT is announced by a page that turned somebody's own agent
+// on or off, so the drawer asks again rather than waiting for a reload.
+export const AGENT_TURNED_EVENT = 'teanode:agent-turned'
+
 // Whether there is an agent to show anything for, told by the drawer once
 // it knows, so that the menu offers the switches only where they mean
 // something. The agent's name comes with it, for the rail's row that opens
 // its conversations: the drawer has already asked, and asking again from
 // the rail would be a second request for the same answer.
-// AGENT_TURNED_EVENT is announced by a page that turned somebody's own agent
-// on or off, so the drawer asks again rather than waiting for a reload.
-export const AGENT_TURNED_EVENT = 'teanode:agent-turned'
-
 let agentAvailable = false
 let agentName = ''
 const AVAILABLE = 'teanode:agent-available'
