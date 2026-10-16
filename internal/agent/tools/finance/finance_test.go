@@ -33,8 +33,7 @@ func operationRule(operation string) string {
 
 // The tool operations that stand for more than one call, act on a source
 // through the operations every source has, answer with where to go, or
-// take fewer arguments than the operation they call (import_statement takes
-// a message, never an uploaded file, whose id the model is not shown).
+// take fewer arguments than the operation they call.
 var spanningOperations = map[string][]string{
 	"import_statement":  {"ImportStatement"},
 	"link_plaid":        {"CreateFinanceLinkToken", "CompleteFinanceLink"},
@@ -49,7 +48,7 @@ var spanningOperations = map[string][]string{
 	"delete_source":          {},
 	// Says where the person deletes an imported account.
 	"delete_statement_account": {},
-	// A message only, never an uploaded file, as import_statement.
+	// A message only, never an uploaded file.
 	"read_receipt": {"ReadReceipt"},
 }
 
@@ -866,8 +865,37 @@ func TestFinanceToolImportsAStatementFromAMessage(test *testing.T) {
 			test.Error("the import was sent for a mailbox not granted")
 		}
 	}
-	if _, err := call(test, &fakeOperations{}, `{"operation":"import_statement","agent_attachment_id":"attachment-one"}`); err == nil {
-		test.Error("an uploaded file's id was taken")
+	if _, err := call(test, &fakeOperations{}, `{"operation":"import_statement"}`); err == nil {
+		test.Error("an import with neither a file nor a message was sent")
+	}
+	if _, err := call(test, &fakeOperations{}, `{"operation":"import_statement","agent_attachment_id":"attachment-one","mailbox_item_id":"item-one"}`); err == nil {
+		test.Error("an import with both a file and a message was sent")
+	}
+}
+
+// import_statement imports a file the person sent in the chat by its
+// attachment id, without asking for a message; the server checks the file
+// is this agent's own.
+func TestFinanceToolImportsAStatementSentInTheChat(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{answers: map[string]string{"ImportStatement": `{"addedTransactionCount":2,"financeAccountNames":["Invented Card ··c3d4"]}`}}
+	result, err := call(test, operations, `{"operation":"import_statement","agent_attachment_id":"attachment-one"}`)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "Invented Card") {
+		test.Errorf("%+v", result)
+	}
+	if len(operations.documents) != 1 || !strings.Contains(operations.documents[0], "ImportStatement(") {
+		test.Errorf("sent %v", operations.documents)
+	}
+	if sent := operations.variables[0]; len(sent) != 1 || sent["agentAttachmentId"] != "attachment-one" {
+		test.Errorf("sent %v", sent)
+	}
+	// The card says where the file came from: the chat, not a message.
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: &fakeOperations{}})
+	if card := financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"import_statement","agent_attachment_id":"attachment-one"}`)); !strings.Contains(card, "sent in the chat") {
+		test.Errorf("the card says %q", card)
 	}
 }
 
