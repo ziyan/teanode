@@ -2253,6 +2253,8 @@ struct AgentScheduleEditor: View {
 /// they muted, each unmuted again.
 struct MutedAlertsView: View {
     let connection: Connection
+    /// Opens scrolled to what the agent is following, below the alerts.
+    var focusesFollowing = false
     @State private var preferences: AgentUpkeepPreferences?
     @State private var isAgentRead = false
     @State private var isAgentMissing = false
@@ -2271,16 +2273,23 @@ struct MutedAlertsView: View {
     @State private var problemText: String?
 
     var body: some View {
-        List {
-            if isAgentMissing {
-                ContentUnavailableView("Your agent is off", systemImage: "bell.slash", description: Text("Turn it on in its overview first."))
-            } else {
-                settingsSection
-                if preferences?.isRunning == true {
-                    alertsSection
-                    followingSection
-                    mutesSection
+        ScrollViewReader { scrollProxy in
+            List {
+                if isAgentMissing {
+                    ContentUnavailableView("Your agent is off", systemImage: "bell.slash", description: Text("Turn it on in its overview first."))
+                } else {
+                    settingsSection
+                    if preferences?.isRunning == true {
+                        alertsSection
+                        followingSection.id(Self.followingId)
+                        mutesSection
+                    }
                 }
+            }
+            .task(id: followUps?.count) {
+                guard focusesFollowing, followUps != nil else { return }
+                try? await Task.sleep(for: .milliseconds(200))
+                scrollProxy.scrollTo(Self.followingId, anchor: .top)
             }
         }
         .navigationTitle("Alerts")
@@ -2377,6 +2386,8 @@ struct MutedAlertsView: View {
             Text("What your agent told you unasked, newest first, with the messages each was about. Mute one to stop hearing about things like it.")
         }
     }
+
+    private static let followingId = "alerts-following"
 
     @ViewBuilder
     private var followingSection: some View {

@@ -520,6 +520,7 @@ struct SettingsForm: View {
                     }
                 case "dreams": DreamsView(connection: connection)
                 case "alerts": MutedAlertsView(connection: connection)
+                case "alerts-following": MutedAlertsView(connection: connection, focusesFollowing: true)
                 case "activity-run": AgentActivityView(connection: connection)
                 case "schedules": SchedulesView(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
