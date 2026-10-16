@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.168.1] - 2026-10-16
+
+### Fixed
+
+- A video or sound the agent sends plays in the iPhone chat instead of showing a crossed-out play button. (#523)
+
 ## [0.168.0] - 2026-10-16
 
 ### Added
