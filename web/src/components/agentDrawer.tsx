@@ -79,7 +79,7 @@ import {
   withReaction,
   type AgentMessageReaction,
 } from './agentReactions'
-import { announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
+import { AGENT_TURNED_EVENT, announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
 
@@ -2463,26 +2463,32 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const filePicker = useRef<HTMLInputElement>(null)
   useFitToContent(input, draft, open)
 
-  // Whether there is an agent to talk to at all. Asked once; the button
-  // stays hidden otherwise, which is most servers.
+  // Whether there is an agent to talk to at all. Asked when the page loads,
+  // and again when a page says the person turned theirs on or off; the
+  // button stays hidden otherwise, which is most servers.
   useEffect(() => {
     let cancelled = false
-    graphql<{
-      ReadAgent: { agent?: { enabled: boolean; name: string } | null; allowed: { enabled: boolean; ask: boolean } }
-    }>(AGENT)
-      .then((response) => {
-        if (cancelled) return
-        const view = response.ReadAgent
-        const usable = Boolean(view.agent?.enabled && view.allowed.enabled && view.allowed.ask)
-        setAvailable(usable)
-        announceAgentAvailable(usable, view.agent?.name?.trim() ?? '')
-        setAgentName(view.agent?.name ?? '')
-      })
-      .catch(() => {
-        if (!cancelled) setAvailable(false)
-      })
+    const check = () => {
+      graphql<{
+        ReadAgent: { agent?: { enabled: boolean; name: string } | null; allowed: { enabled: boolean; ask: boolean } }
+      }>(AGENT)
+        .then((response) => {
+          if (cancelled) return
+          const view = response.ReadAgent
+          const usable = Boolean(view.agent?.enabled && view.allowed.enabled && view.allowed.ask)
+          setAvailable(usable)
+          announceAgentAvailable(usable, view.agent?.name?.trim() ?? '')
+          setAgentName(view.agent?.name ?? '')
+        })
+        .catch(() => {
+          if (!cancelled) setAvailable(false)
+        })
+    }
+    check()
+    window.addEventListener(AGENT_TURNED_EVENT, check)
     return () => {
       cancelled = true
+      window.removeEventListener(AGENT_TURNED_EVENT, check)
     }
   }, [])
 
@@ -2789,8 +2795,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
-      if (!available || !detail?.conversationId) return
+      if (!available || !detail) return
       detail.handled = true
+      // Asked to open with no conversation named: open on the one it shows.
+      if (!detail.conversationId) {
+        setOpen(true)
+        remember(OPEN_KEY, '1')
+        setTimeout(() => input.current?.focus(), 50)
+        return
+      }
       if (detail.draft) {
         remember(draftKey(detail.conversationId), detail.draft)
         draftLoadedFor.current = ''

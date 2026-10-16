@@ -138,6 +138,36 @@ func TestTheAgentIntroducesItselfToAPersonWhoIsThere(t *testing.T) {
 	}
 }
 
+// A main conversation the person opened before anything was said in it
+// has no surface yet; the greeting goes into it all the same.
+func TestTheAgentIntroducesItselfInAConversationNobodyHasSpokenIn(t *testing.T) {
+	world := newSpeakFirstWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.CreateAgentConversation(&models.AgentConversation{AgentID: world.agent.ID, Kind: models.AgentConversationMain, LastAt: time.Now()}); err != nil {
+			t.Fatalf("CreateAgentConversation: %s", err)
+		}
+	})
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.tick(t)
+
+	jobs := world.speakFirstJobs(t)
+	if len(jobs) != 1 || jobs[0].Status != models.AgentJobDone {
+		t.Fatalf("one onboarding job, done: %+v", jobs)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		main, _ := tx.ListAgentConversations(world.agent.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
+		if len(main) != 1 {
+			t.Fatalf("one main conversation: %d", len(main))
+		}
+		if main[0].Surface != "" {
+			t.Fatalf("the agent's own turn leaves the surface to the person: %q", main[0].Surface)
+		}
+		if messages, _ := tx.ListAgentMessages(main[0].ID, nil); len(messages) != 2 {
+			t.Fatalf("the greeting was said: %+v", messages)
+		}
+	})
+}
+
 // Nobody there, nobody greeted.
 func TestTheAgentDoesNotSpeakFirstToSomebodyWhoIsAway(t *testing.T) {
 	world := newSpeakFirstWorld(t)

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../../api'
-import { SaveRow, announceSaved } from '../../components/common'
+import { RESTART_PATH, SaveRow, announceSaved } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { PencilIcon, TrashIcon } from '../../components/icons'
 import { Select } from '../../components/select'
@@ -235,6 +236,11 @@ const FINANCE_PROVIDERS = ['plaid', 'simplefin'] as const
 const PLAID_PRODUCTS = ['transactions', 'investments', 'liabilities'] as const
 
 const BASE_MODELS = ['default', 'fast', 'quick', 'embedding'] as const
+
+// Model names that are not for conversation, as providers name them.
+const NOT_CONVERSATION =
+  /embed|tts|transcribe|whisper|dall-e|image|audio|realtime|moderation|search-preview|deep-research|babbage|davinci|sora|computer-use/i
+const EMBEDDING = /embed/i
 const WORK_MODELS = [
   'triage',
   'research',
@@ -268,12 +274,13 @@ function messageOf(caught: unknown): string {
 function useSectionSave(onSaved: () => Promise<unknown> | unknown) {
   const { t } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   async function save(values: Record<string, unknown>): Promise<boolean> {
     setBusy(true)
     try {
       await graphql(UPDATE, { agent: values })
-      await announceSaved(toast, t)
+      await announceSaved(toast, t, () => navigate(RESTART_PATH))
       await onSaved()
       return true
     } catch (caught) {
@@ -1106,7 +1113,15 @@ function ModelsForm({
     .filter((provider) => provider.kind === 'typesafe')
     .map((provider) => provider.name)
   const isDecider = (name: string) => deciders.includes(name.split(':')[0])
-  const knownForWork = known.filter((name) => !isDecider(name))
+  // A provider lists every model it has, and most of OpenAI's do not hold a
+  // conversation: embeddings, speech in and out, pictures, realtime audio.
+  // Offered for the default, a list of a hundred and forty began with
+  // babbage-002. So the pickers are narrowed by name, the embedding picker to
+  // embedding models and the others to the rest; a name left out can still
+  // be typed in.
+  const isTranscriber = (name: string) => knownModels.some((model) => model.name === name && model.canTranscribe)
+  const knownForWork = known.filter((name) => !isDecider(name) && !NOT_CONVERSATION.test(name) && !isTranscriber(name))
+  const knownEmbedding = known.filter((name) => EMBEDDING.test(name))
   const knownForDeciding = known.filter(isDecider)
   const choosable = knownForWork.filter((name) => !models.choices.includes(name))
 
@@ -1125,7 +1140,7 @@ function ModelsForm({
           <ModelPicker
             key={field}
             value={models[field]}
-            known={knownForWork}
+            known={field === 'embedding' && knownEmbedding.length > 0 ? knownEmbedding : knownForWork}
             label={t(`agentSettings.model.${field}`)}
             placeholder={field === 'quick' ? t('agentSettings.modelQuickOff') : t('agentSettings.modelNone')}
             onChange={(value) => setModels({ ...models, [field]: value })}

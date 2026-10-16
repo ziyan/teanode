@@ -38,6 +38,7 @@ type Toast = {
 // How long each kind stays. A failure is read; something that worked is only
 // noticed, and a reader who was not looking has lost nothing.
 const LINGER: Record<ToastKind, number> = { done: 4500, failed: 9000 }
+const ACTION_LINGER = 12000
 
 // A burst of them — a rule applied to fifty messages, a page of failures —
 // must not fill the window. The oldest go.
@@ -45,7 +46,7 @@ const MOST = 3
 
 type Speak = {
   done: (message: string, action?: ToastAction) => void
-  failed: (message: string) => void
+  failed: (message: string, action?: ToastAction) => void
   // Whatever went wrong, said in the words it arrived with. Anything that is
   // not an Error has no message worth showing, so it gets the general one.
   failure: (caught: unknown, fallback: string) => void
@@ -69,7 +70,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const speak = useMemo<Speak>(
     () => ({
       done: (message, action) => add('done', message, action),
-      failed: (message) => add('failed', message),
+      failed: (message, action) => add('failed', message, action),
       failure: (caught, fallback) =>
         add('failed', caught instanceof Error && caught.message ? caught.message : fallback),
     }),
@@ -131,9 +132,11 @@ function ToastRow({
     if (held) {
       return
     }
-    const timer = window.setTimeout(() => dismissRef.current(), LINGER[toast.kind])
+    // A toast with something to press stays long enough to be pressed.
+    const linger = toast.action ? Math.max(LINGER[toast.kind], ACTION_LINGER) : LINGER[toast.kind]
+    const timer = window.setTimeout(() => dismissRef.current(), linger)
     return () => window.clearTimeout(timer)
-  }, [held, toast.kind])
+  }, [held, toast.kind, toast.action])
 
   return (
     <div

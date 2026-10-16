@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { graphql } from '../../api'
 import { ToastProvider } from '../../components/toast'
@@ -60,15 +61,17 @@ const checked = {
 
 function renderProviders(onSaved = vi.fn()) {
   render(
-    <TranslationProvider>
-      <ToastProvider>
-        <ProvidersSection
-          settings={{ providers: [provider], kinds: ['openai'] } as unknown as Agent}
-          onSaved={onSaved}
-          onModels={() => undefined}
-        />
-      </ToastProvider>
-    </TranslationProvider>,
+    <MemoryRouter>
+      <TranslationProvider>
+        <ToastProvider>
+          <ProvidersSection
+            settings={{ providers: [provider], kinds: ['openai'] } as unknown as Agent}
+            onSaved={onSaved}
+            onModels={() => undefined}
+          />
+        </ToastProvider>
+      </TranslationProvider>
+    </MemoryRouter>,
   )
   return onSaved
 }

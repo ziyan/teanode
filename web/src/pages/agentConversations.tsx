@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
@@ -22,6 +22,7 @@ import { useTranslation } from '../i18n/i18n'
 export function AgentConversationsPage() {
   const { t } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const agent = useAgentIdentity()
   const agentLabel = agent.name || t('nav.agent')
   useBreadcrumbDetail(agentLabel)
@@ -59,8 +60,12 @@ export function AgentConversationsPage() {
     })
   }, [data, filter, t])
 
+  // Turning it on is on the agent's own settings page, where each person
+  // does it for themselves.
+  const turnOnAction = { label: t('agentConversations.turnOnAction'), run: () => navigate('/settings/agent') }
+
   const open = (conversationId: string) => {
-    if (!openAgentConversation(conversationId)) toast.failed(t('agentConversations.unavailable'))
+    if (!openAgentConversation(conversationId)) toast.failed(t('agentConversations.unavailable'), turnOnAction)
   }
 
   // A link from the agent's memory names the conversation in the address
@@ -72,7 +77,7 @@ export function AgentConversationsPage() {
   useEffect(() => {
     if (!linkedConversationId || openedLink.current === linkedConversationId) return
     openedLink.current = linkedConversationId
-    if (!openAgentConversation(linkedConversationId)) toast.failed(t('agentConversations.unavailable'))
+    if (!openAgentConversation(linkedConversationId)) toast.failed(t('agentConversations.unavailable'), turnOnAction)
     setParameters(
       (previous) => {
         const next = new URLSearchParams(previous)
@@ -88,7 +93,8 @@ export function AgentConversationsPage() {
   }, [linkedConversationId])
 
   const startNew = () => {
-    if (!startAgentConversation(() => void reload(true))) toast.failed(t('agentConversations.unavailable'))
+    if (!startAgentConversation(() => void reload(true)))
+      toast.failed(t('agentConversations.unavailable'), turnOnAction)
   }
 
   const hasConversations = (data?.ListAgentConversations.length ?? 0) > 0
