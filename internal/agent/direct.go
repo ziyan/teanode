@@ -325,6 +325,13 @@ func (self *directRun) BrowserPage(ctx context.Context) (*browser.Context, error
 	return nil, fmt.Errorf("the server's own browser is used inside a conversation; drive the attached tab instead, or ask the agent")
 }
 
+// RenderingPage is the server's browser for one read, as web_fetch uses it
+// on a page its scripts build: opened and closed within the call, so there
+// is no page left over between calls for the conversation's rule above.
+func (self *directRun) RenderingPage(ctx context.Context) (*browser.Context, func(), error) {
+	return self.agent.renderingPage(ctx)
+}
+
 // meaningOfQuestion is what the words mean, for the searches below. A
 // conversation remembers these for the length of its turn; one call asks
 // once, so there is nothing to remember them for.

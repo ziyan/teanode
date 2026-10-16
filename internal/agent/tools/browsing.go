@@ -29,6 +29,13 @@ type Browsing interface {
 	ReconnectedTab(ctx context.Context, dropped Tab, wait time.Duration) Tab
 }
 
+// Rendering is a run that can open a page of its own in the operator's
+// headless browser for one read, apart from the turn's page, so that a
+// read never moves what the browser tool is on. The function closes it.
+type Rendering interface {
+	RenderingPage(ctx context.Context) (*browser.Context, func(), error)
+}
+
 // ErrDeviceDetached is a device's connection ending while a request to it
 // was open, or before the request could be sent: whether the device did
 // what it was asked is not known.
