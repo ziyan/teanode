@@ -49,7 +49,7 @@ export type LocationView = {
 export type FoundPlace = {
   placeName: string
   osmType: string
-  osmId: string | null
+  osmId: number | null
   osmCategory: string
   addressText: string
   latitudeDegrees: number

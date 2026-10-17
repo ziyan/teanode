@@ -1,7 +1,7 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
-import { graphql } from '../api'
+import { graphql, subscribe } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Tag } from '../components/common'
@@ -23,6 +23,7 @@ import {
   VISIT_FIELDS,
 } from '../components/locationData'
 import { LocationMap, MapPerson, MapPlace } from '../components/locationMap'
+import { LocationSetup } from '../components/locationSetup'
 import { LocationSharing } from '../components/locationShare'
 import { MenuButton } from '../components/menuButton'
 import { Pager, usePageInAddress } from '../components/pager'
@@ -50,21 +51,37 @@ const TABS: TabItem[] = [
   { id: 'sharing', label: 'location.tabSharing' },
 ]
 
+// How often the people on the map are read again when the live feed says
+// nothing: a feed that dropped, or a person who moved while it was down.
+const PEOPLE_FALLBACK_REFRESH_MS = 60_000
+
+// Remembered in this browser once the person has said "Not now" to the setup.
+const SETUP_DISMISSED_KEY = 'teanode.location.setupDismissed'
+
+function readIsSetupDismissed(): boolean {
+  try {
+    return window.localStorage.getItem(SETUP_DISMISSED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
 const MINIMUM_RADIUS_METERS = 25
 const MAXIMUM_RADIUS_METERS = 2000
 
-const GET_LOCATION = `query { GetLocation { ${PERSON_FIELDS} } }`
+const GET_LOCATION = `query ($userId: String) { GetLocation(userId: $userId) { ${PERSON_FIELDS} } }`
+const LOCATION_EVENTS = `subscription { LocationEvents { userId } }`
 const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} } }`
-const LIST_VISITS = `query ($from: String, $until: String, $offset: Int, $limitCount: Int) {
-  ListLocationVisits(from: $from, until: $until, offset: $offset, limitCount: $limitCount) {
+const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $offset: Int, $limitCount: Int) {
+  ListLocationVisits(userId: $userId, from: $from, until: $until, offset: $offset, limitCount: $limitCount) {
     placeVisits { ${VISIT_FIELDS} } nextOffset
   }
 }`
-const LIST_POINTS = `query ($from: String!, $until: String!) {
-  ListLocationPoints(from: $from, until: $until) { latitudeDegrees longitudeDegrees accuracyMeters measuredAt }
+const LIST_POINTS = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
+  ListLocationPoints(userId: $userId, from: $from, until: $until) { latitudeDegrees longitudeDegrees accuracyMeters measuredAt }
 }`
-const LIST_PLACES = `query ($offset: Int, $limitCount: Int) {
-  ListPlaces(offset: $offset, limitCount: $limitCount) { places { ${PLACE_FIELDS} } nextOffset }
+const LIST_PLACES = `query ($userId: String, $offset: Int, $limitCount: Int) {
+  ListPlaces(userId: $userId, offset: $offset, limitCount: $limitCount) { places { ${PLACE_FIELDS} } nextOffset }
 }`
 const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $radiusMeters: Float) {
   SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, radiusMeters: $radiusMeters) { id }
@@ -100,7 +117,14 @@ function LocationContent({ userId }: { userId: string }) {
   const visitsPaging = usePageInAddress()
   const placesPaging = usePageInAddress({ pageParameter: 'placesPage', pageSizeParameter: 'placesRows' })
 
+  // The person whose visits and places are shown, in the address, when it is
+  // somebody sharing with this person. The person themselves is not in it.
+  const requestedPersonId = parameters.get('person')
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [isSetupDismissed, setIsSetupDismissed] = useState(readIsSetupDismissed)
+  // What the live feed has read again about people who moved, until the next
+  // full reading of everybody replaces it.
+  const [movedViews, setMovedViews] = useState<Record<string, LocationView>>({})
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const [editingPlace, setEditingPlace] = useState<Place | null>(null)
@@ -124,24 +148,52 @@ function LocationContent({ userId }: { userId: string }) {
 
   const range = useMemo(() => (dayStart ? dayRange(dayStart) : null), [dayStart])
 
-  const me = useQuery(() => graphql<{ GetLocation: LocationView | null }>(GET_LOCATION), [userId])
+  // Read again by the live feed and every minute, not by the page's default
+  // ten-second timer.
+  const me = useQuery(() => graphql<{ GetLocation: LocationView | null }>(GET_LOCATION), [userId], {
+    refresh: false,
+  })
   // The people sharing with this person arrive with milestone 4 of the
   // location plan. On a server that does not have the operation yet this
   // call fails, and that is the same as nobody sharing: the page works with
   // only the person's own position, without a word about it.
-  const shared = useQuery(async () => {
-    try {
-      const answer = await graphql<{ ListSharedLocations: LocationView[] | null }>(LIST_SHARED_LOCATIONS)
-      return answer.ListSharedLocations ?? []
-    } catch {
-      return [] as LocationView[]
-    }
-  }, [userId])
+  const shared = useQuery(
+    async () => {
+      try {
+        const answer = await graphql<{ ListSharedLocations: LocationView[] | null }>(LIST_SHARED_LOCATIONS)
+        return answer.ListSharedLocations ?? []
+      } catch {
+        return [] as LocationView[]
+      }
+    },
+    [userId],
+    { refresh: false },
+  )
+  // Somebody else's visits and places are read only when they share their
+  // history; at "where I am now" there is nothing of theirs to list. Until the
+  // people are read, a person in the address is not known to be sharing.
+  const views = useMemo(
+    () => [
+      ...(me.data?.GetLocation ? [me.data.GetLocation] : []),
+      ...(shared.data ?? []).map((view) => movedViews[view.userId] ?? view),
+    ],
+    [me.data, shared.data, movedViews],
+  )
+  const isPersonPending = requestedPersonId !== null && shared.data === null
+  const viewedPerson = useMemo(
+    () => views.find((view) => view.userId === requestedPersonId && view.locationShareLevel !== 'owner') ?? null,
+    [views, requestedPersonId],
+  )
+  const viewedUserId = viewedPerson?.userId ?? null
+  const isReadOnly = viewedPerson !== null
+  const canReadHistory = !isPersonPending && (viewedPerson === null || viewedPerson.locationShareLevel === 'history')
+
   const visits = useQuery(
     async () =>
-      tab === 'visits'
+      tab === 'visits' && canReadHistory
         ? (
             await graphql<{ ListLocationVisits: VisitPage }>(LIST_VISITS, {
+              userId: viewedUserId,
               from: range?.from ?? null,
               until: range?.until ?? null,
               offset: visitsPaging.offset,
@@ -149,24 +201,28 @@ function LocationContent({ userId }: { userId: string }) {
             })
           ).ListLocationVisits
         : null,
-    [tab, range?.from, visitsPaging.offset, visitsPaging.pageSize, userId],
+    [tab, range?.from, visitsPaging.offset, visitsPaging.pageSize, userId, viewedUserId, canReadHistory],
   )
   const points = useQuery(
     async () =>
-      range ? (await graphql<{ ListLocationPoints: LocationPoint[] }>(LIST_POINTS, range)).ListLocationPoints : [],
-    [range?.from, userId],
+      range && canReadHistory
+        ? (await graphql<{ ListLocationPoints: LocationPoint[] }>(LIST_POINTS, { userId: viewedUserId, ...range }))
+            .ListLocationPoints
+        : [],
+    [range?.from, userId, viewedUserId, canReadHistory],
   )
   const places = useQuery(
     async () =>
-      tab === 'places'
+      tab === 'places' && canReadHistory
         ? (
             await graphql<{ ListPlaces: PlacePage }>(LIST_PLACES, {
+              userId: viewedUserId,
               offset: placesPaging.offset,
               limitCount: placesPaging.pageSize,
             })
           ).ListPlaces
         : null,
-    [tab, placesPaging.offset, placesPaging.pageSize, userId],
+    [tab, placesPaging.offset, placesPaging.pageSize, userId, viewedUserId, canReadHistory],
   )
 
   const visitRows = useMemo(() => visits.data?.placeVisits ?? [], [visits.data])
@@ -178,10 +234,6 @@ function LocationContent({ userId }: { userId: string }) {
     return [...(places.data?.places ?? [])].sort((first, second) => rank(first) - rank(second))
   }, [places.data])
 
-  const views = useMemo(
-    () => [...(me.data?.GetLocation ? [me.data.GetLocation] : []), ...(shared.data ?? [])],
-    [me.data, shared.data],
-  )
   const mapPeople: MapPerson[] = useMemo(
     () =>
       views.flatMap((view) =>
@@ -195,12 +247,12 @@ function LocationContent({ userId }: { userId: string }) {
                 latitudeDegrees: view.latestPoint.latitudeDegrees,
                 longitudeDegrees: view.latestPoint.longitudeDegrees,
                 accuracyMeters: view.latestPoint.accuracyMeters,
-                isSelected: view.userId === selectedUserId,
+                isSelected: view.userId === (viewedUserId ?? selectedUserId),
               },
             ]
           : [],
       ),
-    [views, selectedUserId],
+    [views, selectedUserId, viewedUserId],
   )
   const mapPlaces: MapPlace[] = useMemo(() => {
     const shown =
@@ -234,11 +286,24 @@ function LocationContent({ userId }: { userId: string }) {
   )
   const timeOf = (moment: string) => timeFormat.format(new Date(moment))
 
+  // Choosing a person centers the map on them. Somebody else is put in the
+  // address, with their visits and places; the person themselves is not.
+  function selectPerson(view: LocationView) {
+    setSelectedPlaceId(null)
+    if (view.locationShareLevel === 'owner') {
+      setSelectedUserId(view.userId)
+      changeParameters({ person: null, page: null, placesPage: null })
+    } else {
+      setSelectedUserId(null)
+      changeParameters({ person: view.userId, page: null, placesPage: null })
+    }
+  }
+
   function selectPlaceOnMap(placeId: string) {
     setSelectedPlaceId(placeId)
     setSelectedUserId(null)
     const place = placeRows.find((each) => each.id === placeId)
-    if (tab === 'places' && place) setEditingPlace(place)
+    if (tab === 'places' && place && !isReadOnly) setEditingPlace(place)
   }
 
   function reloadAll() {
@@ -246,6 +311,60 @@ function LocationContent({ userId }: { userId: string }) {
     void visits.reload()
     void places.reload()
   }
+
+  // Everybody on the map is read again: the person and the people sharing with
+  // them. Quietly, so the page does not go back to loading.
+  function refreshPeople() {
+    setMovedViews({})
+    return Promise.all([me.reload(true), shared.reload(true)])
+  }
+
+  // A person the live feed says moved is read again by themselves, and the
+  // person (the viewer) with the page's own reading. A person who can no
+  // longer be read, because they stopped sharing, is a reason to read
+  // everybody again.
+  async function refreshMovedPerson(movedUserId: string) {
+    if (movedUserId === userId) {
+      await me.reload(true)
+      return
+    }
+    try {
+      const answer = await graphql<{ GetLocation: LocationView | null }>(GET_LOCATION, { userId: movedUserId })
+      const moved = answer.GetLocation
+      if (moved) setMovedViews((previous) => ({ ...previous, [movedUserId]: moved }))
+    } catch {
+      await refreshPeople()
+    }
+  }
+
+  // The latest of both, read by the feed without it starting again at every
+  // render.
+  const feedHandlers = useRef({ refreshMovedPerson, refreshPeople })
+  feedHandlers.current = { refreshMovedPerson, refreshPeople }
+
+  useEffect(() => {
+    const stop = subscribe<{ LocationEvents: { userId: string } }>(
+      LOCATION_EVENTS,
+      {},
+      (data) => void feedHandlers.current.refreshMovedPerson(data.LocationEvents.userId),
+      // A feed that ended is covered by the minute refresh below.
+      undefined,
+      {
+        // What happened while the socket was down is read again before the
+        // feed resumes.
+        beforeStart: async (isReconnecting) => {
+          if (isReconnecting) await feedHandlers.current.refreshPeople()
+        },
+      },
+    )
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void feedHandlers.current.refreshPeople()
+    }, PEOPLE_FALLBACK_REFRESH_MS)
+    return () => {
+      stop()
+      window.clearInterval(timer)
+    }
+  }, [userId])
 
   async function act(work: () => Promise<unknown>, done: string, failed: string): Promise<boolean> {
     setIsBusy(true)
@@ -304,6 +423,12 @@ function LocationContent({ userId }: { userId: string }) {
     return moment ? dayKeyOf(moment) : ''
   }
 
+  // The first time, with no position recorded yet, a short setup stands where
+  // the empty map would be, until it is dismissed.
+  const isSetupShown = me.data !== null && !me.data.GetLocation?.latestPoint && !isSetupDismissed
+  const viewedName = viewedPerson ? personName(viewedPerson) : ''
+  const notSharedHistoryText = viewedPerson ? t('location.personSharesNowOnly', { name: viewedName }) : ''
+
   return (
     <>
       <PageHeadingActions>
@@ -314,87 +439,103 @@ function LocationContent({ userId }: { userId: string }) {
 
       <ErrorMessage error={me.error} />
 
-      <section className="card location-map-card">
-        <LocationMap
-          people={mapPeople}
-          places={mapPlaces}
-          path={path}
-          onSelectPerson={(selected) => {
-            setSelectedUserId(selected)
-            setSelectedPlaceId(null)
+      {isSetupShown && (
+        <LocationSetup
+          onDismiss={() => {
+            try {
+              window.localStorage.setItem(SETUP_DISMISSED_KEY, 'true')
+            } catch {
+              // Dismissed for this visit only.
+            }
+            setIsSetupDismissed(true)
           }}
-          onSelectPlace={selectPlaceOnMap}
         />
-        <div className="location-people">
-          {views.map((view) => {
-            const name = personName(view)
-            const isOwner = view.locationShareLevel === 'owner'
-            return (
-              <button
-                key={view.userId}
-                type="button"
-                className={view.userId === selectedUserId ? 'location-row is-selected' : 'location-row'}
-                disabled={!view.latestPoint}
-                onClick={() => {
-                  setSelectedUserId(view.userId)
-                  setSelectedPlaceId(null)
-                }}
-              >
-                <span className="location-row-icon">
-                  <Avatar name={name} avatarUrl={view.avatarUrl} colorIndex={view.avatarColorIndex} size={28} />
-                </span>
-                <span className="location-row-body">
-                  <strong>{name}</strong>
-                  <span className="muted">
-                    {view.openVisit ? (
-                      t('location.atSince', {
-                        place: placeTitle(view.openVisit.place, t),
-                        time: view.openVisit.arrivedAt ? timeOf(view.openVisit.arrivedAt) : '',
-                      })
-                    ) : view.latestPoint ? (
-                      <>
-                        {t('location.lastSeen')} <RelativeTime value={view.latestPoint.measuredAt} />
-                      </>
-                    ) : (
-                      t('location.nowhere')
-                    )}
+      )}
+
+      {!isSetupShown && (
+        <section className="card location-map-card">
+          <LocationMap
+            people={mapPeople}
+            places={mapPlaces}
+            path={path}
+            onSelectPerson={(selected) => {
+              const view = views.find((each) => each.userId === selected)
+              if (view) selectPerson(view)
+            }}
+            onSelectPlace={selectPlaceOnMap}
+          />
+          <div className="location-people">
+            {views.map((view) => {
+              const name = personName(view)
+              const isOwner = view.locationShareLevel === 'owner'
+              return (
+                <button
+                  key={view.userId}
+                  type="button"
+                  className={
+                    view.userId === (viewedUserId ?? selectedUserId) ? 'location-row is-selected' : 'location-row'
+                  }
+                  disabled={!view.latestPoint}
+                  onClick={() => selectPerson(view)}
+                >
+                  <span className="location-row-icon">
+                    <Avatar name={name} avatarUrl={view.avatarUrl} colorIndex={view.avatarColorIndex} size={28} />
                   </span>
-                </span>
-                {isOwner && (
-                  <span className="location-row-meta">
-                    <Tag value={t('location.you')} />
+                  <span className="location-row-body">
+                    <strong>{name}</strong>
+                    <span className="muted">
+                      {view.openVisit ? (
+                        t('location.atSince', {
+                          place: placeTitle(view.openVisit.place, t),
+                          time: view.openVisit.arrivedAt ? timeOf(view.openVisit.arrivedAt) : '',
+                        })
+                      ) : view.latestPoint ? (
+                        <>
+                          {t('location.lastSeen')} <RelativeTime value={view.latestPoint.measuredAt} />
+                        </>
+                      ) : (
+                        t('location.nowhere')
+                      )}
+                    </span>
                   </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </section>
+                  {isOwner && (
+                    <span className="location-row-meta">
+                      <Tag value={t('location.you')} />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       <Tabs items={TABS} active={tab} onSelect={selectTab} />
 
       {tab === 'visits' && (
         <SettingsSection
           card
-          title={t('location.visits')}
+          title={viewedPerson ? t('location.personVisits', { name: viewedName }) : t('location.visits')}
           action={
-            <MenuButton
-              className="icon-action"
-              label={t('location.moreMenu')}
-              icon={<MoreIcon size={16} />}
-              render={(close) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    close()
-                    setIsErasing(true)
-                  }}
-                >
-                  {t('location.eraseHistory')}
-                </button>
-              )}
-            />
+            isReadOnly ? undefined : (
+              <MenuButton
+                className="icon-action"
+                label={t('location.moreMenu')}
+                icon={<MoreIcon size={16} />}
+                render={(close) => (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      close()
+                      setIsErasing(true)
+                    }}
+                  >
+                    {t('location.eraseHistory')}
+                  </button>
+                )}
+              />
+            )
           }
         >
           <div className="location-day-picker">
@@ -413,8 +554,13 @@ function LocationContent({ userId }: { userId: string }) {
             )}
           </div>
           <ErrorMessage error={visits.error} />
+          {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
           {visits.data && visitRows.length === 0 && (
-            <SettingsEmpty>{dayKey ? t('location.visitsEmptyDay') : t('location.visitsEmpty')}</SettingsEmpty>
+            <SettingsEmpty>
+              {dayKey
+                ? t('location.visitsEmptyDay')
+                : t(isReadOnly ? 'location.personVisitsEmpty' : 'location.visitsEmpty')}
+            </SettingsEmpty>
           )}
           {visitRows.map((visit, index) => {
             const key = visitDayKey(visit)
@@ -478,9 +624,15 @@ function LocationContent({ userId }: { userId: string }) {
       )}
 
       {tab === 'places' && (
-        <SettingsSection card title={t('location.places')}>
+        <SettingsSection
+          card
+          title={viewedPerson ? t('location.personPlaces', { name: viewedName }) : t('location.places')}
+        >
           <ErrorMessage error={places.error} />
-          {places.data && placeRows.length === 0 && <SettingsEmpty>{t('location.placesEmpty')}</SettingsEmpty>}
+          {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
+          {places.data && placeRows.length === 0 && (
+            <SettingsEmpty>{t(isReadOnly ? 'location.personPlacesEmpty' : 'location.placesEmpty')}</SettingsEmpty>
+          )}
           {placeRows.map((place) => (
             <button
               key={place.id}
@@ -489,7 +641,7 @@ function LocationContent({ userId }: { userId: string }) {
               onClick={() => {
                 setSelectedPlaceId(place.id)
                 setSelectedUserId(null)
-                setEditingPlace(place)
+                if (!isReadOnly) setEditingPlace(place)
               }}
             >
               <span className="location-row-icon">

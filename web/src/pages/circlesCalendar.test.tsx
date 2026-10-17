@@ -166,3 +166,34 @@ it('lets a person say not now, and does not offer it for friends', async () => {
   await waitFor(() => expect(calls('AnswerCircleInvitation')).toHaveLength(1))
   expect(screen.queryByRole('dialog')).toBeNull()
 })
+
+it('offers a family where the person is as well, and shares it at the level chosen', async () => {
+  answer({ invitations: [anInvitation()], calendars: [{ id: 'own', calendarKind: 'events', shareLevel: 'owner' }] })
+  renderAt('/circles', ['circle:use', 'calendar:use', 'location:use'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar with Fixture Home?' })
+  fireEvent.change(within(dialog).getByLabelText(/^Share where I am/), { target: { value: 'history' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  await waitFor(() => expect(calls('ShareLocation(')).toHaveLength(1))
+  expect(calls('ShareLocation(')[0][1]).toEqual({ granteeCircleId: 'circle-one', shareLevel: 'history' })
+  expect(calls('$granteeCircleId: String!').length).toBeGreaterThan(0)
+})
+
+it('asks about location alone when calendars are not available, and not for colleagues', async () => {
+  answer({ invitations: [anInvitation()] })
+  renderAt('/circles', ['circle:use', 'location:use'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share where you are with Fixture Home?' })
+  // Nothing is chosen yet, so there is nothing to share.
+  expect((within(dialog).getByRole('button', { name: 'Share' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Not now' }))
+  expect(calls('ShareLocation(')).toHaveLength(0)
+
+  cleanup()
+  vi.mocked(graphql).mockClear()
+  answer({ invitations: [anInvitation({ circleKind: 'colleagues' })] })
+  renderAt('/circles', ['circle:use', 'location:use'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+  await waitFor(() => expect(calls('AnswerCircleInvitation')).toHaveLength(1))
+  expect(screen.queryByRole('dialog')).toBeNull()
+})

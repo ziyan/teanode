@@ -1,8 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { graphql } from '../api'
+import { graphql, subscribe } from '../api'
 import { Place, PlaceVisit } from '../components/locationData'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
@@ -12,6 +13,7 @@ import { LocationPage } from './location'
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   graphql: vi.fn(),
+  subscribe: vi.fn(),
 }))
 // WebGL is not there to draw a map in; the page's part is what it hands the map.
 vi.mock('../components/locationMap', () => ({
@@ -21,6 +23,16 @@ vi.mock('../components/locationMap', () => ({
     </div>
   ),
 }))
+// What the live feed was given: the function it calls with each event.
+let feed: ((data: { LocationEvents: { userId: string } }) => void) | null = null
+beforeEach(() => {
+  feed = null
+  window.localStorage.clear()
+  vi.mocked(subscribe).mockImplementation(((_query: string, _variables: unknown, onData: typeof feed) => {
+    feed = onData
+    return () => {}
+  }) as never)
+})
 afterEach(() => {
   cleanup()
   vi.resetAllMocks()
@@ -71,17 +83,40 @@ const OWN_VIEW = {
   openVisit: null,
 }
 
+const PERSON_B_VIEW = {
+  userId: 'person-b',
+  username: 'person-b-login',
+  name: 'Person B',
+  avatarUrl: null,
+  avatarColorIndex: 5,
+  locationShareLevel: 'history',
+  latestPoint: {
+    latitudeDegrees: 11.5,
+    longitudeDegrees: 21.5,
+    accuracyMeters: 20,
+    measuredAt: '2030-03-05T12:00:00Z',
+  },
+  openVisit: null,
+}
+
 function answerWith(shown: {
+  own?: typeof OWN_VIEW | { latestPoint: null } | null
+  sharedViews?: (typeof PERSON_B_VIEW)[]
+  movedView?: typeof PERSON_B_VIEW
   visits?: PlaceVisit[]
   places?: Place[]
   failSharedLocations?: boolean
   people?: { userId: string; username: string; name: string }[]
 }) {
-  vi.mocked(graphql).mockImplementation(async (document) => {
-    if (document.includes('GetLocation')) return { GetLocation: OWN_VIEW } as never
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('GetLocation')) {
+      const askedUserId = (variables as { userId?: string } | undefined)?.userId
+      if (askedUserId) return { GetLocation: shown.movedView ?? PERSON_B_VIEW } as never
+      return { GetLocation: shown.own === undefined ? OWN_VIEW : shown.own && { ...OWN_VIEW, ...shown.own } } as never
+    }
     if (document.includes('ListSharedLocations')) {
       if (shown.failSharedLocations) throw new Error('Cannot query field "ListSharedLocations"')
-      return { ListSharedLocations: [] } as never
+      return { ListSharedLocations: shown.sharedViews ?? [] } as never
     }
     if (document.includes('ListLocationVisits')) {
       return { ListLocationVisits: { placeVisits: shown.visits ?? [], nextOffset: null } } as never
@@ -187,4 +222,102 @@ it('still shows the person and their visits when the people sharing with them ca
   expect(await screen.findByText('Fixture Park')).toBeTruthy()
   expect(screen.getByText('Person A')).toBeTruthy()
   expect(screen.getByTestId('map').textContent).toBe('1 people, 1 places')
+})
+
+it('reads a person again when the live feed says they moved', async () => {
+  answerWith({
+    sharedViews: [PERSON_B_VIEW],
+    movedView: {
+      ...PERSON_B_VIEW,
+      openVisit: { id: 'visit-now', arrivedAt: '2030-03-05T14:05:00Z', place: place({ placeName: 'Fixture Cafe' }) },
+    } as never,
+  })
+  renderAt('/location')
+
+  expect(await screen.findByText('Person B')).toBeTruthy()
+  expect(screen.queryByText(/Fixture Cafe/)).toBeNull()
+  await waitFor(() => expect(feed).not.toBeNull())
+
+  act(() => feed?.({ LocationEvents: { userId: 'person-b' } }))
+
+  expect(await screen.findByText(/At Fixture Cafe since/)).toBeTruthy()
+  const asked = calls('GetLocation').filter(([, variables]) => (variables as { userId?: string })?.userId)
+  expect(asked).toHaveLength(1)
+  expect(asked[0][1]).toEqual({ userId: 'person-b' })
+
+  // The viewer's own movement reads the viewer's position again, not a person's.
+  const before = calls('GetLocation').length
+  act(() => feed?.({ LocationEvents: { userId: 'person-a' } }))
+  await waitFor(() => expect(calls('GetLocation').length).toBe(before + 1))
+  expect(calls('GetLocation').slice(-1)[0]?.[1]).toBeUndefined()
+})
+
+it('lists the visits of a person who shares their history, read only, with the person in the address', async () => {
+  answerWith({ sharedViews: [PERSON_B_VIEW], visits: [visit()] })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Person B/ }))
+
+  expect(await screen.findByText('Visits of Person B')).toBeTruthy()
+  await waitFor(() =>
+    expect(
+      calls('ListLocationVisits').some(([, variables]) => (variables as { userId?: string }).userId === 'person-b'),
+    ).toBe(true),
+  )
+  // Nothing of theirs can be erased.
+  expect(screen.queryByRole('button', { name: 'More about visits' })).toBeNull()
+})
+
+it('says so when a person shares only where they are now', async () => {
+  answerWith({ sharedViews: [{ ...PERSON_B_VIEW, locationShareLevel: 'current' }] })
+  renderAt('/location?person=person-b')
+
+  expect(await screen.findByText('Person B shares only where they are now.')).toBeTruthy()
+  expect(calls('ListLocationVisits')).toHaveLength(0)
+})
+
+it('sets Location up when no position is recorded, and not again after Not now', async () => {
+  answerWith({ own: { latestPoint: null } })
+  const first = renderAt('/location')
+
+  expect(await screen.findByText('Install the TeaNode app on your iPhone')).toBeTruthy()
+  expect(screen.getByText('This is home')).toBeTruthy()
+  expect(screen.queryByTestId('map')).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Not now' }))
+  expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
+  expect(screen.getByTestId('map')).toBeTruthy()
+
+  first.unmount()
+  renderAt('/location')
+  expect(await screen.findByTestId('map')).toBeTruthy()
+  expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
+})
+
+it('marks home from the browser position, and offers to share with a family', async () => {
+  answerWith({ own: { latestPoint: null } })
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListCircles')) {
+      return { ListCircles: [{ id: 'circle-one', name: 'Fixture Home', circleKind: 'family' }] } as never
+    }
+    return base!(document, variables)
+  })
+  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+  Object.defineProperty(navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      getCurrentPosition: (success: (position: unknown) => void) =>
+        success({ coords: { latitude: 10.5, longitude: 20.5, accuracy: 15 }, timestamp: 1_900_000_000_000 }),
+    },
+  })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Use where I am now' }))
+  await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
+  expect(calls('SavePlace')[0][1]).toEqual({ latitudeDegrees: 10.5, longitudeDegrees: 20.5, placeLabel: 'home' })
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Only where I am now' }))
+  await waitFor(() => expect(calls('ShareLocation(')).toHaveLength(1))
+  expect(calls('ShareLocation(')[0][1]).toEqual({ granteeCircleId: 'circle-one', shareLevel: 'current' })
 })

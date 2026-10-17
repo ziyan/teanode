@@ -14,7 +14,7 @@ const LIST_NEARBY_PLACES = `query ($latitudeDegrees: Float!, $longitudeDegrees: 
   }
 }`
 const CHECK_IN = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String,
-  $osmType: String, $osmId: String, $osmCategory: String, $addressText: String) {
+  $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
   CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees,
     placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) { id }
 }`
@@ -71,7 +71,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
               longitudeDegrees: found.longitudeDegrees,
               placeName: found.placeName,
               osmType: found.osmType,
-              osmId: found.osmId === null ? null : String(found.osmId),
+              osmId: found.osmId,
               osmCategory: found.osmCategory,
               addressText: found.addressText,
             },
