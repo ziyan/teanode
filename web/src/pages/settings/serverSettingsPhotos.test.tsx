@@ -17,7 +17,7 @@ afterEach(() => {
 
 const settings = { maxFileBytes: '8GB', maxAccountBytes: '0', trashRetention: '30d', isFaceRecognitionEnabled: true }
 
-it('turns finding faces off for everybody, and says that is what it does', async () => {
+it('turns finding people off for everybody, and says that is what it does', async () => {
   vi.mocked(graphql).mockResolvedValue({} as never)
   render(
     <TranslationProvider>
@@ -30,7 +30,7 @@ it('turns finding faces off for everybody, and says that is what it does', async
   )
   const faces = screen.getByRole('checkbox', { name: 'Find people in photos' }) as HTMLInputElement
   expect(faces.checked).toBe(true)
-  expect(screen.getByText(/stops finding faces for everybody on this server/)).toBeTruthy()
+  expect(screen.getByText(/stops finding people for everybody on this server/)).toBeTruthy()
   fireEvent.click(faces)
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   const saved = () => vi.mocked(graphql).mock.calls.find(([document]) => document.includes('UpdateSettings'))

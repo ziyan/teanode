@@ -1027,6 +1027,17 @@ it('opens the filters as a labelled dialog, not a menu, and closes it with Escap
   expect(document.activeElement).toBe(button)
 })
 
+it('opens the filters on the kind that is chosen, and gives the keyboard back to Filter when they are cleared', async () => {
+  show('/photos?kind=video')
+  const button = await screen.findByRole('button', { name: 'Filter' })
+  fireEvent.click(button)
+  const popover = await screen.findByRole('dialog', { name: 'Filter' })
+  await waitFor(() => expect(document.activeElement).toBe(within(popover).getByRole('radio', { name: 'Videos' })))
+  fireEvent.click(within(popover).getByRole('button', { name: 'Clear filters' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Filter' })).toBeNull())
+  expect(document.activeElement).toBe(button)
+})
+
 it('offers nothing near here for a photo with no place', async () => {
   show('/photos/photo-1')
   await screen.findByRole('button', { name: 'Details' })

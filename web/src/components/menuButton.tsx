@@ -94,9 +94,12 @@ export function MenuButton({
       return
     }
     if (open) {
-      const first = menu.current?.querySelector<HTMLElement>(
-        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      )
+      // The chosen option of a group first, as a radio group is entered.
+      const first =
+        menu.current?.querySelector<HTMLElement>('input:checked:not([disabled])') ??
+        menu.current?.querySelector<HTMLElement>(
+          'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )
       first?.focus()
     } else if (wasOpen.current && menu.current === null && document.activeElement === document.body) {
       trigger.current?.focus()

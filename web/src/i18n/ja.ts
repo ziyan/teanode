@@ -5652,7 +5652,7 @@ export const ja: Catalog = {
   'services.photosOnlyPassword':
     'この名前のデバイスが写真をバックアップして読み取れるようにします。それ以外はできません。',
   'serverSettings.photosFaces': '写真から人物を見つける',
-  'serverSettings.photosFacesHint': '写真に写っている人を見つけてグループにします。オフにすると、このサーバーの全員について顔を見つけなくなります。',
+  'serverSettings.photosFacesHint': '写真に写っている人を見つけてグループにします。オフにすると、このサーバーの全員について人物を見つけなくなります。',
   'serverSettings.photosTitle': '写真',
   'serverSettings.photosIntro': '各ユーザーの写真ライブラリの上限です。変更は次のアップロードから有効になります。',
   'serverSettings.photosMaxFileBytes': '最大ファイルサイズ',

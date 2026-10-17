@@ -17259,7 +17259,8 @@ body.has-recording-bar .content {
 }
 
 .welcome-other > p {
-  margin: 0 0 var(--space-3);
+  /* With the column's gap, the space it always had before the buttons. */
+  margin: 0 0 calc(var(--space-3) - var(--space-2));
   font-size: var(--text-body);
   line-height: 1.55;
   text-wrap: balance;
