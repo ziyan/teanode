@@ -47,8 +47,11 @@ struct LocationSettingsView: View {
                     "TeaNode notes where you stop and when you leave, even when the app is closed. Turned off, it records nothing new. What is already recorded stays until you erase it.")
             }
             Section {
-                Button("Erase positions and visits", systemImage: "trash", role: .destructive) {
+                Button(role: .destructive) {
                     isConfirmingErase = true
+                } label: {
+                    // The icon takes the tint unless it is colored too.
+                    Label("Erase positions and visits", systemImage: "trash").foregroundStyle(.red)
                 }
                 .disabled(isErasing)
                 .confirmationDialog("Erase your positions and visits?", isPresented: $isConfirmingErase, titleVisibility: .visible) {

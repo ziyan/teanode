@@ -139,7 +139,17 @@ enum LocationText {
     /// One person sharing, in a line: "Sam · at Hillside School since 14:05",
     /// else "Sam · 12 min. ago" for how long ago their latest position was.
     static func line(of person: PersonLocation) -> String {
-        let name = person.displayName
+        line(of: person, name: person.displayName, noPositionText: String(localized: "\(person.displayName) · no position yet"))
+    }
+
+    /// The person's own line: "You · at Hillside School since 14:05", else
+    /// "You · 12 min. ago", else "You · no position recorded yet".
+    static func ownLine(of person: PersonLocation) -> String {
+        let name = String(localized: "You")
+        return line(of: person, name: name, noPositionText: String(localized: "\(name) · no position recorded yet"))
+    }
+
+    private static func line(of person: PersonLocation, name: String, noPositionText: String) -> String {
         if let visit = person.openVisit {
             let place = visit.place.shownName
             if let arrived = visit.arrivedDate { return String(localized: "\(name) · at \(place) since \(time(arrived))") }
@@ -149,7 +159,7 @@ enum LocationText {
             let ago = measured.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
             return String(localized: "\(name) · \(ago)")
         }
-        return String(localized: "\(name) · no position yet")
+        return noPositionText
     }
 
     /// "At Home since 14:05", for the visit in progress.

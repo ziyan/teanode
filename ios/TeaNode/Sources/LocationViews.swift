@@ -42,8 +42,13 @@ enum LocationMapRegion {
             west = min(west, coordinate.longitude)
             east = max(east, coordinate.longitude)
         }
-        let center = CLLocationCoordinate2D(latitude: (south + north) / 2, longitude: (west + east) / 2)
-        let span = MKCoordinateSpan(latitudeDelta: max((north - south) * 1.4, 0.006), longitudeDelta: max((east - west) * 1.4, 0.006))
+        let latitudeDelta = max((north - south) * 1.4, 0.006)
+        // Apple Maps draws its logo and the Legal link along the bottom edge,
+        // and a label there would sit on them: the region reaches further
+        // south than the coordinates do, so they stay in the upper part.
+        let bottomRoom = latitudeDelta * 0.15
+        let center = CLLocationCoordinate2D(latitude: (south + north) / 2 - bottomRoom, longitude: (west + east) / 2)
+        let span = MKCoordinateSpan(latitudeDelta: latitudeDelta * 1.3, longitudeDelta: max((east - west) * 1.4, 0.006))
         return MKCoordinateRegion(center: center, span: span)
     }
 }
@@ -84,7 +89,6 @@ struct LocationScreen: View {
                     if let person = model.selectedPerson {
                         LocationPersonPanel(model: model, person: person)
                     } else {
-                        LocationStatusRow(model: model)
                         if model.isSetupShown {
                             LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
                         } else {
@@ -238,8 +242,12 @@ struct LocationMapHeader: View {
         Map(position: $position) {
             if isShowingPhone {
                 UserAnnotation()
-            } else if let coordinate = model.latestCoordinate {
-                Marker("Latest position", systemImage: "person.fill", coordinate: coordinate)
+            } else if let coordinate = model.latestCoordinate, let own = model.location {
+                Annotation("You", coordinate: coordinate) {
+                    AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 36)
+                        .overlay(Circle().stroke(model.selectedUserId == nil ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
+                        .accessibilityLabel("You")
+                }
             }
             ForEach(model.places.filter(\.isOfPersonsOwn).prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
@@ -272,6 +280,7 @@ struct LocationMapHeader: View {
         .onChange(of: model.latestCoordinate?.latitude, initial: true) { focus() }
         // Centers on the person chosen, or back on the person's own.
         .onChange(of: model.selectedPerson?.userId) { focus() }
+        .onChange(of: model.ownFocusCount) { focus() }
         .onChange(of: recorder.livePosition?.latitudeDegrees) { _, _ in
             // The first reading centers the map once; after that the person
             // moves it as they like.
@@ -293,35 +302,6 @@ struct LocationMapHeader: View {
         } else if let coordinate = model.latestCoordinate {
             position = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1500, longitudinalMeters: 1500))
         }
-    }
-}
-
-/// LocationStatusRow says under the map where the person is: the visit in
-/// progress, else when the latest position was.
-struct LocationStatusRow: View {
-    let model: LocationModel
-
-    var body: some View {
-        if let text = statusText {
-            Label {
-                Text(verbatim: text)
-            } icon: {
-                Image(systemName: model.location?.openVisit?.place.symbolName ?? "location")
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-        }
-    }
-
-    private var statusText: String? {
-        if let visit = model.location?.openVisit { return LocationText.current(visit) }
-        if let date = model.location?.latestPoint?.measuredDate {
-            return String(localized: "Last position \(date.formatted(.relative(presentation: .named)))")
-        }
-        return model.hasLoaded ? String(localized: "No position recorded yet") : nil
     }
 }
 
@@ -454,7 +434,11 @@ struct LocationDayScreen: View {
                             OpenStreetMapCredit()
                         }
                         Section {
-                            Button("Erase this day", systemImage: "trash", role: .destructive) { isConfirmingErase = true }
+                            Button(role: .destructive) {
+                                isConfirmingErase = true
+                            } label: {
+                                Label("Erase this day", systemImage: "trash").foregroundStyle(.red)
+                            }
                                 .disabled(isErasing)
                                 .frame(minHeight: 44)
                                 .confirmationDialog(

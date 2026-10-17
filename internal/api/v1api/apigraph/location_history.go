@@ -1016,7 +1016,7 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 		return nil, err
 	}
 	// One more than the page, to know whether there is a next one.
-	found, err := provider.Search(ctx, query, latitudeDegrees, longitudeDegrees, radiusMeters, offset+limitCount+1)
+	found, err := place.SearchKinds(ctx, provider, query, latitudeDegrees, longitudeDegrees, radiusMeters, offset+limitCount+1)
 	if err != nil {
 		return nil, placeProviderFailure(err)
 	}

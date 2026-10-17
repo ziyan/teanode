@@ -59430,22 +59430,6 @@
         }
       }
     },
-    "Latest position": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最後の位置"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近位置"
-          }
-        }
-      }
-    },
     "Shows the day on the map": {
       "localizations": {
         "ja": {
@@ -64698,22 +64682,6 @@
         }
       }
     },
-    "Last position %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最後の位置情報：%@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近位置：%@"
-          }
-        }
-      }
-    },
     "Message, or @ to ask an agent": {
       "localizations": {
         "ja": {
@@ -65818,6 +65786,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "酒店"
+          }
+        }
+      }
+    },
+    "%@ · no position recorded yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 位置の記録はまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 尚无位置记录"
+          }
+        }
+      }
+    },
+    "Shows you on the map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図に自分を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在地图上显示你"
           }
         }
       }

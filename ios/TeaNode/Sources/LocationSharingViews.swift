@@ -32,11 +32,11 @@ struct LocationSharingList: View {
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: LocationModel.shareName(of: share)).foregroundStyle(.primary)
-                                Text(share.level?.title ?? share.shareLevel).font(.footnote).foregroundStyle(.secondary)
+                                Text(verbatim: LocationModel.shareName(of: share)).foregroundStyle(Color(.label))
+                                Text(share.level?.title ?? share.shareLevel).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                             }
                             Spacer(minLength: 0)
-                            Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.secondary).accessibilityHidden(true)
+                            Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(Color(.secondaryLabel)).accessibilityHidden(true)
                         }
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
