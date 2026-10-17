@@ -418,15 +418,19 @@ public struct PlaceChange: Sendable, Equatable {
 }
 
 /// CheckInTarget is where a check-in is made: a place of the person's own,
-/// or a place found nearby.
+/// a place found nearby, or just a position, where the server uses the
+/// person's own place there or makes a new one and names it afterwards.
 public enum CheckInTarget: Sendable, Equatable {
     case place(String)
     case found(FoundPlace)
+    case position(latitudeDegrees: Double, longitudeDegrees: Double)
 
     var variables: [String: JSONValue] {
         switch self {
         case .place(let placeId):
             return ["placeId": .string(placeId)]
+        case .position(let latitudeDegrees, let longitudeDegrees):
+            return ["latitudeDegrees": .number(latitudeDegrees), "longitudeDegrees": .number(longitudeDegrees)]
         case .found(let found):
             return [
                 "latitudeDegrees": .number(found.latitudeDegrees), "longitudeDegrees": .number(found.longitudeDegrees),

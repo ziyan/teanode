@@ -58072,6 +58072,70 @@
         }
       }
     },
+    "Check in here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここでチェックイン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此签到"
+          }
+        }
+      }
+    },
+    "Checked in here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここでチェックインしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在此签到"
+          }
+        }
+      }
+    },
+    "Within %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誤差 %@ 以内"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "误差在 %@ 以内"
+          }
+        }
+      }
+    },
+    "%@. The phone could only find you roughly.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。iPhoneではおおよその位置しか分かりませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@。手机只能大致确定你的位置。"
+          }
+        }
+      }
+    },
     "Nothing with a name nearby": {
       "localizations": {
         "ja": {
