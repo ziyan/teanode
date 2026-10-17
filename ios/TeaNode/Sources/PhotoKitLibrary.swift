@@ -33,18 +33,73 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
 
     // MARK: Reading
 
-    func listItems(skipping known: Set<String>, includesHidden: Bool) async throws -> PhotoBackupListing {
-        // Taken before the listing, so that whatever changes while it runs is
-        // read again by the next pass rather than missed.
+    func beginListing(includesHidden: Bool) async throws -> PhotoBackupListingStart {
+        // Taken before the first batch is read, so that whatever changes while
+        // the listing runs is read again by a later pass rather than missed.
         let changeToken = Self.archivedCurrentChangeToken()
+        let totalCount = PHAsset.fetchAssets(with: Self.fetchOptions(includesHidden: includesHidden)).count
+        return PhotoBackupListingStart(totalCount: totalCount, changeToken: changeToken)
+    }
+
+    /// Photos made within this many seconds of each other are made at the same
+    /// moment as far as the listing is concerned: two readings of one date need
+    /// not agree to the last bit.
+    private static let sameMomentSeconds: TimeInterval = 0.001
+
+    /// One batch of the library, newest first, after the resume point. A batch
+    /// never ends inside a moment: past the limit it goes on while the next photo
+    /// was made at the moment of the last one taken, so that photos made at one
+    /// moment (a burst), whose order the library does not promise, are listed
+    /// together, and the next batch starts strictly before that moment. Photos
+    /// with no creation date come with the last batch.
+    func listBatch(after resumePoint: PhotoBackupResumePoint?, limit: Int, includesHidden: Bool) async throws -> PhotoBackupListingBatch {
         let options = Self.fetchOptions(includesHidden: includesHidden)
+        let datedOnly = NSPredicate(format: "creationDate != nil")
+        var predicates: [NSPredicate] = [datedOnly]
+        if let existing = options.predicate { predicates.append(existing) }
+        if let resumePoint {
+            predicates.append(
+                NSPredicate(format: "creationDate <= %@", resumePoint.creationDate.addingTimeInterval(-Self.sameMomentSeconds) as NSDate))
+        }
+        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        let result = PHAsset.fetchAssets(with: options)
+        var entries: [PhotoBackupLibraryEntry] = []
+        var position = 0
+        while position < result.count {
+            let asset = result.object(at: position)
+            if entries.count >= max(1, limit), let lastDate = entries.last?.creationDate, let creationDate = asset.creationDate,
+                creationDate <= lastDate.addingTimeInterval(-Self.sameMomentSeconds)
+            {
+                break
+            }
+            entries.append(PhotoBackupLibraryEntry(localIdentifier: asset.localIdentifier, creationDate: asset.creationDate))
+            position += 1
+        }
+        let isEndOfDatedItems = position >= result.count
+        if isEndOfDatedItems {
+            // The fetch leaves out the photos with no creation date; they are
+            // listed with the last batch.
+            entries.append(contentsOf: Self.entriesWithoutCreationDate(includesHidden: includesHidden))
+        }
+        return PhotoBackupListingBatch(entries: entries, isLast: isEndOfDatedItems)
+    }
+
+    /// The items the library holds no creation date for, which are rare. Found by
+    /// sorting the other way, where they come first.
+    private static func entriesWithoutCreationDate(includesHidden: Bool) -> [PhotoBackupLibraryEntry] {
+        let options = fetchOptions(includesHidden: includesHidden)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         let result = PHAsset.fetchAssets(with: options)
-        var assets: [PHAsset] = []
-        result.enumerateObjects { asset, _, _ in
-            if !known.contains(asset.localIdentifier) { assets.append(asset) }
+        var entries: [PhotoBackupLibraryEntry] = []
+        var position = 0
+        while position < result.count {
+            let asset = result.object(at: position)
+            guard asset.creationDate == nil else { break }
+            entries.append(PhotoBackupLibraryEntry(localIdentifier: asset.localIdentifier, creationDate: nil))
+            position += 1
         }
-        return PhotoBackupListing(items: Self.items(for: assets), totalCount: result.count, changeToken: changeToken)
+        return entries
     }
 
     func items(withLocalIdentifiers localIdentifiers: [String], includesHidden: Bool) async throws -> [PhotoBackupItem] {
@@ -76,9 +131,11 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
             // the library is listed again, skipping what the index has.
             throw PhotoBackupLibraryError.changeTokenExpired
         }
-        let assets = Self.assets(withLocalIdentifiers: Array(localIdentifiers), includesHidden: includesHidden)
+        // The identifiers only: the items are built a batch at a time, and the
+        // ones the library no longer lists (deleted, not the person's own, in
+        // the Hidden album when it is left out) are dropped when they are asked for.
         let totalCount = PHAsset.fetchAssets(with: Self.fetchOptions(includesHidden: includesHidden)).count
-        return PhotoBackupChanges(items: Self.items(for: assets), totalCount: totalCount, changeToken: newToken)
+        return PhotoBackupChanges(localIdentifiers: Array(localIdentifiers), totalCount: totalCount, changeToken: newToken)
     }
 
     private static func archivedCurrentChangeToken() -> Data? {

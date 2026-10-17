@@ -56406,6 +56406,22 @@
         }
       }
     },
+    "Reading your photo library: %@ of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真ライブラリを読み込んでいます: %2$@ 件中 %1$@ 件"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取你的照片库：%1$@ / %2$@"
+          }
+        }
+      }
+    },
     "Backing up": {
       "localizations": {
         "ja": {
