@@ -199,6 +199,75 @@ it('keeps looking for a description after two minutes, less often, and says it i
   }
 })
 
+it('does not leave the waiting for a description on a photo it was not asked for', async () => {
+  vi.mocked(graphql).mockImplementation((async (_document: string, variables?: Record<string, unknown>) => ({
+    ReadPhoto: {
+      photo: { ...undescribedPhoto, id: String(variables?.photoId) },
+      photoFiles: [],
+      albums: [],
+      faces: [],
+    },
+  })) as never)
+  let answerRequest: () => void = () => {}
+  const onDescribe = vi.fn(() => new Promise<void>((resolve) => (answerRequest = resolve)))
+  const tree = (shown: Photo) => (
+    <TranslationProvider>
+      <MemoryRouter>
+        <PhotoViewer
+          photo={shown}
+          previousPhoto={null}
+          nextPhoto={null}
+          isTrashed={false}
+          isPaused={false}
+          onNavigate={vi.fn()}
+          onClose={vi.fn()}
+          onToggleFavorite={vi.fn()}
+          onTrash={vi.fn()}
+          onRestore={vi.fn()}
+          onDeleteForever={vi.fn()}
+          onAddToAlbum={vi.fn()}
+          onNewAlbum={vi.fn()}
+          photoLibrary={library()}
+          onDescribe={onDescribe}
+        />
+      </MemoryRouter>
+    </TranslationProvider>
+  )
+  const { rerender } = render(tree(photo))
+  fireEvent.click(await screen.findByRole('button', { name: 'Describe this photo' }))
+  expect(await screen.findByText(/Describing… this can take a minute/)).toBeTruthy()
+  // The person moves on to the next photo while the request is on its way.
+  rerender(tree({ ...photo, id: 'photo-2' }))
+  expect(await screen.findByRole('button', { name: 'Describe this photo' })).toBeTruthy()
+  expect(screen.queryByText(/Describing… this can take a minute/)).toBeNull()
+  // The answer for the first photo comes back: the second is not made to wait for it.
+  answerRequest()
+  await waitFor(() => expect(onDescribe).toHaveBeenCalledTimes(1))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(screen.queryByText(/Describing… this can take a minute/)).toBeNull()
+  expect(screen.getByRole('button', { name: 'Describe this photo' })).toBeTruthy()
+})
+
+it('does not look for a description in a tab nobody is looking at, and looks when it is shown again', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  const visibility = vi.spyOn(document, 'visibilityState', 'get')
+  try {
+    serveRead({ photo: { ...undescribedPhoto, isDescriptionRequested: true } })
+    show(vi.fn(), { photoLibrary: library(), onDescribe: vi.fn() })
+    await screen.findByText(/Describing… this can take a minute/)
+    visibility.mockReturnValue('hidden')
+    const before = vi.mocked(graphql).mock.calls.length
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(vi.mocked(graphql).mock.calls.length).toBe(before)
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await waitFor(() => expect(vi.mocked(graphql).mock.calls.length).toBeGreaterThan(before))
+  } finally {
+    visibility.mockRestore()
+    vi.useRealTimers()
+  }
+})
+
 it('opens the assistant on this photo', async () => {
   serveRead({ photo: describedPhoto })
   const onAskAssistant = vi.fn()
@@ -464,6 +533,33 @@ it('shows no Description section to a reader who was given no description', asyn
   await screen.findByText('Ben')
   expect(screen.queryByText('Description')).toBeNull()
   expect(screen.queryByText('File name')).toBeNull()
+})
+
+it('offers to ask the assistant about a photo shared with the person, with no Description section if there is none', async () => {
+  const shared = { ...photo, isOwnedByCaller: false, ownerName: 'Ben', userId: 'person-2' } as Photo
+  serveRead({ photo: { ...shared, photoDescription: '', descriptionVisibleText: '', describedAt: null } })
+  const onAskAssistant = vi.fn()
+  show(vi.fn(), { photo: shared, photoLibrary: library(), onAskAssistant })
+  fireEvent.click(await screen.findByRole('button', { name: 'Ask the assistant about this photo' }))
+  expect(onAskAssistant).toHaveBeenCalledWith(expect.objectContaining({ id: 'photo-1' }))
+  expect(screen.queryByText('Description')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Describe this photo' })).toBeNull()
+})
+
+it('keeps the description of a shared photo above the way to ask about it', async () => {
+  const shared = { ...photo, isOwnedByCaller: false, ownerName: 'Ben', userId: 'person-2' } as Photo
+  serveRead({
+    photo: {
+      ...shared,
+      photoDescription: 'A red kite.',
+      descriptionVisibleText: '',
+      describedAt: '2030-07-13T10:00:00Z',
+    },
+  })
+  show(vi.fn(), { photo: shared, photoLibrary: library(), onAskAssistant: vi.fn() })
+  expect(await screen.findByText('A red kite.')).toBeTruthy()
+  expect(screen.getByText('Description')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Ask the assistant about this photo' })).toBeTruthy()
 })
 
 it('says how long a photo in the Trash has left', async () => {

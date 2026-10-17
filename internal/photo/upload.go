@@ -383,7 +383,8 @@ func (self *Store) storePart(ctx context.Context, userId string, upload *models.
 // bytes of the account's other uploads that have not finished: those are not
 // photos yet, and counting only photos would let any number of uploads each
 // pass the check and then fill the store. A file that replaces one the photo
-// already has is let through: whether it fits is settled when it arrives, and a
+// already has, or repeats an original the person has, is held only to the bound
+// on unfinished uploads: whether it fits is settled when it arrives, and a
 // client retrying a file that is already stored must not be turned away at the
 // door.
 func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *models.PhotoUploadHeaders, sizeBytes int64) error {
@@ -392,13 +393,22 @@ func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *mod
 		return nil
 	}
 	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		// A replacement or a duplicate of an original takes no more room once it
+		// is complete, but its parts are bytes in the store until then, so the
+		// bound on unfinished uploads still holds for it: without it, many such
+		// uploads that never complete would hold any amount.
 		isReplacement, err := hasFileInRole(transaction, userId, headers)
-		if err != nil || isReplacement {
+		if err != nil {
 			return err
 		}
-		isDuplicate, err := isDuplicateOfOwnOriginal(transaction, userId, headers, sizeBytes, true)
-		if err != nil || isDuplicate {
-			return err
+		isDuplicate := false
+		if !isReplacement {
+			if isDuplicate, err = isDuplicateOfOwnOriginal(transaction, userId, headers, sizeBytes, true); err != nil {
+				return err
+			}
+		}
+		if isReplacement || isDuplicate {
+			return self.checkUnfinishedBytes(transaction, userId, headers, maximumAccountBytes)
 		}
 		usedBytes, err := transaction.PhotoUsedBytes(userId)
 		if err != nil {
@@ -467,13 +477,19 @@ func (self *Store) checkRoomForPart(ctx context.Context, userId string, upload *
 		return nil
 	}
 	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		// As above: no more room once complete, but still bounded while unfinished.
 		isReplacement, err := hasFileInRole(transaction, userId, &upload.PhotoUploadHeaders)
-		if err != nil || isReplacement {
+		if err != nil {
 			return err
 		}
-		isDuplicate, err := isDuplicateOfOwnOriginal(transaction, userId, &upload.PhotoUploadHeaders, upload.ReceivedSizeBytes+partBytes, false)
-		if err != nil || isDuplicate {
-			return err
+		isDuplicate := false
+		if !isReplacement {
+			if isDuplicate, err = isDuplicateOfOwnOriginal(transaction, userId, &upload.PhotoUploadHeaders, upload.ReceivedSizeBytes+partBytes, false); err != nil {
+				return err
+			}
+		}
+		if isReplacement || isDuplicate {
+			return self.checkUnfinishedBytes(transaction, userId, &upload.PhotoUploadHeaders, maximumAccountBytes)
 		}
 		usedBytes, err := transaction.PhotoUsedBytes(userId)
 		if err != nil {

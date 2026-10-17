@@ -41,7 +41,7 @@ func init() {
 				"`show` puts up to 12 photos (photo_ids) in the conversation for the person to see. " +
 				"`favorite` marks one a favorite (is_favorite false takes it back). `trash` and `restore` move photos (photo_ids) to the Trash and back; nothing here deletes forever. " +
 				"`set-date` (photo_id, taken_at) corrects the date a photo was taken: an RFC 3339 time whose offset is the offset of the place it was taken, such as 2025-07-12T14:30:00+09:00; the photo is shown at that clock from then on. " +
-				"`retry` (photo_ids, up to 100) makes the previews of photos again: a photo whose previews failed is tried again from the start, and a photo that is ready is done again to replace previews that look wrong; it answers at once and the previews arrive in a minute or so. " +
+				"`retry` (photo_ids, up to 100) makes the thumbnails of photos again (the dashboard and the iPhone call it Make thumbnails again): a photo whose thumbnails failed is tried again from the start, and a photo that is ready is done again to replace thumbnails that look wrong; it answers at once and the thumbnails arrive in a minute or so. " +
 				"`save` keeps a picture or video as a photo: from this conversation (source conversation, attachment_id), a message (source mail, item_id and attachment as mail_read lists them) or their computer (source computer, path). " +
 				"Albums are named sets of photos, and a photo can be in several: `album-list` and `album-read` (album_id) show them, `list` with album_id lists an album's photos, and `read` says which albums a photo is in. " +
 				"`album-list` also gives the albums of the person's circles and the albums other people shared with them, each with its owner (owner_name, or circle_name for a circle's album) and level (owner, contribute or view). You read those where they are: `list` with album_id, `read`, `look` and `show` work on their photos as on the person's own, each photo says whose it is (owner), and a photo that is not the person's comes without its place unless the share includes it, so do not guess where it was taken. Never copy a photo into the person's library unless they ask; `save-shared` (photo_ids) does, and the copy is theirs. " +
@@ -296,7 +296,7 @@ func run(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	case "restore":
 		return move(ctx, executor, &asked, client.RestorePhotos, "restored from the Trash")
 	case "retry":
-		return move(ctx, executor, &asked, client.RetryPhotoProcessing, "queued to have their previews made again")
+		return move(ctx, executor, &asked, client.RetryPhotoProcessing, "queued to have their thumbnails made again")
 	case "save":
 		return save(ctx, current, &asked)
 	case "album-list":

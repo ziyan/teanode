@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { CloseIcon } from './icons'
@@ -44,6 +44,51 @@ const ACTION_LINGER = 12000
 // must not fill the window. The oldest go.
 const MOST = 3
 
+// The room the strip of toasts has at the foot of the window. It starts at
+// the content area (the rail's width is --rail-width) and ends before the
+// agent's open drawer and the upload tray, which stand at the right and would
+// otherwise cover a message. Left of the drawer there can be too little room
+// to read a message in, as at 800 pixels with the rail open; the strip then
+// starts at the window's margin instead, over the rail, lifted above the
+// account row at the rail's foot.
+const OBSTACLES = '.agent-drawer:not(.standalone), .photo-tray'
+const MARGIN = 16
+const GAP = 12
+const LEAST_ROOM = 240
+const FALLBACK_LIFT = 72
+
+export type ToastRoom = {
+  // Where the strip ends, in pixels from the window's left edge.
+  edge: number
+  // True when the strip starts at the window's margin, over the rail.
+  isOverRail: boolean
+}
+
+// toastRoom works out where the strip may end. railWidth is where the content
+// begins (0 when the rail is a drawer), and the obstacles are the boxes of
+// whatever stands in the window. Only a box beside the strip counts: one that
+// shares its height on the screen (the tray floats above a single toast), and
+// starts right of where the strip starts (a drawer dragged to the left is not
+// a wall at the right, and treating it as one left a sliver to read in).
+export function toastRoom(
+  viewportWidth: number,
+  railWidth: number,
+  obstacles: { left: number; right: number; top?: number; bottom?: number }[],
+  band?: { top: number; bottom: number },
+): ToastRoom {
+  const windowEdge = viewportWidth - MARGIN
+  const contentLeft = railWidth + MARGIN
+  let edge = windowEdge
+  for (const obstacle of obstacles) {
+    const isBeside =
+      !band || obstacle.top === undefined || obstacle.bottom === undefined || (obstacle.top < band.bottom && obstacle.bottom > band.top)
+    if (obstacle.right > obstacle.left && isBeside && obstacle.left > contentLeft && obstacle.left < edge + GAP) {
+      edge = Math.min(edge, obstacle.left - GAP)
+    }
+  }
+  return { edge, isOverRail: railWidth > 0 && edge - contentLeft < LEAST_ROOM }
+}
+
 type Speak = {
   done: (message: string, action?: ToastAction) => void
   failed: (message: string, action?: ToastAction) => void
@@ -81,11 +126,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [add],
   )
 
+  const strip = useRef<HTMLDivElement>(null)
+  useToastRoom(strip, toasts.length > 0)
+
   return (
     <Context.Provider value={speak}>
       {children}
       {createPortal(
-        <div className="toasts" role="status" aria-live="polite">
+        <div className="toasts" role="status" aria-live="polite" ref={strip}>
           {toasts.map((toast) => (
             <ToastRow
               key={toast.id}
@@ -99,6 +147,54 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       )}
     </Context.Provider>
   )
+}
+
+// useToastRoom keeps the strip clear of the drawer and the tray while there
+// is a toast to show: they open, move and are resized meanwhile, so it looks
+// again a few times a second rather than only when a toast arrives.
+function useToastRoom(strip: React.RefObject<HTMLDivElement | null>, isShowing: boolean) {
+  useLayoutEffect(() => {
+    const element = strip.current
+    if (!element) {
+      return
+    }
+    const place = () => {
+      // Under 721 pixels the drawer is the whole screen and the toasts are
+      // drawn over it, as they are on a phone.
+      if (!isShowing || window.innerWidth <= 720) {
+        element.style.removeProperty('--toast-edge')
+        element.style.removeProperty('--toast-lift')
+        element.classList.remove('over-rail')
+        return
+      }
+      const railWidth =
+        window.innerWidth <= 760
+          ? 0
+          : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rail-width')) || 0
+      const boxes = Array.from(document.querySelectorAll(OBSTACLES)).map((each) => each.getBoundingClientRect())
+      // A strip not laid out yet has no height to compare with: every box counts.
+      const stripBox = element.getBoundingClientRect()
+      const band = stripBox.height > 0 ? { top: stripBox.top, bottom: stripBox.bottom } : undefined
+      const room = toastRoom(window.innerWidth, railWidth, boxes, band)
+      element.style.setProperty('--toast-edge', `${room.edge}px`)
+      element.classList.toggle('over-rail', room.isOverRail)
+      const account = document.querySelector('.sidebar .account-button')?.getBoundingClientRect()
+      element.style.setProperty(
+        '--toast-lift',
+        `${account ? Math.max(0, window.innerHeight - account.top + 14) : FALLBACK_LIFT}px`,
+      )
+    }
+    place()
+    if (!isShowing) {
+      return
+    }
+    const timer = window.setInterval(place, 250)
+    window.addEventListener('resize', place)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('resize', place)
+    }
+  }, [strip, isShowing])
 }
 
 // useToast is how anything says what happened. It throws when there is no

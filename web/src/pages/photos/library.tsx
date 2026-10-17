@@ -65,7 +65,7 @@ import {
   startOfDay,
   startOfNextDay,
 } from '../../photos/filters'
-import { formatByteSize, indexRange, personTimeZone, photoReferenceTitle, sortByTrashedAt } from '../../photos/days'
+import { formatByteSize, indexRange, personTimeZone, photoReferenceTitle } from '../../photos/days'
 import {
   hidePhotoFaceGroup,
   listPhotoFaceGroups,
@@ -158,7 +158,10 @@ function AccountPhotosPage() {
   const displayedName = useDisplayedPersonName()
   const canNamePeople =
     session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
-  const isAssistantOn = session.services?.isAssistantEnabled === true
+  // Asking about a photo needs an assistant on the server and one this person
+  // may use, as the sidebar's assistant links do.
+  const isAssistantOn =
+    session.services?.isAssistantEnabled === true && hasPermission(session.permissions, 'agent:use')
   const circleChoices = useCircleChoices()
 
   const listKind: PhotoListKind = isInsideCollection
@@ -312,7 +315,8 @@ function AccountPhotosPage() {
   )
   const people = useQuery(async () => (isMergingPerson ? await listPhotoFaceGroups(true) : []), [isMergingPerson])
   // The names a search may have found photos by without a word being in the
-  // photo itself: the people in it and the albums it is in.
+  // photo itself: the people in it and the albums it is in. Nothing (null)
+  // until they have been read, and when nothing is searched for.
   const searchNames = useQuery(
     async () =>
       isSearching
@@ -320,7 +324,7 @@ function AccountPhotosPage() {
             ...(await listPhotoFaceGroups(true)).map((group) => group.contactName),
             ...(await listPhotoAlbums()).map((each) => each.albumTitle),
           ]
-        : [],
+        : null,
     [isSearching],
     { refresh: false },
   )
@@ -346,11 +350,8 @@ function AccountPhotosPage() {
     [favoriteOverrides],
   )
   // The Trash is read newest trashed first, under the days the photos were
-  // moved there; the server lists it by when the photos were taken.
-  const photos = useMemo(() => {
-    const withOverrides = (listedPhotos ?? []).map(withFavoriteOverride)
-    return isTrash ? sortByTrashedAt(withOverrides) : withOverrides
-  }, [listedPhotos, withFavoriteOverride, isTrash])
+  // moved there, which is the order the server lists it in.
+  const photos = useMemo(() => (listedPhotos ?? []).map(withFavoriteOverride), [listedPhotos, withFavoriteOverride])
 
   // A favorite changed here shows at once and is sent in the order it was
   // chosen, one request after another for the same photo; the heart and the
@@ -1013,13 +1014,24 @@ function AccountPhotosPage() {
     searchText === '' && !hasFilters && !photoAlbumId && !photoFaceGroupId && listKind === 'library'
   const trashedCount = info.data?.trashedCount ?? 0
   const trashDays = info.data?.trashRetentionDays ?? 0
+  // The Trash says under each day how long is left, which it can only do once
+  // the library has said how long it keeps a photo: drawn before that, the
+  // lines would pop in under headings that were already there. If the library
+  // cannot be read the Trash is drawn without them.
+  const isWaitingForTrashRetention = isTrash && info.data === null && info.error === null
   const isSelecting = isSelectionMode || selectedIds.size > 0
   // Nothing in the list and nothing asked for: no search or filter to offer.
   const isListEmpty = library.data !== null && photos.length === 0 && !isListStale && searchText === '' && !hasFilters
   // Day headings are the timeline's. A search is in the order of how well it
   // matches and is under none; the Trash is under the days it was filled.
   const grouping: PhotoGrouping = isSearching ? 'none' : isTrash ? 'trash' : 'day'
-  const isMeaningOnly = isSearching && !isListStale && isFoundByMeaningOnly(searchText, photos, searchNames.data ?? [])
+  // Said only once the names have answered: until then a photo found by a
+  // person's or an album's name would be called a mere closest match.
+  const isMeaningOnly =
+    isSearching &&
+    !isListStale &&
+    searchNames.data !== null &&
+    isFoundByMeaningOnly(searchText, photos, searchNames.data)
 
   return (
     <div
@@ -1241,7 +1253,9 @@ function AccountPhotosPage() {
                 />
                 {near && (
                   <span className="table-pinned photo-near-filter">
-                    {nearPlace ? t('photos.nearPlace', { place: nearPlace }) : t('photos.nearHere')}
+                    <span className="photo-near-label">
+                      {nearPlace ? t('photos.nearPlace', { place: nearPlace }) : t('photos.nearHere')}
+                    </span>
                     <button
                       type="button"
                       className="icon-button"
@@ -1333,7 +1347,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {library.loading && !library.data ? (
+      {(library.loading && !library.data) || isWaitingForTrashRetention ? (
         <Loading />
       ) : photos.length === 0 && !isListStale ? (
         <>

@@ -5744,7 +5744,7 @@ export const en = {
   'photos.askNamed': 'Ask {name} about this photo',
   'photos.describeHintNamed': '{name} looks at the picture and writes what it shows, so a search can find it.',
   'services.photosOnlyPassword': 'Lets the device in its name back up and read your photos. Nothing else.',
-  'serverSettings.photosFaces': 'Find faces in photos',
+  'serverSettings.photosFaces': 'Find people in photos',
   'serverSettings.photosFacesHint':
     'Finds the people in photos and groups them. Turning it off stops finding faces for everybody on this server.',
   'serverSettings.photosTitle': 'Photos',

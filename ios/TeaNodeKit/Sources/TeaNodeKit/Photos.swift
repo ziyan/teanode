@@ -200,16 +200,25 @@ public struct PhotoDescription: Codable, Hashable, Sendable {
 }
 
 /// PhotoDescriptionPolling is how a description that is on its way is waited
-/// for: asked about every few seconds while the person stays on the photo, and
-/// not for longer than two minutes. After that the job goes on without the
-/// screen, and the person finds the description when they come back.
+/// for, as the dashboard does: asked about every few seconds while the person
+/// stays on the photo, and every fifteen seconds once two minutes have passed,
+/// when the screen also says it is taking longer than usual. It does not give
+/// up while the screen is open; closing the screen ends it, and the job goes
+/// on without it.
 public enum PhotoDescriptionPolling {
     public static let intervalSeconds = 3
-    public static let limitSeconds = 120
+    public static let slowAfterSeconds = 120
+    public static let slowIntervalSeconds = 15
 
-    /// Whether a screen that has waited this long should ask once more.
-    public static func shouldAskAgain(afterWaiting waitedSeconds: Int) -> Bool {
-        waitedSeconds < limitSeconds
+    /// Whether a screen that has waited this long says it is taking longer
+    /// than usual.
+    public static func isSlow(afterWaiting waitedSeconds: Int) -> Bool {
+        waitedSeconds >= slowAfterSeconds
+    }
+
+    /// How long a screen that has waited this long waits before it asks again.
+    public static func secondsBeforeAsking(afterWaiting waitedSeconds: Int) -> Int {
+        isSlow(afterWaiting: waitedSeconds) ? slowIntervalSeconds : intervalSeconds
     }
 }
 
@@ -1042,6 +1051,21 @@ public struct PhotoDay: Identifiable, Hashable, Sendable {
     }
 }
 
+/// PhotoTrashDay is the photos of the Trash moved there on one day, with how
+/// long the first of them has left before it is deleted forever. What a person
+/// looking at the Trash asks is when each photo goes, not when it was taken.
+public struct PhotoTrashDay: Identifiable, Hashable, Sendable {
+    /// "2026-03-11", the day they were moved to the Trash on the phone's
+    /// clock, or "unknown" for photos that do not say.
+    public let id: String
+    /// When the first photo of the day was moved to the Trash; nil for no date.
+    public let trashedAt: Date?
+    /// Whole days left, 0 from the last day on; nil when the server keeps
+    /// photos for no set time or the photos do not say when they were trashed.
+    public let daysLeft: Int?
+    public let photos: [Photo]
+}
+
 /// PhotoTimeline is how photos are placed on days and times.
 ///
 /// A photo with a `takenAtOffsetMinutes` is placed by the wall clock of where
@@ -1067,6 +1091,58 @@ public enum PhotoTimeline {
     /// a list ranked by match is laid out, since days would break the order.
     public static func rankedDay(_ photos: [Photo]) -> [PhotoDay] {
         photos.isEmpty ? [] : [PhotoDay(id: "ranked", year: nil, month: nil, day: nil, photos: photos)]
+    }
+
+    /// How many whole days a photo trashed at a moment stays in the Trash,
+    /// counting from now, when the server keeps it for `retentionDays`: zero
+    /// from the last day on, and nil when the server keeps it for no set time
+    /// or the photo does not say when it was trashed. The dashboard counts the
+    /// same way.
+    public static func trashDaysLeft(trashedAt: Date?, retentionDays: Int, now: Date) -> Int? {
+        guard let trashedAt, retentionDays > 0 else { return nil }
+        let elapsedDays = Int((now.timeIntervalSince(trashedAt) / 86_400).rounded(.down))
+        return max(0, retentionDays - elapsedDays)
+    }
+
+    /// The photos of the Trash in groups by the day they were moved there. The
+    /// server lists the Trash newest trashed first, so a group is a run of the
+    /// list: photos are not moved between groups, and the order is kept. Each
+    /// group says how long it has left, as its last photo does: the list runs
+    /// newest first, so that is the oldest, which is deleted first.
+    public static func trashDays(_ photos: [Photo], retentionDays: Int, now: Date = Date(), phoneTimeZone: TimeZone = .current) -> [PhotoTrashDay] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = phoneTimeZone
+        var days: [PhotoTrashDay] = []
+        var runKey: String?
+        var runPhotos: [Photo] = []
+        var runTrashedAt: Date?
+        var runOldestTrashedAt: Date?
+        func closeRun() {
+            guard let key = runKey else { return }
+            days.append(
+                PhotoTrashDay(
+                    id: key, trashedAt: runTrashedAt, daysLeft: trashDaysLeft(trashedAt: runOldestTrashedAt, retentionDays: retentionDays, now: now), photos: runPhotos))
+        }
+        for photo in photos {
+            let trashedAt = ServerTime.date(photo.trashedAt)
+            var key = "unknown"
+            if let trashedAt {
+                let components = calendar.dateComponents([.year, .month, .day], from: trashedAt)
+                if let year = components.year, let month = components.month, let day = components.day {
+                    key = String(format: "%04ld-%02ld-%02ld", year, month, day)
+                }
+            }
+            if key != runKey {
+                closeRun()
+                runKey = key
+                runPhotos = []
+                runTrashedAt = trashedAt
+            }
+            runPhotos.append(photo)
+            runOldestTrashedAt = trashedAt
+        }
+        closeRun()
+        return days
     }
 
     /// The photos, which the server lists newest first, in days. A day keeps

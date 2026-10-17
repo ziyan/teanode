@@ -412,11 +412,12 @@ func (self *processingClaim) abandonRenewal() {
 // claimed at the time it asked for; it was not if the photo is still claimed at
 // the time before, and the claim is lost if it is claimed at neither. When the
 // photo cannot be read the renewal stays pending, to be settled by the next
-// attempt.
-func (self *Store) settleClaim(photo *models.Photo, claim *processingClaim) {
+// attempt, and the answer is false: no renewal may be sent over it, since a new
+// pending time would replace the one the photo may hold.
+func (self *Store) settleClaim(photo *models.Photo, claim *processingClaim) bool {
 	pendingAt, hasPending := claim.pending()
 	if !hasPending {
-		return
+		return true
 	}
 	// The context of the work may be over; what became of the claim is still
 	// worth knowing.
@@ -427,14 +428,21 @@ func (self *Store) settleClaim(photo *models.Photo, claim *processingClaim) {
 		stored, err = transaction.GetPhoto(photo.UserID, photo.ID)
 		return err
 	}); err != nil {
+		// A photo deleted while it was worked on is not read any more, while
+		// its claim still is: there is nothing to settle and nothing to renew.
+		if errors.Is(err, db.ErrNotFound) {
+			claim.abandonRenewal()
+			return true
+		}
 		log.Warningf("cannot tell whether the claim on photo %s was renewed: %s", photo.ID, err)
-		return
+		return false
 	}
 	if stored.ProcessingClaimedAt != nil && stored.ProcessingClaimedAt.Equal(pendingAt) {
 		claim.confirmRenewal()
-		return
+		return true
 	}
 	claim.abandonRenewal()
+	return true
 }
 
 // discardSupersededPreviews takes back the previews a worker recorded when
@@ -503,8 +511,10 @@ func (self *Store) renewClaim(ctx context.Context, photo *models.Photo, claim *p
 			return
 		case <-ticker.C:
 			// An earlier renewal that could not be settled is, before another is
-			// sent over it.
-			self.settleClaim(photo, claim)
+			// sent over it; while it cannot be, none is sent.
+			if !self.settleClaim(photo, claim) {
+				continue
+			}
 			renewedAt := claim.beginRenewal()
 			var isCurrent bool
 			// A renewal is not cut off when the work ends: a request cancelled

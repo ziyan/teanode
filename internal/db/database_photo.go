@@ -273,7 +273,9 @@ type PhotoFilter struct {
 	// IsFavorite keeps favorites when true and the rest when false.
 	IsFavorite *bool
 
-	// IsTrashed lists the trash instead of the library.
+	// IsTrashed lists the trash instead of the library, newest moved to the
+	// trash first rather than newest taken first (a search is still ordered
+	// by how well it matches).
 	IsTrashed bool
 
 	PhotoKind models.PhotoKind
@@ -701,12 +703,20 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 	if strings.TrimSpace(filter.SearchText) != "" {
 		return self.listRankedPhotos(userId, filter)
 	}
+	// The library runs newest first by the date a photo is placed at; the
+	// Trash runs newest first by when the photo was moved there, which is the
+	// order its groups are read in, so that a page never ends in the middle of
+	// an older group's days.
+	orderExpression := photoTimelineExpression
+	if filter.IsTrashed {
+		orderExpression = "photo.trashed_at"
+	}
 	if filter.BeforePhotoID != "" {
 		var cursor struct {
-			PlacedAt time.Time
+			PlacedAt *time.Time
 			ID       string
 		}
-		cursorQuery := self.tx.Model(&photoModel{}).Select(photoTimelineExpression+" AS placed_at, photo.id").Where("photo.id = ?", filter.BeforePhotoID)
+		cursorQuery := self.tx.Model(&photoModel{}).Select(orderExpression+" AS placed_at, photo.id").Where("photo.id = ?", filter.BeforePhotoID)
 		if filter.AlbumID == "" {
 			cursorQuery = cursorQuery.Where("photo.user_id = ?", userId)
 		} else {
@@ -716,13 +726,20 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 		if err != nil {
 			return nil, err
 		}
-		if !isFound {
+		if !isFound || cursor.PlacedAt == nil {
 			return nil, ErrNotFound
 		}
-		query = query.Where("("+photoTimelineExpression+", photo.id) < (?, ?)", cursor.PlacedAt, cursor.ID)
+		// In the Trash, a photo deleted forever since the last page keeps its row
+		// until cleanup, trashed at the epoch: nothing in the Trash is before it,
+		// and the page after it would be empty, ending the listing early. It is
+		// not found, as a photo restored since is, and the caller starts again.
+		if filter.IsTrashed && !cursor.PlacedAt.After(photoMarkedForDeletion) {
+			return nil, ErrNotFound
+		}
+		query = query.Where("("+orderExpression+", photo.id) < (?, ?)", *cursor.PlacedAt, cursor.ID)
 	}
 	var rows []photoModel
-	if err := query.Order(photoTimelineExpression + " DESC, photo.id DESC").Offset(filter.Offset).Limit(filter.PageSize).Find(&rows).Error; err != nil {
+	if err := query.Order(orderExpression + " DESC, photo.id DESC").Offset(filter.Offset).Limit(filter.PageSize).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return photosFromModels(rows), nil

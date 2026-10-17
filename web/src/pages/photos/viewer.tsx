@@ -102,7 +102,7 @@ const FOCUSABLE =
 // first, and from its first to its last. A menu open over it (it is drawn in
 // the body, outside the viewer) keeps the Tab to itself.
 function keepFocusInside(event: KeyboardEvent, viewer: HTMLElement | null) {
-  if (!viewer || document.querySelector('.menu[role="menu"]')) return
+  if (!viewer || document.querySelector('.menu[role="menu"], .menu[role="dialog"]')) return
   const controls = Array.from(viewer.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((control) => {
     const style = window.getComputedStyle(control)
     return style.display !== 'none' && style.visibility !== 'hidden'
@@ -205,7 +205,13 @@ export function PhotoViewer({
   const faces = isRead ? (files.data!.faces ?? []).filter((face) => face.photoFaceGroupId !== '') : []
   const detail = isRead ? files.data!.photo : null
   const isDescriptionRequested = detail?.isDescriptionRequested === true
-  const [isAskingToDescribe, setIsAskingToDescribe] = useState(false)
+  // The photo a request to describe is on its way for. The answer comes back
+  // after the person may have moved on, and belongs to the photo it was asked
+  // about, not to whichever one is shown by then.
+  const [askingPhotoId, setAskingPhotoId] = useState<string | null>(null)
+  const isAskingToDescribe = askingPhotoId === photo.id
+  const shownPhotoId = useRef(photo.id)
+  shownPhotoId.current = photo.id
   // Asked for here and not yet seen to arrive. The server says a description is
   // on its way once it has the request; this covers the moment before it does,
   // and a description that is asked for again, which has one already.
@@ -235,6 +241,7 @@ export function PhotoViewer({
     setIsZoomed(false)
     setIsLive(false)
     setIsWaitingForDescription(false)
+    setAskingPhotoId(null)
     setIsDescriptionSlow(false)
     setIsChangingDate(false)
   }, [photo.id])
@@ -243,7 +250,8 @@ export function PhotoViewer({
   // the viewer stays on the photo, and every fifteen after two minutes, when
   // the viewer also says it is taking longer than usual. It is shown when it
   // arrives, which is when the photo says it was described again, and it stops
-  // when the server says nothing is on its way any more.
+  // when the server says nothing is on its way any more. A tab nobody is
+  // looking at does not look: it looks once when it is shown again.
   const isDescribing = isDescriptionRequested || isWaitingForDescription
   const reloadFiles = files.reload
   useEffect(() => {
@@ -253,11 +261,18 @@ export function PhotoViewer({
     const look = () => {
       const isSlow = Date.now() - startedAt >= DESCRIPTION_SLOW_AFTER_MS
       if (isSlow) setIsDescriptionSlow(true)
-      void reloadFiles(true)
+      if (document.visibilityState !== 'hidden') void reloadFiles(true)
       timer = window.setTimeout(look, isSlow ? DESCRIPTION_SLOW_POLL_MS : DESCRIPTION_POLL_MS)
     }
+    const lookWhenShown = () => {
+      if (document.visibilityState === 'visible') void reloadFiles(true)
+    }
     timer = window.setTimeout(look, DESCRIPTION_POLL_MS)
-    return () => window.clearTimeout(timer)
+    document.addEventListener('visibilitychange', lookWhenShown)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', lookWhenShown)
+    }
   }, [isDescribing, photo.id, reloadFiles])
   useEffect(() => {
     if (!isWaitingForDescription || !isRead) return
@@ -296,19 +311,22 @@ export function PhotoViewer({
 
   async function describe(isRedescribed: boolean) {
     if (!onDescribe) return
-    setIsAskingToDescribe(true)
+    const askedPhoto = photo
+    setAskingPhotoId(askedPhoto.id)
     setIsDescriptionSlow(false)
     describedAtWhenAsked.current = detail?.describedAt ?? null
     hasSeenRequest.current = false
     try {
       // The caller has said what went wrong when this rejects.
-      await onDescribe(photo, isRedescribed)
-      setIsWaitingForDescription(true)
-      await files.reload(true)
+      await onDescribe(askedPhoto, isRedescribed)
+      if (shownPhotoId.current === askedPhoto.id) {
+        setIsWaitingForDescription(true)
+        await files.reload(true)
+      }
     } catch {
       // Said already.
     } finally {
-      setIsAskingToDescribe(false)
+      setAskingPhotoId((current) => (current === askedPhoto.id ? null : current))
     }
   }
 
@@ -353,7 +371,7 @@ export function PhotoViewer({
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
       // An open menu takes the key first: Escape closes the menu, not the
       // viewer behind it.
-      if (document.querySelector('.menu[role="menu"]')) return
+      if (document.querySelector('.menu[role="menu"], .menu[role="dialog"]')) return
       if (event.key === 'Escape') {
         event.preventDefault()
         onClose()
@@ -407,6 +425,10 @@ export function PhotoViewer({
   // A reader of somebody else's photo may be given none of what a model wrote:
   // then there is no description to show, and no empty row for it.
   const hasDescriptionText = Boolean(detail?.photoDescription || detail?.descriptionVisibleText)
+  const hasDescriptionToRead = Boolean(detail?.describedAt && hasDescriptionText)
+  // The agent can be asked about a photo shared with the person as well as
+  // about their own: it reads it by reference.
+  const canAskAssistant = Boolean(onAskAssistant && fittedSource)
   const canChangeDate = isOwn && !isTrashed && onChangeDate !== undefined
   // What is not offered on the bar itself, because it is done once in a while
   // and the bar is for what is done to most photos: choosing the album's cover,
@@ -556,7 +578,7 @@ export function PhotoViewer({
                         disabled={isSaving}
                         onClick={() => void saveToLibrary()}
                       >
-                        <PhotoSaveIcon size={16} /> {t('photos.saveToLibrary')}
+                        <PhotoSaveIcon size={16} /> <span className="photo-save-label">{t('photos.saveToLibrary')}</span>
                       </button>
                     )
                   )}
@@ -871,24 +893,31 @@ export function PhotoViewer({
                   </ul>
                 </section>
               )}
-              {isRead && (isOwn || (detail?.describedAt && hasDescriptionText)) && (
-                <section className="photo-viewer-section" aria-labelledby="photo-viewer-description-heading">
-                  <div className="photo-viewer-section-head">
-                    <h3 id="photo-viewer-description-heading">{t('photos.description')}</h3>
-                    {detail?.describedAt && isOwn && onDescribe && photoLibrary?.isDescriptionAvailable && (
-                      <Tooltip label={t('photos.describeAgain')}>
-                        <button
-                          type="button"
-                          className="icon-action"
-                          aria-label={t('photos.describeAgain')}
-                          disabled={isAskingToDescribe || isDescribing}
-                          onClick={() => void describe(true)}
-                        >
-                          <RefreshIcon size={16} />
-                        </button>
-                      </Tooltip>
-                    )}
-                  </div>
+              {isRead && (isOwn || hasDescriptionToRead || canAskAssistant) && (
+                <section
+                  className="photo-viewer-section"
+                  aria-labelledby={isOwn || hasDescriptionToRead ? 'photo-viewer-description-heading' : undefined}
+                >
+                  {/* A photo shared with the person that nobody described has no
+                      description to show, but the agent can still be asked about it. */}
+                  {(isOwn || hasDescriptionToRead) && (
+                    <div className="photo-viewer-section-head">
+                      <h3 id="photo-viewer-description-heading">{t('photos.description')}</h3>
+                      {detail?.describedAt && isOwn && onDescribe && photoLibrary?.isDescriptionAvailable && (
+                        <Tooltip label={t('photos.describeAgain')}>
+                          <button
+                            type="button"
+                            className="icon-action"
+                            aria-label={t('photos.describeAgain')}
+                            disabled={isAskingToDescribe || isDescribing}
+                            onClick={() => void describe(true)}
+                          >
+                            <RefreshIcon size={16} />
+                          </button>
+                        </Tooltip>
+                      )}
+                    </div>
+                  )}
                   {detail?.describedAt && hasDescriptionText && (
                     <>
                       {detail.photoDescription && <p className="photo-description">{detail.photoDescription}</p>}
@@ -928,8 +957,8 @@ export function PhotoViewer({
                       </p>
                     )
                   ) : null}
-                  {onAskAssistant && fittedSource && (
-                    <button type="button" className="photo-viewer-action" onClick={() => onAskAssistant(photo)}>
+                  {canAskAssistant && (
+                    <button type="button" className="photo-viewer-action" onClick={() => onAskAssistant?.(photo)}>
                       <SparkIcon size={16} /> {assistantWords.askAbout(isVideo)}
                     </button>
                   )}

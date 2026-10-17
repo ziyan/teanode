@@ -60192,13 +60192,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "Photos in the Trash are deleted for good after %lld day."
+                  "value": "Photos in the Trash are deleted forever after %lld day."
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "Photos in the Trash are deleted for good after %lld days."
+                  "value": "Photos in the Trash are deleted forever after %lld days."
                 }
               }
             }
@@ -60802,22 +60802,6 @@
         }
       }
     },
-    "Make previews again": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プレビューを作り直す"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重新生成预览"
-          }
-        }
-      }
-    },
     "Suggested": {
       "localizations": {
         "ja": {
@@ -60868,22 +60852,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已选择"
-          }
-        }
-      }
-    },
-    "Describing…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "説明を作成中…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在生成描述…"
           }
         }
       }
@@ -62146,22 +62114,6 @@
         }
       }
     },
-    "Describing again…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "説明を作り直し中…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在重新生成描述…"
-          }
-        }
-      }
-    },
     "The Trash is empty": {
       "localizations": {
         "ja": {
@@ -62814,6 +62766,288 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行前就被拦截。"
+          }
+        }
+      }
+    },
+    "Moved to the Trash on %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にゴミ箱へ移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@移入废纸篓"
+          }
+        }
+      }
+    },
+    "Deleted forever in %lld days": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Deleted forever in %lld day"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Deleted forever in %lld days"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "あと%lld日で完全に削除されます"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "あと%lld日で完全に削除されます"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "还有 %lld 天将被永久删除"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "还有 %lld 天将被永久删除"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Ask %@ about this video": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このビデオについて%@に聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向%@询问这个视频"
+          }
+        }
+      }
+    },
+    "Describe this video": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このビデオの説明を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为这个视频生成描述"
+          }
+        }
+      }
+    },
+    "Search photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索照片"
+          }
+        }
+      }
+    },
+    "The assistant looks at the picture and writes what it shows, so a search can find it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アシスタントが写真を見て内容を書き出すので、検索で見つけられるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手会查看这张图片并写下其中的内容，这样搜索就能找到它。"
+          }
+        }
+      }
+    },
+    "The assistant looks at the video's poster and writes what it shows, so a search can find it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アシスタントがビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手会查看视频的封面图并写下其中的内容，这样搜索就能找到它。"
+          }
+        }
+      }
+    },
+    "Ask the assistant about this video": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このビデオについてアシスタントに聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向助手询问这个视频"
+          }
+        }
+      }
+    },
+    "Ask the assistant about this photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真についてアシスタントに聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向助手询问这张照片"
+          }
+        }
+      }
+    },
+    "Deleted forever today": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日完全に削除されます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天将被永久删除"
+          }
+        }
+      }
+    },
+    "Describing… this can take a minute.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明を作成中… 1分ほどかかることがあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在生成描述…这可能需要一分钟。"
+          }
+        }
+      }
+    },
+    "Ask %@ about this photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真について%@に聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向%@询问这张照片"
+          }
+        }
+      }
+    },
+    "%@ looks at the video's poster and writes what it shows, so a search can find it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@がビデオのポスター画像を見て内容を書き出すので、検索で見つけられるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@会查看视频的封面图并写下其中的内容，这样搜索就能找到它。"
+          }
+        }
+      }
+    },
+    "Make thumbnails again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サムネイルを作り直す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成缩略图"
+          }
+        }
+      }
+    },
+    "Describing again… this can take a minute.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明を作り直し中… 1分ほどかかることがあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重新生成描述…这可能需要一分钟。"
           }
         }
       }

@@ -6,20 +6,22 @@ import XCTest
 final class PhotosTests: XCTestCase {
     private func photoJSON(
         id: String, kind: String = "picture", takenAt: String? = nil, offsetMinutes: Int? = nil, createdAt: String = "2026-03-01T00:00:00Z",
-        durationMS: Int = 0, smallPreviewUrl: String = "", largePreviewUrl: String = "", placeName: String = ""
+        durationMS: Int = 0, smallPreviewUrl: String = "", largePreviewUrl: String = "", placeName: String = "", trashedAt: String? = nil
     ) -> String {
+        let trashedAt = trashedAt.map { #""\#($0)""# } ?? "null"
         let takenAt = takenAt.map { #""\#($0)""# } ?? "null"
         let offset = offsetMinutes.map { String($0) } ?? "null"
-        return #"{"id":"\#(id)","createdAt":"\#(createdAt)","photoKind":"\#(kind)","takenAt":\#(takenAt),"takenAtOffsetMinutes":\#(offset),"widthPixels":3024,"heightPixels":4032,"durationMS":\#(durationMS),"latitude":null,"longitude":null,"placeName":"\#(placeName)","cameraMake":"","cameraModel":"","originalFilename":"IMG_0001.HEIC","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":null,"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":""}"#
+        return #"{"id":"\#(id)","createdAt":"\#(createdAt)","photoKind":"\#(kind)","takenAt":\#(takenAt),"takenAtOffsetMinutes":\#(offset),"widthPixels":3024,"heightPixels":4032,"durationMS":\#(durationMS),"latitude":null,"longitude":null,"placeName":"\#(placeName)","cameraMake":"","cameraModel":"","originalFilename":"IMG_0001.HEIC","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":""}"#
     }
 
     private func photo(
         _ id: String, kind: String = "picture", takenAt: String? = nil, offsetMinutes: Int? = nil, createdAt: String = "2026-03-01T00:00:00Z",
-        placeName: String = ""
+        placeName: String = "", trashedAt: String? = nil
     ) throws -> Photo {
         try JSONDecoder().decode(
             Photo.self,
-            from: Data(photoJSON(id: id, kind: kind, takenAt: takenAt, offsetMinutes: offsetMinutes, createdAt: createdAt, placeName: placeName).utf8))
+            from: Data(
+                photoJSON(id: id, kind: kind, takenAt: takenAt, offsetMinutes: offsetMinutes, createdAt: createdAt, placeName: placeName, trashedAt: trashedAt).utf8))
     }
 
     private let losAngeles = TimeZone(identifier: "America/Los_Angeles")!
@@ -128,6 +130,52 @@ final class PhotosTests: XCTestCase {
         XCTAssertEqual(PhotoTimeline.days([unplaced], phoneTimeZone: losAngeles).map(\.id), ["2026-03-10"])
         XCTAssertEqual(PhotoTimeline.days([unplaced], phoneTimeZone: tokyo).map(\.id), ["2026-03-11"])
         XCTAssertEqual(try XCTUnwrap(PhotoTimeline.moment(of: unplaced, phoneTimeZone: tokyo)).isTimeZoneOfPhoto, false)
+    }
+
+    func testTheTrashIsGroupedByTheDayPhotosWereMovedThereInTheOrderOfTheList() throws {
+        // Listed newest trashed first, as the server does. The photos were taken on other days, which the Trash does not group by.
+        let now = try XCTUnwrap(ServerTime.date("2026-03-13T05:00:00Z"))
+        let photos = [
+            try photo("a", takenAt: "2020-01-01T00:00:00Z", trashedAt: "2026-03-12T09:00:00Z"),
+            try photo("b", takenAt: "2026-03-10T00:00:00Z", trashedAt: "2026-03-12T01:00:00Z"),
+            try photo("c", takenAt: "2026-03-11T00:00:00Z", trashedAt: "2026-03-09T20:00:00Z"),
+        ]
+        let days = PhotoTimeline.trashDays(photos, retentionDays: 30, now: now, phoneTimeZone: TimeZone(secondsFromGMT: 0)!)
+        XCTAssertEqual(days.map(\.id), ["2026-03-12", "2026-03-09"])
+        XCTAssertEqual(days.map { $0.photos.map(\.id) }, [["a", "b"], ["c"]])
+        // The days left are the oldest photo's, which goes first: 1 whole day since 01:00 on the 12th
+        // (not the 0 since 09:00), and 3 since 20:00 on the 9th.
+        XCTAssertEqual(days.map(\.daysLeft), [29, 27])
+        XCTAssertEqual(days[0].trashedAt, ServerTime.date("2026-03-12T09:00:00Z"))
+    }
+
+    func testTheDayAPhotoWasMovedToTheTrashIsTheDayOnThePhonesClock() throws {
+        let photos = [try photo("a", trashedAt: "2026-03-10T23:30:00Z")]
+        XCTAssertEqual(PhotoTimeline.trashDays(photos, retentionDays: 30, phoneTimeZone: losAngeles).map(\.id), ["2026-03-10"])
+        XCTAssertEqual(PhotoTimeline.trashDays(photos, retentionDays: 30, phoneTimeZone: tokyo).map(\.id), ["2026-03-11"])
+    }
+
+    func testAPhotoInTheTrashLeavesOnTheLastDayAndNeverWhenTheServerSetsNoTime() throws {
+        let trashed = try XCTUnwrap(ServerTime.date("2026-03-01T12:00:00Z"))
+        func daysLeft(_ days: Double, retention: Int) -> Int? {
+            PhotoTimeline.trashDaysLeft(trashedAt: trashed, retentionDays: retention, now: trashed.addingTimeInterval(days * 86_400))
+        }
+        XCTAssertEqual(daysLeft(0, retention: 30), 30)
+        XCTAssertEqual(daysLeft(0.9, retention: 30), 30)
+        XCTAssertEqual(daysLeft(1, retention: 30), 29)
+        XCTAssertEqual(daysLeft(29.5, retention: 30), 1)
+        XCTAssertEqual(daysLeft(30, retention: 30), 0)
+        XCTAssertEqual(daysLeft(45, retention: 30), 0)
+        XCTAssertNil(daysLeft(1, retention: 0))
+        XCTAssertNil(PhotoTimeline.trashDaysLeft(trashedAt: nil, retentionDays: 30, now: trashed))
+    }
+
+    func testPhotosThatDoNotSayWhenTheyWereTrashedAreOneGroupWithNoTimeLeft() throws {
+        let days = PhotoTimeline.trashDays([try photo("a"), try photo("b")], retentionDays: 30)
+        XCTAssertEqual(days.map(\.id), ["unknown"])
+        XCTAssertNil(days[0].trashedAt)
+        XCTAssertNil(days[0].daysLeft)
+        XCTAssertEqual(PhotoTimeline.trashDays([], retentionDays: 30).count, 0)
     }
 
     func testAPhotoWithoutADateIsPlacedByWhenItArrived() throws {

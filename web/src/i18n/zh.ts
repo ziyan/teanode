@@ -5457,7 +5457,7 @@ export const zh: Catalog = {
   'photos.askNamed': '向{name}询问这张照片',
   'photos.describeHintNamed': '{name}会查看这张图片并写下其中的内容，这样搜索就能找到它。',
   'services.photosOnlyPassword': '让以其命名的设备备份并读取你的照片，仅此而已。',
-  'serverSettings.photosFaces': '识别照片中的人脸',
+  'serverSettings.photosFaces': '在照片中查找人物',
   'serverSettings.photosFacesHint': '找出照片中的人物并分组。关闭后，这台服务器上的所有人都不再识别人脸。',
   'serverSettings.photosTitle': '照片',
   'serverSettings.photosIntro': '每个人照片图库的限制。更改会在下一次上传时生效。',

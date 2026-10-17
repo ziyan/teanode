@@ -13,7 +13,6 @@ import {
   indexRange,
   photoAltText,
   photoDateTime,
-  sortByTrashedAt,
   trashDaysLeft,
 } from './days'
 
@@ -193,14 +192,29 @@ describe('the Trash', () => {
     expect(trashDaysLeft(null, 30, now)).toBeNull()
   })
 
-  it('groups photos under the day they were trashed, newest first, whatever order they came in', () => {
+  it('groups photos under the day they were trashed, in the order the server listed them', () => {
     const photos = [
-      { id: 'a', trashedAt: '2030-07-10T08:00:00Z' },
       { id: 'b', trashedAt: '2030-07-19T08:00:00Z' },
       { id: 'c', trashedAt: '2030-07-10T09:00:00Z' },
+      { id: 'a', trashedAt: '2030-07-10T08:00:00Z' },
     ]
-    const days = groupByTrashDay(sortByTrashedAt(photos), 30, now, 'UTC')
+    const days = groupByTrashDay(photos, 30, now, 'UTC')
     expect(days.map((day) => day.photos.map((photo) => photo.id))).toEqual([['b'], ['c', 'a']])
     expect(days.map((day) => day.daysLeft)).toEqual([29, 20])
+  })
+
+  it('says how long a day has as its oldest photo has, which goes first', () => {
+    // Trashed late and early on one day: the late one has 21 days left, the
+    // early one 20, and the day must not promise 21.
+    const days = groupByTrashDay(
+      [
+        { id: 'late', trashedAt: '2030-07-10T23:00:00Z' },
+        { id: 'early', trashedAt: '2030-07-10T01:00:00Z' },
+      ],
+      30,
+      now,
+      'UTC',
+    )
+    expect(days.map((day) => day.daysLeft)).toEqual([20])
   })
 })

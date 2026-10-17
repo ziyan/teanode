@@ -124,13 +124,6 @@ export function trashDaysLeft(trashedAt: string | null, retentionDays: number, n
   return Math.max(0, retentionDays - elapsedDays)
 }
 
-// The photos of the Trash newest first by when they were trashed: the order
-// the groups of the Trash are read in, whatever order the server listed them.
-export function sortByTrashedAt<T extends { trashedAt: string | null }>(photos: T[]): T[] {
-  const momentOf = (photo: T) => (photo.trashedAt ? new Date(photo.trashedAt).getTime() : 0)
-  return [...photos].sort((left, right) => momentOf(right) - momentOf(left))
-}
-
 export interface TrashDay<T> {
   key: string
   heading: Date
@@ -138,7 +131,8 @@ export interface TrashDay<T> {
   photos: T[]
 }
 
-// groupByTrashDay splits photos in the Trash, newest trashed first, into runs
+// groupByTrashDay splits photos in the Trash, which the server lists newest
+// trashed first, into runs
 // under the day they were moved there, each with how long it has left: what a
 // person looking at the Trash asks is when each photo goes, not when it was
 // taken. The days are the person's own, as the timeline's are.
@@ -155,6 +149,9 @@ export function groupByTrashDay<T extends { trashedAt: string | null }>(
     const last = days[days.length - 1]
     if (last && last.key === key) {
       last.photos.push(photo)
+      // The list runs newest first, so the photo just added is the group's
+      // oldest, which is deleted first: the group has as long as it has.
+      last.daysLeft = trashDaysLeft(photo.trashedAt, retentionDays, now)
     } else {
       days.push({ key, heading: moment, daysLeft: trashDaysLeft(photo.trashedAt, retentionDays, now), photos: [photo] })
     }

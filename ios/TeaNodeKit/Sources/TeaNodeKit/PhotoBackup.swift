@@ -168,6 +168,10 @@ public enum PhotoBackupHeader {
     public static let isFavorite = "X-Photo-Is-Favorite"
     public static let isScreenshot = "X-Photo-Is-Screenshot"
     public static let source = "X-Photo-Source"
+    /// The SHA-256 of the file, in lowercase hexadecimal. With it the server
+    /// can tell, before the bytes have all arrived, that the file is one the
+    /// person already has, and does not count it against their room.
+    public static let declaredSha256 = "X-Photo-Declared-SHA256"
     public static let contentType = "Content-Type"
     /// The server's answer to a finished upload names the photo in this.
     public static let photoId = "X-Photo-ID"

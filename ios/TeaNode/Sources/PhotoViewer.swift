@@ -12,6 +12,11 @@ struct PhotoViewer: View {
     /// The list the photos paged through come from: a list of the library, or
     /// an album.
     let listKey: PhotoListKey
+    /// Whether Info offers "Photos taken near here". It shows the Photos tab
+    /// narrowed to the place, which only a viewer opened from that tab can
+    /// do: the tab keeps its own model, so a viewer opened from a
+    /// conversation does not offer it.
+    let canShowNearby: Bool
     @State private var currentPhotoId: String?
     @State private var isZoomed = false
     @State private var isShowingInfo = false
@@ -20,9 +25,10 @@ struct PhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
 
-    init(model: PhotosModel, listKey: PhotoListKey, openedPhotoId: String) {
+    init(model: PhotosModel, listKey: PhotoListKey, openedPhotoId: String, canShowNearby: Bool = true) {
         self.model = model
         self.listKey = listKey
+        self.canShowNearby = canShowNearby
         _currentPhotoId = State(initialValue: openedPhotoId)
         #if DEBUG
             // `-TeaNodeScreen photos-viewer-described`, `photos-viewer-failed` and `photos-shared-info` open Info over the viewer.
@@ -47,7 +53,7 @@ struct PhotoViewer: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $isShowingInfo) {
-                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent, onShowNearby: showNearby) }
+                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent, onShowNearby: canShowNearby ? showNearby : nil) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
@@ -481,15 +487,18 @@ struct PhotoInfoView: View {
     /// The list the viewer pages through, which a changed date reads again.
     let listKey: PhotoListKey
     let onAskAgent: (Photo) -> Void
-    /// Shows the library narrowed to the photos taken near this photo's place.
-    let onShowNearby: (PhotoNearFilter) -> Void
+    /// Shows the library narrowed to the photos taken near this photo's place;
+    /// nil where the viewer cannot, and then the action is not offered.
+    let onShowNearby: ((PhotoNearFilter) -> Void)?
     @State private var isChangingDate = false
     @State private var detail: PhotoDetail?
     /// Why the photo's details could not be read; nil when they could, or have
     /// not been asked for yet.
     @State private var detailFailureText: String?
     @State private var isAskingToDescribe = false
-    @State private var hasGivenUpWaiting = false
+    /// Whether the description has been waited for long enough to say it is taking
+    /// longer than usual. It is still waited for.
+    @State private var isDescriptionSlow = false
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
 
@@ -537,7 +546,7 @@ struct PhotoInfoView: View {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
                 }
                 // A photo shared without places has no coordinates, so it has nothing to be near.
-                if !shownPhoto.isTrashed, let photoNearFilter = PhotoNearFilter(near: shownPhoto) {
+                if let onShowNearby, !shownPhoto.isTrashed, let photoNearFilter = PhotoNearFilter(near: shownPhoto) {
                     Button("Photos taken near here", systemImage: "mappin.and.ellipse") { onShowNearby(photoNearFilter) }
                 }
                 if !cameraText.isEmpty {
@@ -566,7 +575,7 @@ struct PhotoInfoView: View {
                     sharedPeopleSection
                 }
                 if shownPhoto.isOwnedByCaller, !shownPhoto.isFailed, !shownPhoto.isWaiting, !shownPhoto.isTrashed {
-                    makePreviewsSection
+                    makeThumbnailsSection
                 }
                 if detail != nil {
                     descriptionSection
@@ -641,11 +650,11 @@ struct PhotoInfoView: View {
         }
     }
 
-    /// For a photo that is ready: have its previews made again, as the
+    /// For a photo that is ready: have its thumbnails made again, as the
     /// dashboard offers, for a picture that came out wrong.
-    private var makePreviewsSection: some View {
+    private var makeThumbnailsSection: some View {
         Section {
-            Button("Make previews again", systemImage: "arrow.clockwise") {
+            Button("Make thumbnails again", systemImage: "arrow.clockwise") {
                 Task {
                     if await model.retryProcessing([shownPhoto]) { await loadDetail() }
                 }
@@ -748,7 +757,9 @@ struct PhotoInfoView: View {
                         Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
                     }
                 } else if isDescriptionAvailable {
-                    Button("Describe this photo", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
+                    Button(shownPhoto.isVideo ? LocalizedStringKey("Describe this video") : "Describe this photo", systemImage: "text.viewfinder") {
+                        Task { await describe(isRedescribed: false) }
+                    }
                 } else if let library = model.library {
                     Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
                         .foregroundStyle(.secondary)
@@ -759,24 +770,42 @@ struct PhotoInfoView: View {
             Text("Description")
         } footer: {
             if shownPhoto.isOwnedByCaller, !description.isDescribed, !description.isDescriptionRequested, isDescriptionAvailable {
-                Text("\(app.agentTitle) looks at the picture and writes what it shows, so a search can find it.")
+                Text(describeHintText)
             }
         }
     }
 
-    /// The assistant is named as the conversation names it.
+    // The assistant is named as the conversation names it, and a video is a
+    // video here, not a photo: what the assistant looks at for one is its
+    // poster picture. These are the dashboard's words.
     private var askAgentText: String {
-        app.agentName.isEmpty ? String(localized: "Ask your agent") : String(localized: "Ask \(app.agentName)")
+        let agentName = app.agentName
+        if shownPhoto.isVideo {
+            return agentName.isEmpty ? String(localized: "Ask the assistant about this video") : String(localized: "Ask \(agentName) about this video")
+        }
+        return agentName.isEmpty ? String(localized: "Ask the assistant about this photo") : String(localized: "Ask \(agentName) about this photo")
+    }
+
+    private var describeHintText: String {
+        let agentName = app.agentName
+        if shownPhoto.isVideo {
+            return agentName.isEmpty
+                ? String(localized: "The assistant looks at the video's poster and writes what it shows, so a search can find it.")
+                : String(localized: "\(agentName) looks at the video's poster and writes what it shows, so a search can find it.")
+        }
+        return agentName.isEmpty
+            ? String(localized: "The assistant looks at the picture and writes what it shows, so a search can find it.")
+            : String(localized: "\(agentName) looks at the picture and writes what it shows, so a search can find it.")
     }
 
     private var waitingText: String {
-        if hasGivenUpWaiting { return String(localized: "This is taking longer than usual. It keeps going in the background, so look again in a few minutes.") }
-        return description.isDescribed ? String(localized: "Describing again…") : String(localized: "Describing…")
+        if isDescriptionSlow { return String(localized: "This is taking longer than usual. It keeps going in the background, so look again in a few minutes.") }
+        return description.isDescribed ? String(localized: "Describing again… this can take a minute.") : String(localized: "Describing… this can take a minute.")
     }
 
     private func describe(isRedescribed: Bool) async {
         isAskingToDescribe = true
-        hasGivenUpWaiting = false
+        isDescriptionSlow = false
         defer { isAskingToDescribe = false }
         do {
             let asked = try await connection.describePhoto(photo.id, isRedescribed: isRedescribed)
@@ -792,21 +821,21 @@ struct PhotoInfoView: View {
     }
 
     /// While a description is on its way, asks for the photo again every few
-    /// seconds, and not for longer than two minutes: after that the job goes
-    /// on without the screen, and the description is there when the person
-    /// comes back.
+    /// seconds, as the dashboard does: every 3 seconds, then every 15 once two
+    /// minutes have passed, when it also says the wait is longer than usual. It
+    /// does not give up while the sheet is open, so the description is there
+    /// when it arrives.
     private func followDescription() async {
         var waitedSeconds = 0
         while !Task.isCancelled, description.isDescriptionRequested {
-            guard PhotoDescriptionPolling.shouldAskAgain(afterWaiting: waitedSeconds) else {
-                hasGivenUpWaiting = true
-                return
-            }
-            try? await Task.sleep(for: .seconds(PhotoDescriptionPolling.intervalSeconds))
-            waitedSeconds += PhotoDescriptionPolling.intervalSeconds
+            isDescriptionSlow = PhotoDescriptionPolling.isSlow(afterWaiting: waitedSeconds)
+            let pauseSeconds = PhotoDescriptionPolling.secondsBeforeAsking(afterWaiting: waitedSeconds)
+            try? await Task.sleep(for: .seconds(pauseSeconds))
+            waitedSeconds += pauseSeconds
             guard !Task.isCancelled else { return }
             await loadDetail()
         }
+        isDescriptionSlow = false
     }
 
     // MARK: Details

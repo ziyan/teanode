@@ -62,10 +62,6 @@ export type PersonNaming = { kind: 'contact'; contactId: string } | { kind: 'new
 // The most characters a contact's name may have, as the dialog lets it be typed.
 const MOST_CONTACT_NAME_CHARACTERS = 255
 
-// The most contacts the dialog lists for one search, as findContactChoices
-// asks for them: more than that are reached by typing.
-const CONTACTS_LISTED = 20
-
 // NamePersonDialog names a person by choosing a contact from the address
 // book, as the server asks, or by typing a name the address book does not
 // have yet: that makes a contact with it first. A contact that already names
@@ -92,7 +88,7 @@ export function NamePersonDialog({
   const [chosen, setChosen] = useState('')
   const searchText = useDebounced(typed.trim(), 250)
   const choices = useQuery(() => findContactChoices(searchText), [searchText], { refresh: false })
-  const contacts = choices.data ?? []
+  const contacts = choices.data?.contacts ?? []
   const typedName = typed.trim()
   // A name the address book has already is chosen from the list, not made again.
   const hasTypedNameContact = contacts.some(
@@ -172,7 +168,7 @@ export function NamePersonDialog({
           )
         })}
       </div>
-      {contacts.length >= CONTACTS_LISTED && <p className="muted field-hint">{t('photos.contactsMore')}</p>}
+      {choices.data?.hasMore === true && <p className="muted field-hint">{t('photos.contactsMore')}</p>}
     </FormDialog>
   )
 }

@@ -3343,7 +3343,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!isReachable || standalone) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list, .menu[role="menu"]')) return
+      if (
+        document.querySelector(
+          '.dialog-scrim, .select-list, .agent-drawer-list, .menu[role="menu"], .menu[role="dialog"]',
+        )
+      )
+        return
       event.preventDefault()
       toggle()
       if (!open) setTimeout(() => input.current?.focus(), 50)

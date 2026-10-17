@@ -73,12 +73,14 @@ final class PhotoPeopleTests: XCTestCase {
         XCTAssertEqual(description.describedOnText(timeZone: tokyo, locale: english), "March 3, 2026")
     }
 
-    func testADescriptionIsWaitedForForTwoMinutes() {
-        XCTAssertEqual(PhotoDescriptionPolling.intervalSeconds, 3)
-        XCTAssertTrue(PhotoDescriptionPolling.shouldAskAgain(afterWaiting: 0))
-        XCTAssertTrue(PhotoDescriptionPolling.shouldAskAgain(afterWaiting: 117))
-        XCTAssertFalse(PhotoDescriptionPolling.shouldAskAgain(afterWaiting: 120))
-        XCTAssertFalse(PhotoDescriptionPolling.shouldAskAgain(afterWaiting: 300))
+    func testADescriptionIsAskedForEveryThreeSecondsThenEveryFifteenAfterTwoMinutesAndNeverGivenUpOn() {
+        XCTAssertEqual(PhotoDescriptionPolling.secondsBeforeAsking(afterWaiting: 0), 3)
+        XCTAssertEqual(PhotoDescriptionPolling.secondsBeforeAsking(afterWaiting: 117), 3)
+        XCTAssertFalse(PhotoDescriptionPolling.isSlow(afterWaiting: 117))
+        XCTAssertEqual(PhotoDescriptionPolling.secondsBeforeAsking(afterWaiting: 120), 15)
+        XCTAssertTrue(PhotoDescriptionPolling.isSlow(afterWaiting: 120))
+        // There is no limit: a screen still open after an hour asks again.
+        XCTAssertEqual(PhotoDescriptionPolling.secondsBeforeAsking(afterWaiting: 3_600), 15)
     }
 
     func testDescribingAsksForANewDescriptionOnlyWhenToldTo() async throws {

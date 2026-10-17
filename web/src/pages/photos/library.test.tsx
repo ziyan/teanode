@@ -12,14 +12,15 @@ vi.mock('../../api', async (importOriginal) => ({
   graphql: vi.fn(),
   askAgentAbout: vi.fn(),
 }))
-// Whether the session has an assistant to ask.
+// Whether the session has an assistant to ask, and may use one.
 let isAssistantEnabled = false
+let sessionPermissions = ['photos:use', 'agent:use']
 vi.mock('../../session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session')>()),
   useSession: () => ({
     userId: 'person-1',
     services: { isPhotosEnabled: true, isAssistantEnabled },
-    permissions: { everywhere: ['photos:use'], byDomain: [] },
+    permissions: { everywhere: sessionPermissions, byDomain: [] },
   }),
 }))
 // Files whose names start with "hang" are never read to the end.
@@ -155,6 +156,7 @@ beforeEach(() => {
     if (document.includes('ReadPhoto(')) return (await readPhotoAnswer(String(variables?.photoId))) as never
     if (document.includes('UpdatePhoto(')) return (await updatePhotoAnswer(variables ?? {})) as never
     if (document.includes('ListPhotoFaceGroups')) return { ListPhotoFaceGroups: [] } as never
+    if (document.includes('ListPhotoAlbums')) return { ListPhotoAlbums: [] } as never
     if (document.includes('ReadPhotoAlbum(')) {
       return {
         ReadPhotoAlbum: {
@@ -842,6 +844,64 @@ it('says the closest matches when no photo has a word of the search, and not whe
   expect(screen.queryByText('Closest matches')).toBeNull()
 })
 
+it('does not call a search by a name the closest matches before the names have answered', async () => {
+  let answerNames: (answer: unknown) => void = () => {}
+  const namesAnswer = new Promise((resolve) => (answerNames = resolve))
+  extraAnswer = (document) => (document.includes('ListPhotoFaceGroups') ? namesAnswer : undefined)
+  show('/photos?search=zzqx')
+  await screen.findByRole('button', { name: 'Open photo-1.jpg' })
+  expect(screen.queryByText('Closest matches')).toBeNull()
+  answerNames({ ListPhotoFaceGroups: [] })
+  expect(await screen.findByText('Closest matches')).toBeTruthy()
+})
+
+it('keeps the Trash in the order the server lists it, newest moved first, under one heading a day', async () => {
+  library = [
+    photoFixture('photo-1', { trashedAt: '2030-07-19T08:00:00Z', takenAt: '2010-01-01T00:00:00Z' }),
+    photoFixture('photo-2', { trashedAt: '2030-07-19T07:00:00Z', takenAt: '2030-01-01T00:00:00Z' }),
+    photoFixture('photo-3', { trashedAt: '2030-07-10T08:00:00Z', takenAt: '2020-01-01T00:00:00Z' }),
+  ]
+  show('/photos?view=trash')
+  await screen.findByRole('button', { name: 'Open photo-1.jpg' })
+  const names = screen
+    .getAllByRole('button', { name: /^Open photo-/ })
+    .map((button) => button.getAttribute('aria-label'))
+  expect(names).toEqual(['Open photo-1.jpg', 'Open photo-2.jpg', 'Open photo-3.jpg'])
+  expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(2)
+})
+
+it('draws the Trash once the library has said how long it keeps a photo, not before', async () => {
+  library = library.map((photo) => ({ ...photo, trashedAt: new Date().toISOString() }))
+  let answerLibrary: (answer: unknown) => void = () => {}
+  const libraryAnswer = new Promise((resolve) => (answerLibrary = resolve))
+  extraAnswer = (document) => (document.includes('ReadPhotoLibrary') ? libraryAnswer : undefined)
+  show('/photos?view=trash')
+  await waitFor(() => expect(callsTo('ListPhotos').length).toBeGreaterThan(0))
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  expect(screen.queryByRole('button', { name: 'Open photo-1.jpg' })).toBeNull()
+  answerLibrary({
+    ReadPhotoLibrary: {
+      photoCount: 0,
+      videoCount: 0,
+      favoriteCount: 0,
+      trashedCount: 3,
+      usedBytes: 0,
+      maximumFileBytes: 1000,
+      maximumAccountBytes: 0,
+      trashRetentionDays: 30,
+      uploadPath: '/api/v1/photos/uploads',
+      uploadPartBytes: 1000,
+      isDescriptionAvailable: false,
+      descriptionUnavailableMessage: '',
+      isFaceRecognitionAvailable: false,
+      faceRecognitionUnavailableMessage: '',
+      isPhotoFaceRecognitionEnabled: false,
+    },
+  })
+  expect(await screen.findByText('Deleted forever in 30 days')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Open photo-1.jpg' })).toBeTruthy()
+})
+
 it('offers no search or filter on a list with nothing in it, and keeps them once a search has found nothing', async () => {
   library = []
   show('/photos')
@@ -942,8 +1002,65 @@ it('opens the library near where a photo was taken, as a filter that stays in th
   expect(screen.queryByText('Near Old Harbor')).toBeNull()
 })
 
+it('puts the place of the near filter in a part that gives way, beside a close button of its own', async () => {
+  show('/photos?near=10.50000%2C20.25000&nearPlace=A+Very+Long+Place+Name+That+Does+Not+Fit')
+  const label = await screen.findByText('Near A Very Long Place Name That Does Not Fit')
+  expect(label.className).toBe('photo-near-label')
+  const close = screen.getByRole('button', { name: /^Remove the filter/ })
+  expect(label.parentElement?.contains(close)).toBe(true)
+  expect(close.className).toBe('icon-button')
+})
+
+it('opens the filters as a labelled dialog, not a menu, and closes it with Escape', async () => {
+  show('/photos')
+  const button = await screen.findByRole('button', { name: 'Filter' })
+  expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+  fireEvent.click(button)
+  const popover = await screen.findByRole('dialog', { name: 'Filter' })
+  expect(screen.queryByRole('menu')).toBeNull()
+  expect(within(popover).getByRole('radio', { name: 'All kinds' })).toBeTruthy()
+  // The keyboard is taken into it, since it is at the end of the page, and
+  // given back to the button when it closes.
+  await waitFor(() => expect(popover.contains(document.activeElement)).toBe(true))
+  fireEvent.keyDown(document.body, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Filter' })).toBeNull())
+  expect(document.activeElement).toBe(button)
+})
+
 it('offers nothing near here for a photo with no place', async () => {
   show('/photos/photo-1')
   await screen.findByRole('button', { name: 'Details' })
   expect(screen.queryByRole('button', { name: 'Photos taken near here' })).toBeNull()
+})
+
+it('offers no asking about a photo to a person who may not use an assistant', async () => {
+  isAssistantEnabled = true
+  sessionPermissions = ['photos:use']
+  library = library.map((photo) => (photo.id === 'photo-1' ? { ...photo, placeName: 'Harbor Town' } : photo))
+  readPhotoAnswer = async (photoId) => ({
+    ReadPhoto: {
+      photo: {
+        ...photoFixture(photoId, { placeName: 'Harbor Town' }),
+        photoDescription: '',
+        descriptionVisibleText: '',
+        describedAt: null,
+        isDescriptionRequested: false,
+      },
+      photoFiles: [],
+      albums: [],
+      faces: [],
+    },
+  })
+  try {
+    show('/photos/photo-1')
+    // The details have loaded: the place is shown, and nothing offers asking.
+    await screen.findByText('Harbor Town')
+    // Asking is offered once the picture shown is known, a moment after the
+    // details: long enough for it to have come if it were going to.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(screen.queryByRole('button', { name: /about this photo/ })).toBeNull()
+  } finally {
+    isAssistantEnabled = false
+    sessionPermissions = ['photos:use', 'agent:use']
+  }
 })

@@ -320,6 +320,8 @@ jobs:
           shoot photos-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
+          shoot photos-trash-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
+          shoot photos-trash-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-empty-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-empty
           # Albums: the Albums section with a suggestion, one album, and Select mode with two photos chosen.
           shoot photos-albums-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-albums
