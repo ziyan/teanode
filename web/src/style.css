@@ -14430,13 +14430,21 @@ button.idea-history-title {
 
 /* The pane as it stands: kept as drawn, so its forms line up, and scrolled
    sideways in its own box rather than the page's. */
+/* A terminal's ground and text in either theme: the colors a program
+   draws on its screen were chosen against a dark one. */
+.terminal-text {
+  --terminal-background: #1e1e1e;
+  --terminal-text: #d4d4d4;
+  background: var(--terminal-background);
+  color: var(--terminal-text);
+}
+
 .herdr-screen {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: var(--field);
   font-size: 12px;
   line-height: 1.4;
   white-space: pre;

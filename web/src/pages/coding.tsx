@@ -33,6 +33,7 @@ import {
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty } from '../components/settingsList'
 import { Tooltip } from '../components/tooltip'
+import { TerminalText } from '../components/terminalText'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
 
@@ -503,6 +504,20 @@ function CodingSession({
   useEffect(() => setLatest(session), [session])
   const latestRef = useRef(latest)
   latestRef.current = latest
+  // The chosen tab is scrolled into the strip's view: this view is drawn
+  // anew for each session, so the strip would otherwise start at its first
+  // tab, with the one chosen far along it out of sight.
+  const tabStrip = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const strip = tabStrip.current
+    const chosen = strip?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (!strip || !chosen) return
+    const stripBox = strip.getBoundingClientRect()
+    const chosenBox = chosen.getBoundingClientRect()
+    const margin = 24
+    if (chosenBox.left < stripBox.left) strip.scrollLeft += chosenBox.left - stripBox.left - margin
+    else if (chosenBox.right > stripBox.right) strip.scrollLeft += chosenBox.right - stripBox.right + margin
+  }, [latest.computer, latest.paneId, siblings.length])
 
   const everyMS =
     latest.herdrSessionState === 'working' || latest.herdrSessionState === 'asking' ? BUSY_EVERY_MS : IDLE_EVERY_MS
@@ -521,7 +536,7 @@ function CodingSession({
       }
       const response = await graphql<{ ReadAgentHerdrScreen: { herdrSession: HerdrSession; screenText: string } }>(
         HERDR_DOCUMENTS.ReadAgentHerdrScreen,
-        { computer: session.computer, paneId: session.paneId },
+        { computer: session.computer, paneId: session.paneId, shouldKeepColor: true },
       )
       return { ...response.ReadAgentHerdrScreen, turns: [], isTruncated: false }
     },
@@ -674,7 +689,7 @@ function CodingSession({
         </div>
       </header>
       <div className="coding-tabstrip">
-        <div className="tabs herdr-tabs" role="tablist">
+        <div ref={tabStrip} className="tabs herdr-tabs" role="tablist">
           {tabs.map((tab) => (
             <button
               key={tab.paneId}
@@ -749,7 +764,7 @@ function CodingSession({
             <Loading />
           )
         ) : view === 'screen' ? (
-          <pre className="herdr-screen">{shown.screenText}</pre>
+          <TerminalText className="herdr-screen" text={shown.screenText} />
         ) : (
           <>
             {shown.isTruncated && turnCount < MOST_TURN_COUNT ? (

@@ -97,8 +97,8 @@ export const HERDR_DOCUMENTS = {
       herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt } isTruncated
     }
   }`,
-  ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int) {
-    ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) { herdrSession { ${SESSION_FIELDS} } screenText }
+  ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
+    ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount, shouldKeepColor: $shouldKeepColor) { herdrSession { ${SESSION_FIELDS} } screenText }
   }`,
   SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String, $attachmentIds: [String!]) {
     SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, attachmentIds: $attachmentIds) { ${SESSION_FIELDS} }
