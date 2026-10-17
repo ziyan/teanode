@@ -1045,6 +1045,19 @@ export function AlbumAddIcon(props: IconProps) {
   )
 }
 
+// Keep a photo: a picture with a plus at its corner, for putting a photo into
+// the person's own library.
+export function PhotoSaveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M20 17l-4.5-4.5L7 21" />
+      <path d="M19 2v6M16 5h6" />
+    </Icon>
+  )
+}
+
 // Take out of an album: the album with a minus in its front photo.
 export function AlbumRemoveIcon(props: IconProps) {
   return (

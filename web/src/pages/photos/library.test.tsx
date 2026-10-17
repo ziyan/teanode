@@ -35,6 +35,25 @@ vi.mock('../../photos/uploader', () => ({
   uploadPhotoFile: vi.fn(async (file: File) => ({ photoId: `photo-${file.name}` })),
 }))
 
+// Whose the album is and what the person may do with it: their own, by default.
+const ownAlbum = {
+  ownerUserId: 'person-1',
+  circleId: null,
+  ownerUsername: 'ana',
+  ownerName: 'Ana',
+  ownerAvatarUrl: null,
+  ownerAvatarColorIndex: 0,
+  circleName: '',
+  isOwnedByCaller: true,
+  shareLevel: '',
+  canCallerContribute: true,
+  canCallerManage: true,
+  isLocationIncluded: true,
+}
+let albumOwnership: Record<string, unknown> = ownAlbum
+// What a test answers itself, ahead of the defaults: undefined to leave it be.
+let extraAnswer: (document: string, variables: Record<string, unknown>) => unknown = () => undefined
+
 const photoFixture = (id: string, overrides: Record<string, unknown> = {}) => ({
   id,
   clientPhotoId: id,
@@ -56,6 +75,9 @@ const photoFixture = (id: string, overrides: Record<string, unknown> = {}) => ({
   widthPixels: 0,
   heightPixels: 0,
   trashedAt: null,
+  isOwnedByCaller: true,
+  ownerName: '',
+  userId: 'person-1',
   ...overrides,
 })
 
@@ -97,10 +119,14 @@ beforeEach(() => {
     UpdatePhoto: { ...photoFixture(String(variables.photoId)), isFavorite: variables.isFavorite },
   })
   isAssistantEnabled = false
+  albumOwnership = ownAlbum
+  extraAnswer = () => undefined
   vi.mocked(askAgentAbout).mockReset()
   retryAnswer = async (variables) => ({ RetryPhotoProcessing: (variables.photoIds as string[]).length })
   vi.mocked(graphql).mockReset()
   vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    const extra = extraAnswer(document, variables ?? {})
+    if (extra !== undefined) return extra as never
     if (document.includes('RetryPhotoProcessing(')) return (await retryAnswer(variables ?? {})) as never
     if (document.includes('ReadPhotoLibrary'))
       return {
@@ -139,9 +165,11 @@ beforeEach(() => {
           firstTakenAt: null,
           lastTakenAt: null,
           coverPreviewUrl: '',
+          ...albumOwnership,
         },
       } as never
     }
+    if (document.includes('ListCircles')) return { ListCircles: [] } as never
     throw new Error(`unexpected document ${document}`)
   })
 })
@@ -179,6 +207,7 @@ const show = (entry: string, links: { to: string; label: string }[] = []) =>
             <Route path="/photos" element={<PhotosPage />} />
             <Route path="/photos/:photoId" element={<PhotosPage />} />
             <Route path="/photos/albums/:photoAlbumId" element={<PhotosPage />} />
+            <Route path="/photos/albums/:photoAlbumId/:photoId" element={<PhotosPage />} />
           </Routes>
         </MemoryRouter>
       </ToastProvider>
@@ -571,4 +600,220 @@ it('says so when nothing was moved, and when the server refuses', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'More' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
   expect(await screen.findByText('Nothing to try again.')).toBeTruthy()
+})
+
+// ---- albums shared with the person, and sharing the person's own ----
+
+const BEN = { userId: 'person-2', username: 'ben', name: 'Ben', avatarUrl: null, avatarColorIndex: 3 }
+const sharedWithMe = {
+  ownerUserId: 'person-2',
+  ownerUsername: 'ben',
+  ownerName: 'Ben',
+  isOwnedByCaller: false,
+  shareLevel: 'view',
+  canCallerContribute: false,
+  canCallerManage: false,
+  isLocationIncluded: false,
+}
+const bensPhotos = () =>
+  ['photo-1', 'photo-2', 'photo-3'].map((id) =>
+    photoFixture(id, { isOwnedByCaller: false, ownerName: 'Ben', userId: 'person-2', isFavorite: false }),
+  )
+
+it('says an album is shared with the person, and offers no sharing, adding or renaming of it', async () => {
+  albumOwnership = sharedWithMe
+  library = bensPhotos()
+  show('/photos/albums/album-1')
+  await screen.findByText('Friday, July 12, 2030')
+  expect(
+    screen.getByText(
+      'Shared with you. You can see these photos and save them. Where the photos were taken is not shown.',
+    ),
+  ).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Share' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Add photos' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Album options' })).toBeNull()
+})
+
+it('shows a photo of somebody else with its owner and Save to my library, and no favorite or Trash', async () => {
+  albumOwnership = sharedWithMe
+  library = bensPhotos()
+  extraAnswer = (document) => {
+    if (document.includes('ListCirclePeople')) return { ListCirclePeople: [BEN] }
+    if (document.includes('SavePhotoToLibrary('))
+      return { SavePhotoToLibrary: photoFixture('saved-1', { isOwnedByCaller: true }) }
+    return undefined
+  }
+  show('/photos/albums/album-1/photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: /Save to my library/ }))
+  await waitFor(() => expect(callsTo('SavePhotoToLibrary')).toEqual([{ photoId: 'photo-1' }]))
+  expect(await screen.findByText('Saved 1 photo to your library.')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'View photo' })).toBeTruthy()
+  const viewer = screen.getByRole('dialog', { name: 'Photo viewer' })
+  expect(within(viewer).getByText('Shared by')).toBeTruthy()
+  expect(within(viewer).getByText('Ben')).toBeTruthy()
+  expect(within(viewer).queryByRole('button', { name: 'Add to Favorites' })).toBeNull()
+  expect(within(viewer).queryByRole('button', { name: 'Move to Trash' })).toBeNull()
+  expect(within(viewer).queryByRole('button', { name: 'Add to album' })).toBeNull()
+  expect(within(viewer).queryByRole('button', { name: 'Change date' })).toBeNull()
+})
+
+it('offers only Save to my library for a selection of somebody else’s photos', async () => {
+  albumOwnership = sharedWithMe
+  library = bensPhotos()
+  show('/photos/albums/album-1')
+  await selectPhotos('photo-1', 'photo-2')
+  const bar = await screen.findByRole('toolbar')
+  expect(within(bar).getByRole('button', { name: 'Save to my library' })).toBeTruthy()
+  expect(within(bar).queryByRole('button', { name: 'Move to Trash' })).toBeNull()
+  expect(within(bar).queryByRole('button', { name: 'Add to Favorites' })).toBeNull()
+  expect(within(bar).queryByRole('button', { name: 'Remove from album' })).toBeNull()
+})
+
+const sharingAnswers = (shares: unknown[] = []) => {
+  extraAnswer = (document) => {
+    if (document.includes('ListPhotoAlbumShares')) return { ListPhotoAlbumShares: shares }
+    if (document.includes('ListCirclePeople')) return { ListCirclePeople: [BEN] }
+    if (document.includes('ListCircles')) return { ListCircles: [{ id: 'circle-1', name: 'Family' }] }
+    if (document.includes('SharePhotoAlbum(')) return { SharePhotoAlbum: { id: 'share-1' } }
+    if (document.includes('RemovePhotoAlbumShare(')) return { RemovePhotoAlbumShare: true }
+    return undefined
+  }
+}
+const benShare = {
+  id: 'share-1',
+  photoAlbumId: 'album-1',
+  granteeUserId: 'person-2',
+  granteeUsername: 'ben',
+  granteeName: 'Ben',
+  granteeAvatarUrl: null,
+  granteeAvatarColorIndex: 3,
+  granteeCircleId: null,
+  granteeCircleName: '',
+  shareLevel: 'view',
+  isLocationIncluded: false,
+  createdAt: '2030-07-12T09:00:00Z',
+}
+
+it('shares the album with a person at the level and with the places the person chose', async () => {
+  sharingAnswers()
+  show('/photos/albums/album-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share “Picnic”' })
+  expect(await within(dialog).findByText('This album is not shared with anybody yet.')).toBeTruthy()
+  // Nothing is chosen, so there is nothing to send.
+  expect(within(dialog).getByRole('button', { name: 'Share' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(await within(dialog).findByRole('radio', { name: 'Ben' }))
+  fireEvent.click(within(dialog).getByRole('radio', { name: /Contribute/ }))
+  fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Include where photos were taken' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  await waitFor(() =>
+    expect(callsTo('SharePhotoAlbum')).toEqual([
+      {
+        photoAlbumId: 'album-1',
+        granteeUserId: 'person-2',
+        granteeCircleId: null,
+        shareLevel: 'contribute',
+        isLocationIncluded: true,
+      },
+    ]),
+  )
+  expect(await screen.findByText('Shared with Ben.')).toBeTruthy()
+})
+
+it('shares the album with a circle, named as everyone in it', async () => {
+  sharingAnswers()
+  show('/photos/albums/album-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share “Picnic”' })
+  fireEvent.click(await within(dialog).findByRole('radio', { name: 'Everyone in Family' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  await waitFor(() => expect(callsTo('SharePhotoAlbum')).toHaveLength(1))
+  expect(callsTo('SharePhotoAlbum')[0]).toMatchObject({
+    granteeUserId: null,
+    granteeCircleId: 'circle-1',
+    shareLevel: 'view',
+  })
+})
+
+it('changes what somebody has by sharing again, starting from what they have now', async () => {
+  sharingAnswers([{ ...benShare, shareLevel: 'view', isLocationIncluded: true }])
+  show('/photos/albums/album-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share “Picnic”' })
+  expect(await within(dialog).findByText('Places included')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Change what Ben can do' }))
+  expect(
+    (within(dialog).getByRole('checkbox', { name: 'Include where photos were taken' }) as HTMLInputElement).checked,
+  ).toBe(true)
+  fireEvent.click(within(dialog).getByRole('radio', { name: /Contribute/ }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(callsTo('SharePhotoAlbum')).toHaveLength(1))
+  expect(callsTo('SharePhotoAlbum')[0]).toMatchObject({
+    granteeUserId: 'person-2',
+    shareLevel: 'contribute',
+    isLocationIncluded: true,
+  })
+  expect(await screen.findByText('Changed what Ben can do.')).toBeTruthy()
+})
+
+it('asks before taking a share back, and says their photos leave the album', async () => {
+  sharingAnswers([benShare])
+  show('/photos/albums/album-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share “Picnic”' })
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Stop sharing with Ben' }))
+  const confirm = await screen.findByRole('alertdialog', { name: 'Stop sharing with Ben?' })
+  expect(within(confirm).getByText(/the photos they added to it leave the album/)).toBeTruthy()
+  expect(callsTo('RemovePhotoAlbumShare')).toEqual([])
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Stop sharing' }))
+  await waitFor(() => expect(callsTo('RemovePhotoAlbumShare')).toEqual([{ photoAlbumShareId: 'share-1' }]))
+})
+
+it('adds photos of the person’s own to an album they contribute to, from their library', async () => {
+  extraAnswer = (document) => (document.includes('AddPhotosToAlbum(') ? { AddPhotosToAlbum: 2 } : undefined)
+  show('/photos/albums/album-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Add photos' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Add photos to “Picnic”' })
+  expect(within(dialog).getByRole('button', { name: 'Add photos' }).hasAttribute('disabled')).toBe(true)
+  const cells = await within(dialog).findAllByRole('button', { name: /^Select photo-/ })
+  fireEvent.click(cells[0])
+  fireEvent.click(cells[2])
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Add 2 photos' }))
+  await waitFor(() =>
+    expect(callsTo('AddPhotosToAlbum')).toEqual([{ photoAlbumId: 'album-1', photoIds: ['photo-1', 'photo-3'] }]),
+  )
+  expect(await screen.findByText('Added 2 photos to “Picnic”.')).toBeTruthy()
+})
+
+// ---- correcting a date ----
+
+it('changes the date at the photo’s own offset, writing it as RFC 3339 with that offset', async () => {
+  library = library.map((photo) => (photo.id === 'photo-2' ? { ...photo, takenAtOffsetMinutes: 540 } : photo))
+  updatePhotoAnswer = async (variables) => ({ UpdatePhoto: photoFixture(String(variables.photoId)) })
+  show('/photos/photo-2')
+  fireEvent.click(await screen.findByRole('button', { name: 'Change date' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Change the date' })
+  const field = within(dialog).getByLabelText('Date and time') as HTMLInputElement
+  // 09:00 UTC is 18:00 where the photo was taken.
+  expect(field.value).toBe('2030-07-12T18:00')
+  expect(within(dialog).getByText('In the time zone where the photo was taken (UTC+09:00).')).toBeTruthy()
+  fireEvent.change(field, { target: { value: '2030-07-13T07:30' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  await waitFor(() =>
+    expect(callsTo('UpdatePhoto').filter((call) => call.takenAt !== undefined)).toEqual([
+      { photoId: 'photo-2', takenAt: '2030-07-13T07:30:00+09:00' },
+    ]),
+  )
+  expect(await screen.findByText('Changed the date.')).toBeTruthy()
+})
+
+it('says the browser’s zone when the photo has no offset of its own', async () => {
+  library = library.map((photo) =>
+    photo.id === 'photo-2' ? photoFixture('photo-2', { takenAtOffsetMinutes: null }) : photo,
+  )
+  show('/photos/photo-2')
+  fireEvent.click(await screen.findByRole('button', { name: 'Change date' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Change the date' })
+  expect(within(dialog).getByText(/In your browser's time zone \(UTC[+-]\d\d:\d\d\)/)).toBeTruthy()
 })

@@ -28,6 +28,18 @@ const album = (overrides: Record<string, unknown>) => ({
   firstTakenAt: '2030-07-12T09:00:00Z',
   lastTakenAt: '2030-07-14T09:00:00Z',
   coverPreviewUrl: '/cover-1',
+  ownerUserId: 'person-1',
+  circleId: null,
+  ownerUsername: 'ana',
+  ownerName: 'Ana',
+  ownerAvatarUrl: null,
+  ownerAvatarColorIndex: 0,
+  circleName: '',
+  isOwnedByCaller: true,
+  shareLevel: '',
+  canCallerContribute: true,
+  canCallerManage: true,
+  isLocationIncluded: true,
   ...overrides,
 })
 
@@ -46,6 +58,7 @@ function serve(suggestions = [suggestion]) {
       return {
         ListPhotoAlbums: [album({}), album({ id: 'album-2', albumTitle: 'Hike', coverPreviewUrl: '' })],
       } as never
+    if (document.includes('ListCircles')) return { ListCircles: [] } as never
     if (document.includes('SuggestPhotoAlbums')) return { SuggestPhotoAlbums: suggestions } as never
     if (document.includes('sample0:'))
       return {
@@ -102,7 +115,7 @@ it('makes an album from a suggestion with the title the person confirms and ever
 
   await screen.findByText('The album page')
   const created = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('CreatePhotoAlbum'))
-  expect(created?.[1]).toEqual({ albumTitle: 'Trip', photoIds: ['photo-1', 'photo-2'] })
+  expect(created?.[1]).toEqual({ albumTitle: 'Trip', photoIds: ['photo-1', 'photo-2'], circleId: null })
 })
 
 it('says the places of a suggestion once: in its title, or under the dates when the title is dates', async () => {
@@ -154,4 +167,90 @@ it('lists the other albums in the add menu, newest change first, with New album 
   fireEvent.click(screen.getByRole('menuitem', { name: /Picnic/ }))
   expect(onChooseAlbum).toHaveBeenCalledWith(expect.objectContaining({ id: 'album-1' }))
   expect(onNewAlbum).not.toHaveBeenCalled()
+})
+
+// ---- albums of circles, and albums shared with the person ----
+
+const circleAlbum = album({
+  id: 'album-3',
+  albumTitle: 'Holiday',
+  ownerUserId: null,
+  circleId: 'circle-1',
+  ownerUsername: '',
+  ownerName: '',
+  circleName: 'Family',
+  isOwnedByCaller: false,
+  shareLevel: 'contribute',
+  canCallerManage: false,
+})
+const sharedAlbum = album({
+  id: 'album-4',
+  albumTitle: 'Wedding',
+  ownerUserId: 'person-2',
+  ownerUsername: 'ben',
+  ownerName: 'Ben',
+  isOwnedByCaller: false,
+  shareLevel: 'view',
+  canCallerContribute: false,
+  canCallerManage: false,
+})
+
+function serveSharing() {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ListPhotoAlbums')) return { ListPhotoAlbums: [album({}), circleAlbum, sharedAlbum] } as never
+    if (document.includes('ListCircles')) return { ListCircles: [{ id: 'circle-1', name: 'Family' }] } as never
+    if (document.includes('SuggestPhotoAlbums')) return { SuggestPhotoAlbums: [] } as never
+    if (document.includes('CreatePhotoAlbum'))
+      return { CreatePhotoAlbum: album({ id: 'album-5', albumTitle: 'Trip' }) } as never
+    throw new Error(`unexpected document ${document}`)
+  })
+}
+
+it('lists the person’s albums, then their circles’, then those shared with them, each marked with whose it is', async () => {
+  serveSharing()
+  showPage()
+  expect(await screen.findByRole('heading', { name: 'Your albums' })).toBeTruthy()
+  const circles = screen.getByRole('heading', { name: 'Circle albums' }).closest('section') as HTMLElement
+  expect(within(circles).getByRole('link', { name: /Holiday/ }).textContent).toContain('Family')
+  const shared = screen.getByRole('heading', { name: 'Shared with you' }).closest('section') as HTMLElement
+  expect(within(shared).getByRole('link', { name: /Wedding/ }).textContent).toContain('Ben')
+  // The person's own albums carry no mark of an owner.
+  const own = screen.getByRole('heading', { name: 'Your albums' }).closest('section') as HTMLElement
+  expect(within(own).getByRole('link', { name: /Picnic/ }).textContent).not.toContain('Ana')
+})
+
+it('names no sections when every album is the person’s own', async () => {
+  serve([])
+  showPage()
+  await screen.findByRole('link', { name: /Picnic/ })
+  expect(screen.queryByRole('heading', { name: 'Your albums' })).toBeNull()
+})
+
+it('offers to make the album for a circle, and sends the circle with the title', async () => {
+  serveSharing()
+  showPage()
+  fireEvent.click(await screen.findByRole('button', { name: 'New album' }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Trip' } })
+  fireEvent.click(await within(dialog).findByRole('combobox', { name: 'Whose album' }))
+  fireEvent.click(await screen.findByRole('option', { name: 'For Family' }))
+  expect(within(dialog).getByText('Everyone in Family can see it and add their own photos.')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+  await screen.findByText('The album page')
+  const created = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('CreatePhotoAlbum'))
+  expect(created?.[1]).toEqual({ albumTitle: 'Trip', photoIds: [], circleId: 'circle-1' })
+})
+
+it('does not offer an album that is only to view in the add menu', async () => {
+  serveSharing()
+  render(
+    <TranslationProvider>
+      <AddToAlbumMenu onChooseAlbum={vi.fn()} onNewAlbum={vi.fn()} />
+    </TranslationProvider>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Add to album' }))
+  await screen.findByRole('menuitem', { name: /Holiday/ })
+  // The circle's album says whose it is; the album shared to view is not there.
+  expect(screen.getByRole('menuitem', { name: /Holiday/ }).textContent).toContain('Family')
+  expect(screen.queryByRole('menuitem', { name: /Wedding/ })).toBeNull()
 })

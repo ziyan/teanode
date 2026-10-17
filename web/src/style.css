@@ -16985,3 +16985,286 @@ body.has-recording-bar .content {
     padding-left: 0;
   }
 }
+
+/* --- onboarding: Photos on a new server -------------------------------------
+   The welcome page's second way in, for somebody who came for their photos
+   and not for an assistant; the card that says how to back an iPhone up; and
+   the warning edge a notice takes when it is something to act on. */
+.notice.warn {
+  border-left-color: var(--warn);
+}
+
+.welcome-other {
+  margin-top: var(--space-5);
+  text-align: center;
+}
+
+.welcome-other > p {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-body);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.photo-backup {
+  margin-top: var(--space-4);
+}
+
+.photo-backup-steps {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.photo-backup-steps code {
+  overflow-wrap: anywhere;
+}
+
+.photo-backup > .notice {
+  margin-bottom: 0;
+}
+
+.services-review {
+  margin-top: var(--space-3);
+}
+
+.services-saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+.services-saved > p {
+  margin: 0;
+}
+
+.waiting-restart .page-actions {
+  margin-top: var(--space-3);
+  align-items: stretch;
+}
+
+.waiting-restart .page-actions a.button {
+  justify-content: center;
+}
+
+/* --- shared albums ---------------------------------------------------------
+   Whose an album or a photo is, the dialog that shares an album, and the
+   picker that adds photos to one. */
+.photo-album-section + .photo-album-section {
+  margin-top: var(--space-6);
+}
+
+.photo-owner-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.photo-owner-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-circle-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--field);
+  color: var(--muted);
+}
+
+.photo-circle-chip-large {
+  width: 28px;
+  height: 28px;
+}
+
+.photo-album-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.photo-album-head .photo-owner-mark {
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.photo-share-heading {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.photo-share-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.photo-share-name {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-share-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.photo-share-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 14rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+}
+
+.photo-share-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 400;
+  text-align: left;
+}
+
+.photo-share-choice.is-chosen {
+  border-color: var(--accent);
+  background: var(--field);
+}
+
+.photo-share-choice-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-share-levels {
+  margin: var(--space-3) 0 var(--space-2);
+  padding: 0;
+  border: none;
+}
+
+.photo-share-levels legend {
+  padding: 0;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.photo-share-level {
+  align-items: flex-start;
+}
+
+.photo-share-level + .photo-share-level {
+  margin-top: var(--space-1);
+}
+
+.photo-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 4px;
+  max-height: 22rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+}
+
+.photo-picker-cell {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: 4px;
+  background: var(--field);
+}
+
+.photo-picker-cell img,
+.photo-picker-blank {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 120ms ease;
+}
+
+.photo-picker-cell.is-selected img {
+  transform: scale(0.88);
+  border-radius: 4px;
+}
+
+.photo-picker-cell.is-selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--field));
+}
+
+.photo-picker-check {
+  inset: 6px auto auto 6px;
+  width: 22px;
+  height: 22px;
+}
+
+.photo-picker-cell.is-selected .photo-picker-check {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.photo-save-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 12px;
+  border-radius: var(--radius-round);
+  font-size: var(--text-label);
+  font-weight: 650;
+}
+
+.photo-change-date {
+  margin-left: var(--space-1);
+  vertical-align: middle;
+}
+
+/* On a phone the viewer's bar holds more icons than the width has room for
+   (an album's photo has the cover and the take-out beside the usual ones), and
+   the last, Details, was pushed off the edge. They wrap to a second line, still
+   in one row of the viewer's own padding. */
+@media (max-width: 600px) {
+  .photo-viewer-bar {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+}

@@ -66,6 +66,7 @@ import {
   TrashIcon,
   WarningIcon,
   ExternalIcon,
+  PhotoSaveIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
 import { HerdrQuestionAnswer, HerdrQuestionCard, codingAgentName, paneNameOf, type HerdrSession } from './herdrSessions'
@@ -86,7 +87,8 @@ import {
 } from './agentReactions'
 import { AGENT_TURNED_EVENT, announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
-import { useSession } from '../session'
+import { savePhotoFromAttachment } from '../photos/api'
+import { hasPermission, useSession } from '../session'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
 import {
   CHAT_FIELDS,
@@ -1786,13 +1788,42 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
 // FileCard is a file the agent handed over, under the tool line: a
 // picture shown, a video or a sound playing, anything else to open.
-function FileCard({ file }: { file: SharedFile }) {
+export function FileCard({ file }: { file: SharedFile }) {
   const { t } = useTranslation()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const session = useSession()
   const signed = useFileHref(file.url)
+  // The photo the file was kept as, once the person kept it here.
+  const [savedPhotoId, setSavedPhotoId] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
   // Nothing is drawn until there is an address to draw it from.
   const href = signed ?? undefined
   const type = file.content_type.toLowerCase()
-  const photoAddress = file.photo_id ? `/photos/${file.photo_id}` : null
+  const photoAddress = file.photo_id || savedPhotoId ? `/photos/${file.photo_id || savedPhotoId}` : null
+  // A picture or a video can be kept in Photos, unless it is a photo already
+  // or Photos is off for this person.
+  const canSaveToPhotos =
+    !photoAddress &&
+    (isImage(type) || type.startsWith('video/')) &&
+    session.services?.isPhotosEnabled === true &&
+    hasPermission(session.permissions, 'photos:use')
+
+  async function saveToPhotos() {
+    setIsSaving(true)
+    try {
+      const saved = await savePhotoFromAttachment(file.attachment_id)
+      setSavedPhotoId(saved.id)
+      toast.done(t('agentDrawer.savedToPhotos'), {
+        label: t('agentDrawer.openPhoto'),
+        run: () => navigate(`/photos/${encodeURIComponent(saved.id)}`),
+      })
+    } catch (caught) {
+      toast.failure(caught, t('agentDrawer.saveToPhotosFailed'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
   const picture = signed ? <img src={signed} alt={file.name} className="agent-file-media" /> : null
   const media = !signed ? null : isImage(type) ? (
     photoAddress ? (
@@ -1819,6 +1850,19 @@ function FileCard({ file }: { file: SharedFile }) {
           <span className="agent-artifact-title">{file.name}</span>
         )}
         <span className="muted">{formatBytes(file.size)}</span>
+        {canSaveToPhotos && (
+          <Tooltip label={t('agentDrawer.saveToPhotos')}>
+            <button
+              type="button"
+              className="icon-button agent-artifact-open"
+              aria-label={t('agentDrawer.saveToPhotos')}
+              disabled={isSaving}
+              onClick={() => void saveToPhotos()}
+            >
+              <PhotoSaveIcon size={14} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label={t('agentDrawer.openArtifact')}>
           <a
             className="icon-button agent-artifact-open"
@@ -4117,8 +4161,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     const repliedTo = pointed.find(isReplyReference)
     const repliedToLine = repliedTo
       ? (latestLines.current.find((line) => line.kind === 'chat' && line.messageId === repliedTo.agentMessageId) as
-          | ChatLine
-          | undefined)
+          ChatLine | undefined)
       : undefined
     const addressedAgentIds =
       loaded?.kind === 'chat' && !isSuggested
@@ -5316,7 +5359,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
   // Where an agent can be asked, the box says how.
-  const chatPlaceholder = addressable.length > 0 ? t('chat.placeholderWithAgents', { title }) : t('chat.placeholder', { title })
+  const chatPlaceholder =
+    addressable.length > 0 ? t('chat.placeholderWithAgents', { title }) : t('chat.placeholder', { title })
   // What the agent said it needs, while it is still waiting for it and
   // the person has not yet written back.
   const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''

@@ -4,12 +4,16 @@ import { askAgentAbout } from '../../api'
 import { PageHeadingActions, useBreadcrumbDetail } from '../../components/breadcrumb'
 import { ErrorMessage, Loading } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
+import { PhotoBackupGuide } from '../../components/photoBackupGuide'
 import {
+  AddPersonIcon,
   AlbumRemoveIcon,
   CloseIcon,
   DownloadIcon,
   HeartIcon,
   MoreIcon,
+  PhotoSaveIcon,
+  PlusIcon,
   RefreshIcon,
   RestoreIcon,
   TrashIcon,
@@ -41,8 +45,10 @@ import {
   renamePhotoAlbum,
   restorePhotos,
   retryPhotoProcessing,
+  savePhotoToLibrary,
   setPhotoAlbumCover,
   setPhotoFavorite,
+  setPhotoTakenAt,
   trashPhotos,
   type Photo,
   type PhotoAlbum,
@@ -67,7 +73,8 @@ import {
 import { photoUploads } from '../../photos/uploadQueue'
 import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
-import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, type PhotoSection } from './albumControls'
+import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
+import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
 import { PhotoGrid } from './grid'
 import {
   FacePicture,
@@ -138,6 +145,8 @@ function AccountPhotosPage() {
   // The photos a new album is being named for, from a selection or the viewer.
   const [newAlbumPhotos, setNewAlbumPhotos] = useState<Photo[] | null>(null)
   const [isRenamingAlbum, setIsRenamingAlbum] = useState(false)
+  const [isSharingAlbum, setIsSharingAlbum] = useState(false)
+  const [isAddingPhotos, setIsAddingPhotos] = useState(false)
   const [isNamingPerson, setIsNamingPerson] = useState(false)
   const [isMergingPerson, setIsMergingPerson] = useState(false)
   const [personError, setPersonError] = useState<string | null>(null)
@@ -151,6 +160,7 @@ function AccountPhotosPage() {
   const canNamePeople =
     session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
   const isAssistantOn = session.services?.isAssistantEnabled === true
+  const circleChoices = useCircleChoices()
 
   const listKind: PhotoListKind = isInsideCollection
     ? 'library'
@@ -278,6 +288,10 @@ function AccountPhotosPage() {
   // What was read for a different album or person is not this one's.
   const shownAlbum = album.data?.id === photoAlbumId ? album.data : null
   const shownPerson = person.data?.id === photoFaceGroupId ? person.data : null
+  // What the person may do with the album they are looking into. Until it has
+  // been read they may do nothing, so no control flashes in and out.
+  const canManageAlbum = shownAlbum?.canCallerManage === true
+  const canContributeToAlbum = shownAlbum?.canCallerContribute === true
   // The trail and the heading read the album's title, or the person's name,
   // not the id.
   useBreadcrumbDetail(shownAlbum?.albumTitle ?? (shownPerson ? displayedName(shownPerson) : null))
@@ -606,12 +620,13 @@ function AccountPhotosPage() {
     }
   }
 
-  async function createAlbumWith(targets: Photo[], albumTitle: string) {
+  async function createAlbumWith(targets: Photo[], albumTitle: string, circleId: string | null) {
     setIsBusy(true)
     try {
       const created = await createPhotoAlbum(
         albumTitle,
         targets.map((photo) => photo.id),
+        circleId,
       )
       toast.done(t('photos.albumCreated', { title: created.albumTitle }), {
         label: t('photos.viewAlbum'),
@@ -660,6 +675,30 @@ function AccountPhotosPage() {
     } catch (caught) {
       failedWith(caught)
     }
+  }
+
+  // Keeps photos that are somebody else's, seen through a shared album, as the
+  // person's own. The toast links to the first copy.
+  async function saveToLibrary(targets: Photo[]) {
+    try {
+      const saved: Photo[] = []
+      for (const photo of targets) saved.push(await savePhotoToLibrary(photo.id))
+      toast.done(plural(saved.length, { one: 'photos.savedToLibraryOne', other: 'photos.savedToLibraryOther' }), {
+        label: t('photos.viewPhoto'),
+        run: () => navigate({ pathname: `/photos/${encodeURIComponent(saved[0].id)}` }),
+      })
+      clearSelection()
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  // Corrects the date of one of the person's photos. A failure is the
+  // dialog's to say, so it is thrown back to it.
+  async function changeDate(photo: Photo, takenAt: string) {
+    await setPhotoTakenAt(photo.id, takenAt)
+    toast.done(t('photos.dateChanged'))
+    void refresh()
   }
 
   async function renameAlbum(albumTitle: string) {
@@ -876,6 +915,14 @@ function AccountPhotosPage() {
   const areAllSelectedFavorites = selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.isFavorite)
   const haveAllSelectedFailed =
     selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.photoProcessingState === 'failed')
+  // Photos seen through a shared album are somebody else's: they can be kept,
+  // not made favorites, trashed or put in an album of the person's own.
+  const othersSelected = selectedPhotos.filter((photo) => !photo.isOwnedByCaller)
+  const areAllSelectedMine = othersSelected.length === 0
+  // Taking photos out of an album: its manager takes out any, and somebody who
+  // contributes the ones they added.
+  const canRemoveSelectedFromAlbum =
+    photoAlbumId !== undefined && canContributeToAlbum && (canManageAlbum || areAllSelectedMine)
 
   const selectSection = (section: PhotoSection) => {
     if (section === 'albums') navigate('/photos/albums')
@@ -900,7 +947,9 @@ function AccountPhotosPage() {
       : searchText !== '' || hasFilters
         ? t('photos.emptyFiltered')
         : photoAlbumId
-          ? t('photos.emptyAlbum')
+          ? canContributeToAlbum
+            ? t('photos.emptyAlbum')
+            : t('photos.emptyAlbumReader')
           : photoFaceGroupId
             ? t('photos.emptyPerson')
             : listKind === 'favorites'
@@ -908,6 +957,11 @@ function AccountPhotosPage() {
               : isTrash
                 ? t('photos.emptyTrash')
                 : t('photos.emptyLibrary')
+  // The library itself, with nothing searched, filtered or opened, and no
+  // photo in it: where somebody who has just opened Photos is looking, and
+  // where how to back an iPhone up belongs.
+  const isLibraryEmpty =
+    searchText === '' && !hasFilters && !photoAlbumId && !photoFaceGroupId && listKind === 'library'
   const trashedCount = info.data?.trashedCount ?? 0
   const trashDays = info.data?.trashRetentionDays ?? 0
 
@@ -950,7 +1004,17 @@ function AccountPhotosPage() {
             {isSelectionMode || selectedIds.size > 0 ? t('common.cancel') : t('photos.select')}
           </button>
         )}
-        {photoAlbumId && (
+        {photoAlbumId && canContributeToAlbum && (
+          <button type="button" onClick={() => setIsAddingPhotos(true)}>
+            <PlusIcon size={16} /> {t('photos.addPhotos')}
+          </button>
+        )}
+        {photoAlbumId && canManageAlbum && shownAlbum?.circleId === null && (
+          <button type="button" onClick={() => setIsSharingAlbum(true)}>
+            <AddPersonIcon size={16} /> {t('photos.share')}
+          </button>
+        )}
+        {photoAlbumId && canManageAlbum && (
           <MenuButton
             label={t('photos.albumMenu')}
             className="icon-button"
@@ -1054,22 +1118,37 @@ function AccountPhotosPage() {
             </>
           ) : (
             <>
-              <Tooltip label={areAllSelectedFavorites ? t('photos.unfavorite') : t('photos.favorite')}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={areAllSelectedFavorites ? t('photos.unfavorite') : t('photos.favorite')}
-                  onClick={() => void setFavorites(selectedPhotos, !areAllSelectedFavorites)}
-                >
-                  <HeartIcon size={18} />
-                </button>
-              </Tooltip>
-              <AddToAlbumMenu
-                hiddenAlbumId={photoAlbumId}
-                onChooseAlbum={(target) => void addToAlbum(selectedPhotos, target)}
-                onNewAlbum={() => setNewAlbumPhotos(selectedPhotos)}
-              />
-              {photoAlbumId && (
+              {areAllSelectedMine ? (
+                <>
+                  <Tooltip label={areAllSelectedFavorites ? t('photos.unfavorite') : t('photos.favorite')}>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={areAllSelectedFavorites ? t('photos.unfavorite') : t('photos.favorite')}
+                      onClick={() => void setFavorites(selectedPhotos, !areAllSelectedFavorites)}
+                    >
+                      <HeartIcon size={18} />
+                    </button>
+                  </Tooltip>
+                  <AddToAlbumMenu
+                    hiddenAlbumId={photoAlbumId}
+                    onChooseAlbum={(target) => void addToAlbum(selectedPhotos, target)}
+                    onNewAlbum={() => setNewAlbumPhotos(selectedPhotos)}
+                  />
+                </>
+              ) : (
+                <Tooltip label={t('photos.saveToLibrary')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.saveToLibrary')}
+                    onClick={() => void saveToLibrary(othersSelected)}
+                  >
+                    <PhotoSaveIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
+              {canRemoveSelectedFromAlbum && (
                 <Tooltip label={t('photos.removeFromAlbum')}>
                   <button
                     type="button"
@@ -1091,7 +1170,7 @@ function AccountPhotosPage() {
                   <DownloadIcon size={18} />
                 </button>
               </Tooltip>
-              {haveAllSelectedFailed && (
+              {haveAllSelectedFailed && areAllSelectedMine && (
                 <Tooltip label={t('photos.tryAgain')}>
                   <button
                     type="button"
@@ -1104,17 +1183,19 @@ function AccountPhotosPage() {
                   </button>
                 </Tooltip>
               )}
-              <Tooltip label={t('photos.trash')}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={t('photos.trash')}
-                  disabled={isBusy}
-                  onClick={() => setConfirmation({ kind: 'trash', photos: selectedPhotos })}
-                >
-                  <TrashIcon size={18} />
-                </button>
-              </Tooltip>
+              {areAllSelectedMine && (
+                <Tooltip label={t('photos.trash')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.trash')}
+                    disabled={isBusy}
+                    onClick={() => setConfirmation({ kind: 'trash', photos: selectedPhotos })}
+                  >
+                    <TrashIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
             </>
           )}
         </div>
@@ -1176,6 +1257,20 @@ function AccountPhotosPage() {
         </div>
       )}
 
+      {shownAlbum && !shownAlbum.isOwnedByCaller && (
+        <div className="photo-album-head">
+          <AlbumOwnerMark album={shownAlbum} />
+          <span className="muted">
+            {shownAlbum.circleId
+              ? t('photos.albumHeadCircle')
+              : shownAlbum.shareLevel === 'contribute'
+                ? t('photos.albumHeadContribute')
+                : t('photos.albumHeadView')}
+            {shownAlbum.isLocationIncluded ? '' : ` ${t('photos.albumHeadNoPlaces')}`}
+          </span>
+        </div>
+      )}
+
       {shownPerson && (
         <div className="photo-person-head">
           <FacePicture facePictureUrl={shownPerson.facePictureUrl} name={displayedName(shownPerson)} size="large" />
@@ -1202,7 +1297,10 @@ function AccountPhotosPage() {
       {library.loading && !library.data ? (
         <Loading />
       ) : photos.length === 0 && !isListStale ? (
-        <SettingsEmpty>{emptyText}</SettingsEmpty>
+        <>
+          <SettingsEmpty>{emptyText}</SettingsEmpty>
+          {isLibraryEmpty && <PhotoBackupGuide />}
+        </>
       ) : (
         <div className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
           <PhotoGrid
@@ -1265,10 +1363,18 @@ function AccountPhotosPage() {
           isTrashed={Boolean(viewerPhoto.trashedAt) || isTrash}
           isBusy={isBusy}
           isPaused={
-            confirmation !== null || newAlbumPhotos !== null || isRenamingAlbum || isNamingPerson || isMergingPerson
+            confirmation !== null ||
+            newAlbumPhotos !== null ||
+            isRenamingAlbum ||
+            isSharingAlbum ||
+            isAddingPhotos ||
+            isNamingPerson ||
+            isMergingPerson
           }
           photoAlbumId={photoAlbumId}
           photoLibrary={info.data}
+          onSaveToLibrary={(photo) => saveToLibrary([photo])}
+          onChangeDate={changeDate}
           onDescribe={describe}
           onAskAssistant={isAssistantOn ? askAssistant : undefined}
           onRetryProcessing={(photo) => retryProcessing([photo])}
@@ -1281,8 +1387,12 @@ function AccountPhotosPage() {
           onDeleteForever={(photo) => setConfirmation({ kind: 'delete', photos: [photo] })}
           onAddToAlbum={(photo, target) => addToAlbum([photo], target)}
           onNewAlbum={(photo) => setNewAlbumPhotos([photo])}
-          onRemoveFromAlbum={photoAlbumId ? (photo) => removeFromAlbum([photo]) : undefined}
-          onSetCover={photoAlbumId ? (photo) => makeCover(photo) : undefined}
+          onRemoveFromAlbum={
+            photoAlbumId && canContributeToAlbum && (canManageAlbum || viewerPhoto.isOwnedByCaller)
+              ? (photo) => removeFromAlbum([photo])
+              : undefined
+          }
+          onSetCover={photoAlbumId && canManageAlbum ? (photo) => makeCover(photo) : undefined}
         />
       )}
       {isViewerUnavailable && (
@@ -1333,7 +1443,7 @@ function AccountPhotosPage() {
       {confirmation?.kind === 'deleteAlbum' && (
         <ConfirmDialog
           title={t('photos.deleteAlbumTitle', { title: shownAlbum?.albumTitle ?? '' })}
-          body={t('photos.deleteAlbumBody')}
+          body={shownAlbum?.circleId ? t('photos.deleteAlbumBodyCircle') : t('photos.deleteAlbumBody')}
           confirmLabel={t('photos.deleteAlbum')}
           busy={isBusy}
           onConfirm={() => void confirmDeleteAlbum()}
@@ -1372,10 +1482,21 @@ function AccountPhotosPage() {
         <AlbumTitleDialog
           title={t('photos.newAlbum')}
           submitLabel={t('common.create')}
+          circles={circleChoices}
           isBusy={isBusy}
-          onSubmit={(albumTitle) => void createAlbumWith(newAlbumPhotos, albumTitle)}
+          onSubmit={(albumTitle, circleId) => void createAlbumWith(newAlbumPhotos, albumTitle, circleId)}
           onClose={() => setNewAlbumPhotos(null)}
         />
+      )}
+      {isSharingAlbum && shownAlbum && (
+        <ShareAlbumDialog
+          album={shownAlbum}
+          onClose={() => setIsSharingAlbum(false)}
+          onChanged={() => void album.reload(true)}
+        />
+      )}
+      {isAddingPhotos && shownAlbum && (
+        <AddPhotosDialog album={shownAlbum} onClose={() => setIsAddingPhotos(false)} onAdded={() => void refresh()} />
       )}
       {isRenamingAlbum && (
         <AlbumTitleDialog

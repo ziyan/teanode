@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { FormDialog } from '../../components/dialog'
 import { AlbumAddIcon } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
+import { Select } from '../../components/select'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { listPhotoAlbums, readPhotoLibrary, type PhotoAlbum } from '../../photos/api'
 import { listPhotoFaceGroups } from '../../photos/people'
+import { listCircleChoices, type CircleChoice } from '../../photos/sharing'
 
 // The pieces the library, the albums page and the viewer share: the choice
 // between the library's views, the question that asks for an album's title,
@@ -73,12 +75,22 @@ export function PhotoSections({
 // The most characters an album's title may have, as the server counts them.
 const MOST_ALBUM_TITLE_CHARACTERS = 255
 
+// The circles a new album can be made for, read when a dialog asks for them:
+// none for a person who is in no circle, and then nothing is offered.
+export function useCircleChoices(): CircleChoice[] {
+  const circles = useQuery(() => listCircleChoices(), [], { refresh: false })
+  return circles.data ?? []
+}
+
 // AlbumTitleDialog asks for an album's title: for a new album, a suggestion
-// made into one, and a rename. The caller says what the button does.
+// made into one, and a rename. The caller says what the button does. Given
+// circles, it also asks whose the album is: the person's own, or one of the
+// circles', where every member adds their photos.
 export function AlbumTitleDialog({
   title,
   submitLabel,
   initialTitle = '',
+  circles = [],
   isBusy,
   error,
   onSubmit,
@@ -87,14 +99,17 @@ export function AlbumTitleDialog({
   title: string
   submitLabel: string
   initialTitle?: string
+  circles?: CircleChoice[]
   isBusy?: boolean
   error?: string | null
-  onSubmit: (albumTitle: string) => void
+  onSubmit: (albumTitle: string, circleId: string | null) => void
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const [albumTitle, setAlbumTitle] = useState(initialTitle)
+  const [circleId, setCircleId] = useState('')
   const trimmed = albumTitle.trim()
+  const circle = circles.find((each) => each.id === circleId)
   return (
     <FormDialog
       title={title}
@@ -102,7 +117,7 @@ export function AlbumTitleDialog({
       busy={isBusy}
       error={error}
       canSubmit={trimmed !== ''}
-      onSubmit={() => onSubmit(trimmed)}
+      onSubmit={() => onSubmit(trimmed, circle ? circle.id : null)}
       onClose={onClose}
     >
       <label>
@@ -116,6 +131,22 @@ export function AlbumTitleDialog({
           onFocus={(event) => event.target.select()}
         />
       </label>
+      {circles.length > 0 && (
+        <label>
+          <span>{t('photos.albumFor')}</span>
+          <Select
+            block
+            value={circleId}
+            label={t('photos.albumFor')}
+            options={[
+              { value: '', label: t('photos.albumForMe') },
+              ...circles.map((each) => ({ value: each.id, label: t('photos.albumForCircle', { name: each.name }) })),
+            ]}
+            onChange={setCircleId}
+          />
+          {circle && <span className="muted">{t('photos.albumForCircleHint', { name: circle.name })}</span>}
+        </label>
+      )}
     </FormDialog>
   )
 }
@@ -170,7 +201,9 @@ function AlbumChoices({
 }) {
   const { t, plural } = useTranslation()
   const albums = useQuery(() => listPhotoAlbums(), [], { refresh: false })
-  const choices = (albums.data ?? []).filter((album) => album.id !== hiddenAlbumId)
+  // Only the albums the person adds their own photos to: not the ones shared
+  // with them to view.
+  const choices = (albums.data ?? []).filter((album) => album.id !== hiddenAlbumId && album.canCallerContribute)
   return (
     <>
       <button type="button" role="menuitem" onClick={onNewAlbum}>
@@ -187,7 +220,12 @@ function AlbumChoices({
                 <span className="photo-album-choice">
                   <span className="photo-album-choice-title">{album.albumTitle}</span>
                   <span className="muted">
-                    {plural(album.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
+                    {[
+                      plural(album.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' }),
+                      album.isOwnedByCaller ? '' : album.circleId ? album.circleName : album.ownerName,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </span>
                 </span>
               </button>

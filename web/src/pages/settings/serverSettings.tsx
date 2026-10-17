@@ -634,11 +634,13 @@ export function PhotosForm({ settings, onSaved }: { settings: PhotosSettings; on
   const [maxFileBytes, setMaxFileBytes] = useState(settings.maxFileBytes)
   const [maxAccountBytes, setMaxAccountBytes] = useState(settings.maxAccountBytes)
   const [trashRetention, setTrashRetention] = useState(settings.trashRetention)
+  const [isFaceRecognitionEnabled, setIsFaceRecognitionEnabled] = useState(settings.isFaceRecognitionEnabled)
 
   useEffect(() => {
     setMaxFileBytes(settings.maxFileBytes)
     setMaxAccountBytes(settings.maxAccountBytes)
     setTrashRetention(settings.trashRetention)
+    setIsFaceRecognitionEnabled(settings.isFaceRecognitionEnabled)
   }, [settings])
 
   return (
@@ -646,11 +648,21 @@ export function PhotosForm({ settings, onSaved }: { settings: PhotosSettings; on
       className="card"
       onSubmit={(event) => {
         event.preventDefault()
-        void save({ photos: { maxFileBytes, maxAccountBytes, trashRetention } })
+        void save({ photos: { maxFileBytes, maxAccountBytes, trashRetention, isFaceRecognitionEnabled } })
       }}
     >
       <h3>{t('serverSettings.photosTitle')}</h3>
       <p className="muted">{t('serverSettings.photosIntro')}</p>
+
+      <label>
+        <input
+          type="checkbox"
+          checked={isFaceRecognitionEnabled}
+          onChange={(event) => setIsFaceRecognitionEnabled(event.target.checked)}
+        />{' '}
+        {t('serverSettings.photosFaces')}
+      </label>
+      <p className="muted field-hint">{t('serverSettings.photosFacesHint')}</p>
 
       <div className="form-narrow">
         <label>

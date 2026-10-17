@@ -40,7 +40,7 @@ const SETTINGS = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
-      photos { maxFileBytes maxAccountBytes trashRetention }
+      photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
       ${AGENT_SELECTION}
     }
   }`
@@ -101,7 +101,7 @@ export const UPDATE = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
-      photos { maxFileBytes maxAccountBytes trashRetention }
+      photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
       ${AGENT_SELECTION}
     }
   }`
@@ -187,7 +187,12 @@ export type Identity = {
 }
 export type StorageSettings = { directory: string; spoolRetention: string }
 export type GeoIP = { enabled: boolean; databaseFile?: string }
-export type PhotosSettings = { maxFileBytes: string; maxAccountBytes: string; trashRetention: string }
+export type PhotosSettings = {
+  maxFileBytes: string
+  maxAccountBytes: string
+  trashRetention: string
+  isFaceRecognitionEnabled: boolean
+}
 
 // Spam scoring has two engines and the built-in one has parts, so it is not
 // a Service — that shape is a host and a port and nothing else.

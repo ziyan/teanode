@@ -38,6 +38,13 @@ export interface Photo {
   smallPreviewUrl: string
   largePreviewUrl: string
   videoPreviewUrl: string
+  // The photo is in the person's own library. A photo read through an album
+  // shared with them is somebody else's: ownerName says whose, userId is the
+  // same person for the picture that goes with the name, and it has no place,
+  // no favorite mark and no client id.
+  isOwnedByCaller: boolean
+  ownerName: string
+  userId: string
 }
 
 export interface PhotoFile {
@@ -95,6 +102,10 @@ export interface PhotoView {
   faces: PhotoFace[]
 }
 
+// How far an album is shared with somebody: view to see and save its photos,
+// contribute to also add their own. Empty for the owner, who has all of it.
+export type PhotoAlbumShareLevel = '' | 'view' | 'contribute'
+
 export interface PhotoAlbum {
   id: string
   albumTitle: string
@@ -109,6 +120,40 @@ export interface PhotoAlbum {
   lastTakenAt: string | null
   // Empty until a photo of the album has a small preview.
   coverPreviewUrl: string
+  // Whose it is: a person's, or a circle's (then ownerUserId is null and
+  // circleName says which). The owner's name and picture are for the card.
+  ownerUserId: string | null
+  circleId: string | null
+  ownerUsername: string
+  ownerName: string
+  ownerAvatarUrl: string | null
+  ownerAvatarColorIndex: number
+  circleName: string
+  // What the person may do with it: the owner, and an admin of the circle
+  // that owns it, manage it; the owner, a circle's members and anybody it is
+  // shared with at contribute add their own photos.
+  isOwnedByCaller: boolean
+  shareLevel: PhotoAlbumShareLevel
+  canCallerContribute: boolean
+  canCallerManage: boolean
+  // The share that reaches the person lets them see where photos were taken.
+  isLocationIncluded: boolean
+}
+
+// One share of an album: with one person or one circle, never both.
+export interface PhotoAlbumShare {
+  id: string
+  photoAlbumId: string
+  granteeUserId: string | null
+  granteeUsername: string
+  granteeName: string
+  granteeAvatarUrl: string | null
+  granteeAvatarColorIndex: number
+  granteeCircleId: string | null
+  granteeCircleName: string
+  shareLevel: 'view' | 'contribute'
+  isLocationIncluded: boolean
+  createdAt: string
 }
 
 // A run of photos in no album that belong together: a trip or an event. The
@@ -151,7 +196,7 @@ export type PhotoListKind = 'library' | 'favorites' | 'trash'
 export const PHOTOS_PER_PAGE = 200
 
 const PHOTO_FIELDS =
-  'id clientPhotoId photoKind photoSource createdAt takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl'
+  'id clientPhotoId photoKind photoSource createdAt takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl isOwnedByCaller ownerName userId'
 
 const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription descriptionVisibleText describedAt isDescriptionRequested`
 
@@ -159,7 +204,10 @@ const PHOTO_FACE_FIELDS =
   'id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName facePictureUrl'
 
 const PHOTO_ALBUM_FIELDS =
-  'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl'
+  'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl ownerUserId circleId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex circleName isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded'
+
+const PHOTO_ALBUM_SHARE_FIELDS =
+  'id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded createdAt'
 
 export const PHOTO_DOCUMENTS = {
   ListPhotos: `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { ${PHOTO_FIELDS} } }`,
@@ -171,6 +219,9 @@ export const PHOTO_DOCUMENTS = {
   FindPhotos:
     'query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId trashedAt } }',
   UpdatePhoto: `mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { ${PHOTO_FIELDS} } }`,
+  UpdatePhotoTakenAt: `mutation ($photoId: String!, $takenAt: DateTime) { UpdatePhoto(photoId: $photoId, takenAt: $takenAt) { ${PHOTO_FIELDS} } }`,
+  SavePhotoToLibrary: `mutation ($photoId: String!) { SavePhotoToLibrary(photoId: $photoId) { ${PHOTO_FIELDS} } }`,
+  SavePhotoFromAttachment: `mutation ($agentAttachmentId: String!) { SavePhotoFromAttachment(agentAttachmentId: $agentAttachmentId) { ${PHOTO_FIELDS} } }`,
   DescribePhoto: `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) { ${PHOTO_DETAIL_FIELDS} } }`,
   TrashPhotos: 'mutation ($photoIds: [String!]!) { TrashPhotos(photoIds: $photoIds) }',
   RestorePhotos: 'mutation ($photoIds: [String!]!) { RestorePhotos(photoIds: $photoIds) }',
@@ -181,7 +232,12 @@ export const PHOTO_DOCUMENTS = {
   SuggestPhotoAlbums:
     'query { SuggestPhotoAlbums { takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds } }',
   ReadPhotoAlbum: `query ($photoAlbumId: String!) { ReadPhotoAlbum(photoAlbumId: $photoAlbumId) { ${PHOTO_ALBUM_FIELDS} } }`,
-  CreatePhotoAlbum: `mutation ($albumTitle: String!, $photoIds: [String!]) { CreatePhotoAlbum(albumTitle: $albumTitle, photoIds: $photoIds) { ${PHOTO_ALBUM_FIELDS} } }`,
+  CreatePhotoAlbum: `mutation ($albumTitle: String!, $photoIds: [String!], $circleId: String) { CreatePhotoAlbum(albumTitle: $albumTitle, photoIds: $photoIds, circleId: $circleId) { ${PHOTO_ALBUM_FIELDS} } }`,
+  ListPhotoAlbumShares: `query ($photoAlbumId: String!) { ListPhotoAlbumShares(photoAlbumId: $photoAlbumId) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
+  SharePhotoAlbum: `mutation ($photoAlbumId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!, $isLocationIncluded: Boolean) { SharePhotoAlbum(photoAlbumId: $photoAlbumId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
+  UpdatePhotoAlbumShare: `mutation ($photoAlbumShareId: String!, $shareLevel: String!, $isLocationIncluded: Boolean) { UpdatePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId, shareLevel: $shareLevel, isLocationIncluded: $isLocationIncluded) { ${PHOTO_ALBUM_SHARE_FIELDS} } }`,
+  RemovePhotoAlbumShare:
+    'mutation ($photoAlbumShareId: String!) { RemovePhotoAlbumShare(photoAlbumShareId: $photoAlbumShareId) }',
   RenamePhotoAlbum: `mutation ($photoAlbumId: String!, $albumTitle: String!) { RenamePhotoAlbum(photoAlbumId: $photoAlbumId, albumTitle: $albumTitle) { ${PHOTO_ALBUM_FIELDS} } }`,
   DeletePhotoAlbum: 'mutation ($photoAlbumId: String!) { DeletePhotoAlbum(photoAlbumId: $photoAlbumId) }',
   AddPhotosToAlbum:
@@ -297,6 +353,29 @@ export async function setPhotoFavorite(photoId: string, isFavorite: boolean): Pr
   return answer.UpdatePhoto
 }
 
+// Corrects the date a photo was taken. takenAt is RFC 3339 and carries the
+// offset of the place the photo was taken at, which the server keeps as the
+// offset the photo is shown at.
+export async function setPhotoTakenAt(photoId: string, takenAt: string): Promise<Photo> {
+  const answer = await graphql<{ UpdatePhoto: Photo }>(PHOTO_DOCUMENTS.UpdatePhotoTakenAt, { photoId, takenAt })
+  return answer.UpdatePhoto
+}
+
+// Keeps a photo of an album shared with the person as a photo of their own.
+export async function savePhotoToLibrary(photoId: string): Promise<Photo> {
+  const answer = await graphql<{ SavePhotoToLibrary: Photo }>(PHOTO_DOCUMENTS.SavePhotoToLibrary, { photoId })
+  return answer.SavePhotoToLibrary
+}
+
+// Keeps a picture or a video of the person's conversation with their assistant
+// as a photo.
+export async function savePhotoFromAttachment(agentAttachmentId: string): Promise<Photo> {
+  const answer = await graphql<{ SavePhotoFromAttachment: Photo }>(PHOTO_DOCUMENTS.SavePhotoFromAttachment, {
+    agentAttachmentId,
+  })
+  return answer.SavePhotoFromAttachment
+}
+
 // The mutations that take photo ids send them in batches the server accepts,
 // and say how many of them it acted on.
 async function changePhotos(
@@ -346,6 +425,50 @@ export async function readPhotoAlbum(photoAlbumId: string, signal?: AbortSignal)
   return answer.ReadPhotoAlbum
 }
 
+export async function listPhotoAlbumShares(photoAlbumId: string, signal?: AbortSignal): Promise<PhotoAlbumShare[]> {
+  const answer = await graphql<{ ListPhotoAlbumShares: PhotoAlbumShare[] }>(
+    PHOTO_DOCUMENTS.ListPhotoAlbumShares,
+    { photoAlbumId },
+    signal,
+  )
+  return answer.ListPhotoAlbumShares
+}
+
+// Shares an album with one person or one circle, or changes the level they
+// have: sharing again with the same grantee is how the server updates it.
+export async function sharePhotoAlbum(
+  photoAlbumId: string,
+  grantee: { granteeUserId: string } | { granteeCircleId: string },
+  shareLevel: 'view' | 'contribute',
+  isLocationIncluded: boolean,
+): Promise<PhotoAlbumShare> {
+  const answer = await graphql<{ SharePhotoAlbum: PhotoAlbumShare }>(PHOTO_DOCUMENTS.SharePhotoAlbum, {
+    photoAlbumId,
+    granteeUserId: 'granteeUserId' in grantee ? grantee.granteeUserId : null,
+    granteeCircleId: 'granteeCircleId' in grantee ? grantee.granteeCircleId : null,
+    shareLevel,
+    isLocationIncluded,
+  })
+  return answer.SharePhotoAlbum
+}
+
+export async function updatePhotoAlbumShare(
+  photoAlbumShareId: string,
+  shareLevel: 'view' | 'contribute',
+  isLocationIncluded: boolean,
+): Promise<PhotoAlbumShare> {
+  const answer = await graphql<{ UpdatePhotoAlbumShare: PhotoAlbumShare }>(PHOTO_DOCUMENTS.UpdatePhotoAlbumShare, {
+    photoAlbumShareId,
+    shareLevel,
+    isLocationIncluded,
+  })
+  return answer.UpdatePhotoAlbumShare
+}
+
+export async function removePhotoAlbumShare(photoAlbumShareId: string): Promise<void> {
+  await graphql(PHOTO_DOCUMENTS.RemovePhotoAlbumShare, { photoAlbumShareId })
+}
+
 export async function suggestPhotoAlbums(signal?: AbortSignal): Promise<PhotoAlbumSuggestion[]> {
   const answer = await graphql<{ SuggestPhotoAlbums: PhotoAlbumSuggestion[] }>(
     PHOTO_DOCUMENTS.SuggestPhotoAlbums,
@@ -357,10 +480,16 @@ export async function suggestPhotoAlbums(signal?: AbortSignal): Promise<PhotoAlb
 
 // The photos an album is made with, or has put in it, go in batches the
 // server accepts: the first batch makes the album and the rest are added.
-export async function createPhotoAlbum(albumTitle: string, photoIds: string[]): Promise<PhotoAlbum> {
+// With a circle's id the album is the circle's: every member adds to it.
+export async function createPhotoAlbum(
+  albumTitle: string,
+  photoIds: string[],
+  circleId: string | null = null,
+): Promise<PhotoAlbum> {
   const answer = await graphql<{ CreatePhotoAlbum: PhotoAlbum }>(PHOTO_DOCUMENTS.CreatePhotoAlbum, {
     albumTitle,
     photoIds: photoIds.slice(0, MOST_PHOTO_IDS_PER_CALL),
+    circleId,
   })
   if (photoIds.length > MOST_PHOTO_IDS_PER_CALL) {
     await addPhotosToAlbum(answer.CreatePhotoAlbum.id, photoIds.slice(MOST_PHOTO_IDS_PER_CALL))

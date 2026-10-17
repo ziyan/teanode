@@ -1,9 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AGENT_TURNED_EVENT } from '../agentPreferences'
 import { graphql, openAgentDrawer, type ServiceCapabilities } from '../api'
 import { ErrorMessage, Loading, Tag } from '../components/common'
-import { restartServer } from '../components/serverRestart'
+import { useRestartNow } from '../components/restartNow'
 import { SettingsRow } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
@@ -50,8 +50,13 @@ const hostedKeys: HostedServiceKey[] = [
 ]
 
 export function SetupPage() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const toast = useToast()
+  // The welcome page sends somebody who came for their photos here with
+  // ?choose=photos: Photos is ticked when the page first has its answer, once,
+  // and the address is cleaned so that a reload does not tick it again.
+  const [parameters, setParameters] = useSearchParams()
+  const chooseOnArrival = useRef(parameters.get('choose'))
   const { data, error, loading, reload } = useQuery(() => graphql<SetupAnswer>(SETUP))
   const agentQuery = useQuery(() => graphql<AgentAnswer>(READ_AGENT).catch(() => null))
   const [choices, setChoices] = useState<ServiceCapabilities | null>(null)
@@ -60,13 +65,28 @@ export function SetupPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [problem, setProblem] = useState<unknown>()
   const [isSaved, setIsSaved] = useState(false)
-  const [isRestarting, setIsRestarting] = useState(false)
   useEffect(() => {
     if (data) {
-      setChoices(data.GetServiceSetup.selectedServices)
+      const isChoosingPhotos = chooseOnArrival.current === 'photos'
+      setChoices({
+        ...data.GetServiceSetup.selectedServices,
+        ...(isChoosingPhotos ? { isPhotosEnabled: true } : {}),
+      })
       setMailServerName(data.GetServiceSetup.mailServerName)
+      if (chooseOnArrival.current !== null) {
+        chooseOnArrival.current = null
+        const remaining = new URLSearchParams(parameters)
+        remaining.delete('choose')
+        setParameters(remaining, { replace: true })
+      }
     }
+    // Only a new answer from the server changes what is ticked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
+  const { isRestarting, restart } = useRestartNow(async () => {
+    await reload()
+    await agentQuery.reload()
+  })
   if (error) return <ErrorMessage error={error} />
   if (loading || !choices || !data) return <Loading />
   const setup = data.GetServiceSetup
@@ -75,26 +95,21 @@ export function SetupPage() {
   // before it are; until then it is a step still to come.
   const hasNothingToRestart = pendingRestart.length === 0 && !setup.runningServices.hasPendingServiceRestart
   const isReadyToRun = setup.hasModelProvider && setup.selectedServices.isAssistantEnabled
+  // A server whose operator set up hosted services and never asked for the
+  // assistant is not waiting on a model: its steps are the services', and the
+  // assistant's are offered as one optional step instead of three to do. Photos
+  // runs on a new server without being chosen, so it alone says nothing about
+  // what the operator wants, until setup is finished without an assistant.
+  const hasOtherHostedService = hostedKeys.some(
+    (serviceKey) => serviceKey !== 'isPhotosEnabled' && setup.selectedServices[serviceKey],
+  )
+  const isAssistantWanted =
+    setup.selectedServices.isAssistantEnabled ||
+    setup.hasModelProvider ||
+    (!hasOtherHostedService && (!setup.selectedServices.hasCompletedSetup || !setup.selectedServices.isPhotosEnabled))
   const readAgent = agentQuery.data?.ReadAgent
   const isAgentOn = readAgent?.agent?.enabled === true
   const canTurnOnAgent = setup.runningServices.isAssistantEnabled && readAgent?.allowed.enabled === true
-  async function restart() {
-    setIsRestarting(true)
-    try {
-      if (await restartServer()) {
-        toast.done(t('server.cameBack'))
-        await reload()
-        await agentQuery.reload()
-        window.dispatchEvent(new Event('focus'))
-      } else {
-        toast.failed(t('server.didNotComeBack'))
-      }
-    } catch (caught) {
-      toast.failed(caught instanceof Error ? caught.message : String(caught))
-    } finally {
-      setIsRestarting(false)
-    }
-  }
   async function turnOnAgent() {
     setIsSaving(true)
     try {
@@ -109,9 +124,6 @@ export function SetupPage() {
       setIsSaving(false)
     }
   }
-  const hasUnsavedChoices =
-    hostedKeys.some((serviceKey) => choices[serviceKey] !== setup.selectedServices[serviceKey]) ||
-    (choices.isMailRoutingEnabled && mailServerName !== setup.mailServerName)
   const labels = {
     isMailRoutingEnabled: t('services.mail'),
     isMailboxEnabled: t('nav.mail'),
@@ -120,6 +132,28 @@ export function SetupPage() {
     isContactsEnabled: t('nav.contacts'),
     isPhotosEnabled: t('nav.photos'),
   }
+  // The services that are chosen and are not running yet, by name: what a
+  // restart will start. Mail routing and mailboxes are one name.
+  const startingServices = hostedKeys
+    .filter((serviceKey) => setup.selectedServices[serviceKey] && !setup.runningServices[serviceKey])
+    .filter((serviceKey) => !(serviceKey === 'isMailboxEnabled' && setup.selectedServices.isMailRoutingEnabled))
+    .map((serviceKey) => labels[serviceKey])
+    .join(language === 'en' ? ', ' : '、')
+  const isWaitingForRestart = pendingRestart.length > 0 || setup.runningServices.hasPendingServiceRestart
+  // What is waiting, in words: the services that start, and any other
+  // setting the server read once at startup, named as the server names it.
+  const otherPendingSettings = pendingRestart.filter((setting) => setting !== 'services')
+  const restartNote =
+    startingServices !== ''
+      ? t('services.restartStarting', { services: startingServices })
+      : otherPendingSettings.length > 0
+        ? t('services.restartPending', { settings: otherPendingSettings.join(', ') })
+        : isWaitingForRestart
+          ? t('services.restart')
+          : t('services.restartNone')
+  const hasUnsavedChoices =
+    hostedKeys.some((serviceKey) => choices[serviceKey] !== setup.selectedServices[serviceKey]) ||
+    (choices.isMailRoutingEnabled && mailServerName !== setup.mailServerName)
   const descriptions = {
     isMailRoutingEnabled: t('services.routing'),
     isMailboxEnabled: t('services.mailboxes'),
@@ -243,7 +277,7 @@ export function SetupPage() {
           {t('services.review')}
         </button>
         {isReviewing && (
-          <div className="card">
+          <div className="card services-review">
             <h3>{t('services.review')}</h3>
             <ul>
               {hostedKeys
@@ -253,75 +287,115 @@ export function SetupPage() {
                 ))}
             </ul>
             {!hostedKeys.some((serviceKey) => choices[serviceKey]) && <p>{t('services.assistant')}</p>}
-            <p>{t('services.preserve')}</p>
-            <button className="primary" type="button" disabled={isSaving} onClick={() => void apply()}>
-              {t('services.apply')}
-            </button>
-            <button type="button" disabled={isSaving} onClick={() => setIsReviewing(false)}>
-              {t('common.cancel')}
-            </button>
+            {hostedKeys.some((serviceKey) => setup.selectedServices[serviceKey] && !choices[serviceKey]) && (
+              <p>{t('services.preserve')}</p>
+            )}
+            <div className="page-actions">
+              <button className="primary" type="button" disabled={isSaving} onClick={() => void apply()}>
+                {t('services.apply')}
+              </button>
+              <button type="button" disabled={isSaving} onClick={() => setIsReviewing(false)}>
+                {t('common.cancel')}
+              </button>
+            </div>
           </div>
         )}
-        {isSaved && <p role="status">{t('services.saved')}</p>}
+        {isSaved && (
+          <div className="services-saved" role="status">
+            <p>{t('services.saved')}</p>
+            {isWaitingForRestart && (
+              <>
+                <p className="muted">{restartNote}</p>
+                <button type="button" className="primary" disabled={isRestarting} onClick={() => void restart()}>
+                  {isRestarting ? t('server.restarting') : t('services.restartNow')}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <ErrorMessage error={problem} />
       </section>
       <section className="card">
         <h2>{t('services.next')}</h2>
         <p className="muted">{t('services.stepsIntro')}</p>
         <div>
+          {isAssistantWanted ? (
+            <>
+              <SetupStep
+                isDone={setup.hasModelProvider}
+                title={<Link to="/manage/agent/models">{t('services.model')}</Link>}
+                note={t(setup.hasModelProvider ? 'services.providerReady' : 'services.providerMissing')}
+              />
+              <SetupStep
+                isDone={setup.selectedServices.isAssistantEnabled}
+                title={<Link to="/manage/agent/general">{t('services.enableAssistant')}</Link>}
+                note={t(
+                  setup.selectedServices.isAssistantEnabled ? 'services.assistantReady' : 'services.assistantMissing',
+                )}
+              />
+            </>
+          ) : (
+            <SetupStep
+              isDone={false}
+              isOptional
+              title={<Link to="/manage/agent/models">{t('services.addAssistant')}</Link>}
+              note={t('services.addAssistantNote')}
+            />
+          )}
           <SetupStep
-            isDone={setup.hasModelProvider}
-            title={<Link to="/manage/agent/models">{t('services.model')}</Link>}
-            note={t(setup.hasModelProvider ? 'services.providerReady' : 'services.providerMissing')}
-          />
-          <SetupStep
-            isDone={setup.selectedServices.isAssistantEnabled}
-            title={<Link to="/manage/agent/general">{t('services.enableAssistant')}</Link>}
-            note={t(
-              setup.selectedServices.isAssistantEnabled ? 'services.assistantReady' : 'services.assistantMissing',
-            )}
-          />
-          <SetupStep
-            isDone={hasNothingToRestart && isReadyToRun}
-            isWaiting={hasNothingToRestart && !isReadyToRun}
+            isDone={hasNothingToRestart && (!isAssistantWanted || isReadyToRun)}
+            isWaiting={hasNothingToRestart && isAssistantWanted && !isReadyToRun}
             title={<Link to="/manage/server/about">{t('services.restartStep')}</Link>}
-            note={
-              pendingRestart.length > 0
-                ? t('services.restartPending', { settings: pendingRestart.join(', ') })
-                : setup.runningServices.hasPendingServiceRestart
-                  ? t('services.restart')
-                  : t('services.restartNone')
-            }
+            note={restartNote}
             action={
-              (pendingRestart.length > 0 || setup.runningServices.hasPendingServiceRestart) && (
+              isWaitingForRestart && (
                 <button type="button" className="primary" disabled={isRestarting} onClick={() => void restart()}>
                   {isRestarting ? t('server.restarting') : t('services.restartNow')}
                 </button>
               )
             }
           />
-          <SetupStep
-            isDone={isAgentOn}
-            isWaiting={!isAgentOn && !canTurnOnAgent}
-            title={t('services.yourAgent')}
-            note={t(
-              isAgentOn
-                ? 'services.yourAgentReady'
-                : canTurnOnAgent
-                  ? 'services.yourAgentMissing'
-                  : 'services.yourAgentWaiting',
-            )}
-            action={
-              !isAgentOn &&
-              canTurnOnAgent && (
-                <button type="button" className="primary" disabled={isSaving} onClick={() => void turnOnAgent()}>
-                  {t('services.turnOnMine')}
-                </button>
-              )
-            }
-          />
+          {setup.selectedServices.isPhotosEnabled && (
+            <SetupStep
+              isDone={false}
+              isWaiting={!setup.runningServices.isPhotosEnabled}
+              title={t('services.openPhotos')}
+              note={t(
+                setup.runningServices.isPhotosEnabled ? 'services.openPhotosReady' : 'services.openPhotosWaiting',
+              )}
+              action={
+                setup.runningServices.isPhotosEnabled && (
+                  <Link className="button primary" to="/photos">
+                    {t('services.openPhotos')}
+                  </Link>
+                )
+              }
+            />
+          )}
+          {isAssistantWanted && (
+            <SetupStep
+              isDone={isAgentOn}
+              isWaiting={!isAgentOn && !canTurnOnAgent}
+              title={t('services.yourAgent')}
+              note={t(
+                isAgentOn
+                  ? 'services.yourAgentReady'
+                  : canTurnOnAgent
+                    ? 'services.yourAgentMissing'
+                    : 'services.yourAgentWaiting',
+              )}
+              action={
+                !isAgentOn &&
+                canTurnOnAgent && (
+                  <button type="button" className="primary" disabled={isSaving} onClick={() => void turnOnAgent()}>
+                    {t('services.turnOnMine')}
+                  </button>
+                )
+              }
+            />
+          )}
         </div>
-        <p className="muted">{t('services.modelDetail')}</p>
+        {isAssistantWanted && <p className="muted">{t('services.modelDetail')}</p>}
         {setup.selectedServices.isMailRoutingEnabled && (
           <p role="status">
             {t(setup.hasMailDomain ? 'services.domainReady' : 'services.domainMissing')}{' '}
@@ -372,12 +446,14 @@ export function SetupPage() {
 function SetupStep({
   isDone,
   isWaiting = false,
+  isOptional = false,
   title,
   note,
   action,
 }: {
   isDone: boolean
   isWaiting?: boolean
+  isOptional?: boolean
   title: ReactNode
   note: string
   action?: ReactNode
@@ -390,6 +466,8 @@ function SetupStep({
       badge={
         isDone ? (
           <Tag value={t('services.done')} tone="good" />
+        ) : isOptional ? (
+          <Tag value={t('services.optional')} />
         ) : isWaiting ? (
           <Tag value={t('services.later')} />
         ) : (

@@ -19,9 +19,11 @@ import {
 import { titleNamesPlaces } from '../../photos/albumSuggestion'
 import { formatDateRange, personTimeZone } from '../../photos/days'
 import { useSession } from '../../session'
-import { AlbumTitleDialog, PhotoSections, type PhotoSection } from './albumControls'
+import { AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
+import { AlbumOwnerMark } from './albumSharing'
 
-// The Albums page: a grid of the person's albums by their covers, and above
+// The Albums page: a grid of the person's albums by their covers, then the
+// albums of the circles they are in, then the ones shared with them, and above
 // it the trips and events the server found in photos that are in no album.
 // Nothing is made from a suggestion until the person chooses it and names it.
 
@@ -59,12 +61,13 @@ function AccountAlbumsPage() {
   const [isNaming, setIsNaming] = useState(false)
   const [suggestion, setSuggestion] = useState<PhotoAlbumSuggestion | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const circles = useCircleChoices()
 
-  async function create(albumTitle: string, source: PhotoAlbumSuggestion | null) {
+  async function create(albumTitle: string, circleId: string | null, source: PhotoAlbumSuggestion | null) {
     setIsBusy(true)
     try {
       const photoIds = source ? await listSuggestionPhotoIds(source) : []
-      const created = await createPhotoAlbum(albumTitle, photoIds)
+      const created = await createPhotoAlbum(albumTitle, photoIds, circleId)
       toast.done(t('photos.albumCreated', { title: created.albumTitle }))
       navigate(albumAddress(created.id))
     } catch (caught) {
@@ -75,7 +78,12 @@ function AccountAlbumsPage() {
   }
 
   const list = albums.data ?? []
+  const ownAlbums = list.filter((album) => album.isOwnedByCaller)
+  const circleAlbums = list.filter((album) => album.circleId !== null)
+  const sharedAlbums = list.filter((album) => !album.isOwnedByCaller && album.circleId === null)
   const suggested = suggestions.data ?? []
+  // The sections are named only when there is more than one kind of album.
+  const hasOtherSections = circleAlbums.length > 0 || sharedAlbums.length > 0
   return (
     <div className="photos-page">
       <ErrorMessage error={albums.error} />
@@ -134,19 +142,35 @@ function AccountAlbumsPage() {
       ) : list.length === 0 ? (
         <SettingsEmpty>{t('photos.emptyAlbums')}</SettingsEmpty>
       ) : (
-        <div className="photo-album-grid">
-          {list.map((album) => (
-            <AlbumCell key={album.id} album={album} />
-          ))}
-        </div>
+        <>
+          <AlbumSection
+            headingId="photo-albums-own"
+            heading={hasOtherSections ? t('photos.albumsOwn') : null}
+            albums={ownAlbums}
+            emptyText={hasOtherSections ? t('photos.albumsOwnEmpty') : null}
+          />
+          <AlbumSection
+            headingId="photo-albums-circles"
+            heading={t('photos.albumsCircles')}
+            hint={t('photos.albumsCirclesHint')}
+            albums={circleAlbums}
+          />
+          <AlbumSection
+            headingId="photo-albums-shared"
+            heading={t('photos.albumsShared')}
+            hint={t('photos.albumsSharedHint')}
+            albums={sharedAlbums}
+          />
+        </>
       )}
 
       {isNaming && (
         <AlbumTitleDialog
           title={t('photos.newAlbum')}
           submitLabel={t('common.create')}
+          circles={circles}
           isBusy={isBusy}
-          onSubmit={(albumTitle) => void create(albumTitle, null)}
+          onSubmit={(albumTitle, circleId) => void create(albumTitle, circleId, null)}
           onClose={() => setIsNaming(false)}
         />
       )}
@@ -155,8 +179,9 @@ function AccountAlbumsPage() {
           title={t('photos.createAlbum')}
           submitLabel={t('common.create')}
           initialTitle={suggestion.albumTitle}
+          circles={circles}
           isBusy={isBusy}
-          onSubmit={(albumTitle) => void create(albumTitle, suggestion)}
+          onSubmit={(albumTitle, circleId) => void create(albumTitle, circleId, suggestion)}
           onClose={() => setSuggestion(null)}
         />
       )}
@@ -164,8 +189,47 @@ function AccountAlbumsPage() {
   )
 }
 
+// One kind of album: a heading when the page has more than one kind, and the
+// grid. A kind with no album is left out, except the person's own, which says
+// so when the others are there.
+function AlbumSection({
+  headingId,
+  heading,
+  hint,
+  albums,
+  emptyText,
+}: {
+  headingId: string
+  heading: string | null
+  hint?: string
+  albums: PhotoAlbum[]
+  emptyText?: string | null
+}) {
+  if (albums.length === 0 && !emptyText) return null
+  return (
+    <section className="photo-album-section" aria-labelledby={heading ? headingId : undefined}>
+      {heading && (
+        <h2 id={headingId} className="photo-section-heading">
+          {heading}
+        </h2>
+      )}
+      {hint && <p className="muted photo-section-hint">{hint}</p>}
+      {albums.length === 0 ? (
+        <SettingsEmpty>{emptyText}</SettingsEmpty>
+      ) : (
+        <div className="photo-album-grid">
+          {albums.map((album) => (
+            <AlbumCell key={album.id} album={album} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // One album: its cover, square, its title under it, and in muted text how
-// many photos it holds and the dates they span.
+// many photos it holds and the dates they span. An album that is not the
+// person's own says whose it is, by the owner's face and name or the circle's.
 function AlbumCell({ album }: { album: PhotoAlbum }) {
   const { plural, language } = useTranslation()
   const details = [
@@ -187,6 +251,7 @@ function AlbumCell({ album }: { album: PhotoAlbum }) {
       </span>
       <span className="photo-album-title">{album.albumTitle}</span>
       <span className="photo-album-details muted">{details}</span>
+      {!album.isOwnedByCaller && <AlbumOwnerMark album={album} />}
     </Link>
   )
 }

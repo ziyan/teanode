@@ -30,6 +30,9 @@ const photo = {
   cameraModel: '',
   widthPixels: 0,
   heightPixels: 0,
+  isOwnedByCaller: true,
+  ownerName: '',
+  userId: 'person-1',
 } as Photo
 
 beforeEach(() => {

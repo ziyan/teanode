@@ -143,7 +143,7 @@ function AccountDeviceSetupPage() {
         {capabilities.loading && !availableServices ? (
           <Loading />
         ) : !canSetUp ? (
-          <SettingsEmpty>{t('deviceSetup.noServices')}</SettingsEmpty>
+          <SettingsEmpty>{t(canUsePhotos ? 'deviceSetup.noServicesPhotos' : 'deviceSetup.noServices')}</SettingsEmpty>
         ) : null}
       </SettingsSection>
       <SettingsSection
