@@ -374,8 +374,10 @@ app's build, which a self-hosted server does not have.
 ### How the backup keeps going
 
 A pass (`PhotoBackupCoordinator.runPass`) reads the library, notes every file
-still to send in the index, and hands files to the background URLSession. The
-queue it hands over is long, up to 200 files and 10 GB, because iOS goes on
+still to send in the index, and hands files to the background URLSession. A
+library is read in batches, so that a library of 35,000 items starts uploading
+in seconds, resumes where it left off, and reports progress while it is read
+(see "Reading a large library" below). The queue the pass hands over is long, up to 200 files and 10 GB, because iOS goes on
 sending whatever is queued after the person has left the app, and a short queue
 runs dry within minutes. Every queued file is an exported copy in the app's
 outgoing folder, so the bytes queued may not pass a quarter of the free space
@@ -412,6 +414,53 @@ What continues and what waits:
   on with the next file. Before this, one such file held up the pass and every
   later attempt to start one, because a pass already running is joined, not
   started twice.
+
+### Reading a large library
+
+The first pass, and a pass after the library's change token expired, lists the
+whole library. It does not read it whole and then start:
+
+- The library gives only identifiers and creation dates (`listBatch`), newest
+  photo first, 300 at a time. Items (the files of each photo, and iCloud's
+  identifier for it) are built only for the 300 at hand, and only for photos the
+  index has no record of. No more than a batch of items is in memory.
+- For each batch the pass asks the server which photos it has (`FindPhotos`),
+  plans, writes the files to the index as still to send, and queues what the
+  budget allows, before it reads the next batch. The first upload is queued
+  after one batch. What the budget does not take stays in the index and is sent
+  after the listing, from the index's own line (`sendOrder` in each record, so
+  newest photo first), read 300 items at a time. Photos that come into the
+  library later go to the front of that line.
+- The index keeps where the listing stopped (`PhotoBackupListingProgress`: the
+  creation date, to the fraction of a second, and identifier of the last item,
+  the number listed, and the change token as it was when the listing began). A
+  pass that stops (iOS ends the continued processing task, the person leaves,
+  the app is killed) is followed by one that goes on from there and does not
+  begin another listing. The library's change token is stored only when the last
+  batch is done, so changes made during the listing are read afterwards.
+- The index file is replaced whole, so it is not written for each batch: a
+  listing writes it when it begins and ends, and otherwise at most every 30
+  seconds, when a pass ends, and when the app goes to the background or the
+  continued processing task is ended by iOS. Writing it after every batch of
+  35,000 items took 14 s in the test build, against 0.4 s for the batches and
+  0.2 s for the one write at the end. A pass killed without notice loses at most
+  those 30 seconds of listing.
+- The status says how far the listing has got ("Reading your photo library:
+  1,200 of 35,103"). The continued processing task's progress counts the
+  listing as 30 percent of the work and the files as the rest, and never goes
+  back, so iOS does not end the task as stalled.
+- A file that has to come down from iCloud is given 60 seconds while the
+  library is being listed, so that one slow download does not hold the listing.
+  It stays in the index and the pass tries it again afterwards with the full time.
+- A pass tries each file once. The files read again after the listing skip the
+  ones the pass already queued, refused or left for later.
+
+The backup screen asks the server for the library's size (`photoLibrary`) when
+it appears, when the app comes to the foreground and when backup finishes
+something, and at most once every 15 seconds. The numbers it shows for backup
+come from the phone. The rest of the traffic seen while the screen is open is
+the app's presence report: `AppShell.refreshPresence` repeats every 30 seconds
+on every screen (services, access session, chats, presence).
 
 Players cannot send a sign-in, so `PhotoPlaybackAddress` answers a signed
 address, valid for six hours, that streams one preview or file with ranges.
