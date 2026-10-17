@@ -143,6 +143,7 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathPhotoUpload).Methods(http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete).HandlerFunc(self.photoUploadView)
 	router.Path(api.PathPhotoPreview).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPreviewView)
 	router.Path(api.PathPhotoFile).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoFileView)
+	router.Path(api.PathPhotoFacePicture).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoFacePictureView)
 	router.Path(api.PathPhotoPlaybackPreview).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPlaybackPreviewView)
 	router.Path(api.PathPhotoPlaybackFile).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPlaybackFileView)
 	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)

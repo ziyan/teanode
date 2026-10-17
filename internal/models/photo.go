@@ -145,6 +145,34 @@ type Photo struct {
 	ProcessingClaimedAt *time.Time `json:"-"`
 	TrashedAt           *time.Time `json:"trashedAt" graphapi:"nullable"`
 
+	// FacesFoundAt is when the photo's faces were found, null until then.
+	FacesFoundAt *time.Time `json:"-"`
+
+	// PhotoDescription is what a model wrote about the picture, and
+	// DescriptionVisibleText the words it could read in it. Both are empty
+	// until somebody works with the photo: it is described when the agent
+	// looks at it or the person asks, not before. They are text a model wrote
+	// from a picture that may carry words meant for it, so a reader treats
+	// them as evidence and never as instructions.
+	PhotoDescription       string `json:"photoDescription"`
+	DescriptionVisibleText string `json:"descriptionVisibleText"`
+
+	// DescriptionModel is the model that wrote them.
+	DescriptionModel string `json:"-"`
+
+	// DescribedAt is when they were written, null while the photo is
+	// undescribed.
+	DescribedAt *time.Time `json:"describedAt" graphapi:"nullable"`
+
+	// DescriptionRequestedAt is when a description was asked for and not yet
+	// written.
+	DescriptionRequestedAt *time.Time `json:"-"`
+
+	// IsDescriptionRequested says a description is on its way: asked for
+	// recently and not yet written. A request older than a day is taken to
+	// have been lost, since the job that serves it gives up before then.
+	IsDescriptionRequested bool `json:"isDescriptionRequested" gorm:"-"`
+
 	// The preview addresses are worked out when the photo is read, from the
 	// previews that exist; each is empty until its preview is made. They
 	// carry the time the photo last changed, so a new preview is a new
@@ -159,6 +187,10 @@ type Photo struct {
 	// photo is read.
 	PhotoFileRoles []PhotoFileRole `json:"photoFileRoles" gorm:"-"`
 }
+
+// PhotoDescriptionRequestLifetime is how long a request for a description
+// counts as pending. The job retries for hours, and then gives up.
+const PhotoDescriptionRequestLifetime = 24 * time.Hour
 
 // PhotoBlob is the bytes of a file in the blob store, named by their SHA-256.
 type PhotoBlob struct {

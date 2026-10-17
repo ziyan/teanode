@@ -1,0 +1,203 @@
+package photo
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+// People are the faces found in the library, grouped by person. A group is
+// named by a contact from the person's address book. The operations call the
+// ones the dashboard's People page and teanode photo people call.
+
+// maximumPeopleRowCount bounds the rows people answers with; a library of
+// ordinary people has far fewer named ones.
+const maximumPeopleRowCount = 200
+
+// maximumMergedGroupCount is how many groups person-merge puts into one.
+const maximumMergedGroupCount = client.MaximumMergedPhotoFaceGroups
+
+// facePreviewOf describes a people operation for the card that asks first.
+func facePreviewOf(asked arguments) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
+	case "people":
+		return "List the people found in the photos", true
+	case "person-photos":
+		return "List the photos of a person", true
+	case "person-name":
+		return "Say who a group of faces is, by a contact", true
+	case "person-merge":
+		return "Put groups of faces together as one person", true
+	case "faces":
+		switch {
+		case asked.IsEnabled == nil:
+			return "Read whether faces are found in the photos", true
+		case *asked.IsEnabled:
+			return "Find faces in the photos", true
+		}
+		return "Stop finding faces in the photos and delete every face and group found so far", true
+	}
+	return "", false
+}
+
+// faceRiskOf is how risky a people operation is. Switching faces off deletes
+// what was found, and the only way back is reading every photo again, so it is
+// destructive and asks the person; naming and merging only change who the
+// groups are called, and the person can change them back.
+func faceRiskOf(asked arguments) (tools.Risk, bool) {
+	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
+	case "people", "person-photos":
+		return tools.RiskRead, true
+	case "person-name", "person-merge":
+		return tools.RiskWrite, true
+	case "faces":
+		switch {
+		case asked.IsEnabled == nil:
+			return tools.RiskRead, true
+		case *asked.IsEnabled:
+			return tools.RiskWrite, true
+		}
+		return tools.RiskDestructive, true
+	}
+	return tools.RiskRead, false
+}
+
+// groupRow is a group of faces as the agent is told of it. The name is the
+// person's own contact, written by anybody who could write to the address
+// book, so an answer that carries it is untrusted.
+func groupRow(group *models.PhotoFaceGroup) map[string]any {
+	row := map[string]any{"face_group_id": group.ID, "face_count": group.FaceCount, "photo_count": group.PhotoCount}
+	if group.ContactID != "" {
+		row["contact_id"], row["contact_name"] = group.ContactID, group.ContactName
+	} else {
+		row["contact_name"] = nil
+	}
+	if group.IsHidden {
+		row["is_hidden"] = true
+	}
+	return row
+}
+
+func people(ctx context.Context, current tools.Run) (*tools.Result, error) {
+	groups, err := client.ListPhotoFaceGroups(ctx, current.Operations(), false)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, min(len(groups), maximumPeopleRowCount))
+	for _, group := range groups {
+		if len(rows) == maximumPeopleRowCount {
+			break
+		}
+		rows = append(rows, groupRow(group))
+	}
+	answer := map[string]any{
+		"people": rows,
+		"note":   "a face group is named by a contact; list with face_group_id or contact_id gives a person's photos. A group with contact_name null is nobody yet: ask the person who it is, and name it only with a contact they choose",
+	}
+	if len(groups) > len(rows) {
+		answer["more"] = fmt.Sprintf("%d groups are not listed", len(groups)-len(rows))
+	}
+	result, err := tools.JSONResult(answer)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	return result, nil
+}
+
+// personPhotos lists the photos of one group of faces or of one contact, in
+// the pages list gives.
+func personPhotos(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
+	faceGroupId, contactId := strings.TrimSpace(asked.FaceGroupID), strings.TrimSpace(asked.ContactID)
+	if faceGroupId == "" && contactId == "" {
+		return nil, errors.New("person-photos needs face_group_id or contact_id; people gives them")
+	}
+	return list(ctx, current, asked)
+}
+
+func personName(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	faceGroupId, contactId := strings.TrimSpace(asked.FaceGroupID), strings.TrimSpace(asked.ContactID)
+	if faceGroupId == "" || contactId == "" {
+		return nil, errors.New("person-name needs face_group_id and contact_id: the contact the person chose or confirmed. Do not guess a name from a face; ask the person who it is")
+	}
+	group, err := client.NamePhotoFaceGroup(ctx, executor, faceGroupId, contactId)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(groupRow(group))
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "named a group of faces " + tools.Named(group.ContactName, "after a contact")
+	return result, nil
+}
+
+func personMerge(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	groupIds := make([]string, 0, len(asked.FaceGroupIDs))
+	seen := map[string]bool{}
+	for _, groupId := range asked.FaceGroupIDs {
+		if groupId = strings.TrimSpace(groupId); groupId != "" && !seen[groupId] {
+			seen[groupId] = true
+			groupIds = append(groupIds, groupId)
+		}
+	}
+	if len(groupIds) < 2 {
+		return nil, errors.New("person-merge needs face_group_ids, at least two groups; the first is the one that stays")
+	}
+	if len(groupIds) > maximumMergedGroupCount {
+		return nil, fmt.Errorf("person-merge takes at most %d groups at once, not %d", maximumMergedGroupCount, len(groupIds))
+	}
+	group, err := client.MergePhotoFaceGroups(ctx, executor, groupIds)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(groupRow(group))
+	if err != nil {
+		return nil, err
+	}
+	result.Note = fmt.Sprintf("put %d groups of faces together", len(groupIds))
+	return result, nil
+}
+
+// faces reads whether faces are found, and with is_enabled switches them.
+func faces(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	if asked.IsEnabled != nil {
+		if _, err := client.SetPhotoFaceRecognition(ctx, executor, *asked.IsEnabled); err != nil {
+			return nil, err
+		}
+	}
+	library, err := client.ReadPhotoLibrary(ctx, executor)
+	if err != nil {
+		return nil, err
+	}
+	answer := map[string]any{"is_available": library.IsFaceRecognitionAvailable, "is_enabled": library.IsPhotoFaceRecognitionEnabled}
+	if !library.IsFaceRecognitionAvailable {
+		answer["unavailable_message"] = library.FaceRecognitionUnavailableMessage
+	}
+	if asked.IsEnabled != nil && !*asked.IsEnabled {
+		answer["note"] = "every face and group of people found so far is deleted; switching faces on again finds them again"
+	}
+	return tools.JSONResult(answer)
+}
+
+// peopleOf are the people in a photo, for read: each face with the group it
+// is in and the contact that names the group.
+func peopleOf(view *client.PhotoView) []map[string]any {
+	rows := make([]map[string]any, 0, len(view.Faces))
+	for _, face := range view.Faces {
+		row := map[string]any{"photo_face_id": face.ID}
+		if face.PhotoFaceGroupID != "" {
+			row["face_group_id"] = face.PhotoFaceGroupID
+		}
+		if face.ContactID != "" {
+			row["contact_id"], row["contact_name"] = face.ContactID, face.ContactName
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}

@@ -43,10 +43,13 @@ func TestPhotoParity(test *testing.T) {
 		subcommands    []string
 		toolOperations []string
 	}{
-		"ListPhotos":       {client.DocumentListPhotos, []string{"list"}, []string{"list"}},
-		"CountPhotos":      {client.DocumentCountPhotos, []string{"list"}, []string{"list"}},
-		"ReadPhoto":        {client.DocumentReadPhoto, []string{"show", "download"}, []string{"read", "look", "show"}},
-		"ReadPhotoLibrary": {client.DocumentReadPhotoLibrary, []string{"library"}, []string{"library"}},
+		"ListPhotos":  {client.DocumentListPhotos, []string{"list"}, []string{"list"}},
+		"CountPhotos": {client.DocumentCountPhotos, []string{"list"}, []string{"list"}},
+		// How much of a date range a search by what is in the pictures cannot
+		// see into: said beside a search of a range.
+		"CountUndescribedPhotos": {client.DocumentCountUndescribedPhotos, []string{"list"}, []string{"list"}},
+		"ReadPhoto":              {client.DocumentReadPhoto, []string{"show", "download"}, []string{"read", "look", "show"}},
+		"ReadPhotoLibrary":       {client.DocumentReadPhotoLibrary, []string{"library"}, []string{"library"}},
 		// For a player that cannot send the person's sign-in; neither the
 		// command line nor the agent plays anything.
 		"PhotoPlaybackAddress": {client.DocumentPhotoPlaybackAddress, nil, nil},
@@ -60,6 +63,9 @@ func TestPhotoParity(test *testing.T) {
 		// only the person empties it.
 		"DeletePhotos":    {client.DocumentDeletePhotos, []string{"delete"}, nil},
 		"EmptyPhotoTrash": {client.DocumentEmptyPhotoTrash, []string{"empty-trash"}, nil},
+		// Asking for a description is a person looking at one photo, or the
+		// agent looking at some.
+		"DescribePhoto": {client.DocumentDescribePhoto, []string{"describe"}, []string{"describe", "look"}},
 		// The command line sends a file itself, with upload; the agent saves
 		// a file of a conversation, a message or the computer.
 		"SavePhotoFromAttachment": {client.DocumentSavePhotoFromAttachment, nil, []string{"save"}},
@@ -148,12 +154,12 @@ func TestPhotoParity(test *testing.T) {
 		}
 	}
 	for subcommand := range subcommands {
-		if !listedSubcommands[subcommand] && !commandLineOnly[subcommand] {
+		if !listedSubcommands[subcommand] && !commandLineOnly[subcommand] && !isPhotoFaceSurface(subcommand) {
 			test.Errorf("teanode photo %s does nothing the table lists", subcommand)
 		}
 	}
 	for toolOperation := range toolOperations {
-		if !listedToolOperations[toolOperation] && !toolOnly[toolOperation] {
+		if !listedToolOperations[toolOperation] && !toolOnly[toolOperation] && !isPhotoFaceSurface(toolOperation) {
 			test.Errorf("the photo tool's %s does nothing the table lists", toolOperation)
 		}
 	}

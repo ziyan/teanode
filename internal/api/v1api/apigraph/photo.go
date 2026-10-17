@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -19,6 +20,12 @@ import (
 type PhotoQuery interface {
 	ListPhotos(context.Context, ListPhotosArguments) ([]*models.Photo, error)
 	CountPhotos(context.Context, ListPhotosArguments) (int, error)
+
+	// CountUndescribedPhotos is how many photos the filters keep that have no
+	// description yet, so that a caller who searched a range can say how much
+	// of it a search by what is in the pictures cannot see into. The search
+	// words are ignored.
+	CountUndescribedPhotos(context.Context, ListPhotosArguments) (int, error)
 	ReadPhoto(context.Context, PhotoArguments) (*PhotoView, error)
 	ReadPhotoLibrary(context.Context) (*PhotoLibraryView, error)
 	FindPhotos(context.Context, FindPhotosArguments) ([]*models.Photo, error)
@@ -39,6 +46,13 @@ type PhotoMutation interface {
 	DeletePhotos(context.Context, PhotoIDsArguments) (int, error)
 	EmptyPhotoTrash(context.Context) (int, error)
 	SavePhotoFromAttachment(context.Context, SavePhotoFromAttachmentArguments) (*models.Photo, error)
+
+	// DescribePhoto asks the person's assistant to look at the picture and
+	// write what is in it, and answers at once with the photo as it is now:
+	// the description is on its way when isDescriptionRequested is true, and
+	// arrives in describedAt. A photo that has a description is left alone
+	// unless isRedescribed is true.
+	DescribePhoto(context.Context, DescribePhotoArguments) (*models.Photo, error)
 }
 
 // photoPageSize is how many photos a page holds when the caller does not say.
@@ -69,8 +83,11 @@ type ListPhotosArguments struct {
 	TakenAfter  *time.Time `json:"takenAfter"`
 	TakenBefore *time.Time `json:"takenBefore"`
 
-	// SearchText keeps photos whose place name, file name or camera has
-	// every word.
+	// SearchText keeps photos that match the words, best match first instead
+	// of newest first, at most 500: the place, the file name, the camera, the
+	// titles of the albums a photo is in, and, for a photo that has been
+	// described, its description and the words read in it. A photo nobody has
+	// described is found by the rest alone.
 	SearchText string `json:"searchText" graphapi:"nullable"`
 
 	// NearLatitude, NearLongitude and NearDistanceKilometers keep photos
@@ -81,11 +98,24 @@ type ListPhotosArguments struct {
 
 	// AlbumID keeps the photos of one album.
 	AlbumID string `json:"albumId" graphapi:"nullable"`
+
+	// FaceGroupID keeps the photos with a face in one group of faces, and
+	// ContactID the photos with a face in any group that contact names.
+	FaceGroupID string `json:"faceGroupId" graphapi:"nullable"`
+	ContactID   string `json:"contactId" graphapi:"nullable"`
 }
 
 // PhotoArguments names one photo.
 type PhotoArguments struct {
 	PhotoID string `json:"photoId"`
+}
+
+// DescribePhotoArguments names a photo to describe.
+type DescribePhotoArguments struct {
+	PhotoID string `json:"photoId"`
+
+	// IsRedescribed asks for a new description of a photo that has one.
+	IsRedescribed *bool `json:"isRedescribed"`
 }
 
 // PhotoIDsArguments names photos, at most 500.
@@ -127,6 +157,10 @@ type PhotoView struct {
 
 	// Albums are the albums the photo is in, by title.
 	Albums []*models.PhotoAlbumReference `json:"albums"`
+
+	// Faces are the faces found in the photo, each with its group and the
+	// name of the contact that names the group.
+	Faces []*models.PhotoFace `json:"faces"`
 }
 
 // PhotoLibraryView is what a library page shows beside the photos: how much
@@ -154,8 +188,12 @@ type PhotoLibraryView struct {
 	UploadPath      string `json:"uploadPath"`
 	UploadPartBytes int64  `json:"uploadPartBytes"`
 
+	// IsFaceRecognitionAvailable says faces can be found on this server, and
+	// when not FaceRecognitionUnavailableMessage says why.
+	// IsPhotoFaceRecognitionEnabled is the person's own switch.
 	IsFaceRecognitionAvailable        bool   `json:"isFaceRecognitionAvailable"`
 	FaceRecognitionUnavailableMessage string `json:"faceRecognitionUnavailableMessage"`
+	IsPhotoFaceRecognitionEnabled     bool   `json:"isPhotoFaceRecognitionEnabled"`
 	IsDescriptionAvailable            bool   `json:"isDescriptionAvailable"`
 	DescriptionUnavailableMessage     string `json:"descriptionUnavailableMessage"`
 }
@@ -230,7 +268,7 @@ func photoFilter(arguments ListPhotosArguments) *db.PhotoFilter {
 		BeforePhotoID: arguments.BeforePhotoID, Offset: arguments.Offset, PageSize: arguments.PageSize, IsFavorite: arguments.IsFavorite, IsTrashed: arguments.IsTrashed != nil && *arguments.IsTrashed,
 		TakenAfter: arguments.TakenAfter, TakenBefore: arguments.TakenBefore, SearchText: arguments.SearchText,
 		NearLatitude: arguments.NearLatitude, NearLongitude: arguments.NearLongitude, NearDistanceKilometers: arguments.NearDistanceKilometers,
-		AlbumID: arguments.AlbumID,
+		AlbumID: arguments.AlbumID, FaceGroupID: arguments.FaceGroupID, ContactID: arguments.ContactID,
 	}
 	if filter.PageSize == 0 {
 		filter.PageSize = photoPageSize
@@ -246,7 +284,9 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 	if err != nil {
 		return nil, err
 	}
-	photos, err := self.transaction(ctx).ListPhotos(principal.User.ID, photoFilter(arguments))
+	filter := photoFilter(arguments)
+	filter.SearchMeaning = self.photoSearchMeaning(ctx, principal.User.ID, filter.SearchText)
+	photos, err := self.transaction(ctx).ListPhotos(principal.User.ID, filter)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -254,6 +294,21 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 		return nil, translateError(err)
 	}
 	return photos, nil
+}
+
+// photoSearchMeaning is the words of a search as a vector, for finding
+// described photos by what they mean. Nil, and the search by words alone,
+// when the person has no assistant on or the server no embedding model.
+func (self *graph) photoSearchMeaning(ctx context.Context, userId, searchText string) *db.PhotoSearchMeaning {
+	worker := self.agentWorker()
+	if worker == nil || strings.TrimSpace(searchText) == "" {
+		return nil
+	}
+	found, err := self.transaction(ctx).GetAgentByUser(userId)
+	if err != nil || !found.Active() {
+		return nil
+	}
+	return worker.EmbedPhotoSearch(ctx, found, searchText)
 }
 
 // CountPhotos is how many photos the filters of a listing keep. The paging
@@ -265,7 +320,21 @@ func (self *graph) CountPhotos(ctx context.Context, arguments ListPhotosArgument
 	}
 	filter := photoFilter(arguments)
 	filter.BeforePhotoID, filter.Offset = "", 0
+	filter.SearchMeaning = self.photoSearchMeaning(ctx, principal.User.ID, filter.SearchText)
 	count, err := self.transaction(ctx).CountPhotos(principal.User.ID, filter)
+	return count, translateError(err)
+}
+
+// CountUndescribedPhotos is how many photos the filters keep that no model
+// has described. It is a count of a range, so the search words are not used.
+func (self *graph) CountUndescribedPhotos(ctx context.Context, arguments ListPhotosArguments) (int, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return 0, err
+	}
+	filter := photoFilter(arguments)
+	filter.BeforePhotoID, filter.Offset = "", 0
+	count, err := self.transaction(ctx).CountUndescribedPhotos(principal.User.ID, filter)
 	return count, translateError(err)
 }
 
@@ -300,7 +369,12 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	if err != nil {
 		return nil, translateError(err)
 	}
-	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums}, nil
+	faces, err := transaction.ListPhotoFaces(principal.User.ID, []string{found.ID})
+	if err != nil {
+		return nil, translateError(err)
+	}
+	withFacePictureAddresses(faces...)
+	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums, Faces: faces}, nil
 }
 
 func (self *graph) ReadPhotoLibrary(ctx context.Context) (*PhotoLibraryView, error) {
@@ -321,14 +395,51 @@ func (self *graph) ReadPhotoLibrary(ctx context.Context) (*PhotoLibraryView, err
 	if limits.MaxFileBytes.Bytes() > math.MaxInt64 || limits.MaxAccountBytes.Bytes() > math.MaxInt64 {
 		return nil, fmt.Errorf("photo limits exceed supported byte sizes")
 	}
+	descriptionUnavailableMessage, err := self.photoDescriptionUnavailableMessage(ctx, principal.User.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	isFaceRecognitionEnabled, err := transaction.IsPhotoFaceRecognitionEnabled(principal.User.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	faceUnavailableMessage := photo.FaceRecognitionUnavailableMessage(self.config.Current())
 	return &PhotoLibraryView{
 		PhotoCount: counts.PhotoCount, VideoCount: counts.VideoCount, FavoriteCount: counts.FavoriteCount, TrashedCount: counts.TrashedCount,
 		UsedBytes: usedBytes, MaximumFileBytes: int64(limits.MaxFileBytes.Bytes()), MaximumAccountBytes: int64(limits.MaxAccountBytes.Bytes()),
 		TrashRetentionDays: int(math.Ceil(limits.TrashRetention.Duration().Hours() / 24)),
 		UploadPath:         api.PathPhotoUploads, UploadPartBytes: models.PhotoUploadPartBytes,
-		FaceRecognitionUnavailableMessage: "Finding faces in photos is not set up yet.",
-		DescriptionUnavailableMessage:     "Describing photos is not set up yet.",
+		IsFaceRecognitionAvailable: faceUnavailableMessage == "", FaceRecognitionUnavailableMessage: faceUnavailableMessage,
+		IsPhotoFaceRecognitionEnabled: isFaceRecognitionEnabled,
+		IsDescriptionAvailable:        descriptionUnavailableMessage == "",
+		DescriptionUnavailableMessage: descriptionUnavailableMessage,
 	}, nil
+}
+
+// photoDescriptionUnavailableMessage says why the person cannot have a photo
+// described, or "" when they can: it takes their assistant to be on, the
+// permission to use it, and a model that reads pictures.
+func (self *graph) photoDescriptionUnavailableMessage(ctx context.Context, userId string) (string, error) {
+	const assistantOff = "Describing photos needs the assistant to be on."
+	worker := self.agentWorker()
+	if worker == nil {
+		return assistantOff, nil
+	}
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !principal.Permissions.Has(models.PermissionAgentUse) {
+		return assistantOff, nil
+	}
+	found, err := self.transaction(ctx).GetAgentByUser(userId)
+	if err != nil {
+		return "", err
+	}
+	if !found.Active() {
+		return assistantOff, nil
+	}
+	return worker.PhotoDescriptionUnavailableMessage(self.config.Current()), nil
 }
 
 func (self *graph) FindPhotos(ctx context.Context, arguments FindPhotosArguments) ([]*models.Photo, error) {
@@ -443,6 +554,44 @@ func (self *graph) EmptyPhotoTrash(ctx context.Context) (int, error) {
 	}
 	deletedCount, err := self.transaction(ctx).MarkTrashForDeletion(principal.User.ID)
 	return deletedCount, translateError(err)
+}
+
+func (self *graph) DescribePhoto(ctx context.Context, arguments DescribePhotoArguments) (*models.Photo, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	transaction := self.transaction(ctx)
+	found, err := transaction.GetPhoto(principal.User.ID, arguments.PhotoID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	isRedescribed := arguments.IsRedescribed != nil && *arguments.IsRedescribed
+	// A description that is there, or on its way, is not asked for again.
+	isAlreadyDescribed := found.DescribedAt != nil && !isRedescribed
+	if !isAlreadyDescribed && !found.IsDescriptionRequested {
+		unavailableMessage, err := self.photoDescriptionUnavailableMessage(ctx, principal.User.ID)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		if unavailableMessage != "" {
+			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, unavailableMessage)
+		}
+		assistant, err := transaction.GetAgentByUser(principal.User.ID)
+		if err != nil {
+			return nil, translateError(err)
+		}
+		if _, err := self.agentWorker().QueuePhotoDescription(transaction, assistant.ID, found.ID); err != nil {
+			return nil, translateError(err)
+		}
+		if found, err = transaction.GetPhoto(principal.User.ID, found.ID); err != nil {
+			return nil, translateError(err)
+		}
+	}
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}); err != nil {
+		return nil, translateError(err)
+	}
+	return found, nil
 }
 
 // SavePhotoFromAttachment keeps a file of the person's conversation with

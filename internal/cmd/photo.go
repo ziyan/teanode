@@ -43,17 +43,24 @@ func NewPhotoCommand() *cli.Command {
 					JSONFlag(),
 					&cli.BoolFlag{Name: "favorites", Usage: "only the favorites"},
 					&cli.BoolFlag{Name: "trash", Usage: "list the trash instead of the library"},
-					&cli.StringFlag{Name: "search", Usage: "only photos whose place, file name or camera has every one of these words"},
+					&cli.StringFlag{Name: "search", Usage: "photos matching these words, best match first: the place, file name, camera, album titles, and the description and words read in a photo that has been described (a photo nobody described is found by the rest)"},
 					&cli.StringFlag{Name: "after", Usage: "only photos taken on or after this date (2025-07-12 or an RFC 3339 time)"},
 					&cli.StringFlag{Name: "before", Usage: "only photos taken before this date"},
 					&cli.StringFlag{Name: "kind", Usage: "only pictures, videos or Live Photos: picture, video or livePhoto"},
 					&cli.StringFlag{Name: "album", Usage: "only the photos of this album (its id is in teanode photo album list)"},
+					&cli.StringFlag{Name: "face-group", Usage: "only the photos with a face in this group of faces (its id is in teanode photo people list)"},
+					&cli.StringFlag{Name: "contact", Usage: "only the photos with a face in a group this contact names (its id is in teanode contact list)"},
 					&cli.IntFlag{Name: "limit", Value: defaultPhotoListSize, Usage: "photos to list, 1 to 500"},
 					&cli.StringFlag{Name: "continue-after", Usage: "continue after this photo, the last one of the previous page"},
 				},
 				Action: runPhotoList,
 			},
 			{Name: "show", Usage: "everything known about a photo", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoShow},
+			{
+				Name: "describe", Usage: "have the assistant look at a photo and write what is in it, so that a search finds it by that", ArgsUsage: "<id>",
+				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "again", Usage: "write a new description of a photo that has one"}},
+				Action: runPhotoDescribe,
+			},
 			{
 				Name: "upload", Usage: "add pictures and videos; folders are walked, and what the library already has is skipped",
 				ArgsUsage: "<file or folder>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoUpload,
@@ -74,6 +81,8 @@ func NewPhotoCommand() *cli.Command {
 			{Name: "empty-trash", Usage: "delete everything in the trash forever", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoEmptyTrash},
 			{Name: "library", Usage: "how many photos and videos there are, the space used and the largest file", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
 			newPhotoAlbumCommand(),
+			newPhotoPeopleCommand(),
+			newPhotoFacesCommand(),
 		},
 	}
 }
@@ -96,7 +105,7 @@ func parsePhotoDate(flag, text string) (*time.Time, error) {
 func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
 	filter := &client.PhotoFilter{
 		PageSize: int(command.Int("limit")), BeforePhotoID: command.String("continue-after"),
-		IsTrashed: command.Bool("trash"), AlbumID: command.String("album"), SearchText: strings.TrimSpace(command.String("search")), PhotoKind: models.PhotoKind(command.String("kind")),
+		IsTrashed: command.Bool("trash"), AlbumID: command.String("album"), FaceGroupID: command.String("face-group"), ContactID: command.String("contact"), SearchText: strings.TrimSpace(command.String("search")), PhotoKind: models.PhotoKind(command.String("kind")),
 	}
 	if filter.PageSize < 1 || filter.PageSize > 500 {
 		return nil, usage("--limit must be from 1 to 500")
@@ -194,6 +203,13 @@ func runPhotoList(ctx context.Context, command *cli.Command) error {
 	if err := printPhotoTable(photos); err != nil {
 		return err
 	}
+	// A search by words cannot see into photos nobody described, and a range
+	// is where to look at them, so the range's share is said.
+	if filter.SearchText != "" && (filter.TakenAfter != nil || filter.TakenBefore != nil) {
+		if undescribed, err := client.CountUndescribedPhotos(ctx, connection, filter); err == nil && undescribed > 0 {
+			fmt.Fprintf(os.Stderr, "note: %d photos in these dates have no description, so --search cannot find them by what is in them; teanode photo describe <id> writes one\n", undescribed)
+		}
+	}
 	// The page is not the whole library, and says so, once the whole is
 	// known; the count is a second request and only a full page needs it.
 	if len(photos) == filter.PageSize {
@@ -244,6 +260,23 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 	if photo.ProcessingErrorMessage != "" {
 		fields = append(fields, [2]string{"problem", photo.ProcessingErrorMessage})
 	}
+	switch {
+	case photo.DescribedAt != nil:
+		fields = append(fields, [2]string{"description", photo.PhotoDescription})
+		if photo.DescriptionVisibleText != "" {
+			for index, line := range strings.Split(photo.DescriptionVisibleText, "\n") {
+				name := ""
+				if index == 0 {
+					name = "words read in it"
+				}
+				fields = append(fields, [2]string{name, line})
+			}
+		}
+	case photo.IsDescriptionRequested:
+		fields = append(fields, [2]string{"description", "on its way"})
+	default:
+		fields = append(fields, [2]string{"description", "none yet (teanode photo describe " + photo.ID + ")"})
+	}
 	if photo.TrashedAt != nil {
 		fields = append(fields, [2]string{"in the trash since", photo.TrashedAt.Local().Format("2006-01-02 15:04")})
 	}
@@ -253,7 +286,37 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 	for _, album := range view.Albums {
 		fields = append(fields, [2]string{"album", fmt.Sprintf("%s (%s)", album.AlbumTitle, album.ID)})
 	}
+	for _, face := range view.Faces {
+		fields = append(fields, [2]string{"person", photoFaceText(face)})
+	}
 	return printFields(fields)
+}
+
+func runPhotoDescribe(ctx context.Context, command *cli.Command) error {
+	photoId := command.Args().First()
+	if photoId == "" {
+		return usage("usage: teanode photo describe <id> [--again]")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	photo, err := client.DescribePhoto(ctx, connection, photoId, command.Bool("again"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(photo)
+	}
+	switch {
+	case photo.IsDescriptionRequested:
+		_, _ = fmt.Fprintf(command.Writer, "%s: describing; it takes a few seconds, then teanode photo show %s has it\n", photo.ID, photo.ID)
+	case photo.DescribedAt != nil:
+		_, _ = fmt.Fprintf(command.Writer, "%s: already described (add --again to write a new description)\n%s\n", photo.ID, forTerminal(photo.PhotoDescription))
+	default:
+		_, _ = fmt.Fprintf(command.Writer, "%s: not described\n", photo.ID)
+	}
+	return nil
 }
 
 // photoExtensionContentTypes are the files a camera or a phone writes, by
@@ -763,5 +826,6 @@ func runPhotoLibrary(ctx context.Context, command *cli.Command) error {
 		{"space used", library.SpaceUsedText()},
 		{"largest file", client.PhotoByteSizeText(library.MaximumFileBytes)},
 		{"trash kept for", fmt.Sprintf("%d days", library.TrashRetentionDays)},
+		{"finding faces", photoFaceRecognitionText(library)},
 	})
 }

@@ -59,6 +59,10 @@ const (
 	PathPhotoPreview = Prefix + "/photos/{photoId}/previews/{photoPreviewSize}"
 	PathPhotoFile    = Prefix + "/photos/{photoId}/files/{photoFileRole}"
 
+	// PathPhotoFacePicture serves the picture of one face found in a photo:
+	// a square cut from the photo's large preview.
+	PathPhotoFacePicture = Prefix + "/photos/faces/{photoFaceId}/picture"
+
 	// PathPhotoPlaybackPreview and PathPhotoPlaybackFile serve the same bytes
 	// to a player that cannot send the person's sign-in: the address
 	// carries a signature made by PhotoPlaybackAddress, names one preview or file of
@@ -243,6 +247,11 @@ func PhotoUploadPath(photoUploadId string) string {
 // PhotoPreviewPath is PathPhotoPreview with its parameters filled in.
 func PhotoPreviewPath(photoId, photoPreviewSize string) string {
 	return Prefix + "/photos/" + url.PathEscape(photoId) + "/previews/" + url.PathEscape(photoPreviewSize)
+}
+
+// PhotoFacePicturePath is PathPhotoFacePicture with its parameter filled in.
+func PhotoFacePicturePath(photoFaceId string) string {
+	return Prefix + "/photos/faces/" + url.PathEscape(photoFaceId) + "/picture"
 }
 
 // PhotoFilePath is PathPhotoFile with its parameters filled in.

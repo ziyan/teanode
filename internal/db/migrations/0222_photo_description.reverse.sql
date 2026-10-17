@@ -1,0 +1,9 @@
+DROP TABLE "photo_vector";
+DROP INDEX "photo_search_document";
+ALTER TABLE "photo"
+    DROP COLUMN "search_document",
+    DROP COLUMN "description_requested_at",
+    DROP COLUMN "described_at",
+    DROP COLUMN "description_model",
+    DROP COLUMN "description_visible_text",
+    DROP COLUMN "photo_description";

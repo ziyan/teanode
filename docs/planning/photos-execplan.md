@@ -28,7 +28,7 @@ To see it working: switch Photos on in the server's services, drop a few picture
 - [x] (2026-10-17 01:30 EDT) Milestone 3: albums on the server, the command line, the agent tool, the dashboard and the iPhone, with suggestions from trips.
 - [x] (2026-10-17 01:00 EDT) Milestone 6, in the app: backup with a device password that grants photos only, a background URLSession, the library's persistent change token, a continued processing task for the first backup and a processing task overnight. The Photos background upload extension is not built: it needs a device test of `BackgroundUploadURLBase` (see Surprises).
 - [x] (2026-10-17 02:00 EDT) Signed playback addresses (`PhotoPlaybackAddress`) for players that cannot sign in; `FindPhotos` says which files the server holds; a `Z` taken-at is an instant whose offset comes from the file.
-- [ ] Milestone 4: descriptions and search.
+- [x] (2026-10-17) Milestone 4, server, command line and agent tool: migration 0222, the `describe_photo` job, `DescribePhoto` and `CountUndescribedPhotos`, search over `search_document` and meaning, `teanode photo describe`, the tool's `describe`. The dashboard's and the phone's Describe button wait for their own part.
 - [ ] Milestone 5: faces and people.
 - [ ] Milestone 7: albums shared in circles (after the circles branch has its circles and invitations).
 - [ ] Milestone 8: getting started, documentation, review until it converges, visual walk-through, deploy.
@@ -101,6 +101,37 @@ To see it working: switch Photos on in the server's services, drop a few picture
 - Decision: faces are on by default for every person, who can switch them off; switching off deletes their faces and groups.
   Rationale: the maintainer wants faces; a person who does not can remove them entirely.
   Date/Author: 2026-10-16, Claude.
+
+- Decision: `photo_vector` names its model column `model` and carries a `user_id` scope column, not `vector_model`.
+  Rationale: `Nearest` and `EnsureVectorIndex` in `internal/db/database_vector.go` read the columns `model`, `vector` and a scope column by name, as every other vector table has them; the pgvector index is built at start for `PhotoVectorTable` like the others.
+  Date/Author: 2026-10-17, Claude.
+- Decision: a search by words keeps the old substring match on the place, file name and camera beside the full-text match, and orders by rank with a ranked list of at most 500.
+  Rationale: full-text matches whole words, and "kyo" or "IMG_12" found photos before; a ranked order has no date cursor, so `beforePhotoId` continues after that photo's place in the ranking and `offset` skips into it.
+  Date/Author: 2026-10-17, Claude.
+- Decision: an older request for a description than a day is no longer pending (`isDescriptionRequested`), and a failed or refused job clears the request.
+  Rationale: a job that dies must not leave a viewer showing "describing" for good; the job gives up within about 5 hours.
+  Date/Author: 2026-10-17, Claude.
+- Decision: the agent tool's `look` asks for descriptions through the `DescribePhoto` operation, not the queue directly, and its search answer carries `undescribed_photo_count` only for a search with a date or place filter.
+  Rationale: one path for the person, the command line and the agent keeps the permission and availability checks in one place; a count of the whole library is not something to narrow by.
+  Date/Author: 2026-10-17, Claude.
+- Decision: a face group names its contact by two columns, `addressbook_id` and `contact_id`, with a foreign key on both that sets both null when the contact is deleted; the operations take the contact id alone and look it up in the person's address books in order, as `GetContact` does.
+  Rationale: a contact's key is the pair (address book, id) because a CardDAV client chooses its own ids (migration 0050), so a single `contact_id` could not carry a foreign key. A contact that is deleted leaves its group unnamed instead of leaving a name that points nowhere.
+  Date/Author: 2026-10-17, Claude.
+- Decision: `photo_face_group` keeps the sum of its faces' unit vectors (`group_vector_sum`) and how many went into it, not the normalized mean; its face and photo counts and its cover picture are worked out when it is read.
+  Rationale: only the direction of the sum matters to a cosine similarity, a sum takes one more face with one update, and counts worked out from the faces that are in photos outside the trash stay right when photos are trashed or deleted. Merging and taking a face out recompute the sum from the faces in the database in one statement.
+  Date/Author: 2026-10-17, Claude.
+- Decision: faces are grouped under a lock per person (`pg_advisory_xact_lock` on a key made from the person's id, also taken by switching faces off, merging and taking a face out), and two faces of one photo are never put in one group.
+  Rationale: without the lock two photos read at the same time start two groups for one new person (the test fails without it); a photo does not hold the same person twice, so a group that already took one face of the photo is not a candidate for another.
+  Date/Author: 2026-10-17, Claude.
+- Decision: the faces of a photo are stored once, until the record that they were found (`faces_found_at`) is cleared, which a different original or edited file does; the faces the person confirmed carry over to the new face found where the old box was (overlap of at least a half).
+  Rationale: two instances reading the same photo must not replace each other's faces, and an edited version should not lose the correction a person made.
+  Date/Author: 2026-10-17, Claude.
+- Decision: the box columns are `box_left_fraction`, `box_top_fraction`, `box_width_fraction` and `box_height_fraction`, and the JSON keys the same, not `box_left` and so on.
+  Rationale: a name says what the value holds and in what unit, so a reader never has to look at the parent to know a box is in fractions of the picture.
+  Date/Author: 2026-10-17, Claude.
+- Decision: merging keeps the first group's contact, or takes the first other group's contact when the first has none; contacts renamed in the address book are not pushed into the search document of the photos their groups are in until those photos change.
+  Rationale: a merge should not lose a name the person gave, and the address book has no way to tell the photo library that a card changed.
+  Date/Author: 2026-10-17, Claude.
 
 ## Outcomes & Retrospective
 

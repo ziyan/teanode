@@ -245,6 +245,9 @@ func (self *transaction) CreatePhotoAlbum(userId, albumTitle string, photoIds []
 	if _, err := self.insertPhotoAlbumItems(userId, row.ID, photoIds); err != nil {
 		return nil, err
 	}
+	if err := self.refreshPhotoSearchDocumentsOf(photoIds); err != nil {
+		return nil, err
+	}
 	return self.GetPhotoAlbum(userId, row.ID)
 }
 
@@ -259,6 +262,10 @@ func (self *transaction) RenamePhotoAlbum(userId, photoAlbumId, albumTitle strin
 	if err := self.tx.Model(&photoAlbumModel{}).Where("id = ?", photoAlbumId).Updates(map[string]any{"album_title": albumTitle, "updated_at": photoNow()}).Error; err != nil {
 		return nil, err
 	}
+	// The title is part of the search document of every photo in the album.
+	if err := self.refreshPhotoSearchDocuments("photo.id IN (SELECT photo_id FROM photo_album_item WHERE photo_album_id = ?)", photoAlbumId); err != nil {
+		return nil, err
+	}
 	return self.GetPhotoAlbum(userId, photoAlbumId)
 }
 
@@ -266,7 +273,15 @@ func (self *transaction) DeletePhotoAlbum(userId, photoAlbumId string) error {
 	if _, err := self.lockPhotoAlbum(userId, photoAlbumId); err != nil {
 		return err
 	}
-	return self.tx.Where("id = ?", photoAlbumId).Delete(&photoAlbumModel{}).Error
+	// The photos are named before the album goes, since its items go with it.
+	var photoIds []string
+	if err := self.tx.Model(&photoAlbumItemModel{}).Where("photo_album_id = ?", photoAlbumId).Pluck("photo_id", &photoIds).Error; err != nil {
+		return err
+	}
+	if err := self.tx.Where("id = ?", photoAlbumId).Delete(&photoAlbumModel{}).Error; err != nil {
+		return err
+	}
+	return self.refreshPhotoSearchDocumentsOf(photoIds)
 }
 
 func (self *transaction) AddPhotosToAlbum(userId, photoAlbumId string, photoIds []string) (int, error) {
@@ -286,6 +301,9 @@ func (self *transaction) AddPhotosToAlbum(userId, photoAlbumId string, photoIds 
 	}
 	if addedCount > 0 {
 		if err := self.touchPhotoAlbum(photoAlbumId); err != nil {
+			return 0, err
+		}
+		if err := self.refreshPhotoSearchDocumentsOf(photoIds); err != nil {
 			return 0, err
 		}
 	}
@@ -311,6 +329,9 @@ func (self *transaction) RemovePhotosFromAlbum(userId, photoAlbumId string, phot
 		// A cover must be in the album.
 		changes := map[string]any{"updated_at": photoNow(), "cover_photo_id": gorm.Expr("CASE WHEN cover_photo_id IN ? THEN NULL ELSE cover_photo_id END", photoIds)}
 		if err := self.tx.Model(&photoAlbumModel{}).Where("id = ?", photoAlbumId).Updates(changes).Error; err != nil {
+			return 0, err
+		}
+		if err := self.refreshPhotoSearchDocumentsOf(photoIds); err != nil {
 			return 0, err
 		}
 	}

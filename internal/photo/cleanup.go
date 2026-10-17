@@ -13,13 +13,13 @@ import (
 // each kind in a pass: the parts of uploads that failed or went idle, photos
 // that were deleted forever or have been in the trash longer than the
 // operator allows (in batches of deletionBatchSize), and blobs no file refers
-// to. Each batch is its own transaction, so that a restart in the middle finds
+// to, and groups of faces that no face is in. Each batch is its own transaction, so that a restart in the middle finds
 // the rest where it was left. One kind failing does not hold up the others.
 func (self *Store) Cleanup(ctx context.Context, batchSize int) error {
 	if batchSize < 1 || batchSize > 500 {
 		return db.ErrInvalidArguments
 	}
-	return errors.Join(self.cleanUploads(ctx, batchSize), self.cleanTrash(ctx, batchSize), self.cleanBlobs(ctx, batchSize))
+	return errors.Join(self.cleanUploads(ctx, batchSize), self.cleanTrash(ctx, batchSize), self.cleanBlobs(ctx, batchSize), self.cleanFaceGroups(ctx))
 }
 
 func (self *Store) cleanUploads(ctx context.Context, batchSize int) error {

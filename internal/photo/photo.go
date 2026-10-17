@@ -38,6 +38,9 @@ type Store struct {
 	// two instances at once is caught by the offset check and by the
 	// digest of each part when the upload is completed.
 	writingUploads sync.Map
+
+	// faceFinder finds the faces in photos; see faces.go.
+	faceFinder faceFinder
 }
 
 // New requires range-capable storage, because files are large. The

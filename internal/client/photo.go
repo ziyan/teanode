@@ -32,6 +32,9 @@ type PhotoView struct {
 
 	// Albums are the albums the photo is in.
 	Albums []*models.PhotoAlbumReference `json:"albums"`
+
+	// Faces are the faces found in the photo, with the people they are.
+	Faces []*models.PhotoFace `json:"faces"`
 }
 
 // PhotoLibrary is how much a library holds, how much it may, and where files
@@ -49,6 +52,7 @@ type PhotoLibrary struct {
 	UploadPartBytes                   int64  `json:"uploadPartBytes"`
 	IsFaceRecognitionAvailable        bool   `json:"isFaceRecognitionAvailable"`
 	FaceRecognitionUnavailableMessage string `json:"faceRecognitionUnavailableMessage"`
+	IsPhotoFaceRecognitionEnabled     bool   `json:"isPhotoFaceRecognitionEnabled"`
 	IsDescriptionAvailable            bool   `json:"isDescriptionAvailable"`
 	DescriptionUnavailableMessage     string `json:"descriptionUnavailableMessage"`
 }
@@ -118,6 +122,11 @@ type PhotoFilter struct {
 
 	// AlbumID keeps the photos of one album.
 	AlbumID string
+
+	// FaceGroupID keeps the photos with a face in one group of faces, and
+	// ContactID the photos with a face in any group that contact names.
+	FaceGroupID string
+	ContactID   string
 }
 
 // variables are the filter's arguments, leaving out what is not asked.
@@ -165,14 +174,20 @@ func (self *PhotoFilter) variables() map[string]any {
 	if self.AlbumID != "" {
 		variables["albumId"] = self.AlbumID
 	}
+	if self.FaceGroupID != "" {
+		variables["faceGroupId"] = self.FaceGroupID
+	}
+	if self.ContactID != "" {
+		variables["contactId"] = self.ContactID
+	}
 	return variables
 }
 
 const (
-	photoSelection = `{ id createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
+	photoSelection = `{ id createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt photoDescription descriptionVisibleText describedAt isDescriptionRequested smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
 
-	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String`
-	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId`
+	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String, $faceGroupId: String, $contactId: String`
+	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId, faceGroupId: $faceGroupId, contactId: $contactId`
 )
 
 const (
@@ -180,16 +195,19 @@ const (
 
 	DocumentCountPhotos = `query (` + photoFilterDeclarations + `) { CountPhotos(` + photoFilterArguments + `) }`
 
+	DocumentCountUndescribedPhotos = `query (` + photoFilterDeclarations + `) { CountUndescribedPhotos(` + photoFilterArguments + `) }`
+
 	DocumentReadPhoto = `query ($photoId: String!) {
   ReadPhoto(photoId: $photoId) {
     photo ` + photoSelection + `
     photoFiles { photoId photoFileRole blobSha256 contentType fileSizeBytes originalFilename createdAt fileUrl }
     photoPreviews { photoId photoPreviewSize contentType previewSizeBytes widthPixels heightPixels createdAt previewUrl }
     albums { id albumTitle }
+    faces { ` + photoFaceSelection + ` }
   }
 }`
 
-	DocumentReadPhotoLibrary = `query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isFaceRecognitionAvailable faceRecognitionUnavailableMessage isDescriptionAvailable descriptionUnavailableMessage } }`
+	DocumentReadPhotoLibrary = `query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled isDescriptionAvailable descriptionUnavailableMessage } }`
 
 	DocumentFindPhotos = `query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) ` + photoSelection + ` }`
 
@@ -204,6 +222,8 @@ const (
 	DocumentDeletePhotos = `mutation ($photoIds: [String!]!) { DeletePhotos(photoIds: $photoIds) }`
 
 	DocumentEmptyPhotoTrash = `mutation { EmptyPhotoTrash }`
+
+	DocumentDescribePhoto = `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) ` + photoSelection + ` }`
 
 	DocumentSavePhotoFromAttachment = `mutation ($agentAttachmentId: String!) { SavePhotoFromAttachment(agentAttachmentId: $agentAttachmentId) ` + photoSelection + ` }`
 )
@@ -232,6 +252,20 @@ func CountPhotos(ctx context.Context, executor Executor, filter *PhotoFilter) (i
 		return 0, err
 	}
 	return result.CountPhotos, nil
+}
+
+// CountUndescribedPhotos is how many photos the filter keeps that no model
+// has described yet. The filter's search words are not used: it counts the
+// range, which is how much of it a search by what is in the pictures cannot
+// see into.
+func CountUndescribedPhotos(ctx context.Context, executor Executor, filter *PhotoFilter) (int, error) {
+	var result struct {
+		CountUndescribedPhotos int `json:"CountUndescribedPhotos"`
+	}
+	if err := executor.Execute(ctx, DocumentCountUndescribedPhotos, filter.variables(), &result); err != nil {
+		return 0, err
+	}
+	return result.CountUndescribedPhotos, nil
 }
 
 // ReadPhoto is one photo, with its files and previews.
@@ -347,6 +381,20 @@ func EmptyPhotoTrash(ctx context.Context, executor Executor) (int, error) {
 		return 0, err
 	}
 	return result.EmptyPhotoTrash, nil
+}
+
+// DescribePhoto asks the assistant to look at a photo and write what is in it.
+// It answers at once with the photo as it is: the description arrives some
+// seconds later, and isDescriptionRequested says it is on its way. A photo
+// that has a description is left alone unless isRedescribed is true.
+func DescribePhoto(ctx context.Context, executor Executor, photoId string, isRedescribed bool) (*models.Photo, error) {
+	var result struct {
+		DescribePhoto *models.Photo `json:"DescribePhoto"`
+	}
+	if err := executor.Execute(ctx, DocumentDescribePhoto, map[string]any{"photoId": photoId, "isRedescribed": isRedescribed}, &result); err != nil {
+		return nil, err
+	}
+	return result.DescribePhoto, nil
 }
 
 // SavePhotoFromAttachment keeps a file of a conversation as a photo.

@@ -79,7 +79,8 @@ func (self *Store) Process(ctx context.Context, batchSize int) error {
 		return err
 	}
 	if len(photos) == 0 {
-		return self.requeuePhotosWithoutPreviews(ctx)
+		// Idle, so the photos that wait only for their faces get their turn.
+		return errors.Join(self.requeuePhotosWithoutPreviews(ctx), self.findWaitingFaces(ctx))
 	}
 
 	// The photos claimed and not yet reached are waiting on a claim that
@@ -443,7 +444,14 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 	if err := self.saveMetadata(ctx, processed); err != nil {
 		return err
 	}
-	return self.keepPicturePreviews(ctx, processed.photo, decoded)
+	large, err := self.keepPicturePreviews(ctx, processed.photo, decoded)
+	if err != nil {
+		return err
+	}
+	// Step 4: the faces. A failure here is logged and leaves the faces to be
+	// found later; the photo is ready either way.
+	self.findFaces(ctx, processed.photo, large)
+	return nil
 }
 
 // readPictureMetadata sets what a picture's EXIF block says. A picture whose
@@ -468,8 +476,9 @@ func (self *Store) readPictureMetadata(processed *processedPhoto, content io.Rea
 }
 
 // keepPicturePreviews makes and stores the small and large previews of an
-// upright picture.
-func (self *Store) keepPicturePreviews(ctx context.Context, photo *models.Photo, upright image.Image) error {
+// upright picture, and returns the large one, which is what faces are read
+// from.
+func (self *Store) keepPicturePreviews(ctx context.Context, photo *models.Photo, upright image.Image) (image.Image, error) {
 	large := picture.Scale(upright, largePreviewLongSidePixels)
 	// The small one is made from the large one: it is much less to read, and
 	// the difference cannot be seen at 400 pixels.
@@ -480,14 +489,14 @@ func (self *Store) keepPicturePreviews(ctx context.Context, photo *models.Photo,
 	}{{models.PhotoPreviewLarge, large}, {models.PhotoPreviewSmall, small}} {
 		encoded, err := picture.EncodeJPEG(preview.scaled, previewJpegQuality)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		bounds := preview.scaled.Bounds()
 		if err := self.keepPreview(ctx, photo, preview.photoPreviewSize, "image/jpeg", bytes.NewReader(encoded), int64(len(encoded)), bounds.Dx(), bounds.Dy()); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return large, nil
 }
 
 // keepPreview stores a preview's bytes and then records it, in that order, so
@@ -544,9 +553,12 @@ func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) 
 	if err != nil {
 		return err
 	}
-	if err := self.keepPicturePreviews(ctx, processed.photo, decoded); err != nil {
+	large, err := self.keepPicturePreviews(ctx, processed.photo, decoded)
+	if err != nil {
 		return err
 	}
+	// The faces in a video are those of its poster.
+	self.findFaces(ctx, processed.photo, large)
 
 	if probed.DurationMS > maximumVideoPreviewDuration.Milliseconds() {
 		return nil

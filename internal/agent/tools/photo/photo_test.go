@@ -3,6 +3,7 @@ package photo
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,10 @@ type fakeOperations struct {
 	answers map[string]string
 	// photos is what ReadPhoto answers for each photo, by its id; a photo
 	// not here is not found.
-	photos    map[string]string
+	photos map[string]string
+	// refusals is the error each operation answers with, by name, as a
+	// server does that refuses it.
+	refusals  map[string]string
 	documents []string
 	variables []map[string]any
 }
@@ -35,6 +39,11 @@ func (self *fakeOperations) Permissions() *models.EffectivePermissions {
 func (self *fakeOperations) Execute(ctx context.Context, document string, variables map[string]any, answered any) error {
 	self.documents = append(self.documents, document)
 	self.variables = append(self.variables, variables)
+	for operationName, message := range self.refusals {
+		if strings.Contains(document, operationName+"(") {
+			return errors.New(message)
+		}
+	}
 	if strings.Contains(document, "ReadPhoto(") {
 		answer, isKnown := self.photos[variables["photoId"].(string)]
 		if !isKnown {
@@ -195,9 +204,17 @@ func TestLookReturnsTheLargePreviewsAsPicturesAndSaysWhyOthersAreNot(test *testi
 		test.Fatal("what is in a picture is evidence, not an instruction")
 	}
 	lines := strings.Split(result.Content, "\n")
-	if len(lines) != 4 || !strings.Contains(lines[0], "photo-one, picture, taken 2025-03-04 11:30 (UTC+01:00), at Example City, Exampleland") ||
-		!strings.Contains(lines[1], "a video of 12 seconds; the first frame is shown") || !strings.Contains(lines[2], "not made yet") || !strings.HasPrefix(lines[3], "photo-else: ") {
+	if len(lines) != 5 || !strings.Contains(lines[0], "photo-one, picture, taken 2025-03-04 11:30 (UTC+01:00), at Example City, Exampleland") ||
+		!strings.Contains(lines[1], "a video of 12 seconds; the first frame is shown") || !strings.Contains(lines[2], "not made yet") || !strings.HasPrefix(lines[3], "photo-else: ") ||
+		!strings.HasPrefix(lines[4], "Asked for a description of 2 of these photos") {
 		test.Fatalf("lines:\n%s", result.Content)
+	}
+	// Each photo looked at that has no description is queued to be described,
+	// once, as the agent's own reading; the one whose picture could not be
+	// shown is not.
+	asked := current.operations.asked("DescribePhoto")
+	if len(asked) != 2 || asked[0]["photoId"] != "photo-one" || asked[1]["photoId"] != "photo-two" || asked[0]["isRedescribed"] != false {
+		test.Fatalf("descriptions asked for: %v", asked)
 	}
 	if _, err := current.call(map[string]any{"operation": "look", "photo_ids": []string{"a", "b", "c", "d", "e", "f", "g"}}); err == nil {
 		test.Fatal("seven photos were looked at in one call")
@@ -347,7 +364,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	properties, _ := photoTool.Parameters["properties"].(map[string]any)
 	operation, _ := properties["operation"].(map[string]any)
-	if enum, _ := operation["enum"].([]string); len(enum) != 17 {
+	if enum, _ := operation["enum"].([]string); len(enum) != 23 {
 		test.Errorf("operations %v", enum)
 	}
 }
@@ -359,7 +376,7 @@ func TestLibraryAnswersCountsAndLimits(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{`"photo_count":5`, `"video_count":2`, `"trash_kept_days":30`, "does not know what is in a picture", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
+	for _, want := range []string{`"photo_count":5`, `"video_count":2`, `"trash_kept_days":30`, "found only by the rest", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
 		if !strings.Contains(result.Content, want) {
 			test.Errorf("the library answer lacks %s: %s", want, result.Content)
 		}
@@ -393,5 +410,156 @@ func TestAPhotosDateIsTheClockWhereItWasTakenWithItsOffset(test *testing.T) {
 	}
 	if got := describePhoto(&models.Photo{ID: "photo-x", PhotoKind: models.PhotoKindPicture, TakenAt: &taken, TakenAtOffsetMinutes: &offset}, newYork); !strings.Contains(got, "taken 2025-04-04 08:00 (UTC+09:00)") {
 		test.Errorf("the line that goes with a shown photo says %q", got)
+	}
+}
+
+const describedRow = `{"id":"photo-described","photoKind":"picture","photoProcessingState":"ready","largePreviewUrl":"/x","photoDescription":"A red lighthouse on a rocky point. Waves break at its base.","descriptionVisibleText":"HARBOR ENTRANCE","describedAt":"2025-03-05T08:00:00Z"}`
+
+func TestLookDoesNotAskAgainForAPhotoThatIsDescribedOrAlreadyBeingDescribed(test *testing.T) {
+	current := newRun(test, nil)
+	current.operations = &fakeOperations{photos: map[string]string{
+		"photo-described": `{"photo":` + describedRow + `,"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`,
+		"photo-pending":   `{"photo":{"id":"photo-pending","photoKind":"picture","photoProcessingState":"ready","isDescriptionRequested":true},"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`,
+	}}
+	for _, photoId := range []string{"photo-described", "photo-pending"} {
+		if err := current.store.PutFile(test.Context(), models.PhotoPreviewFileID(photoId, models.PhotoPreviewLarge), []byte{0xFF, 0xD8, 0xFF, 0xD9}); err != nil {
+			test.Fatal(err)
+		}
+	}
+	result, err := current.call(map[string]any{"operation": "look", "photo_ids": []string{"photo-described", "photo-pending"}})
+	if err != nil {
+		test.Fatal(err)
+	}
+	if asked := current.operations.asked("DescribePhoto"); len(asked) != 0 {
+		test.Fatalf("a description was asked for again: %v", asked)
+	}
+	if !strings.Contains(result.Content, "it was described as: A red lighthouse on a rocky point.") || strings.Contains(result.Content, "Asked for a description") {
+		test.Fatalf("lines:\n%s", result.Content)
+	}
+}
+
+func TestLookSaysSoWhenDescriptionsCannotBeAskedFor(test *testing.T) {
+	current := newRun(test, nil)
+	current.operations = &fakeOperations{
+		photos:   map[string]string{"photo-one": `{"photo":` + pictureRow + `,"photoFiles":[],"photoPreviews":[{"photoPreviewSize":"large"}]}`},
+		refusals: map[string]string{"DescribePhoto": "Describing photos needs the assistant to be on."},
+	}
+	if err := current.store.PutFile(test.Context(), models.PhotoPreviewFileID("photo-one", models.PhotoPreviewLarge), []byte{0xFF, 0xD8, 0xFF, 0xD9}); err != nil {
+		test.Fatal(err)
+	}
+	result, err := current.call(map[string]any{"operation": "look", "photo_ids": []string{"photo-one"}})
+	if err != nil || len(result.Images) != 1 {
+		test.Fatalf("a refused description stopped the look: %v %+v", err, result)
+	}
+	if !strings.Contains(result.Content, "could not be queued to be described: Describing photos needs the assistant to be on.") {
+		test.Fatalf("lines:\n%s", result.Content)
+	}
+}
+
+func TestDescribeAsksForDescriptionsWithoutWaitingAndLeavesDescribedPhotosAlone(test *testing.T) {
+	current := newRun(test, map[string]string{"DescribePhoto": `{"id":"photo-one","photoKind":"picture","isDescriptionRequested":true}`})
+	result, err := current.call(map[string]any{"operation": "describe", "photo_id": "photo-one", "is_redescribed": true})
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(result.Content, "photo-one: being described") || !result.Untrusted {
+		test.Fatalf("%s", result.Content)
+	}
+	asked := current.operations.asked("DescribePhoto")
+	if len(asked) != 1 || asked[0]["photoId"] != "photo-one" || asked[0]["isRedescribed"] != true {
+		test.Fatalf("asked %v", asked)
+	}
+	current = newRun(test, map[string]string{"DescribePhoto": describedRow})
+	result, err = current.call(map[string]any{"operation": "describe", "photo_ids": []string{"photo-described"}})
+	if err != nil || !strings.Contains(result.Content, "photo-described: described as: A red lighthouse") {
+		test.Fatalf("%v %v", err, result)
+	}
+	if asked := current.operations.asked("DescribePhoto"); asked[0]["isRedescribed"] != false {
+		test.Fatalf("a new description was asked for without being asked: %v", asked)
+	}
+	if _, err := current.call(map[string]any{"operation": "describe"}); err == nil {
+		test.Fatal("describing nothing was accepted")
+	}
+	if _, err := current.call(map[string]any{"operation": "describe", "photo_ids": []string{"a", "b", "c", "d", "e", "f", "g"}}); err == nil {
+		test.Fatal("seven photos were described in one call")
+	}
+}
+
+func TestListShowsFirstSentencesAndHowMuchOfARangeIsUndescribed(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ListPhotos":             `[` + describedRow + `,` + pictureRow + `]`,
+		"CountUndescribedPhotos": `37`,
+	})
+	result, err := current.call(map[string]any{"operation": "list", "search_text": "lighthouse", "taken_after": "2025-03-01", "taken_before": "2025-04-01"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	var answer struct {
+		Photos []struct {
+			PhotoID                  string `json:"photo_id"`
+			HasDescription           bool   `json:"has_description"`
+			DescriptionFirstSentence string `json:"description_first_sentence"`
+		} `json:"photos"`
+		UndescribedPhotoCount int    `json:"undescribed_photo_count"`
+		SearchNote            string `json:"search_note"`
+	}
+	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+		test.Fatal(err)
+	}
+	if len(answer.Photos) != 2 || !answer.Photos[0].HasDescription || answer.Photos[0].DescriptionFirstSentence != "A red lighthouse on a rocky point." || answer.Photos[1].HasDescription || answer.Photos[1].DescriptionFirstSentence != "" {
+		test.Fatalf("%+v", answer.Photos)
+	}
+	if answer.UndescribedPhotoCount != 37 || !strings.Contains(answer.SearchNote, "found only by the rest") {
+		test.Fatalf("%+v", answer)
+	}
+	// The count is of the range, so the words of the search are not asked about it.
+	asked := current.operations.asked("CountUndescribedPhotos")
+	if len(asked) != 1 || asked[0]["takenAfter"] != "2025-03-01T00:00:00Z" {
+		test.Fatalf("asked %v", asked)
+	}
+
+	// With no words there is no search to be blind to undescribed photos, and
+	// with no range the count would be of the whole library.
+	for _, arguments := range []map[string]any{{"operation": "list", "taken_after": "2025-03-01"}, {"operation": "list", "search_text": "lighthouse"}} {
+		current = newRun(test, map[string]string{"ListPhotos": `[` + pictureRow + `]`, "CountUndescribedPhotos": `5`})
+		result, err := current.call(arguments)
+		if err != nil || strings.Contains(result.Content, "undescribed_photo_count") {
+			test.Fatalf("%v: %v %v", arguments, err, result)
+		}
+	}
+}
+
+func TestReadGivesTheDescriptionAndTheWordsReadInThePicture(test *testing.T) {
+	current := newRun(test, nil)
+	current.operations = &fakeOperations{photos: map[string]string{
+		"photo-described": `{"photo":` + describedRow + `,"photoFiles":[],"photoPreviews":[],"albums":[]}`,
+		"photo-pending":   `{"photo":{"id":"photo-pending","photoKind":"picture","isDescriptionRequested":true},"photoFiles":[],"photoPreviews":[],"albums":[]}`,
+	}}
+	result, err := current.call(map[string]any{"operation": "read", "photo_id": "photo-described"})
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, want := range []string{`"has_description":true`, `"description":"A red lighthouse on a rocky point. Waves break at its base."`, `"words_read_in_it":"HARBOR ENTRANCE"`} {
+		if !strings.Contains(result.Content, want) {
+			test.Errorf("read lacks %s: %s", want, result.Content)
+		}
+	}
+	result, err = current.call(map[string]any{"operation": "read", "photo_id": "photo-pending"})
+	if err != nil || !strings.Contains(result.Content, `"description_state":"on its way"`) || !strings.Contains(result.Content, `"has_description":false`) {
+		test.Fatalf("%v %v", err, result)
+	}
+}
+
+func TestTheFirstSentenceStopsAtTheEndOfASentenceAndNotInsideANumber(test *testing.T) {
+	for text, want := range map[string]string{
+		"": "", "One. Two.": "One.", "About 3.5 meters tall. More": "About 3.5 meters tall.", "No ending": "No ending",
+		"赤い灯台。波が打ち寄せる。": "赤い灯台。", "Really? Yes": "Really?",
+	} {
+		if got := firstSentenceOf(text); got != want {
+			test.Errorf("%q gives %q, want %q", text, got, want)
+		}
+	}
+	if long := firstSentenceOf(strings.Repeat("word ", 100)); len([]rune(long)) != maximumFirstSentenceCharacters+1 || !strings.HasSuffix(long, "…") {
+		test.Errorf("a sentence without an end is cut: %d", len([]rune(long)))
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/models"
 	"gorm.io/gorm"
@@ -26,11 +25,39 @@ type PhotoOperation interface {
 	// it. The second value says it was made.
 	CreatePhoto(photo *models.Photo) (*models.Photo, bool, error)
 	GetPhoto(userId, photoId string) (*models.Photo, error)
+	// ListPhotos lists a page of the photos the filter keeps: newest first,
+	// or best match first when the filter has search words.
 	ListPhotos(userId string, filter *PhotoFilter) ([]*models.Photo, error)
 
 	// CountPhotos is how many photos the filter keeps, whatever page it
-	// asks for.
+	// asks for. With search words it is at most the most a search ranks.
 	CountPhotos(userId string, filter *PhotoFilter) (int, error)
+
+	// CountUndescribedPhotos is how many of the photos the filter keeps have
+	// no description yet. The filter's search words are ignored: a photo
+	// nobody has described cannot be found by what is in it, so what this
+	// answers is how much of the date or place range a search by words
+	// cannot see into.
+	CountUndescribedPhotos(userId string, filter *PhotoFilter) (int, error)
+
+	// RequestPhotoDescription records that a description of the photo is
+	// wanted, which is what a viewer shows as "describing" until it is
+	// written. A photo that is not the person's is not found.
+	RequestPhotoDescription(userId, photoId string) error
+
+	// ClearPhotoDescriptionRequest records that the description is no longer
+	// on its way, whether it was written or not.
+	ClearPhotoDescriptionRequest(userId, photoId string) error
+
+	// SetPhotoDescription keeps what a model said is in the picture,
+	// replacing any description, and clears the request. The photo's vectors
+	// are deleted, since they were made from the words it replaces, and its
+	// search document is made again.
+	SetPhotoDescription(userId, photoId string, description *PhotoDescription) error
+
+	// PutPhotoVector keeps the meaning of the photo's description as one
+	// model read it, replacing the vectors of other models.
+	PutPhotoVector(userId, photoId, model string, vector []float32) error
 	FindPhotosByClientIDs(userId string, clientPhotoIds []string) ([]*models.Photo, error)
 	UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error)
 	TrashPhotos(userId string, photoIds []string) (int, error)
@@ -155,9 +182,18 @@ type PhotoFilter struct {
 	TakenAfter  *time.Time
 	TakenBefore *time.Time
 
-	// SearchText keeps photos where every word is in the place name, the file
-	// name or the camera.
+	// SearchText keeps photos that match the words: a word of the place name,
+	// the file name, the camera, an album's title, the description or the
+	// words read in the picture, or, for the fixed fields, a part of one. The
+	// result is ordered by how well it matches instead of by date, and holds
+	// at most MaximumRankedPhotos photos, so a page is reached by Offset or
+	// by BeforePhotoID in that order.
 	SearchText string
+
+	// SearchMeaning is SearchText as a vector, when the caller has an
+	// embedding model. Described photos whose description means something
+	// like it are found too, and ranked together with the matches by words.
+	SearchMeaning *PhotoSearchMeaning
 
 	// NearLatitude, NearLongitude and NearDistanceKilometers keep photos
 	// taken within that distance of a point. All three or none.
@@ -168,7 +204,52 @@ type PhotoFilter struct {
 	// AlbumID keeps the photos of one album. An album that is not the
 	// person's is not found.
 	AlbumID string
+
+	// FaceGroupID keeps the photos with a face in one group of faces; a group
+	// that is not the person's is not found. ContactID keeps the photos with a
+	// face in any group that contact names.
+	FaceGroupID string
+	ContactID   string
 }
+
+// PhotoSearchMeaning is some words as one embedding model read them.
+type PhotoSearchMeaning struct {
+	ModelName string
+	Vector    []float32
+}
+
+// PhotoDescription is what a model wrote about a picture.
+type PhotoDescription struct {
+	// PhotoDescription is the sentences, and VisibleText the words it could
+	// read in the picture.
+	PhotoDescription string
+	VisibleText      string
+
+	// ModelName is the model that wrote them.
+	ModelName string
+}
+
+// The most a description and the words read in a picture hold, in
+// characters. A job cuts what a model wrote to these before it is kept.
+const (
+	MaximumPhotoDescriptionCharacters = 4000
+	MaximumPhotoVisibleTextCharacters = 8000
+)
+
+// MaximumRankedPhotos is how many photos a search by words ranks. A search
+// asks for the best, and the best are on the first pages.
+const MaximumRankedPhotos = 500
+
+// PhotoVectorTable is where the meaning of photos' descriptions is kept.
+var PhotoVectorTable = VectorTable{Table: "photo_vector", IDColumn: "photo_id", ScopeColumn: "user_id", OrderColumn: "created_at", Candidates: 5000}
+
+// photoMeaningFloor is the least similarity worth calling a match, the same
+// as the graph's: unrelated text is a tenth to three tenths apart.
+const photoMeaningFloor = 0.25
+
+// photoSearchFusionConstant is the k of reciprocal rank fusion, as the
+// knowledge search uses it.
+const photoSearchFusionConstant = 60
 
 // PhotoUpdate is what a person may correct about a photo. Fields left nil
 // are kept.
@@ -224,6 +305,9 @@ func photoFromModel(row *photoModel) *models.Photo {
 	photo.TakenAt = utcTime(photo.TakenAt)
 	photo.TrashedAt = utcTime(photo.TrashedAt)
 	photo.ProcessingClaimedAt = utcTime(photo.ProcessingClaimedAt)
+	photo.DescribedAt = utcTime(photo.DescribedAt)
+	photo.DescriptionRequestedAt = utcTime(photo.DescriptionRequestedAt)
+	photo.IsDescriptionRequested = photo.DescriptionRequestedAt != nil && time.Since(*photo.DescriptionRequestedAt) < models.PhotoDescriptionRequestLifetime
 	return &photo
 }
 
@@ -292,6 +376,8 @@ func (self *transaction) CreatePhoto(photo *models.Photo) (*models.Photo, bool, 
 	row.ProcessingErrorMessage = ""
 	row.ProcessingClaimedAt = nil
 	row.TrashedAt = nil
+	row.PhotoDescription, row.DescriptionVisibleText, row.DescriptionModel = "", "", ""
+	row.DescribedAt, row.DescriptionRequestedAt = nil, nil
 	// Two requests with the same uploader name race to this insert; the
 	// unique key decides, and the loser reads the winner's row.
 	inserted := self.tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}, {Name: "client_photo_id"}}, DoNothing: true}).Create(&row)
@@ -299,6 +385,9 @@ func (self *transaction) CreatePhoto(photo *models.Photo) (*models.Photo, bool, 
 		return nil, false, inserted.Error
 	}
 	if inserted.RowsAffected == 1 {
+		if err := self.refreshPhotoSearchDocumentsOf([]string{row.ID}); err != nil {
+			return nil, false, err
+		}
 		return photoFromModel(&row), true, nil
 	}
 	var existing photoModel
@@ -370,6 +459,10 @@ func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*go
 		}
 		query = query.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
 	}
+	query, err := self.photoFaceConditions(query, userId, filter)
+	if err != nil {
+		return nil, err
+	}
 	if filter.IsTrashed {
 		query = query.Where("photo.trashed_at > ?", photoMarkedForDeletion)
 	} else {
@@ -389,18 +482,6 @@ func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*go
 	}
 	if filter.TakenBefore != nil {
 		query = query.Where(photoTimelineExpression+" < ?", *filter.TakenBefore)
-	}
-	if words := strings.Fields(filter.SearchText); len(words) > 0 {
-		if len(words) > 8 {
-			return nil, ErrInvalidArguments
-		}
-		for _, word := range words {
-			if utf8.RuneCountInString(word) > 100 {
-				return nil, ErrInvalidArguments
-			}
-			pattern := "%" + escapeLike(word) + "%"
-			query = query.Where("(photo.place_name ILIKE ? OR photo.original_filename ILIKE ? OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)", pattern, pattern, pattern, pattern)
-		}
 	}
 	hasNear := filter.NearLatitude != nil || filter.NearLongitude != nil || filter.NearDistanceKilometers != nil
 	if hasNear {
@@ -427,6 +508,9 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 	if filter.PageSize < 1 || filter.PageSize > 500 || filter.Offset < 0 || filter.Offset > maximumPhotoOffset || (filter.Offset > 0 && filter.BeforePhotoID != "") {
 		return nil, ErrInvalidArguments
 	}
+	if strings.TrimSpace(filter.SearchText) != "" {
+		return self.listRankedPhotos(userId, filter)
+	}
 	if filter.BeforePhotoID != "" {
 		var cursor struct {
 			PlacedAt time.Time
@@ -449,6 +533,10 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 }
 
 func (self *transaction) CountPhotos(userId string, filter *PhotoFilter) (int, error) {
+	if filter != nil && strings.TrimSpace(filter.SearchText) != "" {
+		rankedIds, err := self.rankPhotos(userId, filter)
+		return len(rankedIds), err
+	}
 	query, err := self.photosMatching(userId, filter)
 	if err != nil {
 		return 0, err
@@ -673,6 +761,9 @@ func (self *transaction) SetPhotoFile(userId, photoId string, file *models.Photo
 		changes["processing_attempt_count"] = 0
 		changes["processing_error_message"] = ""
 		changes["processing_claimed_at"] = nil
+		// The pixels differ, so the faces are found again; the ones the
+		// person confirmed are kept where they are still found.
+		changes["faces_found_at"] = nil
 	}
 	if file.PhotoFileRole == models.PhotoFileRoleLiveVideo && photo.PhotoKind == models.PhotoKindPicture {
 		changes["photo_kind"] = models.PhotoKindLivePhoto
@@ -984,7 +1075,7 @@ func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMeta
 	if updated.RowsAffected == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return self.refreshPhotoSearchDocumentsOf([]string{photoId})
 }
 
 func (self *transaction) TouchPhotoProcessingClaims(photoIds []string) error {

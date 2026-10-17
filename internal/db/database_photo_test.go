@@ -630,16 +630,20 @@ func TestPhotoPreviewsBelongToTheOwner(test *testing.T) {
 func TestPhotoMigrationReverses(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
-	var migration, albumMigration migrations.Migration
+	var migration, albumMigration, descriptionMigration, faceMigration migrations.Migration
 	for _, candidate := range migrations.Migrations() {
 		switch candidate.ID {
 		case "0220_photo":
 			migration = candidate
 		case "0221_photo_album":
 			albumMigration = candidate
+		case "0222_photo_description":
+			descriptionMigration = candidate
+		case "0223_photo_face":
+			faceMigration = candidate
 		}
 	}
-	if migration.ID == "" || albumMigration.ID == "" {
+	if migration.ID == "" || albumMigration.ID == "" || descriptionMigration.ID == "" || faceMigration.ID == "" {
 		test.Fatal("the photo migrations are missing")
 	}
 	// The built-in roles exist once a server has started; a made-up one stands
@@ -647,7 +651,19 @@ func TestPhotoMigrationReverses(test *testing.T) {
 	for _, name := range []string{"Administrator", "Operator", "Member", "Guest"} {
 		dbtest.Exec(test, database, fmt.Sprintf(`INSERT INTO role (id, created_at, modified_at, name) VALUES ('role-%s', now(), now(), '%s')`, strings.ToLower(name), name))
 	}
-	// The albums refer to the photos, so they go first and come back last.
+	// The faces, the descriptions and the albums refer to the photos, so they
+	// go first and come back last.
+	dbtest.Exec(test, database, faceMigration.ReverseSQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_face%'"); tables != "0" {
+		test.Fatalf("%s face tables survive the reverse", tables)
+	}
+	dbtest.Exec(test, database, descriptionMigration.ReverseSQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name = 'photo_vector'"); tables != "0" {
+		test.Fatal("the photo vector table survives the reverse")
+	}
+	if columns := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.columns WHERE table_name = 'photo' AND column_name IN ('photo_description', 'description_visible_text', 'description_model', 'described_at', 'description_requested_at', 'search_document')"); columns != "0" {
+		test.Fatalf("%s description columns survive the reverse", columns)
+	}
 	dbtest.Exec(test, database, albumMigration.ReverseSQL)
 	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_album%'"); tables != "0" {
 		test.Fatalf("%s album tables survive the reverse", tables)
@@ -672,6 +688,14 @@ func TestPhotoMigrationReverses(test *testing.T) {
 	}
 	if granted := dbtest.QueryString(test, database, `SELECT string_agg(role_id, ',' ORDER BY role_id) FROM role_permission WHERE permission_key = 'photos:use'`); granted != "role-administrator,role-member,role-operator" {
 		test.Fatalf("photos:use is granted to %q", granted)
+	}
+	dbtest.Exec(test, database, descriptionMigration.SQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name = 'photo_vector'"); tables != "1" {
+		test.Fatal("the photo vector table is missing after running it again")
+	}
+	dbtest.Exec(test, database, faceMigration.SQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_face%'"); tables != "2" {
+		test.Fatalf("%s face tables after running it again", tables)
 	}
 }
 
