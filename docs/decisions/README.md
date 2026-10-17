@@ -161,3 +161,22 @@ link.
 how a reaction on a message of a conversation is kept (a row per reactor
 per message, gone with its message), why it wakes no turn, how the model
 reads one, and why the agent's own is an action of the conversation tool.
+
+`20261016-people-on-one-server-meet-in-circles.md` says how accounts on one
+server come to know each other: a circle of a kind (family, friends, work),
+joined by invitation, with a role per member, and why there is no directory
+of the whole server. `20261016-a-chat-belongs-to-the-people-in-it.md` says
+why chats between people are not an agent's conversation, why only a
+person's message starts an agent's turn there, and why the agent's working
+transcript stays with its owner.
+`20261016-shared-knowledge-is-read-where-it-lives.md` says why a shared page
+is a live, read-only view of the owner's graph and never a copy.
+`20261016-a-calendar-is-shared-at-a-level.md` says what each share level
+shows, why private events stay busy, and why a family calendar belongs to
+the circle. `20261016-a-guardian-answers-and-pays-from-their-own-agent.md`
+says why a child's purchase is an approval a guardian answers, paid by the
+guardian's own agent, and never by handing the child the guardian's payment
+skill. `20261016-the-agents-face-is-drawn-and-moves-with-its-run.md` says
+why the agent's face is a drawn description that moves with its activity
+state rather than a generated picture. All six are proposed; their plan is
+`docs/planning/circles-and-chats-execplan.md`.
