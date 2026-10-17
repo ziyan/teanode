@@ -19,7 +19,8 @@ To see it working at the end: two accounts in one family circle, each with the a
 - [x] (2026-10-17) Maintainer answered the open questions (see the Decision Log): live while open plus background updates when closed; OpenStreetMap for names, check-ins and place search; the agent sees everything; keep everything; no special rules for children; notifications on; built on the circles branch.
 - [x] (2026-10-17) This plan written.
 - [x] (2026-10-17) Maintainer asked for labels on places (home, work, school and so on); added as `place_label`.
-- [ ] Milestone 0: prototypes (place names from OpenStreetMap from Go; a map on the dashboard under its content security policy; visits on a real iPhone).
+- [x] (2026-10-17) Milestone 0, server half: Nominatim reverse and search, and the OpenFreeMap style's hosts, checked by hand (see Surprises).
+- [ ] Milestone 0, the rest: the map drawn under the dashboard's content security policy (with Milestone 3); visits timed on a real iPhone (with Milestone 2's first TestFlight build).
 - [ ] Milestone 1: storage, reporting and naming on the server, with the command line and the agent's tool.
 - [ ] Milestone 2: the iPhone records, and shows the person their own location.
 - [ ] Milestone 3: the dashboard's Location page.
@@ -43,6 +44,12 @@ To see it working at the end: two accounts in one family circle, each with the a
 
 - Observation: the dashboard's content security policy loads nothing from anywhere but the server (`default-src 'self'`, `img-src 'self' data:`, `connect-src 'self'`), on purpose, because it renders mail written by strangers. A map that fetches tiles from a tile server in the browser would have to widen it.
   Evidence: `internal/web/middlewares.go` (`securityPolicy` and the comment above `MakeSecurityHeadersMiddleware`).
+
+- Observation (Milestone 0): Nominatim's reverse naming at `zoom=18` answers the smallest named thing at the point, which can be a feature inside a place (a clock on a tower rather than the building or the square). Search with words and a bounding box (`viewbox=<west>,<north>,<east>,<south>&bounded=1`) finds things by kind: "playground" in a square of about 3 km answered five playgrounds with `category` `leisure`, `type` `playground`, `osm_type` and `osm_id`, in under a second. Naming a visit therefore asks reverse naming restricted to points of interest first (`layer=poi`), and an address (`layer=address`) when there is none.
+  Evidence: `curl -A "TeaNode/..." "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=..&lon=..&zoom=18"` answered `category amenity`, `type clock`; the search answered `way ... leisure playground` rows.
+
+- Observation (Milestone 0): every file the OpenFreeMap style names comes from one host: the style (`https://tiles.openfreemap.org/styles/liberty`), its vector tiles (`https://tiles.openfreemap.org/planet`, a TileJSON pointing at dated `{z}/{x}/{y}.pbf` files, zoom 0 to 14), its fonts (`/fonts/{fontstack}/{range}.pbf`), its icons (`/sprites/...`) and a shaded relief (`/natural_earth/...png`). The proxy rewrites that one origin to `/api/v1/map` in the style and the TileJSON, and fetches only from it.
+  Evidence: the style's `sources`, `sprite` and `glyphs` fields, read with curl on 2026-10-17.
 
 ## Decision Log
 
