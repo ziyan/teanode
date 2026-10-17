@@ -28,6 +28,9 @@ final class AppModel {
     /// Whether the server could not be asked which services it runs, and
     /// none are known yet: the app says so rather than calling them off.
     private(set) var hasServicesFailedToLoad = false
+    /// Whether the person has a computer attached that runs herdr, which is
+    /// what the Coding section is for.
+    private(set) var hasCodingComputers = false
 
     /// Connections to accounts not in use, made to answer their
     /// notifications, by account. Each account renews its sign-in through
@@ -771,10 +774,6 @@ extension AppModel {
         if let availableServices { self.services = availableServices }
         hasServicesFailedToLoad = availableServices == nil && services == nil
     }
-
-    /// Whether the person has a computer attached that runs herdr, which is
-    /// what the Coding section is for.
-    private(set) var hasCodingComputers = false
 
     func noteCodingComputers() { hasCodingComputers = true }
 
