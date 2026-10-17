@@ -728,7 +728,9 @@ final class PhotoBackupEngine {
             // `settings-photo-backup-other-account` and `photos-backup-other-account` have backup on for a
             // different account than the one signed in.
             let isOnForOtherAccount = DemoServer.screen == "settings-photo-backup-other-account" || DemoServer.screen == "photos-backup-other-account"
-            enabledAccountKey = isOn ? "demo.example.com|robin" : (isOnForOtherAccount ? "photos.example.org|sam" : nil)
+            // The signed-in demo account's own key, as the backup screen compares it:
+            // a key typed by hand left out the scheme the account's address writes.
+            enabledAccountKey = isOn ? DemoServer.account.accountKey : (isOnForOtherAccount ? "photos.example.org|sam" : nil)
             credentialName = isOn ? "Robin's iPhone photo backup" : nil
             accessProblem = nil
             if isWaiting {
