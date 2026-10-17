@@ -41,9 +41,12 @@ func SeededRolePermissions(name string) []Permission {
 		}
 		return permissions
 	case RoleNameMember:
-		// A person with an inbox and nothing else — and an agent of their
-		// own, which is off until they turn it on.
-		return []Permission{PermissionMailRead, PermissionMailWrite, PermissionMailSend, PermissionMailboxManage, PermissionAgentUse}
+		// A person with an inbox, a calendar and contacts, an agent of their
+		// own, which is off until they turn it on, and the circles they are
+		// invited to, which an account made from a circle's page is put in.
+		// The migrations that added each of these gave it to an existing
+		// Member role too, so a new server and an upgraded one agree.
+		return []Permission{PermissionMailRead, PermissionMailWrite, PermissionMailSend, PermissionMailboxManage, PermissionCalendarUse, PermissionContactsUse, PermissionAgentUse, PermissionCircleUse}
 	}
 	return nil
 }

@@ -16,11 +16,13 @@ type AgentPageShare struct {
 	Path     string `json:"path"`
 	PageName string `json:"pageName"`
 
-	GranteeUserID     *string `json:"granteeUserId"`
-	GranteeUsername   string  `json:"granteeUsername"`
-	GranteeName       string  `json:"granteeName"`
-	GranteeCircleID   *string `json:"granteeCircleId"`
-	GranteeCircleName string  `json:"granteeCircleName"`
+	GranteeUserID           *string `json:"granteeUserId"`
+	GranteeUsername         string  `json:"granteeUsername"`
+	GranteeName             string  `json:"granteeName"`
+	GranteeAvatarURL        *string `json:"granteeAvatarUrl"`
+	GranteeAvatarColorIndex int     `json:"granteeAvatarColorIndex"`
+	GranteeCircleID         *string `json:"granteeCircleId"`
+	GranteeCircleName       string  `json:"granteeCircleName"`
 
 	IsQuoteShared bool      `json:"isQuoteShared"`
 	CreatedAt     time.Time `json:"createdAt"`
@@ -40,6 +42,13 @@ type SharedAgentPageRoot struct {
 	NodeKind      string `json:"nodeKind"`
 	Opening       string `json:"opening"`
 	IsQuoteShared bool   `json:"isQuoteShared"`
+}
+
+// SharedAgentPageSearch is what a search of the shared pages found, and
+// whether more matched than were given back.
+type SharedAgentPageSearch struct {
+	Hits        []*SharedAgentPageHit `json:"hits"`
+	HasMoreHits bool                  `json:"hasMoreHits"`
 }
 
 // SharedAgentPageHit is a page or a fact of a shared page that a search
@@ -116,7 +125,7 @@ type AgentPageSharePreview struct {
 }
 
 const (
-	agentPageShareFields = `id path pageName granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName isQuoteShared createdAt`
+	agentPageShareFields = `id path pageName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName isQuoteShared createdAt`
 
 	sharedAgentPageFields = `ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
     path name nodeKind aliases opening isQuoteShared
@@ -154,7 +163,7 @@ const (
 	// DocumentSearchSharedAgentPages finds, by words, pages and facts in what
 	// other people shared with the caller.
 	DocumentSearchSharedAgentPages = `query ($query: String!, $first: Int) {
-  SearchSharedAgentPages(query: $query, first: $first) { ownerUserId ownerUsername ownerName path name opening factNumber text }
+  SearchSharedAgentPages(query: $query, first: $first) { hasMoreHits hits { ownerUserId ownerUsername ownerName path name opening factNumber text } }
 }`
 
 	// DocumentReadSharedAgentPage reads one page another person shared.
@@ -235,13 +244,13 @@ func ListSharedAgentPages(ctx context.Context, connection *Client) ([]*SharedAge
 // SearchSharedAgentPages finds, by words, pages and facts in the pages other
 // people shared with the signed-in account; first bounds the hits, 20 when it
 // is zero.
-func SearchSharedAgentPages(ctx context.Context, connection *Client, query string, first int) ([]*SharedAgentPageHit, error) {
+func SearchSharedAgentPages(ctx context.Context, connection *Client, query string, first int) (*SharedAgentPageSearch, error) {
 	variables := map[string]any{"query": query, "first": nil}
 	if first > 0 {
 		variables["first"] = first
 	}
 	var result struct {
-		SearchSharedAgentPages []*SharedAgentPageHit `json:"SearchSharedAgentPages"`
+		SearchSharedAgentPages *SharedAgentPageSearch `json:"SearchSharedAgentPages"`
 	}
 	if err := connection.Execute(ctx, DocumentSearchSharedAgentPages, variables, &result); err != nil {
 		return nil, err

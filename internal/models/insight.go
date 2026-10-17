@@ -626,7 +626,10 @@ const (
 	NoteSkillShareCallWaiting AgentNoteKind = "skill_share_call_waiting" // a call of a shared skill waits for the person's approval: JSON naming the call
 
 	// What only the person who addressed an agent in a chat is told, when
-	// no turn of it started: the detail is the agent's name.
+	// no turn of it started: the detail is the agent's name, and for the
+	// first the names of the agent and its owner as JSON (ChatAgentNote),
+	// since an agent is called "Agent" until its owner names it and only the
+	// owner tells two of them apart.
 	NoteChatAgentOwnerOnly AgentNoteKind = "chat_agent_owner_only" // only its owner can ask that agent in this chat
 	NoteChatAgentOff       AgentNoteKind = "chat_agent_off"        // its owner has switched it off
 	NoteChatAgentAbsent    AgentNoteKind = "chat_agent_absent"     // its owner is not in this chat
@@ -688,6 +691,15 @@ func NoteText(kind AgentNoteKind, detail string) string {
 			return waiting.GranteeName + " asked to use a skill you shared, and it is waiting for your approval"
 		}
 		return english
+	case kind == NoteChatAgentOwnerOnly && ParseChatAgentNote(detail) != nil:
+		owned := ParseChatAgentNote(detail)
+		// An agent with a name of its own is named, as the dashboard and the
+		// phone do; the default name would read as a person.
+		agentName := strings.TrimSpace(owned.AgentName)
+		if agentName == "" || agentName == AgentDefaultName {
+			return "Only " + owned.OwnerName + " can ask " + owned.OwnerName + "'s agent in this chat."
+		}
+		return "Only " + owned.OwnerName + " can ask " + agentName + ", " + owned.OwnerName + "'s agent, in this chat."
 	case kind == NoteChatAgentOwnerOnly && detail != "":
 		return "Only " + detail + "'s owner can ask it in this chat."
 	case kind == NoteChatAgentOff && detail != "":
@@ -722,6 +734,33 @@ func CircleInvitedDetail(invitedByName, circleName string) string {
 func ParseCircleInvitedNote(detail string) *CircleInvitedNote {
 	var note CircleInvitedNote
 	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.CircleName == "" {
+		return nil
+	}
+	return &note
+}
+
+// ChatAgentNote is the detail of a chat_agent_owner_only note: which agent was
+// addressed and whose it is.
+type ChatAgentNote struct {
+	AgentName string `json:"agentName"`
+	OwnerName string `json:"ownerName"`
+}
+
+// ChatAgentDetail is the detail of a chat_agent_owner_only note.
+func ChatAgentDetail(agentName, ownerName string) string {
+	encoded, err := json.Marshal(ChatAgentNote{AgentName: agentName, OwnerName: ownerName})
+	if err != nil {
+		return agentName
+	}
+	return string(encoded)
+}
+
+// ParseChatAgentNote reads the detail of a chat_agent_owner_only note, or
+// returns nil when it is one written before the owner was named in it: the
+// agent's name alone.
+func ParseChatAgentNote(detail string) *ChatAgentNote {
+	var note ChatAgentNote
+	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.OwnerName == "" {
 		return nil
 	}
 	return &note

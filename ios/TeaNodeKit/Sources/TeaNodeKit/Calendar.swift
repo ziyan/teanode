@@ -195,6 +195,15 @@ public enum ShareTarget: Hashable, Sendable {
 public struct CalendarShareCircle: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
+    /// Who is in it, so a picker can say how many people a circle is and two
+    /// circles with one name can be told apart.
+    public let members: [Member]
+
+    public var memberCount: Int { members.count }
+
+    public struct Member: Codable, Hashable, Sendable {
+        public let userId: String
+    }
 }
 
 /// CalendarEvent is one occurrence of an event in a window.
@@ -450,7 +459,7 @@ extension Documents {
         query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }
         """
     public static let calendarShareCircles = """
-        query { ListCircles { id name } }
+        query { ListCircles { id name members { userId } } }
         """
     public static let createCircleCalendar = """
         mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }

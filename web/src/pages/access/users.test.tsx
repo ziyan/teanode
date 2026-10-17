@@ -32,7 +32,7 @@ function account(id: string, name: string) {
   }
 }
 
-function answerWith(circles: { id: string; name: string; circleKind: string }[]) {
+function answerWith(circles: { id: string; name: string; circleKind: string; members: { userId: string }[] }[]) {
   vi.mocked(graphql).mockImplementation(async (document) => {
     if (document.includes('ListUsers')) {
       return { ListUsers: [account('person-a', 'Person A'), account('person-b', 'Person B')] } as never
@@ -72,14 +72,14 @@ function mutationCalls(operation: string) {
 
 it('offers each account a menu of the operator’s circles, and choosing one adds the account to it', async () => {
   answerWith([
-    { id: 'circle-one', name: 'Fixture Home', circleKind: 'family' },
-    { id: 'circle-two', name: 'Fixture Team', circleKind: 'colleagues' },
+    { id: 'circle-one', name: 'Fixture Home', circleKind: 'family', members: [{ userId: 'person-a' }] },
+    { id: 'circle-two', name: 'Fixture Team', circleKind: 'colleagues', members: [{ userId: 'person-a' }] },
   ])
   renderUsers(['user:manage'])
 
   fireEvent.click(await screen.findByRole('button', { name: 'person-b-login: Add to a circle' }))
-  expect(await screen.findByRole('menuitem', { name: 'Fixture Home' })).toBeTruthy()
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Fixture Team' }))
+  expect(await screen.findByRole('menuitemcheckbox', { name: 'Fixture Home' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Fixture Team' }))
 
   await waitFor(() => expect(mutationCalls('AddCircleMember')).toHaveLength(1))
   expect(mutationCalls('AddCircleMember')[0][1]).toEqual({
@@ -88,6 +88,23 @@ it('offers each account a menu of the operator’s circles, and choosing one add
     memberRole: 'member',
   })
   expect(await screen.findByText('person-b-login is now in Fixture Team.')).toBeTruthy()
+})
+
+it('heads the menu with what it does, and shows a circle the account is already in as ticked and disabled', async () => {
+  answerWith([
+    { id: 'circle-one', name: 'Fixture Home', circleKind: 'family', members: [{ userId: 'person-a' }, { userId: 'person-b' }] },
+    { id: 'circle-two', name: 'Fixture Team', circleKind: 'colleagues', members: [{ userId: 'person-a' }] },
+  ])
+  renderUsers(['user:manage'])
+
+  fireEvent.click(await screen.findByRole('button', { name: 'person-b-login: Add to a circle' }))
+  const already = (await screen.findByRole('menuitemcheckbox', { name: 'Fixture Home' })) as HTMLButtonElement
+  expect(already.disabled).toBe(true)
+  expect(already.getAttribute('aria-checked')).toBe('true')
+  const open = screen.getByRole('menuitemcheckbox', { name: 'Fixture Team' }) as HTMLButtonElement
+  expect(open.disabled).toBe(false)
+  expect(open.getAttribute('aria-checked')).toBe('false')
+  expect(document.querySelector('.menu-header')?.textContent).toBe('Add to a circle')
 })
 
 it('points an operator who is in no circle to the Circles page', async () => {
@@ -101,7 +118,7 @@ it('points an operator who is in no circle to the Circles page', async () => {
 })
 
 it('does not ask for circles or offer the menu to somebody who cannot manage users', async () => {
-  answerWith([{ id: 'circle-one', name: 'Fixture Home', circleKind: 'family' }])
+  answerWith([{ id: 'circle-one', name: 'Fixture Home', circleKind: 'family', members: [] }])
   renderUsers([])
 
   expect(await screen.findByText('Person B')).toBeTruthy()

@@ -262,11 +262,27 @@ func ShareMonth(at time.Time) (start, end time.Time) {
 	return start, start.AddDate(0, 1, 0)
 }
 
-// CheckShareable refuses a set of tools that cannot be shared as the person
-// asked: a tool the skill does not declare, and tools that read an amount
-// shared with no limit and no approval on every call, which would let the
-// other person spend without bound.
+// CheckShareable refuses a share a person is making or changing, as they
+// asked it: what CheckShareStillHolds refuses, and a limit for one payment
+// above the monthly limit, which can never be used up.
 func (self *Skill) CheckShareable(toolNames []string, limits ShareLimits) error {
+	if err := self.CheckShareStillHolds(toolNames, limits); err != nil {
+		return err
+	}
+	if limits.PaymentLimitMinor != nil && limits.MonthlyLimitMinor != nil && *limits.PaymentLimitMinor > *limits.MonthlyLimitMinor {
+		return fmt.Errorf("skills: %s", PaymentLimitAboveMonthlyWords)
+	}
+	return nil
+}
+
+// CheckShareStillHolds refuses a set of tools that cannot be shared as an
+// existing share has them: a tool the skill does not declare, and tools that
+// read an amount shared with no limit and no approval on every call, which
+// would let the other person spend without bound. It is the check for a share
+// made earlier when the skill is saved again; rules added since for a new
+// share are not applied to it, since the skill change is not what made it
+// break them.
+func (self *Skill) CheckShareStillHolds(toolNames []string, limits ShareLimits) error {
 	if len(toolNames) == 0 {
 		return fmt.Errorf("skills: say which of %s's tools to share", self.Name)
 	}
@@ -293,3 +309,8 @@ func (self *Skill) CheckShareable(toolNames []string, limits ShareLimits) error 
 	}
 	return nil
 }
+
+// PaymentLimitAboveMonthlyWords is why a share whose limit for one payment is
+// above its monthly limit is refused, in the one wording the dashboard, the
+// app and the command line use.
+const PaymentLimitAboveMonthlyWords = "the limit for one payment cannot be above the monthly limit"

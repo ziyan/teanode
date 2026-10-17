@@ -2,7 +2,7 @@ import Foundation
 
 // Skills shared with other people, and the calls made through them. The same
 // operations the dashboard, the command line and the agent's skill tool use.
-// Whether a call goes ahead, waits for its owner or is turned back is decided on
+// Whether a call goes ahead, waits for its owner or is refused is decided on
 // the server (internal/skills/share.go, internal/agent/skill_share.go); nothing
 // here runs a skill or moves money. docs/subsystems/skills.md ("Sharing a
 // skill") says how it works.
@@ -59,6 +59,10 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
     public let requestReason: String
     public let amountMinor: Int64?
     public let currencyCode: String
+    /// The argument the skill declares the amount is read from, which the card
+    /// leaves out because it shows the amount apart. Empty or absent when the
+    /// tool declares none, or the skill is no longer installed.
+    public let amountArgumentName: String?
     /// ran, failed, refused, waiting_for_approval, declined or expired.
     public let callState: String
     public let toolOutput: String
@@ -85,7 +89,13 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
         guard let data = toolArguments.data(using: .utf8),
             case .object(let object)? = try? JSONDecoder().decode(JSONValue.self, from: data)
         else { return [] }
-        let apart: Set<String> = ["amount_minor", "amountMinor", "currency", "request_reason"]
+        var apart: Set<String> = ["amount_minor", "amountMinor", "currency", "request_reason"]
+        // The amount is on the card in the currency's own digits, so the argument
+        // the skill declares it is read from is not said again. Any other
+        // argument, even one with "amount" in its name and the same number, is
+        // part of what the owner is approving and stays; and so does that one
+        // when no amount could be read, since the card shows none.
+        if amountMinor != nil, let amountArgumentName, !amountArgumentName.isEmpty { apart.insert(amountArgumentName) }
         var lines: [(name: String, value: String)] = []
         for name in object.keys.sorted() where !apart.contains(name) {
             let text: String
@@ -234,7 +244,7 @@ extension Documents {
         """
     static let skillShareCallFields = """
         id skillShareId skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex ownerName
-        toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt
+        toolName toolArguments requestReason amountMinor currencyCode amountArgumentName callState toolOutput answeredAt answerNote expiresAt createdAt
         """
     public static let skillShares = """
         query { ListSkillShares { \(skillShareFields) } }

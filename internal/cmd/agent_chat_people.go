@@ -160,8 +160,28 @@ func printChatConversation(command *cli.Command, conversation *client.AgentConve
 	if isJson {
 		return PrintJSON(conversation)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s: %s%s\n", conversation.ID, forTerminal(conversation.Title), said)
+	_, _ = fmt.Fprintf(command.Writer, "conversation %s: %s%s\n", conversation.ID, forTerminal(conversation.Title), said)
 	return nil
+}
+
+// splitNewMembers says which of the people to add are not in the chat yet and
+// which already are. Somebody who left is added again; a deleted account is
+// not in the chat either.
+func splitNewMembers(members []*client.AgentChatMember, userIds []string) (newUserIds []string, alreadyMembers []*client.AgentChatMember) {
+	for _, userId := range userIds {
+		var present *client.AgentChatMember
+		for _, member := range members {
+			if member.UserID == userId && !member.IsRemoved {
+				present = member
+			}
+		}
+		if present != nil {
+			alreadyMembers = append(alreadyMembers, present)
+		} else {
+			newUserIds = append(newUserIds, userId)
+		}
+	}
+	return newUserIds, alreadyMembers
 }
 
 func runChatDirect(ctx context.Context, command *cli.Command) error {
@@ -364,11 +384,36 @@ func runChatAdd(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	conversation, err := client.AddChatMembers(ctx, connection, conversationId, userIds)
+	view, err := chatOf(ctx, command, connection, conversationId, 1)
+	if err != nil {
+		return err
+	}
+	newUserIds, alreadyMembers := splitNewMembers(view.Conversation.Chat.Members, userIds)
+	if len(newUserIds) == 0 {
+		// Nothing to send: say who is in already, and add nobody.
+		names := make([]string, 0, len(alreadyMembers))
+		for _, member := range alreadyMembers {
+			names = append(names, memberWords(member))
+		}
+		if command.Bool("json") {
+			return PrintJSON(view.Conversation)
+		}
+		verb := "is"
+		if len(names) > 1 {
+			verb = "are"
+		}
+		_, _ = fmt.Fprintf(command.Writer, "conversation %s: %s already %s in this chat; added nobody\n", conversationId, strings.Join(names, ", "), verb)
+		return nil
+	}
+	conversation, err := client.AddChatMembers(ctx, connection, conversationId, newUserIds)
 	if err != nil {
 		return describeError(command, err)
 	}
-	return printChatConversation(command, conversation, command.Bool("json"), fmt.Sprintf(" (%d added)", len(userIds)))
+	said := fmt.Sprintf(" (%d added)", len(newUserIds))
+	if len(alreadyMembers) > 0 {
+		said = fmt.Sprintf(" (%d added; %d already in the chat)", len(newUserIds), len(alreadyMembers))
+	}
+	return printChatConversation(command, conversation, command.Bool("json"), said)
 }
 
 func runChatRemove(ctx context.Context, command *cli.Command) error {

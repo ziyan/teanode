@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -18,11 +17,12 @@ import (
 // and the app's card, and as the skill tool's share, unshare, shares and calls
 // actions.
 //
-// Lending money with limits, and approving a call that spends it, are done on
-// the dashboard or in the iPhone app and refused here by the server: an agent
-// can drive this command line with your saved sign-in. There is no approve
-// command. Declining, unsharing and asking every time only take things away,
-// and stay.
+// Sharing without asking every time, raising what a share allows, and
+// approving a call that spends money, are done on the dashboard or in the
+// iPhone app and refused here by the server: an agent can drive this command
+// line with your saved sign-in. There is no approve command. Declining,
+// unsharing, asking every time and lowering what a share allows only take
+// things away, and stay.
 
 func newAgentSkillShareCommands() []*cli.Command {
 	return []*cli.Command{
@@ -38,8 +38,10 @@ func newAgentSkillShareCommands() []*cli.Command {
 				"the iPhone app, and 'decline' says no. A tool that pays is not shared\n" +
 				"without a limit or --ask-every-time. Sharing again changes the tools and\n" +
 				"limits.\n\n" +
-				"Lending money is done there too: from here the server accepts only\n" +
-				"--ask-every-time, and lowering what a share allows.",
+				"From a command line the server accepts only a share with --ask-every-time,\n" +
+				"or one that gives no more than the share it replaces: the same tools or\n" +
+				"fewer, the same currency, limits no higher. Any other share, even of a\n" +
+				"tool that pays nothing, is made on the dashboard or in the iPhone app.",
 			Flags: []cli.Flag{
 				JSONFlag(),
 				&cli.StringSliceFlag{Name: "tools", Usage: "the tools to share, by name (repeat or separate with commas)"},
@@ -117,7 +119,7 @@ func describeLimits(share *client.SkillShare) string {
 		parts = append(parts, models.FormatMinor(*share.MonthlyLimitMinor, share.CurrencyCode)+" a month")
 	}
 	if len(parts) == 0 {
-		return "no limits (a tool the skill cannot price always asks)"
+		return models.SkillShareNoLimitsWords
 	}
 	return strings.Join(parts, ", ")
 }
@@ -172,7 +174,7 @@ func runAgentSkillShare(ctx context.Context, command *cli.Command) error {
 		IsApprovalRequired: command.Bool("ask-every-time"),
 	})
 	if client.IsTapRequired(err) {
-		return &describedError{fmt.Errorf("lending a skill with limits, or raising what a share allows, is done on the dashboard or in the iPhone app, not from the command line; open %s. From here only --ask-every-time, or lowering what a share allows, is accepted", skillSharingAddress(connection))}
+		return &describedError{fmt.Errorf("from a command line a skill is shared only with --ask-every-time, or with no more than the share it replaces allows (the same tools or fewer, the same currency, limits no higher); any other share is made on the dashboard or in the iPhone app: open %s", skillSharingAddress(connection))}
 	}
 	if err != nil {
 		return describeNotFound(command, err, "the skill "+command.Args().First()+" or "+command.Args().Get(1))
@@ -298,7 +300,9 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 			// says which skill it was of.
 			tool = call.SkillName + " " + call.ToolName
 		}
-		rows = append(rows, []string{call.ID, call.CreatedAt.Local().Format("2006-01-02 15:04"), call.GranteeUsername, tool, amount, call.CallState, quotedReason, call.ApproveAddress})
+		// The state is printed as --state takes it.
+		callState := models.SkillShareCallState(call.CallState).AskedWord()
+		rows = append(rows, []string{call.ID, call.CreatedAt.Local().Format("2006-01-02 15:04"), call.GranteeUsername, tool, amount, callState, quotedReason, call.ApproveAddress})
 	}
 	return printTable([]string{"call", "asked", "by", "tool", "amount", "state", "their agent said", "approve it at"}, rows)
 }
@@ -307,25 +311,20 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 // operation names them: one entry for each, or a single empty one for every
 // state. "waiting" is how a person says waiting_for_approval.
 func callStatesAsked(command *cli.Command) ([]string, error) {
-	callStates := []string{}
 	asked := command.StringSlice("state")
 	if command.Bool("waiting") {
 		asked = append(asked, "waiting")
 	}
-	for _, state := range asked {
-		state = strings.ToLower(strings.TrimSpace(state))
-		if state == "waiting" {
-			state = string(models.SkillShareCallWaitingForApproval)
-		}
-		if !models.SkillShareCallState(state).IsValid() {
-			return nil, usage("--state is ran, failed, refused, waiting, declined or expired")
-		}
-		if !slices.Contains(callStates, state) {
-			callStates = append(callStates, state)
-		}
+	askedCallStates, err := models.SkillShareCallStatesAsked(asked)
+	if err != nil {
+		return nil, usage("--state is ran, failed, refused, waiting, declined or expired")
 	}
-	if len(callStates) == 0 {
+	if len(askedCallStates) == 0 {
 		return []string{""}, nil
+	}
+	callStates := make([]string, 0, len(askedCallStates))
+	for _, callState := range askedCallStates {
+		callStates = append(callStates, string(callState))
 	}
 	return callStates, nil
 }

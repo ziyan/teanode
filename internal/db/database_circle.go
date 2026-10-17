@@ -3,7 +3,6 @@ package db
 import (
 	"errors"
 	"sort"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -316,7 +315,7 @@ func (self *transaction) CreateCircle(circle *models.Circle, creatorUserId strin
 		ID:              newID(),
 		CreatedAt:       now,
 		ModifiedAt:      now,
-		Name:            strings.TrimSpace(circle.Name),
+		Name:            models.PlainCircleName(circle.Name),
 		CircleKind:      string(circle.CircleKind),
 		CreatedByUserID: &creatorUserId,
 	}
@@ -385,12 +384,12 @@ func (self *transaction) RenameCircle(circleId, name string) (*models.Circle, er
 		return nil, err
 	}
 	if err := self.tx.Model(&circleModel{}).Where("\"id\" = ?", circleId).
-		Updates(map[string]any{"name": strings.TrimSpace(circle.Name), "modified_at": time.Now()}).Error; err != nil {
+		Updates(map[string]any{"name": models.PlainCircleName(circle.Name), "modified_at": time.Now()}).Error; err != nil {
 		return nil, err
 	}
 	// The circle chat is called what the circle is.
 	if err := self.tx.Model(&chatModel{}).Where(`"circle_id" = ?`, circleId).
-		Updates(map[string]any{"title": strings.TrimSpace(circle.Name), "modified_at": time.Now()}).Error; err != nil {
+		Updates(map[string]any{"title": models.PlainCircleName(circle.Name), "modified_at": time.Now()}).Error; err != nil {
 		return nil, err
 	}
 	return self.GetCircle(circleId)

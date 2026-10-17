@@ -128,8 +128,8 @@ func pageSharingServer(test *testing.T) (*httptest.Server, func(string) map[stri
 		"PreviewAgentPageShare": `{"page":` + sharedPage + `,"reachedPageCount":4,"isReachedPageCountCut":false}`,
 		"ListSharedAgentPages":  `[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea."}]`,
 		"ReadSharedAgentPage":   sharedPage,
-		"SearchSharedAgentPages": `[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea.","factNumber":0,"text":""},
-			{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"","factNumber":3,"text":"Next appointment is Tuesday at three."}]`,
+		"SearchSharedAgentPages": `{"hasMoreHits":true,"hits":[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea.","factNumber":0,"text":""},
+			{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"","factNumber":3,"text":"Next appointment is Tuesday at three."}]}`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var document struct {
@@ -236,7 +236,7 @@ func TestSharesUnshareAndShared(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, wanted := range []string{"people/a", "ben", "yes", "s1", "everyone in Home", "s2"} {
+	for _, wanted := range []string{"people/a", "ben", "yes", "s1", `the circle "Home"`, "s2"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("shares lacks %q:\n%s", wanted, output)
 		}
@@ -293,7 +293,7 @@ func TestSearchingWhatOthersSharedFindsPagesAndFacts(test *testing.T) {
 	if variables["query"] != "appointment" || variables["first"] != float64(5) {
 		test.Errorf("what was sent: %v", variables)
 	}
-	for _, wanted := range []string{"ada", "A Grandparent: Lives by the sea.", "people/a-grandparent#3", "Next appointment is Tuesday at three."} {
+	for _, wanted := range []string{"ada", "A Grandparent: Lives by the sea.", "people/a-grandparent#3", "Next appointment is Tuesday at three.", "There may be more; use more words"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("the hits lack %q:\n%s", wanted, output)
 		}

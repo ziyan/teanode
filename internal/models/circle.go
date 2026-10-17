@@ -3,6 +3,7 @@ package models
 import (
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -92,10 +93,24 @@ type Circle struct {
 	Members []*CircleMember `json:"members,omitempty"`
 }
 
+// PlainCircleName is a circle's name as it is kept: on one line, with every
+// control character and run of blanks made a single space. Whoever made the
+// circle typed it, and it is shown to every member on cards and in the
+// model's view, where a line break would pass for a line of its own.
+func PlainCircleName(name string) string {
+	cleaned := strings.Map(func(character rune) rune {
+		if unicode.IsControl(character) {
+			return ' '
+		}
+		return character
+	}, name)
+	return strings.Join(strings.Fields(cleaned), " ")
+}
+
 // Validate reports everything wrong with the circle.
 func (self *Circle) Validate() error {
 	var errors ValidationErrors
-	name := strings.TrimSpace(self.Name)
+	name := PlainCircleName(self.Name)
 	if name == "" {
 		errors.add("name", "required")
 	} else if utf8.RuneCountInString(name) > CircleNameLength {

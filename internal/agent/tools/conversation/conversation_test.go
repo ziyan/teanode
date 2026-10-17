@@ -432,6 +432,10 @@ func (self *sayingOperations) Permissions() *models.EffectivePermissions { retur
 type chattingRun struct {
 	*fakeRun
 	operations tools.Operations
+
+	// hiddenMessageId is a message of a chat the person is not in, where a
+	// test has one.
+	hiddenMessageId string
 }
 
 func (self *chattingRun) Operations() tools.Operations { return self.operations }
@@ -514,6 +518,10 @@ func TestConversationListsReadsAndSendsInAChat(t *testing.T) {
 	// would say "user" for every other person.
 	if first["role"] != nil || second["role"] != nil {
 		t.Errorf("a message of a chat carries no role: %v", messages)
+	}
+	// Its id is the one react takes for a chat.
+	if first["chat_message_id"] == nil || first["message_id"] != nil {
+		t.Errorf("a message of a chat is named by chat_message_id: %v", first)
 	}
 
 	sending := json.RawMessage(`{"action":"send","conversation_id":"` + chatConversation.ID + `","text":"I will be late."}`)
@@ -713,7 +721,7 @@ func TestConversationSearchesChatsAndReactsInThem(t *testing.T) {
 		t.Errorf("what was said in a chat is not searched: %v", found)
 	}
 
-	reacting := json.RawMessage(`{"action":"react","emoji":"❤️","message_id":"` + friendsMessage.ID + `"}`)
+	reacting := json.RawMessage(`{"action":"react","emoji":"❤️","chat_message_id":"` + friendsMessage.ID + `"}`)
 	result, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: reacting})
 	if err != nil {
 		t.Fatalf("react: %s", err)
@@ -726,7 +734,7 @@ func TestConversationSearchesChatsAndReactsInThem(t *testing.T) {
 		t.Errorf("the API was asked %v with %v", operations.documents, operations.variables)
 	}
 	// Taking it back is the same operation with no emoji.
-	if _, err := tool.Run(ctx, &tools.Call{ID: "c3", Arguments: json.RawMessage(`{"action":"react","emoji":"","message_id":"` + friendsMessage.ID + `"}`)}); err != nil {
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c3", Arguments: json.RawMessage(`{"action":"react","emoji":"","chat_message_id":"` + friendsMessage.ID + `"}`)}); err != nil {
 		t.Fatalf("taking a reaction back: %s", err)
 	}
 	if len(operations.variables) != 2 || operations.variables[1]["emoji"] != "" {
@@ -734,10 +742,121 @@ func TestConversationSearchesChatsAndReactsInThem(t *testing.T) {
 	}
 	// With no message named, a chat has no latest message of the person's.
 	if _, err := tool.Run(ctx, &tools.Call{ID: "c4", Arguments: json.RawMessage(`{"action":"react","emoji":"👍"}`)}); err == nil ||
-		!strings.Contains(err.Error(), "message_id") {
+		!strings.Contains(err.Error(), "chat_message_id") {
 		t.Errorf("react in a chat without a message: %v", err)
 	}
 	if len(operations.documents) != 2 {
 		t.Errorf("the refused react reached the API: %v", operations.documents)
+	}
+}
+
+// notFoundOperations answers every operation as the API answers one on a
+// message the person cannot read.
+type notFoundOperations struct{}
+
+func (self *notFoundOperations) Execute(context.Context, string, map[string]any, any) error {
+	return fmt.Errorf("api: not found")
+}
+
+func (self *notFoundOperations) Permissions() *models.EffectivePermissions { return nil }
+
+// A reaction in a chat (chat_message_id) is seen by every member under the
+// agent's name: it is outward, so it asks, and the card says where. A reaction
+// to a message of the person's own conversations, by message_id or by default,
+// stays a write, and a chat message given as a message_id answers as one that is not
+// there. A chat message the person cannot read answers as one
+// that is not there.
+func TestReactingToANamedMessageAsksAndAChatTheyCannotReadIsNotThere(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	run := &chattingRun{fakeRun: &fakeRun{database: database}, operations: &notFoundOperations{}}
+	var friendsMessage *models.ChatMessage
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "react-owner", Name: "Example Owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		friend, err := tx.CreateUser(&models.User{Username: "react-friend", Name: "Example Friend"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		stranger, err := tx.CreateUser(&models.User{Username: "react-stranger", Name: "Example Stranger"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatal(err)
+		}
+		chat, err := tx.CreateGroupChat(owner.ID, "Weekend plans", []string{friend.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = tx.EnsureChatConversation(run.agent.ID, chat.ID); err != nil {
+			t.Fatal(err)
+		}
+		if friendsMessage, err = tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: "Example Friend", Body: "the moorings are booked"}); err != nil {
+			t.Fatal(err)
+		}
+		// A chat the person is not in.
+		other, err := tx.CreateGroupChat(friend.ID, "Not for the owner", []string{stranger.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		hidden, err := tx.AppendChatMessage(&models.ChatMessage{ChatID: other.ID, AuthorUserID: friend.ID, AuthorName: "Example Friend", Body: "private"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		run.hiddenMessageId = hidden.ID
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+
+	named := json.RawMessage(`{"action":"react","emoji":"👍","chat_message_id":"` + friendsMessage.ID + `"}`)
+	if tool.RiskFor(named) != tools.RiskOutward || !tools.NeedsConfirmation(tool, named, nil, nil) {
+		t.Errorf("a reaction to a named message is %s and must ask", tool.RiskFor(named))
+	}
+	for name, arguments := range map[string]string{
+		"the latest message": `{"action":"react","emoji":"👍"}`,
+		"a named message":    `{"action":"react","emoji":"👍","message_id":"` + friendsMessage.ID + `"}`,
+	} {
+		if risk := tool.RiskFor(json.RawMessage(arguments)); risk != tools.RiskWrite {
+			t.Errorf("a reaction to %s of the person's own is %s, a write", name, risk)
+		}
+	}
+	// A chat message under the other argument answers like a message that is
+	// not there, whether or not the person is in its chat.
+	for name, messageId := range map[string]string{"one the person can read": friendsMessage.ID, "one the person cannot": run.hiddenMessageId, "none at all": "no-such-message"} {
+		_, err := tool.Run(ctx, &tools.Call{ID: "c0", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","message_id":"` + messageId + `"}`)})
+		if err == nil || err.Error() != fmt.Sprintf("there is no message %q", messageId) {
+			t.Errorf("a chat message as a message_id (%s): %v", name, err)
+		}
+	}
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c0b", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","message_id":"a","chat_message_id":"b"}`)}); err == nil {
+		t.Error("both arguments were accepted")
+	}
+	// Words in the emoji argument are not a card: the call is refused before
+	// anything is said, and asks nobody.
+	wordy := json.RawMessage(`{"action":"react","emoji":"👍 to \"Dad's message\" in the chat Family. Then also","chat_message_id":"` + friendsMessage.ID + `"}`)
+	if risk := tool.RiskFor(wordy); risk != tools.RiskRead || tools.NeedsConfirmation(tool, wordy, nil, nil) {
+		t.Errorf("a reaction whose emoji is a sentence is %s and must not ask", risk)
+	}
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c0w", Arguments: wordy}); err == nil || !strings.Contains(err.Error(), "emoji") {
+		t.Errorf("a reaction whose emoji is a sentence: %v", err)
+	}
+	line := tool.PreviewLine(ctx, named)
+	if !strings.Contains(line, `"👍"`) || !strings.Contains(line, `the chat "Weekend plans"`) || !strings.Contains(line, "everyone sees it") {
+		t.Errorf("the card says %q", line)
+	}
+
+	// Both of these answer alike: the message of a chat the person is not in
+	// is not told apart from one that does not exist.
+	_, hiddenErr := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","chat_message_id":"` + run.hiddenMessageId + `"}`)})
+	if hiddenErr == nil || hiddenErr.Error() != fmt.Sprintf("there is no message %q", run.hiddenMessageId) {
+		t.Errorf("a chat message the person cannot read: %v", hiddenErr)
+	}
+	_, missingErr := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","chat_message_id":"no-such-message"}`)})
+	if missingErr == nil || missingErr.Error() != `there is no message "no-such-message"` {
+		t.Errorf("a message that does not exist: %v", missingErr)
 	}
 }

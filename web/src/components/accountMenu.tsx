@@ -4,7 +4,8 @@ import { Link } from 'react-router-dom'
 import { endImpersonation } from '../api'
 import { LanguageItems, useTranslation } from '../i18n/i18n'
 import { Avatar } from './avatar'
-import { useOpenCircleInvitationCount } from './circleInvitations'
+import { CircleInvitationMark } from './circleInvitationMark'
+import { useLabelWithInvitationCount, useOpenCircleInvitationCount } from './circleInvitations'
 import { ConfirmDialog } from './dialog'
 import {
   ArrowLeftIcon,
@@ -82,12 +83,15 @@ export function AccountMenu({
   // An operator signed in as this account: said by a mark on the avatar,
   // and the way back is in the menu it opens.
   const operator = session.impersonatorUsername
+  const buttonLabel = useLabelWithInvitationCount(
+    operator ? `${t('nav.account')}: ${t('impersonation.signedInAs', { username })}` : t('nav.account'),
+  )
 
   return (
     <>
       <MenuButton
         className="account-button"
-        label={operator ? `${t('nav.account')}: ${t('impersonation.signedInAs', { username })}` : t('nav.account')}
+        label={buttonLabel}
         placement="above"
         icon={
           <>
@@ -103,6 +107,9 @@ export function AccountMenu({
                   <ShieldIcon size={10} />
                 </span>
               )}
+              {/* Invitations wait for an answer nobody else will ask for, so
+                  they are on the button and not only in the menu it opens. */}
+              <CircleInvitationMark />
             </Avatar>
             <span className="sidebar-label account-name">{displayed}</span>
             {/* A single arrow that turns when the menu opens. Two arrows

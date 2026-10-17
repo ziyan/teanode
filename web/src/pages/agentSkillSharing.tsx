@@ -12,10 +12,11 @@ import {
   LIST_SKILL_SHARE_CALLS,
   SkillShareCallCard,
   SKILL_SHARE_FIELDS,
-  currencyExponent,
+  formatCallTime,
   formatMinor,
   limitsLine,
   parseMinor,
+  typedExample,
   type SkillShare,
   type SkillShareCall,
 } from '../components/skillShare'
@@ -339,7 +340,7 @@ function EndedShares() {
           }
           subtitle={[
             call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : '',
-            new Date(call.createdAt).toLocaleString(),
+            formatCallTime(call.createdAt),
             call.requestReason,
           ]
             .filter(Boolean)
@@ -382,7 +383,9 @@ function ShareCalls({ share, isOwner, onChanged }: { share: SkillShare; isOwner:
   const rows = calls.data.ListSkillShareCalls
   if (rows.length === 0) return <SettingsEmpty>{t('skillShare.noActivity')}</SettingsEmpty>
   const waiting = rows.filter((call) => call.callState === 'waiting_for_approval')
-  const answered = rows.filter((call) => call.callState !== 'waiting_for_approval')
+  // The rest, which the owner did not necessarily answer: some were declined,
+  // some expired and some were refused before there was anything to answer.
+  const earlier = rows.filter((call) => call.callState !== 'waiting_for_approval')
   return (
     <div className="skill-share-calls">
       {waiting.length > 0 ? (
@@ -403,10 +406,10 @@ function ShareCalls({ share, isOwner, onChanged }: { share: SkillShare; isOwner:
           ))}
         </>
       ) : null}
-      {answered.length > 0 ? (
+      {earlier.length > 0 ? (
         <>
-          <h4 className="skill-share-calls-heading">{t('skillShare.callsAnswered')}</h4>
-          {answered.map((call) => (
+          <h4 className="skill-share-calls-heading">{t('skillShare.callsEarlier')}</h4>
+          {earlier.map((call) => (
             <SettingsRow
               key={call.id}
               title={call.toolName}
@@ -418,7 +421,7 @@ function ShareCalls({ share, isOwner, onChanged }: { share: SkillShare; isOwner:
               }
               subtitle={[
                 call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : '',
-                new Date(call.createdAt).toLocaleString(),
+                formatCallTime(call.createdAt),
                 call.requestReason,
               ]
                 .filter(Boolean)
@@ -469,17 +472,22 @@ function ShareSkillDialog({
   const isPaymentUnreadable = paymentLimit.trim() !== '' && paymentMinor === null
   const isMonthlyUnreadable = monthlyLimit.trim() !== '' && monthlyMinor === null
   const isLimitReadable = !isPaymentUnreadable && !isMonthlyUnreadable
+  // A currency that is typed but is not three letters: said under it, since
+  // the limits it belongs to are further down than a short window shows.
+  const isCurrencyBad = currency.trim() !== '' && !isCurrencyValid
+  // One payment above what a month may come to is a limit that cannot hold;
+  // the server refuses it in the same words.
+  const isPaymentAboveMonthly = paymentMinor !== null && monthlyMinor !== null && paymentMinor > monthlyMinor
   // Said under the field that could not be read, in the currency's own digits.
   const unreadableAmount = t('skillShare.amountUnreadable', {
     currency: isCurrencyValid ? code.toUpperCase() : t('skillShare.amountUnreadableCurrency'),
-    example: currencyExponent(code) === 0 ? '1000' : '1000.00',
+    example: typedExample(code),
   })
-  const canSubmit =
-    personId !== '' &&
-    chosen.size > 0 &&
-    (!pays || isAskedEveryTime || hasLimit) &&
-    (!hasLimit || isCurrencyValid) &&
-    isLimitReadable
+  // Asking every time sends no limits, so whatever is wrong with the limit
+  // fields (which are not drawn then) does not hold the share back.
+  const isEachLimitAcceptable =
+    (!pays || hasLimit) && (!hasLimit || isCurrencyValid) && !isCurrencyBad && isLimitReadable && !isPaymentAboveMonthly
+  const canSubmit = personId !== '' && chosen.size > 0 && (isAskedEveryTime || isEachLimitAcceptable)
 
   async function submit() {
     const person = people.find((each) => each.userId === personId)
@@ -530,7 +538,7 @@ function ShareSkillDialog({
       <fieldset className="skill-share-tools">
         <legend>{t('skillShare.tools')}</legend>
         {skill.tools.map((tool) => (
-          <label key={tool.name} className="checkbox">
+          <label key={tool.name} className="skill-share-choice">
             <input
               type="checkbox"
               checked={chosen.has(tool.name)}
@@ -544,9 +552,8 @@ function ShareSkillDialog({
               }
             />
             <span>
-              {tool.name}
-              <span className="muted">
-                {' · '}
+              <span className="skill-share-choice-name">{tool.name}</span>
+              <span className="skill-share-choice-hint">
                 {tool.isAmountDeclared
                   ? t('skillShare.toolPays')
                   : tool.isScoped
@@ -557,15 +564,15 @@ function ShareSkillDialog({
           </label>
         ))}
       </fieldset>
-      <label className="checkbox">
+      <label className="skill-share-choice">
         <input
           type="checkbox"
           checked={isAskedEveryTime}
           onChange={(event) => setIsAskedEveryTime(event.target.checked)}
         />
         <span>
-          {t('skillShare.askEveryTime')}
-          <span className="muted"> · {t('skillShare.askEveryTimeHint')}</span>
+          <span className="skill-share-choice-name">{t('skillShare.askEveryTime')}</span>
+          <span className="skill-share-choice-hint">{t('skillShare.askEveryTimeHint')}</span>
         </span>
       </label>
       {!isAskedEveryTime ? (
@@ -583,6 +590,11 @@ function ShareSkillDialog({
           {isPaymentUnreadable ? (
             <span className="error" role="alert">
               {unreadableAmount}
+            </span>
+          ) : null}
+          {isPaymentAboveMonthly ? (
+            <span className="error" role="alert">
+              {t('skillShare.paymentAboveMonthly')}
             </span>
           ) : null}
           <label>
@@ -611,6 +623,11 @@ function ShareSkillDialog({
             />
             <span className="muted">{t('skillShare.currencyHint')}</span>
           </label>
+          {isCurrencyBad ? (
+            <span className="error" role="alert">
+              {t('skillShare.currencyBad')}
+            </span>
+          ) : null}
           <p className="muted">{pays && !hasLimit ? t('skillShare.needsBound') : t('skillShare.limitsHint')}</p>
         </>
       ) : null}

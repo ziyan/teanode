@@ -1859,8 +1859,15 @@ struct NoteLine: View {
         case "goal_met": return String(localized: "Goal met: \(detail)")
         case "goal_stalled": return String(localized: "Goal stalled: \(detail) turns since you last wrote and it is not met. Write to keep going, or clear or change it.")
         // What a person is told when they addressed an agent in a chat and no
-        // turn of it started; the detail is the agent's name.
+        // turn of it started. The detail is the agent's and its owner's names
+        // as JSON; one written before the owner was named is the agent's name.
         case "chat_agent_owner_only":
+            if let data = detail.data(using: .utf8), let note = try? JSONDecoder().decode(ChatAgentNote.self, from: data), !note.ownerName.isEmpty {
+                let agentName = note.agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return agentName.isEmpty || agentName == AgentSpeaker.defaultName
+                    ? String(localized: "Only \(note.ownerName) can ask \(note.ownerName)'s agent in this chat.")
+                    : String(localized: "Only \(note.ownerName) can ask \(agentName), \(note.ownerName)'s agent, in this chat.")
+            }
             return detail.isEmpty
                 ? String(localized: "Only its owner can ask that agent in this chat.") : String(localized: "Only \(detail)'s owner can ask it in this chat.")
         case "chat_agent_off":
@@ -1885,6 +1892,13 @@ struct NoteLine: View {
 private struct CircleInvitationNote: Decodable {
     var invitedByName: String = ""
     var circleName: String = ""
+}
+
+/// ChatAgentNote is the detail of a chat_agent_owner_only note: the agent
+/// that was addressed and whose it is.
+private struct ChatAgentNote: Decodable {
+    var agentName: String = ""
+    var ownerName: String = ""
 }
 
 /// CardView is something waiting for the person: a tool call to approve, or
@@ -2339,8 +2353,8 @@ struct Composer: View {
     private var placeholder: String {
         if model.isChat {
             // Where an agent can be asked, the box says how.
-            if !model.addressableAgents.isEmpty { return String(localized: "Message \(model.title), or type @ to ask an agent…") }
-            return String(localized: "Message \(model.title)…")
+            if !model.addressableAgents.isEmpty { return String(localized: "Message, or @ to ask an agent") }
+            return String(localized: "Message…")
         }
         if model.freshQuestion != nil { return String(localized: "Your answer") }
         return app.agentName.isEmpty ? String(localized: "Ask your agent…") : String(localized: "Ask \(app.agentName)…")

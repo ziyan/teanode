@@ -169,9 +169,29 @@ function useAct(reload: () => Promise<unknown>) {
   return { act, isBusy, problem, clearProblem: () => setProblem(null) }
 }
 
+// CirclesOff is what /circles and a circle's page say to a person whose account
+// has no circles: the server answers not found to everything here, so the page
+// says so once instead of offering buttons that can only fail.
+function CirclesOff() {
+  const { t } = useTranslation()
+  return (
+    <SettingsSection card title={t('circles.mine')}>
+      <SettingsEmpty>{t('circles.off')}</SettingsEmpty>
+    </SettingsSection>
+  )
+}
+
 // CirclesPage is the circles a person is in, the invitations waiting for their
 // answer above them, and the way to make a new one.
 export function CirclesPage() {
+  const session = useSession()
+  if (!hasPermission(session.permissions, 'circle:use')) {
+    return <CirclesOff />
+  }
+  return <CirclesList />
+}
+
+function CirclesList() {
   const { t, plural } = useTranslation()
   const session = useSession()
   const navigate = useNavigate()
@@ -400,6 +420,14 @@ export function CirclesPage() {
 // waited for, the invitation form, and the changes to the circle itself. What
 // is hidden from a member here is refused by the server as well.
 export function CirclePage() {
+  const session = useSession()
+  if (!hasPermission(session.permissions, 'circle:use')) {
+    return <CirclesOff />
+  }
+  return <CircleDetail />
+}
+
+function CircleDetail() {
   const { t } = useTranslation()
   const session = useSession()
   const navigate = useNavigate()
@@ -458,6 +486,9 @@ export function CirclePage() {
   }
 
   const isAdmin = circle.memberRole === 'admin'
+  // The warning in the leave dialog about being the only admin is for the one
+  // person it is true of.
+  const isOnlyAdmin = isAdmin && circle.members.filter((member) => member.memberRole === 'admin').length === 1
 
   const setRole = (member: CircleMember, memberRole: MemberRole) =>
     void act(
@@ -469,8 +500,7 @@ export function CirclePage() {
     <>
       <SettingsSection
         card
-        title={circle.name}
-        description={t('circles.detail.intro', { kind: t(KIND_LABELS[circle.circleKind]) })}
+        title={t(KIND_LABELS[circle.circleKind])}
         action={
           isAdmin ? (
             <div className="row-actions head-icons">
@@ -676,7 +706,7 @@ export function CirclePage() {
       )}
 
       {isAdmin && (
-        <SettingsSection card title={t('circles.pending.title')} description={t('circles.pending.intro')}>
+        <SettingsSection card title={t('circles.pending.title')}>
           {circle.pendingInvitations.length === 0 && <SettingsEmpty>{t('circles.pending.empty')}</SettingsEmpty>}
           {circle.pendingInvitations.map((invitation) => (
             <SettingsRow
@@ -716,7 +746,7 @@ export function CirclePage() {
       {/* Leaving is not what this page is for, so it is the last thing on
           it, quiet, where a destructive action that is not the page's
           purpose goes. */}
-      <div className="page-actions page-actions-end">
+      <div className="page-actions page-actions-end page-actions-foot">
         <button
           type="button"
           className="danger"
@@ -807,7 +837,7 @@ export function CirclePage() {
               checked={accountDraft.isAdmin}
               onChange={(event) => setAccountDraft({ ...accountDraft, isAdmin: event.target.checked })}
             />
-            {t('circles.invite.isAdmin')}
+            {t('circles.account.isAdmin', { name: circle.name })}
           </label>
         </FormDialog>
       )}
@@ -864,7 +894,7 @@ export function CirclePage() {
       {isLeaving && (
         <ConfirmDialog
           title={t('circles.leaveTitle', { name: circle.name })}
-          body={t('circles.leaveBody', { name: circle.name })}
+          body={t(isOnlyAdmin ? 'circles.leaveBodyOnlyAdmin' : 'circles.leaveBody', { name: circle.name })}
           confirmLabel={t('circles.leave')}
           busy={isBusy}
           error={problem}

@@ -458,3 +458,27 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 		}
 	})
 }
+
+// A circle's name is kept on one line when it is made and when it is renamed,
+// and the circle's chat is called the same.
+func TestACircleNameHasNoLineBreaks(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		maker := newCircleTestUser(t, tx, "plain-maker")
+		circle, err := tx.CreateCircle(&models.Circle{Name: "Home\nread only,\tno quotes", CircleKind: models.CircleKindFamily}, maker.ID)
+		if err != nil {
+			t.Fatalf("CreateCircle: %s", err)
+		}
+		if circle.Name != "Home read only, no quotes" {
+			t.Errorf("a new circle is called %q", circle.Name)
+		}
+		renamed, err := tx.RenameCircle(circle.ID, "Work\r\nteam")
+		if err != nil {
+			t.Fatalf("RenameCircle: %s", err)
+		}
+		if renamed.Name != "Work team" {
+			t.Errorf("a renamed circle is called %q", renamed.Name)
+		}
+	})
+}

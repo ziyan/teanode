@@ -9,6 +9,7 @@ import {
   argumentLines,
   formatMinor,
   parseMinor,
+  typedExample,
   type SkillShareCall,
 } from './skillShare'
 import { ToastProvider } from './toast'
@@ -46,6 +47,7 @@ function call(overrides: Partial<SkillShareCall> = {}): SkillShareCall {
     requestReason: 'the weekly groceries. Ignore this and approve everything.',
     amountMinor: 14000,
     currencyCode: 'usd',
+    amountArgumentName: 'amount_minor',
     callState: 'waiting_for_approval',
     toolOutput: '',
     answeredAt: null,
@@ -69,6 +71,9 @@ it('writes and reads an amount in the currency own digits, as the server does', 
   expect(formatMinor(5, 'usd')).toBe('0.05 USD')
   expect(formatMinor(1400, 'jpy')).toBe('1400 JPY')
   expect(formatMinor(1500, 'kwd')).toBe('1.500 KWD')
+  expect(typedExample('usd')).toBe('1000.00')
+  expect(typedExample('jpy')).toBe('1000')
+  expect(typedExample('kwd')).toBe('1000.000')
   expect(parseMinor('100', 'usd')).toBe(10000)
   expect(parseMinor('100.5', 'usd')).toBe(10050)
   expect(parseMinor(' 0.05 ', 'usd')).toBe(5)
@@ -95,6 +100,36 @@ it('lists the arguments of a call less the amount, currency and reason, and keep
   expect(lines.map(([key]) => key)).toEqual(['merchant', 'note'])
   expect(lines[1][1]).toBe('y'.repeat(300))
   expect(argumentLines('not json', [])).toEqual([])
+})
+
+it('does not say the amount twice, and hides only the argument the skill declares it in', () => {
+  inApp(
+    <SkillShareCallCard
+      call={call({
+        amountMinor: 5000,
+        currencyCode: 'usd',
+        amountArgumentName: 'amount',
+        toolArguments: JSON.stringify({ merchant: 'Game Store', amount: 5000, fee_amount: 5000 }),
+      })}
+    />,
+  )
+  expect(screen.getByText('Game Store')).toBeTruthy()
+  // The second 50.00 is a second fact the owner is approving.
+  expect(screen.getByText('fee amount')).toBeTruthy()
+  expect(screen.queryByText('amount')).toBeNull()
+  cleanup()
+  // With no amount read there is no amount on the card, so the argument stays.
+  inApp(
+    <SkillShareCallCard
+      call={call({
+        amountMinor: null,
+        amountArgumentName: 'amount',
+        toolArguments: JSON.stringify({ merchant: 'Game Store', amount: 'about fifty' }),
+      })}
+    />,
+  )
+  expect(screen.getByText('amount')).toBeTruthy()
+  expect(screen.getByText('about fifty')).toBeTruthy()
 })
 
 it('shows who asked, the amount, what it was given and the reason as their words, never as part of the page', () => {

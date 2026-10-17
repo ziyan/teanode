@@ -214,6 +214,16 @@ public struct CalendarColorComponents: Hashable, Sendable {
 /// CalendarPalette picks a calendar's color from a small palette when the
 /// server keeps none: the same calendar always gets the same one.
 public enum CalendarPalette {
+    /// How many colors the server spreads calendars over: the dashboard's
+    /// `calendar-tone-0` to `calendar-tone-7`.
+    public static let spreadColorCount = 8
+
+    /// The place in the spread of colors for the index the server gave a
+    /// calendar, kept inside the eight whatever it sent.
+    public static func spreadIndex(serverIndex: Int) -> Int {
+        ((serverIndex % spreadColorCount) + spreadColorCount) % spreadColorCount
+    }
+
     /// A place in a palette of `paletteCount` colors, from the calendar's id.
     /// Swift's own hash changes on every launch, so the id is hashed by FNV-1a
     /// instead.

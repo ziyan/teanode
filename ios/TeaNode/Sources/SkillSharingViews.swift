@@ -25,7 +25,7 @@ enum SkillSharingWords {
         if let monthlyLimitMinor = share.monthlyLimitMinor {
             parts.append(String(localized: "up to \(SkillShareMoney.format(minor: monthlyLimitMinor, currencyCode: share.currencyCode)) a month"))
         }
-        if parts.isEmpty { return String(localized: "With no limits, every call that says what it costs runs without asking; anything that does not say is asked") }
+        if parts.isEmpty { return String(localized: "No limits: every call waits for approval, except one that only works on something an earlier call through this share made") }
         if share.monthlyLimitMinor != nil {
             parts.append(String(localized: "\(SkillShareMoney.format(minor: share.monthTotalMinor, currencyCode: share.currencyCode)) so far this month"))
         }
@@ -36,7 +36,7 @@ enum SkillSharingWords {
         switch callState {
         case "ran": String(localized: "Ran")
         case "failed": String(localized: "Did not complete")
-        case "refused": String(localized: "Turned back")
+        case "refused": String(localized: "Refused")
         case "waiting_for_approval": String(localized: "Waiting")
         case "declined": String(localized: "Declined")
         case "expired": String(localized: "Expired")
@@ -58,7 +58,7 @@ enum SkillSharingWords {
         switch call.callState {
         case "ran": words = String(localized: "Approved. It ran on the owner’s computer.")
         case "failed": words = String(localized: "It was tried and did not complete.")
-        case "refused": words = String(localized: "It was turned back before it ran.")
+        case "refused": words = String(localized: "It was refused before it ran.")
         case "declined": words = String(localized: "Declined.")
         case "expired": words = String(localized: "Nobody answered in time, so it expired.")
         default: words = String(localized: "Waiting.")
@@ -325,10 +325,18 @@ struct ShareSkillSheet: View {
         let currencyWords = isCurrencyValid ? code.uppercased() : String(localized: "the currency below")
         return String(localized: "Type the amount in \(currencyWords), such as \(SkillShareMoney.typedExample(currencyCode: code))")
     }
+    /// A currency that is typed but is not three letters, said under it.
+    private var isCurrencyBad: Bool { !currency.trimmingCharacters(in: .whitespaces).isEmpty && !isCurrencyValid }
+    /// One payment above what a month may come to is a limit that cannot hold; the
+    /// server refuses it in the same words.
+    private var isPaymentAboveMonthly: Bool {
+        guard let paymentMinor, let monthlyMinor else { return false }
+        return paymentMinor > monthlyMinor
+    }
     private var pays: Bool { skill.tools.contains { chosen.contains($0.name) && $0.isAmountDeclared } }
     private var canShare: Bool {
         !personId.isEmpty && !chosen.isEmpty && (!pays || isAskedEveryTime || hasLimit) && (!hasLimit || isCurrencyValid || isAskedEveryTime)
-            && (isLimitReadable || isAskedEveryTime)
+            && (isLimitReadable || isAskedEveryTime) && (!isCurrencyBad || isAskedEveryTime) && (!isPaymentAboveMonthly || isAskedEveryTime)
     }
 
     var body: some View {
@@ -357,9 +365,9 @@ struct ShareSkillSheet: View {
                                 Text(verbatim: tool.name).fontDesign(.monospaced)
                                 Group {
                                     if tool.isAmountDeclared {
-                                        Text("pays: needs a limit or your approval")
+                                        Text("Spends money. Calls within your limits go ahead; bigger ones wait for you.")
                                     } else if tool.isScoped {
-                                        Text("Used only for the calls this person makes")
+                                        Text("Costs nothing itself. It only works on something an earlier call through this share made, such as checking or cancelling it.")
                                     } else {
                                         Text("This tool does not say what it costs, so you are asked every time")
                                     }
@@ -376,7 +384,7 @@ struct ShareSkillSheet: View {
                     if !isAskedEveryTime {
                         // Titled, so a field that has been typed in still says
                         // what it is for.
-                        LabeledContent("Most for one payment") {
+                        LabeledContent("Per payment") {
                             TextField("100.00", text: $paymentLimit)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
@@ -384,7 +392,10 @@ struct ShareSkillSheet: View {
                         if isPaymentUnreadable {
                             Text(verbatim: unreadableAmountText).font(.footnote).foregroundStyle(.red)
                         }
-                        LabeledContent("Most in a calendar month") {
+                        if isPaymentAboveMonthly {
+                            Text("The limit for one payment cannot be above the monthly limit.").font(.footnote).foregroundStyle(.red)
+                        }
+                        LabeledContent("Per month") {
                             TextField("400.00", text: $monthlyLimit)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
@@ -397,6 +408,9 @@ struct ShareSkillSheet: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .multilineTextAlignment(.trailing)
+                        }
+                        if isCurrencyBad {
+                            Text("Use the three-letter code, such as usd.").font(.footnote).foregroundStyle(.red)
                         }
                     }
                 } footer: {
@@ -464,7 +478,7 @@ struct SkillShareCallsView: View {
                 Text("Nothing has been asked through this yet.").foregroundStyle(.secondary)
             }
             let waitingCalls = calls.filter(\.isWaiting)
-            let answeredCalls = calls.filter { !$0.isWaiting }
+            let earlierCalls = calls.filter { !$0.isWaiting }
             if !waitingCalls.isEmpty {
                 Section(share.isOwnedByCaller ? LocalizedStringKey("Waiting for you") : LocalizedStringKey("Waiting")) {
                     ForEach(waitingCalls) { call in
@@ -476,9 +490,9 @@ struct SkillShareCallsView: View {
                     }
                 }
             }
-            if !answeredCalls.isEmpty {
-                Section("Answered") {
-                    ForEach(answeredCalls) { call in
+            if !earlierCalls.isEmpty {
+                Section("Earlier") {
+                    ForEach(earlierCalls) { call in
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 8) {
                                 Text(verbatim: call.toolName).fontDesign(.monospaced)
@@ -537,15 +551,15 @@ struct SkillShareCallCard: View {
     @State private var problemText: String?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    /// The two buttons side by side, or one above the other once the text is
-    /// too large for both words to fit on a line.
-    private var buttonLayout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+    /// A fact's name beside its value, and above it at the largest text.
+    private func factLayout(spacing: CGFloat) -> AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: spacing / 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: spacing))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+            (dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 10))) {
                 AvatarView(name: call.shownGrantee, avatarUrl: call.granteeAvatarUrl, colorIndex: call.granteeAvatarColorIndex, size: 32)
                 Text(isOwner ? String(localized: "\(call.shownGrantee)’s agent asked to run \(call.toolName) with your \(call.skillName) skill") : String(localized: "Your agent asked to run \(call.toolName) with \(call.ownerName)’s \(call.skillName) skill"))
                     .font(.subheadline.weight(.semibold))
@@ -575,19 +589,11 @@ struct SkillShareCallCard: View {
                 TextField("A word for \(call.shownGrantee) (optional)", text: $note)
                     .textFieldStyle(.roundedBorder)
                     .disabled(isAnswering)
-                buttonLayout {
-                    Button {
-                        Task { await answer(isApproved: true) }
-                    } label: {
-                        Text("Approve and run it").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button {
-                        Task { await answer(isApproved: false) }
-                    } label: {
-                        Text("Decline").frame(maxWidth: .infinity).foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.bordered)
+                // The two buttons side by side while both words fit on one
+                // line each, and one above the other once they do not.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { answerButtons(isOneLine: true) }
+                    VStack(spacing: 10) { answerButtons(isOneLine: false) }
                 }
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
@@ -609,12 +615,40 @@ struct SkillShareCallCard: View {
         .accessibilityElement(children: .contain)
     }
 
+    @ViewBuilder
+    private func answerButtons(isOneLine: Bool) -> some View {
+        Button {
+            Task { await answer(isApproved: true) }
+        } label: {
+            answerLabel("Approve and run it", isOneLine: isOneLine)
+        }
+        .buttonStyle(.borderedProminent)
+        Button {
+            Task { await answer(isApproved: false) }
+        } label: {
+            answerLabel("Decline", isOneLine: isOneLine).foregroundStyle(.primary)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    /// A button's words. Side by side they keep their whole width, so that the
+    /// pair no longer fits, and is stacked, before a word would be cut.
+    @ViewBuilder
+    private func answerLabel(_ words: LocalizedStringKey, isOneLine: Bool) -> some View {
+        if isOneLine {
+            Text(words).fixedSize().frame(maxWidth: .infinity)
+        } else {
+            Text(words).frame(maxWidth: .infinity)
+        }
+    }
+
     private func fact(_ name: String, _ value: String, isProminent: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: name).font(.footnote).foregroundStyle(.secondary).frame(minWidth: 70, alignment: .leading)
+        (factLayout(spacing: 8)) {
+            Text(verbatim: name).font(.footnote).foregroundStyle(.secondary)
+                .frame(minWidth: dynamicTypeSize.isAccessibilitySize ? nil : 70, alignment: .leading)
             // Whole, and wrapped: the owner approves exactly this call.
             Text(verbatim: value).font(isProminent ? .headline : .callout).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
         }
     }
 

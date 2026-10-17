@@ -253,8 +253,6 @@ struct KnowledgeShareSheet: View {
                 } else if isLoaded {
                     Section {
                         ShareTargetPicker(people: people, circles: circles, chosen: $chosen)
-                    } header: {
-                        Text("Share with")
                     } footer: {
                         Text("Choose a person, or a whole circle. They read this page and everything under it as it is now, and cannot change it.")
                     }
@@ -449,12 +447,12 @@ struct KnowledgeSharePreviewScreen: View {
 
     /// How many pages the share reaches, as the dashboard says it.
     private static func pagesText(of preview: KnowledgeSharePreview) -> String {
-        let count = preview.reachedPageCount
-        switch (preview.isReachedPageCountCut, count == 1) {
+        let reachedPageCount = preview.reachedPageCount
+        switch (preview.isReachedPageCountCut, reachedPageCount == 1) {
         case (false, true): return String(localized: "This shares 1 page: this one and everything under it.")
-        case (false, false): return String(localized: "This shares \(count) pages: this one and everything under it.")
+        case (false, false): return String(localized: "This shares \(reachedPageCount) pages: this one and everything under it.")
         case (true, true): return String(localized: "This shares at least 1 page: this one and everything under it.")
-        case (true, false): return String(localized: "This shares at least \(count) pages: this one and everything under it.")
+        case (true, false): return String(localized: "This shares at least \(reachedPageCount) pages: this one and everything under it.")
         }
     }
 

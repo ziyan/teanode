@@ -134,6 +134,24 @@ func (self *phoneWorld) read(t *testing.T, delivery *push.Delivery) *push.Conten
 	return content
 }
 
+// A member who archived the chat is left alone by it, as by a muted one, and
+// is told again once they put it back.
+func TestAChatMessageIsNotNotifiedToAMemberWhoArchivedTheChat(t *testing.T) {
+	world := newPhoneWorld(t)
+	message := &models.AgentMessage{
+		ID: "a-message", AuthorKind: models.ChatAuthorPerson, AuthorUserID: "another-person", AuthorName: "Maria",
+		Content: "are you there?",
+	}
+	archived := world.recipient
+	archived.IsConversationArchived = true
+	world.hub.NotifyChatMessage(message, "Weekend trip", true, []Recipient{archived})
+	world.expectSent(t, 0, "an archived chat")
+
+	archived.IsConversationArchived = false
+	world.hub.NotifyChatMessage(message, "Weekend trip", true, []Recipient{archived})
+	world.expectSent(t, 1, "a chat put back")
+}
+
 // On a server with no agent, a message in a chat reaches the phone of a member
 // who is not looking, with the author's name and the first line, grouped by
 // the member's conversation; not the author's own, not a muted chat's, not a

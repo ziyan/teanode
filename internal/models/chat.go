@@ -183,6 +183,10 @@ type ChatMember struct {
 	// ConversationID is the member's own conversation for the chat, when the
 	// query that returned the member looked it up.
 	ConversationID string `json:"-"`
+
+	// IsConversationArchived says the member put that conversation away, which
+	// quiets the chat for them the way a mute does.
+	IsConversationArchived bool `json:"-"`
 }
 
 // IsMutedAt says whether the member asked not to be told of this chat at the

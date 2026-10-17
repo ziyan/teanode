@@ -83,6 +83,13 @@ public struct SharedKnowledgeOwnerGroup: Hashable, Sendable, Identifiable {
     }
 }
 
+/// SharedKnowledgeSearch is what a search of the shared pages found, and
+/// whether more matched than were given back.
+public struct SharedKnowledgeSearch: Decodable, Hashable, Sendable {
+    public let hits: [SharedKnowledgeHit]
+    public let hasMoreHits: Bool
+}
+
 /// SharedKnowledgeHit is a page, or a fact of a page, that a search of what
 /// other people shared found, with whose it is. A fact has its number as the
 /// owner numbers them and what it says; a page has an opening.
@@ -207,7 +214,9 @@ extension Documents {
         """
     public static let searchSharedKnowledge = """
         query ($query: String!, $first: Int) {
-          SearchSharedAgentPages(query: $query, first: $first) { ownerUserId ownerUsername ownerName path name opening factNumber text }
+          SearchSharedAgentPages(query: $query, first: $first) {
+            hasMoreHits hits { ownerUserId ownerUsername ownerName path name opening factNumber text }
+          }
         }
         """
     public static let sharedKnowledgePage = """
@@ -269,9 +278,10 @@ extension Connection {
 
     /// Finds words in the pages other people shared, only within what is
     /// shared with the person: the search the agent's memory tool makes of
-    /// them. Each hit says whose it is.
-    public func searchSharedKnowledge(_ words: String, first: Int? = nil) async throws -> [SharedKnowledgeHit] {
-        struct Answer: Decodable, Sendable { let SearchSharedAgentPages: [SharedKnowledgeHit] }
+    /// them. Each hit says whose it is, and the answer says when more matched
+    /// than it gives back.
+    public func searchSharedKnowledge(_ words: String, first: Int? = nil) async throws -> SharedKnowledgeSearch {
+        struct Answer: Decodable, Sendable { let SearchSharedAgentPages: SharedKnowledgeSearch }
         return try await execute(
             Documents.searchSharedKnowledge,
             variables: ["query": .string(words), "first": first.map { .number(Double($0)) } ?? .null], as: Answer.self

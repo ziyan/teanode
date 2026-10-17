@@ -267,6 +267,7 @@ func TestWhatTheAgentIsAskedAboutBeforeSharingOrWritingToOthersCalendars(t *test
 func TestWritingToOthersCalendarsGoesWhereItWasAskedAndNowhereElse(t *testing.T) {
 	operations := &routing{answers: map[string]string{
 		"ListCalendars":     sharedCalendars,
+		"ListCircles":       `[{"id":"c1","name":"Home","members":[{"userId":"u-ada"}]},{"id":"c3","name":"Club","members":[{"userId":"u-ada"}]}]`,
 		"SaveCalendarEvent": `{"id":"new","summary":"School play"}`,
 	}}
 	ctx := runWith(operations)
@@ -467,7 +468,7 @@ func TestTheCardForSharingNamesWhoItIsFor(t *testing.T) {
 		t.Fatal("calendar is registered")
 	}
 	for arguments, want := range map[string]string{
-		`{"action":"share","with":"c1","share_level":"busy"}`:    `Share your calendar with everyone in Home (4 people), at "busy"`,
+		`{"action":"share","with":"c1","share_level":"busy"}`:    `Share your calendar with the circle "Home" (4 people), at "busy"`,
 		`{"action":"share","with":"Ben","share_level":"titles"}`: `Share your calendar with ben, at "titles"`,
 	} {
 		if line := calendar.PreviewLine(ctx, []byte(arguments)); line != want {
@@ -485,7 +486,7 @@ func TestACircleCalendarNameTwoCirclesHaveIsRefused(t *testing.T) {
 			{"id":"own","name":"Calendar","timezone":"UTC","agentGranted":true,"calendarKind":"events","shareLevel":"owner","ownerUserId":"u-ada","ownerUsername":"ada"},
 			{"id":"family-one","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c1","circleName":"Family","isCircleCalendar":true},
 			{"id":"family-two","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c2","circleName":"Family","isCircleCalendar":true}]`,
-		"ListCircles":       `[{"id":"c1","members":[{"userId":"a"},{"userId":"b"}]},{"id":"c2","members":[{"userId":"a"}]}]`,
+		"ListCircles":       `[{"id":"c1","name":"Family","members":[{"userId":"a"},{"userId":"b"}]},{"id":"c2","name":"family","members":[{"userId":"a"}]}]`,
 		"SaveCalendarEvent": `{"id":"new","summary":"Picnic"}`,
 	}}
 	ctx := runWith(operations)
@@ -501,5 +502,59 @@ func TestACircleCalendarNameTwoCirclesHaveIsRefused(t *testing.T) {
 	}
 	if operations.sent["SaveCalendarEvent"]["calendarId"] != "family-two" {
 		t.Errorf("an id names one: %v", operations.sent["SaveCalendarEvent"])
+	}
+}
+
+// The name is ambiguous among the circles the person is in, not only among
+// those that have a calendar: a second circle of that name without one still
+// means the id has to be given, as it does for sharing.
+func TestACircleCalendarNameIsAmbiguousAmongAllTheCircles(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars": `[
+			{"id":"own","name":"Calendar","timezone":"UTC","agentGranted":true,"calendarKind":"events","shareLevel":"owner","ownerUserId":"u-ada","ownerUsername":"ada"},
+			{"id":"family-one","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c1","circleName":"Family","isCircleCalendar":true}]`,
+		"ListCircles":       `[{"id":"c1","name":"Family","members":[{"userId":"a"},{"userId":"b"}]},{"id":"c2","name":"Family","members":[{"userId":"a"}]}]`,
+		"SaveCalendarEvent": `{"id":"new","summary":"Picnic"}`,
+	}}
+	ctx := runWith(operations)
+	_, err := call(t, "calendar_add", ctx, `{"summary":"Picnic","starts":"2030-01-05T12:00","circle":"Family"}`)
+	if err == nil || !strings.Contains(err.Error(), "c1 (2 people)") || !strings.Contains(err.Error(), "c2 (1 person)") {
+		t.Fatalf("two circles with one name, one with a calendar: %v", err)
+	}
+	if operations.sent["SaveCalendarEvent"] != nil {
+		t.Errorf("nothing was written: %v", operations.sent["SaveCalendarEvent"])
+	}
+	if _, err := call(t, "calendar_add", ctx, `{"summary":"Picnic","starts":"2030-01-05T12:00","circle":"c1"}`); err != nil {
+		t.Fatal(err)
+	}
+	if operations.sent["SaveCalendarEvent"]["calendarId"] != "family-one" {
+		t.Errorf("an id names one: %v", operations.sent["SaveCalendarEvent"])
+	}
+}
+
+// When two of the person's circles have one name the agenda gives the id of
+// each beside the name, since the name alone is refused by the tools that
+// write; a circle whose name is its own gives only the name.
+func TestTheAgendaGivesTheIdOfACircleWhoseNameIsShared(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars": `[
+			{"id":"own","name":"Calendar","timezone":"UTC","agentGranted":true,"calendarKind":"events","shareLevel":"owner","ownerUserId":"u-ada","ownerUsername":"ada"},
+			{"id":"family-one","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c1","circleName":"Family","isCircleCalendar":true},
+			{"id":"family-two","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c2","circleName":"family","isCircleCalendar":true},
+			{"id":"club","name":"Club","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c3","circleName":"Club","isCircleCalendar":true}]`,
+		"ListCircles":        `[{"id":"c1","name":"Family","members":[]},{"id":"c2","name":"family","members":[]},{"id":"c3","name":"Club","members":[]}]`,
+		"ListCalendarEvents": `[{"id":"e1","summary":"Dentist","startsAt":"2030-01-02T10:00:00Z","endsAt":"2030-01-02T11:00:00Z"}]`,
+	}}
+	answer, err := call(t, "calendar_agenda", runWith(operations), `{"owner":"everyone","from":"2030-01-02","until":"2030-01-03"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identifiers := map[string]any{}
+	for _, each := range answer["events"].([]any) {
+		row := each.(map[string]any)
+		identifiers[row["circle"].(string)] = row["circle_id"]
+	}
+	if identifiers["Family"] != "c1" || identifiers["family"] != "c2" || identifiers["Club"] != nil || len(identifiers) != 3 {
+		t.Errorf("the id is given for the two circles that share a name, and only for them: %v", identifiers)
 	}
 }

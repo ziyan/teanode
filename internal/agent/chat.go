@@ -44,6 +44,10 @@ type ChatRecipient struct {
 	// MutedUntil is when the member's silence on this chat ends, nil when
 	// they have not asked for any.
 	MutedUntil *time.Time
+
+	// IsConversationArchived says the member put the chat away: it is as
+	// quiet for them as a muted one.
+	IsConversationArchived bool
 }
 
 // PublishChatEvents hands events of a chat to the chat hub: what the agent

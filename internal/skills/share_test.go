@@ -334,6 +334,35 @@ func TestOnlyTheRightToolsAreShareableWithoutALimit(t *testing.T) {
 	}
 }
 
+// A payment cannot be allowed to be larger than the month it counts in, so
+// the share that says so is refused, in the words the dashboard shows too.
+func TestAPaymentLimitAboveTheMonthlyLimitIsRefused(t *testing.T) {
+	skill := paymentsSkill(t)
+	err := skill.CheckShareable([]string{"pay"}, usdLimits(whole(50000), whole(10000)))
+	if err == nil || !strings.Contains(err.Error(), PaymentLimitAboveMonthlyWords) {
+		t.Errorf("a payment limit above the monthly limit gave %v", err)
+	}
+	if err := skill.CheckShareable([]string{"pay"}, usdLimits(whole(10000), whole(10000))); err != nil {
+		t.Errorf("a payment limit equal to the monthly limit was refused: %s", err)
+	}
+	if err := skill.CheckShareable([]string{"pay"}, usdLimits(whole(5000), whole(10000))); err != nil {
+		t.Errorf("a payment limit below the monthly limit was refused: %s", err)
+	}
+}
+
+// A share made before that rule is not held to it when the skill is saved
+// again: only a person making or changing a share is.
+func TestAShareMadeBeforeThePaymentRuleStillHoldsWhenTheSkillIsSaved(t *testing.T) {
+	skill := paymentsSkill(t)
+	limits := usdLimits(whole(50000), whole(10000))
+	if err := skill.CheckShareStillHolds([]string{"pay"}, limits); err != nil {
+		t.Errorf("an existing share with a payment limit above the monthly limit was held: %s", err)
+	}
+	if err := skill.CheckShareStillHolds([]string{"pay"}, ShareLimits{}); err == nil {
+		t.Error("an existing share of a tool that pays with no bound still held")
+	}
+}
+
 func TestTheMonthIsTheCalendarMonthInUTC(t *testing.T) {
 	start, end := ShareMonth(time.Date(2026, time.March, 31, 23, 59, 0, 0, time.FixedZone("west", -8*3600)))
 	if !start.Equal(time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)) || !end.Equal(time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)) {

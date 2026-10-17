@@ -133,15 +133,19 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 	// What the author is told about the agents that start nothing.
 	hub := self.chatHub()
 	for _, note := range decision.Notes {
-		if _, err := tx.AppendAgentMessage(models.NewAgentNote(session.Conversation.ID, note.NoteKind, note.AgentName)); err != nil {
+		detail := note.AgentName
+		if note.NoteKind == models.NoteChatAgentOwnerOnly && note.OwnerName != "" {
+			detail = models.ChatAgentDetail(note.AgentName, note.OwnerName)
+		}
+		if _, err := tx.AppendAgentMessage(models.NewAgentNote(session.Conversation.ID, note.NoteKind, detail)); err != nil {
 			return "", err
 		}
 		if hub == nil {
 			continue
 		}
 		event := agent.Event{
-			Kind: agent.EventNote, ConversationID: session.Conversation.ID, Note: models.NoteText(note.NoteKind, note.AgentName),
-			NoteKind: string(note.NoteKind), NoteDetail: note.AgentName,
+			Kind: agent.EventNote, ConversationID: session.Conversation.ID, Note: models.NoteText(note.NoteKind, detail),
+			NoteKind: string(note.NoteKind), NoteDetail: detail,
 		}
 		tx.AfterCommit(func() { hub.PublishChatEvents([]agent.Event{event}) })
 	}

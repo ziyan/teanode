@@ -53,9 +53,10 @@ func ownCalendarNamed(ctx context.Context, command *cli.Command, connection *cli
 // shareTarget is who a share is for, resolved from what was typed: the
 // username of somebody who shares a circle with the caller, or a circle by
 // identifier or name. The same answer for an account that does not exist and
-// one that shares no circle, since the server answers that way too. A circle
-// name more than one circle has, or that is also a username, is refused with
-// the ids and sizes to choose from, in the words the agent's tools use.
+// one that shares no circle, since the server answers that way too. A username
+// wins over a circle of the same name; a circle name more than one circle has
+// is refused with the ids and sizes to choose from, in the words the agent's
+// tools use.
 func shareTarget(ctx context.Context, connection *client.Client, typed string) (granteeUserId, granteeCircleId, described string, err error) {
 	typed = strings.TrimSpace(typed)
 	people, err := client.ListCirclePeople(ctx, connection)
@@ -140,7 +141,7 @@ func runCalendarShares(ctx context.Context, command *cli.Command) error {
 	for _, share := range shares {
 		who := share.GranteeUsername
 		if share.GranteeCircleID != nil {
-			who = "everyone in " + share.GranteeCircleName
+			who = models.DescribeCircleByName(share.GranteeCircleName)
 		}
 		rows = append(rows, []string{who, share.ShareLevel, share.ID})
 	}
@@ -177,7 +178,7 @@ func runCalendarCircle(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(made)
 	}
-	fmt.Printf("made %q, which everyone in %s reads and writes\n", forTerminal(made.Name), forTerminal(made.CircleName))
+	fmt.Printf("made %q, which everyone in %s reads and writes\n", forTerminal(made.Name), forTerminal(models.DescribeCircleByName(made.CircleName)))
 	return nil
 }
 

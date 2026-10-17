@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { failureText, graphql, isNotFound } from '../api'
 import { Avatar } from './avatar'
-import { Tag, formatTime } from './common'
+import { Tag } from './common'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -53,6 +53,7 @@ export type SkillShareCall = {
   requestReason: string
   amountMinor: number | null
   currencyCode: string
+  amountArgumentName: string
   callState: string
   toolOutput: string
   answeredAt: string | null
@@ -66,7 +67,7 @@ export const SKILL_SHARE_FIELDS = `id skillName toolNames ownerUserId ownerUsern
   paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor`
 
 export const SKILL_SHARE_CALL_FIELDS = `id skillShareId isShareEnded skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
-  ownerName toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt`
+  ownerName toolName toolArguments requestReason amountMinor currencyCode amountArgumentName callState toolOutput answeredAt answerNote expiresAt createdAt`
 
 export const LIST_SKILL_SHARE_CALLS = `query ($shareId: String!, $callState: String) {
   ListSkillShareCalls(shareId: $shareId, callState: $callState) { ${SKILL_SHARE_CALL_FIELDS} }
@@ -93,6 +94,14 @@ export function currencyExponent(currencyCode: string): number {
   if (NO_MINOR_UNIT.has(code)) return 0
   if (THOUSANDTHS.has(code)) return 3
   return 2
+}
+
+// typedExample is an amount as it is typed in the currency's own digits, for
+// saying what to type when one could not be read: 1000.00, 1000.000 for a
+// currency of thousandths, or 1000 where there is no minor unit.
+export function typedExample(currencyCode: string): string {
+  const exponent = currencyExponent(currencyCode)
+  return exponent === 0 ? '1000' : '1000.' + '0'.repeat(exponent)
 }
 
 // formatMinor writes an amount in minor units as people write money: 14.00 USD.
@@ -133,7 +142,7 @@ export function limitsLine(share: SkillShare, t: (key: Key, values?: Values) => 
 }
 
 // argumentLines are the arguments a call was made with, one line each, less
-// the amount and currency, which the card shows apart. A value is kept whole:
+// the ones named in hide, which the card shows apart. A value is kept whole:
 // the owner is approving exactly this call, and a cut value could hide the part
 // that matters. The card wraps it.
 export function argumentLines(toolArguments: string, hide: string[]): [string, string][] {
@@ -151,6 +160,20 @@ export function argumentLines(toolArguments: string, hide: string[]): [string, s
     lines.push([key.replace(/_/g, ' '), text])
   }
   return lines
+}
+
+// formatCallTime is when a call was made or waits until, as the rest of the
+// dashboard writes a day ("Tue, Oct 20") and the time, to the minute.
+export function formatCallTime(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 // SkillShareCallCard is one call of a shared skill, with who asked, what, and for how
@@ -175,7 +198,18 @@ export function SkillShareCallCard({
   const name = call.granteeName || call.granteeUsername
   const isWaiting = call.callState === 'waiting_for_approval'
   const amount = call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : ''
-  const lines = argumentLines(call.toolArguments, ['amount_minor', 'amountMinor', 'currency', 'request_reason'])
+  // The card says the amount in the currency's own digits, so the argument the
+  // skill declares it is read from is not said again; any other argument, even
+  // one with "amount" in its name and the same number, is part of what the
+  // owner is approving and stays. When no amount could be read the card shows
+  // none, and that argument stays too.
+  const lines = argumentLines(call.toolArguments, [
+    'amount_minor',
+    'amountMinor',
+    'currency',
+    'request_reason',
+    ...(call.amountMinor !== null && call.amountArgumentName ? [call.amountArgumentName] : []),
+  ])
 
   async function answer(isApproved: boolean) {
     setBusy(true)
@@ -253,7 +287,7 @@ export function SkillShareCallCard({
             </button>
           </div>
           {call.expiresAt ? (
-            <p className="muted">{t('skillShare.callExpires', { time: formatTime(call.expiresAt) })}</p>
+            <p className="muted">{t('skillShare.callExpires', { time: formatCallTime(call.expiresAt) })}</p>
           ) : null}
         </>
       ) : isWaiting ? (

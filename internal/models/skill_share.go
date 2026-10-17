@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ const (
 	// could not be tried because the owner's computer was not connected.
 	SkillShareCallFailed SkillShareCallState = "failed"
 
-	// SkillShareCallRefused is a call the server turned back before it ran:
+	// SkillShareCallRefused is a call the server refused before it ran:
 	// a request for a spend request that did not come through the share.
 	SkillShareCallRefused SkillShareCallState = "refused"
 
@@ -57,6 +58,47 @@ func (self SkillShareCallState) IsValid() bool {
 		}
 	}
 	return false
+}
+
+// SkillShareNoLimitsWords says what a share allows that has no limit and does
+// not ask every time, in one wording for the dashboard, the app, the command
+// line and the agent. Nothing that can be priced goes through unasked there
+// (a tool that pays is shared with a limit or with asking every time, and a
+// call the server cannot price waits); what does is a tool that works only on
+// something an earlier call through the share made, such as checking or
+// cancelling that payment, which pays nothing itself (skills.Tool.Weigh).
+const SkillShareNoLimitsWords = "No limits: every call waits for approval, except one that only works on something an earlier call through this share made"
+
+// SkillShareCallStatesAsked reads the states somebody asks to see calls in,
+// by the words they say: the operation's own names, and "waiting" for
+// waiting_for_approval. Each state once, in the order asked; none when no
+// state was asked, which is every call. The command line and the agent's
+// tool both read them this way.
+func SkillShareCallStatesAsked(words []string) ([]SkillShareCallState, error) {
+	var askedCallStates []SkillShareCallState
+	for _, word := range words {
+		callState := SkillShareCallState(strings.ToLower(strings.TrimSpace(word)))
+		if callState == "waiting" {
+			callState = SkillShareCallWaitingForApproval
+		}
+		if !callState.IsValid() {
+			return nil, fmt.Errorf("a call state is ran, failed, refused, waiting, declined or expired; %q is none of them", word)
+		}
+		if !slices.Contains(askedCallStates, callState) {
+			askedCallStates = append(askedCallStates, callState)
+		}
+	}
+	return askedCallStates, nil
+}
+
+// AskedWord is the state as SkillShareCallStatesAsked takes it, which is what
+// the command line prints and the agent's tool answers: waiting for
+// waiting_for_approval, and the operation's own name for any other.
+func (self SkillShareCallState) AskedWord() string {
+	if self == SkillShareCallWaitingForApproval {
+		return "waiting"
+	}
+	return string(self)
 }
 
 // SkillShareCallWaitFor is how long a call waits for the owner before it

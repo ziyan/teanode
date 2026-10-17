@@ -335,6 +335,7 @@ struct ChatMenu: View {
 /// list.
 struct ChatMembersSheet: View {
     let model: ConversationModel
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var isAdding = false
     @State private var removing: ChatMember?
@@ -399,22 +400,40 @@ struct ChatMembersSheet: View {
     /// person's alone, each with the sentence that says what it means.
     private func agentSection(_ own: ChatMember) -> some View {
         Section {
-            Toggle(
-                "My agent remembers this chat",
-                isOn: Binding(
-                    get: { own.isAgentReading },
-                    set: { isOn in Task { problemText = await model.setAgentReading(isOn) } }))
-            Toggle(
-                "Others may ask my agent here",
-                isOn: Binding(
-                    get: { own.isAgentAskableByOthers == true },
-                    set: { isOn in Task { problemText = await model.setAgentAskableByOthers(isOn) } }))
+            if own.isAgentActive == false {
+                // Switches for an agent that is off would be accepted and do
+                // nothing, so the section says it is off, as the dashboard does.
+                Text("Your agent is off.")
+                // Where it is turned on, as the screen with no agent offers it.
+                // A person with no agent at all has nothing to turn on.
+                if app.hasAgent {
+                    Button {
+                        dismiss()
+                        app.openedSection = .settings
+                    } label: {
+                        Label("Open Settings", systemImage: "gearshape")
+                    }
+                }
+            } else {
+                Toggle(
+                    "My agent remembers this chat",
+                    isOn: Binding(
+                        get: { own.isAgentReading },
+                        set: { isOn in Task { problemText = await model.setAgentReading(isOn) } }))
+                Toggle(
+                    "Others may ask my agent here",
+                    isOn: Binding(
+                        get: { own.isAgentAskableByOthers == true },
+                        set: { isOn in Task { problemText = await model.setAgentAskableByOthers(isOn) } }))
+            }
         } header: {
             Text("Your agent in this chat")
         } footer: {
-            Text(
-                "Remembering: from now on your agent reads what is said here with the rest of what it knows. What it learned stays if you turn this off, and it reads nothing said while this is off.\n\nAsking: anyone in this chat can address your agent with @, and it answers them in front of everybody. It can read this chat and look things up on the web, and nothing of yours: no mail, notes, files or calendar. Its work is counted as yours."
-            )
+            if own.isAgentActive != false {
+                Text(
+                    "Remembering: from now on your agent reads what is said here with the rest of what it knows. What it learned stays if you turn this off, and it reads nothing said while this is off.\n\nAsking: anyone in this chat can address your agent with @, and it answers them in front of everybody. It can read this chat and look things up on the web, and nothing of yours: no mail, notes, files or calendar. Its work is counted as yours."
+                )
+            }
         }
     }
 
@@ -428,13 +447,15 @@ struct ChatMembersSheet: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                // On the person's own row it is their agent, not somebody's.
+                let isOwn = member.userId == model.ownUserId
                 if member.isAgentReading {
-                    Text("Their agent remembers this chat")
+                    Text(isOwn ? LocalizedStringKey("Your agent remembers this chat") : LocalizedStringKey("Their agent remembers this chat"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 if member.isAgentAskableByOthers == true {
-                    Text("Others may ask their agent")
+                    Text(isOwn ? LocalizedStringKey("Others may ask your agent") : LocalizedStringKey("Others may ask their agent"))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

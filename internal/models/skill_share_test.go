@@ -99,3 +99,25 @@ func TestASharedSkillChangeThatOnlyTakesAwayOpensNothingBeyond(t *testing.T) {
 		}
 	}
 }
+
+// The states somebody asks calls for are read the same by the command line and
+// the agent: "waiting" is waiting_for_approval, each state is kept once, and a
+// word that is no state is refused.
+func TestCallStatesAreAskedForByTheWordsPeopleUse(t *testing.T) {
+	states, err := SkillShareCallStatesAsked([]string{" Waiting ", "ran", "waiting_for_approval", "RAN"})
+	if err != nil || len(states) != 2 || states[0] != SkillShareCallWaitingForApproval || states[1] != SkillShareCallRan {
+		t.Errorf("the states are %v %v", states, err)
+	}
+	if states, err := SkillShareCallStatesAsked(nil); err != nil || states != nil {
+		t.Errorf("no state asked is every call: %v %v", states, err)
+	}
+	if _, err := SkillShareCallStatesAsked([]string{"ran", "nearly"}); err == nil {
+		t.Error("a word that is no state was accepted")
+	}
+	// What is printed is what can be asked for.
+	for _, callState := range SkillShareCallStates {
+		if again, err := SkillShareCallStatesAsked([]string{callState.AskedWord()}); err != nil || len(again) != 1 || again[0] != callState {
+			t.Errorf("%s is told as %q, which is read as %v %v", callState, callState.AskedWord(), again, err)
+		}
+	}
+}

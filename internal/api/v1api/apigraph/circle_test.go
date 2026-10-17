@@ -182,7 +182,10 @@ func TestACircleIsMadeInvitedToAndJoined(t *testing.T) {
 	if len(world.members(t, world.alice, circleId)) != 2 {
 		t.Error("declining put carol in the circle")
 	}
-	world.refused(t, world.carol, fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: true) { id } }`, carolInvitation))
+	// An invitation already answered says so, to the person it was for.
+	if said := world.refused(t, world.carol, fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: true) { id } }`, carolInvitation)); !strings.Contains(said, "that invitation was already answered") {
+		t.Errorf("answering an answered invitation said %q", said)
+	}
 
 	// Nobody answers somebody else's invitation.
 	world.invite(t, world.alice, circleId, world.erin, "member")
@@ -417,8 +420,11 @@ func TestAddCircleMemberNeedsUserManage(t *testing.T) {
 
 	// Not an admin of the circle, not a member, and not an account manager.
 	world.refused(t, world.carol, add)
-	// Not even the circle's own admin, whose way in is an invitation.
-	world.refused(t, world.alice, add)
+	// Not even the circle's own admin, whose way in is an invitation, who is
+	// told what is missing rather than that the circle is not found.
+	if said := world.refused(t, world.alice, add); !strings.Contains(said, "needs the user:manage permission") || strings.Contains(said, "not found") {
+		t.Errorf("the circle's admin was told %q", said)
+	}
 	if len(world.members(t, world.alice, circleId)) != 1 {
 		t.Fatal("a refused AddCircleMember put somebody in")
 	}

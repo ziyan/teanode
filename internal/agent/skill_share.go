@@ -269,7 +269,7 @@ func weighShared(tx db.Transaction, shared *sharedSkill, arguments map[string]an
 	verdict.isApprovalNeeded, verdict.waitReason = verdict.weighing.IsApprovalNeeded, verdict.weighing.WaitReason
 	if verdict.isApprovalNeeded {
 		// A call that would add to the owner's pile of unanswered ones is
-		// turned back when the pile is already long: each is a card and a
+		// refused when the pile is already long: each is a card and a
 		// notification on her phone, and an agent that asks again and again
 		// should not be able to bury the one she meant to answer.
 		waiting, err := tx.ListSkillShareCalls(share.ID, models.SkillShareCallWaitingForApproval, sharedWaitingMost)
