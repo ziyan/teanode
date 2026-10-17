@@ -20,10 +20,16 @@
             refreshToken: "", expiresAt: .distantFuture, username: "robin")
 
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+            // A person's picture is read from its address, not asked for in GraphQL.
+            if let picture = Self.avatarPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
             if let recordingAnswer = Self.recordingAnswer(query: query) {
                 answer = recordingAnswer
+            } else if let circlesAnswer = Self.circlesAnswer(query: query, body: request.httpBody) {
+                answer = circlesAnswer
             } else if query.contains("AgentServerUsage") {
                 answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
@@ -463,6 +469,8 @@
         static let conversations = #"""
             {"data":{"ListAgentConversations":[
               {"id":"main","kind":"main","title":null,"summary":null,"lastAt":"2026-10-10T09:05:00Z"},
+              \#(directChatListEntry),
+              \#(groupChatListEntry),
               {"id":"trip","kind":"named","title":"Weekend trip","summary":null,"lastAt":"2026-10-09T18:30:00Z"},
               {"id":"taxes","kind":"named","title":"Receipts for the year","summary":null,"lastAt":"2026-10-02T12:00:00Z"}
             ]}}
@@ -530,7 +538,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 
