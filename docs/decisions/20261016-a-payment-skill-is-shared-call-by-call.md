@@ -16,7 +16,7 @@ that owns the agent.
 In a household one person often holds the payment account and others
 need to pay with it: a spouse buying groceries, a child asking for a book.
 The spouse should be able to pay without asking each time; the child
-should ask every time, and a parent should answer.
+should ask every time.
 
 Handing the other person the whole skill was rejected. The skill runs on
 the owner's computer as the owner, so the other person's agent would read
@@ -37,20 +37,16 @@ Each share has limits the server checks before anything runs: the most
 one payment may be, and the most a month. A call within them goes ahead
 (and Link still asks in its app). A call above them, or with an amount
 the server cannot read from the arguments (paying an address whose price
-only the merchant knows), becomes an **approval** for the owner. A share
-may also require an approval for every call.
+only the merchant knows), waits for the owner's **approval**. A share may
+require an approval for every call, which is what a parent sets for a
+child.
 
-A share with a child always requires an approval for every call, and the
-approval goes to the child's guardians, any one of whom answers it. An
-approval also covers what else a child may not do alone: joining or
-leaving a circle, sharing outside the family, widening what their agent
-does unattended. Approving runs exactly the call that was asked, with the
-arguments that were shown, on the owner's computer; nothing else is
-decided when it is answered.
-
-An approval is answered by a person and never by an agent, the same rule
-that keeps the unattended setting on a card the person answered. Nobody's
-unattended allowances answer an approval.
+The owner approves or declines from a card in their drawer or their
+phone. Approving runs exactly the call that was asked, with the arguments
+that were shown, on the owner's computer; nothing else is decided when it
+is answered. An approval is answered by the owner and never by an agent,
+the same rule that keeps the unattended setting on a card the person
+answered, and nobody's unattended allowances answer one.
 
 The owner sees every call made through a share, its arguments and its
 outcome; the other person sees their own.
@@ -58,16 +54,17 @@ outcome; the other person sees their own.
 ## Consequences
 
 Two tables: `skill_share` (owner, skill, tools, grantee, limits) and
-`circle_approval`. A new card in the approver's conversation that is not a
-tool call of the approver's agent: it is answered with
-`AnswerCircleApproval`, not `ResolveAgentConfirmation`.
+`skill_share_call` (each call, its amount, and its approval when it needed
+one). A new card in the owner's conversation that is not a tool call of
+the owner's agent: it is answered with `AnswerSkillShareCall`, not
+`ResolveAgentConfirmation`.
 
 The server never holds a card and never moves money on its own. A share
 works only while the owner's computer is connected, because that is where
 the skill is signed in. Who approves in the Link app is whoever is signed
 in to that Link account there, which is between the household and Link.
 
-Payment is only as automatic as Link makes it. A child's purchase is two
-answers, the guardian's in TeaNode and the Link account holder's in Link,
-and is the price of never letting the server, or a child's agent, pay
-alone.
+Payment is only as automatic as Link makes it. A purchase that needs an
+approval is two answers, the owner's in TeaNode and the Link account
+holder's in Link, and is the price of never letting the server, or
+somebody else's agent, pay alone.

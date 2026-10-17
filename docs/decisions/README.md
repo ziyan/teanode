@@ -164,8 +164,8 @@ reads one, and why the agent's own is an action of the conversation tool.
 
 `20261016-people-on-one-server-meet-in-circles.md` says how accounts on one
 server come to know each other: a circle of a kind (family, friends,
-colleagues), joined by invitation, with a role per member and guardians in a
-family, and why there is no directory of the whole server.
+colleagues), joined by invitation, with admins and members and no other
+role, and why there is no directory of the whole server.
 `20261016-a-chat-is-a-conversation-with-people-in-it.md` says why chats
 between people are conversations in the drawer, how each member's own
 agent's work stays in their own view of the chat, and why only a person's
@@ -176,8 +176,8 @@ is a live, read-only view of the owner's graph and never a copy.
 shows, why private events stay busy, and why a family calendar belongs to
 the circle. `20261016-a-payment-skill-is-shared-call-by-call.md` says why a
 payment skill is shared as named tools with limits, run on the owner's
-computer, why a call above them or any call of a child's is an approval a
-person answers, and why the whole skill is never handed over.
+computer, why a call above them, or on a share set to ask every time,
+waits for the owner's approval, and why the whole skill is never handed over.
 `20261016-the-agents-face-is-drawn-and-moves-with-its-run.md` says why the
 agent's face is a drawn description that moves with its activity state
 rather than a generated picture. All six are proposed; their plan is
