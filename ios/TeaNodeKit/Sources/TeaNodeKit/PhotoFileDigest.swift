@@ -21,14 +21,19 @@ import Foundation
             // memory that is only freed when an autorelease pool drains, and
             // without a pool per chunk a long video's would pile up until the
             // whole file was read.
+            // A read that throws is a file that cannot be read; one that answers
+            // nothing, or no bytes, is the end of the file.
             var isReadable = true
             while isReadable {
                 let isMore: Bool = autoreleasepool {
-                    guard let chunk = try? handle.read(upToCount: chunkSizeBytes) else {
+                    let chunk: Data?
+                    do {
+                        chunk = try handle.read(upToCount: chunkSizeBytes)
+                    } catch {
                         isReadable = false
                         return false
                     }
-                    if chunk.isEmpty { return false }
+                    guard let chunk, !chunk.isEmpty else { return false }
                     hasher.update(data: chunk)
                     return true
                 }
