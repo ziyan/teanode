@@ -9,7 +9,9 @@ import (
 )
 
 // An invitation is a note for a person whose agent is on, and nothing for one
-// whose agent is off or who has none, so no conversation is made for them.
+// whose agent is off or who has none, so no conversation is made for them. A
+// person whose agent is off still has the agent row their phones hang from,
+// and it is named so they are notified.
 func TestAnInvitationIsNotedOnlyForAnAgentThatIsOn(t *testing.T) {
 	fixture := newPhoneFixture(t)
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
@@ -43,8 +45,12 @@ func TestAnInvitationIsNotedOnlyForAnAgentThatIsOn(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if agentId, err := NoteCircleInvitation(tx, fixture.owner.ID, "Maria", "Home"); err != nil || agentId != "" {
+		if agentId, err := NoteCircleInvitation(tx, fixture.owner.ID, "Maria", "Home"); err != nil || agentId != fixture.agent.ID {
 			t.Errorf("a person whose agent is off: %q %v", agentId, err)
+		}
+		messages, err = tx.ListAgentMessages(main.ID, nil)
+		if err != nil || len(messages) != 1 {
+			t.Errorf("no second note for an agent that is off: %+v %v", messages, err)
 		}
 	})
 }
@@ -53,7 +59,7 @@ func TestAnInvitationIsNotedOnlyForAnAgentThatIsOn(t *testing.T) {
 // its own kind that a phone can choose not to take.
 func TestAPhoneIsToldOfAnInvitation(t *testing.T) {
 	fixture := newPhoneFixture(t)
-	fixture.worker.NotifyCircleInvitation(fixture.agent.ID, "Maria", "Home")
+	fixture.worker.Phones().NotifyCircleInvitation(fixture.agent.ID, "Maria", "Home")
 	fixture.worker.waitGroup.Wait()
 
 	sent := fixture.relay.to("sealed:a-registration")
@@ -70,7 +76,7 @@ func TestAPhoneIsToldOfAnInvitation(t *testing.T) {
 			t.Fatalf("UpdateAgentPhoneSettings: %s", err)
 		}
 	})
-	fixture.worker.NotifyCircleInvitation(fixture.agent.ID, "Maria", "Home")
+	fixture.worker.Phones().NotifyCircleInvitation(fixture.agent.ID, "Maria", "Home")
 	fixture.worker.waitGroup.Wait()
 	if len(fixture.relay.to("sealed:a-registration")) != 1 {
 		t.Error("a phone that chose only approvals was told of an invitation")

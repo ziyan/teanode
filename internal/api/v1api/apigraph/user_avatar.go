@@ -20,11 +20,11 @@ import (
 	"github.com/ziyan/teanode/internal/storage"
 )
 
-// avatarURL is where a person's picture is served, or nil when they have
+// avatarUrl is where a person's picture is served, or nil when they have
 // none. The time it changed is in the address: a browser keeps the picture
 // for a day without asking, and a new picture has to be a new address for
 // that to be safe.
-func avatarURL(user *models.User) *string {
+func avatarUrl(user *models.User) *string {
 	if user == nil || user.AvatarFileID == "" || user.AvatarUpdatedAt == nil {
 		return nil
 	}
@@ -196,9 +196,10 @@ func (self *graph) deleteAvatarFile(ctx context.Context, fileId string) {
 	}
 }
 
-// avatarSizes are the sizes a picture is served at: the stored one, and the
-// small one a list row draws.
-var avatarSizes = map[int]bool{64: true, avatar.Size: true}
+// avatarSidePixelsServed are the sides, in pixels, a picture is served at: the
+// stored one, and the small one a list row draws. They are the values of the
+// size query parameter of the picture address, which both apps send.
+var avatarSidePixelsServed = map[int]bool{64: true, avatar.SidePixels: true}
 
 // A person's picture, served as a picture.
 //
@@ -227,14 +228,14 @@ func (self *graph) avatarView(response http.ResponseWriter, request *http.Reques
 	}
 
 	userId := strings.TrimSpace(mux.Vars(request)["userId"])
-	size := avatar.Size
+	sidePixels := avatar.SidePixels
 	if asked := request.URL.Query().Get("size"); asked != "" {
 		parsed, err := strconv.Atoi(asked)
-		if err != nil || !avatarSizes[parsed] {
+		if err != nil || !avatarSidePixelsServed[parsed] {
 			http.Error(response, "size is 64 or 512", http.StatusBadRequest)
 			return
 		}
-		size = parsed
+		sidePixels = parsed
 	}
 
 	var principal *api.Principal
@@ -259,7 +260,7 @@ func (self *graph) avatarView(response http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	tag := `"` + strconv.FormatInt(owner.AvatarUpdatedAt.UnixNano(), 10) + `-` + strconv.Itoa(size) + `"`
+	tag := `"` + strconv.FormatInt(owner.AvatarUpdatedAt.UnixNano(), 10) + `-` + strconv.Itoa(sidePixels) + `"`
 	response.Header().Set("ETag", tag)
 	// Private, because who may see a picture is decided per caller. A day,
 	// since a changed picture is a new address (?v=) and never needs this
@@ -280,8 +281,8 @@ func (self *graph) avatarView(response http.ResponseWriter, request *http.Reques
 		http.Error(response, "no such picture", http.StatusNotFound)
 		return
 	}
-	if size != avatar.Size {
-		if content, err = avatar.Resize(content, size); err != nil {
+	if sidePixels != avatar.SidePixels {
+		if content, err = avatar.Resize(content, sidePixels); err != nil {
 			log.Errorf("cannot resize the picture file %s: %s", owner.AvatarFileID, err)
 			http.Error(response, "cannot read that just now", http.StatusInternalServerError)
 			return

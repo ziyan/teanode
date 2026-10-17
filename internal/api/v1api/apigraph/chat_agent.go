@@ -79,9 +79,9 @@ func (self *graph) SetChatAgentAskableByOthers(ctx context.Context, arguments Se
 // caller's own when asked for, once each.
 func addressedAgentsOf(session *chatSession, arguments AskAgentArguments) []string {
 	addressed := []string{}
-	for _, agentID := range arguments.AddressedAgentIDs {
-		if agentID = strings.TrimSpace(agentID); agentID != "" && !slices.Contains(addressed, agentID) {
-			addressed = append(addressed, agentID)
+	for _, agentId := range arguments.AddressedAgentIDs {
+		if agentId = strings.TrimSpace(agentId); agentId != "" && !slices.Contains(addressed, agentId) {
+			addressed = append(addressed, agentId)
 		}
 	}
 	if arguments.ShouldAddressOwnAgent && !slices.Contains(addressed, session.Agent.ID) {
@@ -158,7 +158,7 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 	if err != nil {
 		return "", err
 	}
-	ownRunID := ""
+	ownRunId := ""
 	for _, turn := range decision.Turns {
 		member := session.Chat.Member(turn.OwnerUserID)
 		if member == nil || member.ConversationID == "" {
@@ -203,7 +203,7 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 			},
 		}
 		if !settings.Chat.IsMemberTurn {
-			ownRunID = settings.RunID
+			ownRunId = settings.RunID
 		}
 		askedConversationId := session.Conversation.ID
 		tx.AfterCommit(func() {
@@ -220,7 +220,7 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 			}
 		})
 	}
-	return ownRunID, nil
+	return ownRunId, nil
 }
 
 // effortOf is how hard the turn thinks: as the asker chose for their own agent,

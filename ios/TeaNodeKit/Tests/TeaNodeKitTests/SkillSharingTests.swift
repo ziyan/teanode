@@ -28,7 +28,7 @@ final class SkillSharingTests: XCTestCase {
              "granteeAvatarUrl":null,"granteeAvatarColorIndex":3,"ownerName":"Ada Example","toolName":"pay",
              "toolArguments":\(String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)),
              "requestReason":"the weekly groceries","amountMinor":14000,"currencyCode":"usd","callState":"\(state)","toolOutput":"",
-             "decidedAt":null,"decisionNote":"","expiresAt":"2026-10-18T10:00:00Z","createdAt":"2026-10-17T10:00:00Z"}
+             "answeredAt":null,"answerNote":"","expiresAt":"2026-10-18T10:00:00Z","createdAt":"2026-10-17T10:00:00Z"}
             """
         return try JSONDecoder().decode(SkillShareCall.self, from: Data(json.utf8))
     }
@@ -45,7 +45,33 @@ final class SkillSharingTests: XCTestCase {
         let long = try call(arguments: "{\"note\":\"\(String(repeating: "y", count: 300))\",\"count\":3,\"nested\":{\"a\":1}}")
         XCTAssertEqual(long.argumentLines.map(\.name), ["count", "nested", "note"])
         XCTAssertEqual(long.argumentLines[0].value, "3")
-        XCTAssertEqual(long.argumentLines[2].value.count, 201)
+        XCTAssertEqual(long.argumentLines[2].value.count, 300)
+    }
+
+    func testWhatToTypeIsWrittenInTheCurrencysOwnDigits() {
+        XCTAssertEqual(SkillShareMoney.typedExample(currencyCode: "usd"), "1000.00")
+        XCTAssertEqual(SkillShareMoney.typedExample(currencyCode: "jpy"), "1000")
+        XCTAssertEqual(SkillShareMoney.typedExample(currencyCode: "kwd"), "1000.000")
+        XCTAssertEqual(SkillShareMoney.typedExample(currencyCode: ""), "1000.00")
+    }
+
+    func testACallIsGoneOnlyWhenTheServerSaysItIsNotThere() throws {
+        let waiting = try call()
+        XCTAssertEqual(SkillShareCallReading.reading(callId: "call-1", of: .success([waiting])), .found(waiting))
+        XCTAssertEqual(SkillShareCallReading.reading(callId: "other", of: .success([waiting])), .gone)
+        XCTAssertEqual(SkillShareCallReading.reading(callId: "call-1", of: .failure(TeaNodeError.refused("api: not found"))), .gone)
+        // A read that did not get through says nothing about the call.
+        XCTAssertEqual(SkillShareCallReading.reading(callId: "call-1", of: .failure(URLError(.notConnectedToInternet))), .failed)
+        XCTAssertEqual(SkillShareCallReading.reading(callId: "call-1", of: .failure(TeaNodeError.refused("api: forbidden"))), .failed)
+        XCTAssertEqual(SkillShareCallReading.reading(callId: "call-1", of: .failure(TeaNodeError.unreadableAnswer)), .failed)
+    }
+
+    func testAFailureIsToldInTheServersWordsOnlyWhenTheServerAnswered() {
+        XCTAssertEqual(TeaNodeError.refused("that call is not waiting any more").refusalReason(orSay: "Try again."), "that call is not waiting any more")
+        XCTAssertEqual(URLError(.notConnectedToInternet).refusalReason(orSay: "Try again."), "Try again.")
+        XCTAssertEqual(TeaNodeError.refused("").refusalReason(orSay: "Try again."), "Try again.")
+        XCTAssertTrue(TeaNodeError.refused("db: not found").isNotFound)
+        XCTAssertFalse(TeaNodeError.signedOut.isNotFound)
     }
 
     func testTheNoteOfTheMainConversationNamesTheCall() {
@@ -95,5 +121,23 @@ final class SkillSharingTests: XCTestCase {
         }
         // A limit is an Int64: it can pass two billion cents.
         XCTAssertTrue(Documents.shareSkill.contains("$paymentLimitMinor: Int64"))
+    }
+
+    /// Two calls that wait can reach the feed as notes with the same run and
+    /// sequence; each is its own card, and the same call twice is one.
+    func testEachCallThatWaitsIsOneCardWhateverRunAndSequenceItsNoteCameWith() {
+        func note(callId: String) -> AgentEvent {
+            AgentEvent(
+                kind: "note", runId: "", sequence: 0, noteKind: "skill_share_call_waiting",
+                noteDetail: #"{"skillShareId":"share-1","callId":"\#(callId)"}"#)
+        }
+        var transcript = Transcript(messages: [])
+        transcript.apply(note(callId: "call-1"))
+        transcript.apply(note(callId: "call-2"))
+        transcript.apply(note(callId: "call-1"))
+        XCTAssertEqual(
+            transcript.lines.map(\.id), ["skill-share-call-waiting-call-1", "skill-share-call-waiting-call-2"])
+        XCTAssertEqual(transcript.lines.map(\.detail), ["skill_share_call_waiting", "skill_share_call_waiting"])
+        XCTAssertEqual(SkillShareNote.parsing(transcript.lines[1].text)?.callId, "call-2")
     }
 }

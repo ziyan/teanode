@@ -266,16 +266,16 @@ function localDayOf(at: string): string {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 }
 
-// startsRun is whether a line begins a run: the first of its author's
+// beginsRun is whether a line begins a run: the first of its author's
 // lines in a row. A line after a deleted one, or a long pause, or a
 // different day, begins one as well.
-export function startsRun(line: ChatLine, previous: { kind: string } | undefined): boolean {
+export function beginsRun(line: ChatLine, previous: { kind: string } | undefined): boolean {
   if (!previous || previous.kind !== 'chat') return true
   const before = previous as ChatLine
   if (authorKeyOf(before) !== authorKeyOf(line)) return true
   if (!before.at || !line.at) return false
   // The drawer draws a divider where the day changes ("Today"), and the line
-  // under it is the first of what follows, so it shows the name and the face
+  // under it is the first of what follows, so it shows the name and the picture
   // again however little time passed across midnight.
   if (localDayOf(before.at) !== localDayOf(line.at)) return true
   const minutes = (new Date(line.at).getTime() - new Date(before.at).getTime()) / 60_000
@@ -383,7 +383,7 @@ export function linesWithEdit<Line extends { kind: string; key: string }>(
   )
 }
 
-// isStreamingKey says a key is a streaming line's, which an unsaid event names
+// isStreamingKey says a key is a streaming line's, which a deleted event names
 // when the words it was drawn from will not be stored as a message: the turn
 // was stopped, it failed, or what it said came to nothing.
 export function isStreamingKey(key: string): boolean {
@@ -396,8 +396,8 @@ export function linesWithoutStreaming<Line extends { kind: string; key: string }
   return lines.filter((line) => !(line.kind === 'chat' && line.key === key))
 }
 
-// linesWithUnsaid turns a line that was deleted into the mark that it was.
-export function linesWithUnsaid<Line extends { kind: string; key: string }>(lines: Line[], messageId: string): Line[] {
+// linesWithDeleted turns a line that was deleted into the mark that it was.
+export function linesWithDeleted<Line extends { kind: string; key: string }>(lines: Line[], messageId: string): Line[] {
   return lines.map((line) =>
     line.kind === 'chat' && (line as unknown as ChatLine).messageId === messageId
       ? ({ ...line, text: '', isDeleted: true, attachments: undefined, reactions: undefined } as Line)
@@ -476,9 +476,9 @@ export function withMemberRead(chat: ChatSummary, userId: string, messageId: str
   }
 }
 
-// ChatFaces are a chat's people: the other person's face for a direct
+// ChatAvatars are a chat's people: the other person's picture for a direct
 // chat, two overlapped for a group.
-export function ChatFaces({
+export function ChatAvatars({
   chat,
   ownUserId,
   deleted,
@@ -492,7 +492,7 @@ export function ChatFaces({
   const others = otherMembersOf(chat, ownUserId)
   const shown = chat.chatKind === 'direct' ? others.slice(0, 1) : others.slice(0, 2)
   return (
-    <span className="avatar-stack chat-faces" aria-hidden="true">
+    <span className="avatar-stack chat-avatars" aria-hidden="true">
       {shown.length === 0 ? (
         <Avatar name={chat.title || '?'} size={size} />
       ) : (
@@ -687,7 +687,7 @@ export function MentionList({
   )
 }
 
-// ReadMarks are the small faces under a message of the people who have read
+// ReadMarks are the small pictures under a message of the people who have read
 // as far as it.
 export function ReadMarks({ readers, deleted }: { readers: ChatMember[]; deleted: string }) {
   const { t } = useTranslation()
@@ -712,16 +712,16 @@ export function ReadMarks({ readers, deleted }: { readers: ChatMember[]; deleted
 }
 
 // ChatLineFrame puts a message where it belongs: the person's own on the
-// right, and everyone else's on the left with their face and, above the
+// right, and everyone else's on the left with their picture and, above the
 // first message of a run, their name. The bubble itself is the children.
 export function ChatLineFrame({
   line,
-  startsRun: isRunStart,
+  isRunStart,
   readers,
   children,
 }: {
   line: ChatLine
-  startsRun: boolean
+  isRunStart: boolean
   readers: ChatMember[]
   children: React.ReactNode
 }) {
@@ -745,7 +745,7 @@ export function ChatLineFrame({
         : line.authorName
   return (
     <div className={['agent-chat-turn', isRunStart ? 'starts-run' : ''].filter(Boolean).join(' ')}>
-      <span className="agent-chat-face">
+      <span className="agent-chat-avatar">
         {isRunStart ? (
           <Avatar
             name={name || '?'}
@@ -912,7 +912,7 @@ export function ChatPeopleDialog({
             <p className="muted">{t('chat.noPeople')}</p>
             <p>
               <Link to="/circles" onClick={onClose}>
-                {t('chat.noPeopleOpenCircles')}
+                {t('circles.open')}
               </Link>
             </p>
           </>
@@ -1067,6 +1067,7 @@ export function ChatMembersDialog({
   return (
     <ConfirmDialog
       title={t('chat.members')}
+      error={error}
       body={
         <>
           <ul className="chat-members">
@@ -1120,11 +1121,6 @@ export function ChatMembersDialog({
                 <span>{t('chat.agentAskable')}</span>
               </label>
               <p className="muted">{t('chat.agentAskableHelp')}</p>
-              {error ? (
-                <p className="form-error" role="alert">
-                  {error}
-                </p>
-              ) : null}
             </fieldset>
           ) : null}
         </>

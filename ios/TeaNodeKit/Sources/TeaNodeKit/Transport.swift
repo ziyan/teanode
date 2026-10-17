@@ -86,6 +86,15 @@ public enum TeaNodeError: Error, Equatable, Sendable, LocalizedError {
     /// A durable recording deletion refuses upload retries.
     case recordingDeleted
 
+    /// Whether the server refused because what was asked for is not there, or
+    /// is not the person's to see: it answers both the same way ("api: not
+    /// found"). Every other failure, such as no connection, says nothing about
+    /// whether the thing is there.
+    public var isNotFound: Bool {
+        guard case .refused(let reason) = self else { return false }
+        return reason.contains("api: not found") || reason.contains("db: not found")
+    }
+
     public var errorDescription: String? {
         switch self {
         case .unreadableAnswer:
@@ -99,5 +108,19 @@ public enum TeaNodeError: Error, Equatable, Sendable, LocalizedError {
         case .connectCodeSpent:
             return "That code has been used or has expired. Show a new one on the dashboard."
         }
+    }
+}
+
+extension Error {
+    /// Whether this is the server answering that what was asked for is not
+    /// there, rather than a call that did not get through.
+    public var isNotFoundRefusal: Bool { (self as? TeaNodeError)?.isNotFound ?? false }
+
+    /// The server's own reason when it answered and refused, since the reason
+    /// says why; otherwise the sentence the caller wrote for a call that did not
+    /// get through, which says what to do next.
+    public func refusalReason(orSay fallback: String) -> String {
+        if let known = self as? TeaNodeError, case .refused(let reason) = known, !reason.isEmpty { return reason }
+        return fallback
     }
 }

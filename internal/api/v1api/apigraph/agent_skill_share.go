@@ -169,10 +169,10 @@ type SkillShareCallView struct {
 	// What the call answered, or why it did not complete (JSON text)
 	ToolOutput string `json:"toolOutput"`
 
-	DecidedAt    *time.Time `json:"decidedAt"`
-	DecisionNote string     `json:"decisionNote"`
-	ExpiresAt    *time.Time `json:"expiresAt"`
-	CreatedAt    time.Time  `json:"createdAt"`
+	AnsweredAt *time.Time `json:"answeredAt"`
+	AnswerNote string     `json:"answerNote"`
+	ExpiresAt  *time.Time `json:"expiresAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
 }
 
 type ListSkillShareCallsArguments struct {
@@ -226,7 +226,7 @@ type AnswerSkillShareCallArguments struct {
 
 	// A word for the other person, shown to them and to their agent as
 	// yours
-	DecisionNote string `json:"decisionNote" graphapi:"nullable"`
+	AnswerNote string `json:"answerNote" graphapi:"nullable"`
 }
 
 // approveOnTheDashboard is what a request is told when it is one that only a
@@ -237,9 +237,9 @@ func describeSkillShare(share *models.SkillShare, callerUserId string) *SkillSha
 	return &SkillShareView{
 		ID: share.ID, SkillName: share.SkillName, ToolNames: share.ToolNames,
 		OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName,
-		OwnerAvatarURL: avatarURL(share.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(share.OwnerUserID),
+		OwnerAvatarURL: avatarUrl(share.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(share.OwnerUserID),
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
-		GranteeAvatarURL: avatarURL(share.GranteeUser), GranteeAvatarColorIndex: avatar.InitialColorIndex(share.GranteeUserID),
+		GranteeAvatarURL: avatarUrl(share.GranteeUser), GranteeAvatarColorIndex: avatar.InitialColorIndex(share.GranteeUserID),
 		PaymentLimitMinor: share.PaymentLimitMinor, MonthlyLimitMinor: share.MonthlyLimitMinor,
 		CurrencyCode: share.CurrencyCode, IsApprovalRequired: share.IsApprovalRequired,
 		IsOwnedByCaller: share.OwnerUserID == callerUserId, CreatedAt: share.CreatedAt,
@@ -259,11 +259,11 @@ func describeSkillShareCall(call *models.SkillShareCall, share *models.SkillShar
 	view := &SkillShareCallView{
 		ID: call.ID, SkillShareID: call.SkillShareID, IsShareEnded: call.IsShareEnded(), SkillName: share.SkillName,
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
-		GranteeAvatarURL: avatarURL(share.GranteeUser), GranteeAvatarColorIndex: avatar.InitialColorIndex(share.GranteeUserID),
+		GranteeAvatarURL: avatarUrl(share.GranteeUser), GranteeAvatarColorIndex: avatar.InitialColorIndex(share.GranteeUserID),
 		OwnerName: share.OwnerName,
 		ToolName:  call.ToolName, ToolArguments: string(arguments), RequestReason: call.RequestReason,
 		AmountMinor: call.AmountMinor, CurrencyCode: call.CurrencyCode, CallState: string(call.CallState),
-		DecidedAt: call.DecidedAt, DecisionNote: call.DecisionNote, ExpiresAt: call.ExpiresAt, CreatedAt: call.CreatedAt,
+		AnsweredAt: call.AnsweredAt, AnswerNote: call.AnswerNote, ExpiresAt: call.ExpiresAt, CreatedAt: call.CreatedAt,
 	}
 	if len(call.ToolOutput) > 0 {
 		output, _ := json.Marshal(call.ToolOutput)
@@ -529,7 +529,7 @@ func (self *graph) AnswerSkillShareCall(ctx context.Context, arguments AnswerSki
 // refused and not run again; the screen reads the call to see how it was
 // answered.
 func (self *graph) answerSkillShareCall(ctx context.Context, worker *agent.Agent, ownerUserId string, arguments AnswerSkillShareCallArguments) (*models.SkillShareCall, error) {
-	answered, err := worker.AnswerSharedCall(ctx, ownerUserId, strings.TrimSpace(arguments.CallID), arguments.IsApproved, arguments.DecisionNote)
+	answered, err := worker.AnswerSharedCall(ctx, ownerUserId, strings.TrimSpace(arguments.CallID), arguments.IsApproved, arguments.AnswerNote)
 	switch {
 	case err == nil:
 		return answered, nil

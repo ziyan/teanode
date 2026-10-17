@@ -254,16 +254,16 @@ func TestACallIsAnsweredOnce(t *testing.T) {
 	}
 	close(mayCommit)
 	first, second := <-firstDone, <-secondDone
-	if first.err != nil || !first.isChanged || first.call.CallState != models.SkillShareCallRan || first.call.DecidedAt == nil || first.call.DecisionNote != "go ahead" {
+	if first.err != nil || !first.isChanged || first.call.CallState != models.SkillShareCallRan || first.call.AnsweredAt == nil || first.call.AnswerNote != "go ahead" {
 		t.Fatalf("the first answer: %+v", first)
 	}
-	if second.err != nil || second.isChanged || second.call.CallState != models.SkillShareCallRan || second.call.DecisionNote != "go ahead" {
+	if second.err != nil || second.isChanged || second.call.CallState != models.SkillShareCallRan || second.call.AnswerNote != "go ahead" {
 		t.Fatalf("the second answer changed the call, or did not see the first: %+v", second)
 	}
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		again, isChanged, err := tx.AnswerSkillShareCall(waitingId, models.SkillShareCallRan, "again", now)
-		if err != nil || isChanged || again.DecisionNote != "go ahead" {
+		if err != nil || isChanged || again.AnswerNote != "go ahead" {
 			t.Fatalf("a later answer changed the call: %+v %v %v", again, isChanged, err)
 		}
 		if _, _, err := tx.AnswerSkillShareCall(waitingId, models.SkillShareCallFailed, "", now); !errors.Is(err, db.ErrInvalidArguments) {
@@ -384,7 +384,7 @@ func TestWaitingCallsExpireAfterTheirDay(t *testing.T) {
 			t.Fatalf("CreateSkillShareCall: %s", err)
 		}
 		expired, err := tx.ExpireSkillShareCalls(time.Now())
-		if err != nil || len(expired) != 1 || expired[0].ID != stale.ID || expired[0].CallState != models.SkillShareCallExpired || expired[0].DecidedAt == nil {
+		if err != nil || len(expired) != 1 || expired[0].ID != stale.ID || expired[0].CallState != models.SkillShareCallExpired || expired[0].AnsweredAt == nil {
 			t.Fatalf("the sweep: %+v %v", expired, err)
 		}
 		if again, _ := tx.ExpireSkillShareCalls(time.Now()); len(again) != 0 {
@@ -445,9 +445,9 @@ func TestAnIdentifierMustHaveComeOutOfTheSharesOwnCalls(t *testing.T) {
 	})
 }
 
-// A call decided while its grantee's conversation was not told is found by
+// A call answered while its grantee's conversation was not told is found by
 // the sweep; only one claimer has it; a told one is not found again.
-func TestADecidedCallIsToldOnce(t *testing.T) {
+func TestAnAnsweredCallIsToldOnce(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -518,8 +518,8 @@ func TestWaitingCallsAreListedFirst(t *testing.T) {
 		world := newShareWorld(t, tx)
 		share := shareWithBen(t, tx, world)
 		var states []models.SkillShareCallState
-		for _, state := range []models.SkillShareCallState{models.SkillShareCallRan, models.SkillShareCallWaitingForApproval, models.SkillShareCallDeclined} {
-			if _, err := tx.CreateSkillShareCall(callOf(share, state, 100)); err != nil {
+		for _, callState := range []models.SkillShareCallState{models.SkillShareCallRan, models.SkillShareCallWaitingForApproval, models.SkillShareCallDeclined} {
+			if _, err := tx.CreateSkillShareCall(callOf(share, callState, 100)); err != nil {
 				t.Fatalf("CreateSkillShareCall: %s", err)
 			}
 		}

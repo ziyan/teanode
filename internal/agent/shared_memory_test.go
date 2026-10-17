@@ -342,10 +342,10 @@ func TestThePreviewIsWhatTheShareShows(t *testing.T) {
 	}
 	world.share(t, "people/a", false)
 	actual := world.read(t, world.reader, "people/a")
-	expectedJSON, _ := json.Marshal(previewed)
-	actualJSON, _ := json.Marshal(actual)
-	if string(expectedJSON) != string(actualJSON) {
-		t.Errorf("the preview differs from the share:\n%s\n%s", expectedJSON, actualJSON)
+	expectedJson, _ := json.Marshal(previewed)
+	actualJson, _ := json.Marshal(actual)
+	if string(expectedJson) != string(actualJson) {
+		t.Errorf("the preview differs from the share:\n%s\n%s", expectedJson, actualJson)
 	}
 	// With the quotes, and replacing the share already made.
 	candidate.IsQuoteShared = true

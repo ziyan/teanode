@@ -92,6 +92,44 @@ extension View {
     }
 }
 
+/// LoadFailedView is what a screen says when its first read did not get
+/// through: that it did not, why, and a way to try again. A read that failed is
+/// not an empty answer, so a screen draws this and not "nothing here".
+struct LoadFailedView: View {
+    /// The server's reason, or the words that say what to do next.
+    let problemText: String
+    let retry: () async -> Void
+    @State private var isRetrying = false
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("This could not be loaded", systemImage: "wifi.exclamationmark")
+        } description: {
+            Text(verbatim: problemText)
+        } actions: {
+            Button {
+                isRetrying = true
+                Task {
+                    await retry()
+                    isRetrying = false
+                }
+            } label: {
+                if isRetrying { ProgressView() } else { Text("Try again") }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isRetrying)
+        }
+    }
+}
+
+extension Error {
+    /// Why a read failed, in words that say what to do next: the server's own
+    /// reason when it answered and refused, else the connection advice.
+    var loadProblemText: String {
+        refusalReason(orSay: String(localized: "Check your connection and try again."))
+    }
+}
+
 /// SidePanel slides a screen aside to show a panel under it from the left,
 /// as messaging apps keep their lists: the button in the bar opens it, a
 /// swipe from the left edge opens it, and a tap on the screen or a swipe

@@ -28,7 +28,7 @@ import (
 //     which is the words of the others in it ("from Ada's chats");
 //   - a link to a page that is not itself shared with the reader, and so the
 //     name of every page of the owner's that is not;
-//   - the night's reflections and lessons, which cite the owner's other pages
+//   - the dream's reflections and lessons, which cite the owner's other pages
 //     and say what nobody said;
 //   - the note on a link, which the owner's agent wrote from pages and sources
 //     that are not shared;

@@ -237,7 +237,7 @@ func circleFromModel(model *circleModel, members []*models.CircleMember) *models
 	return circle
 }
 
-func nullableUserID(userId string) *string {
+func nullableUserId(userId string) *string {
 	if userId == "" {
 		return nil
 	}
@@ -260,7 +260,7 @@ func loadCircleMembers(tx *gorm.DB, circleIds []string) (map[string][]*models.Ci
 	for _, row := range rows {
 		userIds = append(userIds, row.UserID)
 	}
-	users, err := loadUsersByID(tx, userIds)
+	users, err := loadUsersById(tx, userIds)
 	if err != nil {
 		return nil, err
 	}
@@ -280,9 +280,9 @@ func loadCircleMembers(tx *gorm.DB, circleIds []string) (map[string][]*models.Ci
 	return members, nil
 }
 
-// loadUsersByID reads accounts, without their groups, which a screen drawing
+// loadUsersById reads accounts, without their groups, which a screen drawing
 // a person has no use for.
-func loadUsersByID(tx *gorm.DB, userIds []string) (map[string]*models.User, error) {
+func loadUsersById(tx *gorm.DB, userIds []string) (map[string]*models.User, error) {
 	users := map[string]*models.User{}
 	if len(userIds) == 0 {
 		return users, nil
@@ -518,7 +518,7 @@ func (self *transaction) AddCircleMember(circleId, userId string, memberRole mod
 	if !isMember {
 		if err := self.tx.Create(&circleMemberModel{
 			CircleID: circleId, UserID: userId, MemberRole: string(memberRole), JoinedAt: time.Now(),
-			InvitedByUserID: nullableUserID(invitedByUserId),
+			InvitedByUserID: nullableUserId(invitedByUserId),
 		}).Error; err != nil {
 			return nil, err
 		}
@@ -716,7 +716,7 @@ func (self *transaction) ListCirclePeople(userId string) ([]*models.CircleMember
 	for _, row := range rows {
 		userIds = append(userIds, row.UserID)
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}
@@ -781,7 +781,7 @@ func (self *transaction) CreateCircleInvitation(invitation *models.CircleInvitat
 			ID:              invitationId,
 			CircleID:        invitation.CircleID,
 			InvitedUserID:   invitation.InvitedUserID,
-			InvitedByUserID: nullableUserID(invitation.InvitedByUserID),
+			InvitedByUserID: nullableUserId(invitation.InvitedByUserID),
 			MemberRole:      string(invitation.MemberRole),
 			CreatedAt:       invitation.CreatedAt,
 			ExpiresAt:       invitation.ExpiresAt,
@@ -790,7 +790,7 @@ func (self *transaction) CreateCircleInvitation(invitation *models.CircleInvitat
 		}
 	} else if err := self.tx.Model(&circleInvitationModel{}).Where("\"id\" = ?", invitationId).Updates(map[string]any{
 		"member_role":        string(invitation.MemberRole),
-		"invited_by_user_id": nullableUserID(invitation.InvitedByUserID),
+		"invited_by_user_id": nullableUserId(invitation.InvitedByUserID),
 		"created_at":         invitation.CreatedAt,
 		"expires_at":         invitation.ExpiresAt,
 	}).Error; err != nil {

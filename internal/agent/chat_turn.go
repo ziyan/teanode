@@ -78,14 +78,14 @@ var memberTurnTools = map[string]bool{"web_search": true, "web_fetch": true, "da
 const chatHistoryRows = 400
 
 // isMemberTurn says somebody other than the owner asked.
-func (settings *AskSettings) isMemberTurn() bool {
-	return settings != nil && settings.Chat != nil && settings.Chat.IsMemberTurn
+func (self *AskSettings) isMemberTurn() bool {
+	return self != nil && self.Chat != nil && self.Chat.IsMemberTurn
 }
 
 // isAnsweringChatMessage says the turn answers a message of the chat, which
 // is stored already as the chat's, rather than words of its own.
-func (settings *AskSettings) isAnsweringChatMessage() bool {
-	return settings.Chat != nil && settings.Chat.MessageID != ""
+func (self *AskSettings) isAnsweringChatMessage() bool {
+	return self.Chat != nil && self.Chat.MessageID != ""
 }
 
 // applyChatSettings makes a turn in a chat what it is: on the chat surface,
@@ -190,11 +190,11 @@ func chatWords(authorName, ownerName string, isAgent bool, words string) string 
 // calls as the owner's own row; they are put back as the one assistant turn
 // they were. The message that started the turn is left out, for the caller to
 // put last.
-func chatTurnRows(rows []*models.AgentMessage, ownerUserID, agentID, triggerID string) []*models.AgentMessage {
+func chatTurnRows(rows []*models.AgentMessage, ownerUserId, agentId, triggerId string) []*models.AgentMessage {
 	converted := make([]*models.AgentMessage, 0, len(rows))
 	isOwnAnswer := map[*models.AgentMessage]bool{}
 	for _, row := range rows {
-		if triggerID != "" && row.ID == triggerID {
+		if triggerId != "" && row.ID == triggerId {
 			continue
 		}
 		if row.AuthorKind == "" {
@@ -213,11 +213,11 @@ func chatTurnRows(rows []*models.AgentMessage, ownerUserID, agentID, triggerID s
 		copied := *row
 		copied.Reactions = nil
 		switch {
-		case row.AuthorKind == models.ChatAuthorAgent && row.AuthorAgentID == agentID:
+		case row.AuthorKind == models.ChatAuthorAgent && row.AuthorAgentID == agentId:
 			copied.Role = string(llm.RoleAssistant)
 			copied.Content = strings.TrimSpace(row.Content)
 			isOwnAnswer[&copied] = true
-		case row.AuthorKind == models.ChatAuthorPerson && row.AuthorUserID == ownerUserID:
+		case row.AuthorKind == models.ChatAuthorPerson && row.AuthorUserID == ownerUserId:
 			copied.Role = string(llm.RoleUser)
 			copied.Content = historyTurn(&copied)
 			copied.Attachments = nil
@@ -282,8 +282,8 @@ func (self *AskRun) chatTrigger(ctx context.Context) llm.ChatMessage {
 	return message
 }
 
-// chatPromptData is who is in the room, for the conduct's chat section.
-type chatPromptData struct {
+// chatPromptFacts is who is in the room, for the conduct's chat section.
+type chatPromptFacts struct {
 	// People is everybody in the chat now, one of them marked as the person
 	// the agent acts for.
 	People string
@@ -296,7 +296,7 @@ type chatPromptData struct {
 // chatPrompt reads who is in the chat. Names are typed by whoever has them,
 // and this goes into the part of the prompt that is the server's own, so each
 // is made one short line and quoted.
-func (self *AskRun) chatPrompt(ctx context.Context) *chatPromptData {
+func (self *AskRun) chatPrompt(ctx context.Context) *chatPromptFacts {
 	settings := self.settings
 	if settings.Chat == nil {
 		return nil
@@ -308,7 +308,7 @@ func (self *AskRun) chatPrompt(ctx context.Context) *chatPromptData {
 	})
 	if err != nil || chat == nil {
 		log.Debugf("cannot read who is in chat %q for the prompt: %v", settings.Chat.ChatID, err)
-		return self.withAsker(&chatPromptData{People: "the people there", IsMemberTurn: settings.isMemberTurn()})
+		return self.withAsker(&chatPromptFacts{People: "the people there", IsMemberTurn: settings.isMemberTurn()})
 	}
 	names := []string{}
 	for _, member := range chat.ActiveMembers() {
@@ -322,17 +322,17 @@ func (self *AskRun) chatPrompt(ctx context.Context) *chatPromptData {
 	if count := len(names); count > 1 {
 		people = strings.Join(names[:count-1], ", ") + " and " + names[count-1]
 	}
-	return self.withAsker(&chatPromptData{People: people, IsMemberTurn: settings.isMemberTurn()})
+	return self.withAsker(&chatPromptFacts{People: people, IsMemberTurn: settings.isMemberTurn()})
 }
 
 // withAsker names, in a member turn, who asked: one short line, quoted,
 // because the asker typed their own name and it sits in the server's part of
 // the prompt.
-func (self *AskRun) withAsker(data *chatPromptData) *chatPromptData {
-	if data.IsMemberTurn {
-		data.AskerName = fmt.Sprintf("%q", chatAuthorName(self.settings.Chat.AskerName))
+func (self *AskRun) withAsker(facts *chatPromptFacts) *chatPromptFacts {
+	if facts.IsMemberTurn {
+		facts.AskerName = fmt.Sprintf("%q", chatAuthorName(self.settings.Chat.AskerName))
 	}
-	return data
+	return facts
 }
 
 // memberSituation is what a turn somebody else asked for is told of where it
@@ -364,8 +364,8 @@ const (
 	chatMembersFresh = 2 * time.Second
 )
 
-// chatRunState is what a turn in a chat keeps while it runs.
-type chatRunState struct {
+// chatRunProgress is what a turn in a chat keeps while it runs.
+type chatRunProgress struct {
 	mutex sync.Mutex
 
 	// pending is the streamed words not yet told, and flushedAt when words
@@ -382,21 +382,21 @@ type chatRunState struct {
 
 // chatMembers are the people in the chat now.
 func (self *AskRun) chatMembers() []*models.ChatMember {
-	state := &self.chatState
-	state.mutex.Lock()
-	defer state.mutex.Unlock()
-	if state.members != nil && time.Since(state.readAt) < chatMembersFresh {
-		return state.members
+	progress := &self.chatProgress
+	progress.mutex.Lock()
+	defer progress.mutex.Unlock()
+	if progress.members != nil && time.Since(progress.readAt) < chatMembersFresh {
+		return progress.members
 	}
 	var chat *models.Chat
 	if err := self.agent.settings.Database.TransactionContext(self.agent.ctx, func(tx db.Transaction) (err error) {
 		chat, err = tx.GetChat(self.settings.Chat.ChatID)
 		return err
 	}); err != nil || chat == nil {
-		return state.members
+		return progress.members
 	}
-	state.members, state.readAt = chat.ActiveMembers(), time.Now()
-	return state.members
+	progress.members, progress.readAt = chat.ActiveMembers(), time.Now()
+	return progress.members
 }
 
 // chatOwnerName is what the chat calls the turn's owner, the name that tells
@@ -434,23 +434,23 @@ func (self *AskRun) tellChat(build func(member *models.ChatMember) Event) {
 // streamChatText tells every member the words as they come, as a message that
 // the stored one replaces.
 func (self *AskRun) streamChatText(delta string) {
-	state := &self.chatState
-	state.mutex.Lock()
-	state.pending.WriteString(delta)
+	progress := &self.chatProgress
+	progress.mutex.Lock()
+	progress.pending.WriteString(delta)
 	var text string
-	if time.Since(state.flushedAt) >= chatTextEvery {
-		text = state.pending.String()
-		state.pending.Reset()
-		state.flushedAt = time.Now()
-		state.hasStreamed = state.hasStreamed || text != ""
+	if time.Since(progress.flushedAt) >= chatTextEvery {
+		text = progress.pending.String()
+		progress.pending.Reset()
+		progress.flushedAt = time.Now()
+		progress.hasStreamed = progress.hasStreamed || text != ""
 	}
-	state.mutex.Unlock()
+	progress.mutex.Unlock()
 	if text == "" {
 		return
 	}
-	agentID, agentName, ownerName := self.settings.Agent.ID, self.settings.Agent.DisplayName(), self.chatOwnerName()
+	agentId, agentName, ownerName := self.settings.Agent.ID, self.settings.Agent.DisplayName(), self.chatOwnerName()
 	self.tellChat(func(*models.ChatMember) Event {
-		return Event{Kind: EventText, RunID: self.ID, Text: text, Name: agentName, AuthorAgentID: agentID, AuthorOwnerName: ownerName}
+		return Event{Kind: EventText, RunID: self.ID, Text: text, Name: agentName, AuthorAgentID: agentId, AuthorOwnerName: ownerName}
 	})
 }
 
@@ -465,35 +465,35 @@ func ChatStreamingKey(runId string) string {
 // forgetChatText drops the words not yet told: the message they were part of
 // is stored and told whole, which replaces the provisional line on a screen.
 func (self *AskRun) forgetChatText() {
-	state := &self.chatState
-	state.mutex.Lock()
-	state.pending.Reset()
-	state.hasStreamed = false
-	state.mutex.Unlock()
+	progress := &self.chatProgress
+	progress.mutex.Lock()
+	progress.pending.Reset()
+	progress.hasStreamed = false
+	progress.mutex.Unlock()
 }
 
 // retractChatText takes the provisional line off every member's screen when
 // the words that were streamed will not be stored as a message: the turn was
 // stopped, it failed, or what it said came to nothing once the hidden markers
 // were taken out. Without it the words stay on screens as a line no message
-// ever replaces, until each person reloads. It is an unsaid event naming the
+// ever replaces, until each person reloads. It is a deleted event naming the
 // provisional line, which the clients take off rather than mark deleted.
 func (self *AskRun) retractChatText() {
 	if self.settings.Chat == nil {
 		return
 	}
-	state := &self.chatState
-	state.mutex.Lock()
-	hasStreamed := state.hasStreamed
-	state.pending.Reset()
-	state.hasStreamed = false
-	state.mutex.Unlock()
+	progress := &self.chatProgress
+	progress.mutex.Lock()
+	hasStreamed := progress.hasStreamed
+	progress.pending.Reset()
+	progress.hasStreamed = false
+	progress.mutex.Unlock()
 	if !hasStreamed {
 		return
 	}
 	key := ChatStreamingKey(self.ID)
 	self.tellChat(func(*models.ChatMember) Event {
-		return Event{Kind: EventUnsaid, MessageID: key}
+		return Event{Kind: EventDeleted, MessageID: key}
 	})
 }
 
@@ -507,12 +507,12 @@ func (self *AskRun) startThinkingInChat() (stop func()) {
 	done := make(chan struct{})
 	var once sync.Once
 	tell := func() {
-		agentID, agentName, ownerID, ownerName := self.settings.Agent.ID, self.settings.Agent.DisplayName(), self.settings.Owner.ID, self.chatOwnerName()
+		agentId, agentName, ownerId, ownerName := self.settings.Agent.ID, self.settings.Agent.DisplayName(), self.settings.Owner.ID, self.chatOwnerName()
 		self.tellChat(func(member *models.ChatMember) Event {
-			if member.UserID == ownerID {
+			if member.UserID == ownerId {
 				return Event{}
 			}
-			return Event{Kind: EventTyping, RunID: self.ID, Name: agentName, AuthorAgentID: agentID, AuthorOwnerName: ownerName}
+			return Event{Kind: EventTyping, RunID: self.ID, Name: agentName, AuthorAgentID: agentId, AuthorOwnerName: ownerName}
 		})
 	}
 	self.agent.waitGroup.Add(1)
@@ -568,7 +568,7 @@ func (self *AskRun) postChatAnswer(tx db.Transaction, content string) (*postedCh
 		AuthorName:    settings.Agent.DisplayName(),
 		AuthorAgentID: settings.Agent.ID,
 		AgentRunID:    self.ID,
-		Body:          cutRunes(content, models.ChatMessageLength),
+		Body:          cutRunes(content, models.ChatMessageMostCharacters),
 	})
 	if err != nil {
 		return nil, err

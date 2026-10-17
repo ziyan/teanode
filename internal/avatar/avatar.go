@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	// Size is the side of the stored picture, in pixels.
-	Size = 512
+	// SidePixels is the side of the stored picture, in pixels.
+	SidePixels = 512
 
 	// MaxInputBytes is the largest upload accepted, the same bound an
 	// attachment upload has.
@@ -86,7 +86,7 @@ func takeNormalizeSlot(ctx context.Context) error {
 }
 
 // Normalize decodes a PNG or JPEG, crops the largest centered square, scales
-// it to Size by Size and encodes it as a PNG. A JPEG's orientation tag is
+// it to SidePixels by SidePixels and encodes it as a PNG. A JPEG's orientation tag is
 // applied first, because the tag is dropped with the rest of the metadata and
 // a sideways portrait is worse than a location left behind.
 func Normalize(ctx context.Context, content []byte) ([]byte, error) {
@@ -129,7 +129,7 @@ func Normalize(ctx context.Context, content []byte) ([]byte, error) {
 	square := image.NewRGBA(image.Rect(0, 0, side, side))
 	draw.Draw(square, square.Bounds(), decoded, image.Pt(left, top), draw.Src)
 
-	scaled := scale(square, Size)
+	scaled := scale(square, SidePixels)
 	if format == "jpeg" {
 		scaled = orient(scaled, jpegOrientation(content))
 	}
@@ -139,8 +139,8 @@ func Normalize(ctx context.Context, content []byte) ([]byte, error) {
 // Resize scales a stored picture to a smaller square, for the places that
 // draw a person at the size of a list row. A request for the stored size or
 // more returns the picture as it is.
-func Resize(content []byte, size int) ([]byte, error) {
-	if size <= 0 {
+func Resize(content []byte, sidePixels int) ([]byte, error) {
+	if sidePixels <= 0 {
 		return nil, ErrUnusable
 	}
 	decoded, err := png.Decode(bytes.NewReader(content))
@@ -148,12 +148,12 @@ func Resize(content []byte, size int) ([]byte, error) {
 		return nil, err
 	}
 	bounds := decoded.Bounds()
-	if bounds.Dx() != bounds.Dy() || size >= bounds.Dx() {
+	if bounds.Dx() != bounds.Dy() || sidePixels >= bounds.Dx() {
 		return content, nil
 	}
 	square := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	draw.Draw(square, square.Bounds(), decoded, bounds.Min, draw.Src)
-	return encode(scale(square, size))
+	return encode(scale(square, sidePixels))
 }
 
 // InitialColorIndex says which of the ColorCount colors a person without a
@@ -227,13 +227,13 @@ func contributions(sourceSize, targetSize int) []contribution {
 // scale resamples a square to another square, one axis and then the other,
 // on premultiplied color so that a transparent edge does not bleed its
 // invisible color into its neighbors.
-func scale(square *image.RGBA, size int) *image.RGBA {
+func scale(square *image.RGBA, sidePixels int) *image.RGBA {
 	side := square.Bounds().Dx()
 	// Both axes of a square are the same, so one list serves for each.
-	axis := contributions(side, size)
+	axis := contributions(side, sidePixels)
 
-	// Horizontal pass: side rows of size pixels, four channels each.
-	across := make([]float32, side*size*4)
+	// Horizontal pass: side rows of sidePixels pixels, four channels each.
+	across := make([]float32, side*sidePixels*4)
 	for row := 0; row < side; row++ {
 		line := square.Pix[row*square.Stride:]
 		for column, parts := range axis {
@@ -245,17 +245,17 @@ func scale(square *image.RGBA, size int) *image.RGBA {
 				blue += weight * float32(line[base+2])
 				alpha += weight * float32(line[base+3])
 			}
-			target := (row*size + column) * 4
+			target := (row*sidePixels + column) * 4
 			across[target], across[target+1], across[target+2], across[target+3] = red, green, blue, alpha
 		}
 	}
 
-	scaled := image.NewRGBA(image.Rect(0, 0, size, size))
+	scaled := image.NewRGBA(image.Rect(0, 0, sidePixels, sidePixels))
 	for row, parts := range axis {
-		for column := 0; column < size; column++ {
+		for column := 0; column < sidePixels; column++ {
 			var red, green, blue, alpha float32
 			for offset, weight := range parts.weights {
-				base := ((parts.first+offset)*size + column) * 4
+				base := ((parts.first+offset)*sidePixels + column) * 4
 				red += weight * across[base]
 				green += weight * across[base+1]
 				blue += weight * across[base+2]

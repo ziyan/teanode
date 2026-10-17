@@ -168,7 +168,7 @@ func describeCircleMember(member *models.CircleMember) *CircleMember {
 	if member.User != nil {
 		described.Username = member.User.Username
 		described.Name = member.User.Name
-		described.AvatarURL = avatarURL(member.User)
+		described.AvatarURL = avatarUrl(member.User)
 	}
 	return described
 }
@@ -443,8 +443,10 @@ func (self *graph) InviteToCircle(ctx context.Context, arguments InviteToCircleA
 	if err != nil {
 		return false, err
 	}
-	if worker := self.agentWorker(); worker != nil {
-		tx.AfterCommit(func() { worker.NotifyCircleInvitation(agentId, inviterName, circle.Name) })
+	// Through the notifier chats use, so a person whose agent is off, or a
+	// server with no worker, is told as well.
+	if notifier := self.phoneNotifier(); notifier != nil && agentId != "" {
+		tx.AfterCommit(func() { notifier.NotifyCircleInvitation(agentId, inviterName, circle.Name) })
 	}
 	log.Noticef("%s invited an account to the circle %q", member.User.Username, circle.Name)
 	return true, nil

@@ -119,6 +119,9 @@ it('says so when the person is in no circle', async () => {
   answerWith({})
   renderAt('/circles')
   expect(await screen.findByText(/You are not in a circle yet/)).toBeTruthy()
+  // On a fresh server nobody else has an account until somebody who can make
+  // one does: say who to ask.
+  expect(screen.getByText(/ask whoever runs this server to make their account/)).toBeTruthy()
   // Somebody who cannot make accounts is not told they can add people without one.
   expect(screen.queryByText(/with or without accounts yet/)).toBeNull()
 })

@@ -98,14 +98,14 @@ func TestNormalizeDropsMetadataAndTurnsThePictureUpright(t *testing.T) {
 	if err != nil || format != "png" {
 		t.Fatalf("the result is %q, err %v; want a PNG", format, err)
 	}
-	if decoded.Bounds().Dx() != Size || decoded.Bounds().Dy() != Size {
-		t.Errorf("the result is %v, want %dx%d", decoded.Bounds(), Size, Size)
+	if decoded.Bounds().Dx() != SidePixels || decoded.Bounds().Dy() != SidePixels {
+		t.Errorf("the result is %v, want %dx%d", decoded.Bounds(), SidePixels, SidePixels)
 	}
 	// Orientation 6 is a quarter turn clockwise: red, which was on top,
 	// ends up on the right.
-	if dominant(decoded, Size-20, Size/2) != "red" || dominant(decoded, 20, Size/2) != "blue" {
+	if dominant(decoded, SidePixels-20, SidePixels/2) != "red" || dominant(decoded, 20, SidePixels/2) != "blue" {
 		t.Errorf("the picture was not turned upright: right is %s, left is %s",
-			dominant(decoded, Size-20, Size/2), dominant(decoded, 20, Size/2))
+			dominant(decoded, SidePixels-20, SidePixels/2), dominant(decoded, 20, SidePixels/2))
 	}
 }
 
@@ -129,10 +129,10 @@ func TestNormalizeCropsTheCenterSquare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Bounds().Dx() != Size || decoded.Bounds().Dy() != Size {
-		t.Fatalf("the result is %v, want a square of %d", decoded.Bounds(), Size)
+	if decoded.Bounds().Dx() != SidePixels || decoded.Bounds().Dy() != SidePixels {
+		t.Fatalf("the result is %v, want a square of %d", decoded.Bounds(), SidePixels)
 	}
-	for _, point := range []image.Point{{0, 0}, {Size - 1, 0}, {0, Size - 1}, {Size - 1, Size - 1}, {Size / 2, Size / 2}} {
+	for _, point := range []image.Point{{0, 0}, {SidePixels - 1, 0}, {0, SidePixels - 1}, {SidePixels - 1, SidePixels - 1}, {SidePixels / 2, SidePixels / 2}} {
 		red, green, _, _ := decoded.At(point.X, point.Y).RGBA()
 		if red != 0 || green == 0 {
 			t.Errorf("pixel %v is not the middle third of the original", point)
@@ -172,7 +172,7 @@ func TestResizeShrinksAndLeavesSmallerRequestsAlone(t *testing.T) {
 	t.Parallel()
 
 	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, halves(Size)); err != nil {
+	if err := png.Encode(&encoded, halves(SidePixels)); err != nil {
 		t.Fatal(err)
 	}
 	small, err := Resize(encoded.Bytes(), 64)

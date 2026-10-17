@@ -22,11 +22,11 @@ func (self ChatKind) IsValid() bool {
 
 // The limits on what a person writes in a chat.
 const (
-	// ChatTitleLength is the most characters a group's title may have.
-	ChatTitleLength = 100
+	// ChatTitleMostCharacters is the most characters a group's title may have.
+	ChatTitleMostCharacters = 100
 
-	// ChatMessageLength is the most characters a message may have.
-	ChatMessageLength = 16000
+	// ChatMessageMostCharacters is the most characters a message may have.
+	ChatMessageMostCharacters = 16000
 
 	// ChatMessagesPerMinute is how many messages one person may send a
 	// minute on one instance, which stops a runaway script and nobody typing.
@@ -53,8 +53,8 @@ const (
 // ValidateChatTitle says why a title cannot be a group's, or nil.
 func ValidateChatTitle(title string) error {
 	var errors ValidationErrors
-	if utf8.RuneCountInString(strings.TrimSpace(title)) > ChatTitleLength {
-		errors.add("title", "must be at most %d characters", ChatTitleLength)
+	if utf8.RuneCountInString(strings.TrimSpace(title)) > ChatTitleMostCharacters {
+		errors.add("title", "must be at most %d characters", ChatTitleMostCharacters)
 	}
 	return errors.ErrOrNil()
 }
@@ -65,8 +65,8 @@ func ValidateChatMessageBody(body string, hasAttachments bool) error {
 	var errors ValidationErrors
 	if strings.TrimSpace(body) == "" && !hasAttachments {
 		errors.add("message", "say something, or send a file")
-	} else if utf8.RuneCountInString(body) > ChatMessageLength {
-		errors.add("message", "must be at most %d characters", ChatMessageLength)
+	} else if utf8.RuneCountInString(body) > ChatMessageMostCharacters {
+		errors.add("message", "must be at most %d characters", ChatMessageMostCharacters)
 	}
 	return errors.ErrOrNil()
 }

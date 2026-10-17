@@ -1164,6 +1164,14 @@ export function isNotFound(caught: unknown): boolean {
   return caught instanceof APIError && /\b(api|db): not found\b/.test(caught.message)
 }
 
+// failureText is what to tell a person about a call that failed: the server's
+// own words when it answered and refused, since they say why, and otherwise
+// the sentence the caller wrote for a call that did not get through, which
+// says what to do next. A browser's "Failed to fetch" says neither.
+export function failureText(caught: unknown, fallback: string): string {
+  return caught instanceof APIError && caught.message ? caught.message : fallback
+}
+
 // The agent changed mail — filed, flagged, drafted, sent, a rule or a
 // folder made — and the pages showing mail read again. Announced by the
 // drawer after such a tool answers; listened for by the mailbox.

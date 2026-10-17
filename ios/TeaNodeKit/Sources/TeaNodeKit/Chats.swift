@@ -299,7 +299,7 @@ extension TranscriptLine {
     /// row. One after a different author, or a long pause, or on another
     /// day begins one. The day is the one the conversation draws its date
     /// dividers between, so the message under a divider shows the name and
-    /// the face again however little time passed across midnight.
+    /// the picture again however little time passed across midnight.
     public func beginsRun(after previous: TranscriptLine?, calendar: Calendar = .current) -> Bool {
         guard let author, let previous, let before = previous.author, before.runKey == author.runKey else { return true }
         guard let now = ServerTime.date(at), let then = ServerTime.date(previous.at) else { return false }

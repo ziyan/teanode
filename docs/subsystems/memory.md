@@ -1127,7 +1127,11 @@ nothing. A write that names an owner other
 than the person is refused before it is looked at, and so is every other
 action that is not a read of shared pages. `shared` lists everything shared
 with the person, `share`, `shares` and `unshare` are the person's own, and
-`share` is a granting call, so the person is asked first. The prompt
+`share` is a granting call, so the person is asked first, by a card that says the page
+goes with everything under it, who it is for (a circle with how many people it
+is) and whether the quotes each fact was read from go too. `preview` shows what
+a share would show and how many pages it reaches (`PreviewAgentPageShare`), and
+shares nothing, so the person can decide first. The prompt
 carries a "Shared with you" section as a block after the history
 (`<shared_with_you>`, `sharedIndexOverlay`), read afresh for every turn and not
 kept in the half-hour snapshot of the front of the prompt, so a share taken back
@@ -1145,8 +1149,11 @@ the same page in the app. On the Knowledge page the shared pages are listed
 under "Shared with you" in the sidebar, grouped by owner, and each opens read
 only with its owner shown; the person's own pages show who each is shared
 with, and a Share action that shows exactly what the other side will see
-before anything is shared. `teanode agent memory share|shares|unshare|shared`
-and `memory get --owner` are the same on the command line
+before anything is shared. The "Shared with you" section has a search box, and
+the app's Knowledge search lists a "Shared with you" section of hits: both ask
+`SearchSharedAgentPages`, the search the memory tool makes of shared pages, and
+each hit says whose it is. `teanode agent memory share|shares|unshare|shared`
+(`shared --query words` searches) and `memory get --owner` are the same on the command line
 (`docs/reference/command-line.md`).
 
 **Never copied.** The result of a shared read starts with a marker line

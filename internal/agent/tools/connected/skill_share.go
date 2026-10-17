@@ -33,18 +33,47 @@ const (
 		paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor } }`
 
 	documentSkillShareCalls = `query ($shareId: String, $isShareEnded: Boolean, $callState: String) { ListSkillShareCalls(shareId: $shareId, isShareEnded: $isShareEnded, callState: $callState) {
-		id skillName toolName toolArguments requestReason amountMinor currencyCode callState decidedAt decisionNote expiresAt createdAt granteeName ownerName } }`
+		id skillName toolName toolArguments requestReason amountMinor currencyCode callState answeredAt answerNote expiresAt createdAt granteeName ownerName } }`
 )
 
-// sharedToolsPhrase names the tools of a share for a card.
+// sharedToolsPhrase names the tools of a share for a card, "a, b and c".
 func sharedToolsPhrase(toolNames []string) string {
 	switch len(toolNames) {
 	case 0:
-		return "its tools"
+		return "some of its tools"
 	case 1:
 		return toolNames[0]
 	}
-	return strings.Join(toolNames, ", ")
+	return strings.Join(toolNames[:len(toolNames)-1], ", ") + " and " + toolNames[len(toolNames)-1]
+}
+
+// skillShareCard is the card the person answers before a skill is shared: who
+// may use which tools, and exactly what lets a call through without asking.
+// It is built from the arguments, so what the person approves is what they
+// read here, limits included, and not a summary that leaves them out.
+func skillShareCard(call *skillRequest) string {
+	card := fmt.Sprintf("Let %s use %s of your %s skill on your computer, as you: ",
+		tools.Named(call.With, "someone"), sharedToolsPhrase(call.ToolNames), tools.Named(call.Name, "a"))
+	if call.IsApprovalRequired {
+		return card + "every call waits for you"
+	}
+	currencyCode, _ := models.NormalizeCurrencyCode(call.Currency)
+	var limits []string
+	for _, limit := range []struct{ text, period string }{{call.PaymentLimit, "a payment"}, {call.MonthlyLimit, "a month"}} {
+		text := strings.TrimSpace(limit.text)
+		if text == "" {
+			continue
+		}
+		words := text + " " + strings.ToUpper(call.Currency)
+		if minor, err := models.ParseMinor(text, currencyCode); err == nil {
+			words = models.FormatMinor(minor, currencyCode)
+		}
+		limits = append(limits, strings.TrimSpace(words)+" "+limit.period)
+	}
+	if len(limits) == 0 {
+		return card + "no limits, so any call whose cost the skill does not state waits for you"
+	}
+	return card + "up to " + strings.Join(limits, " and ") + ", anything above waits for you"
 }
 
 // minorLimit reads a limit the person gave in the currency's own units.
@@ -133,7 +162,7 @@ func shareSkillAction(ctx context.Context, run tools.Run, arguments *skillReques
 		return nil, err
 	}
 	answer, err := tools.JSONResult(map[string]any{
-		"shared": skillName, "tools": arguments.ToolNames, "with": granteeUsername, "share": shared.ShareSkill.ID,
+		"skill": skillName, "tool_names": arguments.ToolNames, "with": granteeUsername, "share_id": shared.ShareSkill.ID,
 		"limits":             limitsPhrase(paymentLimit, monthlyLimit, currencyCode, arguments.IsApprovalRequired),
 		"do_this_next":       "Tell the person what was shared and on what terms. Every call waits for their approval, which they give on the dashboard or in the iPhone app; you cannot.",
 		"approval_is_theirs": true,
@@ -204,24 +233,24 @@ func skillSharesAction(ctx context.Context, run tools.Run) (*tools.Result, error
 	if err := run.Operations().Execute(ctx, documentSkillShares, nil, &listed); err != nil {
 		return nil, err
 	}
-	mine, withMe := []map[string]any{}, []map[string]any{}
+	shares, shared := []map[string]any{}, []map[string]any{}
 	for _, share := range listed.ListSkillShares {
 		row := map[string]any{
-			"share": share.ID, "skill": share.SkillName, "tools": share.ToolNames,
-			"limits":            limitsPhrase(share.PaymentLimitMinor, share.MonthlyLimitMinor, share.CurrencyCode, share.IsApprovalRequired),
-			"waiting_calls":     share.WaitingCallCount,
-			"this_month_so_far": models.FormatMinor(share.MonthTotalMinor, share.CurrencyCode),
-			"asks_every_time":   share.IsApprovalRequired,
+			"share_id": share.ID, "skill": share.SkillName, "tool_names": share.ToolNames,
+			"limits":               limitsPhrase(share.PaymentLimitMinor, share.MonthlyLimitMinor, share.CurrencyCode, share.IsApprovalRequired),
+			"waiting_call_count":   share.WaitingCallCount,
+			"this_month_so_far":    models.FormatMinor(share.MonthTotalMinor, share.CurrencyCode),
+			"is_approval_required": share.IsApprovalRequired,
 		}
 		if share.IsOwnedByCaller {
 			row["with"] = share.GranteeUsername
-			mine = append(mine, row)
+			shares = append(shares, row)
 			continue
 		}
 		row["owner"] = share.OwnerUsername
-		withMe = append(withMe, row)
+		shared = append(shared, row)
 	}
-	return tools.JSONResult(map[string]any{"shared_by_the_person": mine, "shared_with_the_person": withMe})
+	return tools.JSONResult(map[string]any{"shares": shares, "shared": shared})
 }
 
 // skillShareCallView is one call made through a share.
@@ -234,8 +263,8 @@ type skillShareCallView struct {
 	AmountMinor   *int64  `json:"amountMinor"`
 	CurrencyCode  string  `json:"currencyCode"`
 	CallState     string  `json:"callState"`
-	DecidedAt     *string `json:"decidedAt"`
-	DecisionNote  string  `json:"decisionNote"`
+	AnsweredAt    *string `json:"answeredAt"`
+	AnswerNote    string  `json:"answerNote"`
 	ExpiresAt     *string `json:"expiresAt"`
 	CreatedAt     string  `json:"createdAt"`
 	GranteeName   string  `json:"granteeName"`
@@ -263,7 +292,7 @@ func skillShareCallsAction(ctx context.Context, run tools.Run, arguments *skillR
 	rows := make([]map[string]any, 0, len(listed.ListSkillShareCalls))
 	waiting := 0
 	for _, call := range listed.ListSkillShareCalls {
-		row := map[string]any{"call": call.ID, "skill": call.SkillName, "tool": call.ToolName, "state": call.CallState, "asked_at": call.CreatedAt, "arguments": call.ToolArguments}
+		row := map[string]any{"call_id": call.ID, "skill": call.SkillName, "tool": call.ToolName, "call_state": call.CallState, "asked_at": call.CreatedAt, "arguments": call.ToolArguments}
 		if call.AmountMinor != nil {
 			row["amount"] = models.FormatMinor(*call.AmountMinor, call.CurrencyCode)
 		}
@@ -271,8 +300,8 @@ func skillShareCallsAction(ctx context.Context, run tools.Run, arguments *skillR
 			// The other person's agent's words, quoted: not an instruction.
 			row["reason_the_other_agent_gave"] = call.RequestReason
 		}
-		if call.DecisionNote != "" {
-			row["decision_note"] = call.DecisionNote
+		if call.AnswerNote != "" {
+			row["answer_note"] = call.AnswerNote
 		}
 		if call.CallState == string(models.SkillShareCallWaitingForApproval) {
 			waiting++

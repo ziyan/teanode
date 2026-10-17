@@ -16,7 +16,7 @@ import (
 //
 // A calendar shared with somebody below edit is read only for them. The
 // protocol has a property for that, current-user-privilege-set, and a phone
-// that reads it greys out the editing instead of letting the person type an
+// that reads it grays out the editing instead of letting the person type an
 // event and fail after. The protocol library writes that property but
 // hard-codes "read and write" for every calendar, so the answer to a PROPFIND
 // is taken in a buffer and the write privilege is taken out of the calendars
@@ -47,8 +47,8 @@ func (self *component) refuseReadOnly(response http.ResponseWriter, request *htt
 		return false
 	}
 	if refusal := mayWrite(found); refusal != nil {
-		status, message := statusOf(refusal)
-		http.Error(response, message, status)
+		httpStatus, refusalText := statusOf(refusal)
+		http.Error(response, refusalText, httpStatus)
 		return true
 	}
 	return false
@@ -76,22 +76,22 @@ func (self *component) readOnlyCalendars(ctx context.Context, signedIn *session)
 // bufferedResponse holds an answer until the handler is done, so that it can
 // be rewritten.
 type bufferedResponse struct {
-	header http.Header
-	status int
-	body   bytes.Buffer
+	header     http.Header
+	httpStatus int
+	body       bytes.Buffer
 }
 
 func (self *bufferedResponse) Header() http.Header { return self.header }
 
-func (self *bufferedResponse) WriteHeader(status int) {
-	if self.status == 0 {
-		self.status = status
+func (self *bufferedResponse) WriteHeader(httpStatus int) {
+	if self.httpStatus == 0 {
+		self.httpStatus = httpStatus
 	}
 }
 
 func (self *bufferedResponse) Write(content []byte) (int, error) {
-	if self.status == 0 {
-		self.status = http.StatusOK
+	if self.httpStatus == 0 {
+		self.httpStatus = http.StatusOK
 	}
 	return self.body.Write(content)
 }
@@ -135,7 +135,7 @@ func (self *component) serveWithPrivileges(response http.ResponseWriter, request
 	buffered := &bufferedResponse{header: http.Header{}}
 	handler.ServeHTTP(buffered, request)
 	body := buffered.body.Bytes()
-	if buffered.status == http.StatusMultiStatus {
+	if buffered.httpStatus == http.StatusMultiStatus {
 		body = withoutWritePrivilege(body, readOnly)
 	}
 	for name, values := range buffered.header {
@@ -144,8 +144,8 @@ func (self *component) serveWithPrivileges(response http.ResponseWriter, request
 	if response.Header().Get("Content-Length") != "" {
 		response.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	}
-	if buffered.status != 0 {
-		response.WriteHeader(buffered.status)
+	if buffered.httpStatus != 0 {
+		response.WriteHeader(buffered.httpStatus)
 	}
 	_, _ = response.Write(body)
 }

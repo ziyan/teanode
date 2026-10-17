@@ -98,14 +98,14 @@ type SkillShareOperation interface {
 	// HasSkillShareOutputWith says whether an earlier call of the share that
 	// ran answered with this identifier as a whole word in any text of its
 	// output: the identifier of a request it made. One shorter than
-	// SkillShareIdentifierShortest never is.
+	// SkillShareIdentifierShortestCharacters never is.
 	HasSkillShareOutputWith(shareId, identifier string) (bool, error)
 
 	// AnswerSkillShareCall moves a call out of waiting_for_approval to the
 	// state given, once: it changes the row only if the call is waiting and,
 	// for ran, has not expired, and says whether it did. Two answers at the
 	// same moment change the row once. The call is returned as it now stands.
-	AnswerSkillShareCall(callId string, callState models.SkillShareCallState, decisionNote string, now time.Time) (*models.SkillShareCall, bool, error)
+	AnswerSkillShareCall(callId string, callState models.SkillShareCallState, answerNote string, now time.Time) (*models.SkillShareCall, bool, error)
 
 	// FinishSkillShareCall records how a call that was started came out: its
 	// state and what it answered.
@@ -115,10 +115,10 @@ type SkillShareOperation interface {
 	// expired, and returns them.
 	ExpireSkillShareCalls(now time.Time) ([]*models.SkillShareCall, error)
 
-	// ListSkillShareCallsToWake are the calls the owner or the clock decided
+	// ListSkillShareCallsToWake are the calls the owner or the clock answered
 	// between the two moments whose conversation has not been told, and whose
 	// claim, if any, is older than the third.
-	ListSkillShareCallsToWake(decidedAfter, decidedBefore, claimedBefore time.Time, limit int) ([]*models.SkillShareCall, error)
+	ListSkillShareCallsToWake(answeredAfter, answeredBefore, claimedBefore time.Time, limit int) ([]*models.SkillShareCall, error)
 
 	// ClaimSkillShareCallWake takes the telling of one call, and says whether
 	// the caller has it: only one caller does, until the claim is older than
@@ -133,10 +133,10 @@ type SkillShareOperation interface {
 	MarkSkillShareCallsWoken(callIds []string, now time.Time) error
 }
 
-// SkillShareIdentifierShortest is the shortest identifier that counts as one
+// SkillShareIdentifierShortestCharacters is the shortest identifier that counts as one
 // an earlier call made. A short one would be found in any output by chance, and
 // the identifiers a payment service gives are long.
-const SkillShareIdentifierShortest = 6
+const SkillShareIdentifierShortestCharacters = 6
 
 type skillShareModel struct {
 	ID                 string         `gorm:"column:id;primaryKey"`
@@ -190,8 +190,8 @@ type skillShareCallModel struct {
 	CurrencyCode          *string    `gorm:"column:currency_code"`
 	CallState             string     `gorm:"column:call_state"`
 	ToolOutput            []byte     `gorm:"column:tool_output"`
-	DecidedAt             *time.Time `gorm:"column:decided_at"`
-	DecisionNote          string     `gorm:"column:decision_note"`
+	AnsweredAt            *time.Time `gorm:"column:answered_at"`
+	AnswerNote            string     `gorm:"column:answer_note"`
 	ExpiresAt             *time.Time `gorm:"column:expires_at"`
 	WakeClaimedAt         *time.Time `gorm:"column:wake_claimed_at"`
 	WokenAt               *time.Time `gorm:"column:woken_at"`
@@ -211,7 +211,7 @@ func (self *skillShareCallModel) toModel() *models.SkillShareCall {
 		RequestReason: self.RequestReason,
 		AmountMinor:   self.AmountMinor,
 		CallState:     models.SkillShareCallState(self.CallState),
-		DecisionNote:  self.DecisionNote,
+		AnswerNote:    self.AnswerNote,
 		ToolArguments: map[string]any{},
 	}
 	if self.SkillShareID != nil {
@@ -235,7 +235,7 @@ func (self *skillShareCallModel) toModel() *models.SkillShareCall {
 	if len(self.ToolOutput) > 0 {
 		_ = json.Unmarshal(self.ToolOutput, &call.ToolOutput)
 	}
-	call.DecidedAt = localTime(self.DecidedAt)
+	call.AnsweredAt = localTime(self.AnsweredAt)
 	call.ExpiresAt = localTime(self.ExpiresAt)
 	call.WokenAt = localTime(self.WokenAt)
 	return call
@@ -263,7 +263,7 @@ func (self *transaction) describeSkillShares(rows []skillShareModel) ([]*models.
 			userIds = append(userIds, owner.UserID)
 		}
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +470,7 @@ WHERE share.grantee_user_id = @grantee
 // share).
 func expireWaitingSkillShareCalls(tx *gorm.DB, shareCondition string, arguments ...any) error {
 	return tx.Exec(`UPDATE "skill_share_call"
-		SET "call_state" = 'expired', "decided_at" = now(), "woken_at" = now(), "modified_at" = now()
+		SET "call_state" = 'expired', "answered_at" = now(), "woken_at" = now(), "modified_at" = now()
 		WHERE "call_state" = 'waiting_for_approval' AND "skill_share_id" IN (SELECT share.id FROM "skill_share" share WHERE `+shareCondition+`)`,
 		arguments...).Error
 }
@@ -538,14 +538,14 @@ func (self *transaction) CreateSkillShareCall(call *models.SkillShareCall) (*mod
 	created := self.tx.Exec(`INSERT INTO "skill_share_call"
 		("id", "created_at", "modified_at", "skill_share_id", "owner_agent_id", "grantee_user_id", "skill_name",
 		 "grantee_run_id", "grantee_conversation_id", "tool_name",
-		 "tool_arguments", "request_reason", "amount_minor", "currency_code", "call_state", "tool_output", "decided_at", "decision_note", "expires_at")
+		 "tool_arguments", "request_reason", "amount_minor", "currency_code", "call_state", "tool_output", "answered_at", "answer_note", "expires_at")
 		SELECT ?, ?, ?, share."id", share."owner_agent_id", share."grantee_user_id", share."skill_name",
 		       ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?::jsonb, ?, ?, ?
 		FROM "skill_share" share WHERE share."id" = ?`,
 		id, now, now,
 		nullableText(call.GranteeRunID), nullableText(call.GranteeConversationID), call.ToolName,
-		string(arguments), call.RequestReason, call.AmountMinor, currencyCode, string(call.CallState), nullableJSON(output),
-		call.DecidedAt, call.DecisionNote, call.ExpiresAt, call.SkillShareID)
+		string(arguments), call.RequestReason, call.AmountMinor, currencyCode, string(call.CallState), nullableJson(output),
+		call.AnsweredAt, call.AnswerNote, call.ExpiresAt, call.SkillShareID)
 	if created.Error != nil {
 		return nil, created.Error
 	}
@@ -555,8 +555,8 @@ func (self *transaction) CreateSkillShareCall(call *models.SkillShareCall) (*mod
 	return self.GetSkillShareCall(id)
 }
 
-// nullableJSON is a value for a nullable jsonb column.
-func nullableJSON(encoded []byte) any {
+// nullableJson is a value for a nullable jsonb column.
+func nullableJson(encoded []byte) any {
 	if len(encoded) == 0 {
 		return nil
 	}
@@ -603,7 +603,7 @@ func (self *transaction) SkillShareMonthTotal(ownerAgentId, granteeUserId, skill
 	if err := self.tx.Raw(`SELECT COALESCE(SUM("amount_minor"), 0) FROM "skill_share_call"
 		WHERE "owner_agent_id" = ? AND "grantee_user_id" = ? AND "skill_name" = ?
 		  AND "call_state" IN ('ran', 'failed') AND "currency_code" = ?
-		  AND "amount_minor" IS NOT NULL AND COALESCE("decided_at", "created_at") >= ? AND COALESCE("decided_at", "created_at") < ?`,
+		  AND "amount_minor" IS NOT NULL AND COALESCE("answered_at", "created_at") >= ? AND COALESCE("answered_at", "created_at") < ?`,
 		ownerAgentId, granteeUserId, skillName, currencyCode, from, until).Scan(&total).Error; err != nil {
 		return 0, err
 	}
@@ -647,7 +647,7 @@ func (self *transaction) ListEndedSkillShareCalls(userId string, callState model
 			userIds = append(userIds, owner.UserID)
 		}
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}
@@ -667,7 +667,7 @@ func (self *transaction) ListEndedSkillShareCalls(userId string, callState model
 }
 
 func (self *transaction) HasSkillShareOutputWith(shareId, identifier string) (bool, error) {
-	if shareId == "" || len(identifier) < SkillShareIdentifierShortest {
+	if shareId == "" || len(identifier) < SkillShareIdentifierShortestCharacters {
 		return false, nil
 	}
 	// A skill that runs a command answers with what it printed, as one piece
@@ -686,7 +686,7 @@ func (self *transaction) HasSkillShareOutputWith(shareId, identifier string) (bo
 	return matchingCallCount > 0, nil
 }
 
-func (self *transaction) AnswerSkillShareCall(callId string, callState models.SkillShareCallState, decisionNote string, now time.Time) (*models.SkillShareCall, bool, error) {
+func (self *transaction) AnswerSkillShareCall(callId string, callState models.SkillShareCallState, answerNote string, now time.Time) (*models.SkillShareCall, bool, error) {
 	switch callState {
 	case models.SkillShareCallRan, models.SkillShareCallDeclined:
 	default:
@@ -696,9 +696,9 @@ func (self *transaction) AnswerSkillShareCall(callId string, callState models.Sk
 	// whichever of two answers reaches the row first changes it, and the other
 	// finds nothing to change.
 	update := self.tx.Exec(`UPDATE "skill_share_call"
-		SET "call_state" = ?, "decided_at" = ?, "decision_note" = ?, "modified_at" = ?
+		SET "call_state" = ?, "answered_at" = ?, "answer_note" = ?, "modified_at" = ?
 		WHERE "id" = ? AND "call_state" = 'waiting_for_approval' AND ("expires_at" IS NULL OR "expires_at" > ? OR ? = 'declined')`,
-		string(callState), now, decisionNote, now, callId, now, string(callState))
+		string(callState), now, answerNote, now, callId, now, string(callState))
 	if update.Error != nil {
 		return nil, false, update.Error
 	}
@@ -735,7 +735,7 @@ func (self *transaction) FinishSkillShareCall(callId string, callState models.Sk
 func (self *transaction) ExpireSkillShareCalls(now time.Time) ([]*models.SkillShareCall, error) {
 	var rows []skillShareCallModel
 	if err := self.tx.Raw(`UPDATE "skill_share_call"
-		SET "call_state" = 'expired', "decided_at" = ?, "modified_at" = ?
+		SET "call_state" = 'expired', "answered_at" = ?, "modified_at" = ?
 		WHERE "call_state" = 'waiting_for_approval' AND "expires_at" <= ?
 		RETURNING *`, now, now, now).Scan(&rows).Error; err != nil {
 		return nil, err
@@ -747,16 +747,16 @@ func (self *transaction) ExpireSkillShareCalls(now time.Time) ([]*models.SkillSh
 	return calls, nil
 }
 
-func (self *transaction) ListSkillShareCallsToWake(decidedAfter, decidedBefore, claimedBefore time.Time, limit int) ([]*models.SkillShareCall, error) {
+func (self *transaction) ListSkillShareCallsToWake(answeredAfter, answeredBefore, claimedBefore time.Time, limit int) ([]*models.SkillShareCall, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var rows []skillShareCallModel
 	if err := self.tx.Raw(`SELECT * FROM "skill_share_call"
-		WHERE "decided_at" IS NOT NULL AND "woken_at" IS NULL AND "grantee_conversation_id" IS NOT NULL
-		  AND "decided_at" > ? AND "decided_at" <= ?
+		WHERE "answered_at" IS NOT NULL AND "woken_at" IS NULL AND "grantee_conversation_id" IS NOT NULL
+		  AND "answered_at" > ? AND "answered_at" <= ?
 		  AND ("wake_claimed_at" IS NULL OR "wake_claimed_at" <= ?)
-		ORDER BY "decided_at" ASC, "id" ASC LIMIT ?`, decidedAfter, decidedBefore, claimedBefore, limit).Scan(&rows).Error; err != nil {
+		ORDER BY "answered_at" ASC, "id" ASC LIMIT ?`, answeredAfter, answeredBefore, claimedBefore, limit).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	calls := make([]*models.SkillShareCall, 0, len(rows))

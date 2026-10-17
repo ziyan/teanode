@@ -128,8 +128,8 @@ it('says In memory with the pages a record is linked to, a guess marked as one',
   expect(screen.getByRole('link', { name: 'Fixture Guest' }).getAttribute('href')).toBe(
     '/knowledge/people/fixture-guest',
   )
-  expect(screen.getByRole('link', { name: 'Fixture Topic' }).getAttribute('title')).toBe('About, Perhaps')
-  expect(screen.getAllByText('Perhaps')).toHaveLength(1)
+  expect(screen.getByRole('link', { name: 'Fixture Topic' }).getAttribute('title')).toBe("About, The agent's guess")
+  expect(screen.getAllByText("The agent's guess")).toHaveLength(1)
   expect(vi.mocked(graphql).mock.calls[0][1]).toMatchObject({ recordKind: 'mail', recordId: 'item-1' })
 })
 

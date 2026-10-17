@@ -288,7 +288,7 @@ public struct AgentMessageReaction: Codable, Hashable, Sendable, Identifiable {
 public struct AgentEvent: Codable, Hashable, Sendable {
     /// asked, text, message, tool_call, tool_result, confirmation, question,
     /// note, titled, navigate, locate, done or error; and in a chat said,
-    /// edited, unsaid, reacted, read, typing or members.
+    /// edited, deleted, reacted, read, typing or members.
     public let kind: String
     public let runId: String
     public let sequence: Int
@@ -370,7 +370,7 @@ public struct AgentPhone: Codable, Hashable, Sendable {
     public let canBeNotified: Bool
 
     /// Every kind, in the order a person chooses among them.
-    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "payment", "photo"]
+    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "skill_share_call", "photo"]
 }
 
 /// ServerTime reads the server's times.

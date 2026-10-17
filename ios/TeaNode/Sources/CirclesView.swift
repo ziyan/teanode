@@ -23,6 +23,9 @@ final class CircleDirectory {
     private(set) var canManageUsers = false
     /// Whether the list of circles has been read once.
     private(set) var isLoaded = false
+    /// Why the first read of the circles did not get through, to be said with a
+    /// way to try again, since an empty list would say the person is in none.
+    private(set) var loadProblemText: String?
     private(set) var isLoading = false
     var isBusy = false
     var doneText: String?
@@ -47,8 +50,9 @@ final class CircleDirectory {
         do {
             circles = try await connection.circles()
             didReadCircles = true
+            loadProblemText = nil
         } catch {
-            problemText = error.localizedDescription
+            if isLoaded { problemText = error.loadProblemText } else { loadProblemText = error.loadProblemText }
         }
         if let readInvitations = await invitationsRead { invitations = readInvitations }
         if let session = await sessionRead {
@@ -72,7 +76,7 @@ final class CircleDirectory {
             await load()
             return true
         } catch {
-            problemText = error.localizedDescription
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
             await load()
             return false
         }
@@ -86,6 +90,9 @@ final class CircleDirectory {
 struct CirclesView: View {
     @State private var directory: CircleDirectory
     @State private var isAdding = false
+    /// The offer to share the calendar with a circle just joined, made once as
+    /// the invitation is accepted.
+    @State private var calendarOffer: CircleCalendarOffer?
 
     init(connection: Connection) {
         _directory = State(initialValue: CircleDirectory(connection: connection))
@@ -112,7 +119,9 @@ struct CirclesView: View {
         }
         .navigationTitle("Circles")
         .overlay {
-            if !directory.isLoaded && directory.isLoading {
+            if let loadProblemText = directory.loadProblemText, !directory.isLoaded {
+                LoadFailedView(problemText: loadProblemText) { await directory.load() }
+            } else if !directory.isLoaded && directory.isLoading {
                 ProgressView()
             } else if directory.isLoaded && directory.circles.isEmpty && directory.invitations.isEmpty {
                 ContentUnavailableView(
@@ -121,7 +130,7 @@ struct CirclesView: View {
                         // An operator can bring in people who have no account
                         // yet; anybody else can only invite accounts.
                         ? Text("Make a circle and add the people who use this server, with or without accounts yet.")
-                        : Text("Make a circle, then invite the people who should be in it."))
+                        : Text("Make a circle, then invite the people who should be in it. If nobody is listed, ask whoever runs this server to make their account."))
             }
         }
         .toolbar {
@@ -134,6 +143,9 @@ struct CirclesView: View {
         .task { await directory.load() }
         .sheet(isPresented: $isAdding) {
             CircleForm(directory: directory, editedCircle: nil)
+        }
+        .sheet(item: $calendarOffer) { offer in
+            CircleCalendarOfferSheet(connection: directory.connection, offer: offer) { said in directory.doneText = said }
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
     }
@@ -161,23 +173,30 @@ struct CirclesView: View {
 
     private func answer(_ invitation: CircleInvitation, isAccepted: Bool) {
         Task {
-            await directory.act(saying: isAccepted ? String(localized: "You joined \(invitation.circleName)") : String(localized: "Invitation declined")) {
+            let isDone = await directory.act(saying: isAccepted ? String(localized: "You joined \(invitation.circleName)") : String(localized: "Invitation declined")) {
                 try await directory.connection.answerCircleInvitation(invitation.id, isAccepted: isAccepted)
+            }
+            // Joining a family or colleagues offers to share the calendar with
+            // them, once; a person with no calendar of their own is not asked.
+            if isDone, isAccepted, invitation.circleKind != CircleKind.friends.rawValue,
+                let own = CircleCalendarOffer.ownCalendar(among: (try? await directory.connection.calendars()) ?? [])
+            {
+                calendarOffer = CircleCalendarOffer(accepting: invitation, calendarId: own.id)
             }
         }
     }
 }
 
 /// CircleRow is a circle in a line or two: its name, what kind it is and how
-/// many people are in it, beside a few of their faces.
+/// many people are in it, beside a few of their pictures.
 private struct CircleRow: View {
     let circle: PeopleCircle
 
-    private static let mostFaces = 3
+    private static let mostAvatars = 3
 
     var body: some View {
         HStack(spacing: 12) {
-            faces
+            avatars
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: circle.name)
                 Text(verbatim: details).font(.footnote).foregroundStyle(Color(.secondaryLabel))
@@ -185,10 +204,10 @@ private struct CircleRow: View {
         }
     }
 
-    /// A few members' faces, each overlapping the one before.
-    private var faces: some View {
+    /// A few members' pictures, each overlapping the one before.
+    private var avatars: some View {
         HStack(spacing: -10) {
-            ForEach(circle.members.prefix(Self.mostFaces)) { member in
+            ForEach(circle.members.prefix(Self.mostAvatars)) { member in
                 AvatarView(name: member.displayName, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: 30)
                     .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
             }
@@ -222,6 +241,24 @@ struct CircleDetailView: View {
     private var circle: PeopleCircle? { directory.circle(circleId) }
 
     var body: some View {
+        #if DEBUG
+            // `-TeaNodeScreen circle-detail`: scrolled to the invitation waiting for an answer.
+            ScrollViewReader { scroller in
+                list
+                    .task(id: directory.isLoaded) {
+                        guard DemoServer.isRequested, DemoServer.screen == "circle-detail", directory.isLoaded,
+                            let invitation = circle?.pendingInvitations.first
+                        else { return }
+                        try? await Task.sleep(for: .seconds(1))
+                        withAnimation { scroller.scrollTo(invitation.id, anchor: .bottom) }
+                    }
+            }
+        #else
+            list
+        #endif
+    }
+
+    private var list: some View {
         List {
             if let circle {
                 if let kind = circle.knownCircleKind {
@@ -334,7 +371,12 @@ struct CircleDetailView: View {
         } header: {
             Text("Invite someone")
         } footer: {
-            Text("Enter the username of an account on this server.")
+            // An operator can make the account; anybody else is told whom to ask.
+            if directory.canManageUsers {
+                Text("Enter the username of an account on this server.")
+            } else {
+                Text("Enter the username of an account on this server. If nobody is listed, ask whoever runs this server to make their account.")
+            }
         }
     }
 
@@ -409,7 +451,21 @@ struct CircleDetailView: View {
     }
 }
 
-/// MemberRow is somebody in a circle: their face, what to call them, the
+/// OpenCirclesLink is the way to Circles from a screen that has found nobody to
+/// share with: it opens the same screen the Settings row does.
+struct OpenCirclesLink: View {
+    let connection: Connection
+
+    var body: some View {
+        NavigationLink {
+            CirclesView(connection: connection)
+        } label: {
+            Label("Open Circles", systemImage: "person.2")
+        }
+    }
+}
+
+/// MemberRow is somebody in a circle: their picture, what to call them, the
 /// username they sign in with when that is different, and whether they are an
 /// admin.
 private struct MemberRow: View {
@@ -543,7 +599,7 @@ private struct CircleAccountForm: View {
                 madeUsername = username
             }
         } catch {
-            problemText = error.localizedDescription
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
             return
         }
         do {
@@ -627,7 +683,7 @@ private struct CircleForm: View {
             await directory.load()
             dismiss()
         } catch {
-            problemText = error.localizedDescription
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
         }
     }
 }
@@ -648,6 +704,6 @@ private extension CircleKind {
 /// CircleWords are the words the circles screens share.
 private enum CircleWords {
     static func memberCount(_ memberCount: Int) -> String {
-        memberCount == 1 ? String(localized: "\(memberCount) member") : String(localized: "\(memberCount) members")
+        memberCount == 1 ? String(localized: "1 person") : String(localized: "\(memberCount) people")
     }
 }

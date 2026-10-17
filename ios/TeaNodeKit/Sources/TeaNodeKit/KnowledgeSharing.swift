@@ -83,6 +83,27 @@ public struct SharedKnowledgeOwnerGroup: Hashable, Sendable, Identifiable {
     }
 }
 
+/// SharedKnowledgeHit is a page, or a fact of a page, that a search of what
+/// other people shared found, with whose it is. A fact has its number as the
+/// owner numbers them and what it says; a page has an opening.
+public struct SharedKnowledgeHit: Codable, Hashable, Sendable, Identifiable {
+    public let ownerUserId: String
+    public let ownerUsername: String
+    public let ownerName: String
+    public let path: String
+    public let name: String
+    public let opening: String
+    public let factNumber: Int
+    public let text: String
+
+    public var id: String { "\(ownerUserId)/\(path)/\(factNumber)" }
+    public var isFact: Bool { factNumber > 0 }
+    public var shownName: String { name.isEmpty ? path : name }
+    public var shownOwner: String { ownerName.isEmpty ? ownerUsername : ownerName }
+    /// What the hit says: the fact, or the page's opening.
+    public var shownText: String { isFact ? text : opening }
+}
+
 /// SharedKnowledgePage is a page another person shared, as the person is
 /// shown it.
 public struct SharedKnowledgePage: Codable, Hashable, Sendable {
@@ -184,6 +205,11 @@ extension Documents {
           ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex path name nodeKind opening isQuoteShared
         } }
         """
+    public static let searchSharedKnowledge = """
+        query ($query: String!, $first: Int) {
+          SearchSharedAgentPages(query: $query, first: $first) { ownerUserId ownerUsername ownerName path name opening factNumber text }
+        }
+        """
     public static let sharedKnowledgePage = """
         query ($ownerUserId: String!, $path: String!) {
           ReadSharedAgentPage(ownerUserId: $ownerUserId, path: $path) { \(sharedKnowledgePageFields) }
@@ -239,6 +265,17 @@ extension Connection {
     public func sharedKnowledgeRoots() async throws -> [SharedKnowledgeRoot] {
         struct Answer: Decodable, Sendable { let ListSharedAgentPages: [SharedKnowledgeRoot] }
         return try await execute(Documents.sharedKnowledgeRoots, as: Answer.self).ListSharedAgentPages
+    }
+
+    /// Finds words in the pages other people shared, only within what is
+    /// shared with the person: the search the agent's memory tool makes of
+    /// them. Each hit says whose it is.
+    public func searchSharedKnowledge(_ words: String, first: Int? = nil) async throws -> [SharedKnowledgeHit] {
+        struct Answer: Decodable, Sendable { let SearchSharedAgentPages: [SharedKnowledgeHit] }
+        return try await execute(
+            Documents.searchSharedKnowledge,
+            variables: ["query": .string(words), "first": first.map { .number(Double($0)) } ?? .null], as: Answer.self
+        ).SearchSharedAgentPages
     }
 
     /// One page another person shared, or a page under one. A page not

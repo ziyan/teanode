@@ -185,4 +185,30 @@ final class CirclesTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("not found"))
         }
     }
+
+    private func invitation(circleKind: String) -> CircleInvitation {
+        CircleInvitation(
+            id: "invitation-1", circleId: "circle-1", circleName: "Fixture Home", circleKind: circleKind, invitedByName: "Person A",
+            invitedUsername: "person-b", memberRole: "member", createdAt: "2030-01-01T00:00:00Z", expiresAt: "2030-01-31T00:00:00Z")
+    }
+
+    func testJoiningAFamilyOrColleaguesOffersToShareTheCalendarButJoiningFriendsDoesNot() {
+        for circleKind in ["family", "colleagues", "neighbors"] {
+            let offer = CircleCalendarOffer(accepting: invitation(circleKind: circleKind), calendarId: "calendar-1")
+            XCTAssertEqual(offer?.circleId, "circle-1", circleKind)
+            XCTAssertEqual(offer?.circleName, "Fixture Home", circleKind)
+            XCTAssertEqual(offer?.calendarId, "calendar-1", circleKind)
+        }
+        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "friends"), calendarId: "calendar-1"))
+        // Edit is chosen on the calendar screen, not offered in passing.
+        XCTAssertEqual(CircleCalendarOffer.levels, [.busy, .titles, .details])
+    }
+
+    func testTheCalendarOfferedIsThePersonsOwnOfEventsAndNotARemindersListOrSomeoneElses() {
+        let reminders = AgentCalendar(id: "reminders", name: "Reminders", calendarKind: "reminders", shareLevel: "owner")
+        let theirs = AgentCalendar(id: "theirs", name: "Calendar", calendarKind: "events", shareLevel: "titles")
+        let own = AgentCalendar(id: "own", name: "Calendar", calendarKind: "events", shareLevel: "owner")
+        XCTAssertEqual(CircleCalendarOffer.ownCalendar(among: [reminders, theirs, own])?.id, "own")
+        XCTAssertNil(CircleCalendarOffer.ownCalendar(among: [reminders, theirs]))
+    }
 }

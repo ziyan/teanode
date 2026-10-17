@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
-import { ChatFaces, UnreadCount, chatTitleOf } from '../components/agentChat'
+import { ChatAvatars, UnreadCount, chatTitleOf } from '../components/agentChat'
 import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
@@ -175,7 +175,7 @@ export function AgentConversationsPage() {
                     </>
                   ) : conversation.chat ? (
                     <>
-                      <ChatFaces chat={conversation.chat} ownUserId={ownUserId} deleted={deletedNote} size={20} />
+                      <ChatAvatars chat={conversation.chat} ownUserId={ownUserId} deleted={deletedNote} size={20} />
                       <HighlightText text={titleOf(conversation) || t('agentDrawer.untitled')} search={filter} />
                     </>
                   ) : (

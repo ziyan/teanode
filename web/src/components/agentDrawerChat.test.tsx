@@ -319,13 +319,13 @@ it('draws the other person once for a run of their messages, and the signed-in p
 
   await screen.findByText('Dinner at seven?')
   expect(screen.getByText('Bring the pie')).toBeTruthy()
-  // One name for the two messages in a row, with a face beside it.
+  // One name for the two messages in a row, with a picture beside it.
   const names = container.querySelectorAll('.agent-chat-author')
   expect(names).toHaveLength(1)
   expect(names[0].textContent).toBe('Person B')
   expect(container.querySelectorAll('.agent-chat-turn:not(.mine) .avatar')).toHaveLength(1)
   // The person's own message is where it always was: on the right, with no
-  // name or face of its own.
+  // name or picture of its own.
   const own = screen.getByText('Sounds good')
   expect(own.closest('.agent-chat-turn')?.classList.contains('mine')).toBe(true)
   expect(own.closest('.agent-line')?.classList.contains('user')).toBe(true)
@@ -402,7 +402,7 @@ it('takes the words of a turn that was stopped off the screen', async () => {
     authorAgentId: 'agent-robin',
   })
   expect(await screen.findByText('Thursday at')).toBeTruthy()
-  tell('chat-conversation', { kind: 'unsaid', messageId: 'streaming-run-1' })
+  tell('chat-conversation', { kind: 'deleted', messageId: 'streaming-run-1' })
   await waitFor(() => expect(screen.queryByText('Thursday at')).toBeNull())
   // Nothing was marked deleted: there was no message.
   expect(screen.queryByText('Message deleted')).toBeNull()
@@ -415,7 +415,7 @@ it('shows a deleted message as such and an edited one with its mark', async () =
   await screen.findByText('Dinner at seven?')
   await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
 
-  tell('chat-conversation', { kind: 'unsaid', messageId: '01J0000000000000000000002' })
+  tell('chat-conversation', { kind: 'deleted', messageId: '01J0000000000000000000002' })
   expect(await screen.findByText('Message deleted')).toBeTruthy()
   expect(screen.queryByText('Bring the pie')).toBeNull()
 
@@ -483,6 +483,44 @@ it('opens on the chats when the agent is off, with the offer to turn it on in th
   expect(screen.getByRole('button', { name: 'Turn it on…' })).toBeTruthy()
   // Nothing to write to, so no box.
   expect(screen.queryByRole('textbox')).toBeNull()
+})
+
+it('does not offer to turn the agent on, or say Main chat, while the chats are still being looked through', async () => {
+  answerWith({ isAgentOn: false, hasChat: false })
+  const answer = vi.mocked(graphql).getMockImplementation()!
+  let release: () => void = () => undefined
+  const isListed = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  // The first question of the list is what makes the drawer reachable at all;
+  // it is the second, the drawer's own look through the chats, that waits.
+  let listings = 0
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListAgentConversations') && ++listings > 1) await isListed
+    return answer(document, variables)
+  })
+  localStorage.setItem(OPEN_KEY, '1')
+  renderDrawer()
+
+  expect((await screen.findAllByText('loading…')).length).toBeGreaterThan(0)
+  expect(screen.queryByText(/Your agent is not on yet/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Main chat' })).toBeNull()
+  // The box has nowhere to write yet.
+  expect(screen.queryByRole('textbox')).toBeNull()
+
+  release()
+  expect(await screen.findByText(/Your agent is not on yet/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Main chat' })).toBeTruthy()
+})
+
+it('labels the icons that edit and delete a message with whose message it is', async () => {
+  answerWith()
+  openOnChat()
+  renderDrawer()
+  const mine = (await screen.findByText('Sounds good')).closest('.agent-line') as HTMLElement
+  const row = (mine.closest('.agent-chat-turn') ?? mine.parentElement) as HTMLElement
+  expect(within(row).getByRole('button', { name: 'Edit message from Person A' })).toBeTruthy()
+  expect(within(row).getByRole('button', { name: 'Delete message from Person A' })).toBeTruthy()
 })
 
 it('offers the chats to a person with no chat yet and no agent, who shares a circle with someone', async () => {
@@ -703,7 +741,9 @@ it('offers the agents an @ can ask, and sends the one chosen with the message', 
   fireEvent.change(box, { target: { value: '@Benny what is the weather?', selectionStart: 27, selectionEnd: 27 } })
   fireEvent.keyDown(box, { key: 'Enter' })
   await waitFor(() => {
-    const asked = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('mutation') && document.includes('AskAgent'))
+    const asked = vi
+      .mocked(graphql)
+      .mock.calls.find(([document]) => document.includes('mutation') && document.includes('AskAgent'))
     expect(asked).toBeTruthy()
     expect(asked?.[1]).toMatchObject({ message: '@Benny what is the weather?', addressedAgentIds: ['agent-benny'] })
   })
@@ -718,8 +758,12 @@ it('addresses nothing when an agent’s name is only typed, or taken out again',
 
   fireEvent.change(box, { target: { value: 'ask Benny about it', selectionStart: 18, selectionEnd: 18 } })
   fireEvent.keyDown(box, { key: 'Enter' })
-  await waitFor(() => expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('AskAgent'))).toBe(true))
-  const asked = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('mutation') && document.includes('AskAgent'))
+  await waitFor(() =>
+    expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('AskAgent'))).toBe(true),
+  )
+  const asked = vi
+    .mocked(graphql)
+    .mock.calls.find(([document]) => document.includes('mutation') && document.includes('AskAgent'))
   expect((asked?.[1] as { addressedAgentIds?: string[] }).addressedAgentIds).toBeUndefined()
 })
 
@@ -746,8 +790,20 @@ it('shows an agent as thinking by name, draws its words as they come and replace
   tell('chat-conversation', { kind: 'typing', userId: 'person-b', name: 'Person B' })
   expect(await screen.findByText('Person B is typing')).toBeTruthy()
 
-  tell('chat-conversation', { kind: 'text', runId: 'run-1', text: 'Thurs', name: 'Robin', authorAgentId: 'agent-robin' })
-  tell('chat-conversation', { kind: 'text', runId: 'run-1', text: 'day at 3', name: 'Robin', authorAgentId: 'agent-robin' })
+  tell('chat-conversation', {
+    kind: 'text',
+    runId: 'run-1',
+    text: 'Thurs',
+    name: 'Robin',
+    authorAgentId: 'agent-robin',
+  })
+  tell('chat-conversation', {
+    kind: 'text',
+    runId: 'run-1',
+    text: 'day at 3',
+    name: 'Robin',
+    authorAgentId: 'agent-robin',
+  })
   expect(await screen.findByText('Thursday at 3')).toBeTruthy()
   // It is drawn as the agent’s message, under its name.
   expect(document.querySelectorAll('.agent-chat-author')).toHaveLength(2)

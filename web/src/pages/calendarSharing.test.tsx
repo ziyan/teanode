@@ -221,7 +221,7 @@ it('lists every calendar the person reaches, each with whose it is and what they
     .map((box) => box.closest('label')?.textContent)
   expect(names).toEqual([
     'Calendar',
-    'The householdCan edit',
+    'The householdDetails, and can edit',
     "BBen's calendarTitles",
     "CCora's calendarBusy times only",
   ])
@@ -232,9 +232,9 @@ it('lists every calendar the person reaches, each with whose it is and what they
   expect(screen.getByText("Ben's lunch")).toBeTruthy()
 })
 
-it('shows a calendar shared only at busy as a grey Busy block, with nothing to open', async () => {
+it('shows a calendar shared only at busy as a gray Busy block, with nothing to open', async () => {
   show()
-  const block = (await screen.findByText('Busy', { selector: '.calendar-agenda-title' })).closest(
+  const block = (await screen.findByText('Busy · Cora', { selector: '.calendar-agenda-title' })).closest(
     '.calendar-agenda-row',
   ) as HTMLElement
   expect(within(block).getByText('Cora')).toBeTruthy()
@@ -276,7 +276,9 @@ it('opens an event in a calendar shared below edit to read, not to change', asyn
   const row = (await screen.findByText("Ben's lunch")).closest('.calendar-agenda-row') as HTMLElement
   // Not deletable from here.
   expect(within(row).queryByRole('button', { name: 'Delete' })).toBeNull()
-  fireEvent.click(within(row).getByRole('button', { name: 'Edit' }))
+  // It says View, not Edit, since nothing can be changed.
+  expect(within(row).queryByRole('button', { name: 'Edit' })).toBeNull()
+  fireEvent.click(within(row).getByRole('button', { name: 'View' }))
   const dialog = await screen.findByRole('alertdialog')
   expect(within(dialog).getByText('The canteen')).toBeTruthy()
   expect(within(dialog).getByText('Bring cash')).toBeTruthy()
@@ -364,4 +366,50 @@ it('shares the calendar with a person at a level, and takes a share back', async
     .mocked(graphql)
     .mock.calls.filter(([document]) => document.includes('mutation') && document.includes('ShareCalendar'))[1]
   expect(last[1]).toMatchObject({ granteeUserId: null, granteeCircleId: 'circle-1', shareLevel: 'details' })
+})
+
+it('names each person in the picker with the username in brackets', async () => {
+  show()
+  await screen.findByText('My dentist')
+  fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar' })
+  const picker = (await within(dialog).findByLabelText(/^Share with/)) as HTMLSelectElement
+  expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
+    'Choose a person or a circle',
+    'Ben (ben)',
+    'Cora (cora)',
+    'Everyone in Home',
+  ])
+})
+
+it('sends a person with nobody to share with to Circles', async () => {
+  const answer = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('ListCirclePeople')) return { ListCirclePeople: [] } as never
+    if (document.includes('ListCircles')) return { ListCircles: [] } as never
+    return answer(document, variables)
+  })
+  show()
+  await screen.findByText('My dentist')
+  fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar' })
+  expect(await within(dialog).findByText(/You do not share a circle with anybody yet/)).toBeTruthy()
+  expect(within(dialog).getByRole('link', { name: 'Open Circles' }).getAttribute('href')).toBe('/circles')
+})
+
+it('says a share that did not go through once, with what to do', async () => {
+  const answer = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('mutation') && document.includes('ShareCalendar')) throw new TypeError('Failed to fetch')
+    return answer(document, variables)
+  })
+  show()
+  await screen.findByText('My dentist')
+  fireEvent.click(screen.getByRole('button', { name: 'Share' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar' })
+  fireEvent.change(await within(dialog).findByLabelText(/^Share with/), { target: { value: 'user:cora-id' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  await waitFor(() =>
+    expect(screen.getAllByText('That did not work. Check your connection and try again.')).toHaveLength(1),
+  )
 })

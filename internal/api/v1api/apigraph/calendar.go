@@ -431,7 +431,7 @@ func (self *graph) calendarView(principal *api.Principal, each *models.Reachable
 	if owner != nil {
 		view.OwnerUsername = owner.Username
 		view.OwnerName = owner.DisplayName()
-		view.OwnerAvatarURL = avatarURL(owner)
+		view.OwnerAvatarURL = avatarUrl(owner)
 	}
 	view.OwnerAvatarColorIndex = avatar.InitialColorIndex(found.UserID)
 	return view
@@ -475,7 +475,7 @@ func (self *graph) ListCalendarEvents(ctx context.Context, arguments ListCalenda
 	}
 	tx := self.transaction(ctx)
 	if !reach.ShareLevel.CanRead() {
-		// Shared at busy: when the owner is busy, by the same judgements and
+		// Shared at busy: when the owner is busy, by the same judgments and
 		// the same merging as their own free-busy, and not one word of what
 		// any of it is.
 		periods, err := self.busyPeriods(ctx, found, from, until)

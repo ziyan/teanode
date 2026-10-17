@@ -28,7 +28,7 @@ func TestChoosingACalendarWithNoNameLeavesTheRemindersListOut(test *testing.T) {
 	for name, example := range map[string]struct {
 		collections []*client.AgentCollection
 		kind, named string
-		wantID      string
+		wantId      string
 		wantError   string
 	}{
 		"a diary and a reminders list":      {[]*client.AgentCollection{diary, reminders, book}, "calendar", "", "c1", ""},
@@ -48,8 +48,8 @@ func TestChoosingACalendarWithNoNameLeavesTheRemindersListOut(test *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), example.wantError) {
 				test.Errorf("%s: the error is %v, want one with %q", name, err, example.wantError)
 			}
-		case err != nil || found.ID != example.wantID:
-			test.Errorf("%s: chose %+v, %v; want %s", name, found, err, example.wantID)
+		case err != nil || found.ID != example.wantId:
+			test.Errorf("%s: chose %+v, %v; want %s", name, found, err, example.wantId)
 		}
 	}
 }

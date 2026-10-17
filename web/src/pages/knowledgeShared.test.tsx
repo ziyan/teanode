@@ -134,6 +134,58 @@ it('lists what is shared in the sidebar under each person, each row opening thei
   ).toBe('/knowledge/projects/boat?owner=ben')
 })
 
+it('searches what is shared, and lists the pages and facts found with whose they are', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('SearchSharedAgentPages')) {
+      return {
+        SearchSharedAgentPages: [
+          {
+            ownerUserId: 'ada-id',
+            ownerUsername: 'ada',
+            ownerName: 'Ada Example',
+            path: 'people/a-grandparent',
+            name: 'A Grandparent',
+            opening: 'Lives by the sea.',
+            factNumber: 0,
+            text: '',
+          },
+          {
+            ownerUserId: 'ada-id',
+            ownerUsername: 'ada',
+            ownerName: 'Ada Example',
+            path: 'people/a-grandparent',
+            name: 'A Grandparent',
+            opening: '',
+            factNumber: 3,
+            text: 'Next appointment is Tuesday at three.',
+          },
+        ],
+      }
+    }
+    return { ListSharedAgentPages: [root()] }
+  })
+  inApp(<SharedWithYou />)
+  const section = await screen.findByRole('region', { name: 'Shared with you' })
+  fireEvent.change(within(section).getByRole('searchbox', { name: 'Search what is shared with you' }), {
+    target: { value: 'appointment' },
+  })
+  const fact = await within(section).findByRole('link', { name: /A Grandparent #3/ })
+  expect(fact.getAttribute('href')).toBe('/knowledge/people/a-grandparent?owner=ada')
+  expect(within(fact).getByText(/Shared by Ada Example: Next appointment is Tuesday at three\./)).toBeTruthy()
+  expect(within(section).getByText(/Shared by Ada Example: Lives by the sea\./)).toBeTruthy()
+  const searched = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('SearchSharedAgentPages'))
+  expect(searched?.[1]).toEqual({ query: 'appointment' })
+
+  // Words that match nothing say so, and clearing them brings the people back.
+  vi.mocked(graphql).mockImplementation(async (document: string) =>
+    document.includes('SearchSharedAgentPages') ? { SearchSharedAgentPages: [] } : { ListSharedAgentPages: [root()] },
+  )
+  fireEvent.change(within(section).getByRole('searchbox'), { target: { value: 'nothing like it' } })
+  expect(await within(section).findByText('Nothing shared with you has those words.')).toBeTruthy()
+  fireEvent.change(within(section).getByRole('searchbox'), { target: { value: '' } })
+  expect(await within(section).findByText('Ada Example')).toBeTruthy()
+})
+
 it('draws nothing when nothing is shared, and nothing when it cannot ask', async () => {
   vi.mocked(graphql).mockResolvedValue({ ListSharedAgentPages: [] })
   const { container, unmount } = inApp(<SharedWithYou />)
@@ -269,7 +321,7 @@ it('shows what they will see before the page is shared, with the quotes only whe
   const share = within(dialog).getByRole('button', { name: 'Share' }) as HTMLButtonElement
   // Nothing to confirm until somebody is chosen, and a preview has arrived.
   expect(share.disabled).toBe(true)
-  await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Ben Example' })).toBeTruthy())
+  await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Ben Example (ben)' })).toBeTruthy())
 
   fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'user:ben-id' } })
   expect(await within(dialog).findByText('What Ben Example will see')).toBeTruthy()
@@ -324,6 +376,53 @@ it('shares with a circle by its identifier', async () => {
     granteeCircleId: 'home-id',
     isQuoteShared: false,
   })
+})
+
+it('sends a person with nobody to share with to Circles', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ListCirclePeople')) return { ListCirclePeople: [] }
+    if (document.includes('ListCircles')) return { ListCircles: [] }
+    return {}
+  })
+  inApp(
+    <SharePageDialog
+      path="people/a-grandparent"
+      name="A Grandparent"
+      onClose={() => undefined}
+      onChanged={() => undefined}
+    />,
+  )
+  const dialog = await screen.findByRole('dialog', { name: 'Share A Grandparent' })
+  expect(await within(dialog).findByText(/You do not share a circle with anybody yet/)).toBeTruthy()
+  expect(within(dialog).getByRole('link', { name: 'Open Circles' }).getAttribute('href')).toBe('/circles')
+})
+
+it('says a share that did not go through once, with what to do', async () => {
+  sharingServer()
+  const answer = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('mutation')) throw new TypeError('Failed to fetch')
+    return answer(document, variables)
+  })
+  inApp(
+    <SharePageDialog
+      path="people/a-grandparent"
+      name="A Grandparent"
+      onClose={() => undefined}
+      onChanged={() => undefined}
+    />,
+  )
+  const dialog = await screen.findByRole('dialog', { name: 'Share A Grandparent' })
+  await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Ben Example (ben)' })).toBeTruthy())
+  fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'user:ben-id' } })
+  await within(dialog).findByText('What Ben Example will see')
+  await waitFor(() =>
+    expect((within(dialog).getByRole('button', { name: 'Share' }) as HTMLButtonElement).disabled).toBe(false),
+  )
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  await waitFor(() =>
+    expect(screen.getAllByText('Sharing was not changed. Check your connection and try again.')).toHaveLength(1),
+  )
 })
 
 it('lists who a page is shared with, including by a page above it, and stops one', async () => {

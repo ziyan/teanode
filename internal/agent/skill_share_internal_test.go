@@ -449,7 +449,7 @@ func TestACallThatNeedsTheOwnerWaitsForHer(t *testing.T) {
 			dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
 				main, _ := tx.MainAgentConversation(fixture.adaAgent.ID, "drawer")
 				messages, _ := tx.ListAgentMessages(main.ID, nil)
-				if len(messages) != 1 || messages[0].Role != models.AgentMessageNote || messages[0].Name != string(models.NotePaymentWaiting) {
+				if len(messages) != 1 || messages[0].Role != models.AgentMessageNote || messages[0].Name != string(models.NoteSkillShareCallWaiting) {
 					t.Fatalf("the owner's conversation holds %+v", messages)
 				}
 				note := models.ParseSkillShareCallNote(messages[0].Content)
@@ -466,7 +466,7 @@ func TestACallThatNeedsTheOwnerWaitsForHer(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if told.NotificationKind != models.NotificationPayment || told.CallID != calls[0].ID || len(told.Buttons) != 1 || told.Buttons[0].ButtonAction != "open" {
+			if told.NotificationKind != models.NotificationSkillShareCall || told.CallID != calls[0].ID || len(told.Buttons) != 1 || told.Buttons[0].ButtonAction != "open" {
 				t.Errorf("the phone was told %+v: it must only open the app", told)
 			}
 			if strings.Contains(told.Body, "Example") || strings.Contains(told.Body, "140") {
@@ -550,7 +550,7 @@ func TestACallWithTheOwnersComputerAwayAnswersThatAndRecordsNothing(t *testing.T
 	}
 	fixture.attachComputer()
 	approved, err := fixture.worker.AnswerSharedCall(context.Background(), fixture.ada.ID, waiting.ID, true, "go ahead")
-	if err != nil || approved.CallState != models.SkillShareCallRan || approved.DecisionNote != "go ahead" || len(fixture.ranCommands()) != 1 {
+	if err != nil || approved.CallState != models.SkillShareCallRan || approved.AnswerNote != "go ahead" || len(fixture.ranCommands()) != 1 {
 		t.Fatalf("approving once she is back: %+v %v (%v)", approved, err, fixture.ranCommands())
 	}
 }
@@ -573,7 +573,7 @@ func TestApprovingRunsTheStoredCallOnceAndTellsTheGrantee(t *testing.T) {
 		t.Fatal("a refused answer ran the call")
 	}
 	approved, err := fixture.worker.AnswerSharedCall(context.Background(), fixture.ada.ID, waiting.ID, true, "ok")
-	if err != nil || approved.CallState != models.SkillShareCallRan || approved.DecidedAt == nil {
+	if err != nil || approved.CallState != models.SkillShareCallRan || approved.AnsweredAt == nil {
 		t.Fatalf("approving: %+v %v", approved, err)
 	}
 	commands := fixture.ranCommands()
@@ -591,7 +591,7 @@ func TestApprovingRunsTheStoredCallOnceAndTellsTheGrantee(t *testing.T) {
 		t.Fatalf("the grantee's phone was sent %d notifications", len(sent))
 	}
 	told, _ := push.DecryptContent(fixture.benKey, sent[0].Sealed)
-	if told.NotificationKind != models.NotificationPayment || !strings.Contains(told.Body, "Ada approved your request") {
+	if told.NotificationKind != models.NotificationSkillShareCall || !strings.Contains(told.Body, "Ada approved what your agent asked for") {
 		t.Errorf("the grantee's phone was told %+v", told)
 	}
 	fixture.waitUntilTold(t, waiting.ID)
@@ -654,7 +654,7 @@ func TestDecliningStopsTheCall(t *testing.T) {
 	}
 	waiting := fixture.callsOf(t, share)[0]
 	declined, err := fixture.worker.AnswerSharedCall(context.Background(), fixture.ada.ID, waiting.ID, false, "not this week")
-	if err != nil || declined.CallState != models.SkillShareCallDeclined || declined.DecisionNote != "not this week" {
+	if err != nil || declined.CallState != models.SkillShareCallDeclined || declined.AnswerNote != "not this week" {
 		t.Fatalf("declining: %+v %v", declined, err)
 	}
 	if _, err := fixture.worker.AnswerSharedCall(context.Background(), fixture.ada.ID, waiting.ID, true, ""); err != ErrCallNotWaiting {
@@ -1059,10 +1059,10 @@ func TestTheOutcomeOfACallMadeInAChatIsToldInTheMainConversation(t *testing.T) {
 			t.Fatalf("EnsureChatConversation: %s", err)
 		}
 		amount := int64(14000)
-		decided := time.Now()
+		answered := time.Now()
 		if call, err = tx.CreateSkillShareCall(&models.SkillShareCall{
 			SkillShareID: share.ID, GranteeConversationID: chatConversation.ID, ToolName: "pay", CallState: models.SkillShareCallDeclined,
-			AmountMinor: &amount, CurrencyCode: "usd", ToolArguments: map[string]any{}, DecidedAt: &decided,
+			AmountMinor: &amount, CurrencyCode: "usd", ToolArguments: map[string]any{}, AnsweredAt: &answered,
 		}); err != nil {
 			t.Fatalf("CreateSkillShareCall: %s", err)
 		}

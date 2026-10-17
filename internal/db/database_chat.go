@@ -99,11 +99,11 @@ type ChatOperation interface {
 	GetChatMessage(messageId string) (*models.ChatMessage, error)
 
 	// EditChatMessage changes what a message says and marks it edited.
-	// ErrNotFound when it is taken back.
+	// ErrNotFound when it is deleted.
 	EditChatMessage(messageId, body string) (*models.ChatMessage, error)
 
-	// DeleteChatMessage takes a message back: its text and files go and the
-	// message stays, drawn as taken back.
+	// DeleteChatMessage deletes a message: its text and files go and the
+	// message stays, drawn as deleted.
 	DeleteChatMessage(messageId string) (*models.ChatMessage, error)
 
 	// SharesChat says whether two different people are both current members
@@ -219,7 +219,7 @@ func valueOfString(value *string) string {
 }
 
 func (self *transaction) GetUsersByID(userIds []string) (map[string]*models.User, error) {
-	return loadUsersByID(self.tx, userIds)
+	return loadUsersById(self.tx, userIds)
 }
 
 func (self *transaction) EnsureAgent(userId string) (*models.Agent, error) {
@@ -343,7 +343,7 @@ func (self *transaction) loadChats(chatIds []string) ([]*models.Chat, error) {
 			userIds = append(userIds, *row.UserID)
 		}
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}
@@ -883,7 +883,7 @@ func (self *transaction) ListChatConversations(agentId string) ([]*models.AgentC
 // chatUnreadCounts is how many messages by others each chat the person is in
 // has that they have not read: those inside the time they were in the chat,
 // newer than their read mark (by when stored, then by identifier, as
-// moveChatReadMark has it), not taken back and not their own.
+// moveChatReadMark has it), not deleted and not their own.
 func (self *transaction) chatUnreadCounts(userId string) (map[string]int, error) {
 	var rows []struct {
 		ChatID string `gorm:"column:chat_id"`
@@ -1175,7 +1175,7 @@ func (self *transaction) DeleteChatMessage(messageId string) (*models.ChatMessag
 	if result.RowsAffected == 0 {
 		return nil, ErrNotFound
 	}
-	// A reaction on what was taken back has nothing to be about.
+	// A reaction on what was deleted has nothing to be about.
 	if err := self.tx.Where(`"message_id" = ?`, messageId).Delete(&chatReactionModel{}).Error; err != nil {
 		return nil, err
 	}

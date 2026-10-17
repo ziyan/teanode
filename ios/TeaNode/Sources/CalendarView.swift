@@ -66,6 +66,9 @@ struct CalendarScreen: View {
                 if DemoServer.screen == "calendar-day", path.isEmpty {
                     path = [CalendarDay(containing: Date(), in: model.dates)]
                 }
+                // The calendars of other people as a list, which names whose each event is, and the share screen open over the month.
+                if DemoServer.screen == "calendar-shared" { model.viewMode = .agenda }
+                if DemoServer.screen == "calendar-share-sheet" || DemoServer.screen == "calendar-find-time" { isShowingCalendars = true }
             #endif
         }
         .sheet(item: $draft) { draft in
@@ -284,7 +287,7 @@ extension CalendarModel {
     /// keeps one, or else a color of the palette, always the same one for
     /// the same calendar.
     func color(of event: CalendarEvent) -> Color {
-        // The times somebody is busy are grey, whose calendar they are in.
+        // The times somebody is busy are gray, whose calendar they are in.
         if event.isBusy { return Color(.systemGray) }
         if let parts = CalendarColorComponents(hexText: calendar(withId: event.calendarId)?.colour) {
             return Color(red: parts.red, green: parts.green, blue: parts.blue)
@@ -723,7 +726,7 @@ struct CalendarSearch: View {
                             Button {
                                 opened = event
                             } label: {
-                                EventRow(event: event, color: model.color(of: event))
+                                EventRow(event: event, color: model.color(of: event), model: model)
                             }
                             .buttonStyle(.plain)
                         }
@@ -908,7 +911,7 @@ struct DaySection: View {
                     Button {
                         onOpen(event)
                     } label: {
-                        EventRow(event: event, color: model.color(of: event))
+                        EventRow(event: event, color: model.color(of: event), model: model)
                     }
                     .buttonStyle(.plain)
                 }
@@ -925,6 +928,19 @@ struct DaySection: View {
 struct EventRow: View {
     let event: CalendarEvent
     let color: Color
+    /// What the row calls the event, and whose calendar it is in when that is
+    /// another person's: several people's calendars share one list, and a gray
+    /// "Busy" would not say whose.
+    private let title: String
+    private let ownerName: String?
+
+    init(event: CalendarEvent, color: Color, model: CalendarModel) {
+        self.event = event
+        self.color = color
+        title = model.shownTitle(of: event)
+        // A busy block already carries the name in its title.
+        ownerName = event.isBusy ? nil : model.ownerName(of: event)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -939,9 +955,14 @@ struct EventRow: View {
                             .foregroundStyle(.secondary)
                             .accessibilityLabel("Private")
                     }
-                    Text(event.shownTitle)
+                    Text(title)
                         .font(.body)
                         .strikethrough(event.isCancelled)
+                }
+                if let ownerName {
+                    Label(ownerName, systemImage: "person")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
                 HStack(spacing: 4) {
                     Text(EventWords.when(event))
@@ -1041,7 +1062,7 @@ struct DayTimeline: View {
                                                     .imageScale(.small)
                                                     .accessibilityLabel("Private")
                                             }
-                                            Text(item.event.isBusy ? item.event.shownTitle : (item.event.summary ?? ""))
+                                            Text(item.event.isBusy ? model.shownTitle(of: item.event) : (item.event.summary ?? ""))
                                         }
                                         .font(.footnote.weight(.semibold))
                                         Text(EventWords.when(item.event))
@@ -1078,7 +1099,7 @@ struct DayTimeline: View {
                             Button {
                                 onOpen(event)
                             } label: {
-                                EventRow(event: event, color: model.color(of: event))
+                                EventRow(event: event, color: model.color(of: event), model: model)
                                     .padding(8)
                                     .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 8))
                             }

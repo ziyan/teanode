@@ -129,8 +129,8 @@ type CalendarOfCircle = {
   isCircleCalendar?: boolean
 }
 
-// The most faces a card draws before the count says the rest.
-const MOST_FACES = 5
+// The most pictures a card draws before the count says the rest.
+const MOST_AVATARS = 5
 
 function nameOf(member: Pick<CircleMember, 'name' | 'username'>): string {
   return member.name?.trim() || member.username
@@ -275,7 +275,7 @@ export function CirclesPage() {
                 </div>
                 <div className="circle-card-members">
                   <div className="avatar-stack">
-                    {circle.members.slice(0, MOST_FACES).map((member) => (
+                    {circle.members.slice(0, MOST_AVATARS).map((member) => (
                       <Avatar
                         key={member.userId}
                         name={nameOf(member)}
@@ -760,6 +760,7 @@ export function CirclePage() {
                       username,
                       reason: caught instanceof Error ? caught.message : t('circles.failed'),
                     }),
+                    { cause: caught },
                   )
                 }
               },

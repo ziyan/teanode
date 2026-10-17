@@ -46,18 +46,22 @@ it is in any conversation, and only that member reads it. Reading a chat
 conversation interleaves the two by time.
 
 A message in a chat goes to the people. It starts an agent's turn only
-when the writer addresses their own agent (mentioning it, or replying to
-it), and from no other message. Another member's message never starts a
-turn of somebody else's agent, and an agent's message never starts a turn
-of any agent, so two agents in a room cannot talk to each other. A card
-the turn raises is the owner's alone. The other members see that the
-agent is thinking or working, and not which tool it is using.
+when the writer addresses an agent (mentioning it, or replying to it), and
+from no other message. One message starts at most four agents (the first
+four it addresses), so a message that mentions everybody cannot start a
+crowd of turns. Another member's message never starts a turn of somebody
+else's agent unless its owner allowed that, and an agent's message never
+starts a turn of any agent, so two agents in a room cannot talk to each
+other. A card the turn raises is the owner's alone. The other members see
+that the agent is thinking or working, and not which tool it is using.
 
 The owner may let the other members of one chat ask their agent too. A
-turn one of them starts runs held to what everybody in the chat may see:
-the chat, what has been shared with all of them, the web. It reads none
-of the owner's mail, memory, files or money, and makes no call that
-needs the owner's word.
+turn one of them starts is limited to the chat and the web. It reads none
+of the owner's mail, memory, files, calendar or money, and makes no call
+that needs the owner's word. That includes what the owner shared with
+particular people: a shared calendar or shared memory page was shared with
+the person it was shared with, not with the room, and the answer goes to
+the whole room, so a member's turn is offered neither.
 
 Whether an agent remembers a chat is its owner's choice, chat by chat,
 the way a mailbox is granted: a chat is a source. Every member can see

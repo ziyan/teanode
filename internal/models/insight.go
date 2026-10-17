@@ -257,6 +257,26 @@ func (self *AgentConversation) IsChat() bool {
 	return self != nil && self.Kind == AgentConversationChat
 }
 
+// HasChatWords says whether a chat's title or one of its members' names or
+// usernames holds the words, in any case: how a chat is found by a search,
+// since what was said in it is not searched. It is false for anything that is
+// not a chat, or a chat whose title and members have not been described.
+func (self *AgentConversation) HasChatWords(words string) bool {
+	if !self.IsChat() || self.Chat == nil {
+		return false
+	}
+	words = strings.ToLower(words)
+	if strings.Contains(strings.ToLower(self.Chat.Title), words) {
+		return true
+	}
+	for _, member := range self.Chat.Members {
+		if strings.Contains(strings.ToLower(member.Name), words) || strings.Contains(strings.ToLower(member.Username), words) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsGoal says whether a conversation is a goal's own.
 func (self *AgentConversation) IsGoal() bool {
 	return self != nil && self.Kind == AgentConversationGoal
@@ -591,19 +611,19 @@ type AgentNoteKind string
 
 // The kinds of note a conversation carries.
 const (
-	NoteQueued          AgentNoteKind = "queued"           // the turn waits behind the one before it
-	NoteStopped         AgentNoteKind = "stopped"          // stopped, by the person or for the detail's reason
-	NoteFailed          AgentNoteKind = "failed"           // the turn failed: the error
-	NoteCallUnreadable  AgentNoteKind = "call_unreadable"  // a tool call the server could not read
-	NoteRepeatedFailure AgentNoteKind = "repeated_failure" // the same call failed three times
-	NoteRoundLimit      AgentNoteKind = "round_limit"      // the most rounds a turn may take
-	NoteCompacting      AgentNoteKind = "compacting"       // the earlier conversation is being folded into a note
-	NoteCompacted       AgentNoteKind = "compacted"        // it was: the detail is the note
-	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
-	NoteHerdrAsked      AgentNoteKind = "herdr_asked"      // a coding session's question, for the drawer to draw: JSON
-	NoteHerdrAnswered   AgentNoteKind = "herdr_answered"   // it went, and what it was answered with: JSON
-	NoteCircleInvited   AgentNoteKind = "circle_invited"   // somebody invited the person to a circle: JSON of the inviter's name and the circle's
-	NotePaymentWaiting  AgentNoteKind = "payment_waiting"  // a call of a shared skill waits for the person's approval: JSON naming the call
+	NoteQueued                AgentNoteKind = "queued"                   // the turn waits behind the one before it
+	NoteStopped               AgentNoteKind = "stopped"                  // stopped, by the person or for the detail's reason
+	NoteFailed                AgentNoteKind = "failed"                   // the turn failed: the error
+	NoteCallUnreadable        AgentNoteKind = "call_unreadable"          // a tool call the server could not read
+	NoteRepeatedFailure       AgentNoteKind = "repeated_failure"         // the same call failed three times
+	NoteRoundLimit            AgentNoteKind = "round_limit"              // the most rounds a turn may take
+	NoteCompacting            AgentNoteKind = "compacting"               // the earlier conversation is being folded into a note
+	NoteCompacted             AgentNoteKind = "compacted"                // it was: the detail is the note
+	NoteDepth                 AgentNoteKind = "depth"                    // looked into carefully: the detail is why
+	NoteHerdrAsked            AgentNoteKind = "herdr_asked"              // a coding session's question, for the drawer to draw: JSON
+	NoteHerdrAnswered         AgentNoteKind = "herdr_answered"           // it went, and what it was answered with: JSON
+	NoteCircleInvited         AgentNoteKind = "circle_invited"           // somebody invited the person to a circle: JSON of the inviter's name and the circle's
+	NoteSkillShareCallWaiting AgentNoteKind = "skill_share_call_waiting" // a call of a shared skill waits for the person's approval: JSON naming the call
 
 	// What only the person who addressed an agent in a chat is told, when
 	// no turn of it started: the detail is the agent's name.
@@ -624,28 +644,28 @@ const (
 // noteEnglish is each kind in English, for whoever reads a note without
 // the kinds: the command line, a chat channel, an old client.
 var noteEnglish = map[AgentNoteKind]string{
-	NoteQueued:             "queued behind the turn before it",
-	NoteStopped:            "stopped",
-	NoteFailed:             "failed",
-	NoteCallUnreadable:     "a tool call the server could not read; asked again",
-	NoteRepeatedFailure:    "stopped: the same call failed three times",
-	NoteRoundLimit:         "stopped after the most rounds a turn may take",
-	NoteCompacting:         "compacting the earlier conversation into a note",
-	NoteCompacted:          "the earlier conversation was compacted into a note",
-	NoteDepth:              "looking into this carefully",
-	NoteHerdrAsked:         "a coding session asked a question",
-	NoteHerdrAnswered:      "a coding session's question was answered",
-	NoteCircleInvited:      "invited you to a circle",
-	NotePaymentWaiting:     "a call of a skill you shared is waiting for your approval",
-	NoteChatAgentOwnerOnly: "only its owner can ask that agent in this chat",
-	NoteChatAgentOff:       "that agent is switched off",
-	NoteChatAgentAbsent:    "that agent's owner is not in this chat",
-	NoteGoalSet:            "Goal set",
-	NoteGoalSetAgain:       "Goal set again",
-	NoteGoalChanged:        "Goal changed",
-	NoteGoalCleared:        "Goal cleared",
-	NoteGoalMet:            "Goal met",
-	NoteGoalStalled:        "Goal stalled",
+	NoteQueued:                "queued behind the turn before it",
+	NoteStopped:               "stopped",
+	NoteFailed:                "failed",
+	NoteCallUnreadable:        "a tool call the server could not read; asked again",
+	NoteRepeatedFailure:       "stopped: the same call failed three times",
+	NoteRoundLimit:            "stopped after the most rounds a turn may take",
+	NoteCompacting:            "compacting the earlier conversation into a note",
+	NoteCompacted:             "the earlier conversation was compacted into a note",
+	NoteDepth:                 "looking into this carefully",
+	NoteHerdrAsked:            "a coding session asked a question",
+	NoteHerdrAnswered:         "a coding session's question was answered",
+	NoteCircleInvited:         "invited you to a circle",
+	NoteSkillShareCallWaiting: "a call of a skill you shared is waiting for your approval",
+	NoteChatAgentOwnerOnly:    "only its owner can ask that agent in this chat",
+	NoteChatAgentOff:          "that agent is switched off",
+	NoteChatAgentAbsent:       "that agent's owner is not in this chat",
+	NoteGoalSet:               "Goal set",
+	NoteGoalSetAgain:          "Goal set again",
+	NoteGoalChanged:           "Goal changed",
+	NoteGoalCleared:           "Goal cleared",
+	NoteGoalMet:               "Goal met",
+	NoteGoalStalled:           "Goal stalled",
 }
 
 // NoteText is a note in English: the kind's words, then its detail. The
@@ -663,7 +683,7 @@ func NoteText(kind AgentNoteKind, detail string) string {
 			return invitation.InvitedByName + " invited you to " + invitation.CircleName
 		}
 		return english
-	case kind == NotePaymentWaiting:
+	case kind == NoteSkillShareCallWaiting:
 		if waiting := ParseSkillShareCallNote(detail); waiting != nil {
 			return waiting.GranteeName + " asked to use a skill you shared, and it is waiting for your approval"
 		}

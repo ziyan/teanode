@@ -63,6 +63,10 @@ final class AppModel {
     /// A conversation a pressed notification asks to open.
     var openedConversationId: String?
 
+    /// Whether a pressed notification asks for the Circles screen, which the
+    /// settings screen opens and then clears.
+    var isCirclesOpened = false
+
     /// Something elsewhere in the app the person asked the agent about,
     /// such as a mail; the conversation takes it as what the next message
     /// refers to.
@@ -654,7 +658,11 @@ final class AppModel {
         }
         if isOpening {
             await switchTo(notifying)
-            if !info.conversationId.isEmpty {
+            if info.notificationKind == "circle" {
+                // An invitation is answered on Circles, in the settings.
+                openedSection = .settings
+                isCirclesOpened = true
+            } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
             return

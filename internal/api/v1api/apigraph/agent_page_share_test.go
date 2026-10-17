@@ -293,3 +293,42 @@ func TestTheReaderListsWhatIsSharedWithThem(t *testing.T) {
 		t.Errorf("a root with its owner and opening: %v", first)
 	}
 }
+
+// A search of what others shared finds pages and facts by words, only within
+// what is shared with the caller, each hit saying whose it is, and nothing for
+// a person nothing is shared with.
+func TestTheReaderSearchesWhatIsSharedWithThem(t *testing.T) {
+	world := newPageShareWorld(t)
+	world.share(t, "people/a", world.ben, false)
+
+	data := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "doctor") { ownerUserId ownerUsername ownerName path name opening factNumber text } }`)
+	hits := data["SearchSharedAgentPages"].([]any)
+	if len(hits) == 0 {
+		t.Fatalf("nothing found for a word on a shared page: %v", data)
+	}
+	paths := map[string]bool{}
+	for _, each := range hits {
+		hit := each.(map[string]any)
+		paths[hit["path"].(string)] = true
+		if hit["ownerUserId"] != world.ada.ID || hit["ownerUsername"] != world.ada.Username {
+			t.Errorf("a hit says whose it is: %v", hit)
+		}
+	}
+	if !paths["people/a/doctor"] || paths["projects/private"] || paths["people/ab"] {
+		t.Errorf("only shared pages are found: %v", paths)
+	}
+
+	// What is not shared is not found by a word on it, and a person nothing is
+	// shared with finds nothing.
+	if hits := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "business") { path } }`)["SearchSharedAgentPages"].([]any); len(hits) != 0 {
+		t.Errorf("a page that is not shared was found: %v", hits)
+	}
+	if hits := world.call(t, world.cora, `query { SearchSharedAgentPages(query: "doctor") { path } }`)["SearchSharedAgentPages"].([]any); len(hits) != 0 {
+		t.Errorf("cora has nothing shared with her: %v", hits)
+	}
+	if hits := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "doctor", first: 1) { path } }`)["SearchSharedAgentPages"].([]any); len(hits) != 1 {
+		t.Errorf("first bounds the hits: %v", hits)
+	}
+	world.refused(t, world.ben, `query { SearchSharedAgentPages(query: "  ") { path } }`)
+	world.refused(t, world.eve, `query { SearchSharedAgentPages(query: "doctor") { path } }`)
+}

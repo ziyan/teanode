@@ -58,7 +58,7 @@ func describePhotoAlbumShare(share *models.PhotoAlbumShare) *PhotoAlbumShareView
 	}
 	if share.GranteeUserID != "" {
 		view.GranteeUserID = &share.GranteeUserID
-		view.GranteeAvatarURL, view.GranteeAvatarColorIndex = avatarURL(share.GranteeUser), avatar.InitialColorIndex(share.GranteeUserID)
+		view.GranteeAvatarURL, view.GranteeAvatarColorIndex = avatarUrl(share.GranteeUser), avatar.InitialColorIndex(share.GranteeUserID)
 	}
 	if share.GranteeCircleID != "" {
 		view.GranteeCircleID = &share.GranteeCircleID

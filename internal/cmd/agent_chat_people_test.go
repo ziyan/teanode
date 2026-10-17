@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,16 +40,20 @@ func TestChatParity(test *testing.T) {
 		"RemoveChatMember":  {"remove", ""},
 		"LeaveChat":         {"leave", ""},
 		"EditChatMessage":   {"edit", ""},
-		"DeleteChatMessage": {"unsay", ""},
+		"DeleteChatMessage": {"delete-message", ""},
 		"MarkChatRead":      {"read", ""},
 		"MuteChat":          {"mute", ""},
 		"SetChatTyping":     {"", ""},
 		"SayInChatAsAgent":  {"", "send"},
 
+		// The agent's own reaction, apart from its person's: the person
+		// reacts with teanode agent react.
+		"ReactInChatAsAgent": {"", "react"},
+
 		// What a member allows their agent in a chat is theirs to switch from a
 		// terminal or a screen, and no business of the agent's own.
 		"SetChatAgentReading":         {"remember", ""},
-		"SetChatAgentAskableByOthers": {"askable", ""},
+		"SetChatAgentAskableByOthers": {"others-may-ask", ""},
 	}
 	for operation := range operations {
 		if _, isListed := table[operation]; !isListed {
@@ -104,6 +109,32 @@ func TestChatParity(test *testing.T) {
 	}
 	if flagNamed(commandNamed(test, conversation, "list"), "kind") == nil {
 		test.Error("conversation list takes --kind, or only chats cannot be listed")
+	}
+
+	// What AskAgent and ListAgentConversations take for chats, on every
+	// surface that sends them: the arguments of the API, the document the
+	// command line sends, and the flags that fill them.
+	asked := reflect.TypeFor[apigraph.AskAgentArguments]()
+	for field, name := range map[string]string{"AddressedAgentIDs": "addressedAgentIds", "ShouldAddressOwnAgent": "shouldAddressOwnAgent"} {
+		member, found := asked.FieldByName(field)
+		if !found || strings.Split(member.Tag.Get("json"), ",")[0] != name {
+			test.Errorf("AskAgent does not take %s", name)
+		}
+		if !strings.Contains(client.DocumentAskAgent, "$"+name+":") {
+			test.Errorf("the command line's AskAgent document does not send %s", name)
+		}
+	}
+	askCommand := commandNamed(test, NewAgentCommand(), "ask")
+	for _, name := range []string{"address", "ask-agent", "reply-to"} {
+		if flagNamed(askCommand, name) == nil {
+			test.Errorf("teanode agent ask takes no --%s", name)
+		}
+	}
+	if kind, found := reflect.TypeFor[apigraph.ListAgentConversationsArguments]().FieldByName("Kind"); !found || strings.Split(kind.Tag.Get("json"), ",")[0] != "kind" {
+		test.Error("ListAgentConversations does not take kind")
+	}
+	if !strings.Contains(client.DocumentListAgentConversations, "$kind:") {
+		test.Error("the command line's ListAgentConversations document does not send kind")
 	}
 	if flagNamed(commandNamed(test, conversation, "group"), "with") == nil {
 		test.Error("conversation group takes --with")
@@ -171,7 +202,7 @@ func TestAChatTranscriptShowsAuthorsAndIsSafeForATerminal(test *testing.T) {
 	for _, want := range []string{
 		"Weekend (c1), 7 message(s), 2 unread", "in it: Alice, Bob (old) (deleted account)",
 		"Maria: hello\\x1b[2K there", "↪ replying to \"hello\"", "you: hi (edited)", "(Maria reacted 👍)",
-		"(taken back)",
+		"(deleted)",
 		// An agent is told by its owner, and two that are both called "Agent"
 		// are told apart by it.
 		"Bertie · Alice's agent: Alice will be late.", "Maria's agent: noted", "Alice's agent: same here",
@@ -213,5 +244,66 @@ func TestSayingInAChatSaysItWasSent(test *testing.T) {
 	}
 	if written.String() != "sent in c1\n" {
 		test.Errorf("the command printed %q", written.String())
+	}
+}
+
+// --address asks agents in a chat by the id of the agent or the username of
+// its owner, from the members the chat lists, and sends their ids; a name
+// that is nobody's with an agent to ask is refused before anything is sent.
+func TestAskingOtherPeoplesAgentsFromTheCommandLine(test *testing.T) {
+	test.Parallel()
+
+	var lock sync.Mutex
+	var asked string
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body := new(bytes.Buffer)
+		_, _ = body.ReadFrom(request.Body)
+		response.Header().Set("Content-Type", "application/json")
+		if strings.Contains(body.String(), "AskAgent(") {
+			lock.Lock()
+			asked = body.String()
+			lock.Unlock()
+			_, _ = response.Write([]byte(`{"data":{"AskAgent":{"runId":"","conversationId":"c1"}}}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"data":{"ReadAgentConversation":{"total":0,"messages":[],"conversation":{"id":"c1","kind":"chat","title":"Weekend","chat":{"chatId":"chat1","chatKind":"group","members":[
+			{"userId":"u1","username":"alice","name":"Alice","agentId":"agent-alice","isAgentActive":true},
+			{"userId":"u2","username":"maria","name":"Maria","agentId":"agent-maria","isAgentActive":true,"isAgentAskableByOthers":true},
+			{"userId":"u3","username":"dana","name":"Dana"}]}}}}}`))
+	}))
+	defer server.Close()
+	run := func(arguments ...string) error {
+		command := &cli.Command{
+			Name:     "fixture",
+			Flags:    []cli.Flag{&cli.StringFlag{Name: "url", Value: server.URL}, &cli.StringFlag{Name: "token", Value: "tnt_x"}},
+			Commands: []*cli.Command{NewAgentCommand()},
+			Writer:   &bytes.Buffer{},
+		}
+		return command.Run(test.Context(), append([]string{"fixture", "agent", "ask", "--conversation", "c1"}, arguments...))
+	}
+
+	if err := run("--address", "Maria", "--address", "agent-alice", "--address", "maria", "what time is it?"); err != nil {
+		test.Fatal(err)
+	}
+	lock.Lock()
+	sent := asked
+	lock.Unlock()
+	if !strings.Contains(sent, `"addressedAgentIds":["agent-maria","agent-alice"]`) {
+		test.Errorf("the agents were sent as %s", sent)
+	}
+	lock.Lock()
+	asked = ""
+	lock.Unlock()
+	// Dana has no agent to ask here, and nobody is called Zed.
+	for _, name := range []string{"dana", "zed"} {
+		err := run("--address", name, "hello")
+		if err == nil || !strings.Contains(err.Error(), "neither the id of an agent in this chat nor the username") {
+			test.Errorf("--address %s: %v", name, err)
+		}
+	}
+	lock.Lock()
+	defer lock.Unlock()
+	if asked != "" {
+		test.Errorf("something was sent for a name that is nobody's: %s", asked)
 	}
 }

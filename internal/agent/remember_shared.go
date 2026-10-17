@@ -19,7 +19,7 @@ import (
 //
 // The check is on words, like the quote check beside it: whether a fact's
 // quote occurs in text that came from a shared page is a string test, not a
-// judgement. The tool result of a shared read is marked
+// judgment. The tool result of a shared read is marked
 // (tools.SharedPageMarker) so that the writer can tell it from the person's
 // own pages, and an answer that cites a shared fact says so in the form the
 // citation has.

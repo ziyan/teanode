@@ -105,6 +105,7 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"UnshareAgentPage":        client.DocumentUnshareAgentPage,
 		"PreviewAgentPageShare":   client.DocumentPreviewAgentPageShare,
 		"ListSharedAgentPages":    client.DocumentListSharedAgentPages,
+		"SearchSharedAgentPages":  client.DocumentSearchSharedAgentPages,
 		"ReadSharedAgentPage":     client.DocumentReadSharedAgentPage,
 		"SaveReminder":            client.DocumentSaveReminder,
 		"SetReminderDone":         client.DocumentSetReminderDone,
