@@ -77,6 +77,17 @@ final class LocationModel {
         isSetupDismissed = LocationRecorder.shared.isSetupDismissed(accountKey: AppModel.shared.account?.accountKey)
     }
 
+    /// How many times the person asked to see their own position on the map;
+    /// the map centers on it each time this changes.
+    private(set) var ownFocusCount = 0
+
+    /// Goes back to the person's own location and centers the map on it, even
+    /// when it was already the one shown.
+    func focusOnOwn() {
+        clearSelection()
+        ownFocusCount += 1
+    }
+
     /// The selected person, once the server has said they share.
     var selectedPerson: PersonLocation? { people.first { $0.userId == selectedUserId } }
 

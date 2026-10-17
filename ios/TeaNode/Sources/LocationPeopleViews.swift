@@ -16,8 +16,9 @@ struct LocationPeopleRows: View {
     private static let mostRows = 3
 
     var body: some View {
-        if !model.people.isEmpty {
+        if model.location != nil || !model.people.isEmpty {
             VStack(spacing: 0) {
+                LocationOwnRow(model: model)
                 if model.people.count > Self.mostRows {
                     NavigationLink(value: LocationRoute.people) {
                         HStack {
@@ -57,14 +58,52 @@ struct LocationPeopleScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        List(model.people) { person in
-            LocationPersonRow(person: person, isSelected: person.userId == model.selectedUserId) {
-                model.select(userId: person.userId)
-                dismiss()
+        List {
+            LocationOwnRow(model: model) { dismiss() }
+            ForEach(model.people) { person in
+                LocationPersonRow(person: person, isSelected: person.userId == model.selectedUserId) {
+                    model.select(userId: person.userId)
+                    dismiss()
+                }
             }
         }
         .navigationTitle("People")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// LocationOwnRow is the person's own row, first in the list of people and
+/// drawn like the others: their picture and "You · at Hillside School since
+/// 14:05". A tap centers the map on them.
+struct LocationOwnRow: View {
+    let model: LocationModel
+    var didChoose: () -> Void = {}
+
+    var body: some View {
+        if let own = model.location {
+            Button {
+                model.focusOnOwn()
+                didChoose()
+            } label: {
+                HStack(spacing: 12) {
+                    AvatarView(name: own.displayName, avatarUrl: own.avatarUrl, colorIndex: own.avatarColorIndex, size: 32)
+                    Text(verbatim: LocationText.ownLine(of: own))
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if model.selectedUserId == nil {
+                        Image(systemName: "checkmark")
+                            .foregroundStyle(.tint)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(model.selectedUserId == nil ? .isSelected : [])
+            .accessibilityHint("Shows you on the map")
+        }
     }
 }
 

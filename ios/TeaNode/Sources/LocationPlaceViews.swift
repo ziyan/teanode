@@ -28,9 +28,12 @@ struct LocationPlaceScreen: View {
     var body: some View {
         Form {
             Section {
-                TextField(place.placeName.isEmpty ? String(localized: "Place name") : place.placeName, text: $nameText)
-                    .submitLabel(.done)
-                    .onSubmit { Task { await saveName() } }
+                LabeledContent("Name") {
+                    TextField("Name", text: $nameText, prompt: Text(verbatim: place.placeName.isEmpty ? String(localized: "Place name") : place.placeName))
+                        .multilineTextAlignment(.trailing)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await saveName() } }
+                }
                 Picker("Label", selection: $labelChoice) {
                     Text("None").tag("")
                     ForEach(PlaceLabel.allCases, id: \.rawValue) { label in
@@ -81,8 +84,10 @@ struct LocationPlaceScreen: View {
                 OpenStreetMapCredit()
             }
             Section {
-                Button("Forget this place", systemImage: "trash", role: .destructive) {
+                Button(role: .destructive) {
                     isConfirmingForget = true
+                } label: {
+                    Label("Forget this place", systemImage: "trash").foregroundStyle(.red)
                 }
                 .confirmationDialog("Forget \(place.shownName)?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
                     Button("Forget this place", role: .destructive) {
@@ -199,20 +204,20 @@ struct CheckInSheet: View {
                                     if let labelSymbolName = foundPlace.labelSymbolName {
                                         Image(systemName: labelSymbolName)
                                             .symbolRenderingMode(.hierarchical)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color(.secondaryLabel))
                                             .frame(width: 28)
                                             .accessibilityHidden(true)
                                     }
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(verbatim: foundPlace.shownName).foregroundStyle(.primary)
+                                        Text(verbatim: foundPlace.shownName).foregroundStyle(Color(.label))
                                         if let secondaryName = foundPlace.secondaryName {
                                             Text(verbatim: secondaryName)
                                                 .font(.subheadline)
-                                                .foregroundStyle(.secondary)
+                                                .foregroundStyle(Color(.secondaryLabel))
                                         }
                                         Text(verbatim: details(of: foundPlace))
                                             .font(.subheadline)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(Color(.secondaryLabel))
                                     }
                                 }
                                 .frame(minHeight: 44, alignment: .leading)
