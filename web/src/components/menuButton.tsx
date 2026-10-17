@@ -24,12 +24,14 @@ export function MenuButton({
   // the foot of the rail, where a menu opening downwards would open off the
   // bottom of the window.
   placement = 'below',
+  disabled = false,
   render,
 }: {
   label: string
   icon: React.ReactNode
   className?: string
   placement?: 'below' | 'above'
+  disabled?: boolean
   render: (close: () => void) => React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -131,6 +133,7 @@ export function MenuButton({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={label}
+        disabled={disabled}
         onClick={() => setOpen((previous) => !previous)}
       >
         {icon}

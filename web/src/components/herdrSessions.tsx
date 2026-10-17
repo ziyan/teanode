@@ -393,15 +393,35 @@ export function HerdrTurnsList({ turns }: { turns: HerdrTurn[] }) {
   )
 }
 
+// HerdrDraft is what has been typed into a send form and not sent yet.
+export interface HerdrDraft {
+  text: string
+  pending: File[]
+}
+
 // HerdrSendForm types into a session: text, and files to hand it, which are
 // written on its computer with their paths typed after the text. The box
 // grows with what is typed, and Cmd or Ctrl with Enter sends. onSent is told
-// the session as it stands after.
-export function HerdrSendForm({ session, onSent }: { session: HerdrSession; onSent: (after: HerdrSession) => void }) {
+// the session as it stands after. The draft is kept here unless the caller
+// passes draft and onDraftChange, to keep it somewhere that outlives this form.
+export function HerdrSendForm({
+  session,
+  onSent,
+  draft,
+  onDraftChange,
+}: {
+  session: HerdrSession
+  onSent: (after: HerdrSession) => void
+  draft?: HerdrDraft
+  onDraftChange?: (draft: HerdrDraft) => void
+}) {
   const { t } = useTranslation()
   const toast = useToast()
-  const [text, setText] = useState('')
-  const [pending, setPending] = useState<File[]>([])
+  const [ownDraft, setOwnDraft] = useState<HerdrDraft>({ text: '', pending: [] })
+  const { text, pending } = draft ?? ownDraft
+  const changeDraft = onDraftChange ?? setOwnDraft
+  const setText = (next: string) => changeDraft({ text: next, pending })
+  const setPending = (update: (previous: File[]) => File[]) => changeDraft({ text, pending: update(pending) })
   const filePicker = useRef<HTMLInputElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
   const [isSending, setSending] = useState(false)
@@ -432,8 +452,7 @@ export function HerdrSendForm({ session, onSent }: { session: HerdrSession; onSe
         text,
         attachmentIds,
       })
-      setText('')
-      setPending([])
+      changeDraft({ text: '', pending: [] })
       toast.done(t('herdr.sent', { pane: paneNameOf(session) }))
       sharedList = null
       onSent(response.SendAgentHerdrSession)

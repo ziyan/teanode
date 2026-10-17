@@ -253,3 +253,46 @@ it('shows a session that has not said anything yet as empty, without asking for 
     list.sessions.pop()
   }
 })
+
+it('keeps what was typed in each session while switching tabs and back', async () => {
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1')
+  await screen.findByText('hello w1:p1')
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'half a thought' } })
+  fireEvent.click(screen.getByRole('tab', { name: /review/ }))
+  await screen.findByText('hello w1:p2')
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'other draft' } })
+  fireEvent.click(screen.getByRole('tab', { name: /build/ }))
+  await screen.findByText('hello w1:p1')
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('half a thought')
+  fireEvent.click(screen.getByRole('tab', { name: /review/ }))
+  await screen.findByText('hello w1:p2')
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('other draft')
+})
+
+it('keeps the open session while its computer does not answer', async () => {
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1')
+  await screen.findByText('hello w1:p1')
+  const base = execute.getMockImplementation()!
+  execute.mockImplementation(async (document: string, variables?: Record<string, unknown>) =>
+    document === HERDR_DOCUMENTS.ListAgentHerdrSessions
+      ? {
+          ListAgentHerdrSessions: {
+            computerNames: ['laptop', 'desk'],
+            failedComputerNames: ['laptop'],
+            sessions: sessions.filter((each) => each.computer === 'desk'),
+          },
+        }
+      : base(document, variables),
+  )
+  const listCount = () =>
+    execute.mock.calls.filter(([document]) => document === HERDR_DOCUMENTS.ListAgentHerdrSessions).length
+  const before = listCount()
+  // Showing the tab on the computer reads the list again at once.
+  fireEvent.click(screen.getByRole('button', { name: 'Show on computer' }))
+  await waitFor(() => expect(listCount()).toBeGreaterThan(before))
+  await waitFor(() => expect(screen.getByText(/did not answer/)).toBeTruthy())
+  expect(screen.queryByText('This session is no longer open.')).toBeNull()
+  expect(screen.getByRole('tab', { name: /build/ })).toBeTruthy()
+  expect(screen.getByText('hello w1:p1')).toBeTruthy()
+})

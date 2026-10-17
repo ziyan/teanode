@@ -9,6 +9,7 @@ import {
   HerdrOpenDialog,
   HerdrQuestionAnswer,
   HerdrSendForm,
+  type HerdrDraft,
   HerdrStateTag,
   HerdrTurnsList,
   codingAgentName,
@@ -57,7 +58,8 @@ interface SessionRead {
 // useVisiblePolling runs load now and then every everyMS, only while the page
 // is in view, and stops when the page unmounts. The answer is kept per
 // resetKey: a new key shows nothing until its first answer. A new refreshKey
-// reads again at once and keeps what was read until then. The error stays the same object until a
+// reads again at once and keeps what was read until then. The error is
+// cleared when the resetKey changes, and stays the same object until a
 // read succeeds, so a computer that stays unreachable is said once.
 function useVisiblePolling<Answer>(
   load: () => Promise<Answer>,
@@ -71,6 +73,8 @@ function useVisiblePolling<Answer>(
   const loadRef = useRef(load)
   loadRef.current = load
   useEffect(() => {
+    // What failed for the last key says nothing of this one.
+    setError(null)
     let isStopped = false
     let isRunning = false
     // The first read is made even in a tab in the background, so the page
@@ -208,6 +212,12 @@ export function CodingPage() {
   const [isOpening, setOpening] = useState(false)
   // A session just opened, which the list does not name yet.
   const [justOpened, setJustOpened] = useState<HerdrSession | null>(null)
+  // What has been typed into each session's box and not sent, kept while the
+  // person looks at other sessions, for the life of the page.
+  const [drafts, setDrafts] = useState<Record<string, HerdrDraft>>({})
+  // The last session seen for the selection, kept while its computer does not
+  // answer, so one failed poll does not close the view.
+  const lastSelected = useRef<HerdrSession | null>(null)
   const list = useVisiblePolling(() => listHerdrSessions(true), LIST_EVERY_MS, 'list')
   useEffect(() => {
     if (list.error) toast.failure(list.error, t('herdr.listFailed'))
@@ -227,9 +237,17 @@ export function CodingPage() {
   const listed = list.data?.sessions.find(
     (session) => session.computer === selectedComputer && session.paneId === selectedPaneId,
   )
+  const isSelectedFailed = (list.data?.failedComputerNames ?? []).includes(selectedComputer)
+  const remembered = lastSelected.current
   const selected =
     listed ??
-    (justOpened && justOpened.computer === selectedComputer && justOpened.paneId === selectedPaneId ? justOpened : null)
+    (justOpened && justOpened.computer === selectedComputer && justOpened.paneId === selectedPaneId
+      ? justOpened
+      : null) ??
+    (isSelectedFailed && remembered && isSameSession(remembered, { computer: selectedComputer, paneId: selectedPaneId })
+      ? remembered
+      : null)
+  lastSelected.current = selected
   const isReading = selectedPaneId !== ''
   const computerNames = list.data?.computerNames ?? []
 
@@ -308,6 +326,11 @@ export function CodingPage() {
                   (each.workspaceId ?? '') === (selected.workspaceId ?? '') &&
                   (selected.workspaceId ?? '') !== '',
               )}
+              draft={drafts[`${selected.computer}/${selected.paneId}`]}
+              onDraftChange={(draft) => {
+                const draftKey = `${selected.computer}/${selected.paneId}`
+                setDrafts((previous) => ({ ...previous, [draftKey]: draft }))
+              }}
               onSelect={select}
               onBack={() => select(null)}
               onChanged={list.reload}
@@ -362,6 +385,8 @@ export function CodingPage() {
 function CodingSession({
   session,
   siblings,
+  draft,
+  onDraftChange,
   onSelect,
   onBack,
   onChanged,
@@ -369,6 +394,8 @@ function CodingSession({
 }: {
   session: HerdrSession
   siblings: HerdrSession[]
+  draft: HerdrDraft | undefined
+  onDraftChange: (draft: HerdrDraft) => void
   onSelect: (session: HerdrSession) => void
   onBack: () => void
   onChanged: () => void
@@ -585,6 +612,7 @@ function CodingSession({
             label={t('herdr.newTab')}
             className="icon-button"
             icon={<PlusIcon size={18} />}
+            disabled={!latest.workspaceId}
             render={(closeMenu) =>
               agentKinds.map((kind) => (
                 <button
@@ -669,6 +697,8 @@ function CodingSession({
       <div className="coding-composer">
         <HerdrSendForm
           session={latest}
+          draft={draft ?? { text: '', pending: [] }}
+          onDraftChange={onDraftChange}
           onSent={(after) => {
             setLatest(after)
             isAtEnd.current = true
