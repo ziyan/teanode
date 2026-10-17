@@ -125,6 +125,19 @@ type ChatHolding interface {
 	HeldToChatConversation() string
 }
 
+// ChatAnswering is a run whose words are posted to the people of a chat: any
+// turn in a chat, the owner's own as well as one somebody else started.
+type ChatAnswering interface {
+	IsAnsweringInChat() bool
+}
+
+// IsAnsweringInChat says the run's words go to the room of a chat, so that a
+// tool does not tell it to say in them what is for the person alone.
+func IsAnsweringInChat(run Run) bool {
+	answering, ok := run.(ChatAnswering)
+	return ok && answering.IsAnsweringInChat()
+}
+
 // HeldToChat is the id of the only conversation the run may read, or empty
 // when the run is not held to a chat.
 func HeldToChat(run Run) string {

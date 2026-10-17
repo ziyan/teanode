@@ -13,6 +13,11 @@ Start with `docs/reference/local-development.md` to get a build and a database.
     make test          # starts a PostgreSQL container automatically
     make build
 
+Merge only on green checks, and only after looking at what they made: for a
+change to a screen, the CI screenshots or a running server. A branch that
+another open pull request is based on keeps its branch when it merges, or
+GitHub closes the one stacked on it.
+
 CI runs `make lint-ci`, which is golangci-lint only. A local check enforces this
 project's naming conventions and is local-only, so a contributor without it is
 never blocked; run it anyway if you have it.
@@ -21,6 +26,13 @@ never blocked; run it anyway if you have it.
 
 A feature is done when all of these hold, not when the code compiles.
 
+- **Plan a large one first.** A feature that adds tables, a subsystem or a
+  new surface starts as a plan under `docs/planning/` (`<name>-execplan.md`,
+  shaped like its neighbors): the tables it adds, field by field, the
+  operations and tools, the screens, what is left out, and the decisions
+  somebody had to make. Settle the names there, because renaming after the
+  code exists touches every surface. The plan is then built whole, in one
+  pull request, rather than as a trail of halves.
 - **Coordinate with what is in flight.** Before starting, read the open pull
   requests and the plans under `docs/planning/` for work on the same tables,
   files or screens. Build on it or settle an order instead of colliding.
@@ -35,13 +47,26 @@ A feature is done when all of these hold, not when the code compiles.
   operations, job, tool entries and pages, and reuse the words it already
   uses for the same idea. A new word for an old idea, or a convention no
   neighbor uses, needs a reason in the pull request.
+- **Use it for real.** Run it against a server with a model configured and
+  do what a person would: send the message, attach the file, ask the agent
+  to do the thing its new tool exists for, on the phone as well as the
+  desktop. Most of what a review would miss shows up in the first real use,
+  and `docs/evaluation/end-to-end-tasks.md` is where a task worth repeating
+  is written down.
 - **Look at it.** Walk every screen the change touches on a running server, at
   desktop and phone widths, in light and dark, from real screenshots: spacing,
   alignment, rows that cannot be told apart, text that overflows, a way back.
   Fix what you find before asking for review.
 - **Review it, then fix what the review finds.** Read the whole diff as a
   reviewer would, or have one read it, and fix every finding before calling it
-  done; a finding left open says why in the pull request.
+  done; a finding left open says why in the pull request. Then review again:
+  fixes bring their own findings, and a change is ready when a round finds
+  nothing.
+- **Replace, do not keep both.** When something is renamed, moved or
+  removed, the old one goes in the same change: no redirect from an old
+  dashboard path, no alias for an old word, no compatibility branch for a
+  shape nobody outside this repository depends on. A migration still carries
+  forward data a person would miss.
 
 ## Naming
 
@@ -60,7 +85,15 @@ These are not negotiable, and `make lint` checks most of them.
 - **Struct receivers are `self`.** Consistently, across the whole codebase.
   `.golangci.yml` disables the linters that would object.
 - **Name the same thing the same way everywhere.** If it is a `delivery` in the
-  database it is not a `send` in the API.
+  database it is not a `send` in the API, the command line, the dashboard or
+  a translation. One idea has one name: when two features turn out to be the
+  same thing, one name is kept and the other is gone from the code, the words
+  on screen and the docs. A new word that collides with one already in use
+  for something else (a mailbox rule and an agent's standing instruction,
+  say) is renamed before it ships.
+- **Table names are singular**: `agent_follow_up`, not `agent_follow_ups`.
+- **Words a person reads are plain.** No coined terms, no internal names, and
+  the background memory runs are dreams in code, docs and on screen alike.
 
 ## The dashboard
 
@@ -69,6 +102,20 @@ for, where a panel's action goes, when a row action is an icon and when it is
 a word — in `docs/coding/frontend-design.md`. Read it before adding a page or
 a panel. A page that builds by hand what a component already does is the
 change most likely to be sent back.
+
+## The iPhone app
+
+`ios/DESIGN.md` is the app's rulebook: system components first, the green
+accent, every string in the String Catalog in all three languages.
+
+- **The server goes first.** An app build that reads a new field breaks
+  against a server that does not have it yet, and TestFlight hands it out
+  within the hour, so the server side is deployed before the app is built.
+- **Every screen has a demo.** CI runs the app against `DemoServer` and takes
+  a screenshot of each screen listed in `.github/workflows/ios.yml`, in light
+  and dark. A new screen adds its demo data and its `shoot` lines, and
+  somebody opens the screenshots before the pull request merges: CI passing
+  says the screen was drawn, not that it looks right.
 
 ## Comments
 
@@ -81,6 +128,53 @@ the counter` above `counter++` is noise. `// Reject before the DATA command so
 a spammer pays for the connection` is worth having.
 
 Exported identifiers get a doc comment starting with their name.
+
+## The agent
+
+The agent acts for a person, so most of its rules are about doing what that
+person could do, no more and no less, without making them do it twice.
+
+- **Its tools can do what the person can.** Anything the dashboard or the
+  command line lets a person do, under their permissions, the agent's tools
+  can do too, through the same operation and with the same refusals.
+- **Few tools, many actions.** A new capability is an action on the tool
+  that owns its subject, with the arguments that action needs, before it is
+  a tool of its own. Every tool the model is shown costs every turn, and a
+  model choosing among forty near-twins chooses worse than among ten.
+- **Long results page.** A tool that can return a lot returns a part of it,
+  says there is more, and takes the offset to read on. What was stored is
+  never cut to fit: a document is kept whole and read in parts.
+- **Limits are code.** A cap on searches, spending or retries is enforced
+  where the call is made. A prompt can say why a limit exists; it cannot be
+  the limit.
+- **No ceremony for what was already allowed.** A person who attached their
+  own computer or browser has authorized the agent to use it as them. A
+  confirmation card is for spending money, sending as the person and
+  deleting what cannot come back, not for reading a directory.
+- **Proactive by default, easy to stop.** Something the agent does on its
+  own (following a bill, a weekly look around town) is on without setup, and
+  each kind of it can be stopped from the place it shows up, with the tools,
+  the dashboard, the command line and the iPhone app agreeing on what is
+  stopped.
+- **The person's language is for the person.** The dashboard's language sets
+  the language of conversations with the person, not of the runs nobody
+  reads.
+- **Prompts stay short, and are tried.** A prompt says what the model cannot
+  work out for itself, once, in the file under `internal/agent/prompts/`
+  that owns it. A change to one is run against a real model before it
+  ships, through the tasks in `docs/evaluation/`, and the pull request says
+  what was asked and what came back.
+- **A restart can come at any moment.** A deploy restarts the server in the
+  middle of a turn, a dream or a job. A job is retried, a turn the restart
+  cut short is carried on when the server is back, and new background work
+  says what it does when it is interrupted.
+
+## Storage
+
+Rows describe and blobs hold: what is searched, listed or joined lives in
+PostgreSQL, and the bytes of a message, an attachment, a photo or a
+recording live in the blob store with a row pointing at them. Something a
+person deletes is soft deleted first when they might want it back.
 
 ## Invariants
 
@@ -107,8 +201,14 @@ trace back.
   not meet authentication, a redirect to HTTPS, or a catch-all route.
 - **The server secret is generated once.** It signs bounce return paths and
   every SMTP credential's password. Rotating it invalidates all of them.
-- **Never commit a secret or a real address.** `make check-secrets` scans
-  tracked files. Test fixtures use `example.com` and `example.net`.
+- **Never commit a secret or anything real.** `make check-secrets` scans
+  tracked files and gitleaks scans every branch's history, so a slip is not
+  undone by a later commit. Test fixtures use `example.com` and
+  `example.net`. Invent every example in a comment, a test, a plan or a pull
+  request: no real person, company, host, account number, document id or
+  home-directory path, and no account of the incident that motivated a
+  change beyond what the engineering reason needs. Deleting an example is
+  usually better than renaming it to something that reads as real.
 
 ## Tests
 
@@ -128,8 +228,14 @@ Construction and starting are now separate for exactly this reason.
 Write the message for somebody trying to understand this change a year from
 now with no memory of the conversation that produced it.
 
-- Subject in the imperative, under about 72 characters: "Obtain certificates
-  without a cloud account".
+- Subject in the Conventional Commits form, `<type>(<scope>): <what now
+  happens>`, under about 80 characters, saying what is different for whoever
+  uses it: "fix(api): attachments answer byte ranges, so a video plays in the
+  iPhone chat". The types are `feat`, `fix`, `docs`, `test`, `ci`, `refactor`
+  and `chore`; the scope is the part of TeaNode (`agent`, `web`, `ios`,
+  `api`, `recording`).
+- A pull request is squashed into one commit on `main`, so its title is that
+  subject and its description is that body.
 - Body explains why the change was needed and what it costs. Describing what
   the diff does is redundant; the diff is right there.
 - Note behavior that changed for an operator, and anything that has to be done

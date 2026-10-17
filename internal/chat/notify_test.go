@@ -168,18 +168,35 @@ func TestAChatMessageIsNotifiedWithNoAgentUnlessMutedOrWatchedOrOwn(t *testing.T
 	world.hub.NotifyChatMessage(&own, "", false, []Recipient{world.recipient})
 	world.expectSent(t, 1, "the author's own message")
 
-	// Looking at a dashboard or the app now, as reported to the hub with no
-	// agent to take the report: nothing.
-	world.hub.ReportPresence(world.recipient.UserID, "a-tab", true, 0, time.Now())
+	// Looking at this chat in a dashboard or the app now, as reported to the
+	// hub with no agent to take the report: nothing.
+	world.hub.ReportPresence(world.recipient.UserID, "a-tab", true, 0, world.recipient.ConversationID, time.Now())
 	world.hub.NotifyChatMessage(message, "", false, []Recipient{world.recipient})
-	world.expectSent(t, 1, "a member who was looking")
+	world.expectSent(t, 1, "a member who was looking at this chat")
+
+	// Looking at the app on another screen, or at another conversation, is
+	// not looking at this one: the message is news.
+	world.hub.ReportPresence(world.recipient.UserID, "a-tab", true, 0, "", time.Now())
+	world.hub.NotifyChatMessage(message, "", false, []Recipient{world.recipient})
+	world.expectSent(t, 2, "a member who was on another screen")
+	world.hub.ReportPresence(world.recipient.UserID, "a-tab", true, 0, "another-conversation", time.Now())
+	world.hub.NotifyChatMessage(message, "", false, []Recipient{world.recipient})
+	world.expectSent(t, 3, "a member who was looking at another conversation")
+
+	// One of two tabs on this chat is enough, and a tab on this chat that is
+	// hidden is not looking.
+	world.hub.ReportPresence(world.recipient.UserID, "another-tab", true, 0, world.recipient.ConversationID, time.Now())
+	world.hub.NotifyChatMessage(message, "", false, []Recipient{world.recipient})
+	world.expectSent(t, 3, "a member with one tab on another conversation and one on this chat")
+	world.hub.ReportPresence(world.recipient.UserID, "another-tab", false, 0, world.recipient.ConversationID, time.Now())
+	world.hub.NotifyChatMessage(message, "", false, []Recipient{world.recipient})
+	world.expectSent(t, 4, "a member whose tab on this chat was hidden")
 
 	// In a group the title says which; a message of a file only says so.
-	world.hub.ReportPresence(world.recipient.UserID, "a-tab", false, 0, time.Now())
 	fileOnly := &models.AgentMessage{AuthorKind: models.ChatAuthorPerson, AuthorUserID: "another-person", AuthorName: "Maria", Attachments: []models.AgentAttachment{{ID: "a-file"}}}
 	world.hub.NotifyChatMessage(fileOnly, "Weekend trip", true, []Recipient{world.recipient})
-	sent = world.expectSent(t, 2, "a group message")
-	content = world.read(t, sent[1])
+	sent = world.expectSent(t, 5, "a group message")
+	content = world.read(t, sent[4])
 	if content.Title != "Maria in Weekend trip" || !strings.Contains(content.Body, "file") {
 		t.Errorf("the group notification says %+v", content)
 	}
@@ -187,7 +204,7 @@ func TestAChatMessageIsNotifiedWithNoAgentUnlessMutedOrWatchedOrOwn(t *testing.T
 	// A member with no agent row to hang a phone from is not notified, and a
 	// phone that chose other kinds is not sent a chat.
 	world.hub.NotifyChatMessage(message, "", false, []Recipient{{UserID: world.recipient.UserID, ConversationID: "the-members-conversation"}})
-	world.expectSent(t, 2, "a recipient with no agent row")
+	world.expectSent(t, 5, "a recipient with no agent row")
 	if other := world.relay.to("sealed:the-other-registration"); len(other) != 0 {
 		t.Errorf("a phone that wants only approvals was sent %d chat notifications", len(other))
 	}

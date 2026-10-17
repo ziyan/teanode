@@ -10,20 +10,20 @@ import (
 const answerWordsApart = 6
 
 // AnswersSkillShareCall says a command line, as typed into a shell, looks like
-// `teanode agent skill approve` or `teanode agent skill decline`, the command
-// that answers a call somebody's agent made through a skill the person
-// shared, which waits for the person's own word and spends their money when
-// approved.
+// `teanode agent skill approve` or `teanode agent skill decline`, the commands
+// that answer a call somebody's agent made through a skill the person shared,
+// which waits for the person's own word and spends their money when approved.
 //
-// This is a guess over words and not a parse of the shell: quotes, separators
-// and substitutions are turned into spaces, and the words agent, skill and
-// approve or decline must come in that order with a few words between them.
-// It errs toward asking, since asking costs the person a tap and missing costs
-// them what the call spends. What it cannot see, a command assembled from
-// pieces or typed into a terminal a key at a time, it cannot hold; the server
-// holds the rest by refusing the agent's own operations the answer
-// (AnswerSkillShareCall), and the approval is still the person's
-// authenticated act when their own program makes it.
+// A courtesy and not the guard. It is a guess over words and not a parse of
+// the shell: quotes, separators and substitutions are turned into spaces, and
+// the words agent, skill and approve or decline must come in that order with a
+// few words between them. It errs toward asking, so that a shell that looks
+// like it is answering a call asks the person first, as money. What it cannot
+// see, a command assembled from pieces or typed into a terminal a key at a
+// time, it cannot hold, and it does not have to: the server refuses to approve
+// a call, or to lend money, to anything but the dashboard's session or the
+// phone app's own sign-in (AnswerSkillShareCall, ShareSkill), whoever typed
+// the command and however they wrote it.
 func AnswersSkillShareCall(commandLine string) bool {
 	words := strings.FieldsFunc(strings.ToLower(commandLine), func(character rune) bool {
 		return !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != '-' && character != '_'

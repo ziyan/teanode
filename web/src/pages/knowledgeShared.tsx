@@ -52,7 +52,6 @@ type SharedEdge = {
   fromName: string
   toName: string
   relation: string
-  note: string
   isProposed: boolean
 }
 
@@ -78,7 +77,7 @@ export type SharedPage = {
 const PAGE_FIELDS = `ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
     path name nodeKind aliases opening isQuoteShared
     facts { number factKind text happenedAt isInferred evidenceSource evidenceQuote }
-    edges { fromPath toPath fromName toName relation note isProposed }
+    edges { fromPath toPath fromName toName relation isProposed }
     children { path name nodeKind opening }`
 
 const LIST_SHARED = `query { ListSharedAgentPages {
@@ -242,9 +241,10 @@ function SharedFacts({ facts }: { facts: SharedFact[] }) {
 }
 
 // SharedPageBody is a shared page as the person reads it, and as the owner
-// sees it before they confirm a share: the opening, the overview, the facts,
-// the links to other shared pages and the pages under it. The same drawing
-// for both, so that the preview is what is read.
+// sees it before they confirm a share: the opening, the facts, the links to
+// other shared pages and the pages under it. There is no overview: a model
+// writes it from pages and quotes that are not shared. The same drawing for
+// both, so that the preview is what is read.
 export function SharedPageBody({ page, ownerUsername }: { page: SharedPage; ownerUsername?: string }) {
   const { t } = useTranslation()
   const isLinked = Boolean(ownerUsername)
@@ -282,7 +282,6 @@ export function SharedPageBody({ page, ownerUsername }: { page: SharedPage; owne
                   </>
                 }
                 badge={edge.isProposed ? <Tag value={t('memoryLinks.perhaps')} tone="warn" /> : null}
-                subtitle={edge.note || null}
               />
             )
           })}

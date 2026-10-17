@@ -97,8 +97,10 @@ func TestASkillIsSharedOnlyWithinACircle(t *testing.T) {
 	})
 }
 
-// Leaving the only circle two people share ends the share between them, with
-// its calls, in the same transaction; leaving one of two they share does not.
+// Leaving the only circle two people share ends the share between them in the
+// same transaction, and leaving one of two they share does not. The calls the
+// share held stay as the owner's record, without a share, and the one that was
+// waiting expires.
 func TestLeavingACircleEndsTheSkillSharesThatNeededIt(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
@@ -107,6 +109,10 @@ func TestLeavingACircleEndsTheSkillSharesThatNeededIt(t *testing.T) {
 		world := newShareWorld(t, tx)
 		share := shareWithBen(t, tx, world)
 		call, err := tx.CreateSkillShareCall(callOf(share, models.SkillShareCallRan, 500))
+		if err != nil {
+			t.Fatalf("CreateSkillShareCall: %s", err)
+		}
+		waiting, err := tx.CreateSkillShareCall(callOf(share, models.SkillShareCallWaitingForApproval, 900))
 		if err != nil {
 			t.Fatalf("CreateSkillShareCall: %s", err)
 		}
@@ -131,8 +137,13 @@ func TestLeavingACircleEndsTheSkillSharesThatNeededIt(t *testing.T) {
 		if gone, _ := tx.GetSkillShare(share.ID); gone != nil {
 			t.Fatal("the share outlived the last circle the two shared")
 		}
-		if gone, _ := tx.GetSkillShareCall(call.ID); gone != nil {
-			t.Fatal("the share's calls outlived it")
+		kept, err := tx.GetSkillShareCall(call.ID)
+		if err != nil || kept == nil || !kept.IsShareEnded() || kept.CallState != models.SkillShareCallRan ||
+			kept.OwnerAgentID != share.OwnerAgentID || kept.GranteeUserID != world.ben.ID || kept.SkillName != "payments" {
+			t.Fatalf("the call after its share ended: %+v %v", kept, err)
+		}
+		if waited, err := tx.GetSkillShareCall(waiting.ID); err != nil || waited == nil || waited.CallState != models.SkillShareCallExpired || !waited.IsShareEnded() {
+			t.Fatalf("the call that was waiting when the share ended: %+v %v", waited, err)
 		}
 	})
 }
@@ -166,14 +177,14 @@ func TestTheMonthTotalCountsRanAndFailedCallsOnly(t *testing.T) {
 			t.Fatalf("CreateSkillShareCall: %s", err)
 		}
 		start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
-		total, err := tx.SkillShareMonthTotal(share.ID, "usd", start, end)
+		total, err := tx.SkillShareMonthTotal(share.OwnerAgentID, share.GranteeUserID, share.SkillName, "usd", start, end)
 		if err != nil || total != 10250 {
 			t.Fatalf("the month's total is %d (%v), want the two calls that ran and the one that failed", total, err)
 		}
-		if total, _ := tx.SkillShareMonthTotal(share.ID, "usd", end, end.Add(time.Hour)); total != 0 {
+		if total, _ := tx.SkillShareMonthTotal(share.OwnerAgentID, share.GranteeUserID, share.SkillName, "usd", end, end.Add(time.Hour)); total != 0 {
 			t.Fatalf("another month counts this one's calls: %d", total)
 		}
-		if total, _ := tx.SkillShareMonthTotal(share.ID, "eur", start, end); total != 333 {
+		if total, _ := tx.SkillShareMonthTotal(share.OwnerAgentID, share.GranteeUserID, share.SkillName, "eur", start, end); total != 333 {
 			t.Fatalf("a currency counts another's calls: %d", total)
 		}
 	})
@@ -293,7 +304,7 @@ func TestTwoCallsRacingTheMonthlyLimitOnlyOneRuns(t *testing.T) {
 			close(hasLocked)
 			<-mayContinue
 		}
-		total, err := tx.SkillShareMonthTotal(locked.ID, locked.CurrencyCode, start, end)
+		total, err := tx.SkillShareMonthTotal(locked.OwnerAgentID, locked.GranteeUserID, locked.SkillName, locked.CurrencyCode, start, end)
 		if err != nil {
 			return "", err
 		}
@@ -349,7 +360,7 @@ func TestTwoCallsRacingTheMonthlyLimitOnlyOneRuns(t *testing.T) {
 		t.Fatalf("the first call is %s and the second %s; want the first to run and the second to wait", first.callState, second.callState)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		total, err := tx.SkillShareMonthTotal(share.ID, "usd", start, end)
+		total, err := tx.SkillShareMonthTotal(share.OwnerAgentID, share.GranteeUserID, share.SkillName, "usd", start, end)
 		if err != nil || total != amount {
 			t.Errorf("the month's total is %d (%v); want %d, one call", total, err, amount)
 		}
@@ -552,6 +563,90 @@ func TestRemovingASkillEndsItsShares(t *testing.T) {
 		}
 		if kept, _ := tx.GetSkillShare(other.ID); kept == nil {
 			t.Error("the share of another skill went")
+		}
+	})
+}
+
+// Taking a share back keeps the calls made through it, as the record of what
+// was asked of the owner's money: they say what they were a call of, the one
+// that waited has expired, the owner lists them all and the other person their
+// own, and a share made again between the same two people for the same skill
+// starts the month with what the earlier one had spent.
+func TestACallOutlivesItsShareAndCountsTowardTheNextOne(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		share := shareWithBen(t, tx, world)
+		for _, call := range []*models.SkillShareCall{
+			callOf(share, models.SkillShareCallRan, 1000),
+			callOf(share, models.SkillShareCallWaitingForApproval, 8000),
+			callOf(share, models.SkillShareCallDeclined, 7000),
+		} {
+			if _, err := tx.CreateSkillShareCall(call); err != nil {
+				t.Fatalf("CreateSkillShareCall: %s", err)
+			}
+		}
+		if _, err := tx.CreateSkillShareCall(&models.SkillShareCall{SkillShareID: "no-such-share", ToolName: "pay", CallState: models.SkillShareCallRan}); !errors.Is(err, db.ErrNotFound) {
+			t.Fatalf("a call of a share that is not there: %v", err)
+		}
+
+		if err := tx.DeleteSkillShare(share.ID); err != nil {
+			t.Fatalf("DeleteSkillShare: %s", err)
+		}
+		ended, err := tx.ListEndedSkillShareCalls(world.ada.ID, "", 0)
+		if err != nil || len(ended) != 3 {
+			t.Fatalf("the owner's ended calls: %v %v", ended, err)
+		}
+		states := map[models.SkillShareCallState]int{}
+		for _, call := range ended {
+			states[call.CallState]++
+			if !call.IsShareEnded() || call.SkillName != "payments" || call.OwnerUsername != "ada" || call.GranteeUsername != "ben" || call.GranteeUser == nil {
+				t.Errorf("an ended call does not say what it was a call of: %+v", call)
+			}
+		}
+		if states[models.SkillShareCallRan] != 1 || states[models.SkillShareCallDeclined] != 1 || states[models.SkillShareCallExpired] != 1 || states[models.SkillShareCallWaitingForApproval] != 0 {
+			t.Errorf("the ended calls are in the states %v; the one that waited is expired", states)
+		}
+		if only, err := tx.ListEndedSkillShareCalls(world.ada.ID, models.SkillShareCallRan, 0); err != nil || len(only) != 1 {
+			t.Errorf("a state narrows them: %v %v", only, err)
+		}
+		if theirs, err := tx.ListEndedSkillShareCalls(world.ben.ID, "", 0); err != nil || len(theirs) != 3 {
+			t.Errorf("the person it was shared with sees their own calls: %v %v", theirs, err)
+		}
+		for _, stranger := range []*models.User{world.cora, world.dave} {
+			if seen, err := tx.ListEndedSkillShareCalls(stranger.ID, "", 0); err != nil || len(seen) != 0 {
+				t.Errorf("%s sees %v %v", stranger.Username, seen, err)
+			}
+		}
+		// The sweep has nothing to expire or tell for them.
+		if expired, err := tx.ExpireSkillShareCalls(time.Now().Add(48 * time.Hour)); err != nil || len(expired) != 0 {
+			t.Errorf("the sweep found %v %v", expired, err)
+		}
+
+		// Sharing again starts a share with a new identifier, and the month
+		// carries on from what the first one spent.
+		again := shareWithBen(t, tx, world)
+		if again.ID == share.ID {
+			t.Fatal("the new share has the old identifier")
+		}
+		start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+		if total, err := tx.SkillShareMonthTotal(again.OwnerAgentID, again.GranteeUserID, again.SkillName, "usd", start, end); err != nil || total != 1000 {
+			t.Errorf("the month's total for the new share is %d (%v); want the 1000 the ended share spent", total, err)
+		}
+		if _, err := tx.CreateSkillShareCall(callOf(again, models.SkillShareCallRan, 250)); err != nil {
+			t.Fatal(err)
+		}
+		if total, _ := tx.SkillShareMonthTotal(again.OwnerAgentID, again.GranteeUserID, again.SkillName, "usd", start, end); total != 1250 {
+			t.Errorf("after one more call: %d", total)
+		}
+		// Another skill, or another person, is another month.
+		if total, _ := tx.SkillShareMonthTotal(again.OwnerAgentID, again.GranteeUserID, "another-skill", "usd", start, end); total != 0 {
+			t.Errorf("another skill counts these calls: %d", total)
+		}
+		if total, _ := tx.SkillShareMonthTotal(again.OwnerAgentID, world.cora.ID, again.SkillName, "usd", start, end); total != 0 {
+			t.Errorf("another person's month counts these calls: %d", total)
 		}
 	})
 }

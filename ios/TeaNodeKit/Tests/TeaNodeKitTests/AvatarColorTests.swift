@@ -25,7 +25,7 @@ final class AvatarColorTests: XCTestCase {
 
     func testEveryTextLandsOnOneOfTheTwelveColors() {
         for text in ["", "a", "\u{4E2D}\u{6587}", "01JZZZZZZZZZZZZZZZZZZZZZZZ"] {
-            XCTAssertTrue((0..<AvatarColor.count).contains(AvatarColor.index(of: text)))
+            XCTAssertTrue((0..<AvatarColor.colorCount).contains(AvatarColor.index(of: text)))
         }
     }
 }

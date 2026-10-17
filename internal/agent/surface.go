@@ -134,6 +134,9 @@ var surfaces = map[string]surface{
 	backgroundSurface: {
 		situationLine: "This turn was woken by a command you left running in the background, not by the person; what you say is read in the conversation when they look.",
 	},
+	resumeSurface: {
+		situationLine: "This turn carries on an answer the server's restart cut short; the person wrote their message before it, and reads what you say in the conversation when they look.",
+	},
 	speakFirstSurfacePrefix: {
 		situationLine:       "You are writing first, before the person has said anything; they read it in the dashboard.",
 		overlay:             dashboardOverlay,
@@ -150,6 +153,13 @@ const voiceOverlay = "<surface>\nVoice: they are listening, not reading, and sil
 	"No tables, headings, code blocks or bullet lists, and no web addresses read out: name the page or the thing instead, and put a link or a picture only where they would look at the screen for it. " +
 	"Say numbers, sums, dates and times the way a person says them (\"half past three tomorrow\", \"about twelve hundred dollars\"). " +
 	"Ask at most one question, at the end. When a word they said may have been misheard and it changes what they want, a name, a sum, a day, say what you heard and ask before acting on it.\n</surface>"
+
+// isWokenSurface says the surface is one of a turn the agent was woken
+// into rather than one the person typed: what asks "did the person just
+// write" must not count it.
+func isWokenSurface(surfaceName string) bool {
+	return surfaceName == backgroundSurface || surfaceName == resumeSurface
+}
 
 // isAppSurface reports whether a turn was asked from the TeaNode app.
 func isAppSurface(surfaceName string) bool {

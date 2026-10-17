@@ -68,8 +68,9 @@ const (
 	// CirclesMadeMost is how many circles one person made and still has.
 	CirclesMadeMost = 20
 
-	// CircleInvitationsPerHourMost is how many invitations, new or renewed,
-	// one person sends in an hour.
+	// CircleInvitationsPerHourMost is how many calls that invite somebody one
+	// person makes in an hour, whether the invitation is new, renewed, or
+	// none at all because nobody has that name.
 	CircleInvitationsPerHourMost = 30
 )
 

@@ -52,12 +52,16 @@ does, in the same transaction: they leave the circle's chat first (so their
 agents stop reading it), and once the circle is gone, every group chat in which
 they now share a circle with none of the others.
 
-One person makes at most 20 circles (those they made that still exist) and sends
-at most 30 invitations an hour, counting a renewal as one (`models.CirclesMadeMost`,
-`models.CircleInvitationsPerHourMost`, kept in `internal/db/database_circle.go`).
-The refusal says which limit it is. An invitation that stores nothing (an unknown
-username, a person who may not use circles) is not counted and is still answered
-`true`.
+One person makes at most 20 circles (those they made that still exist) and makes
+at most 30 calls that invite somebody an hour (`models.CirclesMadeMost`,
+`models.CircleInvitationsPerHourMost`). The refusal says which limit it is. Every
+call counts, in `circle_invitation_send` (a row for the person and the time), before
+anything about the person invited is looked at: a call that stores nothing (an
+unknown username, a person who may not use circles) is counted the same and still
+answered `true`, so the limit cannot be used to tell a username that exists from
+one that does not, and deleting the circle the invitations were to does not give
+the allowance back, because the rows do not belong to the circle. A person's rows
+older than a day are removed by their next call.
 
 ## Joining
 

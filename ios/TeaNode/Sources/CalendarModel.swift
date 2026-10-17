@@ -39,6 +39,9 @@ final class CalendarModel {
     @ObservationIgnored private var monthEventsByMonth: [CalendarMonth: MonthEvents] = [:]
     private(set) var loadedMonths: Set<CalendarMonth> = []
     private(set) var loadingMonths: Set<CalendarMonth> = []
+    /// The calendars that could not be read, which later months leave out
+    /// rather than ask again on every scroll. A refresh asks again.
+    @ObservationIgnored private var unreadableCalendarIds: Set<String> = []
     var problemText: String?
     var doneText: String?
 
@@ -92,6 +95,7 @@ final class CalendarModel {
         guard viewMode != .reminders else { return }
         let months = neededMonths
         loadedMonths.formIntersection(months)
+        unreadableCalendarIds = []
         await loadMonths(months, isForced: true)
     }
 
@@ -125,23 +129,31 @@ final class CalendarModel {
             guard let monthWindow = month.window(in: dates) else { continue }
             // Every calendar shown, one after another. One that cannot be
             // read (it was shared, and has just been taken back) does not
-            // take the rest of the month with it; the person is told.
+            // take the rest of the month with it: it is remembered, and the
+            // person is told once, by its name.
             var events: [CalendarEvent] = []
-            var failure: Error?
-            for each in read {
+            var failures: [(calendar: AgentCalendar, error: Error)] = []
+            let attempted = read.filter { !unreadableCalendarIds.contains($0.id) }
+            for each in attempted {
                 do {
                     events += try await connection.calendarEvents(calendarId: each.id, from: monthWindow.from, until: monthWindow.until)
                 } catch {
-                    failure = failure ?? error
+                    failures.append((each, error))
                 }
             }
-            monthEvents(month).eventsByDay = CalendarDates.eventsByDay(events, in: month, calendar: dates)
-            if let failure {
-                problemText = failure.localizedDescription
-            } else {
-                loadedMonths.insert(month)
-                problemText = nil
+            // Every one failing is the connection and not a calendar: nothing
+            // is remembered, and the month is read again when it is next
+            // asked for.
+            if !attempted.isEmpty, failures.count == attempted.count, let first = failures.first {
+                problemText = first.error.localizedDescription
+                continue
             }
+            for failure in failures {
+                unreadableCalendarIds.insert(failure.calendar.id)
+                problemText = String(localized: "The calendar “\(failure.calendar.name)” could not be read: \(failure.error.localizedDescription)")
+            }
+            monthEvents(month).eventsByDay = CalendarDates.eventsByDay(events, in: month, calendar: dates)
+            loadedMonths.insert(month)
         }
     }
 
@@ -356,27 +368,27 @@ struct EventDraft: Identifiable {
         endsAt = start.addingTimeInterval(3600)
     }
 
-    init(_ detail: CalendarEventDetail, calendarId: String? = nil) {
-        eventId = detail.id
+    init(_ eventDetail: CalendarEventDetail, calendarId: String? = nil) {
+        eventId = eventDetail.id
         self.calendarId = calendarId
-        summary = detail.summary ?? ""
-        location = detail.location ?? ""
-        notes = detail.description ?? ""
-        isAllDay = detail.allDay
-        recurrence = detail.recurrence ?? ""
-        status = detail.status ?? ""
-        isPrivate = detail.isPrivate ?? false
-        invited = (detail.attendees ?? []).map(\.address).joined(separator: "\n")
-        if detail.allDay {
+        summary = eventDetail.summary ?? ""
+        location = eventDetail.location ?? ""
+        notes = eventDetail.description ?? ""
+        isAllDay = eventDetail.allDay
+        recurrence = eventDetail.recurrence ?? ""
+        status = eventDetail.status ?? ""
+        isPrivate = eventDetail.isPrivate ?? false
+        invited = (eventDetail.attendees ?? []).map(\.address).joined(separator: "\n")
+        if eventDetail.allDay {
             var local = Calendar.current
             local.timeZone = .current
-            let start = CalendarDates.day(ofAllDay: detail.startsAt)
-            let last = CalendarDates.lastDay(startsAt: detail.startsAt, endsAt: detail.endsAt)
+            let start = CalendarDates.day(ofAllDay: eventDetail.startsAt)
+            let last = CalendarDates.lastDay(startsAt: eventDetail.startsAt, endsAt: eventDetail.endsAt)
             startsAt = start.flatMap { local.date(from: $0) } ?? Date()
             endsAt = last.flatMap { local.date(from: $0) } ?? startsAt
         } else {
-            startsAt = ServerTime.date(detail.startsAt) ?? Date()
-            endsAt = ServerTime.date(detail.endsAt) ?? startsAt.addingTimeInterval(3600)
+            startsAt = ServerTime.date(eventDetail.startsAt) ?? Date()
+            endsAt = ServerTime.date(eventDetail.endsAt) ?? startsAt.addingTimeInterval(3600)
         }
     }
 

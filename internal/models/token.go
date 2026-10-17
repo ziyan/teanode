@@ -53,6 +53,47 @@ type Token struct {
 	// naming a resource is refused anywhere else, so one issued for the
 	// agent tools endpoint cannot be replayed against the rest of the API.
 	Resource string `json:"resource,omitempty"`
+
+	// ClientKind says the token is the TeaNode phone app's own sign-in
+	// (ClientKindApp), made in a place where a person was tapping: a connect
+	// code made on the dashboard or in the app, or the app's consent
+	// approved there. Empty on every other token, including one a program
+	// got through a connect code or an approval that a command line token
+	// made, because that sign-in could have been made by a program running
+	// on the person's computer. Only a token of this kind is taken as a
+	// person's tap (see CredentialKind).
+	ClientKind TokenClientKind `json:"clientKind,omitempty"`
+}
+
+// TokenClientKind is the marker on a token that its holder is the phone app.
+type TokenClientKind string
+
+// ClientKindApp is the phone app's own sign-in.
+const ClientKindApp TokenClientKind = "app"
+
+// CredentialKind is what a request signed in with, as far as telling a
+// person's tap from a program's call goes.
+type CredentialKind string
+
+const (
+	// CredentialSession is the dashboard's cookie session, which also had to
+	// pass the cross-site check for a request that changes something.
+	CredentialSession CredentialKind = "session"
+
+	// CredentialApp is a token of the phone app's own sign-in.
+	CredentialApp CredentialKind = "app"
+
+	// CredentialToken is any other token: one minted for the command line
+	// or an API client, or one a program was authorized for.
+	CredentialToken CredentialKind = "token"
+)
+
+// IsInteractive says whether the credential is one a person's own tap on a
+// screen arrives with: the dashboard in a browser, or the phone app. A command
+// line or an agent running on the person's computer holds a token of the other
+// kind, so it never arrives as a tap.
+func (self CredentialKind) IsInteractive() bool {
+	return self == CredentialSession || self == CredentialApp
 }
 
 // RefreshWindow is how long after its access expires a program's token can

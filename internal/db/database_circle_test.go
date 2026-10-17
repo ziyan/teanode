@@ -2,7 +2,6 @@ package db_test
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -313,42 +312,38 @@ func TestCirclesAndInvitationsAreBoundedForOnePerson(t *testing.T) {
 			t.Errorf("after deleting one: %v", err)
 		}
 
-		// Invitations, to one circle, from one person.
+		// Invitations sent, by one person. Every call counts, whether or not it
+		// stored an invitation, and the count outlives the circle.
 		inviting := circles[1]
 		now := time.Now()
-		invite := func(userId string, sentAt time.Time) error {
-			_, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
-				CircleID: inviting.ID, InvitedUserID: userId, InvitedByUserID: maker.ID, MemberRole: models.MemberRoleMember,
-				CreatedAt: sentAt, ExpiresAt: sentAt.Add(models.CircleInvitationLifetime),
-			})
-			return err
-		}
-		var invited []*models.User
 		for count := 0; count < models.CircleInvitationsPerHourMost; count++ {
-			person := newCircleTestUser(t, tx, fmt.Sprintf("bound-invited-%02d", count))
-			invited = append(invited, person)
-			if err := invite(person.ID, now); err != nil {
+			if err := tx.RecordCircleInvitationSend(maker.ID, now); err != nil {
 				t.Fatalf("invitation %d: %s", count+1, err)
 			}
 		}
-		extra := newCircleTestUser(t, tx, "bound-invited-extra")
-		if err := invite(extra.ID, now); !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "30 invitations") {
+		if err := tx.RecordCircleInvitationSend(maker.ID, now); !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "30 invitations") {
 			t.Errorf("the thirty-first invitation: %v", err)
 		}
-		// A renewal is one more card as well.
-		if err := invite(invited[0].ID, now); !errors.Is(err, db.ErrLimitReached) {
-			t.Errorf("renewing one: %v", err)
+		// Deleting the circle they were to does not give the allowance back.
+		invited := newCircleTestUser(t, tx, "bound-invited-first")
+		if _, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
+			CircleID: inviting.ID, InvitedUserID: invited.ID, InvitedByUserID: maker.ID, MemberRole: models.MemberRoleMember,
+			CreatedAt: now, ExpiresAt: now.Add(models.CircleInvitationLifetime),
+		}); err != nil {
+			t.Fatalf("storing an invitation does not count by itself: %s", err)
+		}
+		if err := tx.DeleteCircle(inviting.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.RecordCircleInvitationSend(maker.ID, now); !errors.Is(err, db.ErrLimitReached) {
+			t.Errorf("after deleting the circle: %v", err)
 		}
 		// An hour later they are not counted.
-		if err := invite(extra.ID, now.Add(61*time.Minute)); err != nil {
+		if err := tx.RecordCircleInvitationSend(maker.ID, now.Add(61*time.Minute)); err != nil {
 			t.Errorf("an hour on: %v", err)
 		}
 		// Somebody else has their own allowance.
-		fresh := newCircleTestUser(t, tx, "bound-invited-fresh")
-		if _, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
-			CircleID: inviting.ID, InvitedUserID: fresh.ID, InvitedByUserID: other.ID, MemberRole: models.MemberRoleMember,
-			CreatedAt: now, ExpiresAt: now.Add(models.CircleInvitationLifetime),
-		}); err != nil {
+		if err := tx.RecordCircleInvitationSend(other.ID, now); err != nil {
 			t.Errorf("another person's first invitation: %v", err)
 		}
 	})

@@ -44,15 +44,29 @@ child.
 The owner approves or declines from a card in their drawer or their
 phone. Approving runs exactly the call that was asked, with the arguments
 that were shown, on the owner's computer; nothing else is decided when it
-is answered. The server refuses an approval to the agent's own operations,
-and the agent's shell and terminal ask the owner before running the command
-that approves, whatever they allowed for when they are away. Both are best
-effort: an approval made with the owner's own sign-in is the owner's, so the
-guard is the card, not a certainty (`docs/subsystems/skills.md` says what is
-and is not held).
+is answered.
+
+Approving, and lending money in the first place, are done where a person
+taps, and **the server is the guard**: it accepts them only from the
+dashboard's session or the iPhone app's own sign-in, and refuses a command
+line token, an API token, the console and the agent's own operations with
+"approve it on the dashboard or in the iPhone app". A check on the words of a
+command could not hold this, because an agent can drive the owner's own
+command line (the `shell`, `terminal`, `claude_code`, `codex` and `herdr`
+tools all reach it) with their saved sign-in. The server tells the app's token
+from a command line token by a mark on the token row, put there only by a
+sign-in that was itself made where a person was tapping. Declining, taking a
+share back, lowering its limits and asking every time only take money away,
+and stay open to every sign-in. The agent's own `share` is limited to asking
+every time, so nothing it shares runs without the owner's approval. The
+agent's shell and terminal still ask the owner before running a command that
+looks like it answers a call, as a courtesy, not as the guard.
 
 The owner sees every call made through a share, its arguments and its
-outcome; the other person sees their own.
+outcome; the other person sees their own. The record stays when the share
+ends, whether the owner took it back or the two stopped sharing a circle, and
+the month's total of a new share between the same two people carries on from
+it.
 
 ## Consequences
 

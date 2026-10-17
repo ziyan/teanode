@@ -14,7 +14,8 @@ import (
 // the person handed in (in the chat, by the agent_attachment_id the
 // conversation names it with) or the files a message carries, and
 // record_paystub and record_tax_form record one the agent read itself,
-// line by line or box by box. The server checks them; only the last four
+// line by line or box by box, though a call naming an uploaded file queues
+// the reading job for it instead. The server checks them; only the last four
 // digits of a taxpayer number are ever sent or kept.
 
 // paystubArguments are record_paystub's arguments.
@@ -106,7 +107,21 @@ func taxDocumentVariables(asked map[string]any, arguments []string, listKey stri
 	return variables, nil
 }
 
+// uploadedFileReadNote is said when a record call carrying an uploaded file
+// is answered by queueing the reading job instead.
+const uploadedFileReadNote = "nothing was recorded from the fields you sent: an uploaded file is read by the dedicated reading job, which reads the whole document and records it; sending the file (read_tax_document) is enough, do not read it yourself"
+
 func recordTaxDocument(ctx context.Context, executor tools.Operations, name string, asked map[string]any) (*tools.Result, error) {
+	// A model that reads a paystub itself mixes up the current period with
+	// the year to date and is refused by the arithmetic check, then reads
+	// it again through the job. The job reads the uploaded file better, so
+	// a file sent with the fields goes to the job and the fields are
+	// dropped. Only the tool does this: the job itself, the command line
+	// (a JSON file the person wrote) and the dashboard record through the
+	// same operation, which stays a plain record.
+	if attachmentId := text(asked, "agent_attachment_id"); attachmentId != "" {
+		return queueTaxDocumentReading(ctx, executor, "read_tax_document", map[string]any{"agent_attachment_id": attachmentId}, uploadedFileReadNote)
+	}
 	var variables map[string]any
 	var err error
 	var recorded any
@@ -132,6 +147,12 @@ func recordTaxDocument(ctx context.Context, executor tools.Operations, name stri
 }
 
 func readTaxDocument(ctx context.Context, executor tools.Operations, name string, asked map[string]any) (*tools.Result, error) {
+	return queueTaxDocumentReading(ctx, executor, name, asked, "")
+}
+
+// queueTaxDocumentReading queues the reading job for a file or a message,
+// and answers with the jobs and a hint, with note beside them when given.
+func queueTaxDocumentReading(ctx context.Context, executor tools.Operations, name string, asked map[string]any, note string) (*tools.Result, error) {
 	attachmentId, itemId := text(asked, "agent_attachment_id"), text(asked, "mailbox_item_id")
 	if (attachmentId == "") == (itemId == "") {
 		return nil, fmt.Errorf("%s needs agent_attachment_id (a file handed over in the conversation) or mailbox_item_id (a message), one of the two", name)
@@ -153,7 +174,11 @@ func readTaxDocument(ctx context.Context, executor tools.Operations, name string
 	if err := client.RunFinance(ctx, executor, "ReadTaxDocument", variables, &reading); err != nil {
 		return nil, err
 	}
-	result, err := tools.JSONResult(map[string]any{name: reading, "hint": "the reading job reads each file in the background; paystubs, tax_forms and tax_year show them once read"})
+	answer := map[string]any{name: reading, "hint": "the reading job reads each file in the background; paystubs, tax_forms and tax_year show them once read"}
+	if note != "" {
+		answer["note"] = note
+	}
+	result, err := tools.JSONResult(answer)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +189,9 @@ func readTaxDocument(ctx context.Context, executor tools.Operations, name string
 // recordPaystubPreview is the card of a paystub the agent read: whose,
 // paid when, gross and take-home.
 func recordPaystubPreview(_ *previewLookup, call map[string]any) string {
+	if text(call, "agent_attachment_id") != "" {
+		return "Have the reading job read the paystub in the file and record it"
+	}
 	line := fmt.Sprintf("Record a paystub from %s paid %s: %s gross, %s take-home", tools.Named(text(call, "employer_name"), "an employer"),
 		text(call, "pay_date"), amountText(call["gross_amount"]), amountText(call["net_amount"]))
 	if isAccepted, _ := call["is_unbalanced_accepted"].(bool); isAccepted {
@@ -174,6 +202,9 @@ func recordPaystubPreview(_ *previewLookup, call map[string]any) string {
 
 // recordTaxFormPreview is the card of a W-2 the agent read.
 func recordTaxFormPreview(_ *previewLookup, call map[string]any) string {
+	if text(call, "agent_attachment_id") != "" {
+		return "Have the reading job read the W-2 in the file and record it"
+	}
 	return fmt.Sprintf("Record a %d W-2 from %s with %d boxes", wholeNumber(call["tax_year"]), tools.Named(text(call, "payer_name"), "an employer"),
 		len(objects(call, "tax_form_entries")))
 }

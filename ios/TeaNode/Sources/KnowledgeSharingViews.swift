@@ -137,8 +137,6 @@ struct SharedKnowledgeSections: View {
             Text("\(relation) \(far)").font(.body)
             if edge.isProposed {
                 Text("The agent’s guess").font(.footnote).foregroundStyle(.secondary)
-            } else if let note = edge.note, !note.isEmpty {
-                Text(note).font(.footnote).foregroundStyle(.secondary)
             }
         }
     }
@@ -355,6 +353,7 @@ struct KnowledgeShareSheet: View {
                 doneText = String(localized: "Shared")
                 chosenPersonId = nil
                 chosenCircleId = nil
+                isQuoteShared = false
                 shares = try await connection.knowledgeShares()
             } catch {
                 problemText = error.localizedDescription

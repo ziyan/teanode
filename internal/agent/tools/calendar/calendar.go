@@ -78,7 +78,7 @@ func init() {
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "Share the person's own calendar with a person they share a circle with, or with a whole circle, at a level: " +
 					"'busy' (when they are busy and nothing else), 'titles' (the time, title and place), 'details' (everything, guests included) " +
-					"or 'edit' (details, and they may add and change events). Sharing again changes the level. " +
+					"or 'edit' (details, and they may add, change and remove events that have no guests). Sharing again changes the level. " +
 					"Events marked private are only ever shown as busy.",
 				Parameters: tools.Object(map[string]any{
 					"person": tools.StringProperty("the username to share with, from circle_people; leave out when sharing with a circle"),
@@ -143,8 +143,10 @@ func init() {
 					Summary string   `json:"summary"`
 					Starts  string   `json:"starts"`
 					Invite  []string `json:"invite"`
+					Circle  string   `json:"circle"`
+					Person  string   `json:"person"`
 				}) string {
-					said := "Put " + tools.Named(call.Summary, "something") + " in your calendar"
+					said := "Put " + tools.Named(call.Summary, "something") + " in " + whichCalendar(call.Circle, call.Person)
 					if call.Starts != "" {
 						said += " on " + call.Starts
 					}
@@ -181,10 +183,10 @@ func init() {
 					"is_private":  tools.BooleanProperty("true to mark it private, so that people the calendar is shared with see only that the person is busy; false takes the mark off"),
 					"invite":      tools.ArrayProperty("the whole guest list as it should now be; everybody on it is sent the change", tools.StringProperty("an address")),
 					"tell_guests": tools.BooleanProperty("true when the people already invited are to be told about this change"),
-					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar, as the agenda said"),
-					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit, as the agenda said"),
+					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row"),
+					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit: the person value of the agenda row"),
 				}, "event"),
-				PreviewIn: eventPreview("Change %s"),
+				PreviewIn: eventPreview("Change %s in %s"),
 				Run:       runEdit,
 			},
 			{
@@ -199,13 +201,13 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"event":       tools.StringProperty("which event, as the identifier the agenda gives"),
 					"tell_guests": tools.BooleanProperty("true when the people invited are to be told it is off"),
-					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar, as the agenda said"),
-					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit, as the agenda said"),
+					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row"),
+					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit: the person value of the agenda row"),
 				}, "event"),
 				// Naming the event, not its identifier: taking a thing out
 				// of somebody's diary is not a decision they can make about
 				// "01m2ep...".
-				PreviewIn: eventPreview("Take %s out of your calendar"),
+				PreviewIn: eventPreview("Take %s out of %s"),
 				Run:       runRemove,
 			},
 		},
@@ -216,7 +218,7 @@ func init() {
 			// removing one cannot be undone.
 			tools.Group{
 				Name: "calendar", Family: tools.FamilyAccount,
-				Description: "The person's own calendar, which their phone and computer synchronize over CalDAV.",
+				Description: "The person's own calendar (synchronized over CalDAV), the calendars other people and their circles share with them, and sharing the person's own.",
 				Members: []tools.Member{
 					{Action: "agenda", Tool: "calendar_agenda"},
 					{Action: "free", Tool: "calendar_free"},
@@ -1009,6 +1011,19 @@ func zoneOf(zone string) *time.Location {
 	return time.UTC
 }
 
+// whichCalendar says in words which calendar a call writes to, for the card
+// the person answers: a circle's, which everybody in it sees, another
+// person's, which lands in front of them, or the person's own.
+func whichCalendar(circle, person string) string {
+	switch {
+	case strings.TrimSpace(circle) != "":
+		return "the circle calendar " + tools.Named(circle, "")
+	case strings.TrimSpace(person) != "":
+		return tools.Named(person, "") + "'s calendar, which they will see"
+	}
+	return "your calendar"
+}
+
 // eventPreview is the card for a call that names an event by identifier:
 // the event's own title, looked up, because "01m2ep..." is not something a
 // person can decide about. Whether the guests are told is said too — that
@@ -1032,7 +1047,7 @@ func eventPreview(shape string) func(context.Context, json.RawMessage) string {
 				}
 			}
 		}
-		said := fmt.Sprintf(shape, named)
+		said := fmt.Sprintf(shape, named, whichCalendar(call.Circle, call.Person))
 		if call.TellGuests {
 			said += ", and tell the guests"
 		}

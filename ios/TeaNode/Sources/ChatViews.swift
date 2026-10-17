@@ -66,17 +66,17 @@ struct ChatFacesView: View {
 
 /// UnreadBadge is how many messages wait in a chat.
 struct UnreadBadge: View {
-    let count: Int
+    let unreadCount: Int
 
     var body: some View {
-        Text(verbatim: count > 99 ? "99+" : "\(count)")
+        Text(verbatim: unreadCount > 99 ? "99+" : "\(unreadCount)")
             .font(.caption.weight(.semibold))
             .monospacedDigit()
             .foregroundStyle(.white)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(.tint, in: .capsule)
-            .accessibilityLabel(Text("\(count) unread"))
+            .accessibilityLabel(Text("\(unreadCount) unread"))
     }
 }
 
@@ -152,7 +152,14 @@ struct MentionRow: View {
                     Button {
                         onChoose(agent)
                     } label: {
-                        Label(agent.name, systemImage: "sparkle")
+                        // Another person's agent is named by whose it is, as
+                        // it is above its messages; two of them are often both
+                        // called Agent.
+                        Label(
+                            agent.isOwn
+                                ? agent.name
+                                : AgentSpeaker.name(agentName: agent.name, ownerName: agent.ownerName, ownedWords: ChatWords.agentOf),
+                            systemImage: "sparkle")
                     }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
@@ -206,6 +213,13 @@ struct ChatLineFrame<Content: View>: View {
                         .padding(.leading, 6)
                     }
                     content
+                        // A continuation shows no name, so VoiceOver is told
+                        // whose it is, as it is for the first of a run.
+                        .overlay(alignment: .topLeading) {
+                            if !startsRun {
+                                Color.clear.frame(width: 1, height: 1).allowsHitTesting(false).accessibilityElement().accessibilityLabel(name)
+                            }
+                        }
                     ReadMarks(readers: readers)
                         .padding(.leading, 6)
                 }
@@ -314,6 +328,9 @@ struct ChatMembersSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isAdding = false
     @State private var removing: ChatMember?
+    /// A refusal of a change made here, which the sheet covers the screen to
+    /// say.
+    @State private var problemText: String?
 
     var body: some View {
         NavigationStack {
@@ -346,6 +363,7 @@ struct ChatMembersSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .toast(done: .constant(nil), problem: $problemText)
             .sheet(isPresented: $isAdding) {
                 ChatPeopleSheet(
                     connection: model.connection, purpose: .add, leftOut: Set(model.chat?.presentMembers.map(\.userId) ?? [])
@@ -365,12 +383,12 @@ struct ChatMembersSheet: View {
                 "My agent remembers this chat",
                 isOn: Binding(
                     get: { own.isAgentReading },
-                    set: { isOn in Task { await model.setAgentReading(isOn) } }))
+                    set: { isOn in Task { problemText = await model.setAgentReading(isOn) } }))
             Toggle(
                 "Others may ask my agent here",
                 isOn: Binding(
                     get: { own.isAgentAskableByOthers == true },
-                    set: { isOn in Task { await model.setAgentAskableByOthers(isOn) } }))
+                    set: { isOn in Task { problemText = await model.setAgentAskableByOthers(isOn) } }))
         } header: {
             Text("Your agent in this chat")
         } footer: {
@@ -426,7 +444,7 @@ struct ChatMembersSheet: View {
             titleVisibility: .visible, presenting: removing
         ) { person in
             Button("Remove", role: .destructive) {
-                Task { await model.removeMember(person) }
+                Task { problemText = await model.removeMember(person) }
             }
         } message: { person in
             Text("\(ChatWords.name(of: person)) will not see new messages in this group. What was said stays.")

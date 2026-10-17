@@ -13,13 +13,15 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	_ "github.com/ziyan/teanode/internal/agent/tools/all"
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
 )
 
 // Sharing a skill is on the API, the command line and the agent's skill tool
 // under the same names. The dashboard and the iPhone app call the same
-// operations. Answering a call that waits is on the command line and in the
-// apps and is not on the tool, by design.
+// operations. Declining a call that waits is on the command line and in the
+// apps and is not on the tool, by design; approving one is in the apps only,
+// because the server accepts it from nothing else.
 func TestSkillSharingParity(test *testing.T) {
 	test.Parallel()
 
@@ -37,7 +39,7 @@ func TestSkillSharingParity(test *testing.T) {
 		"ShareSkill":           {[]string{"share"}, "share"},
 		"UnshareSkill":         {[]string{"unshare"}, "unshare"},
 		"ListSkillShareCalls":  {[]string{"calls"}, "calls"},
-		"AnswerSkillShareCall": {[]string{"approve", "decline"}, ""},
+		"AnswerSkillShareCall": {[]string{"decline"}, ""},
 	}
 	for operation := range operations {
 		if _, listed := table[operation]; !listed {
@@ -82,6 +84,11 @@ func TestSkillSharingParity(test *testing.T) {
 		if names.action != "" && !actions[names.action] {
 			test.Errorf("the skill tool has no action %s", names.action)
 		}
+	}
+	// Approving is a person's tap, on the dashboard or in the iPhone app, and
+	// there is no command that tries it from a command line.
+	if commands["approve"] != nil {
+		test.Error("teanode agent skill has an approve command, which the server refuses to a command line token")
 	}
 	// The one thing the tool must not do.
 	for name := range actions {
@@ -217,26 +224,82 @@ func TestSkillSharesAndCallsAreListedAndAnswered(test *testing.T) {
 		test.Errorf("what was sent: %v", called("ListSkillShareCalls"))
 	}
 
-	output, err = runSkillCommand(test, server, "approve", "call-1", "--note", "go ahead")
-	if err != nil || !strings.Contains(output, "approved, and it ran on your computer") {
-		test.Errorf("approve: %q %v", output, err)
+	// A call that waits comes with where to approve it.
+	if !strings.Contains(output, server.URL+"/settings/agent/connections") {
+		test.Errorf("the waiting call does not say where to approve it: %q", output)
 	}
-	if variables := called("AnswerSkillShareCall"); variables["callId"] != "call-1" || variables["isApproved"] != true || variables["decisionNote"] != "go ahead" {
-		test.Errorf("what approving sent: %v", variables)
+	output, err = runSkillCommand(test, server, "calls", "s1")
+	if err != nil || strings.Count(output, "/settings/agent/connections") != 1 {
+		test.Errorf("one waiting call, one address: %q %v", output, err)
 	}
-	if _, err = runSkillCommand(test, server, "decline", "call-1"); err != nil {
-		test.Fatal(err)
+
+	output, err = runSkillCommand(test, server, "decline", "call-1", "--note", "not today")
+	if err != nil || !strings.Contains(output, "declined; Ben was told") {
+		test.Errorf("decline: %q %v", output, err)
 	}
-	if variables := called("AnswerSkillShareCall"); variables["isApproved"] != false || variables["decisionNote"] != nil {
+	if variables := called("AnswerSkillShareCall"); variables["callId"] != "call-1" || variables["isApproved"] != false || variables["decisionNote"] != "not today" {
 		test.Errorf("what declining sent: %v", variables)
 	}
 
 	if _, err = runSkillCommand(test, server, "unshare", "s1"); err != nil || called("UnshareSkill")["shareId"] != "s1" {
 		test.Errorf("unshare: %v %v", err, called("UnshareSkill"))
 	}
-	for _, arguments := range [][]string{{"approve"}, {"decline"}, {"calls"}, {"unshare"}} {
+	for _, arguments := range [][]string{{"decline"}, {"calls"}, {"unshare"}} {
 		if _, err := runSkillCommand(test, server, arguments...); err == nil {
 			test.Errorf("%v without an argument was accepted", arguments)
+		}
+	}
+}
+
+// Lending with limits is the dashboard's and the iPhone app's, and the server
+// refuses it to a command line token. The command says so plainly and prints
+// where to do it, rather than showing the server's sentence as a failure of
+// the arguments.
+func TestSharingWithLimitsFromTheCommandLineSaysWhereToDoIt(test *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Query string `json:"query"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&document)
+		response.Header().Set("Content-Type", "application/json")
+		if strings.Contains(document.Query, "ListCirclePeople") {
+			_, _ = response.Write([]byte(`{"data":{"ListCirclePeople":[{"userId":"u-ben","username":"ben","name":"Ben"}]}}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"errors":[{"message":"api: permission denied: ` + api.TapRequiredPhrase + `: lending money is done where a person taps"}]}`))
+	}))
+	test.Cleanup(server.Close)
+
+	_, err := runSkillCommand(test, server, "share", "payments", "ben", "--tools", "pay", "--payment-limit", "100.00", "--currency", "usd")
+	if err == nil {
+		test.Fatal("the refusal was not reported")
+	}
+	for _, expected := range []string{"dashboard", "iPhone app", server.URL + "/settings/agent/connections", "--ask-every-time"} {
+		if !strings.Contains(err.Error(), expected) {
+			test.Errorf("the refusal does not say %q: %s", expected, err)
+		}
+	}
+}
+
+// A share that ended keeps its calls for the owner, listed without naming a
+// share.
+func TestTheCallsOfSharesThatEndedAreListedWithoutAShare(test *testing.T) {
+	server, called := skillSharingServer(test)
+
+	output, err := runSkillCommand(test, server, "calls", "--ended", "--waiting")
+	if err != nil || !strings.Contains(output, "payments pay") || !strings.Contains(output, "ben") {
+		test.Errorf("the ended calls: %q %v", output, err)
+	}
+	variables := called("ListSkillShareCalls")
+	if variables["callState"] != "waiting_for_approval" || variables["shareId"] != nil {
+		test.Errorf("what was sent: %v", variables)
+	}
+	for name, arguments := range map[string][]string{
+		"a share and --ended": {"calls", "s1", "--ended"},
+		"neither":             {"calls"},
+	} {
+		if _, err := runSkillCommand(test, server, arguments...); err == nil {
+			test.Errorf("%s was accepted", name)
 		}
 	}
 }

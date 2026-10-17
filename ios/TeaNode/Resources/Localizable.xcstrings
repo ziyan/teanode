@@ -61141,6 +61141,214 @@
           }
         }
       }
+    },
+    "The calendar “%@” could not be read: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー「%@」を読み込めませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取日历“%@”：%@"
+          }
+        }
+      }
+    },
+    "That agent is switched off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントはオフになっています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该助手已关闭。"
+          }
+        }
+      }
+    },
+    "Only its owner can ask that agent in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントをこのチャットで呼び出せるのは、持ち主だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有该助手的主人才能在此聊天中向它提问。"
+          }
+        }
+      }
+    },
+    "Your chats are in the menu": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットはメニューにあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的聊天在菜单里"
+          }
+        }
+      }
+    },
+    "The account is made; adding it to the circle again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントは作成済みです。サークルへの追加をもう一度行います"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已创建；正在再次将其加入圈子"
+          }
+        }
+      }
+    },
+    "This page is no longer shared with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページは、もうあなたと共有されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此页面已不再与你共享"
+          }
+        }
+      }
+    },
+    "%@ is switched off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はオフになっています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已关闭。"
+          }
+        }
+      }
+    },
+    "That agent's owner is not in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントの持ち主は、このチャットにいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该助手的主人不在此聊天中。"
+          }
+        }
+      }
+    },
+    "Open the menu to read and write to the people you share a circle with.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューを開くと、サークルを共有している人とやり取りできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开菜单，即可与和你同在一个圈子的人聊天。"
+          }
+        }
+      }
+    },
+    "Carrying on after a restart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再起動のあと、続きを進めています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启之后，接着继续"
+          }
+        }
+      }
+    },
+    "That did not reach the chat: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットに届きませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没能送到聊天：%@"
+          }
+        }
+      }
+    },
+    "%@'s owner is not in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の持ち主は、このチャットにいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的主人不在此聊天中。"
+          }
+        }
+      }
+    },
+    "Only %@'s owner can ask it in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をこのチャットで呼び出せるのは、持ち主だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有 %@ 的主人才能在此聊天中向它提问。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

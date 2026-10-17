@@ -6,6 +6,7 @@ import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { TrashIcon } from '../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import {
+  LIST_ENDED_SKILL_SHARE_CALLS,
   LIST_SKILL_SHARE_CALLS,
   PaymentCard,
   SKILL_SHARE_FIELDS,
@@ -84,7 +85,7 @@ export function SkillSharesCard() {
   const lendable = overview.data.ListAgentSkills.filter(
     (skill) => skill.enabled && skill.readable && skill.tools.length > 0,
   )
-  if (lendable.length === 0 && shares.length === 0) return null
+  if (lendable.length === 0 && shares.length === 0) return <EndedShares />
 
   const toggle = (shareId: string) =>
     setOpened((before) => {
@@ -207,6 +208,8 @@ export function SkillSharesCard() {
         </SettingsSection>
       ) : null}
 
+      <EndedShares />
+
       {sharing ? (
         <ShareSkillDialog
           skill={sharing}
@@ -234,6 +237,47 @@ export function SkillSharesCard() {
         />
       ) : null}
     </>
+  )
+}
+
+// EndedShares are the calls of shares that no longer exist: taken back, or
+// ended when the two stopped sharing a circle. The owner keeps the record of
+// what was asked of their money; the other person sees their own. Drawn only
+// when there are any.
+function EndedShares() {
+  const { t } = useTranslation()
+  const calls = useQuery(() => graphql<{ ListSkillShareCalls: SkillShareCall[] }>(LIST_ENDED_SKILL_SHARE_CALLS), [])
+  const rows = calls.data?.ListSkillShareCalls ?? []
+  if (rows.length === 0) return null
+  return (
+    <SettingsSection card title={t('skillShare.ended')} description={t('skillShare.endedHint')}>
+      {rows.map((call) => (
+        <SettingsRow
+          key={call.id}
+          title={t('skillShare.endedRow', {
+            skill: call.skillName,
+            tool: call.toolName,
+            name: call.granteeName || call.granteeUsername,
+          })}
+          avatar={call.granteeName || call.granteeUsername}
+          avatarUrl={call.granteeAvatarUrl}
+          avatarColorIndex={call.granteeAvatarColorIndex}
+          badge={
+            <Tag
+              value={t(`skillShare.callState.${call.callState}` as Parameters<typeof t>[0])}
+              tone={call.callState === 'ran' ? 'good' : 'bad'}
+            />
+          }
+          subtitle={[
+            call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : '',
+            new Date(call.createdAt).toLocaleString(),
+            call.requestReason,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        />
+      ))}
+    </SettingsSection>
   )
 }
 

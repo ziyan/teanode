@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -498,7 +499,6 @@ func describeChatAuthors(messages []*models.AgentMessage, users map[string]*mode
 	}
 }
 
-// copyForMember is the message as another member's conversation shows it.
 // withoutQuoteBeforeJoining is the member's copy of a reply without the words
 // of the message it is to, when that was said before they joined: the reply
 // still says which message it is to. The copy is shallow, so the references
@@ -515,6 +515,8 @@ func withoutQuoteBeforeJoining(copied *models.AgentMessage, member *models.ChatM
 	return copied
 }
 
+// copyForMember is the message as another member's conversation shows it: in
+// that member's conversation, and theirs only when they wrote it.
 func copyForMember(message *models.AgentMessage, member *models.ChatMember) *models.AgentMessage {
 	copied := *message
 	copied.ConversationID = member.ConversationID
@@ -540,6 +542,54 @@ func (self *graph) publishChatEvents(ctx context.Context, chatId string, build f
 	tx.AfterCommit(func() { hub.PublishChatEvents(events) })
 }
 
+// publishChatMessageEvents is publishChatEvents for a change to one message
+// (edited, unsaid, reacted): told only to the members the message is readable
+// by, because a person who joined after it was said was never shown it, and an
+// edit would hand them its new words, a reaction its context.
+func (self *graph) publishChatMessageEvents(ctx context.Context, message *models.ChatMessage, build func(member *models.ChatMember) agent.Event) {
+	self.publishChatEvents(ctx, message.ChatID, func(member *models.ChatMember) agent.Event {
+		if !isReadableByMember(message, member) {
+			return agent.Event{}
+		}
+		return build(member)
+	})
+}
+
+// requireChatAttachmentRoom refuses files that would take the person past what
+// one person keeps of the files they send in chats. A message with files stays
+// until somebody deletes it and the others in the chat read them, so they are
+// not swept like a file handed to the agent, and without a bound one account
+// fills the server's storage a message at a time.
+func (self *graph) requireChatAttachmentRoom(tx db.Transaction, agentId string, newBytes int64) error {
+	if newBytes <= 0 {
+		return nil
+	}
+	limits := self.config.Current().Agent.Limits
+	most := int64(min(limits.EffectiveMaxChatAttachmentAccountBytes(), uint64(math.MaxInt64)))
+	kept, err := tx.ChatAttachmentBytes(agentId)
+	if err != nil {
+		return err
+	}
+	if kept+newBytes <= most {
+		return nil
+	}
+	return fmt.Errorf("%w: you keep %s of files you sent in chats, and these %s would take you past the %s each person may keep; delete old messages with files, in the chats they were sent in, to make room",
+		api.ErrInvalidArguments, sizeInWords(kept), sizeInWords(newBytes), sizeInWords(most))
+}
+
+// sizeInWords is a size as a person reads it: 1.5 GB, 12.0 MB, 300 kB.
+func sizeInWords(size int64) string {
+	switch {
+	case size >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(size)/float64(1<<30))
+	case size >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(size)/float64(1<<20))
+	case size >= 1<<10:
+		return fmt.Sprintf("%.0f kB", float64(size)/float64(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", size)
+}
+
 // postChatMessage stores what the caller said in a chat, tells the members,
 // and notifies their phones. As the agent, the message is the agent's under
 // its name and the caller is its owner.
@@ -563,10 +613,15 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, bo
 	if len(attachments) != len(attachmentIds) {
 		return nil, fmt.Errorf("%w: an attachment is missing", api.ErrInvalidArguments)
 	}
+	var attachedBytes int64
 	for _, attachment := range attachments {
 		if attachment.AgentID != session.Agent.ID || attachment.MessageID != "" {
 			return nil, api.ErrNotFound
 		}
+		attachedBytes += attachment.Size
+	}
+	if err := self.requireChatAttachmentRoom(tx, session.Agent.ID, attachedBytes); err != nil {
+		return nil, err
 	}
 	// A reply is to a message the caller could read: what was said before they
 	// joined is not theirs to quote.
@@ -667,6 +722,11 @@ func (self *graph) sayInChat(ctx context.Context, session *chatSession, argument
 			break
 		}
 	}
+	// Before the words are stored: a message that is said and then fails to
+	// start the turn it asked for is said all the same.
+	if err := checkEffort(arguments.Effort); err != nil {
+		return nil, err
+	}
 	addressed := addressedAgentsOf(session, arguments)
 	worker := self.agentWorker()
 	if len(addressed) > 0 && worker == nil {
@@ -727,7 +787,7 @@ func (self *graph) EditChatMessage(ctx context.Context, arguments EditChatMessag
 	if err != nil {
 		return nil, err
 	}
-	self.publishChatEvents(ctx, session.Chat.ID, func(member *models.ChatMember) agent.Event {
+	self.publishChatMessageEvents(ctx, message, func(member *models.ChatMember) agent.Event {
 		return agent.Event{Kind: agent.EventEdited, MessageID: shown.ID, Message: copyForMember(shown, member)}
 	})
 	return shown, nil
@@ -762,7 +822,7 @@ func (self *graph) DeleteChatMessage(ctx context.Context, arguments DeleteChatMe
 	if _, err := tx.DeleteChatMessage(message.ID); err != nil {
 		return false, translateError(err)
 	}
-	self.publishChatEvents(ctx, session.Chat.ID, func(*models.ChatMember) agent.Event {
+	self.publishChatMessageEvents(ctx, message, func(*models.ChatMember) agent.Event {
 		return agent.Event{Kind: agent.EventUnsaid, MessageID: message.ID}
 	})
 	return true, nil

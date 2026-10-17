@@ -60,6 +60,17 @@ CREATE UNIQUE INDEX "circle_invitation_waiting" ON "circle_invitation" ("circle_
 CREATE INDEX "circle_invitation_invited_user" ON "circle_invitation" ("invited_user_id")
     WHERE "answered_at" IS NULL;
 
+-- One row for every call that invites somebody, whether or not it stored an
+-- invitation, so that the hourly bound on invitations cannot be told apart by
+-- whether a username exists (a name nobody has stores nothing) and is not
+-- reset by deleting the circle the invitations were to (they go with it).
+-- Rows older than a day are removed by the next call of the same person.
+CREATE TABLE "circle_invitation_send" (
+    "user_id" character varying(32) NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+    "sent_at" timestamp with time zone NOT NULL
+);
+CREATE INDEX "circle_invitation_send_user" ON "circle_invitation_send" ("user_id", "sent_at" DESC);
+
 -- Making a circle is something a person does with their own account, like
 -- keeping a calendar, so everybody who has the ordinary roles gets it. An
 -- operator can take it away from a role in the usual place.

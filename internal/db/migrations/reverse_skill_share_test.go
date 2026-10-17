@@ -8,8 +8,9 @@ import (
 )
 
 // A share names its tools and a currency for any limit it sets, a call is in
-// one of the six states, a call that waits has a moment it stops waiting, and
-// one skill is shared with one person once. The reverse file takes both tables
+// one of the six states and says whose skill it was a call of, a call that
+// waits has a moment it stops waiting, and one skill is shared with one person
+// once. A call stays when its share goes. The reverse file takes both tables
 // away.
 func TestTheSkillShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 	t.Parallel()
@@ -25,8 +26,8 @@ func TestTheSkillShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 		`INSERT INTO "agent" ("id", "created_at", "modified_at", "user_id", "name") VALUES ('reverse-skill-agent', now(), now(), '` + ownerId + `', 'Agent')`,
 		`INSERT INTO "skill_share" ("id", "created_at", "modified_at", "owner_agent_id", "skill_name", "tool_names", "grantee_user_id", "payment_limit_minor", "currency_code")
 			VALUES ('reverse-skill-share', now(), now(), 'reverse-skill-agent', 'payments', ARRAY['pay'], '` + granteeId + `', 10000, 'usd')`,
-		`INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "tool_name", "call_state")
-			VALUES ('reverse-skill-call', now(), now(), 'reverse-skill-share', 'pay', 'ran')`,
+		`INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "owner_agent_id", "grantee_user_id", "skill_name", "tool_name", "call_state")
+			VALUES ('reverse-skill-call', now(), now(), 'reverse-skill-share', 'reverse-skill-agent', '` + granteeId + `', 'payments', 'pay', 'ran')`,
 	} {
 		dbtest.Exec(t, database, statement)
 	}
@@ -36,8 +37,8 @@ func TestTheSkillShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 			VALUES ('` + id + `', now(), now(), 'reverse-skill-agent', 'other', '` + granteeId + `', ` + values + `)`
 	}
 	insertCall := func(id, callState, extraColumns, extraValues string) string {
-		return `INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "tool_name", "call_state"` + extraColumns + `)
-			VALUES ('` + id + `', now(), now(), 'reverse-skill-share', 'pay', '` + callState + `'` + extraValues + `)`
+		return `INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "owner_agent_id", "grantee_user_id", "skill_name", "tool_name", "call_state"` + extraColumns + `)
+			VALUES ('` + id + `', now(), now(), 'reverse-skill-share', 'reverse-skill-agent', '` + granteeId + `', 'payments', 'pay', '` + callState + `'` + extraValues + `)`
 	}
 	for name, statement := range map[string]string{
 		"no tools":         insertShare("reverse-skill-none", `"tool_names"`, `ARRAY[]::text[]`),
@@ -47,7 +48,8 @@ func TestTheSkillShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 		"twice":            `INSERT INTO "skill_share" ("id", "created_at", "modified_at", "owner_agent_id", "skill_name", "tool_names", "grantee_user_id") VALUES ('reverse-skill-twice', now(), now(), 'reverse-skill-agent', 'payments', ARRAY['pay'], '` + granteeId + `')`,
 		"unknown state":    insertCall("reverse-skill-state", "running", "", ""),
 		"waits for ever":   insertCall("reverse-skill-forever", "waiting_for_approval", "", ""),
-		"call of no share": `INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "tool_name", "call_state") VALUES ('reverse-skill-orphan', now(), now(), 'nobody', 'pay', 'ran')`,
+		"call of no share": `INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "owner_agent_id", "grantee_user_id", "skill_name", "tool_name", "call_state") VALUES ('reverse-skill-orphan', now(), now(), 'nobody', 'reverse-skill-agent', '` + granteeId + `', 'payments', 'pay', 'ran')`,
+		"call of no one":   `INSERT INTO "skill_share_call" ("id", "created_at", "modified_at", "skill_share_id", "tool_name", "call_state") VALUES ('reverse-skill-nobody', now(), now(), 'reverse-skill-share', 'pay', 'ran')`,
 	} {
 		if err := execute(database, statement); err == nil {
 			t.Errorf("%s: the database accepted a row it should refuse", name)
@@ -56,10 +58,15 @@ func TestTheSkillShareMigrationRefusesBadRowsAndReverses(t *testing.T) {
 	// Waiting with a moment to stop waiting is fine.
 	dbtest.Exec(t, database, insertCall("reverse-skill-waiting", "waiting_for_approval", `, "expires_at"`, `, now() + interval '1 day'`))
 
-	// Removing the share takes its calls with it.
+	// Removing the share leaves its calls, without a share, as the record.
 	dbtest.Exec(t, database, `DELETE FROM "skill_share" WHERE "id" = 'reverse-skill-share'`)
+	if got := dbtest.QueryString(t, database, `SELECT count(*)::text FROM "skill_share_call" WHERE "skill_share_id" IS NULL AND "skill_name" = 'payments'`); got != "2" {
+		t.Errorf("%s calls are left, empty of a share, after their share went; want the 2 that were written", got)
+	}
+	// Removing the owner's agent takes its record with it.
+	dbtest.Exec(t, database, `DELETE FROM "agent" WHERE "id" = 'reverse-skill-agent'`)
 	if got := dbtest.QueryString(t, database, `SELECT count(*)::text FROM "skill_share_call"`); got != "0" {
-		t.Errorf("%s calls are left after their share went", got)
+		t.Errorf("%s calls are left after the owner's agent went", got)
 	}
 
 	reverse, err := os.ReadFile("0197_skill_share.reverse.sql")

@@ -104,18 +104,25 @@ func (self *Agent) wakeForSkillShareCall(answer *skillShareAnswer) {
 	self.queueWakeLocked(wokenConversationId, wake, backgroundWakeGather)
 }
 
+// quotedName is a name somebody typed, made one short line and quoted, for a
+// sentence the server writes: the group's title and the members' names are
+// the people's own, and the owner's name goes to somebody else's agent.
+func quotedName(name string) string {
+	return fmt.Sprintf("%q", chatAuthorName(models.PlainText(name)))
+}
+
 // chatLabelFor names a chat for the person whose agent made the call: the
 // group's title, else the other people in it.
 func chatLabelFor(chat *models.Chat, agentId string) string {
 	if title := strings.TrimSpace(chat.Title); title != "" {
-		return "the chat " + title
+		return "the chat " + quotedName(title)
 	}
 	names := []string{}
 	for _, member := range chat.ActiveMembers() {
 		if member.AgentID == agentId {
 			continue
 		}
-		names = append(names, member.Name)
+		names = append(names, quotedName(member.Name))
 	}
 	if len(names) == 0 {
 		return "a chat"
@@ -193,7 +200,7 @@ func skillShareOutcome(call *models.SkillShareCall) string {
 func skillShareAnswersLine(answers []*skillShareAnswer) string {
 	described := make([]string, 0, len(answers))
 	for _, answer := range answers {
-		described = append(described, fmt.Sprintf("%s's %s (%s), %s", answer.ownerName, answer.skillName, answer.call.ToolName, skillShareOutcome(answer.call)))
+		described = append(described, fmt.Sprintf("%s shared by %s (%s), %s", answer.skillName, quotedName(answer.ownerName), answer.call.ToolName, skillShareOutcome(answer.call)))
 	}
 	return "Shared skill calls answered: " + strings.Join(described, "; ")
 }
@@ -214,7 +221,7 @@ func skillShareWakeMessage(answers []*skillShareAnswer) string {
 	for _, answer := range answers {
 		call := answer.call
 		builder.WriteString("\n")
-		fmt.Fprintf(&builder, "%s call id: %s\nskill: %s's %s, tool %s\noutcome: %s\n", models.BackgroundWorkMarker, call.ID, answer.ownerName, answer.skillName, call.ToolName, skillShareOutcome(call))
+		fmt.Fprintf(&builder, "%s call id: %s\nskill: %s shared by %s, tool %s\noutcome: %s\n", models.BackgroundWorkMarker, call.ID, answer.skillName, quotedName(answer.ownerName), call.ToolName, skillShareOutcome(call))
 		if answer.chatLabel != "" {
 			builder.WriteString("made while answering in " + answer.chatLabel + "; you are not in that chat now, so tell your person here, and do not repeat it to the others in the chat unless they ask you to\n")
 		}
@@ -222,7 +229,7 @@ func skillShareWakeMessage(answers []*skillShareAnswer) string {
 			fmt.Fprintf(&builder, "amount: %s\n", models.FormatMinor(*call.AmountMinor, call.CurrencyCode))
 		}
 		if call.DecisionNote != "" {
-			builder.WriteString(answer.ownerName + "'s note:\n" + fenced(call.DecisionNote) + "\n")
+			builder.WriteString("the note from " + quotedName(answer.ownerName) + ":\n" + fenced(call.DecisionNote) + "\n")
 		}
 		if len(call.ToolOutput) > 0 {
 			encoded, _ := json.Marshal(call.ToolOutput)

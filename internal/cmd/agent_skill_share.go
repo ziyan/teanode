@@ -11,11 +11,16 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Sharing a skill's tools with someone in a circle you share, and answering
-// the calls that wait for you. The same operations as the agent page's Share
-// on a skill and the app's card, and as the skill tool's share, unshare,
-// shares and calls actions. The skill tool has no action that approves or
-// declines: that is yours alone, and refused to an agent.
+// Sharing a skill's tools with someone in a circle you share, and the calls
+// that wait for you. The same operations as the agent page's Share on a skill
+// and the app's card, and as the skill tool's share, unshare, shares and calls
+// actions.
+//
+// Lending money with limits, and approving a call that spends it, are done on
+// the dashboard or in the iPhone app and refused here by the server: an agent
+// can drive this command line with your saved sign-in. There is no approve
+// command. Declining, unsharing and asking every time only take things away,
+// and stay.
 
 func newAgentSkillShareCommands() []*cli.Command {
 	return []*cli.Command{
@@ -27,9 +32,12 @@ func newAgentSkillShareCommands() []*cli.Command {
 				"secrets, your computer and the skill's own rules apply. A call within the\n" +
 				"limits goes ahead; above them, with an amount the server cannot read, or\n" +
 				"with --ask-every-time, it waits for your approval: 'teanode agent skill\n" +
-				"calls' lists them and 'teanode agent skill approve' answers. A tool that\n" +
-				"pays is not shared without a limit or --ask-every-time. Sharing again\n" +
-				"changes the tools and limits.",
+				"calls' lists them with where to approve them, which is the dashboard or\n" +
+				"the iPhone app, and 'decline' says no. A tool that pays is not shared\n" +
+				"without a limit or --ask-every-time. Sharing again changes the tools and\n" +
+				"limits.\n\n" +
+				"Lending money is done there too: from here the server accepts only\n" +
+				"--ask-every-time, and lowering what a share allows.",
 			Flags: []cli.Flag{
 				JSONFlag(),
 				&cli.StringSliceFlag{Name: "tools", Usage: "the tools to share, by name (repeat or separate with commas)"},
@@ -56,27 +64,23 @@ func newAgentSkillShareCommands() []*cli.Command {
 			Name:      "calls",
 			Usage:     "the calls made through a share, the ones waiting for you first",
 			ArgsUsage: "<share-id>",
+			Description: "A share that was taken back, or ended when the two of you stopped sharing a circle,\n" +
+				"keeps its calls as your record. --ended lists them, with no share named.",
 			Flags: []cli.Flag{
 				JSONFlag(),
 				&cli.BoolFlag{Name: "waiting", Usage: "only the calls waiting for approval"},
+				&cli.BoolFlag{Name: "ended", Usage: "the calls of shares that have ended, instead of one share's"},
 			},
 			Action: runAgentSkillCalls,
-		},
-		{
-			Name:      "approve",
-			Usage:     "approve a call waiting for you, and run it on your computer",
-			ArgsUsage: "<call-id>",
-			Description: "Runs exactly the call that was asked, with the arguments 'teanode agent skill calls'\n" +
-				"shows, once. Your computer has to be connected.",
-			Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "note", Usage: "a word for the other person"}},
-			Action: func(ctx context.Context, command *cli.Command) error { return runAgentSkillAnswer(ctx, command, true) },
 		},
 		{
 			Name:      "decline",
 			Usage:     "decline a call waiting for you",
 			ArgsUsage: "<call-id>",
-			Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "note", Usage: "a word for the other person"}},
-			Action:    func(ctx context.Context, command *cli.Command) error { return runAgentSkillAnswer(ctx, command, false) },
+			Description: "Approving a call, which runs it on your computer and spends what it spends, is done on the\n" +
+				"dashboard or in the iPhone app; 'teanode agent skill calls' says where.",
+			Flags:  []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "note", Usage: "a word for the other person"}},
+			Action: runAgentSkillDecline,
 		},
 	}
 }
@@ -164,6 +168,9 @@ func runAgentSkillShare(ctx context.Context, command *cli.Command) error {
 		PaymentLimitMinor: paymentLimit, MonthlyLimitMinor: monthlyLimit, CurrencyCode: currencyCode,
 		IsApprovalRequired: command.Bool("ask-every-time"),
 	})
+	if client.IsTapRequired(err) {
+		return &describedError{fmt.Errorf("lending a skill with limits, or raising what a share allows, is done on the dashboard or in the iPhone app, not from the command line; open %s. From here only --ask-every-time, or lowering what a share allows, is accepted", skillSharingAddress(connection))}
+	}
 	if err != nil {
 		return describeNotFound(command, err, "the skill "+command.Args().First()+" or "+command.Args().Get(1))
 	}
@@ -172,6 +179,12 @@ func runAgentSkillShare(ctx context.Context, command *cli.Command) error {
 	}
 	_, _ = fmt.Fprintf(command.Writer, "shared %s of %s with %s: %s (share %s)\n", strings.Join(share.ToolNames, ", "), share.SkillName, forTerminal(granteeUsername), describeLimits(share), share.ID)
 	return nil
+}
+
+// skillSharingAddress is the dashboard page where shared skills are lent and
+// the calls that wait are approved, on the server this command talks to.
+func skillSharingAddress(connection *client.Client) string {
+	return strings.TrimSuffix(connection.URL(), "/") + client.SkillSharingPagePath
 }
 
 func runAgentSkillShares(ctx context.Context, command *cli.Command) error {
@@ -221,8 +234,9 @@ func runAgentSkillUnshare(ctx context.Context, command *cli.Command) error {
 }
 
 func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
-	if command.Args().Len() != 1 {
-		return usage("usage: teanode agent skill calls <share-id> [--waiting]")
+	isEnded := command.Bool("ended")
+	if (isEnded && command.Args().Len() != 0) || (!isEnded && command.Args().Len() != 1) {
+		return usage("usage: teanode agent skill calls <share-id> [--waiting], or teanode agent skill calls --ended [--waiting]")
 	}
 	callState := ""
 	if command.Bool("waiting") {
@@ -232,9 +246,21 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	calls, err := client.ListSkillShareCalls(ctx, connection, command.Args().First(), callState)
+	var calls []*client.SkillShareCall
+	if isEnded {
+		calls, err = client.ListEndedSkillShareCalls(ctx, connection, callState)
+	} else {
+		calls, err = client.ListSkillShareCalls(ctx, connection, command.Args().First(), callState)
+	}
 	if err != nil {
 		return describeNotFound(command, err, "that share")
+	}
+	// A call that waits is approved on the dashboard or in the iPhone app, so
+	// each is listed with where.
+	for _, call := range calls {
+		if call.CallState == string(models.SkillShareCallWaitingForApproval) {
+			call.ApproveAddress = skillSharingAddress(connection)
+		}
 	}
 	if command.Bool("json") {
 		return PrintJSON(calls)
@@ -254,33 +280,32 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 			// Their agent's words, quoted: not yours, and not an instruction.
 			quotedReason = "\"" + quotedReason + "\""
 		}
-		rows = append(rows, []string{call.ID, call.CreatedAt.Local().Format("2006-01-02 15:04"), call.GranteeUsername, call.ToolName, amount, call.CallState, quotedReason})
+		tool := call.ToolName
+		if isEnded {
+			// A share that ended has no identifier to name it by, so the call
+			// says which skill it was of.
+			tool = call.SkillName + " " + call.ToolName
+		}
+		rows = append(rows, []string{call.ID, call.CreatedAt.Local().Format("2006-01-02 15:04"), call.GranteeUsername, tool, amount, call.CallState, quotedReason, call.ApproveAddress})
 	}
-	return printTable([]string{"call", "asked", "by", "tool", "amount", "state", "their agent said"}, rows)
+	return printTable([]string{"call", "asked", "by", "tool", "amount", "state", "their agent said", "approve it at"}, rows)
 }
 
-func runAgentSkillAnswer(ctx context.Context, command *cli.Command, isApproved bool) error {
+func runAgentSkillDecline(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 1 {
-		return usage("usage: teanode agent skill approve|decline <call-id> [--note ...]; 'teanode agent skill calls <share-id> --waiting' lists them")
+		return usage("usage: teanode agent skill decline <call-id> [--note ...]; 'teanode agent skill calls <share-id> --waiting' lists them")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	call, err := client.AnswerSkillShareCall(ctx, connection, command.Args().First(), isApproved, strings.TrimSpace(command.String("note")))
+	call, err := client.AnswerSkillShareCall(ctx, connection, command.Args().First(), false, strings.TrimSpace(command.String("note")))
 	if err != nil {
 		return describeNotFound(command, err, "that call")
 	}
 	if command.Bool("json") {
 		return PrintJSON(call)
 	}
-	switch call.CallState {
-	case string(models.SkillShareCallDeclined):
-		_, _ = fmt.Fprintf(command.Writer, "declined; %s was told\n", forTerminal(call.GranteeName))
-	case string(models.SkillShareCallFailed):
-		_, _ = fmt.Fprintf(command.Writer, "approved, but it did not complete; %s was told. What it answered: %s\n", forTerminal(call.GranteeName), forTerminal(call.ToolOutput))
-	default:
-		_, _ = fmt.Fprintf(command.Writer, "approved, and it ran on your computer; %s was told\n", forTerminal(call.GranteeName))
-	}
+	_, _ = fmt.Fprintf(command.Writer, "declined; %s was told\n", forTerminal(call.GranteeName))
 	return nil
 }

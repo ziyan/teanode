@@ -59,12 +59,15 @@ type SkillShareOperation interface {
 	// who still shares a circle with them, with the owner named.
 	ListSkillSharesReaching(granteeUserId string) ([]*models.SkillShare, error)
 
-	// DeleteSkillShare takes one back, with its calls. ErrNotFound when there
-	// is none.
+	// DeleteSkillShare takes one back. Its calls stay, as the record of what
+	// was asked of the owner's money, without a share; the ones that were
+	// waiting for approval expire, since nobody can approve a call of a share
+	// that is gone. ErrNotFound when there is none.
 	DeleteSkillShare(shareId string) error
 
-	// CreateSkillShareCall records one call. The caller sets its state; a
-	// call that waits has an ExpiresAt.
+	// CreateSkillShareCall records one call of a share, which fills in whose
+	// skill it was and for whom. The caller sets its state; a call that waits
+	// has an ExpiresAt. ErrNotFound when the share is gone.
 	CreateSkillShareCall(call *models.SkillShareCall) (*models.SkillShareCall, error)
 
 	// GetSkillShareCall is one call, or nil.
@@ -74,14 +77,23 @@ type SkillShareOperation interface {
 	// newest first. A state narrows them; empty is every state.
 	ListSkillShareCalls(shareId string, callState models.SkillShareCallState, limit int) ([]*models.SkillShareCall, error)
 
-	// SkillShareMonthTotal is what the share's ran and failed calls come to,
-	// in the currency, for those that ran from the moment to the moment (a call
-	// that waited ran when it was approved), and no other calls: one that was
-	// refused, declined, expired or still waits has paid nothing. A call that
-	// failed counts, because a failure after the command acted cannot be told
-	// from one before it, and the month's limit is the owner's bound on what
-	// could have been spent.
-	SkillShareMonthTotal(shareId, currencyCode string, from, until time.Time) (int64, error)
+	// ListEndedSkillShareCalls are the calls of shares that have ended and
+	// that the person made the share of (the owner, who sees all of them) or
+	// made (the other person, who sees their own), newest first, with the
+	// people named. A state narrows them; empty is every state.
+	ListEndedSkillShareCalls(userId string, callState models.SkillShareCallState, limit int) ([]*models.SkillShareCall, error)
+
+	// SkillShareMonthTotal is what the calls of one skill from one owner's
+	// agent to one person, that ran and failed, come to, in the currency, for
+	// those that ran from the moment to the moment (a call that waited ran when
+	// it was approved), and no other calls: one that was refused, declined,
+	// expired or still waits has paid nothing. A call that failed counts,
+	// because a failure after the command acted cannot be told from one before
+	// it, and the month's limit is the owner's bound on what could have been
+	// spent. The calls are counted by who they were between and not by the
+	// share, so a share made again between the same two people, after the
+	// earlier one ended, starts the month where it was.
+	SkillShareMonthTotal(ownerAgentId, granteeUserId, skillName, currencyCode string, from, until time.Time) (int64, error)
 
 	// HasSkillShareOutputWith says whether an earlier call of the share that
 	// ran answered with this identifier as a whole word in any text of its
@@ -165,7 +177,10 @@ type skillShareCallModel struct {
 	ID                    string     `gorm:"column:id;primaryKey"`
 	CreatedAt             time.Time  `gorm:"column:created_at"`
 	ModifiedAt            time.Time  `gorm:"column:modified_at"`
-	SkillShareID          string     `gorm:"column:skill_share_id"`
+	SkillShareID          *string    `gorm:"column:skill_share_id"`
+	OwnerAgentID          string     `gorm:"column:owner_agent_id"`
+	GranteeUserID         string     `gorm:"column:grantee_user_id"`
+	SkillName             string     `gorm:"column:skill_name"`
 	GranteeRunID          *string    `gorm:"column:grantee_run_id"`
 	GranteeConversationID *string    `gorm:"column:grantee_conversation_id"`
 	ToolName              string     `gorm:"column:tool_name"`
@@ -189,13 +204,18 @@ func (self *skillShareCallModel) toModel() *models.SkillShareCall {
 		ID:            self.ID,
 		CreatedAt:     self.CreatedAt.In(time.Local),
 		ModifiedAt:    self.ModifiedAt.In(time.Local),
-		SkillShareID:  self.SkillShareID,
+		OwnerAgentID:  self.OwnerAgentID,
+		GranteeUserID: self.GranteeUserID,
+		SkillName:     self.SkillName,
 		ToolName:      self.ToolName,
 		RequestReason: self.RequestReason,
 		AmountMinor:   self.AmountMinor,
 		CallState:     models.SkillShareCallState(self.CallState),
 		DecisionNote:  self.DecisionNote,
 		ToolArguments: map[string]any{},
+	}
+	if self.SkillShareID != nil {
+		call.SkillShareID = *self.SkillShareID
 	}
 	if self.GranteeRunID != nil {
 		call.GranteeRunID = *self.GranteeRunID
@@ -444,7 +464,21 @@ WHERE share.grantee_user_id = @grantee
 	return shares, nil
 }
 
+// expireWaitingSkillShareCalls ends the calls of the shares chosen by the
+// condition that were waiting for the owner, because the shares are going: it
+// changes them to expired, told to nobody (the person lost the tools with the
+// share).
+func expireWaitingSkillShareCalls(tx *gorm.DB, shareCondition string, arguments ...any) error {
+	return tx.Exec(`UPDATE "skill_share_call"
+		SET "call_state" = 'expired', "decided_at" = now(), "woken_at" = now(), "modified_at" = now()
+		WHERE "call_state" = 'waiting_for_approval' AND "skill_share_id" IN (SELECT share.id FROM "skill_share" share WHERE `+shareCondition+`)`,
+		arguments...).Error
+}
+
 func (self *transaction) DeleteSkillShare(shareId string) error {
+	if err := expireWaitingSkillShareCalls(self.tx, `share.id = ?`, shareId); err != nil {
+		return err
+	}
 	deleted := self.tx.Where("\"id\" = ?", shareId).Delete(&skillShareModel{})
 	if deleted.Error != nil {
 		return deleted.Error
@@ -460,17 +494,21 @@ func (self *transaction) DeleteSkillShare(shareId string) error {
 // circle code calls it (endSharesOutsideCircles) in the transaction that takes
 // a person out of a circle. A skill share is always to one person, so unlike
 // the other shares there is no circle's share to leave alone: it ends the
-// moment the two stop sharing a circle, and the calls it holds go with it.
+// moment the two stop sharing a circle. The calls it holds stay, as the
+// owner's record, and the ones that waited expire.
 func endSkillSharesOutsideCircles(tx *gorm.DB, userId string) error {
-	return tx.Exec(`DELETE FROM "skill_share" WHERE "id" IN (
+	const strangers = `share.id IN (
 		SELECT share.id FROM "skill_share" share
 		JOIN "agent" owner ON owner.id = share.owner_agent_id
 		WHERE (owner.user_id = @user OR share.grantee_user_id = @user)
 		  AND NOT EXISTS (
 		      SELECT 1 FROM "circle_member" mine
 		      JOIN "circle_member" theirs ON theirs.circle_id = mine.circle_id
-		      WHERE mine.user_id = owner.user_id AND theirs.user_id = share.grantee_user_id))`,
-		sql.Named("user", userId)).Error
+		      WHERE mine.user_id = owner.user_id AND theirs.user_id = share.grantee_user_id))`
+	if err := expireWaitingSkillShareCalls(tx, strangers, sql.Named("user", userId)); err != nil {
+		return err
+	}
+	return tx.Exec(`DELETE FROM "skill_share" share WHERE `+strangers, sql.Named("user", userId)).Error
 }
 
 func (self *transaction) CreateSkillShareCall(call *models.SkillShareCall) (*models.SkillShareCall, error) {
@@ -495,14 +533,24 @@ func (self *transaction) CreateSkillShareCall(call *models.SkillShareCall) (*mod
 	}
 	now := time.Now()
 	id := newID()
-	if err := self.tx.Exec(`INSERT INTO "skill_share_call"
-		("id", "created_at", "modified_at", "skill_share_id", "grantee_run_id", "grantee_conversation_id", "tool_name",
+	// Whose skill it was and for whom are the share's, copied onto the call
+	// so that the call still says so when the share is gone.
+	created := self.tx.Exec(`INSERT INTO "skill_share_call"
+		("id", "created_at", "modified_at", "skill_share_id", "owner_agent_id", "grantee_user_id", "skill_name",
+		 "grantee_run_id", "grantee_conversation_id", "tool_name",
 		 "tool_arguments", "request_reason", "amount_minor", "currency_code", "call_state", "tool_output", "decided_at", "decision_note", "expires_at")
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)`,
-		id, now, now, call.SkillShareID, nullableText(call.GranteeRunID), nullableText(call.GranteeConversationID), call.ToolName,
+		SELECT ?, ?, ?, share."id", share."owner_agent_id", share."grantee_user_id", share."skill_name",
+		       ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?::jsonb, ?, ?, ?
+		FROM "skill_share" share WHERE share."id" = ?`,
+		id, now, now,
+		nullableText(call.GranteeRunID), nullableText(call.GranteeConversationID), call.ToolName,
 		string(arguments), call.RequestReason, call.AmountMinor, currencyCode, string(call.CallState), nullableJSON(output),
-		call.DecidedAt, call.DecisionNote, call.ExpiresAt).Error; err != nil {
-		return nil, err
+		call.DecidedAt, call.DecisionNote, call.ExpiresAt, call.SkillShareID)
+	if created.Error != nil {
+		return nil, created.Error
+	}
+	if created.RowsAffected == 0 {
+		return nil, ErrNotFound
 	}
 	return self.GetSkillShareCall(id)
 }
@@ -550,15 +598,72 @@ func (self *transaction) ListSkillShareCalls(shareId string, callState models.Sk
 	return calls, nil
 }
 
-func (self *transaction) SkillShareMonthTotal(shareId, currencyCode string, from, until time.Time) (int64, error) {
+func (self *transaction) SkillShareMonthTotal(ownerAgentId, granteeUserId, skillName, currencyCode string, from, until time.Time) (int64, error) {
 	var total int64
 	if err := self.tx.Raw(`SELECT COALESCE(SUM("amount_minor"), 0) FROM "skill_share_call"
-		WHERE "skill_share_id" = ? AND "call_state" IN ('ran', 'failed') AND "currency_code" = ?
+		WHERE "owner_agent_id" = ? AND "grantee_user_id" = ? AND "skill_name" = ?
+		  AND "call_state" IN ('ran', 'failed') AND "currency_code" = ?
 		  AND "amount_minor" IS NOT NULL AND COALESCE("decided_at", "created_at") >= ? AND COALESCE("decided_at", "created_at") < ?`,
-		shareId, currencyCode, from, until).Scan(&total).Error; err != nil {
+		ownerAgentId, granteeUserId, skillName, currencyCode, from, until).Scan(&total).Error; err != nil {
 		return 0, err
 	}
 	return total, nil
+}
+
+func (self *transaction) ListEndedSkillShareCalls(userId string, callState models.SkillShareCallState, limit int) ([]*models.SkillShareCall, error) {
+	if userId == "" {
+		return []*models.SkillShareCall{}, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := self.tx.Table("skill_share_call AS call").
+		Select("call.*").
+		Joins("JOIN agent owner ON owner.id = call.owner_agent_id").
+		Where("call.skill_share_id IS NULL AND (owner.user_id = ? OR call.grantee_user_id = ?)", userId, userId)
+	if callState != "" {
+		query = query.Where("call.call_state = ?", string(callState))
+	}
+	var rows []skillShareCallModel
+	if err := query.Order("call.created_at DESC, call.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	ownerUserIds := map[string]string{}
+	agentIds, userIds := []string{}, []string{}
+	for _, row := range rows {
+		agentIds = append(agentIds, row.OwnerAgentID)
+		userIds = append(userIds, row.GranteeUserID)
+	}
+	if len(agentIds) > 0 {
+		var owners []struct {
+			ID     string `gorm:"column:id"`
+			UserID string `gorm:"column:user_id"`
+		}
+		if err := self.tx.Table("agent").Select("id, user_id").Where("id IN ?", uniqueStrings(agentIds)).Scan(&owners).Error; err != nil {
+			return nil, err
+		}
+		for _, owner := range owners {
+			ownerUserIds[owner.ID] = owner.UserID
+			userIds = append(userIds, owner.UserID)
+		}
+	}
+	users, err := loadUsersByID(self.tx, userIds)
+	if err != nil {
+		return nil, err
+	}
+	calls := make([]*models.SkillShareCall, 0, len(rows))
+	for index := range rows {
+		call := rows[index].toModel()
+		call.OwnerUserID = ownerUserIds[call.OwnerAgentID]
+		if owner := users[call.OwnerUserID]; owner != nil {
+			call.OwnerUsername, call.OwnerName = owner.Username, owner.DisplayName()
+		}
+		if grantee := users[call.GranteeUserID]; grantee != nil {
+			call.GranteeUsername, call.GranteeName, call.GranteeUser = grantee.Username, grantee.DisplayName(), grantee
+		}
+		calls = append(calls, call)
+	}
+	return calls, nil
 }
 
 func (self *transaction) HasSkillShareOutputWith(shareId, identifier string) (bool, error) {

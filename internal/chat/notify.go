@@ -42,7 +42,8 @@ func notificationBody(message *models.AgentMessage) string {
 
 // NotifyChatMessage tells the phones of the members what somebody said: of
 // each member but the author who has not silenced the chat and is not
-// looking at a dashboard or the app. An agent's message is told to its owner
+// looking at that chat in a dashboard or the app: being in the app on another
+// screen, or in another conversation, does not hide a new message. An agent's message is told to its owner
 // too, who may be waiting for the answer away from the screen. The phones are
 // told in the background.
 // The title is the same in every language: the notification is plain text
@@ -57,7 +58,7 @@ func (self *Hub) NotifyChatMessage(message *models.AgentMessage, chatTitle strin
 		if recipient.MutedUntil != nil && recipient.MutedUntil.After(now) {
 			continue
 		}
-		if self.settings.Presence.IsWatching(recipient.UserID, time.Time{}, now) {
+		if self.settings.Presence.IsWatchingConversation(recipient.UserID, recipient.ConversationID, now) {
 			continue
 		}
 		self.phones.NotifyPhones(recipient.AgentID, models.NotificationChat, &push.Content{

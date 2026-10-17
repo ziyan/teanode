@@ -308,6 +308,39 @@ func TestTheLastMemberLeavingDeletesTheCircle(t *testing.T) {
 	world.refused(t, world.bob, fmt.Sprintf(`query { ReadCircle(circleId: %q) { id } }`, circleId))
 }
 
+// The bound on invitations an hour says no after the same number of calls
+// whatever the names are, so that it cannot be used to find which usernames
+// exist, and deleting the circle the invitations were to does not give the
+// allowance back.
+func TestTheInvitationBoundCountsEveryCallAndSurvivesDeletingTheCircle(t *testing.T) {
+	world := newCircleWorld(t)
+	circleId := world.makeCircle(t, world.alice, "Home", "family")
+	invite := func(circleId, username string) (map[string]any, string) {
+		t.Helper()
+		data, failures := world.ask(t, world.alice, fmt.Sprintf(`mutation { InviteToCircle(circleId: %q, username: %q, memberRole: "member") }`, circleId, username))
+		return data, strings.Join(failures, "; ")
+	}
+	// Thirty calls for names nobody has, none of which stores anything.
+	for count := 0; count < models.CircleInvitationsPerHourMost; count++ {
+		if data, said := invite(circleId, fmt.Sprintf("circle-nobody-%02d", count)); said != "" || data["InviteToCircle"] != true {
+			t.Fatalf("call %d: %v %q", count+1, data, said)
+		}
+	}
+	// The next is refused the same way for a name that exists and for one that
+	// does not.
+	_, forAccount := invite(circleId, world.carol.Username)
+	_, forNobody := invite(circleId, "circle-nobody-extra")
+	if forAccount == "" || forAccount != forNobody || !strings.Contains(forAccount, "30 invitations") {
+		t.Fatalf("the refusals: %q for an account and %q for nobody", forAccount, forNobody)
+	}
+	// A new circle is no new allowance.
+	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteCircle(circleId: %q) }`, circleId))
+	again := world.makeCircle(t, world.alice, "Home again", "family")
+	if _, said := invite(again, world.carol.Username); !strings.Contains(said, "30 invitations") {
+		t.Errorf("after deleting the circle: %q", said)
+	}
+}
+
 func TestInvitingAUsernameThatIsNotAnAccountAnswersTheSameAndStoresNothing(t *testing.T) {
 	world := newCircleWorld(t)
 	circleId := world.makeCircle(t, world.alice, "Home", "family")

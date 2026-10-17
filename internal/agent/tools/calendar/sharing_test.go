@@ -385,3 +385,64 @@ func TestAnEventIsMarkedPrivateThroughTheTool(t *testing.T) {
 		t.Errorf("the agenda says which is private: %v", events)
 	}
 }
+
+// The card for a write into a circle's calendar or another person's says
+// whose calendar it is, and does not say "your calendar" for it.
+func TestTheCardNamesTheCalendarAWriteGoesTo(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars":      sharedCalendars,
+		"ListCalendarEvents": `[{"id":"e1","summary":"School play","startsAt":"2030-01-05T18:00:00Z","endsAt":"2030-01-05T19:00:00Z"}]`,
+		"GetCalendarEvent":   `{"id":"e1","summary":"School play"}`,
+	}}
+	ctx := runWith(operations)
+	calendar := tools.Build().Get("calendar")
+	if calendar == nil {
+		t.Fatal("calendar is registered")
+	}
+	cases := map[string]string{
+		`{"action":"add","summary":"Lunch","starts":"2030-01-05T12:00"}`: "in your calendar",
+		`{"action":"add","summary":"School play","circle":"Home"}`:       `in the circle calendar "Home"`,
+		`{"action":"add","summary":"Lunch","person":"cora"}`:             `in "cora"'s calendar, which they will see`,
+		`{"action":"remove","event":"e1","circle":"Home"}`:               `out of the circle calendar "Home"`,
+		`{"action":"remove","event":"e1","person":"cora"}`:               `out of "cora"'s calendar, which they will see`,
+		`{"action":"remove","event":"e1"}`:                               "out of your calendar",
+	}
+	for arguments, want := range cases {
+		line := calendar.PreviewLine(ctx, []byte(arguments))
+		if !strings.Contains(line, want) {
+			t.Errorf("%s is previewed as %q, want it to say %q", arguments, line, want)
+		}
+		if want != "in your calendar" && want != "out of your calendar" && strings.Contains(line, "your calendar") {
+			t.Errorf("%s: another calendar is not called yours: %q", arguments, line)
+		}
+	}
+}
+
+// The agenda of what others shared gives, on each row, the value the edit and
+// remove tools take to reach that calendar.
+func TestTheAgendaRowsGiveWhatEditAndRemoveTake(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars":      sharedCalendars,
+		"ListCalendarEvents": `[{"id":"e1","summary":"Dentist","startsAt":"2030-01-02T10:00:00Z","endsAt":"2030-01-02T11:00:00Z"}]`,
+	}}
+	answer, err := call(t, "calendar_agenda", runWith(operations), `{"whose":"everyone","from":"2030-01-02","until":"2030-01-03"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var circles, people int
+	for _, each := range answer["events"].([]any) {
+		row := each.(map[string]any)
+		if row["calendar"] != nil {
+			t.Errorf("a calendar identifier no tool takes is not given: %v", row)
+		}
+		switch {
+		case row["whose"] == "Home" && row["circle"] == "Home" && row["person"] == nil:
+			circles++
+		case row["whose"] == "Cora" && row["person"] == "cora" && row["circle"] == nil:
+			people++
+		}
+	}
+	if circles != 1 || people != 1 {
+		t.Errorf("one circle row and one person row: %v", answer)
+	}
+}

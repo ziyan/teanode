@@ -117,13 +117,57 @@ func (self *SkillShare) IsSharing(toolName string) bool {
 	return false
 }
 
+// OpensNothingBeyond says whether sharing these terms lets the person do no
+// more than the share they replace already did, so that the change only takes
+// something away: it asks the owner every time, or it keeps to tools the share
+// already had, in the same currency, with limits at or below the old ones.
+// With no share to replace (nil), only asking every time qualifies, because
+// that is the one share under which nothing runs without the owner's word.
+func (self *SkillShare) OpensNothingBeyond(replaced *SkillShare) bool {
+	if self.IsApprovalRequired {
+		return true
+	}
+	if replaced == nil || replaced.IsApprovalRequired {
+		return false
+	}
+	for _, toolName := range self.ToolNames {
+		if !replaced.IsSharing(toolName) {
+			return false
+		}
+	}
+	// Limits in another currency cannot be compared with the old ones. When
+	// the old share had none, there is nothing to compare.
+	if (replaced.PaymentLimitMinor != nil || replaced.MonthlyLimitMinor != nil) && self.CurrencyCode != replaced.CurrencyCode {
+		return false
+	}
+	return isLimitNoHigher(self.PaymentLimitMinor, replaced.PaymentLimitMinor) &&
+		isLimitNoHigher(self.MonthlyLimitMinor, replaced.MonthlyLimitMinor)
+}
+
+// isLimitNoHigher says whether a limit is at most the one it replaces; no
+// limit is the highest there is.
+func isLimitNoHigher(limit, replaced *int64) bool {
+	if replaced == nil {
+		return true
+	}
+	return limit != nil && *limit <= *replaced
+}
+
 // SkillShareCall is one call of a shared tool, whatever came of it.
 type SkillShareCall struct {
 	ID         string    `json:"id"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 
+	// SkillShareID is the share it was made through, empty once that share
+	// has ended: the call stays, with what it was a call of below.
 	SkillShareID string `json:"skillShareId"`
+
+	// OwnerAgentID, GranteeUserID and SkillName are what the call was a call
+	// of, kept on the call so that it still says so when its share is gone.
+	OwnerAgentID  string `json:"ownerAgentId"`
+	GranteeUserID string `json:"granteeUserId"`
+	SkillName     string `json:"skillName"`
 
 	// GranteeRunID and GranteeConversationID are the turn of the grantee's
 	// agent that made the call, and the conversation that turn was in: where
@@ -155,6 +199,20 @@ type SkillShareCall struct {
 	DecisionNote string     `json:"decisionNote,omitempty"`
 	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
 	WokenAt      *time.Time `json:"wokenAt,omitempty"`
+
+	// The people, read along with the calls of shares that ended, which have
+	// no share to name them. Empty on any other call.
+	OwnerUserID     string `json:"ownerUserId,omitempty"`
+	OwnerUsername   string `json:"ownerUsername,omitempty"`
+	OwnerName       string `json:"ownerName,omitempty"`
+	GranteeUsername string `json:"granteeUsername,omitempty"`
+	GranteeName     string `json:"granteeName,omitempty"`
+	GranteeUser     *User  `json:"-"`
+}
+
+// IsShareEnded says the share the call was made through is gone.
+func (self *SkillShareCall) IsShareEnded() bool {
+	return self.SkillShareID == ""
 }
 
 // ToolArgumentsJSON is the arguments as stored.

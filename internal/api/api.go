@@ -46,6 +46,13 @@ var (
 	ErrConflict = errors.New("api: conflict")
 )
 
+// TapRequiredPhrase is how the refusal of a request that only a person's tap
+// may make begins: approving a call that spends the owner's money, or lending
+// it. A command line token is refused these, because an agent can drive the
+// person's command line, and says where to do it instead. The command line
+// recognizes this phrase to explain the refusal in its own words.
+const TapRequiredPhrase = "approve it on the dashboard or in the iPhone app"
+
 // Settings are the server-wide values the API needs.
 type Settings struct {
 	// RunningServices is the immutable set constructed by this process.
@@ -86,8 +93,9 @@ type Settings struct {
 // events, is reached through the hub itself by the packages that know it.
 type ChatService interface {
 	// ReportPresence records one tab's or one phone's report for a person:
-	// whether it is shown, and how long since the person last used it.
-	ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, now time.Time)
+	// whether it is shown, how long since the person last used it, and which
+	// conversation it has on screen, empty when none.
+	ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time)
 }
 
 // AgentService is what the API asks the agent to do at once.

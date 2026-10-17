@@ -202,6 +202,7 @@ func (self *webSocketConnection) handle(ctx context.Context) error {
 				// A token is never an impersonation, whatever cookie came
 				// with the upgrade.
 				self.request.Header.Del(api.ImpersonatorUsernameHeader)
+				self.request.Header.Del(api.CredentialKindHeader)
 			} else if self.request.Header.Get("Origin") == "" || !fromThisServer(self.request) {
 				// A session, then, and a session is a cookie: the browser
 				// attached it without being asked, so the page that opened

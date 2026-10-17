@@ -116,8 +116,8 @@ public enum Documents {
         mutation ($messageId: String!, $emoji: String!) { ReactToAgentMessage(messageId: $messageId, emoji: $emoji) }
         """
     public static let reportPresence = """
-        mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String) {
-          ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds, reporterId: $reporterId)
+        mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String, $conversationId: String) {
+          ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds, reporterId: $reporterId, conversationId: $conversationId)
         }
         """
     public static let registerPhone = """
@@ -499,12 +499,24 @@ extension Connection {
         _ = try await execute(Documents.reactToMessage, variables: ["messageId": .string(messageId), "emoji": .string(emoji)], as: Answer.self)
     }
 
-    public func reportPresence(isVisible: Bool) async throws {
+    /// Says whether the app is in front of the person and which conversation
+    /// it shows, an empty id when it is on another screen: a message in a
+    /// chat is held back from the phone only while that chat is on screen.
+    public func reportPresence(isVisible: Bool, conversationId: String = "") async throws {
         struct Answer: Decodable, Sendable { let ReportAgentPresence: Bool? }
         _ = try await execute(
             Documents.reportPresence,
-            variables: ["isVisible": .bool(isVisible), "idleSeconds": .number(0), "reporterId": .string(Self.presenceReporterId)],
+            variables: Self.presenceVariables(isVisible: isVisible, conversationId: conversationId),
             as: Answer.self)
+    }
+
+    /// The variables of a presence report, apart from the call so that what
+    /// is sent can be checked.
+    static func presenceVariables(isVisible: Bool, conversationId: String) -> [String: JSONValue] {
+        [
+            "isVisible": .bool(isVisible), "idleSeconds": .number(0), "reporterId": .string(presenceReporterId),
+            "conversationId": .string(conversationId),
+        ]
     }
 
     /// This launch of the app's name in its presence reports, so the server

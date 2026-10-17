@@ -762,6 +762,59 @@ func TestOnlyTheAuthorEditsAndAnAdminOfAGroupCanDeleteAnyMessage(t *testing.T) {
 	world.refused(t, world.alice, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, directMessage))
 }
 
+// An edit, a reaction and a message taken back are told only to the members
+// the message is readable by. Somebody added to a group after a message was
+// said was never shown it, and the feed must not hand them its new words, who
+// reacted to it, or that it was taken back.
+func TestAChangeToAMessageIsNotToldToALateJoiner(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
+	group := world.call(t, world.alice, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q]) { id } }`, world.bob.ID))["CreateGroupChat"].(map[string]any)["id"].(string)
+	groupOf := func(user *models.User) string {
+		for _, each := range world.call(t, user, `query { ListAgentConversations(kind: "chat") { id chat { title } } }`)["ListAgentConversations"].([]any) {
+			if each.(map[string]any)["chat"].(map[string]any)["title"] == "Trip" {
+				return each.(map[string]any)["id"].(string)
+			}
+		}
+		return ""
+	}
+	bobGroup := groupOf(world.bob)
+	world.say(t, world.bob, bobGroup, "before carol")
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, group, world.carol.ID))
+	carolGroup := groupOf(world.carol)
+	world.say(t, world.bob, bobGroup, "after carol")
+	messages := world.read(t, world.alice, group)
+	before, after := messages[0]["id"].(string), messages[1]["id"].(string)
+
+	aliceEvents, carolEvents := world.follow(group), world.follow(carolGroup)
+	defer aliceEvents.stop()
+	defer carolEvents.stop()
+
+	// What was said before she came.
+	world.call(t, world.bob, fmt.Sprintf(`mutation { EditChatMessage(messageId: %q, message: "before carol, changed") { id } }`, before))
+	world.call(t, world.alice, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: "👍") }`, before))
+	world.call(t, world.bob, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, before))
+	for _, kind := range []agent.EventKind{agent.EventEdited, agent.EventReacted, agent.EventUnsaid} {
+		if aliceEvents.next(kind) == nil {
+			t.Errorf("Alice, who was there, was not told of the %s", kind)
+		}
+		if !carolEvents.none(kind) {
+			t.Errorf("Carol, who joined after the message, was told of the %s", kind)
+		}
+	}
+	// What was said after.
+	world.call(t, world.bob, fmt.Sprintf(`mutation { EditChatMessage(messageId: %q, message: "after carol, changed") { id } }`, after))
+	world.call(t, world.alice, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: "👍") }`, after))
+	world.call(t, world.bob, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, after))
+	edited := carolEvents.next(agent.EventEdited)
+	if edited == nil || edited.Message == nil || edited.Message.Content != "after carol, changed" {
+		t.Errorf("Carol's feed carried %+v for an edit of what she was shown", edited)
+	}
+	if carolEvents.next(agent.EventReacted) == nil || carolEvents.next(agent.EventUnsaid) == nil {
+		t.Error("Carol was not told of a reaction to, or the taking back of, what she was shown")
+	}
+}
+
 func TestAChatReadMarkNeverMovesBack(t *testing.T) {
 	world := newChatWorld(t)
 	world.shareCircle(t, world.alice, "Home", world.bob)
@@ -1040,6 +1093,69 @@ func TestAFileSentInAChatIsReadableByTheOthersInIt(t *testing.T) {
 	if code := fetch(world.bob); code != http.StatusNotFound {
 		t.Errorf("after the message was taken back, a member fetching the file got %d", code)
 	}
+}
+
+// One person keeps only so much of the files they send in chats: a message
+// with files stays until it is taken back and everybody in the chat reads
+// them, so nothing sweeps them. A send past the limit is refused with how much
+// is kept and what to do, and taking old messages back makes room.
+func TestAPersonKeepsOnlySoMuchOfTheFilesTheySendInChats(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.bob)
+	aliceChat := world.openDirect(t, world.alice, world.bob)
+	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
+		configuration.Agent.Limits.MaxChatAttachmentAccountBytes = 1000
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	upload := func(size int64) string {
+		t.Helper()
+		var attachmentId string
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			aliceAgent, err := tx.EnsureAgent(world.alice.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attachment, err := tx.CreateAgentAttachment(&models.AgentAttachment{AgentID: aliceAgent.ID, Name: "photo.png", ContentType: "image/png", Size: size})
+			if err != nil {
+				t.Fatal(err)
+			}
+			attachmentId = attachment.ID
+		})
+		return attachmentId
+	}
+	send := func(attachmentId string) (map[string]any, []string) {
+		return world.ask(t, world.alice, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "a file", attachmentIds: [%q]) { runId } }`, aliceChat, attachmentId))
+	}
+	first, second, third := upload(600), upload(300), upload(200)
+	if _, failures := send(first); len(failures) > 0 {
+		t.Fatalf("the first file: %v", failures)
+	}
+	if _, failures := send(second); len(failures) > 0 {
+		t.Fatalf("the second file, to 900 of 1000 bytes: %v", failures)
+	}
+	// Uploaded and not sent counts for nothing yet; sending it would pass 1000.
+	_, failures := send(third)
+	said := strings.Join(failures, "; ")
+	for _, expected := range []string{"900 bytes", "200 bytes", "1000 bytes", "delete old messages with files"} {
+		if !strings.Contains(said, expected) {
+			t.Errorf("the refusal does not say %q: %q", expected, said)
+		}
+	}
+	// Nothing was sent, and the file is still the person's to send.
+	messages := world.read(t, world.alice, aliceChat)
+	if len(messages) != 2 {
+		t.Errorf("the chat has %d messages; want the two that fit", len(messages))
+	}
+	// Taking a message with files back makes room for it.
+	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, messages[0]["id"]))
+	if _, failures := send(third); len(failures) > 0 {
+		t.Errorf("after making room: %v", failures)
+	}
+	// Somebody else's allowance is their own.
+	bobChat := world.openDirect(t, world.bob, world.alice)
+	world.say(t, world.bob, bobChat, "no files here")
 }
 
 func TestAChatIsNotRenamedOrDeletedLikeAConversationWithTheAgent(t *testing.T) {

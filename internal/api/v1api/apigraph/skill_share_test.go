@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -412,4 +413,207 @@ func TestSavingASkillMakesSharesThatNoLongerQualifyAskEveryTime(t *testing.T) {
 			t.Errorf("a second save changes nothing: %v %v", again, err)
 		}
 	})
+}
+
+// shareOf is the share the owner made with ben as the owner's dashboard lists
+// it.
+func (self *skillShareWorld) shareOf(t *testing.T) map[string]any {
+	t.Helper()
+	listed := self.call(t, self.ada, `query { ListSkillShares `+skillShareFields+` }`)["ListSkillShares"].([]any)
+	if len(listed) != 1 {
+		t.Fatalf("the owner is shown %d shares: %v", len(listed), listed)
+	}
+	return listed[0].(map[string]any)
+}
+
+// Lending money is a person's tap, on the dashboard or in the phone app: an
+// agent can drive the owner's command line with their saved sign-in, so a
+// command line token, an API token and the agent's own operations are not
+// accepted for anything that lets a call through unasked. What only takes
+// away, asking every time and lowering what a share allows, is open to all.
+func TestLendingMoneyIsOnlyAcceptedFromATap(t *testing.T) {
+	world := newSkillShareWorld(t)
+	limits := func(payment, monthly int, extra string) string {
+		return world.shareQuery(`["pay"]`, world.ben.ID, fmt.Sprintf(`, paymentLimitMinor: %d, monthlyLimitMinor: %d, currencyCode: "usd"%s`, payment, monthly, extra))
+	}
+	askEveryTime := world.shareQuery(`["pay"]`, world.ben.ID, `, isApprovalRequired: true`)
+
+	// Creating a share with limits: refused to what is not a tap, and nothing
+	// is stored.
+	for name, credentialKind := range map[string]models.CredentialKind{"a command line token": models.CredentialToken, "no credential": ""} {
+		_, failures := world.askWith(t, world.ada, credentialKind, limits(10000, 40000, ""))
+		if said := strings.Join(failures, "; "); !strings.Contains(said, api.TapRequiredPhrase) {
+			t.Errorf("%s was not told where to do it: %q", name, said)
+		}
+	}
+	if listed := world.call(t, world.ada, `query { ListSkillShares `+skillShareFields+` }`)["ListSkillShares"].([]any); len(listed) != 0 {
+		t.Fatalf("a refused request stored a share: %v", listed)
+	}
+
+	// Asking every time takes nothing, from anywhere.
+	if data, failures := world.askWith(t, world.ada, models.CredentialToken, askEveryTime); len(failures) > 0 {
+		t.Fatalf("a share that asks every time from a command line token: %v %v", data, failures)
+	}
+	// Turning that off, with limits, is lending.
+	world.askWith(t, world.ada, models.CredentialToken, limits(10000, 40000, ""))
+	if share := world.shareOf(t); share["isApprovalRequired"] != true {
+		t.Errorf("a command line token turned asking every time off: %v", share)
+	}
+	// The phone app and the dashboard may.
+	for _, credentialKind := range []models.CredentialKind{models.CredentialApp, models.CredentialSession} {
+		if data, failures := world.askWith(t, world.ada, credentialKind, limits(10000, 40000, "")); len(failures) > 0 {
+			t.Fatalf("%s lent: %v %v", credentialKind, data, failures)
+		}
+	}
+	if share := world.shareOf(t); share["isApprovalRequired"] != false || share["paymentLimitMinor"].(float64) != 10000 {
+		t.Fatalf("the share a tap made: %v", share)
+	}
+
+	// Raising is lending: a higher limit, no limit where there was one, a
+	// tool that was not shared.
+	for name, query := range map[string]string{
+		"a higher payment limit": limits(20000, 40000, ""),
+		"a higher monthly limit": limits(10000, 90000, ""),
+		"no monthly limit":       world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 10000, currencyCode: "usd"`),
+		"another tool":           world.shareQuery(`["pay", "spend_requests"]`, world.ben.ID, `, paymentLimitMinor: 10000, monthlyLimitMinor: 40000, currencyCode: "usd"`),
+	} {
+		_, failures := world.askWith(t, world.ada, models.CredentialToken, query)
+		if said := strings.Join(failures, "; "); !strings.Contains(said, api.TapRequiredPhrase) {
+			t.Errorf("%s from a command line token: %q", name, said)
+		}
+	}
+	if share := world.shareOf(t); share["paymentLimitMinor"].(float64) != 10000 || share["monthlyLimitMinor"].(float64) != 40000 || len(share["toolNames"].([]any)) != 1 {
+		t.Errorf("a refused request changed the share: %v", share)
+	}
+
+	// Lowering takes away, so it is open.
+	if data, failures := world.askWith(t, world.ada, models.CredentialToken, limits(5000, 40000, "")); len(failures) > 0 {
+		t.Fatalf("lowering a limit from a command line token: %v %v", data, failures)
+	}
+	if share := world.shareOf(t); share["paymentLimitMinor"].(float64) != 5000 {
+		t.Errorf("the lowered share: %v", share)
+	}
+	// And so does asking every time, from the agent's own operations too.
+	operations := &agentOperations{
+		graph: world.graph, user: world.ada,
+		permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionAgentUse}, {Permission: models.PermissionCircleUse}}),
+	}
+	var shared map[string]any
+	if err := operations.Execute(context.Background(), limits(90000, 90000, ""), nil, &shared); err == nil || !strings.Contains(err.Error(), api.TapRequiredPhrase) {
+		t.Errorf("the agent raised the limits: %v %v", shared, err)
+	}
+	if err := operations.Execute(context.Background(), askEveryTime, nil, &shared); err != nil {
+		t.Errorf("the agent shared so that every call asks: %s", err)
+	}
+	if share := world.shareOf(t); share["isApprovalRequired"] != true {
+		t.Errorf("the share after the agent asked every time: %v", share)
+	}
+}
+
+// Approving a call spends the owner's money on the owner's computer, and is a
+// person's tap. A command line token is refused with where to approve it and
+// the call stays waiting; the same token may decline, which only says no.
+func TestApprovingACallIsOnlyAcceptedFromATap(t *testing.T) {
+	world := newSkillShareWorld(t)
+	shareId := world.shareWithBen(t)
+
+	callId := world.waitingCall(t, shareId)
+	for name, credentialKind := range map[string]models.CredentialKind{"a command line token": models.CredentialToken, "no credential": ""} {
+		_, failures := world.askWith(t, world.ada, credentialKind, world.answer(callId, true))
+		if said := strings.Join(failures, "; "); !strings.Contains(said, api.TapRequiredPhrase) {
+			t.Errorf("%s approving: %q", name, said)
+		}
+	}
+	if world.computer.ran.Load() != 0 {
+		t.Fatalf("a refused approval ran %d commands", world.computer.ran.Load())
+	}
+	if waiting := world.shareOf(t)["waitingCallCount"].(float64); waiting != 1 {
+		t.Fatalf("the call is not waiting any more: %v", waiting)
+	}
+	// The phone app approves.
+	data, failures := world.askWith(t, world.ada, models.CredentialApp, world.answer(callId, true))
+	if len(failures) > 0 || data["AnswerSkillShareCall"].(map[string]any)["callState"] != "ran" || world.computer.ran.Load() != 1 {
+		t.Fatalf("the app's approval: %v %v (%d commands)", data, failures, world.computer.ran.Load())
+	}
+
+	// A command line token declines.
+	declinedCall := world.waitingCall(t, shareId)
+	data, failures = world.askWith(t, world.ada, models.CredentialToken, world.answer(declinedCall, false))
+	if len(failures) > 0 || data["AnswerSkillShareCall"].(map[string]any)["callState"] != "declined" {
+		t.Fatalf("declining from a command line token: %v %v", data, failures)
+	}
+	// The dashboard approves.
+	sessionCall := world.waitingCall(t, shareId)
+	data, failures = world.askWith(t, world.ada, models.CredentialSession, world.answer(sessionCall, true))
+	if len(failures) > 0 || data["AnswerSkillShareCall"].(map[string]any)["callState"] != "ran" || world.computer.ran.Load() != 2 {
+		t.Fatalf("the dashboard's approval: %v %v (%d commands)", data, failures, world.computer.ran.Load())
+	}
+	world.worker.Wait()
+}
+
+// The owner's record of what was asked of their money does not go when the
+// share does, whether they took it back or the other person left the circle:
+// the calls are listed as those of a share that ended, the owner sees every
+// one and the other person their own, nobody else any, and the call that was
+// waiting is expired. A share made again between the two starts the month with
+// what the earlier one spent.
+func TestTheOwnersRecordOfCallsSurvivesTheShareEnding(t *testing.T) {
+	world := newSkillShareWorld(t)
+	shareId := world.shareWithBen(t)
+	ranId := world.waitingCall(t, shareId)
+	world.call(t, world.ada, world.answer(ranId, true))
+	waitingId := world.waitingCall(t, shareId)
+	world.worker.Wait()
+
+	// The other person leaves the circle they shared; the share ends with it.
+	world.call(t, world.ben, fmt.Sprintf(`mutation { LeaveCircle(circleId: %q) }`, world.home))
+	if listed := world.call(t, world.ada, `query { ListSkillShares `+skillShareFields+` }`)["ListSkillShares"].([]any); len(listed) != 0 {
+		t.Fatalf("the share is still listed: %v", listed)
+	}
+	listEnded := func(user *models.User, extra string) []any {
+		t.Helper()
+		return world.call(t, user, `query { ListSkillShareCalls(isShareEnded: true `+extra+`) { id skillName toolName callState amountMinor isShareEnded skillShareId granteeUsername ownerName } }`)["ListSkillShareCalls"].([]any)
+	}
+	ended := listEnded(world.ada, "")
+	states := map[string]string{}
+	for _, each := range ended {
+		call := each.(map[string]any)
+		states[call["id"].(string)] = call["callState"].(string)
+		if call["isShareEnded"] != true || call["skillShareId"] != "" || call["skillName"] != "payments" || call["granteeUsername"] != world.ben.Username || call["ownerName"] == "" {
+			t.Errorf("an ended call does not say what it was a call of: %v", call)
+		}
+	}
+	if len(ended) != 2 || states[ranId] != "ran" || states[waitingId] != "expired" {
+		t.Fatalf("the owner is shown %v", states)
+	}
+	if only := listEnded(world.ada, `, callState: "ran"`); len(only) != 1 {
+		t.Errorf("a state narrows the ended calls: %v", only)
+	}
+	if theirs := listEnded(world.ben, ""); len(theirs) != 2 {
+		t.Errorf("the other person is shown %v", theirs)
+	}
+	if rows := listEnded(world.cora, ""); len(rows) != 0 {
+		t.Errorf("a stranger is shown %v", rows)
+	}
+	world.refused(t, world.eve, `query { ListSkillShareCalls(isShareEnded: true) { id } }`)
+	// The ended calls are not a share's calls, and say so when asked wrongly.
+	world.refused(t, world.ada, fmt.Sprintf(`query { ListSkillShareCalls(shareId: %q) %s }`, shareId, skillShareCallFields))
+	world.refused(t, world.ada, fmt.Sprintf(`query { ListSkillShareCalls(shareId: %q, isShareEnded: true) %s }`, shareId, skillShareCallFields))
+	world.refused(t, world.ada, `query { ListSkillShareCalls `+skillShareCallFields+` }`)
+	// Nothing waits any more, so nothing can be approved.
+	world.refused(t, world.ada, world.answer(waitingId, true))
+
+	// The two share a circle again and a new share carries on the month.
+	world.call(t, world.ada, fmt.Sprintf(`mutation { InviteToCircle(circleId: %q, username: %q, memberRole: "member") }`, world.home, world.ben.Username))
+	for _, each := range world.call(t, world.ben, `query { ListCircleInvitations { id } }`)["ListCircleInvitations"].([]any) {
+		world.call(t, world.ben, fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: true) { id } }`, each.(map[string]any)["id"]))
+	}
+	data := world.call(t, world.ada, world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 10000, monthlyLimitMinor: 40000, currencyCode: "usd"`))
+	if data["ShareSkill"].(map[string]any)["id"] == shareId {
+		t.Fatal("the new share has the old identifier")
+	}
+	listed := world.call(t, world.ada, `query { ListSkillShares { monthTotalMinor } }`)["ListSkillShares"].([]any)
+	if len(listed) != 1 || listed[0].(map[string]any)["monthTotalMinor"].(float64) != 2500 {
+		t.Errorf("the new share's month so far: %v; want the 2500 the ended share spent", listed)
+	}
 }

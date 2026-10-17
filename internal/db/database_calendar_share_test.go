@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -510,6 +511,60 @@ func TestEnsureCalendarNeverPicksACircleOrSharedCalendar(t *testing.T) {
 			if each.Calendar.ID == reminders.ID {
 				t.Fatalf("a reminders list is not reachable")
 			}
+		}
+	})
+}
+
+// A disabled account's calendar stops reaching the people it was shared with,
+// whether it was shared with a person or with a circle, and reaches them again
+// when the account is switched back on.
+func TestADisabledOwnersCalendarStopsReachingReaders(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		if _, err := tx.ShareCalendar(world.ada.ID, &models.CalendarShare{CalendarID: world.adaCalendar.ID, GranteeUserID: world.ben.ID, ShareLevel: models.ShareLevelTitles}); err != nil {
+			t.Fatalf("ShareCalendar: %s", err)
+		}
+		if _, err := tx.ShareCalendar(world.ada.ID, &models.CalendarShare{CalendarID: world.adaCalendar.ID, GranteeCircleID: world.home.ID, ShareLevel: models.ShareLevelDetails}); err != nil {
+			t.Fatalf("ShareCalendar: %s", err)
+		}
+		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != models.ShareLevelDetails {
+			t.Fatalf("before: %q", level)
+		}
+		set := func(isDisabled bool) {
+			t.Helper()
+			if _, err := tx.UpdateUser(world.ada.ID, func(owner *models.User) error {
+				owner.DisabledAt = nil
+				if isDisabled {
+					now := time.Now()
+					owner.DisabledAt = &now
+				}
+				return nil
+			}); err != nil {
+				t.Fatalf("UpdateUser: %s", err)
+			}
+		}
+		set(true)
+		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != "" {
+			t.Errorf("a disabled owner's calendar reaches ben at %q", level)
+		}
+		reachable, err := tx.ListReachableCalendars(world.ben.ID)
+		if err != nil {
+			t.Fatalf("ListReachableCalendars: %s", err)
+		}
+		for _, each := range reachable {
+			if each.Calendar.ID == world.adaCalendar.ID {
+				t.Errorf("a disabled owner's calendar is listed for ben")
+			}
+		}
+		if level := accessOf(t, tx, world.ada.ID, world.adaCalendar); level != models.ShareLevelOwner {
+			t.Errorf("the owner's own access: %q", level)
+		}
+		set(false)
+		if level := accessOf(t, tx, world.ben.ID, world.adaCalendar); level != models.ShareLevelDetails {
+			t.Errorf("after switching the account back on: %q", level)
 		}
 	})
 }

@@ -486,20 +486,33 @@ private struct CircleAccountForm: View {
     @State private var isBusy = false
     @State private var problemText: String?
 
+    /// Whether the account was made and only putting it in the circle is left.
+    private var isAccountMade: Bool { madeUsername != nil }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section {
+                    // Once the account is made these are what it was made
+                    // with: a retry adds that account to the circle and
+                    // would ignore a change to them without a word.
                     TextField("Username", text: $draft.username)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(isAccountMade)
                     TextField("Name", text: $draft.name)
                         .textContentType(.name)
+                        .disabled(isAccountMade)
                     SecureField("Password", text: $draft.password)
                         .textContentType(.newPassword)
+                        .disabled(isAccountMade)
                     Toggle("Make them an admin", isOn: $draft.isAdmin)
                 } footer: {
-                    Text("They sign in with that username and password, and can change the password themselves in their settings.")
+                    if isAccountMade {
+                        Text("The account is made; adding it to the circle again")
+                    } else {
+                        Text("They sign in with that username and password, and can change the password themselves in their settings.")
+                    }
                 }
             }
             .navigationTitle("Make an account for someone")

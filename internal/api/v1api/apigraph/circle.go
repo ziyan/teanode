@@ -397,6 +397,13 @@ func (self *graph) InviteToCircle(ctx context.Context, arguments InviteToCircleA
 	if username == "" {
 		return false, fmt.Errorf("%w: say which username to invite", api.ErrInvalidArguments)
 	}
+	// Counted before anything about the person is looked at, for every call
+	// however it ends, so that the bound cannot be used to tell a username
+	// that exists from one that does not, and deleting a circle does not give
+	// the allowance back.
+	if err := tx.RecordCircleInvitationSend(member.UserID, time.Now()); err != nil {
+		return false, translateError(err)
+	}
 	invited, err := tx.GetUserByUsername(username)
 	if err != nil {
 		return false, err

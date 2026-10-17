@@ -1499,6 +1499,14 @@ this limit. Zero resolves to 64GB. Neither limit changes conversation attachment
 across its files; `25MB` by default. A picture is shown to the model, a
 text file is read to it, and anything else is named.
 
+**`maxChatAttachmentAccountBytes`** bounds the files one person may keep of those
+they have sent in chats; `1GB` when it is not set. A message with files stays
+until somebody deletes it, and everybody in the chat reads them, so these
+are not swept the way a file handed to the agent is. A send that would take a
+person past it is refused, with how much they keep and what to do: delete old
+messages with files to make room. Not to be confused with `maxAttachmentBytes`
+above, which bounds one upload.
+
 **`maxScannedAttachmentBytes`** — The largest file a knowledge source
 carries off a person's machine: a picture or a document that a record in a
 `records` folder said it came with, kept in object storage so that

@@ -38,7 +38,7 @@ final class KnowledgeSharingTests: XCTestCase {
              "isQuoteShared":false,
              "facts":[{"number":3,"factKind":"fact","text":"Next appointment is Tuesday.","happenedAt":null,"isInferred":false,
                        "evidenceSource":"from Ada Example's mail","evidenceQuote":""}, null],
-             "edges":[{"fromPath":"people/a-grandparent","toPath":"people/a-grandparent/doctor","relation":"knows","note":"","isProposed":false}],
+             "edges":[{"fromPath":"people/a-grandparent","toPath":"people/a-grandparent/doctor","relation":"knows","isProposed":false}],
              "children":[{"path":"people/a-grandparent/doctor","name":"The doctor","opening":""}]}
             """
         let page = try JSONDecoder().decode(SharedKnowledgePage.self, from: Data(json.utf8))

@@ -3,6 +3,7 @@ package db_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -278,7 +279,7 @@ func TestASearchWithinRootsStopsAtTheBoundary(t *testing.T) {
 				t.Fatalf("AddAgentFact: %s", err)
 			}
 		}
-		nodes, facts, err := tx.SearchAgentGraphWithin(world.adaAgent.ID, []string{"people/a"}, "bees", 20)
+		nodes, facts, err := tx.SearchAgentGraphWithin(world.adaAgent.ID, []string{"people/a"}, nil, "bees", 20)
 		if err != nil {
 			t.Fatalf("SearchAgentGraphWithin: %s", err)
 		}
@@ -294,6 +295,51 @@ func TestASearchWithinRootsStopsAtTheBoundary(t *testing.T) {
 			if node.Path == "people/ab" {
 				t.Errorf("people/ab was found")
 			}
+		}
+	})
+}
+
+// A disabled account cannot sign in, and what it shared stops reaching
+// readers while it is off: through a person and through a circle alike. The
+// shares are kept, and reach again when the account is switched back on.
+func TestADisabledOwnersPagesStopReachingReaders(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newPageShareWorld(t, tx)
+		if _, err := tx.SharePage(world.ada.ID, &models.AgentPageShare{Path: "people/a", GranteeUserID: world.ben.ID}); err != nil {
+			t.Fatalf("SharePage: %s", err)
+		}
+		if _, err := tx.SharePage(world.ada.ID, &models.AgentPageShare{Path: "people/ab", GranteeCircleID: world.home.ID}); err != nil {
+			t.Fatalf("SharePage: %s", err)
+		}
+		if got := reachingPaths(t, tx, world.ben); len(got) != 2 {
+			t.Fatalf("before: %v", got)
+		}
+		disable := func(isDisabled bool) {
+			t.Helper()
+			if _, err := tx.UpdateUser(world.ada.ID, func(owner *models.User) error {
+				owner.DisabledAt = nil
+				if isDisabled {
+					now := time.Now()
+					owner.DisabledAt = &now
+				}
+				return nil
+			}); err != nil {
+				t.Fatalf("UpdateUser: %s", err)
+			}
+		}
+		disable(true)
+		if got := reachingPaths(t, tx, world.ben); len(got) != 0 {
+			t.Errorf("a disabled owner's pages reach ben: %v", got)
+		}
+		if mine, err := tx.ListPageSharesBy(world.ada.ID); err != nil || len(mine) != 2 {
+			t.Errorf("the owner keeps the shares: %v %v", mine, err)
+		}
+		disable(false)
+		if got := reachingPaths(t, tx, world.ben); len(got) != 2 {
+			t.Errorf("after switching the account back on: %v", got)
 		}
 	})
 }

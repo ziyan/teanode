@@ -49,6 +49,15 @@ The first segment of a path says whose the page is, and the rail follows it:
 A page that moves does not leave a redirect behind: every link to it in the
 code moves with it, and the old path is not found.
 
+Where you are is in the address. A tab, the row whose details are open, a
+list's filters and its page are each in the path or the query string, so
+the browser's back and forward buttons, a reload and a copied link all land
+in the same place.
+
+A new page starts from the page most like it. A list with a reading pane
+looks like the mailbox; a page of settings looks like the other settings
+pages. A layout no other page has needs a reason the pull request gives.
+
 ## Panels
 
 A page is a stack of panels. A panel is `.card`: a surface, a border, one
@@ -244,6 +253,12 @@ and `ja`. `make lint-ci` fails when they disagree. Write the English first and
 make it a sentence: "No mail program has been set up yet", not "No devices".
 Buttons say what will happen — `Create`, `Revoke`, `Save`.
 
+Say less. A hint that explains what the page plainly shows, a count beside
+a heading that already has one, a status pill that repeats the row: each
+takes room and is read once. When a word on screen needs a paragraph to
+explain it, the paragraph belongs in the dialog that the action opens, not
+on the page.
+
 Spelling is US English throughout: "authorizes", "canceled", "behavior".
 
 ## Style
@@ -256,6 +271,13 @@ paragraph and the fields in a `.row` are already rules; so is right-aligning a
 lone action, with `page-actions-end`.
 
 A checkbox and its label on one line is `label.checkbox`.
+
+Nothing moves when it is hovered, chosen or opened. A row that is selected,
+a menu item that is the current page and a button that is pressed keep
+their size, so the rows around them stay put; a border or an icon that
+appears on selection has its room taken from the start. A control's whole
+shape answers a click, not only its text: if the hover color or the ripple
+covers it, so does the click.
 
 The breakpoints are 900px, 760px and 600px, and a phone is the narrow end.
 Check a change at 390px before sending it: a row of buttons, a wide table and

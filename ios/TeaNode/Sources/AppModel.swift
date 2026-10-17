@@ -292,12 +292,17 @@ final class AppModel {
         if let connection, let identity = try? await connection.agentIdentity() {
             agentName = identity.name.trimmingCharacters(in: .whitespacesAndNewlines)
             isAgentEnabledByPerson = identity.isOn
+            hasAgent = identity.hasAgent
         }
     }
 
     /// Whether the person has turned their own agent on, as far as the
     /// server has said; on until it says otherwise.
     private(set) var isAgentEnabledByPerson = true
+
+    /// Whether the person has an agent at all, as far as the server has said.
+    /// One who has none is offered no switch to turn it on: only their chats.
+    private(set) var hasAgent = true
 
     /// Whether there is an agent to talk to: the server runs agents and the
     /// person turned theirs on. Without one the conversation screen shows
@@ -375,6 +380,15 @@ final class AppModel {
         }
     }
 
+    /// What the account in use said about itself is not true of the next one.
+    private func forgetAccountFacts() {
+        ownUserId = nil
+        canChat = false
+        unreadChatCount = 0
+        isAgentEnabledByPerson = true
+        hasAgent = true
+    }
+
     private func use(_ account: Account) {
         if let local = MeetingRecorder.shared.localRecording, local.accountKey == account.accountKey,
             !local.belongsTo(accountKey: account.accountKey, recordingUserId: account.cachedRecordingUserId) {
@@ -384,6 +398,7 @@ final class AppModel {
         if isChanged {
             services = nil
             accessSession = nil
+            forgetAccountFacts()
             openedRecordingLink = nil
             openedRecordingAccountKey = nil
         }
@@ -662,7 +677,12 @@ final class AppModel {
                 try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
             }
         } catch {
-            await tell(String(localized: "That did not reach your agent: \(describe(error))"))
+            // A reply to a person in a chat went to the chat, not to the agent.
+            if info.notificationKind == "chat" {
+                await tell(String(localized: "That did not reach the chat: \(describe(error))"))
+            } else {
+                await tell(String(localized: "That did not reach your agent: \(describe(error))"))
+            }
         }
     }
 
@@ -714,6 +734,7 @@ final class AppModel {
         account = nil
         accounts = []
         connection = nil
+        forgetAccountFacts()
         self.signedOutText = signedOutText
     }
 

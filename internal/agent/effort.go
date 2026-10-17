@@ -72,7 +72,7 @@ func (self *AskRun) chooseDepth() {
 	// A turn a finished background command woke was not typed, and its
 	// message is the wake's framing: judged, the fast model restated the
 	// person's earlier request and the note said so a second time.
-	if settings.Headless || settings.Surface == backgroundSurface || settings.Effort != "" || settings.Research {
+	if settings.Headless || isWokenSurface(settings.Surface) || settings.Effort != "" || settings.Research {
 		return
 	}
 	// A spoken turn is answered as it comes. The judgement is a second

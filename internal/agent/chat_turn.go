@@ -143,6 +143,11 @@ func (self *AskRun) HeldToChatConversation() string {
 	return ""
 }
 
+// IsAnsweringInChat says the turn's words are posted to the room of a chat.
+func (self *AskRun) IsAnsweringInChat() bool {
+	return self.settings.Chat != nil || (self.settings.Conversation != nil && self.settings.Conversation.IsChat())
+}
+
 // chatAuthorName is a person's name as the model reads it beside what they
 // wrote: on one line and short, because it is typed by whoever wrote it.
 func chatAuthorName(name string) string {
@@ -303,7 +308,7 @@ func (self *AskRun) chatPrompt(ctx context.Context) *chatPromptData {
 	})
 	if err != nil || chat == nil {
 		log.Debugf("cannot read who is in chat %q for the prompt: %v", settings.Chat.ChatID, err)
-		return &chatPromptData{People: "the people there", IsMemberTurn: settings.isMemberTurn()}
+		return self.withAsker(&chatPromptData{People: "the people there", IsMemberTurn: settings.isMemberTurn()})
 	}
 	names := []string{}
 	for _, member := range chat.ActiveMembers() {
@@ -317,9 +322,15 @@ func (self *AskRun) chatPrompt(ctx context.Context) *chatPromptData {
 	if count := len(names); count > 1 {
 		people = strings.Join(names[:count-1], ", ") + " and " + names[count-1]
 	}
-	data := &chatPromptData{People: people, IsMemberTurn: settings.isMemberTurn()}
+	return self.withAsker(&chatPromptData{People: people, IsMemberTurn: settings.isMemberTurn()})
+}
+
+// withAsker names, in a member turn, who asked: one short line, quoted,
+// because the asker typed their own name and it sits in the server's part of
+// the prompt.
+func (self *AskRun) withAsker(data *chatPromptData) *chatPromptData {
 	if data.IsMemberTurn {
-		data.AskerName = chatAuthorName(settings.Chat.AskerName)
+		data.AskerName = fmt.Sprintf("%q", chatAuthorName(self.settings.Chat.AskerName))
 	}
 	return data
 }

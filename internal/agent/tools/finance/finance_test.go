@@ -1224,3 +1224,70 @@ func TestFinanceToolCategorizesSeveralTransactions(test *testing.T) {
 		test.Error("the description does not explain categorizing several at once")
 	}
 }
+
+// A paystub or W-2 sent as an uploaded file goes to the reading job, which
+// reads the whole document; the fields the model read out of it are
+// dropped, since a model reading it itself took year-to-date amounts for
+// the current period and was refused.
+func TestFinanceToolQueuesTheReaderForARecordedUploadedFile(test *testing.T) {
+	test.Parallel()
+	for _, arguments := range []string{
+		`{"operation":"record_paystub","agent_attachment_id":"attachment-one","employer_name":"Invented Works","employee_name":"Pat Example","pay_date":"2026-09-30","gross_amount":"100.00","net_amount":"80.00","paystub_lines":[{"paystub_line_kind":"earning","description":"Salary","current_amount":"100.00"}]}`,
+		`{"operation":"record_paystub","agent_attachment_id":"attachment-one"}`,
+		`{"operation":"record_tax_form","agent_attachment_id":"attachment-one","tax_year":2025,"payer_name":"Invented Works","recipient_name":"Pat Example","tax_form_entries":[{"box_code":"1","amount":"100.00"}]}`,
+	} {
+		operations := &fakeOperations{answers: map[string]string{"ReadTaxDocument": `{"agentAttachmentIds":["attachment-one"],"agentJobIds":["job-one"]}`}}
+		result, err := call(test, operations, arguments)
+		if err != nil {
+			test.Fatal(err)
+		}
+		var answer struct {
+			Reading struct {
+				AgentAttachmentIDs []string `json:"agentAttachmentIds"`
+				AgentJobIDs        []string `json:"agentJobIds"`
+			} `json:"read_tax_document"`
+			Hint string `json:"hint"`
+			Note string `json:"note"`
+		}
+		if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
+			test.Fatal(err)
+		}
+		if len(answer.Reading.AgentJobIDs) != 1 || answer.Reading.AgentJobIDs[0] != "job-one" || answer.Hint == "" || !strings.Contains(answer.Note, "dedicated reading job") {
+			test.Errorf("%s", result.Content)
+		}
+		if len(operations.documents) != 1 || !strings.Contains(operations.documents[0], "ReadTaxDocument(") {
+			test.Fatalf("sent %v", operations.documents)
+		}
+		for _, document := range operations.documents {
+			if strings.Contains(document, "RecordPaystub(") || strings.Contains(document, "RecordTaxForm(") {
+				test.Errorf("recorded from the model's fields: %s", document)
+			}
+		}
+		if sent := operations.variables[0]; len(sent) != 1 || sent["agentAttachmentId"] != "attachment-one" {
+			test.Errorf("sent %v", sent)
+		}
+	}
+}
+
+// A record call names the file it was read from, so one without a file
+// records nothing and says what it needs.
+func TestFinanceToolRecordsNoPaystubWithoutAFile(test *testing.T) {
+	test.Parallel()
+	operations := &fakeOperations{}
+	if _, err := call(test, operations, `{"operation":"record_paystub","employer_name":"Invented Works","gross_amount":"100.00","net_amount":"80.00"}`); err == nil || !strings.Contains(err.Error(), "agent_attachment_id") {
+		test.Errorf("%v", err)
+	}
+	if len(operations.documents) != 0 {
+		test.Errorf("sent %v", operations.documents)
+	}
+}
+
+// The card of a record call carrying a file says the reading job reads it.
+func TestFinanceToolRecordCardSaysTheReadingJobReadsTheFile(test *testing.T) {
+	test.Parallel()
+	ctx := tools.WithRun(context.Background(), &fakeRun{operations: &fakeOperations{}})
+	card := financeTool(test).PreviewLine(ctx, json.RawMessage(`{"operation":"record_paystub","agent_attachment_id":"attachment-one","employer_name":"Invented Works"}`))
+	if !strings.Contains(card, "reading job") {
+		test.Errorf("the card says %q", card)
+	}
+}

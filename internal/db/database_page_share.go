@@ -47,9 +47,17 @@ type PageShareOperation interface {
 	ListPageSharesReaching(readerUserId string) ([]*models.AgentPageShare, error)
 
 	// SearchAgentGraphWithin finds pages and facts by words in the graph of
-	// one agent, only on the pages at these roots or under them. The
-	// shared-memory reader is the only caller.
-	SearchAgentGraphWithin(agentId string, roots []string, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error)
+	// one agent, only on the pages at these roots or under them. A page is
+	// found by its path, name, aliases and summary, except that the pages
+	// named in hiddenSummaryNodeIds are found by their path, name and
+	// aliases alone: their summary is not shown to the reader, so a word on
+	// it must not find them. The shared-memory reader is the only caller.
+	SearchAgentGraphWithin(agentId string, roots, hiddenSummaryNodeIds []string, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error)
+
+	// ListAgentNodesWithQuoteMarksWithin are the pages at these roots or
+	// under them whose summary has a quotation mark in it, which are the only
+	// ones whose summary may be left out of what a reader is shown.
+	ListAgentNodesWithQuoteMarksWithin(agentId string, roots []string) ([]*models.AgentNode, error)
 }
 
 type agentPageShareModel struct {
@@ -280,11 +288,14 @@ func (self *transaction) DeletePageShare(shareId string) error {
 // joins on circle_member are what make a share stop reaching someone the
 // moment the circle it depended on is gone: a share to a person needs the two
 // to share a circle, and a share to a circle needs both the reader and the
-// owner to be in it.
+// owner to be in it. The join on the owner's account is what stops a disabled
+// account's pages reaching anybody: it cannot sign in, and what it shared is
+// not read in its name while it is off.
 const reachingPageSharesQuery = `
 SELECT share.*
 FROM "agent_page_share" share
 JOIN "agent" owner ON owner.id = share.agent_id
+JOIN "user" owner_user ON owner_user.id = owner.user_id AND owner_user.disabled_at IS NULL
 WHERE owner.user_id <> @reader
   AND (
     (share.grantee_user_id = @reader AND EXISTS (
@@ -363,20 +374,31 @@ func endPageSharesOutsideCircles(tx *gorm.DB, userId string) error {
 const withinRootsCondition = `EXISTS (SELECT 1 FROM unnest(?::text[]) AS root
 	WHERE node."path" = root OR starts_with(node."path", root || '/'))`
 
-func (self *transaction) SearchAgentGraphWithin(agentId string, roots []string, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error) {
+func (self *transaction) SearchAgentGraphWithin(agentId string, roots, hiddenSummaryNodeIds []string, query string, limit int) ([]*models.AgentNode, []*models.AgentFact, error) {
 	if strings.TrimSpace(query) == "" || len(roots) == 0 {
 		return nil, nil, nil
 	}
 	if limit <= 0 {
 		limit = 20
 	}
+	if hiddenSummaryNodeIds == nil {
+		hiddenSummaryNodeIds = []string{}
+	}
 	query = SearchText(query)
 	var nodeIds []string
+	// What a page is found by is the text of its row less the summary when
+	// the summary is not shown, and it is ranked by that text too: the order
+	// of the answers would otherwise say how often a word is on a summary the
+	// reader cannot read.
 	if err := self.tx.Raw(
-		`SELECT node."id" FROM "agent_node" node
-		 WHERE node."agent_id" = ? AND node."search" @@ `+AnyWord+` AND `+withinRootsCondition+`
-		 ORDER BY ts_rank(node."search", `+AnyWord+`) DESC, node."importance" DESC, node."id" ASC LIMIT ?`,
-		agentId, query, pq.Array(roots), query, limit).Scan(&nodeIds).Error; err != nil {
+		`SELECT node."id" FROM "agent_node" node,
+		   LATERAL (SELECT CASE WHEN node."id" = ANY(?::text[])
+		     THEN to_tsvector('simple', node."path" || ' ' || node."name" || ' ' ||
+		       COALESCE((SELECT string_agg("alias", ' ') FROM jsonb_array_elements_text(node."aliases") AS "alias"), ''))
+		     ELSE node."search" END AS "shown") visible
+		 WHERE node."agent_id" = ? AND visible."shown" @@ `+AnyWord+` AND `+withinRootsCondition+`
+		 ORDER BY ts_rank(visible."shown", `+AnyWord+`) DESC, node."importance" DESC, node."id" ASC LIMIT ?`,
+		pq.Array(hiddenSummaryNodeIds), agentId, query, pq.Array(roots), query, limit).Scan(&nodeIds).Error; err != nil {
 		return nil, nil, err
 	}
 	var factIds []string
@@ -398,4 +420,23 @@ func (self *transaction) SearchAgentGraphWithin(agentId string, roots []string, 
 		return nil, nil, err
 	}
 	return orderNodesBy(nodes, nodeIds), orderFactsBy(facts, factIds), nil
+}
+
+func (self *transaction) ListAgentNodesWithQuoteMarksWithin(agentId string, roots []string) ([]*models.AgentNode, error) {
+	if len(roots) == 0 {
+		return nil, nil
+	}
+	var nodeIds []string
+	if err := self.tx.Raw(
+		`SELECT node."id" FROM "agent_node" node
+		 WHERE node."agent_id" = ? AND node."summary" ~ ? AND `+withinRootsCondition+`
+		 ORDER BY node."id" ASC`,
+		agentId, "[\"'“”‘’«»「」『』]", pq.Array(roots)).Scan(&nodeIds).Error; err != nil {
+		return nil, err
+	}
+	nodes, err := self.GetAgentNodes(agentId, nodeIds)
+	if err != nil {
+		return nil, err
+	}
+	return orderNodesBy(nodes, nodeIds), nil
 }

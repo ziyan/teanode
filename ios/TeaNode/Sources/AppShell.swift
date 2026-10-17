@@ -252,19 +252,24 @@ struct MainView: View {
         // While the conversation is on screen the person is here, and
         // notifications that would tell them what they see are held back.
         // Elsewhere in the app they are away from it, so what the agent says
-        // first still reaches them, as a banner over the app.
-        .task(id: "\(scenePhase)-\(section)") {
+        // first still reaches them, as a banner over the app. A chat is held
+        // back only while that chat is the one on screen, so the report
+        // names the conversation, and is made again when it changes.
+        .task(id: "\(scenePhase)-\(section)-\(conversation?.id ?? "")") {
             await refreshPresence()
         }
     }
 
     private func refreshPresence() async {
         let isVisible = scenePhase == .active && section == .agent
+        // The main conversation has no id until it is loaded and is never a
+        // chat, so it is reported as none.
+        let shownConversationId = isVisible ? conversation?.id ?? "" : ""
         repeat {
             await app.refreshServices()
             if Task.isCancelled { return }
             await app.refreshChats()
-            if app.services?.isAssistantEnabled == true || app.canChat { try? await connection.reportPresence(isVisible: isVisible) }
+            if app.services?.isAssistantEnabled == true || app.canChat { try? await connection.reportPresence(isVisible: isVisible, conversationId: shownConversationId) }
             if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
             if scenePhase != .active { return }
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -382,9 +387,20 @@ struct KnowledgeStack: View {
             // by the identifier they are listed under, which only the pages
             // shared with this person can say.
             Task {
-                let roots = (try? await connection.sharedKnowledgeRoots()) ?? []
+                let roots: [SharedKnowledgeRoot]
+                do {
+                    roots = try await connection.sharedKnowledgeRoots()
+                } catch {
+                    app.openedLinkText = app.describe(error)
+                    return
+                }
+                // Not among those who share with this person: the owner
+                // stopped, or never did.
                 guard let owner = roots.first(where: { $0.ownerUsername.caseInsensitiveCompare(link.ownerUsername) == .orderedSame })
-                else { return }
+                else {
+                    app.openedLinkText = String(localized: "This page is no longer shared with you")
+                    return
+                }
                 path = NavigationPath()
                 path.append(KnowledgePlace.sharedPage(ownerUserId: owner.ownerUserId, path: link.path))
             }
@@ -574,11 +590,22 @@ struct ServicesLoadingView: View {
 
 /// AgentOffView is where the main conversation would be for a person who has
 /// not turned their agent on: the offer to, with the way to Settings. Their
-/// chats are in the menu, and need no agent.
+/// chats are in the menu, and need no agent. A person who has no agent at
+/// all is offered nothing to turn on: only their chats.
 struct AgentOffView: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        if !app.hasAgent {
+            ContentUnavailableView(
+                "Your chats are in the menu", systemImage: "bubble.left",
+                description: Text("Open the menu to read and write to the people you share a circle with."))
+        } else {
+            offer
+        }
+    }
+
+    private var offer: some View {
         ContentUnavailableView {
             Label("Your agent is not on", systemImage: "bubble.left")
         } description: {

@@ -268,8 +268,13 @@ public struct AgentMessageReaction: Codable, Hashable, Sendable, Identifiable {
     public var reactorUserId: String? = nil
     public var reactorName: String? = nil
 
-    /// One reaction for each reactor, so several people's tell apart.
-    public var id: String { "\(reactorKind):\(reactorUserId ?? "")" }
+    /// One reaction for each reactor, so several people's tell apart. Accounts
+    /// that are gone name nobody, so the name and the time keep their
+    /// reactions apart.
+    public var id: String { "\(reactorKind):\(reactorUserId ?? ""):\(reactorName ?? ""):\(reactedAt ?? "")" }
+
+    /// Who reacted, when the reaction names a person at all.
+    var namedUserId: String? { reactorUserId.flatMap { $0.isEmpty ? nil : $0 } }
 
     public init(emoji: String, reactorKind: String, reactedAt: String? = nil, reactorUserId: String? = nil, reactorName: String? = nil) {
         self.emoji = emoji

@@ -115,8 +115,8 @@ public struct SkillShareNote: Decodable, Hashable, Sendable {
     public let granteeUserId: String?
 
     /// The note the detail of a message holds, or nil when it is not one.
-    public static func parsing(_ detail: String) -> SkillShareNote? {
-        guard let data = detail.data(using: .utf8), let note = try? JSONDecoder().decode(SkillShareNote.self, from: data),
+    public static func parsing(_ noteDetail: String) -> SkillShareNote? {
+        guard let noteData = noteDetail.data(using: .utf8), let note = try? JSONDecoder().decode(SkillShareNote.self, from: noteData),
             !note.callId.isEmpty, !note.skillShareId.isEmpty
         else { return nil }
         return note

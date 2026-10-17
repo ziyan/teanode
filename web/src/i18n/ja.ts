@@ -3679,6 +3679,7 @@ export const ja: Catalog = {
   'agentDrawer.goalNeedsYouTurn': '目標があなたを必要としています',
   'agentDrawer.herdrQuestionTurn': 'コーディングセッションからの質問',
   'agentDrawer.herdrSessionTurn': 'コーディングセッションが終わりました',
+  'agentDrawer.restartResumeTurn': '再起動のあと、続きを進めています',
   'agentDrawer.openGoal': '目標を開く',
   'goals.nextScheduled': '次の実行 {when}',
   'goals.runsOnSchedule': 'スケジュールで実行',
@@ -5805,6 +5806,10 @@ export const ja: Catalog = {
   'skillShare.waiting': '承認待ち{count}件',
   'skillShare.requests': '依頼',
   'skillShare.noRequests': 'この共有ではまだ何も依頼されていません。',
+  'skillShare.ended': '終了した共有',
+  'skillShare.endedHint':
+    '取り消した共有、またはお互いが同じサークルに属さなくなって終了した共有です。依頼の記録はここに残ります。承認待ちだったものはもう承認できません。',
+  'skillShare.endedRow': '{skill}、{tool}、{name}さんと',
   'skillShare.stop': '共有をやめる',
   'skillShare.stopTitle': '{skill}を{name}さんと共有するのをやめますか？',
   'skillShare.stopBody': '相手はすぐに使えなくなり、これまでの依頼の記録も削除されます。',

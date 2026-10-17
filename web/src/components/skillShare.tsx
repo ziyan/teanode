@@ -40,6 +40,7 @@ export type SkillShare = {
 export type SkillShareCall = {
   id: string
   skillShareId: string
+  isShareEnded: boolean
   skillName: string
   granteeUserId: string
   granteeUsername: string
@@ -64,11 +65,17 @@ export const SKILL_SHARE_FIELDS = `id skillName toolNames ownerUserId ownerUsern
   granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
   paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor`
 
-export const SKILL_SHARE_CALL_FIELDS = `id skillShareId skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
+export const SKILL_SHARE_CALL_FIELDS = `id skillShareId isShareEnded skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
   ownerName toolName toolArguments requestReason amountMinor currencyCode callState toolOutput decidedAt decisionNote expiresAt createdAt`
 
 export const LIST_SKILL_SHARE_CALLS = `query ($shareId: String!, $callState: String) {
   ListSkillShareCalls(shareId: $shareId, callState: $callState) { ${SKILL_SHARE_CALL_FIELDS} }
+}`
+
+// The calls of shares that have ended: the owner's record, kept when a share is
+// taken back or the two stop sharing a circle.
+export const LIST_ENDED_SKILL_SHARE_CALLS = `query {
+  ListSkillShareCalls(isShareEnded: true) { ${SKILL_SHARE_CALL_FIELDS} }
 }`
 
 const ANSWER_SKILL_SHARE_CALL = `mutation ($callId: String!, $isApproved: Boolean!, $decisionNote: String) {

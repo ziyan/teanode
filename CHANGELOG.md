@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.169.2] - 2026-10-17
+
+### Fixed
+
+- A paystub or W-2 you send to the agent is read by the dedicated reader instead of the chat model, which misread year-to-date amounts. (#530)
+- An answer cut off by the server restarting is finished when it is back, instead of never coming. (#532)
+
 ## [0.169.1] - 2026-10-17
 
 ### Fixed

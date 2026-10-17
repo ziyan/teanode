@@ -117,12 +117,15 @@ func (self *calendarShareModel) toModel() *models.CalendarShare {
 // calendar each is for. The joins on circle_member are what make a share stop
 // reaching someone the moment the circle it depended on is gone: a share to a
 // person needs the two to share a circle, and a share to a circle needs both
-// the reader and the calendar's owner to be in it. Only the events calendar of
-// a person is ever reached this way; reminders are never shared.
+// the reader and the calendar's owner to be in it. The join on the owner's
+// account is what stops a disabled account's calendar reaching anybody. Only
+// the events calendar of a person is ever reached this way; reminders are
+// never shared.
 const reachingSharesQuery = `
 SELECT share.calendar_id AS calendar_id, share.share_level AS share_level
 FROM "calendar_share" share
 JOIN "calendar" shared ON shared.id = share.calendar_id
+JOIN "user" owner_user ON owner_user.id = shared.user_id AND owner_user.disabled_at IS NULL
 WHERE shared.user_id IS NOT NULL
   AND shared.user_id <> @reader
   AND shared.calendar_kind = 'events'

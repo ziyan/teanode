@@ -26,6 +26,13 @@ import (
 // through it, with its arguments and what it came to; the other person sees
 // their own. A call that waits is answered by the owner, as a person: no agent
 // answers one, and neither does an operator signed in as the owner.
+//
+// Lending money and approving a call that spends it are done where a person
+// taps, and the server holds that: a request is accepted only from the
+// dashboard's session or from the phone app's own sign-in. A command line
+// token, an API token and the console are refused, because an agent can drive
+// the person's command line with their saved sign-in. Taking money away
+// (declining, unsharing, lowering limits, asking every time) is open to all.
 
 // AgentSkillShareQuery reads shares and their calls.
 type AgentSkillShareQuery interface {
@@ -35,7 +42,10 @@ type AgentSkillShareQuery interface {
 
 	// The calls made through one share, waiting ones first and then newest
 	// first. The share's owner sees all of them, with their arguments; the
-	// person it is shared with sees theirs. Needs circle:use.
+	// person it is shared with sees theirs. With isShareEnded and no share,
+	// the calls of shares that have ended instead: the record stays when a
+	// share is taken back or the two stop sharing a circle, and the owner
+	// sees every call of it, the other person their own. Needs circle:use.
 	ListSkillShareCalls(ctx context.Context, arguments ListSkillShareCallsArguments) ([]*SkillShareCallView, error)
 }
 
@@ -45,6 +55,11 @@ type AgentSkillShareMutation interface {
 	// shares a circle with, run on the caller's own computer as the caller,
 	// within limits. Sharing the same skill with the same person again
 	// changes the tools and limits. Needs agent:use and circle:use.
+	//
+	// Creating a share, raising its limits or tools, and turning off asking
+	// every time are accepted only from the dashboard's session or the phone
+	// app. Asking every time, and lowering what a share allows, are accepted
+	// from anywhere, because they only take away.
 	ShareSkill(ctx context.Context, arguments ShareSkillArguments) (*SkillShareView, error)
 
 	// Take a share back, with the record of its calls. The other person
@@ -56,15 +71,14 @@ type AgentSkillShareMutation interface {
 	// declining stops it. Answering a call that is not waiting any more is
 	// refused. Needs agent:use.
 	//
-	// What is guaranteed is narrower than "a person answers": the operation
-	// is refused to the agent's own operations, which carry the agent as the
-	// actor, and to an operator signed in as the owner. A request with the
-	// owner's own sign-in is the owner's, whoever typed it, so a command the
-	// agent runs on the owner's computer with their saved sign-in arrives as
-	// the owner. That path is held by the agent's tools instead: a shell or
-	// terminal call whose words look like the command that answers
-	// (tools.AnswersSkillShareCall) always asks the owner, as money, and
-	// nothing they allow for when they are away covers it.
+	// Approving is accepted only from the dashboard's session or the phone
+	// app's own sign-in; a command line or API token is refused with where to
+	// approve it, because an agent can drive the owner's command line with
+	// their saved sign-in. Declining is open to any sign-in of the owner. Both
+	// are refused to the agent's own operations, which carry the agent as the
+	// actor, and to an operator signed in as the owner. A shell call whose
+	// words look like the command that declines still asks the owner first
+	// (tools.AnswersSkillShareCall), as a courtesy; the server is the guard.
 	AnswerSkillShareCall(ctx context.Context, arguments AnswerSkillShareCallArguments) (*SkillShareCallView, error)
 }
 
@@ -108,8 +122,11 @@ type SkillShareView struct {
 	// How many calls wait for the owner now
 	WaitingCallCount int `json:"waitingCallCount"`
 
-	// What the calls that ran this calendar month come to, in the minor unit
-	// of the currency, so the person it is shared with can see what is left
+	// What the calls that ran or failed this calendar month come to, between
+	// the same two people and for the same skill, whether or not an earlier
+	// share of it has ended, in the minor unit of the currency, so the person
+	// it is shared with can see what is left. A failed call counts because a
+	// failure after the command acted cannot be told from one before it.
 	MonthTotalMinor int64 `json:"monthTotalMinor"`
 
 	CreatedAt time.Time `json:"createdAt"`
@@ -117,8 +134,11 @@ type SkillShareView struct {
 
 // SkillShareCallView is one call made through a share.
 type SkillShareCallView struct {
-	ID           string `json:"id"`
+	ID string `json:"id"`
+
+	// The share it was made through, empty when that share has ended
 	SkillShareID string `json:"skillShareId"`
+	IsShareEnded bool   `json:"isShareEnded"`
 	SkillName    string `json:"skillName"`
 
 	// Who asked, and whose skill it is
@@ -142,7 +162,8 @@ type SkillShareCallView struct {
 	AmountMinor  *int64 `json:"amountMinor"`
 	CurrencyCode string `json:"currencyCode"`
 
-	// ran, failed, refused, waiting_for_approval, declined or expired
+	// ran, failed, refused, waiting_for_approval, declined or expired (the
+	// owner did not answer in a day, or the share ended while it waited)
 	CallState string `json:"callState"`
 
 	// What the call answered, or why it did not complete (JSON text)
@@ -155,7 +176,11 @@ type SkillShareCallView struct {
 }
 
 type ListSkillShareCallsArguments struct {
-	ShareID string `json:"shareId"`
+	// The share; left out with isShareEnded
+	ShareID string `json:"shareId" graphapi:"nullable"`
+
+	// List the calls of shares that have ended, instead of one share's
+	IsShareEnded bool `json:"isShareEnded" graphapi:"nullable"`
 
 	// Only the calls in this state; every state when left out
 	CallState string `json:"callState" graphapi:"nullable"`
@@ -204,6 +229,10 @@ type AnswerSkillShareCallArguments struct {
 	DecisionNote string `json:"decisionNote" graphapi:"nullable"`
 }
 
+// approveOnTheDashboard is what a request is told when it is one that only a
+// person's tap may make and it did not come as one.
+const approveOnTheDashboard = api.TapRequiredPhrase + ": lending money, and approving what spends it, are done where a person taps, not from a command line or an API token"
+
 func describeSkillShare(share *models.SkillShare, callerUserId string) *SkillShareView {
 	return &SkillShareView{
 		ID: share.ID, SkillName: share.SkillName, ToolNames: share.ToolNames,
@@ -219,8 +248,16 @@ func describeSkillShare(share *models.SkillShare, callerUserId string) *SkillSha
 
 func describeSkillShareCall(call *models.SkillShareCall, share *models.SkillShare) *SkillShareCallView {
 	arguments, _ := json.Marshal(call.ToolArguments)
+	// A call of a share that has ended is named by the call itself, which
+	// carries what it was a call of.
+	if share == nil {
+		share = &models.SkillShare{
+			SkillName: call.SkillName, OwnerUserID: call.OwnerUserID, OwnerUsername: call.OwnerUsername, OwnerName: call.OwnerName,
+			GranteeUserID: call.GranteeUserID, GranteeUsername: call.GranteeUsername, GranteeName: call.GranteeName, GranteeUser: call.GranteeUser,
+		}
+	}
 	view := &SkillShareCallView{
-		ID: call.ID, SkillShareID: call.SkillShareID, SkillName: share.SkillName,
+		ID: call.ID, SkillShareID: call.SkillShareID, IsShareEnded: call.IsShareEnded(), SkillName: share.SkillName,
 		GranteeUserID: share.GranteeUserID, GranteeUsername: share.GranteeUsername, GranteeName: share.GranteeName,
 		GranteeAvatarURL: avatarURL(share.GranteeUser), GranteeAvatarColorIndex: avatar.InitialColorIndex(share.GranteeUserID),
 		OwnerName: share.OwnerName,
@@ -272,7 +309,7 @@ func (self *graph) ListSkillShares(ctx context.Context) ([]*SkillShareView, erro
 		view.WaitingCallCount = len(waiting)
 		if share.CurrencyCode != "" {
 			from, until := skills.ShareMonth(time.Now())
-			if view.MonthTotalMinor, err = tx.SkillShareMonthTotal(share.ID, share.CurrencyCode, from, until); err != nil {
+			if view.MonthTotalMinor, err = tx.SkillShareMonthTotal(share.OwnerAgentID, share.GranteeUserID, share.SkillName, share.CurrencyCode, from, until); err != nil {
 				return nil, err
 			}
 		}
@@ -286,10 +323,6 @@ func (self *graph) ListSkillShareCalls(ctx context.Context, arguments ListSkillS
 	if err != nil {
 		return nil, err
 	}
-	share, err := self.skillShareOfParty(ctx, user, arguments.ShareID)
-	if err != nil {
-		return nil, err
-	}
 	callState := models.SkillShareCallState(strings.TrimSpace(arguments.CallState))
 	if callState != "" && !callState.IsValid() {
 		return nil, fmt.Errorf("%w: %q is not a state of a call", api.ErrInvalidArguments, arguments.CallState)
@@ -297,6 +330,27 @@ func (self *graph) ListSkillShareCalls(ctx context.Context, arguments ListSkillS
 	limit := 0
 	if arguments.Limit != nil {
 		limit = *arguments.Limit
+	}
+	if arguments.IsShareEnded {
+		if strings.TrimSpace(arguments.ShareID) != "" {
+			return nil, fmt.Errorf("%w: a share that has ended has no identifier to name; leave shareId out", api.ErrInvalidArguments)
+		}
+		calls, err := self.transaction(ctx).ListEndedSkillShareCalls(user.ID, callState, limit)
+		if err != nil {
+			return nil, err
+		}
+		views := make([]*SkillShareCallView, 0, len(calls))
+		for _, call := range calls {
+			views = append(views, describeSkillShareCall(call, nil))
+		}
+		return views, nil
+	}
+	if strings.TrimSpace(arguments.ShareID) == "" {
+		return nil, fmt.Errorf("%w: say which share, or ask for the shares that ended with isShareEnded", api.ErrInvalidArguments)
+	}
+	share, err := self.skillShareOfParty(ctx, user, arguments.ShareID)
+	if err != nil {
+		return nil, err
 	}
 	calls, err := self.transaction(ctx).ListSkillShareCalls(share.ID, callState, limit)
 	if err != nil {
@@ -361,11 +415,24 @@ func (self *graph) ShareSkill(ctx context.Context, arguments ShareSkillArguments
 	}); err != nil {
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, strings.TrimPrefix(err.Error(), "skills: "))
 	}
-	saved, err := tx.ShareSkill(principal.User.ID, &models.SkillShare{
+	terms := &models.SkillShare{
 		SkillName: skill.Name, ToolNames: arguments.ToolNames, GranteeUserID: strings.TrimSpace(arguments.GranteeUserID),
 		PaymentLimitMinor: arguments.PaymentLimitMinor, MonthlyLimitMinor: arguments.MonthlyLimitMinor,
 		CurrencyCode: currencyCode, IsApprovalRequired: arguments.IsApprovalRequired,
-	})
+	}
+	// Lending money is the person's tap. A share that opens nothing beyond
+	// what was already open is not lending more, and is let through from
+	// anywhere: asking every time, and lowering what a share allows.
+	if !principal.IsPersonsTap() {
+		replaced, err := self.ownSkillShare(tx, principal.User.ID, terms)
+		if err != nil {
+			return nil, err
+		}
+		if !terms.OpensNothingBeyond(replaced) {
+			return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, approveOnTheDashboard)
+		}
+	}
+	saved, err := tx.ShareSkill(principal.User.ID, terms)
 	if err != nil {
 		// A person who shares no circle with the caller, one who does not
 		// exist: both answer as nothing found, because which it was is not
@@ -374,6 +441,21 @@ func (self *graph) ShareSkill(ctx context.Context, arguments ShareSkillArguments
 	}
 	log.Noticef("%s shared the %s skill with someone", principal.User.Username, skill.Name)
 	return describeSkillShare(saved, principal.User.ID), nil
+}
+
+// ownSkillShare is the share the owner already made of this skill with this
+// person, or nil.
+func (self *graph) ownSkillShare(tx db.Transaction, ownerUserId string, terms *models.SkillShare) (*models.SkillShare, error) {
+	shares, err := tx.ListSkillSharesBy(ownerUserId)
+	if err != nil {
+		return nil, err
+	}
+	for _, share := range shares {
+		if share.SkillName == terms.SkillName && share.GranteeUserID == terms.GranteeUserID {
+			return share, nil
+		}
+	}
+	return nil, nil
 }
 
 func (self *graph) UnshareSkill(ctx context.Context, arguments UnshareSkillArguments) (bool, error) {
@@ -415,6 +497,13 @@ func (self *graph) AnswerSkillShareCall(ctx context.Context, arguments AnswerSki
 	// comment for what holds that case).
 	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent || principal.Impersonator != nil {
 		return nil, api.ErrNotFound
+	}
+	// Approving spends the owner's money on the owner's computer, and is a
+	// person's tap: the dashboard's session or the phone app. A command line
+	// token is what an agent holds when it drives the person's computer.
+	// Declining takes nothing, and is left open to the owner's other sign-ins.
+	if arguments.IsApproved && !principal.IsPersonsTap() {
+		return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, approveOnTheDashboard)
 	}
 	worker := self.agentWorker()
 	if worker == nil {

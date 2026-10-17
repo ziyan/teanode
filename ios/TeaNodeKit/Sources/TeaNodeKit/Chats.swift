@@ -32,7 +32,7 @@ public struct ChatMember: Codable, Hashable, Sendable, Identifiable {
     /// The newest message they have read; empty when they have read none.
     public var readThroughMessageId: String?
     /// Their agent remembers this chat.
-    public let isAgentReading: Bool
+    public var isAgentReading: Bool
     /// The others in the chat may address their agent there.
     public var isAgentAskableByOthers: Bool? = nil
     /// Which agent is theirs, what it is called and whether it is on; told
@@ -156,6 +156,20 @@ public struct ChatSummary: Codable, Hashable, Sendable {
             guard member.userId == userId, (member.readThroughMessageId ?? "") < messageId else { return member }
             var moved = member
             moved.readThroughMessageId = messageId
+            return moved
+        }
+        return changed
+    }
+
+    /// A member's two agent switches set as the person just chose them,
+    /// before the server has said yes; a nil one is left as it is.
+    public func withAgentSwitches(userId: String, isAgentReading: Bool? = nil, isAgentAskableByOthers: Bool? = nil) -> ChatSummary {
+        var changed = self
+        changed.members = members.map { member in
+            guard member.userId == userId else { return member }
+            var moved = member
+            if let isAgentReading { moved.isAgentReading = isAgentReading }
+            if let isAgentAskableByOthers { moved.isAgentAskableByOthers = isAgentAskableByOthers }
             return moved
         }
         return changed
@@ -629,9 +643,10 @@ extension Connection {
         try await accessSession().userId
     }
 
-    /// What the person's agent is called, and whether they have turned it on.
-    /// A chat needs neither.
-    public func agentIdentity() async throws -> (name: String, isOn: Bool) {
+    /// What the person's agent is called, whether they have turned it on, and
+    /// whether they have one at all: the server answers no agent for a person
+    /// who has none, who has nothing to turn on. A chat needs none of it.
+    public func agentIdentity() async throws -> (name: String, isOn: Bool, hasAgent: Bool) {
         struct Answer: Decodable, Sendable {
             struct Read: Decodable, Sendable {
                 struct Agent: Decodable, Sendable {
@@ -643,7 +658,7 @@ extension Connection {
             let ReadAgent: Read
         }
         let agent = try await execute(Documents.agent, as: Answer.self).ReadAgent.agent
-        return (agent?.name ?? "", agent?.enabled ?? false)
+        return (agent?.name ?? "", agent?.enabled ?? false, agent != nil)
     }
 
     /// Everybody the person shares a circle with: the people a chat can be
