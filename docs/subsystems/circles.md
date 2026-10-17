@@ -95,11 +95,18 @@ an Open button and no reply field.
 have the name of somebody's username. Wherever a person or an agent names a
 circle by its name (`teanode calendar share` and `agent memory share`, the
 `with` of the calendar and memory tools, the `circle` of the calendar tool's
-`add`), a name that more than one circle has, or that is also a username, is
-refused with the ids and member counts of the circles it could be (the same
-words on every surface, `models.ResolveShareTarget`); an id is never ambiguous.
-The cards the agent asks the person to approve for sharing with a circle say how
-many people it is: "everyone in Family (4 people)".
+`add`), a name that more than one circle has is refused with the ids and member
+counts of the circles it could be (the same words on every surface,
+`models.ResolveShareTarget`); an id is never ambiguous. A word that is the
+username of somebody the person may share with is that person, even when a
+circle has the same name, so whoever names a circle cannot take a share meant
+for somebody; that circle is still reached by its id. Every result, command line
+line and card the agent asks the person to approve says a circle as `the circle
+"Family" (4 people)`, with the name in quotes (a circle's name is typed by
+whoever made it, kept on one line, and must not read as part of the sentence)
+and how many people it is. The dashboard and the iPhone app say it in their
+pickers as "Everyone in Family (4 people)", so two circles called the same can
+be told apart there too.
 
 An operator with `user:manage` can put an account in a circle without an
 invitation (`AddCircleMember`), for an account made for somebody who will not

@@ -291,5 +291,13 @@ func (self *Skill) CheckShareable(toolNames []string, limits ShareLimits) error 
 	if (limits.PaymentLimitMinor != nil || limits.MonthlyLimitMinor != nil) && limits.CurrencyCode == "" {
 		return fmt.Errorf("skills: a limit is in a currency; say which")
 	}
+	if limits.PaymentLimitMinor != nil && limits.MonthlyLimitMinor != nil && *limits.PaymentLimitMinor > *limits.MonthlyLimitMinor {
+		return fmt.Errorf("skills: %s", PaymentLimitAboveMonthlyWords)
+	}
 	return nil
 }
+
+// PaymentLimitAboveMonthlyWords is why a share whose limit for one payment is
+// above its monthly limit is refused, in the one wording the dashboard, the
+// app and the command line use.
+const PaymentLimitAboveMonthlyWords = "the limit for one payment cannot be above the monthly limit"

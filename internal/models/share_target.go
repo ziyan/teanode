@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -25,13 +26,10 @@ type ShareTarget struct {
 	UserID   string
 	CircleID string
 
-	// Description says who it is in a result: the username, or "everyone in"
-	// and the circle's name.
+	// Description says who it is, in a result and on a card somebody approves:
+	// the username, or the circle with its name in quotes and how many people
+	// it is, `the circle "Family" (4 people)`.
 	Description string
-
-	// ApprovalDescription is the same for a card somebody approves, where a
-	// circle also says how many people it is: "everyone in Family (4 people)".
-	ApprovalDescription string
 }
 
 // ErrNoShareTarget is what ResolveShareTarget answers when the words name
@@ -65,12 +63,27 @@ func AmbiguousCircleNameError(typed string, circles []ShareableCircle) error {
 		typed, DescribeCircleChoices(circles))
 }
 
+// DescribeCircle says which circle a result or a card means: the circle, with
+// its name in quotes, so that a name typed by whoever made the circle cannot
+// read as part of the sentence, and how many people it is.
+func DescribeCircle(name string, memberCount int) string {
+	return fmt.Sprintf("%s (%s)", DescribeCircleByName(name), PeopleCountWords(memberCount))
+}
+
+// DescribeCircleByName is DescribeCircle for a line that does not know the
+// circle's size, such as a share in a list.
+func DescribeCircleByName(name string) string {
+	return "the circle " + strconv.Quote(name)
+}
+
 // ResolveShareTarget finds who typed words name: the id of a circle the
 // account is in, the username of somebody it shares a circle with, or the
-// name of a circle. Circle names are not unique, so a name that matches more
-// than one circle, or that is both a username and a circle's name, is refused
-// with the ids and sizes of the circles it could be; an id never is
-// ambiguous.
+// name of a circle. A username of somebody the account may share with wins
+// over a circle of the same name, so that whoever names a circle cannot take
+// a share meant for a person; the circle is still reached by its id. Circle
+// names are not unique, so a name that is nobody's username and matches more
+// than one circle is refused with the ids and sizes of the circles it could
+// be; an id never is ambiguous.
 func ResolveShareTarget(typed string, people []ShareablePerson, circles []ShareableCircle) (*ShareTarget, error) {
 	typed = strings.TrimSpace(typed)
 	if typed == "" {
@@ -81,11 +94,9 @@ func ResolveShareTarget(typed string, people []ShareablePerson, circles []Sharea
 			return circleShareTarget(circle), nil
 		}
 	}
-	var namedPerson *ShareablePerson
 	for _, person := range people {
 		if strings.EqualFold(person.Username, typed) {
-			namedPerson = &person
-			break
+			return &ShareTarget{UserID: person.UserID, Description: person.Username}, nil
 		}
 	}
 	var namedCircles []ShareableCircle
@@ -94,32 +105,15 @@ func ResolveShareTarget(typed string, people []ShareablePerson, circles []Sharea
 			namedCircles = append(namedCircles, circle)
 		}
 	}
-	switch {
-	case namedPerson != nil && len(namedCircles) > 0:
-		return nil, fmt.Errorf("%q is both the username of somebody you share a circle with and the name of %s: %s; "+
-			"give the circle's id to mean the circle, and rename the circle to name the person",
-			typed, circleOrCircles(len(namedCircles)), DescribeCircleChoices(namedCircles))
-	case len(namedCircles) > 1:
-		return nil, AmbiguousCircleNameError(typed, namedCircles)
-	case namedPerson != nil:
-		return &ShareTarget{UserID: namedPerson.UserID, Description: namedPerson.Username, ApprovalDescription: namedPerson.Username}, nil
-	case len(namedCircles) == 1:
+	switch len(namedCircles) {
+	case 0:
+		return nil, ErrNoShareTarget
+	case 1:
 		return circleShareTarget(namedCircles[0]), nil
 	}
-	return nil, ErrNoShareTarget
-}
-
-func circleOrCircles(count int) string {
-	if count == 1 {
-		return "a circle"
-	}
-	return "circles"
+	return nil, AmbiguousCircleNameError(typed, namedCircles)
 }
 
 func circleShareTarget(circle ShareableCircle) *ShareTarget {
-	return &ShareTarget{
-		CircleID:            circle.ID,
-		Description:         "everyone in " + circle.Name,
-		ApprovalDescription: fmt.Sprintf("everyone in %s (%s)", circle.Name, PeopleCountWords(circle.MemberCount)),
-	}
+	return &ShareTarget{CircleID: circle.ID, Description: DescribeCircle(circle.Name, circle.MemberCount)}
 }

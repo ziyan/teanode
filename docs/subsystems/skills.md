@@ -308,8 +308,14 @@ first, and a turn with nobody present spends only if that person allowed money
 calls when they are not there. A tool that works on a scoped identifier has
 risk `write`. The card the person answers before the agent shares a skill is
 built from the arguments and says what is granted: who, which tools (or "some
-of its tools" when none are named), the limit for one payment and for a month
-with their currency, and that anything above waits, or that every call waits.
+of its tools" when none are named), and that every call waits, which is the
+only share the tool makes. A call that asks for limits, or for a share that
+does not ask every time, is refused before there is a card, saying the
+limits are set on the dashboard or in the iPhone app. A share made there with
+no limits, and without asking every time, is worded the same on every surface
+(`models.SkillShareNoLimitsWords`): nothing that can be priced goes through
+unasked there, and only a tool that works on something an earlier call through
+the share made does.
 The tools are read again for every turn, so taking a share back,
 leaving the circle, switching the owner's agent off or removing the skill
 takes them from the next turn; and every call is checked again when it is made.
@@ -337,7 +343,7 @@ takes them from the next turn; and every call is checked again when it is made.
    been spent. A tool that declares an amount waits too on a share with no limit
    of either kind that is not set to ask every time: there is nothing a call
    could be within.
-3. A tool with a scoped identifier is never priced. Its call is turned back
+3. A tool with a scoped identifier is never priced. Its call is refused
    unless it names an identifier that appears, as a whole word, in the output
    of an earlier call of the same share that ran (and has at least six
    characters), so `retrieve` and `cancel` work on a request the share made and
@@ -360,7 +366,7 @@ takes them from the next turn; and every call is checked again when it is made.
    leaves no row at all.
 6. A call that waits is stored with its arguments exactly as asked, the
    amount the server read, and the reason the other person's agent gave, for a
-   day. A share has at most twenty waiting at once; the next is turned back
+   day. A share has at most twenty waiting at once; the next is refused
    until some are answered, so an agent that asks again and again cannot bury
    the one they meant to answer.
 
@@ -385,7 +391,13 @@ raising its limits or its tools, or turning off asking every time) are accepted
 only from the dashboard's session, which has passed the check against forms on
 other sites, or from the iPhone app's own sign-in. A command line token, an API
 token, the console and the agent's own operations are refused, with "approve it
-on the dashboard or in the iPhone app". That is the whole guard, because an
+on the dashboard or in the iPhone app". For a share the refusal says what is
+accepted from there (`shareOnTheDashboard`): a share with every call asking, or
+one with no more than the share it replaces allowed (the same tools or fewer,
+the same currency, limits no higher), whether or not the tools pay. A share whose
+limit for one payment is above its monthly limit is refused from anywhere, in the
+same words on every surface (`skills.PaymentLimitAboveMonthlyWords`). That is the
+whole guard, because an
 agent can drive the owner's computer (the `shell`, `terminal`, `claude_code`,
 `codex` and `herdr` tools reach it, and their saved command line sign-in is
 there), and anything it types arrives as their token.

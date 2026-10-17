@@ -233,6 +233,11 @@ type AnswerSkillShareCallArguments struct {
 // person's tap may make and it did not come as one.
 const approveOnTheDashboard = api.TapRequiredPhrase + ": lending money, and approving what spends it, are done where a person taps, not from a command line or an API token"
 
+// shareOnTheDashboard is what a share is told when it is one that only a
+// person's tap may make: any share that does not ask every time and does not
+// lower an earlier share, whether or not the tools pay.
+const shareOnTheDashboard = api.TapRequiredPhrase + ": from a command line or an API token a skill is shared only with every call asking you, or with no more than an earlier share of it allowed; any other share is made where a person taps"
+
 func describeSkillShare(share *models.SkillShare, callerUserId string) *SkillShareView {
 	return &SkillShareView{
 		ID: share.ID, SkillName: share.SkillName, ToolNames: share.ToolNames,
@@ -429,7 +434,7 @@ func (self *graph) ShareSkill(ctx context.Context, arguments ShareSkillArguments
 			return nil, err
 		}
 		if !terms.OpensNothingBeyond(replaced) {
-			return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, approveOnTheDashboard)
+			return nil, fmt.Errorf("%w: %s", api.ErrPermissionDenied, shareOnTheDashboard)
 		}
 	}
 	saved, err := tx.ShareSkill(principal.User.ID, terms)

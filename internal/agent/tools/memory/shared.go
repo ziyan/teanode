@@ -584,7 +584,7 @@ func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*
 		facts = append(facts, row)
 	}
 	answer := map[string]any{
-		"path": path, "with": grantee.ApprovalDescription, "is_quote_shared": item.IsQuoteShared,
+		"path": path, "with": grantee.Description, "is_quote_shared": item.IsQuoteShared,
 		"reached_page_count": preview.ReachedPageCount, "is_reached_page_count_cut": preview.IsReachedPageCountCut,
 		"page": map[string]any{
 			"name": preview.Page.Name, "opening": preview.Page.Opening, "fact_count": len(preview.Page.Facts), "facts": facts,
@@ -616,7 +616,7 @@ func sharesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 	for _, share := range result.ListAgentPageShares {
 		with := share.GranteeUsername
 		if share.GranteeCircleName != "" {
-			with = "everyone in " + share.GranteeCircleName
+			with = models.DescribeCircleByName(share.GranteeCircleName)
 		}
 		rows = append(rows, map[string]any{"share_id": share.ID, "path": share.Path, "page": share.PageName, "with": with, "is_quote_shared": share.IsQuoteShared})
 	}

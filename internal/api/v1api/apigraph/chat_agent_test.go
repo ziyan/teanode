@@ -276,6 +276,18 @@ func TestAskingSomebodyElsesAgentNeedsTheirLeave(t *testing.T) {
 	if notes := world.notesIn(t, world.frank, frankChat); len(notes) != 0 {
 		t.Errorf("Frank was told %v of Grace being refused", notes)
 	}
+	// The note names whose agent it is: an agent is called "Agent" until its
+	// owner names it, and the owner is what tells two of them apart.
+	for _, each := range world.call(t, world.grace, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { messages { role name content } } }`, graceChat))["ReadAgentConversation"].(map[string]any)["messages"].([]any) {
+		message := each.(map[string]any)
+		if message["name"] != string(models.NoteChatAgentOwnerOnly) {
+			continue
+		}
+		note := models.ParseChatAgentNote(message["content"].(string))
+		if note == nil || note.OwnerName != world.frank.Name || note.AgentName == "" {
+			t.Errorf("the note says %q; want the names of the agent and of %s", message["content"], world.frank.Name)
+		}
+	}
 
 	// Allowed: the turn starts, held, and its answer is the chat's.
 	world.call(t, world.frank, fmt.Sprintf(`mutation { SetChatAgentAskableByOthers(conversationId: %q, isAgentAskableByOthers: true) %s }`, frankChat, chatAgentFields))

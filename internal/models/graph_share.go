@@ -49,6 +49,7 @@ type AgentPageShare struct {
 	OwnerUser         *User  `json:"-"`
 	GranteeUsername   string `json:"granteeUsername,omitempty"`
 	GranteeName       string `json:"granteeName,omitempty"`
+	GranteeUser       *User  `json:"-"`
 	GranteeCircleName string `json:"granteeCircleName,omitempty"`
 }
 

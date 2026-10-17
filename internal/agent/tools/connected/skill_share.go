@@ -3,6 +3,7 @@ package connected
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
@@ -48,32 +49,34 @@ func sharedToolsPhrase(toolNames []string) string {
 }
 
 // skillShareCard is the card the person answers before a skill is shared: who
-// may use which tools, and exactly what lets a call through without asking.
-// It is built from the arguments, so what the person approves is what they
-// read here, limits included, and not a summary that leaves them out.
+// may use which tools, and what lets a call through without asking. This tool
+// can only share so that every call waits for the person (shareRefusal turns
+// anything else back before there is a card), so that is what the card says,
+// and what the person approves is what the share will be.
 func skillShareCard(call *skillRequest) string {
-	card := fmt.Sprintf("Let %s use %s of your %s skill on your computer, as you: ",
+	return fmt.Sprintf("Let %s use %s of your %s skill on your computer, as you: every call waits for you",
 		tools.Named(call.With, "someone"), sharedToolsPhrase(call.ToolNames), tools.Named(call.Name, "a"))
-	if call.IsApprovalRequired {
-		return card + "every call waits for you"
+}
+
+// shareRefusal is why a share cannot be made as asked, or nil. It is asked
+// before the person is, as well as when the share is made: a card describing
+// a share that cannot happen would have them approve something and then read
+// a refusal. What lets a call through without asking is lent on the
+// dashboard or in the app, never by the agent.
+func shareRefusal(call *skillRequest) error {
+	if strings.TrimSpace(call.Name) == "" {
+		return fmt.Errorf("which skill? list says which are installed")
 	}
-	currencyCode, _ := models.NormalizeCurrencyCode(call.Currency)
-	var limits []string
-	for _, limit := range []struct{ text, period string }{{call.PaymentLimit, "a payment"}, {call.MonthlyLimit, "a month"}} {
-		text := strings.TrimSpace(limit.text)
-		if text == "" {
-			continue
-		}
-		words := text + " " + strings.ToUpper(call.Currency)
-		if minor, err := models.ParseMinor(text, currencyCode); err == nil {
-			words = models.FormatMinor(minor, currencyCode)
-		}
-		limits = append(limits, strings.TrimSpace(words)+" "+limit.period)
+	if len(call.ToolNames) == 0 {
+		return fmt.Errorf("which of its tools? give tool_names; list with name says what each does and which declare an amount")
 	}
-	if len(limits) == 0 {
-		return card + "no limits, so any call whose cost the skill does not state waits for you"
+	if strings.TrimSpace(call.With) == "" {
+		return fmt.Errorf("with whom? give 'with': the username of somebody the person shares a circle with")
 	}
-	return card + "up to " + strings.Join(limits, " and ") + ", anything above waits for you"
+	if !call.IsApprovalRequired || strings.TrimSpace(call.PaymentLimit) != "" || strings.TrimSpace(call.MonthlyLimit) != "" {
+		return fmt.Errorf("you can share a skill only so that every call waits for the person's approval: give is_approval_required true, and no limits. Limits that let a call through without asking are set by the person, on the dashboard's Agent page (Connections) or in the iPhone app")
+	}
+	return nil
 }
 
 // minorLimit reads a limit the person gave in the currency's own units.
@@ -89,22 +92,11 @@ func minorLimit(text, currencyCode, what string) (*int64, error) {
 }
 
 func shareSkillAction(ctx context.Context, run tools.Run, arguments *skillRequest) (*tools.Result, error) {
+	if err := shareRefusal(arguments); err != nil {
+		return nil, err
+	}
 	skillName := strings.ToLower(strings.TrimSpace(arguments.Name))
-	if skillName == "" {
-		return nil, fmt.Errorf("which skill? list says which are installed")
-	}
-	if len(arguments.ToolNames) == 0 {
-		return nil, fmt.Errorf("which of its tools? give tool_names; list with name says what each does and which declare an amount")
-	}
 	with := strings.TrimSpace(arguments.With)
-	if with == "" {
-		return nil, fmt.Errorf("with whom? give 'with': the username of somebody the person shares a circle with")
-	}
-	// What lets a call through without asking is lent on the dashboard or in
-	// the app, never by the agent.
-	if !arguments.IsApprovalRequired || strings.TrimSpace(arguments.PaymentLimit) != "" || strings.TrimSpace(arguments.MonthlyLimit) != "" {
-		return nil, fmt.Errorf("you can share a skill only so that every call waits for the person's approval: give is_approval_required true, and no limits. Limits that let a call through without asking are set by the person, on the dashboard's Agent page (Connections) or in the iPhone app")
-	}
 	currencyCode, hasCurrency := models.NormalizeCurrencyCode(arguments.Currency)
 	if strings.TrimSpace(arguments.Currency) != "" && !hasCurrency {
 		return nil, fmt.Errorf("a currency is three letters, such as usd")
@@ -187,7 +179,7 @@ func limitsPhrase(paymentLimit, monthlyLimit *int64, currencyCode string, isAppr
 		parts = append(parts, "up to "+models.FormatMinor(*monthlyLimit, currencyCode)+" a month")
 	}
 	if len(parts) == 0 {
-		return "no limits set, so any call whose cost the skill does not declare waits for the person's approval"
+		return models.SkillShareNoLimitsWords
 	}
 	return strings.Join(parts, " and ") + "; anything above waits for the person's approval"
 }
@@ -276,18 +268,42 @@ func skillShareCallsAction(ctx context.Context, run tools.Run, arguments *skillR
 	if shareId == "" && !arguments.IsShareEnded {
 		return nil, fmt.Errorf("which share? give share_id, from shares, or is_share_ended true for the calls of shares that ended")
 	}
-	variables := map[string]any{"shareId": nil, "isShareEnded": arguments.IsShareEnded, "callState": nil}
-	if shareId != "" {
-		variables["shareId"] = shareId
+	askedCallStates, err := models.SkillShareCallStatesAsked(arguments.CallStates)
+	if err != nil {
+		return nil, err
 	}
-	if callState := strings.TrimSpace(arguments.CallState); callState != "" {
-		variables["callState"] = callState
+	// The operation takes one state or none, so several are asked for one at
+	// a time and put together, the newest first, as the command line does.
+	callStates := []string{""}
+	if len(askedCallStates) > 0 {
+		callStates = callStates[:0]
+		for _, callState := range askedCallStates {
+			callStates = append(callStates, string(callState))
+		}
 	}
 	var listed struct {
 		ListSkillShareCalls []*skillShareCallView `json:"ListSkillShareCalls"`
 	}
-	if err := run.Operations().Execute(ctx, documentSkillShareCalls, variables, &listed); err != nil {
-		return nil, err
+	for _, callState := range callStates {
+		variables := map[string]any{"shareId": nil, "isShareEnded": arguments.IsShareEnded, "callState": nil}
+		if shareId != "" {
+			variables["shareId"] = shareId
+		}
+		if callState != "" {
+			variables["callState"] = callState
+		}
+		var found struct {
+			ListSkillShareCalls []*skillShareCallView `json:"ListSkillShareCalls"`
+		}
+		if err := run.Operations().Execute(ctx, documentSkillShareCalls, variables, &found); err != nil {
+			return nil, err
+		}
+		listed.ListSkillShareCalls = append(listed.ListSkillShareCalls, found.ListSkillShareCalls...)
+	}
+	if len(callStates) > 1 {
+		sort.SliceStable(listed.ListSkillShareCalls, func(first, second int) bool {
+			return listed.ListSkillShareCalls[first].CreatedAt > listed.ListSkillShareCalls[second].CreatedAt
+		})
 	}
 	rows := make([]map[string]any, 0, len(listed.ListSkillShareCalls))
 	waiting := 0

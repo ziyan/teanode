@@ -129,7 +129,7 @@ func runAgentMemoryShares(ctx context.Context, command *cli.Command) error {
 	for _, share := range shares {
 		with := share.GranteeUsername
 		if share.GranteeCircleID != nil {
-			with = "everyone in " + share.GranteeCircleName
+			with = models.DescribeCircleByName(share.GranteeCircleName)
 		}
 		quotes := "no"
 		if share.IsQuoteShared {
@@ -185,13 +185,14 @@ func runAgentMemoryShared(ctx context.Context, command *cli.Command) error {
 // says for each hit whose it is: a page by its name and opening, a fact by its
 // number on the page, as 'teanode agent memory get --owner' numbers them.
 func runAgentMemorySharedSearch(ctx context.Context, command *cli.Command, connection *client.Client, query string) error {
-	hits, err := client.SearchSharedAgentPages(ctx, connection, query, command.Int("first"))
+	found, err := client.SearchSharedAgentPages(ctx, connection, query, command.Int("first"))
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
-		return PrintJSON(hits)
+		return PrintJSON(found)
 	}
+	hits := found.Hits
 	if len(hits) == 0 {
 		_, _ = fmt.Fprintln(command.Writer, "nothing shared with you has those words")
 		return nil
@@ -206,7 +207,13 @@ func runAgentMemorySharedSearch(ctx context.Context, command *cli.Command, conne
 		}
 		rows = append(rows, []string{hit.OwnerUsername, where, said})
 	}
-	return printTable([]string{"shared by", "page", "about"}, rows)
+	if err := printTable([]string{"shared by", "page", "about"}, rows); err != nil {
+		return err
+	}
+	if found.HasMoreHits {
+		_, _ = fmt.Fprintln(command.Writer, "There may be more; use more words, or --first for more of them.")
+	}
+	return nil
 }
 
 // runAgentMemoryGetShared reads a page another person shared, for

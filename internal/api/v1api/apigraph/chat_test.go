@@ -1053,7 +1053,7 @@ func TestAnAgentReactsInAChatForItsOwner(t *testing.T) {
 
 	world.call(t, world.frank, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "❤️") }`, said))
 	reacted := feed.next(agent.EventReacted)
-	if reacted == nil || reacted.MessageID != said || reacted.Emoji != "❤️" || reacted.ReactorKind != "agent" || reacted.ReactorName != models.AgentDefaultName {
+	if reacted == nil || reacted.MessageID != said || reacted.Emoji != "❤️" || reacted.ReactorKind != "agent" || reacted.ReactorName != models.AgentSpeakerLabel(models.AgentDefaultName, world.frank.DisplayName()) {
 		t.Fatalf("Alice's chat was told %+v", reacted)
 	}
 	reactions := world.read(t, world.alice, aliceChat)[0]["reactions"].([]any)
@@ -1203,15 +1203,17 @@ func TestAPersonKeepsOnlySoMuchOfTheFilesTheySendInChats(t *testing.T) {
 	world.say(t, world.bob, bobChat, "no files here")
 }
 
+// A chat is put away, which is its own row of it (see
+// TestAChatIsPutAwayAndBroughtBackByEachPersonAlone), but not renamed or
+// deleted like a conversation with the agent.
 func TestAChatIsNotRenamedOrDeletedLikeAConversationWithTheAgent(t *testing.T) {
 	world := newChatWorld(t)
 	world.shareCircle(t, world.alice, "Home", world.frank)
 	frankChat := world.openDirect(t, world.frank, world.alice)
 	for query, expected := range map[string]string{
-		fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, title: "x") { id } }`, frankChat):     "RenameChat",
-		fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, archived: true) { id } }`, frankChat): "RenameChat",
-		fmt.Sprintf(`mutation { DeleteAgentConversation(conversationId: %q) }`, frankChat):                        "left, not deleted",
-		fmt.Sprintf(`mutation { SetAgentMainConversation(conversationId: %q) { id } }`, frankChat):                "named conversation",
+		fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, title: "x") { id } }`, frankChat): "RenameChat",
+		fmt.Sprintf(`mutation { DeleteAgentConversation(conversationId: %q) }`, frankChat):                    "left, not deleted",
+		fmt.Sprintf(`mutation { SetAgentMainConversation(conversationId: %q) { id } }`, frankChat):            "named conversation",
 	} {
 		if message := world.refused(t, world.frank, query); !strings.Contains(message, expected) {
 			t.Errorf("%s was answered %q", query, message)
@@ -1505,4 +1507,70 @@ func TestAChangeOfPeopleIsToldToEveryoneItConcerns(t *testing.T) {
 	if carolCircleFeed.next(agent.EventMembers) == nil {
 		t.Error("Carol was not told that the circle's chat ended")
 	}
+}
+
+// A chat is put away like any other conversation, by a person whose agent is
+// off as well: the listing holds it with the archived and not with the live
+// ones, for that person alone, and a new message does not bring it back.
+func TestAChatIsPutAwayAndBroughtBackByEachPersonAlone(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.bob)
+	aliceChat := world.openDirect(t, world.alice, world.bob)
+	bobChat := ""
+	for _, each := range world.call(t, world.bob, `query { ListAgentConversations(kind: "chat") { id } }`)["ListAgentConversations"].([]any) {
+		bobChat = each.(map[string]any)["id"].(string)
+	}
+	if bobChat == "" {
+		t.Fatal("Bob has no chat")
+	}
+	listed := func(user *models.User, isArchived bool) []string {
+		t.Helper()
+		ids := []string{}
+		for _, each := range world.call(t, user, fmt.Sprintf(`query { ListAgentConversations(archived: %t) { id } }`, isArchived))["ListAgentConversations"].([]any) {
+			ids = append(ids, each.(map[string]any)["id"].(string))
+		}
+		return ids
+	}
+	contains := func(ids []string, id string) bool {
+		for _, each := range ids {
+			if each == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Bob's agent is off, and he puts the chat away.
+	data := world.call(t, world.bob, fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, archived: true) { id archivedAt chat { chatId } } }`, bobChat))
+	archived := data["UpdateAgentConversation"].(map[string]any)
+	if archived["archivedAt"] == nil || archived["chat"] == nil {
+		t.Fatalf("archiving the chat answered %v", archived)
+	}
+	if contains(listed(world.bob, false), bobChat) || !contains(listed(world.bob, true), bobChat) {
+		t.Errorf("Bob lists live %v and archived %v after putting the chat away", listed(world.bob, false), listed(world.bob, true))
+	}
+	// It is Bob's row of the chat: Alice still has hers.
+	if !contains(listed(world.alice, false), aliceChat) || contains(listed(world.alice, true), aliceChat) {
+		t.Error("putting the chat away took it out of Alice's list")
+	}
+
+	// A new message is not a reason to bring it back, as in any conversation.
+	world.say(t, world.alice, aliceChat, "are you there?")
+	if contains(listed(world.bob, false), bobChat) {
+		t.Error("a new message brought the archived chat back")
+	}
+
+	world.call(t, world.bob, fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, archived: false) { id } }`, bobChat))
+	if !contains(listed(world.bob, false), bobChat) || contains(listed(world.bob, true), bobChat) {
+		t.Error("the chat did not come back")
+	}
+
+	// Somebody else's chat is not found, and a chat is renamed with its own
+	// operation.
+	world.refused(t, world.alice, fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, archived: true) { id } }`, bobChat))
+	if message := world.refused(t, world.bob, fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, title: "x") { id } }`, bobChat)); !strings.Contains(message, "RenameChat") {
+		t.Errorf("renaming a chat as a conversation was answered %q", message)
+	}
+	// A person who may not use circles has no chats to put away.
+	world.refused(t, world.heidi, fmt.Sprintf(`mutation { UpdateAgentConversation(conversationId: %q, archived: true) { id } }`, bobChat))
 }

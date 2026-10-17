@@ -217,7 +217,7 @@ func TestSkillSharesAndCallsAreListedAndAnswered(test *testing.T) {
 	}
 
 	output, err = runSkillCommand(test, server, "calls", "s1", "--waiting")
-	if err != nil || !strings.Contains(output, "140.00 USD") || !strings.Contains(output, `"the weekly groceries"`) || !strings.Contains(output, "waiting_for_approval") {
+	if err != nil || !strings.Contains(output, "140.00 USD") || !strings.Contains(output, `"the weekly groceries"`) || !strings.Contains(output, " waiting ") || strings.Contains(output, " waiting_for_approval ") {
 		test.Errorf("the calls: %q %v", output, err)
 	}
 	if called("ListSkillShareCalls")["callState"] != "waiting_for_approval" || called("ListSkillShareCalls")["shareId"] != "s1" {
@@ -345,7 +345,8 @@ func TestTheCallsOfAShareAreListedByState(test *testing.T) {
 	lock.Lock()
 	asked = asked[:0]
 	lock.Unlock()
-	if _, err := runSkillCommand(test, server, "calls", "s1", "--state", "waiting"); err != nil {
+	waitingOutput, err := runSkillCommand(test, server, "calls", "s1", "--state", "waiting")
+	if err != nil {
 		test.Fatal(err)
 	}
 	lock.Lock()
@@ -353,6 +354,11 @@ func TestTheCallsOfAShareAreListedByState(test *testing.T) {
 	lock.Unlock()
 	if got != "waiting_for_approval" {
 		test.Errorf("waiting is waiting_for_approval to the operation: %q", got)
+	}
+	// The state column says waiting, as --state takes it, not waiting_for_approval
+	// (which is still in the call's own identifier here).
+	if strings.Contains(waitingOutput, " waiting_for_approval ") || !strings.Contains(waitingOutput, " waiting ") {
+		test.Errorf("the table names the state as --state takes it:\n%s", waitingOutput)
 	}
 	lock.Lock()
 	asked = asked[:0]

@@ -135,12 +135,13 @@ func TestOnlyTheOwnerSharesASkillWithinACircle(t *testing.T) {
 
 	// What is wrong with the request is said.
 	for name, test := range map[string]struct{ query, expected string }{
-		"a tool that pays with no bound": {world.shareQuery(`["pay"]`, world.ben.ID, ``), "limit"},
-		"a tool the skill lacks":         {world.shareQuery(`["wire"]`, world.ben.ID, `, isApprovalRequired: true`), "wire"},
-		"no tools":                       {world.shareQuery(`[]`, world.ben.ID, `, isApprovalRequired: true`), "which"},
-		"a limit with no currency":       {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 500`), "currency"},
-		"a currency that is not one":     {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 500, currencyCode: "dollars"`), "three letters"},
-		"a limit of nothing":             {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 0, currencyCode: "usd"`), "above zero"},
+		"a tool that pays with no bound":          {world.shareQuery(`["pay"]`, world.ben.ID, ``), "limit"},
+		"a tool the skill lacks":                  {world.shareQuery(`["wire"]`, world.ben.ID, `, isApprovalRequired: true`), "wire"},
+		"no tools":                                {world.shareQuery(`[]`, world.ben.ID, `, isApprovalRequired: true`), "which"},
+		"a limit with no currency":                {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 500`), "currency"},
+		"a currency that is not one":              {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 500, currencyCode: "dollars"`), "three letters"},
+		"a limit of nothing":                      {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 0, currencyCode: "usd"`), "above zero"},
+		"a payment limit above the monthly limit": {world.shareQuery(`["pay"]`, world.ben.ID, `, paymentLimitMinor: 50000, monthlyLimitMinor: 10000, currencyCode: "usd"`), skills.PaymentLimitAboveMonthlyWords},
 	} {
 		if said := world.refused(t, world.ada, test.query); !strings.Contains(strings.ToLower(said), test.expected) {
 			t.Errorf("%s: %q does not mention %q", name, said, test.expected)
@@ -448,6 +449,13 @@ func TestLendingMoneyIsOnlyAcceptedFromATap(t *testing.T) {
 	}
 	if listed := world.call(t, world.ada, `query { ListSkillShares `+skillShareFields+` }`)["ListSkillShares"].([]any); len(listed) != 0 {
 		t.Fatalf("a refused request stored a share: %v", listed)
+	}
+
+	// The refusal says what is accepted from here, whether or not the tool
+	// pays: a share that is not asking every time is made where a person taps.
+	_, readOnlyFailures := world.askWith(t, world.ada, models.CredentialToken, world.shareQuery(`["spend_requests"]`, world.ben.ID, ``))
+	if said := strings.Join(readOnlyFailures, "; "); !strings.Contains(said, api.TapRequiredPhrase) || !strings.Contains(said, "only with every call asking you") {
+		t.Errorf("a share of a tool that pays nothing was not refused in the words of the rule: %q", said)
 	}
 
 	// Asking every time takes nothing, from anywhere.

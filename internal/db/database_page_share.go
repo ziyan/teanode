@@ -143,7 +143,7 @@ func (self *transaction) describePageShares(rows []agentPageShareModel) ([]*mode
 			share.OwnerUsername, share.OwnerName, share.OwnerUser = owner.Username, owner.DisplayName(), owner
 		}
 		if grantee := users[share.GranteeUserID]; grantee != nil {
-			share.GranteeUsername, share.GranteeName = grantee.Username, grantee.DisplayName()
+			share.GranteeUsername, share.GranteeName, share.GranteeUser = grantee.Username, grantee.DisplayName(), grantee
 		}
 		share.GranteeCircleName = circleNames[share.GranteeCircleID]
 		shares = append(shares, share)

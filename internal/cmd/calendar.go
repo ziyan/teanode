@@ -663,7 +663,7 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 			found.Name, whose, level, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
 		})
 	}
-	return printTable([]string{"name", "owner", "level", "timezone", "week starts", "colour", "holds", "id"}, rows)
+	return printTable([]string{"name", "owner", "level", "timezone", "week starts", "color", "holds", "id"}, rows)
 }
 
 func runCalendarSet(ctx context.Context, command *cli.Command) error {

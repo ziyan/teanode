@@ -473,6 +473,13 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	if invitation == nil || invitation.InvitedUserID != user.ID {
 		return nil, api.ErrNotFound
 	}
+	// It is the caller's own, so they may be told why it cannot be answered.
+	if invitation.AnsweredAt != nil {
+		return nil, fmt.Errorf("%w: That invitation was already answered", api.ErrInvalidArguments)
+	}
+	if !invitation.IsOpen(time.Now()) {
+		return nil, fmt.Errorf("%w: That invitation has expired", api.ErrInvalidArguments)
+	}
 	invitationAnswer := models.InvitationAnswerDeclined
 	if arguments.IsAccepted {
 		invitationAnswer = models.InvitationAnswerAccepted
@@ -610,9 +617,14 @@ type AddCircleMemberArguments struct {
 }
 
 func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMemberArguments) (*Circle, error) {
-	principal, err := self.requirePermission(ctx, models.PermissionUserManage)
+	principal, err := self.requireSignedIn(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// Said plainly: "not found" here read as if the circle were missing, to
+	// an admin of that very circle.
+	if !principal.Permissions.Has(models.PermissionUserManage) {
+		return nil, fmt.Errorf("%w: putting an account in a circle needs the %s permission", api.ErrPermissionDenied, models.PermissionUserManage)
 	}
 	memberRole := models.MemberRole(strings.TrimSpace(arguments.MemberRole))
 	if !memberRole.IsValid() {

@@ -301,8 +301,8 @@ func TestTheReaderSearchesWhatIsSharedWithThem(t *testing.T) {
 	world := newPageShareWorld(t)
 	world.share(t, "people/a", world.ben, false)
 
-	data := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "doctor") { ownerUserId ownerUsername ownerName path name opening factNumber text } }`)
-	hits := data["SearchSharedAgentPages"].([]any)
+	data := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "doctor") { hasMoreHits hits { ownerUserId ownerUsername ownerName path name opening factNumber text } } }`)
+	hits := data["SearchSharedAgentPages"].(map[string]any)["hits"].([]any)
 	if len(hits) == 0 {
 		t.Fatalf("nothing found for a word on a shared page: %v", data)
 	}
@@ -320,15 +320,39 @@ func TestTheReaderSearchesWhatIsSharedWithThem(t *testing.T) {
 
 	// What is not shared is not found by a word on it, and a person nothing is
 	// shared with finds nothing.
-	if hits := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "business") { path } }`)["SearchSharedAgentPages"].([]any); len(hits) != 0 {
+	if hits := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "business") { hits { path } } }`)["SearchSharedAgentPages"].(map[string]any)["hits"].([]any); len(hits) != 0 {
 		t.Errorf("a page that is not shared was found: %v", hits)
 	}
-	if hits := world.call(t, world.cora, `query { SearchSharedAgentPages(query: "doctor") { path } }`)["SearchSharedAgentPages"].([]any); len(hits) != 0 {
+	if hits := world.call(t, world.cora, `query { SearchSharedAgentPages(query: "doctor") { hits { path } } }`)["SearchSharedAgentPages"].(map[string]any)["hits"].([]any); len(hits) != 0 {
 		t.Errorf("cora has nothing shared with her: %v", hits)
 	}
-	if hits := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "doctor", first: 1) { path } }`)["SearchSharedAgentPages"].([]any); len(hits) != 1 {
-		t.Errorf("first bounds the hits: %v", hits)
+	world.refused(t, world.ben, `query { SearchSharedAgentPages(query: "  ") { hits { path } } }`)
+	world.refused(t, world.eve, `query { SearchSharedAgentPages(query: "doctor") { hits { path } } }`)
+}
+
+// A search says when it left hits out, and a first of nothing is the default
+// rather than one hit.
+func TestASharedSearchSaysWhenItLeftHitsOut(t *testing.T) {
+	world := newPageShareWorld(t)
+	world.share(t, "people/a", world.ben, false)
+
+	search := func(arguments string) (int, bool) {
+		t.Helper()
+		data := world.call(t, world.ben, `query { SearchSharedAgentPages(query: "fact"`+arguments+`) { hasMoreHits hits { path } } }`)
+		found := data["SearchSharedAgentPages"].(map[string]any)
+		return len(found["hits"].([]any)), found["hasMoreHits"].(bool)
 	}
-	world.refused(t, world.ben, `query { SearchSharedAgentPages(query: "  ") { path } }`)
-	world.refused(t, world.eve, `query { SearchSharedAgentPages(query: "doctor") { path } }`)
+	everything, hasMore := search("")
+	if everything < 2 || hasMore {
+		t.Fatalf("the page and its fact are found, and nothing was left out: %d %v", everything, hasMore)
+	}
+	if count, hasMore := search(", first: 1"); count != 1 || !hasMore {
+		t.Errorf("first bounds the hits and the search says it left some out: %d %v", count, hasMore)
+	}
+	if count, hasMore := search(fmt.Sprintf(", first: %d", everything)); count != everything || hasMore {
+		t.Errorf("exactly as many as there are is not more: %d %v", count, hasMore)
+	}
+	if count, hasMore := search(", first: 0"); count != everything || hasMore {
+		t.Errorf("a first of nothing is the default: %d %v", count, hasMore)
+	}
 }

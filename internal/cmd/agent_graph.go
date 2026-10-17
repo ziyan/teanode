@@ -52,7 +52,7 @@ func newAgentGraphCommands() []*cli.Command {
 		},
 		{
 			Name:      "overview",
-			Usage:     "how the thing a page is about works, as the night last wrote it from the page and the pages under and beside it",
+			Usage:     "how the thing a page is about works, as the last dream wrote it from the page and the pages under and beside it",
 			ArgsUsage: "<path>",
 			Flags: []cli.Flag{
 				JSONFlag(),

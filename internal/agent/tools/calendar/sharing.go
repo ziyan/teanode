@@ -9,6 +9,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/calendar"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Reading and sharing the calendars of other people.
@@ -73,6 +74,28 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 		return nil, fmt.Errorf("%s has not shared a calendar with the person", owner)
 	}
 
+	// Two circles can be called the same, and then the name alone is refused
+	// by calendar_add and the others: the row says the id as well.
+	isCircleNameShared := map[string]bool{}
+	for _, each := range chosen {
+		if !each.IsCircleCalendar {
+			continue
+		}
+		circles, err := tools.ShareableCircles(ctx, run.Operations())
+		if err != nil {
+			return nil, err
+		}
+		seen := map[string]bool{}
+		for _, circle := range circles {
+			name := strings.ToLower(circle.Name)
+			if seen[name] {
+				isCircleNameShared[name] = true
+			}
+			seen[name] = true
+		}
+		break
+	}
+
 	type entry struct {
 		startsAt string
 		row      map[string]any
@@ -87,9 +110,13 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 			starts, ends := moments(item, where)
 			row := map[string]any{"owner": each.whose(), "share_level": each.ShareLevel}
 			// The value calendar_edit and calendar_remove take to reach this
-			// calendar, so an entry can be acted on without another lookup.
+			// calendar, so an entry can be acted on without another lookup:
+			// the circle's name, or its id when another circle has the name.
 			if each.IsCircleCalendar {
 				row["circle"] = each.CircleName
+				if isCircleNameShared[strings.ToLower(each.CircleName)] {
+					row["circle_id"] = each.CircleID
+				}
 			} else {
 				row["person"] = each.OwnerUsername
 			}
@@ -287,7 +314,7 @@ func runShares(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	for _, share := range result.ListCalendarShares {
 		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel}
 		if share.GranteeCircleName != "" {
-			row["with"] = "everyone in " + share.GranteeCircleName
+			row["with"] = models.DescribeCircleByName(share.GranteeCircleName)
 		} else {
 			row["with"] = share.GranteeUsername
 			row["name"] = share.GranteeName

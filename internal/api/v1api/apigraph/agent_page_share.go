@@ -42,8 +42,9 @@ type AgentPageShareQuery interface {
 
 	// Find, by words, pages and facts in the pages other people shared with
 	// the caller: the same search the agent's memory tool makes of them, and
-	// only within what is shared. Each hit says whose it is. Needs circle:use.
-	SearchSharedAgentPages(ctx context.Context, arguments SearchSharedAgentPagesArguments) ([]*SharedAgentPageHitView, error)
+	// only within what is shared. Each hit says whose it is, and the answer says
+	// when more matched than first allows. Needs circle:use.
+	SearchSharedAgentPages(ctx context.Context, arguments SearchSharedAgentPagesArguments) (*SharedAgentPageSearchView, error)
 
 	// One page another person shared with the caller, or a page under one:
 	// its name, opening and facts, the links to other shared
@@ -74,11 +75,13 @@ type AgentPageShareView struct {
 	PageName string `json:"pageName"`
 
 	// Who it is shared with: a person or a circle, never both
-	GranteeUserID     *string `json:"granteeUserId"`
-	GranteeUsername   string  `json:"granteeUsername"`
-	GranteeName       string  `json:"granteeName"`
-	GranteeCircleID   *string `json:"granteeCircleId"`
-	GranteeCircleName string  `json:"granteeCircleName"`
+	GranteeUserID           *string `json:"granteeUserId"`
+	GranteeUsername         string  `json:"granteeUsername"`
+	GranteeName             string  `json:"granteeName"`
+	GranteeAvatarURL        *string `json:"granteeAvatarUrl"`
+	GranteeAvatarColorIndex int     `json:"granteeAvatarColorIndex"`
+	GranteeCircleID         *string `json:"granteeCircleId"`
+	GranteeCircleName       string  `json:"granteeCircleName"`
 
 	// Whether the words each fact was read in are shown to the reader
 	IsQuoteShared bool `json:"isQuoteShared"`
@@ -197,6 +200,8 @@ func describeAgentPageShare(share *models.AgentPageShare) *AgentPageShareView {
 	}
 	if share.GranteeUserID != "" {
 		view.GranteeUserID = &share.GranteeUserID
+		view.GranteeAvatarURL = avatarUrl(share.GranteeUser)
+		view.GranteeAvatarColorIndex = avatar.InitialColorIndex(share.GranteeUserID)
 	}
 	if share.GranteeCircleID != "" {
 		view.GranteeCircleID = &share.GranteeCircleID
@@ -330,17 +335,24 @@ type SearchSharedAgentPagesArguments struct {
 	Query string `json:"query"`
 
 	// The most hits to give back; 20 by default and at most 50
-	First *int `json:"first" graphapi:"nullable"`
+	First int `json:"first" graphapi:"nullable"`
 }
 
-// sharedSearchFirstMost is the most hits one search of shared pages gives
-// back, and sharedSearchFirstDefault how many when none is asked for.
+// SharedAgentPageSearchView is what a search of the shared pages found.
+type SharedAgentPageSearchView struct {
+	Hits []*SharedAgentPageHitView `json:"hits"`
+
+	// More matched than first allows; a search with more words narrows it.
+	HasMoreHits bool `json:"hasMoreHits"`
+}
+
+// The hits one search of shared pages gives back: by default, and at most.
 const (
-	sharedSearchFirstMost    = 50
-	sharedSearchFirstDefault = 20
+	defaultSharedSearchHits = 20
+	maximumSharedSearchHits = 50
 )
 
-func (self *graph) SearchSharedAgentPages(ctx context.Context, arguments SearchSharedAgentPagesArguments) ([]*SharedAgentPageHitView, error) {
+func (self *graph) SearchSharedAgentPages(ctx context.Context, arguments SearchSharedAgentPagesArguments) (*SharedAgentPageSearchView, error) {
 	user, err := self.requireCirclePerson(ctx)
 	if err != nil {
 		return nil, err
@@ -349,25 +361,29 @@ func (self *graph) SearchSharedAgentPages(ctx context.Context, arguments SearchS
 	if query == "" {
 		return nil, fmt.Errorf("%w: say what to look for", api.ErrInvalidArguments)
 	}
-	first := sharedSearchFirstDefault
-	if arguments.First != nil {
-		first = min(max(*arguments.First, 1), sharedSearchFirstMost)
+	first := defaultSharedSearchHits
+	if arguments.First > 0 {
+		first = min(arguments.First, maximumSharedSearchHits)
 	}
-	hits, err := agent.SearchSharedPages(self.transaction(ctx), user.ID, query, first)
+	// One more than is given back, so that the search says whether anything
+	// was left out. The owners' hits are interleaved before the cut, or an
+	// owner with many matches would fill the answer.
+	hits, err := agent.SearchSharedPages(self.transaction(ctx), user.ID, query, first+1)
 	if err != nil {
 		return nil, err
 	}
-	if len(hits) > first {
+	hits = agent.InterleaveSharedHits(hits)
+	view := &SharedAgentPageSearchView{Hits: []*SharedAgentPageHitView{}, HasMoreHits: len(hits) > first}
+	if view.HasMoreHits {
 		hits = hits[:first]
 	}
-	views := make([]*SharedAgentPageHitView, 0, len(hits))
 	for _, hit := range hits {
-		views = append(views, &SharedAgentPageHitView{
+		view.Hits = append(view.Hits, &SharedAgentPageHitView{
 			OwnerUserID: hit.OwnerUserID, OwnerUsername: hit.OwnerUsername, OwnerName: hit.OwnerName,
 			Path: hit.Path, Name: hit.Name, Opening: hit.Opening, FactNumber: hit.FactNumber, Text: hit.Text,
 		})
 	}
-	return views, nil
+	return view, nil
 }
 
 type ReadSharedAgentPageArguments struct {
