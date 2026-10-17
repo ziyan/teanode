@@ -9,6 +9,8 @@ import {
   isChatMessage,
   linesWithSaid,
   linesWithStreamedText,
+  linesWithoutStreaming,
+  isStreamingKey,
   mentionAt,
   readersByMessage,
   startsRun,
@@ -167,6 +169,17 @@ it('is not a message of the chat when it is a row of the agent’s own work', ()
   expect(isChatMessage({ ...base, toolCalls: [{ id: 'call' }] })).toBe(false)
   expect(isChatMessage({ ...base, content: 'Let me look.', toolCalls: [{ id: 'call' }] })).toBe(true)
   expect(isChatMessage({ ...base, role: 'tool' })).toBe(false)
+})
+
+it('takes the line of a turn that was stopped off the screen, and leaves the rest', () => {
+  const run = { runId: 'run-1', name: 'Robin', authorAgentId: 'agent-robin' }
+  let lines: ChatLine[] = [said('01', 'person-b')]
+  lines = linesWithStreamedText(lines, { ...run, text: 'Thurs' })
+  lines = linesWithStreamedText(lines, { ...run, runId: 'run-2', text: 'x' })
+  expect(isStreamingKey(streamingKeyOf('run-1'))).toBe(true)
+  expect(isStreamingKey('01')).toBe(false)
+  const remaining = linesWithoutStreaming(lines, streamingKeyOf('run-1'))
+  expect(remaining.map((line) => line.key)).toEqual([lines[0].key, streamingKeyOf('run-2')])
 })
 
 it('adds the words of an answer to the line for its run, and the stored message takes its place', () => {

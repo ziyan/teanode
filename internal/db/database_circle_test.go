@@ -2,6 +2,8 @@ package db_test
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -276,6 +278,188 @@ func TestDeletingAnAccountLeavesNoCircleWithoutAnAdmin(t *testing.T) {
 		}
 		if gone, err := tx.GetCircle(alone.ID); err != nil || gone != nil {
 			t.Errorf("a circle nobody is in was kept: %v %+v", err, gone)
+		}
+	})
+}
+
+// One person makes only so many circles, counting the ones they made that
+// still exist, and sends only so many invitations an hour.
+func TestCirclesAndInvitationsAreBoundedForOnePerson(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		maker := newCircleTestUser(t, tx, "bound-maker")
+		other := newCircleTestUser(t, tx, "bound-other")
+		var circles []*models.Circle
+		for count := 0; count < models.CirclesMadeMost; count++ {
+			circle, err := tx.CreateCircle(&models.Circle{Name: "Circle", CircleKind: models.CircleKindFriends}, maker.ID)
+			if err != nil {
+				t.Fatalf("circle %d: %s", count+1, err)
+			}
+			circles = append(circles, circle)
+		}
+		_, err := tx.CreateCircle(&models.Circle{Name: "One too many", CircleKind: models.CircleKindFriends}, maker.ID)
+		if !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "20 circles") {
+			t.Fatalf("the twenty-first circle: %v", err)
+		}
+		// Somebody else makes theirs, and deleting one makes room.
+		if _, err := tx.CreateCircle(&models.Circle{Name: "Theirs", CircleKind: models.CircleKindFriends}, other.ID); err != nil {
+			t.Errorf("another person's first circle: %v", err)
+		}
+		if err := tx.DeleteCircle(circles[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateCircle(&models.Circle{Name: "Room again", CircleKind: models.CircleKindFriends}, maker.ID); err != nil {
+			t.Errorf("after deleting one: %v", err)
+		}
+
+		// Invitations, to one circle, from one person.
+		inviting := circles[1]
+		now := time.Now()
+		invite := func(userId string, sentAt time.Time) error {
+			_, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
+				CircleID: inviting.ID, InvitedUserID: userId, InvitedByUserID: maker.ID, MemberRole: models.MemberRoleMember,
+				CreatedAt: sentAt, ExpiresAt: sentAt.Add(models.CircleInvitationLifetime),
+			})
+			return err
+		}
+		var invited []*models.User
+		for count := 0; count < models.CircleInvitationsPerHourMost; count++ {
+			person := newCircleTestUser(t, tx, fmt.Sprintf("bound-invited-%02d", count))
+			invited = append(invited, person)
+			if err := invite(person.ID, now); err != nil {
+				t.Fatalf("invitation %d: %s", count+1, err)
+			}
+		}
+		extra := newCircleTestUser(t, tx, "bound-invited-extra")
+		if err := invite(extra.ID, now); !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "30 invitations") {
+			t.Errorf("the thirty-first invitation: %v", err)
+		}
+		// A renewal is one more card as well.
+		if err := invite(invited[0].ID, now); !errors.Is(err, db.ErrLimitReached) {
+			t.Errorf("renewing one: %v", err)
+		}
+		// An hour later they are not counted.
+		if err := invite(extra.ID, now.Add(61*time.Minute)); err != nil {
+			t.Errorf("an hour on: %v", err)
+		}
+		// Somebody else has their own allowance.
+		fresh := newCircleTestUser(t, tx, "bound-invited-fresh")
+		if _, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
+			CircleID: inviting.ID, InvitedUserID: fresh.ID, InvitedByUserID: other.ID, MemberRole: models.MemberRoleMember,
+			CreatedAt: now, ExpiresAt: now.Add(models.CircleInvitationLifetime),
+		}); err != nil {
+			t.Errorf("another person's first invitation: %v", err)
+		}
+	})
+}
+
+// Two people who share two circles each leave one of them at the same time.
+// Each leaving ends what only the circle it leaves made possible, on the
+// circles as that transaction sees them, and each used to see the other
+// person still in the circle they were about to leave: so the share and the
+// group chat between the two, who then shared no circle, were both kept.
+// Leaving takes turns now, and the second leaving sees the first.
+func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+
+	var ada, ben, adaCalendarID, groupChatID, firstCircleID, secondCircleID string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		adaUser := newCircleTestUser(t, tx, "parallel-ada")
+		benUser := newCircleTestUser(t, tx, "parallel-ben")
+		cora := newCircleTestUser(t, tx, "parallel-cora")
+		dave := newCircleTestUser(t, tx, "parallel-dave")
+		ada, ben = adaUser.ID, benUser.ID
+		// Cora and Dave keep the two circles alive.
+		first, err := tx.CreateCircle(&models.Circle{Name: "First", CircleKind: models.CircleKindFriends}, cora.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		second, err := tx.CreateCircle(&models.Circle{Name: "Second", CircleKind: models.CircleKindFriends}, dave.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		firstCircleID, secondCircleID = first.ID, second.ID
+		for _, circleID := range []string{first.ID, second.ID} {
+			for _, userID := range []string{ada, ben} {
+				if _, err := tx.AddCircleMember(circleID, userID, models.MemberRoleMember, ""); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		calendar, err := tx.CreateCalendar(&models.Calendar{UserID: ada, Name: "Calendar"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		adaCalendarID = calendar.ID
+		if _, err := tx.ShareCalendar(ada, &models.CalendarShare{CalendarID: calendar.ID, GranteeUserID: ben, ShareLevel: models.ShareLevelDetails}); err != nil {
+			t.Fatal(err)
+		}
+		group, err := tx.CreateGroupChat(ada, "Trip", []string{ben})
+		if err != nil {
+			t.Fatal(err)
+		}
+		groupChatID = group.ID
+	})
+
+	// The first transaction has left and has not committed yet when the
+	// second starts to leave.
+	firstHasLeft := make(chan struct{})
+	mayCommit := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- database.Transaction(func(tx db.Transaction) error {
+			if _, err := tx.RemoveCircleMember(firstCircleID, ada); err != nil {
+				return err
+			}
+			close(firstHasLeft)
+			<-mayCommit
+			return nil
+		})
+	}()
+	<-firstHasLeft
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- database.Transaction(func(tx db.Transaction) error {
+			_, err := tx.RemoveCircleMember(secondCircleID, ben)
+			return err
+		})
+	}()
+	// The second waits for the first, which is the point; if it does not, it
+	// finishes at once, having looked at the circles without the first's leaving.
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log("the second leaving did not wait for the first")
+		close(mayCommit)
+	case <-time.After(500 * time.Millisecond):
+		close(mayCommit)
+		if err := <-secondDone; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := <-firstDone; err != nil {
+		t.Fatal(err)
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		if shares, err := tx.SharesCircle(ada, ben); err != nil || shares {
+			t.Fatalf("Ada and Ben still share a circle: %v %v", shares, err)
+		}
+		calendarShares, err := tx.ListCalendarShares(adaCalendarID)
+		if err != nil || len(calendarShares) != 0 {
+			t.Errorf("Ada's calendar is still shared with Ben: %v %v", calendarShares, err)
+		}
+		group, err := tx.GetChat(groupChatID)
+		if err != nil || group == nil {
+			t.Fatalf("GetChat: %v %v", group, err)
+		}
+		adaIn, benIn := group.Member(ada), group.Member(ben)
+		if adaIn != nil && !adaIn.IsRemoved && benIn != nil && !benIn.IsRemoved {
+			t.Errorf("Ada and Ben, who share no circle, are still together in the group chat")
 		}
 	})
 }

@@ -1,7 +1,10 @@
 package apigraph
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -463,6 +466,41 @@ func TestAMemberNeverReadsAnotherMembersAgentRows(t *testing.T) {
 	}
 	// Not even an operator who may act as other people.
 	world.refused(t, world.operator, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { total } }`, carolChat))
+	// Nor to react in it as them, to what her agent said there or to take
+	// one of her reactions away.
+	var answerId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		answer, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: carolChat, Role: "assistant", Content: "here is what I found"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answerId = answer.ID
+	})
+	var actor *models.User
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if actor, err = tx.CreateUser(&models.User{Username: "chat-actor", Name: "chat-actor"}); err != nil {
+			t.Fatal(err)
+		}
+		role, err := tx.CreateRole(&models.Role{Name: "chat-actor role", Permissions: []models.Permission{models.PermissionCircleUse, models.PermissionAgentUse, models.PermissionAgentAct}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "chat-actor group", UserIDs: []string{actor.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateAgent(&models.Agent{UserID: actor.ID, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.refused(t, actor, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { total } }`, carolChat))
+	for _, emoji := range []string{"👍", ""} {
+		message := world.refused(t, actor, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: %q) }`, answerId, emoji))
+		if !strings.Contains(strings.ToLower(message), "not found") {
+			t.Errorf("a person who may act as others, reacting in a chat as Carol, was told %q; want not found", message)
+		}
+	}
+	world.call(t, world.carol, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: "👍") }`, answerId))
 }
 
 func TestRemovingSomeoneFromACircleRemovesThemFromItsChatsInOneStep(t *testing.T) {
@@ -1101,5 +1139,208 @@ func TestEveryChatOperationAnswersNotFoundToAnOutsider(t *testing.T) {
 		if message := world.refused(t, world.alice, missing); !strings.Contains(message, "not found") {
 			t.Errorf("something that is not there answered %q for %s", message, missing)
 		}
+	}
+}
+
+// A reply shows the words of the message it is to, but not to a member who
+// joined after that was said: not when they read, not in the event they are
+// told, and they cannot reply to it themselves.
+func TestAReplyDoesNotQuoteWhatWasSaidBeforeAMemberJoined(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
+	group := world.call(t, world.alice, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q]) %s }`, world.bob.ID, chatTestFields))["CreateGroupChat"].(map[string]any)
+	aliceGroup := group["id"].(string)
+	conversationOf := func(user *models.User) string {
+		for _, each := range world.call(t, user, `query { ListAgentConversations(kind: "chat") { id chat { title } } }`)["ListAgentConversations"].([]any) {
+			if each.(map[string]any)["chat"].(map[string]any)["title"] == "Trip" {
+				return each.(map[string]any)["id"].(string)
+			}
+		}
+		t.Fatalf("%s has no Trip chat", user.Username)
+		return ""
+	}
+	bobGroup := conversationOf(world.bob)
+
+	world.say(t, world.alice, aliceGroup, "the surprise is a boat")
+	surprise := world.read(t, world.alice, aliceGroup)[0]["id"]
+	time.Sleep(5 * time.Millisecond)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, aliceGroup, world.carol.ID))
+	time.Sleep(5 * time.Millisecond)
+	carolGroup := conversationOf(world.carol)
+
+	aliceFeed, carolFeed := world.follow(aliceGroup), world.follow(carolGroup)
+	defer aliceFeed.stop()
+	defer carolFeed.stop()
+	world.call(t, world.bob, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "a boat!", references: [{agentMessageId: %q}]) { runId } }`, bobGroup, surprise))
+
+	quotedTextOf := func(message *models.AgentMessage) string {
+		t.Helper()
+		if message == nil || len(message.References) != 1 || message.References[0].AgentMessageID != surprise {
+			t.Fatalf("the reply is shown as %+v", message)
+		}
+		return message.References[0].QuotedText
+	}
+	if event := aliceFeed.next(agent.EventSaid); event == nil || quotedTextOf(event.Message) != "the surprise is a boat" {
+		t.Errorf("Alice, who was there, is told %+v", event)
+	}
+	if event := carolFeed.next(agent.EventSaid); event == nil || quotedTextOf(event.Message) != "" {
+		t.Errorf("Carol, who joined after, is told what was said before: %+v", event)
+	}
+	for name, test := range map[string]struct {
+		reader *models.User
+		group  string
+		want   string
+	}{"Alice": {world.alice, aliceGroup, "the surprise is a boat"}, "Carol": {world.carol, carolGroup, ""}} {
+		messages := world.read(t, test.reader, test.group)
+		reply := messages[len(messages)-1]
+		references := reply["references"].([]any)
+		if len(references) != 1 || references[0].(map[string]any)["agentMessageId"] != surprise || references[0].(map[string]any)["quotedText"] != test.want {
+			t.Errorf("%s reads the reply as %v; want the quote %q", name, reply, test.want)
+		}
+	}
+	world.refused(t, world.carol, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "what surprise?", references: [{agentMessageId: %q}]) { runId } }`, carolGroup, surprise))
+}
+
+// A file sent in a chat is kept for a person whose agent is off, but the text
+// read out of it is meant for a model and only a person whose agent is on has
+// one to spend it on.
+func TestAFileSentInAChatIsReadForTheModelOnlyWhenTheUploadersAgentIsOn(t *testing.T) {
+	world := newChatWorld(t)
+	world.router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(world.graph.agentAttachmentsView)
+	upload := func(as *models.User) []*models.AgentAttachment {
+		t.Helper()
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, err := writer.CreateFormFile("file", "menu.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write([]byte("soup and bread"))
+		_ = writer.Close()
+		request := httptest.NewRequest(http.MethodPost, api.PathAgentAttachments, &body)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		request.Header.Set(api.AuthenticatedUsernameHeader, as.Username)
+		response := httptest.NewRecorder()
+		world.router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s uploading got %d: %s", as.Username, response.Code, response.Body.String())
+		}
+		var result AgentAttachmentUploadResult
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || len(result.Attachments) != 1 {
+			t.Fatalf("the upload answered %s", response.Body.String())
+		}
+		var stored []*models.AgentAttachment
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			var err error
+			if stored, err = tx.GetAgentAttachments([]string{result.Attachments[0].ID}); err != nil || len(stored) != 1 {
+				t.Fatalf("GetAgentAttachments: %v %v", stored, err)
+			}
+		})
+		return stored
+	}
+	// Bob may chat, and his agent is off.
+	if stored := upload(world.bob); stored[0].Text != "" {
+		t.Errorf("text was read for a person whose agent is off: %q", stored[0].Text)
+	}
+	// Frank's is on.
+	if stored := upload(world.frank); stored[0].Text != "soup and bread" {
+		t.Errorf("text for a person whose agent is on: %q", stored[0].Text)
+	}
+}
+
+// conversationWhere is the id of the person's chat conversation the test
+// picks out of their list.
+func (self *chatWorld) conversationWhere(t *testing.T, user *models.User, picks func(chat map[string]any) bool) string {
+	t.Helper()
+	for _, each := range self.call(t, user, `query { ListAgentConversations(kind: "chat") `+chatTestFields+` }`)["ListAgentConversations"].([]any) {
+		conversation := each.(map[string]any)
+		if picks(conversation["chat"].(map[string]any)) {
+			return conversation["id"].(string)
+		}
+	}
+	t.Fatalf("%s has no such chat", user.Username)
+	return ""
+}
+
+// Whoever a change to the people of a chat concerns is told, those it takes
+// out included, so that an open chat reads its members again instead of
+// staying as it was until a reload.
+func TestAChangeOfPeopleIsToldToEveryoneItConcerns(t *testing.T) {
+	world := newChatWorld(t)
+	circleId := world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q]) { id } }`, world.bob.ID))
+	isTrip := func(chat map[string]any) bool { return chat["title"] == "Trip" }
+	isCircle := func(chat map[string]any) bool { return chat["isCircleChat"] == true }
+	aliceTrip := world.conversationWhere(t, world.alice, isTrip)
+	bobTrip := world.conversationWhere(t, world.bob, isTrip)
+	bobCircle := world.conversationWhere(t, world.bob, isCircle)
+	aliceCircle := world.conversationWhere(t, world.alice, isCircle)
+	carolCircle := world.conversationWhere(t, world.carol, isCircle)
+	bobTripFeed, aliceCircleFeed, carolCircleFeed, bobCircleFeed := world.follow(bobTrip), world.follow(aliceCircle), world.follow(carolCircle), world.follow(bobCircle)
+	defer bobTripFeed.stop()
+	defer aliceCircleFeed.stop()
+	defer carolCircleFeed.stop()
+	defer bobCircleFeed.stop()
+	// Events are published as the change commits, before the call returns, so
+	// emptying a feed before a step leaves only what the step told.
+	drain := func(feeds ...*chatEvents) {
+		for _, feed := range feeds {
+			for len(feed.channel) > 0 {
+				<-feed.channel
+			}
+		}
+	}
+
+	// Adding Carol to the group tells Bob, who has it open.
+	drain(bobTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, aliceTrip, world.carol.ID))
+	if bobTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that Carol joined the group")
+	}
+	// Carol is in it now, with a conversation of her own to follow.
+	carolTrip := world.conversationWhere(t, world.carol, isTrip)
+	carolTripFeed := world.follow(carolTrip)
+	defer carolTripFeed.stop()
+
+	// Taking her out tells her and the others.
+	drain(bobTripFeed, carolTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { RemoveChatMember(conversationId: %q, userId: %q) { id } }`, aliceTrip, world.carol.ID))
+	if carolTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that she was taken out of the group")
+	}
+	if bobTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that Carol was taken out")
+	}
+	// Carol is put back in, and leaves: the one who leaves hears it.
+	drain(carolTripFeed, bobTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, aliceTrip, world.carol.ID))
+	if carolTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that she was added again")
+	}
+	drain(carolTripFeed)
+	world.call(t, world.carol, fmt.Sprintf(`mutation { LeaveChat(conversationId: %q) }`, carolTrip))
+	if carolTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that she left")
+	}
+
+	// Taking Bob out of the circle takes him out of its chat and out of the
+	// group, where he shares no circle with Alice any more; he, and the others,
+	// are told of both.
+	drain(bobCircleFeed, aliceCircleFeed, carolCircleFeed, bobTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { RemoveCircleMember(circleId: %q, userId: %q) { id } }`, circleId, world.bob.ID))
+	if bobCircleFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that he left the circle's chat")
+	}
+	if aliceCircleFeed.next(agent.EventMembers) == nil || carolCircleFeed.next(agent.EventMembers) == nil {
+		t.Error("the rest of the circle were not told that Bob left its chat")
+	}
+	if bobTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that he left the group")
+	}
+	// Deleting the circle ends its chat for the two who are left in it.
+	drain(carolCircleFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteCircle(circleId: %q) }`, circleId))
+	if carolCircleFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that the circle's chat ended")
 	}
 }

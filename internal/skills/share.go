@@ -201,8 +201,9 @@ type Weighing struct {
 }
 
 // Weigh holds one call of this tool to a share's limits. monthTotalMinor is
-// what the share's ran calls of this calendar month in the share's currency
-// already come to.
+// what the share's ran and failed calls of this calendar month in the share's
+// currency already come to (a call that failed counts, since a failure after
+// the command acted cannot be told from one before it).
 //
 // A tool that names a scoped identifier pays nothing and is not held to the
 // limits: it is held to the identifier rule, which the caller decides. Every
@@ -229,6 +230,13 @@ func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotal
 		} else {
 			weighing.WaitReason = "the skill does not say what this tool costs, so only you can say whether it is within what you meant to allow"
 		}
+	case limits.PaymentLimitMinor == nil && limits.MonthlyLimitMinor == nil:
+		// Reaching here with an amount that was read and no limit of any kind
+		// would let the call go ahead as though a limit had passed it. A share
+		// of a tool that pays is made with a limit or with asking every time
+		// (CheckShareable), but a skill updated since may declare an amount
+		// the tool did not have when it was shared.
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "this share has no limit for a payment, so only you can say whether it is within what you meant to allow"
 	case limits.CurrencyCode != "" && amount.CurrencyCode != limits.CurrencyCode:
 		weighing.IsApprovalNeeded = true
 		if amount.CurrencyCode == "" {
@@ -239,7 +247,7 @@ func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotal
 	case limits.PaymentLimitMinor != nil && amount.Minor > *limits.PaymentLimitMinor:
 		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it is above your limit for one payment"
 	case limits.MonthlyLimitMinor != nil && monthTotalMinor+amount.Minor > *limits.MonthlyLimitMinor:
-		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it would take this month past your monthly limit"
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it would take this month past your monthly limit (a use that failed counts toward it)"
 	}
 	return weighing
 }

@@ -339,8 +339,9 @@ final class ConversationModel {
                 Task { await markRead() }
             }
         case "members":
-            // Somebody changed what their agent does here: who can be asked
-            // and who remembers the chat.
+            // Somebody was added, taken out or left, or changed what their
+            // agent does here (who can be asked, who remembers the chat): the
+            // members are read again with the chat.
             Task { try? await load() }
         case "read":
             if let userId = event.userId, let messageId = event.messageId, let chat = conversation?.chat {

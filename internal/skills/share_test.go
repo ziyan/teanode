@@ -146,6 +146,27 @@ func TestEitherLimitAloneHoldsOnItsOwn(t *testing.T) {
 	}
 }
 
+// A tool that declares an amount, on a share with no limit of either kind and
+// not set to ask every time, waits: nothing was set that a call could be
+// within. This is how a share made before a skill update gave the tool an
+// amount behaves until it is set to ask.
+func TestAPaymentOnAShareWithNoLimitWaits(t *testing.T) {
+	pay := paymentsSkill(t).Tool("pay")
+	for name, limits := range map[string]ShareLimits{
+		"no limits":                {},
+		"no limits but a currency": {CurrencyCode: "usd"},
+	} {
+		weighing := pay.Weigh(cardOf(100, "usd"), limits, 0)
+		if !weighing.IsApprovalNeeded || !strings.Contains(weighing.WaitReason, "no limit") {
+			t.Errorf("%s: a payment with nothing to be within goes ahead: %+v", name, weighing)
+		}
+	}
+	// With a limit of either kind it is weighed against it, as before.
+	if weighing := pay.Weigh(cardOf(100, "usd"), usdLimits(whole(1000), nil), 0); weighing.IsApprovalNeeded {
+		t.Errorf("a payment within its limit waits: %s", weighing.WaitReason)
+	}
+}
+
 // A share that asks every time waits for every call, whatever it pays.
 func TestAShareThatAsksEveryTimeAlwaysWaits(t *testing.T) {
 	skill := paymentsSkill(t)

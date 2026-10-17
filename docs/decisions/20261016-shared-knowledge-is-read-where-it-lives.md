@@ -31,10 +31,16 @@ read only and live: the reader's agent reads the owner's rows as they are
 now, through the memory tool, and the reader sees them on the Knowledge
 page under "Shared with you".
 
-A reader sees a shared page's name, summary, overview and facts. Edges are
+A reader sees a shared page's name, summary and facts, and not its overview: a
+model writes the overview from the page's links, its children and the quotes, so
+it can name pages that are not shared and repeat quotes the owner did not share,
+and the view says the owner's longer overview is not shared. Edges are
 shown only when the page at the other end is shared with them too. The
-quotes behind facts are left out unless the owner chose to include them,
-and the source is named only as the owner's ("from their mail").
+quotes behind facts are left out unless the owner chose to include them, and
+never for a fact read in a chat, which holds other people's words; the source is
+named only as the owner's ("from their mail", "from their chats"). A summary that
+quotes somebody (four words or more between quotation marks) is left out too,
+unless the owner shares quotes.
 
 Nothing from a shared page is written into the reader's graph. The
 reader's dream does not read shared pages, and a fact whose only evidence

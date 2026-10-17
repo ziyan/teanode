@@ -457,6 +457,9 @@ func (self *graph) DeleteUser(ctx context.Context, arguments DeleteUserArguments
 	if err := tx.DeleteUser(user.ID); err != nil {
 		return translateError(err)
 	}
+	// The picture's bytes: no row names them any more.
+	avatarFileId := user.AvatarFileID
+	tx.AfterCommit(func() { self.deleteAvatarFile(context.WithoutCancel(ctx), avatarFileId) })
 	log.Noticef("%s removed the account %q", operatorName(ctx), user.Username)
 	if count, err := tx.CountUsers(); err == nil && count == 0 {
 		log.Warningf("no accounts remain; this server is unclaimed and the next visitor can take it")

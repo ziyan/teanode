@@ -184,9 +184,16 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				return nil
 			}
 			// A chat is what the people said, from when the person joined,
-			// by time with this agent's own rows; the end of it is read.
+			// by time with this agent's own rows; the end of it is read. A
+			// turn somebody else asked for reads only what every member of
+			// the chat could read, and none of the agent's own rows.
 			if conversation.IsChat() {
-				if messages, chatTotal, err = tx.ListChatConversationMessages(conversation, limit, 0); err != nil {
+				if heldToChat != "" {
+					messages, chatTotal, err = tx.ListChatMemberTurnMessages(conversation, limit, 0)
+				} else {
+					messages, chatTotal, err = tx.ListChatConversationMessages(conversation, limit, 0)
+				}
+				if err != nil {
 					return err
 				}
 				return tx.ChatViewsFor(run.Agent().UserID, []*models.AgentConversation{conversation})

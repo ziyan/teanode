@@ -383,6 +383,19 @@ export function linesWithEdit<Line extends { kind: string; key: string }>(
   )
 }
 
+// isStreamingKey says a key is a streaming line's, which an unsaid event names
+// when the words it was drawn from will not be stored as a message: the turn
+// was stopped, it failed, or what it said came to nothing.
+export function isStreamingKey(key: string): boolean {
+  return key.startsWith('streaming-')
+}
+
+// linesWithoutStreaming takes the line drawn from streamed words off the
+// screen. Nothing marks it deleted: no message was ever stored for it.
+export function linesWithoutStreaming<Line extends { kind: string; key: string }>(lines: Line[], key: string): Line[] {
+  return lines.filter((line) => !(line.kind === 'chat' && line.key === key))
+}
+
 // linesWithUnsaid turns a line that was deleted into the mark that it was.
 export function linesWithUnsaid<Line extends { kind: string; key: string }>(lines: Line[], messageId: string): Line[] {
   return lines.map((line) =>

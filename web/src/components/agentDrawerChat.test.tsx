@@ -387,6 +387,27 @@ it('adds a message the chat says was said, and clears the typing line it ends', 
   expect(document.querySelectorAll('.agent-chat-author')).toHaveLength(2)
 })
 
+it('takes the words of a turn that was stopped off the screen', async () => {
+  answerWith()
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
+
+  tell('chat-conversation', {
+    kind: 'text',
+    runId: 'run-1',
+    text: 'Thursday at',
+    name: 'Robin',
+    authorAgentId: 'agent-robin',
+  })
+  expect(await screen.findByText('Thursday at')).toBeTruthy()
+  tell('chat-conversation', { kind: 'unsaid', messageId: 'streaming-run-1' })
+  await waitFor(() => expect(screen.queryByText('Thursday at')).toBeNull())
+  // Nothing was marked deleted: there was no message.
+  expect(screen.queryByText('Message deleted')).toBeNull()
+})
+
 it('shows a deleted message as such and an edited one with its mark', async () => {
   answerWith()
   openOnChat()

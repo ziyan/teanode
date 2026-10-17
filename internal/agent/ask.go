@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/computer"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -276,7 +277,7 @@ const (
 	// published to the conversation of every member who is in the chat.
 	EventSaid   EventKind = "said"   // a new message: Message, whole unless IsMessageCut
 	EventEdited EventKind = "edited" // a message was changed: Message
-	EventUnsaid EventKind = "unsaid" // a message was taken back: MessageID
+	EventUnsaid EventKind = "unsaid" // a message was taken back: MessageID; or, named ChatStreamingKey(run), words that were streamed and will not be stored
 	EventRead   EventKind = "read"   // a member's read mark moved: UserID, MessageID
 	EventTyping EventKind = "typing" // a member is writing: UserID, Name; an agent is thinking: AuthorAgentID, Name
 
@@ -482,6 +483,11 @@ type AskRun struct {
 	// promptData is the part of the prompt read from the person's data,
 	// kept for the turn's rounds; see systemPrompt.
 	promptData *turnPromptData
+
+	// sharedIndex is the "Shared with you" lines read for this turn, in
+	// the overlay after the history; see sharedIndexOverlay.
+	sharedIndex       []string
+	isSharedIndexRead bool
 
 	// previous is the turn of the same conversation this one waits for;
 	// done closes when this one is over.
@@ -1018,6 +1024,9 @@ func (self *AskRun) loop() {
 	err := self.turn()
 	stopThinking()
 	if err != nil {
+		// Words streamed to the chat before it stopped or failed are not
+		// stored as a message; every screen drops the line they were drawn as.
+		self.retractChatText()
 		if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
 			// read as cut short after a reload.
@@ -1515,7 +1524,18 @@ func (self *AskRun) turn() error {
 					if posted != nil {
 						history[len(history)-1].SourceID = posted.message.ID
 					}
-					return nil
+					// What the answering round cost, and the judgements
+					// carried to it, are the owner's own row, as in any
+					// turn: a row with no words and no calls, which is
+					// nothing to read, and which the history leaves out. The
+					// words are the chat's message, and the chat's message
+					// carries no cost, since the others in the chat read it.
+					_, err := tx.AppendAgentMessage(&models.AgentMessage{
+						ConversationID: settings.Conversation.ID,
+						Role:           string(llm.RoleAssistant),
+						Usage:          answerUsage,
+					})
+					return err
 				}
 			}
 			content := answer.Content
@@ -2023,6 +2043,10 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			// are the runs that read mail from strangers, and what the
 			// person allows the agent to do alone is not theirs to steer.
 			isRestricted := self.ReadOnly() || self.settings.Allow != nil
+			if slices.Contains(unattendedRisks, models.UnattendedRiskPersonsAnswer) {
+				// Not something they can allow for when they are away.
+				return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "needs_confirmation: this answers something that waits for the person, and only the person gives that answer (personsAnswer); tell them it is waiting."}`)}
+			}
 			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
 				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
 			}
@@ -2405,10 +2429,9 @@ func (self *AskRun) personSnapshot(ctx context.Context) (knowledge, selfLines []
 		}
 	}
 	knowledge = self.carryIndex(ctx, indexTokens)
-	// What other people shared goes after the person's own index, in the part
-	// of the prompt that only changes when a share does and is kept with it in
-	// the snapshot.
-	knowledge = append(knowledge, self.sharedKnowledgeLines(ctx)...)
+	// What other people shared is not here: a share taken back would stay in
+	// the prompt for the rest of the half hour. It is read for every turn,
+	// in the overlay after the history (sharedIndexOverlay).
 	selfLines = self.agent.selfLines(ctx, settings.Agent, settings.Owner)
 	if canCacheSnapshot {
 		self.agent.promptSnapshots.Store(conversationID, &promptSnapshot{agentID: settings.Agent.ID, knowledge: knowledge, self: selfLines, takenAt: now})
@@ -2787,6 +2810,9 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 				blocks = append(blocks, block)
 			}
 		}
+	}
+	if block := self.sharedIndexOverlay(ctx); block != "" {
+		blocks = append(blocks, block)
 	}
 	_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
 		budget, err := CheckBudget(tx, configuration, settings.Agent, settings.Owner, time.Now())

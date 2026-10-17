@@ -36,6 +36,16 @@ type SkillShareOperation interface {
 	// GetSkillShare is one share, or nil.
 	GetSkillShare(shareId string) (*models.SkillShare, error)
 
+	// ListSkillSharesOf are the shares of one installed skill, by whoever
+	// made them. An installed skill that is saved again is checked against
+	// them.
+	ListSkillSharesOf(skillName string) ([]*models.SkillShare, error)
+
+	// RequireSkillShareApproval makes every call of a share wait for the
+	// owner, and says whether it changed anything: false when the share
+	// already did or is gone.
+	RequireSkillShareApproval(shareId string) (bool, error)
+
 	// LockSkillShare is a share with its row held until the transaction ends,
 	// so that two calls deciding at once against the month's limit take turns.
 	// ErrNotFound when there is none.
@@ -64,10 +74,13 @@ type SkillShareOperation interface {
 	// newest first. A state narrows them; empty is every state.
 	ListSkillShareCalls(shareId string, callState models.SkillShareCallState, limit int) ([]*models.SkillShareCall, error)
 
-	// SkillShareMonthTotal is what the share's ran calls come to, in the
-	// currency, for those that ran from the moment to the moment (a call that
-	// waited ran when it was approved), and no other calls: one that failed,
-	// was refused, declined, expired or still waits has paid nothing.
+	// SkillShareMonthTotal is what the share's ran and failed calls come to,
+	// in the currency, for those that ran from the moment to the moment (a call
+	// that waited ran when it was approved), and no other calls: one that was
+	// refused, declined, expired or still waits has paid nothing. A call that
+	// failed counts, because a failure after the command acted cannot be told
+	// from one before it, and the month's limit is the owner's bound on what
+	// could have been spent.
 	SkillShareMonthTotal(shareId, currencyCode string, from, until time.Time) (int64, error)
 
 	// HasSkillShareOutputWith says whether an earlier call of the share that
@@ -365,6 +378,22 @@ func (self *transaction) LockSkillShare(shareId string) (*models.SkillShare, err
 	return described[0], nil
 }
 
+func (self *transaction) ListSkillSharesOf(skillName string) ([]*models.SkillShare, error) {
+	var rows []skillShareModel
+	if err := self.tx.Where("\"skill_name\" = ?", strings.ToLower(strings.TrimSpace(skillName))).
+		Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return self.describeSkillShares(rows)
+}
+
+func (self *transaction) RequireSkillShareApproval(shareId string) (bool, error) {
+	updated := self.tx.Model(&skillShareModel{}).
+		Where("\"id\" = ? AND NOT \"is_approval_required\"", shareId).
+		Updates(map[string]any{"is_approval_required": true, "modified_at": time.Now()})
+	return updated.RowsAffected > 0, updated.Error
+}
+
 func (self *transaction) ListSkillSharesBy(ownerUserId string) ([]*models.SkillShare, error) {
 	var rows []skillShareModel
 	if err := self.tx.Table("skill_share AS share").
@@ -524,7 +553,7 @@ func (self *transaction) ListSkillShareCalls(shareId string, callState models.Sk
 func (self *transaction) SkillShareMonthTotal(shareId, currencyCode string, from, until time.Time) (int64, error) {
 	var total int64
 	if err := self.tx.Raw(`SELECT COALESCE(SUM("amount_minor"), 0) FROM "skill_share_call"
-		WHERE "skill_share_id" = ? AND "call_state" = 'ran' AND "currency_code" = ?
+		WHERE "skill_share_id" = ? AND "call_state" IN ('ran', 'failed') AND "currency_code" = ?
 		  AND "amount_minor" IS NOT NULL AND COALESCE("decided_at", "created_at") >= ? AND COALESCE("decided_at", "created_at") < ?`,
 		shareId, currencyCode, from, until).Scan(&total).Error; err != nil {
 		return 0, err

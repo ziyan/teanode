@@ -505,3 +505,16 @@ func TestAnInvitationIsNotedForAPersonWhoseAgentIsOn(t *testing.T) {
 		}
 	})
 }
+
+// A person who has made as many circles as one person may is told so, in
+// words they can act on.
+func TestMakingTooManyCirclesIsRefusedInPlainWords(t *testing.T) {
+	world := newCircleWorld(t)
+	for count := 0; count < models.CirclesMadeMost; count++ {
+		world.makeCircle(t, world.alice, fmt.Sprintf("Circle %d", count), "friends")
+	}
+	message := world.refused(t, world.alice, `mutation { CreateCircle(name: "One too many", circleKind: "friends") { id } }`)
+	if !strings.Contains(message, "20 circles") || !strings.Contains(message, "delete one") {
+		t.Errorf("the refusal said %q", message)
+	}
+}

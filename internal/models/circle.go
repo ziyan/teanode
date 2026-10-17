@@ -60,6 +60,19 @@ const CircleInvitationLifetime = 30 * 24 * time.Hour
 // CircleNameLength is the most characters a circle's name may have.
 const CircleNameLength = 100
 
+// The most one person does with circles. Making circles and inviting people
+// to them is what a stranger on a server with open accounts would do first,
+// and each invitation puts a card in someone's conversation with their agent,
+// so neither is without a bound.
+const (
+	// CirclesMadeMost is how many circles one person made and still has.
+	CirclesMadeMost = 20
+
+	// CircleInvitationsPerHourMost is how many invitations, new or renewed,
+	// one person sends in an hour.
+	CircleInvitationsPerHourMost = 30
+)
+
 // Circle is a named set of accounts on one server that know each other.
 // Everything this server shares between people is shared with a circle or
 // with a person in one.

@@ -80,6 +80,17 @@ func refuseGuests(found *models.Calendar, isOwner bool, objects ...*models.Calen
 	return nil
 }
 
+// refusePrivate refuses a change by somebody who is not the owner to an event
+// its owner marked private. They are shown it only as busy, and a change made
+// from that copy would write the busy copy over the real event. A calendar
+// that belongs to a circle has no owner to keep an event private from.
+func refusePrivate(found *models.Calendar, isOwner bool, object *models.CalendarObject) error {
+	if isOwner || found.CircleID != "" || object == nil || !calendar.IsPrivateFile(object.Data) {
+		return nil
+	}
+	return refused("this event is private to its owner")
+}
+
 // refuseParsedGuests is refuseGuests for an event about to be kept.
 func refuseParsedGuests(found *models.Calendar, isOwner bool, parsed *calendar.Parsed) error {
 	if isOwner || parsed == nil || len(parsed.Attendees) == 0 {

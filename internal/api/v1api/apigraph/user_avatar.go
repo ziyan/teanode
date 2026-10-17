@@ -33,8 +33,10 @@ func avatarURL(user *models.User) *string {
 }
 
 // canSeeAvatar says whether the caller may be shown this person's picture:
-// the person themselves, anyone who manages accounts, and anyone who shares a
-// circle with them. The one place that decides.
+// the person themselves, anyone who manages accounts, anyone who shares a
+// circle with them, and anyone who is in a chat with them now, since a chat
+// shows each member's name to the others and the picture goes with the name.
+// The one place that decides.
 func canSeeAvatar(tx db.Transaction, principal *api.Principal, userId string) (bool, error) {
 	if principal == nil || userId == "" {
 		return false, nil
@@ -48,7 +50,11 @@ func canSeeAvatar(tx db.Transaction, principal *api.Principal, userId string) (b
 	if principal.User == nil {
 		return false, nil
 	}
-	return tx.SharesCircle(principal.User.ID, userId)
+	isInCircle, err := tx.SharesCircle(principal.User.ID, userId)
+	if err != nil || isInCircle {
+		return isInCircle, err
+	}
+	return tx.SharesChat(principal.User.ID, userId)
 }
 
 // requireAvatarOwner is the account whose picture an operation changes: the
@@ -104,10 +110,15 @@ func (self *graph) SetUserAvatar(ctx context.Context, arguments SetUserAvatarArg
 	if err != nil {
 		return nil, fmt.Errorf("%w: the picture must be base64 text", api.ErrInvalidArguments)
 	}
-	normalized, err := avatar.Normalize(content)
+	normalized, err := avatar.Normalize(ctx, content)
 	if err != nil {
 		if errors.Is(err, avatar.ErrUnusable) {
 			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+		// Others' pictures are being processed: the same picture sent again
+		// in a moment is accepted.
+		if errors.Is(err, avatar.ErrBusy) {
+			return nil, api.ErrTooManyRequests
 		}
 		return nil, err
 	}

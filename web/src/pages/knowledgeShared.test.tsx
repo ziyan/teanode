@@ -55,7 +55,6 @@ function sharedPage(overrides: Partial<SharedPage> = {}): SharedPage {
     nodeKind: 'person',
     aliases: [],
     opening: 'Lives by the sea.',
-    overview: '',
     isQuoteShared: false,
     facts: [
       {

@@ -479,3 +479,55 @@ func TestACircleCalendarIsWrittenByEveryMemberOverCalDAV(t *testing.T) {
 		t.Errorf("and cannot be read: %d", answer.StatusCode)
 	}
 }
+
+// An editor is not the owner: an event its owner marked private is busy to
+// them too, and they may neither change nor remove it, since a change from the
+// busy copy would write that copy over the real event. A circle's calendar has
+// no owner, so a private event in it stays whole for its members.
+func TestAnEditorSeesAPrivateEventAsBusyAndCannotChangeIt(t *testing.T) {
+	here, done := newSharedWorld(t)
+	defer done()
+	here.share(t, models.ShareLevelEdit)
+
+	answer := here.ask(t, http.MethodGet, here.path(here.bertieCalendarID, "secret"), "")
+	if body := text(t, answer); answer.StatusCode != http.StatusOK || strings.Contains(body, "Surprise") || strings.Contains(body, "barn") || !strings.Contains(body, "SUMMARY:Busy") {
+		t.Fatalf("an editor is shown a private event as busy: %d\n%s", answer.StatusCode, body)
+	}
+	changed := strings.Replace(privateVisit, "SUMMARY:Surprise party", "SUMMARY:Busy", 1)
+	for name, response := range map[string]*http.Response{
+		"change":  here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, "secret"), changed, "Content-Type", "text/calendar; charset=utf-8"),
+		"remove":  here.ask(t, http.MethodDelete, here.path(here.bertieCalendarID, "secret"), ""),
+		"unmark":  here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, "secret"), strings.Replace(privateVisit, "CLASS:PRIVATE\r\n", "", 1), "Content-Type", "text/calendar; charset=utf-8"),
+		"confide": here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, "secret"), strings.Replace(privateVisit, "CLASS:PRIVATE", "CLASS:CONFIDENTIAL", 1), "Content-Type", "text/calendar; charset=utf-8"),
+	} {
+		said := text(t, response)
+		if response.StatusCode != http.StatusForbidden || !strings.Contains(said, "private to its owner") {
+			t.Errorf("%s: %d %q", name, response.StatusCode, said)
+		}
+	}
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		object, err := tx.GetCalendarObject(here.bertieCalendarID, "secret")
+		if err != nil || object == nil || !strings.Contains(object.Data, "Surprise party") || !strings.Contains(object.Data, "CLASS:PRIVATE") {
+			t.Fatalf("the private event is as its owner left it: %v %v", object, err)
+		}
+	})
+
+	// A circle's calendar has no owner to keep it from.
+	var circleCalendarID string
+	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
+		made, err := tx.CreateCircleCalendar(here.circleID, "The household", "")
+		if err != nil {
+			t.Fatalf("CreateCircleCalendar: %s", err)
+		}
+		circleCalendarID = made.ID
+	})
+	putIn(t, here.database, circleCalendarID, privateVisit)
+	answer = here.ask(t, http.MethodGet, here.path(circleCalendarID, "secret"), "")
+	if body := text(t, answer); answer.StatusCode != http.StatusOK || !strings.Contains(body, "Surprise party") {
+		t.Fatalf("a member reads a private event of the circle's calendar whole: %d\n%s", answer.StatusCode, body)
+	}
+	answer = here.ask(t, http.MethodDelete, here.path(circleCalendarID, "secret"), "")
+	if _ = text(t, answer); answer.StatusCode >= 300 {
+		t.Errorf("and removes it: %d", answer.StatusCode)
+	}
+}

@@ -578,6 +578,19 @@ func TestAHeldRunReadsOnlyTheChatItIsIn(t *testing.T) {
 			t.Fatalf("EnsureChatConversation: %s", err)
 		}
 		run.conversation = thread
+		// Said before a third person joined, which she could not read.
+		if _, err := tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: "Bob Example", Body: "the surprise is a boat"}); err != nil {
+			t.Fatalf("AppendChatMessage: %s", err)
+		}
+		late, err := tx.CreateUser(&models.User{Username: "cora", Name: "Cora Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+		if _, err := tx.AddChatMembers(chat.ID, []string{late.ID}); err != nil {
+			t.Fatalf("AddChatMembers: %s", err)
+		}
+		time.Sleep(5 * time.Millisecond)
 		if _, err := tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: "Bob Example", Body: "who is bringing the boat?"}); err != nil {
 			t.Fatalf("AppendChatMessage: %s", err)
 		}
@@ -620,7 +633,10 @@ func TestAHeldRunReadsOnlyTheChatItIsIn(t *testing.T) {
 		}
 		said, _ := read["messages"].([]any)
 		if len(said) != 1 || !strings.Contains(fmt.Sprint(said[0]), "who is bringing the boat?") {
-			t.Errorf("%s read %v; want what Bob said and nothing else", arguments, said)
+			t.Errorf("%s read %v; want what Bob said since the latest member joined and nothing else", arguments, said)
+		}
+		if strings.Contains(fmt.Sprint(read), "the surprise") {
+			t.Errorf("%s read what was said before the latest member joined: %v", arguments, read)
 		}
 		if strings.Contains(fmt.Sprint(read), "private mail") {
 			t.Errorf("the owner's agent's own rows were read: %v", read)

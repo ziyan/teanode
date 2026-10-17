@@ -342,7 +342,7 @@ struct ShareSkillSheet: View {
                     } else if pays && !hasLimit {
                         Text("A tool that pays is shared with a limit, or with Ask me every time.")
                     } else {
-                        Text("Above these limits, or when the amount cannot be read, a use waits for you. The limits are in the currency you give.")
+                        Text("Above these limits, or when the amount cannot be read, a use waits for you. The limits are in the currency you give. A use that failed still counts toward the month, because a failure after the command acted looks the same as one before.")
                     }
                 }
                 if let problemText {

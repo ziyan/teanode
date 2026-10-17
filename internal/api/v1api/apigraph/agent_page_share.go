@@ -41,7 +41,7 @@ type AgentPageShareQuery interface {
 	ListSharedAgentPages(ctx context.Context) ([]*SharedAgentPageRootView, error)
 
 	// One page another person shared with the caller, or a page under one:
-	// its name, opening, overview and facts, the links to other shared
+	// its name, opening and facts, the links to other shared
 	// pages, and the pages under it. Anything not shared with the caller,
 	// including a page beside a shared one, is not found. Needs circle:use.
 	ReadSharedAgentPage(ctx context.Context, arguments ReadSharedAgentPageArguments) (*SharedAgentPageView, error)
@@ -114,10 +114,8 @@ type SharedAgentPageView struct {
 	NodeKind string   `json:"nodeKind"`
 	Aliases  []string `json:"aliases"`
 
-	// What the page says, and how the thing it is about works as last written
-	Opening           string     `json:"opening"`
-	Overview          string     `json:"overview"`
-	OverviewWrittenAt *time.Time `json:"overviewWrittenAt"`
+	// What the page says. Its overview is not shared (models.SharedOverviewNotice)
+	Opening string `json:"opening"`
 
 	// Whether the words each fact was read in are shown
 	IsQuoteShared bool `json:"isQuoteShared"`
@@ -149,7 +147,7 @@ func describeSharedPage(page *models.SharedPage) *SharedAgentPageView {
 		OwnerUserID: page.OwnerUserID, OwnerUsername: page.OwnerUsername, OwnerName: page.OwnerName,
 		OwnerAvatarURL: avatarURL(page.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(page.OwnerUserID),
 		Path: page.Path, Name: page.Name, NodeKind: string(page.NodeKind), Aliases: page.Aliases,
-		Opening: page.Opening, Overview: page.Overview, OverviewWrittenAt: page.OverviewWrittenAt,
+		Opening:       page.Opening,
 		IsQuoteShared: page.IsQuoteShared,
 		Facts:         page.Facts, Edges: page.Edges, Children: page.Children,
 	}

@@ -2,8 +2,10 @@ package agent
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -22,7 +24,8 @@ import (
 //
 //   - a fact's quote, unless the owner chose to share the quotes, and where
 //     it was read only in the owner's terms ("from Ada's mail"), never which
-//     mail or which document;
+//     mail or which document; and never the quote of a fact read in a chat,
+//     which is the words of the others in it ("from Ada's chats");
 //   - a link to a page that is not itself shared with the reader, and so the
 //     name of every page of the owner's that is not;
 //   - the night's reflections and lessons, which cite the owner's other pages
@@ -30,7 +33,12 @@ import (
 //   - everything that is not about the page's words: its importance, its
 //     contact card, its history, the identifiers of its rows.
 //
-// The summary and the overview are shown as they are written.
+// The summary is shown as the owner wrote it, except that one which quotes
+// somebody is left out when the owner did not share quotes (the model that
+// writes a summary copies the words it was given). The overview is not shown
+// at all: a model writes it from the page's links, its children and their
+// openings and the quotes, so it can name pages that are not shared and
+// repeat quotes that are not.
 //
 // Nothing read here is written anywhere. docs/decisions/
 // 20261016-shared-knowledge-is-read-where-it-lives.md says why.
@@ -83,6 +91,61 @@ func openingOf(summary string) string {
 	return summary
 }
 
+// quotedSpanPattern finds text between quotation marks: straight, curly,
+// angle and the corner brackets Japanese and Chinese use.
+var quotedSpanPattern = regexp.MustCompile("\"[^\"]*\"|“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』")
+
+// quotedSpanWords is how many words a span between quotation marks has to
+// have to be taken for somebody's words and not a title or a scare quote.
+const quotedSpanWords = 4
+
+// quotedSpanWideRunes is the same limit for a span in a language written
+// without spaces, where words cannot be counted by the spaces.
+const quotedSpanWideRunes = 8
+
+// quotesSomebody says the text has a quoted span of at least quotedSpanWords
+// words.
+func quotesSomebody(text string) bool {
+	for _, span := range quotedSpanPattern.FindAllString(text, -1) {
+		inner := []rune(span)
+		inner = inner[1 : len(inner)-1]
+		if len(strings.Fields(string(inner))) >= quotedSpanWords {
+			return true
+		}
+		wideRuneCount := 0
+		for _, each := range inner {
+			if unicode.In(each, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
+				wideRuneCount++
+			}
+		}
+		if wideRuneCount >= quotedSpanWideRunes {
+			return true
+		}
+	}
+	return false
+}
+
+// sharedSummaryOf is the owner's summary of a page as a reader may see it:
+// all of it, unless the owner did not share quotes and the summary quotes
+// somebody, and then none of it. Cutting the quote out of the sentence would
+// leave the rest of a sentence built around it.
+func sharedSummaryOf(summary string, isQuoteShared bool) string {
+	if !isQuoteShared && quotesSomebody(summary) {
+		return ""
+	}
+	return summary
+}
+
+// isAnyQuoteShared says at least one of these shares includes the quotes.
+func isAnyQuoteShared(shares []*models.AgentPageShare) bool {
+	for _, share := range shares {
+		if share.IsQuoteShared {
+			return true
+		}
+	}
+	return false
+}
+
 // SharedPagesFor are the roots of the subtrees shared with the reader, with
 // the owner of each named, by owner and then path. A root nested under another
 // of the same owner's is not listed twice: reading the outer one reaches it.
@@ -99,6 +162,7 @@ func SharedPagesFor(tx db.Transaction, readerUserId string) ([]*models.SharedRoo
 func sharedRootsOf(tx db.Transaction, shares []*models.AgentPageShare) ([]*models.SharedRoot, error) {
 	roots := []*models.SharedRoot{}
 	byKey := map[string]*models.SharedRoot{}
+	summaryOf := map[*models.SharedRoot]string{}
 	for _, share := range shares {
 		key := share.OwnerUserID + "\x00" + share.Path
 		if existing := byKey[key]; existing != nil {
@@ -127,11 +191,16 @@ func sharedRootsOf(tx db.Transaction, shares []*models.AgentPageShare) ([]*model
 			ShareIDs:    []string{share.ID},
 			OwnerUserID: share.OwnerUserID, OwnerUsername: share.OwnerUsername, OwnerName: share.OwnerName, OwnerUser: share.OwnerUser,
 			Path: node.Path, Name: node.Name, NodeKind: node.Kind,
-			Opening:       openingOf(node.Summary),
 			IsQuoteShared: share.IsQuoteShared,
 		}
+		summaryOf[root] = node.Summary
 		byKey[key] = root
 		roots = append(roots, root)
+	}
+	// The opening waits until every share of a root has been counted, since
+	// any one of them may be the one that shares the quotes.
+	for _, root := range roots {
+		root.Opening = openingOf(sharedSummaryOf(summaryOf[root], root.IsQuoteShared))
 	}
 	return roots, nil
 }
@@ -207,7 +276,7 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 	page := &models.SharedPage{
 		OwnerUserID: covering[0].OwnerUserID, OwnerUsername: covering[0].OwnerUsername, OwnerName: ownerName, OwnerUser: covering[0].OwnerUser,
 		Path: node.Path, Name: node.Name, NodeKind: node.Kind, Aliases: node.Aliases,
-		Opening: strings.TrimSpace(node.Summary), Overview: strings.TrimSpace(node.Overview), OverviewWrittenAt: node.OverviewWrittenAt,
+		Opening:       strings.TrimSpace(sharedSummaryOf(node.Summary, isQuoteShared)),
 		IsQuoteShared: isQuoteShared,
 		Facts:         []*models.SharedFact{}, Edges: []*models.SharedEdge{}, Children: []*models.SharedChild{},
 	}
@@ -219,11 +288,15 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 	if err != nil {
 		return nil, err
 	}
+	chatDocumentIds, err := chatDocumentIdsOf(tx, agentId, facts)
+	if err != nil {
+		return nil, err
+	}
 	for _, fact := range facts {
 		if fact.Kind.FromItsOwnReasoning() {
 			continue
 		}
-		page.Facts = append(page.Facts, sharedFactOf(fact, ownerName, isQuoteShared))
+		page.Facts = append(page.Facts, sharedFactOf(fact, ownerName, isQuoteShared, chatDocumentIds))
 	}
 
 	edges, err := tx.ListAgentEdges(agentId, node.ID)
@@ -271,21 +344,63 @@ func readSharedPageFrom(tx db.Transaction, shares []*models.AgentPageShare, page
 			continue
 		}
 		page.Children = append(page.Children, &models.SharedChild{
-			Path: child.Path, Name: child.Name, NodeKind: child.Kind, Opening: openingOf(child.Summary),
+			Path: child.Path, Name: child.Name, NodeKind: child.Kind,
+			Opening: openingOf(sharedSummaryOf(child.Summary, isAnyQuoteShared(coveringShares(shares, child.Path)))),
 		})
 	}
 	return page, nil
 }
 
-// sharedFactOf is one fact as a reader is shown it.
-func sharedFactOf(fact *models.AgentFact, ownerName string, isQuoteShared bool) *models.SharedFact {
+// chatDocumentIdsOf are the documents among the evidence of these facts that
+// are a chat: what the owner's agent filed from a chat with other people, or
+// from a chat archive or a coding session.
+func chatDocumentIdsOf(tx db.Transaction, agentId string, facts []*models.AgentFact) (map[string]bool, error) {
+	var documentIds []string
+	for _, fact := range facts {
+		for _, evidence := range fact.Evidence {
+			if evidence.Kind == models.EvidenceDocument && evidence.ID != "" {
+				documentIds = append(documentIds, evidence.ID)
+			}
+		}
+	}
+	chatDocumentIds := map[string]bool{}
+	if len(documentIds) == 0 {
+		return chatDocumentIds, nil
+	}
+	documents, err := tx.GetAgentDocuments(agentId, documentIds)
+	if err != nil {
+		return nil, err
+	}
+	for _, document := range documents {
+		if document.Kind == models.DocumentChat {
+			chatDocumentIds[document.ID] = true
+		}
+	}
+	return chatDocumentIds, nil
+}
+
+// isChatEvidence says the evidence is a chat: the words of everybody who was
+// in it, not only the owner's.
+func isChatEvidence(evidence models.Evidence, chatDocumentIds map[string]bool) bool {
+	return evidence.Kind == models.EvidenceChat || (evidence.Kind == models.EvidenceDocument && chatDocumentIds[evidence.ID])
+}
+
+// sharedFactOf is one fact as a reader is shown it. Its quote is shown only
+// when the owner shared quotes, and never when any of the fact's evidence is
+// a chat, even then: the owner chose to share their own words, and the words
+// of the others in the chat were not theirs to share.
+func sharedFactOf(fact *models.AgentFact, ownerName string, isQuoteShared bool, chatDocumentIds map[string]bool) *models.SharedFact {
 	shown := &models.SharedFact{
 		Number: fact.Number, FactKind: fact.Kind, Text: strings.TrimSpace(fact.Text),
 		HappenedAt: fact.HappenedAt, HappenedPrecision: fact.HappenedPrecision,
 		SaidAt: fact.SaidAt(), IsInferred: fact.Inferred,
-		EvidenceSource: sharedSourceLine(ownerName, fact.Evidence),
+		EvidenceSource: sharedSourceLine(ownerName, fact.Evidence, chatDocumentIds),
 	}
-	if isQuoteShared {
+	isFromChat := false
+	for _, evidence := range fact.Evidence {
+		isFromChat = isFromChat || isChatEvidence(evidence, chatDocumentIds)
+	}
+	if isQuoteShared && !isFromChat {
 		for _, evidence := range fact.Evidence {
 			if strings.TrimSpace(evidence.Quote) != "" && isReadableEvidence(evidence.Kind) {
 				shown.EvidenceQuote = strings.TrimSpace(evidence.Quote)
@@ -310,7 +425,7 @@ var sharedSourceWords = map[models.EvidenceKind]string{
 	models.EvidenceMail:                "mail",
 	models.EvidenceDocument:            "documents",
 	models.EvidenceCommit:              "commits",
-	models.EvidenceChat:                "chat",
+	models.EvidenceChat:                "chats",
 	models.EvidenceContact:             "contacts",
 	models.EvidenceRepository:          "repositories",
 	models.EvidencePerson:              "own words",
@@ -325,11 +440,14 @@ var sharedSourceWords = map[models.EvidenceKind]string{
 // Ada's mail" or "from Ada's mail and conversation", and never which mail:
 // the reader is told what kind of thing the owner's agent read, not given the
 // thing. Empty when the fact has none of a kind that can be named.
-func sharedSourceLine(ownerName string, evidence []models.Evidence) string {
+func sharedSourceLine(ownerName string, evidence []models.Evidence, chatDocumentIds map[string]bool) string {
 	var words []string
 	seen := map[string]bool{}
 	for _, each := range evidence {
 		word := sharedSourceWords[each.Kind]
+		if isChatEvidence(each, chatDocumentIds) {
+			word = sharedSourceWords[models.EvidenceChat]
+		}
 		if word == "" || seen[word] {
 			continue
 		}
@@ -377,7 +495,8 @@ func SearchSharedPages(tx db.Transaction, readerUserId, query string, limit int)
 		for _, node := range nodes {
 			hits = append(hits, &models.SharedHit{
 				OwnerUserID: owner.OwnerUserID, OwnerUsername: owner.OwnerUsername, OwnerName: owner.OwnerName,
-				Path: node.Path, Name: node.Name, Opening: openingOf(node.Summary),
+				Path: node.Path, Name: node.Name,
+				Opening: openingOf(sharedSummaryOf(node.Summary, isAnyQuoteShared(coveringShares(ownerShares, node.Path)))),
 			})
 		}
 		if len(facts) == 0 {
@@ -433,9 +552,9 @@ func groupSharesByOwner(shares []*models.AgentPageShare) [][]*models.AgentPageSh
 // call that lists them, so that the section never ends without saying it
 // does. Empty when nothing is shared with the reader.
 //
-// The order is by owner and path and changes only when a share does, so the
-// section is as steady as the rest of the index is and the prompt's front
-// stays a cache hit between turns.
+// The order is by owner and path and changes only when a share does. It is
+// read for every turn and carried after the history (sharedIndexOverlay), not
+// in the prompt's front, which a conversation keeps for half an hour.
 func SharedIndexLines(tx db.Transaction, readerUserId string) ([]string, error) {
 	roots, err := SharedPagesFor(tx, readerUserId)
 	if err != nil || len(roots) == 0 {

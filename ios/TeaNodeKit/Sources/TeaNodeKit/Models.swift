@@ -163,12 +163,16 @@ public struct AgentAttachment: Codable, Hashable, Sendable {
     public let name: String
     public let contentType: String
     public let size: Int
+    /// The file went with the account that held it; the message it came with
+    /// is kept, and a screen says so where the file was.
+    public let isRemoved: Bool?
 
-    public init(id: String, name: String, contentType: String, size: Int) {
+    public init(id: String, name: String, contentType: String, size: Int, isRemoved: Bool? = nil) {
         self.id = id
         self.name = name
         self.contentType = contentType
         self.size = size
+        self.isRemoved = isRemoved
     }
 }
 

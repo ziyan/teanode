@@ -514,3 +514,236 @@ func (self *permittedOperations) Permissions() *models.EffectivePermissions { re
 func (self *permittedOperations) Execute(context.Context, string, map[string]any, any) error {
 	return fmt.Errorf("this test sends nothing to the API")
 }
+
+// setSummary changes what the owner's page says about itself.
+func (self *sharedWorld) setSummary(t *testing.T, path, summary string) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		node := *self.pages[path]
+		node.Summary = summary
+		if _, err := tx.PutAgentNode(&node); err != nil {
+			t.Fatalf("PutAgentNode %s: %s", path, err)
+		}
+	})
+}
+
+// The overview is written by a model from the page's links, its children and
+// their openings and the quotes, so it can name a page that is not shared and
+// repeat a quote that is not. A reader is never shown it.
+func TestASharedPageNeverCarriesTheOwnersOverview(t *testing.T) {
+	world := newSharedWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		overview := "Linked to projects/secret, A private matter. She wrote: \"see you Tuesday at 3, bring the green folder\"."
+		if err := tx.SetAgentNodeOverview(world.ownerAgent.ID, world.pages["people/a"].ID, overview, nil, "inputs", time.Now()); err != nil {
+			t.Fatalf("SetAgentNodeOverview: %s", err)
+		}
+	})
+	for _, isQuoteShared := range []bool{false, true} {
+		world.share(t, "people/a", isQuoteShared)
+		page := world.read(t, world.reader, "people/a")
+		if page == nil {
+			t.Fatal("the page is shared")
+		}
+		serialized, err := json.Marshal(page)
+		if err != nil {
+			t.Fatalf("Marshal: %s", err)
+		}
+		for _, leak := range []string{"projects/secret", "A private matter", "green folder", "verview"} {
+			if strings.Contains(string(serialized), leak) {
+				t.Errorf("with quotes shared %v, the view carries %q: %s", isQuoteShared, leak, serialized)
+			}
+		}
+	}
+}
+
+// A summary that quotes somebody is left out of every view of a page unless
+// the owner shared the quotes, since the summary is written by a model that
+// copies the words it was given. A short quoted word is a name, not words.
+func TestASummaryThatQuotesSomebodyIsLeftOutUnlessQuotesAreShared(t *testing.T) {
+	world := newSharedWorld(t)
+	world.setSummary(t, "people/a", "Lives by the sea. She said \"we meet at the old pier\" last week.")
+	world.setSummary(t, "people/a/doctor", "Known to the family as \"Doc\" and seen every spring.")
+	world.setSummary(t, "projects/garden", "He told them “the bees come back in the spring” twice.")
+	world.share(t, "people/a", false)
+
+	read := func(path string) *models.SharedPage { return world.read(t, world.reader, path) }
+	if page := read("people/a"); page == nil || page.Opening != "" {
+		t.Errorf("the quoting summary is left out: %+v", page)
+	}
+	if page := read("people/a/doctor"); page == nil || page.Opening != "Known to the family as \"Doc\" and seen every spring." {
+		t.Errorf("a short quoted word is not somebody's words: %+v", page)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		roots, err := SharedPagesFor(tx, world.reader.ID)
+		if err != nil || len(roots) != 1 {
+			t.Fatalf("SharedPagesFor: %v, %d roots", err, len(roots))
+		}
+		if roots[0].Opening != "" {
+			t.Errorf("a listing of the root carries the quote: %q", roots[0].Opening)
+		}
+		hits, err := SearchSharedPages(tx, world.reader.ID, "pier", 5)
+		if err != nil {
+			t.Fatalf("SearchSharedPages: %s", err)
+		}
+		for _, hit := range hits {
+			if strings.Contains(hit.Opening, "old pier") {
+				t.Errorf("a hit carries the quote: %+v", hit)
+			}
+		}
+		lines, err := SharedIndexLines(tx, world.reader.ID)
+		if err != nil {
+			t.Fatalf("SharedIndexLines: %s", err)
+		}
+		if strings.Contains(strings.Join(lines, "\n"), "old pier") {
+			t.Errorf("the prompt carries the quote: %q", lines)
+		}
+	})
+	page := read("people/a")
+	for _, child := range page.Children {
+		if child.Path == "people/a/doctor" && child.Opening == "" {
+			t.Error("the child's summary does not quote, so it is kept")
+		}
+	}
+
+	world.share(t, "people/a", true)
+	if page := read("people/a"); page.Opening != "Lives by the sea. She said \"we meet at the old pier\" last week." {
+		t.Errorf("the summary once the owner shares quotes: %q", page.Opening)
+	}
+}
+
+func TestQuotesSomebody(t *testing.T) {
+	for text, want := range map[string]bool{
+		"":                                    false,
+		"No quotes at all here.":              false,
+		"Called \"Doc\" by everyone":          false,
+		"Said \"one two three\" only":         false,
+		"Said \"one two three four\" exactly": true,
+		"Said “one two three four five” in curly":   true,
+		"Said «un deux trois quatre» in French":     true,
+		"言った「明日は雨が降るでしょう今夜」と":                       true,
+		"言った「はい」と":                                  false,
+		"An unclosed \"one two three four five six": false,
+	} {
+		if got := quotesSomebody(text); got != want {
+			t.Errorf("quotesSomebody(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
+
+// The quote of a fact read in a chat is the words of the others in it, so it
+// is not shared even when the owner shares quotes, and the source is "chats".
+func TestAFactReadInAChatIsNeverQuoted(t *testing.T) {
+	world := newSharedWorld(t)
+	var chatDocument *models.AgentDocument
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		source, err := tx.PutAgentSource(&models.AgentKnowledgeSource{
+			AgentID: world.ownerAgent.ID, Kind: models.SourceArchive, Name: "chat records", Enabled: true,
+			Specification: models.AgentKnowledgeSpecification{Computer: "laptop", Path: "~/records", Format: models.FormatRecords},
+		})
+		if err != nil {
+			t.Fatalf("PutAgentSource: %s", err)
+		}
+		if chatDocument, err = tx.PutAgentDocument(&models.AgentDocument{
+			AgentID: world.ownerAgent.ID, SourceID: source.ID, ExternalID: "chat-day", Kind: models.DocumentChat,
+			Title: "A chat, 1 September", Hash: "chat-day", Private: true,
+		}); err != nil {
+			t.Fatalf("PutAgentDocument: %s", err)
+		}
+	})
+	world.fact(t, "people/a", &models.AgentFact{
+		Text:     "Brings the green folder on Tuesday.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceChat, ID: "a-chat", Quote: "bring the green folder, said Cora"}},
+	})
+	world.fact(t, "people/a", &models.AgentFact{
+		Text:     "Keeps bees.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceDocument, ID: chatDocument.ID, Quote: "I keep bees, said Cora"}},
+	})
+	world.fact(t, "people/a", &models.AgentFact{
+		Text:     "Has a boat.",
+		Evidence: []models.Evidence{{Kind: models.EvidenceMail, ID: "a-message", Quote: "the boat is in the harbor"}},
+	})
+	world.share(t, "people/a", true)
+
+	page := world.read(t, world.reader, "people/a")
+	if page == nil || len(page.Facts) != 3 {
+		t.Fatalf("three facts: %+v", page)
+	}
+	for _, fact := range page.Facts[:2] {
+		if fact.EvidenceQuote != "" {
+			t.Errorf("a quote from a chat: %q", fact.EvidenceQuote)
+		}
+		if fact.EvidenceSource != "from Ada Example's chats" {
+			t.Errorf("the source of a chat is named as the owner's chats: %q", fact.EvidenceSource)
+		}
+	}
+	if page.Facts[2].EvidenceQuote != "the boat is in the harbor" {
+		t.Errorf("a quote from mail is kept when quotes are shared: %q", page.Facts[2].EvidenceQuote)
+	}
+	serialized, _ := json.Marshal(page)
+	for _, leak := range []string{"said Cora", chatDocument.ID} {
+		if strings.Contains(string(serialized), leak) {
+			t.Errorf("the view leaks %q: %s", leak, serialized)
+		}
+	}
+}
+
+// The "Shared with you" lines are read for every turn and carried after the
+// history. They are not in the snapshot a conversation keeps for half an hour,
+// so a share taken back is gone from the next turn and not from the one after
+// the snapshot runs out.
+func TestASharedPageTakenBackLeavesThePromptAtOnce(t *testing.T) {
+	world := newSharedWorld(t)
+	world.share(t, "people/a", false)
+
+	configuration := config.Default()
+	worker := New(&Settings{
+		Database:      world.database,
+		Configuration: func() *config.Configuration { return configuration },
+		Instance:      "test", Tick: time.Hour,
+	})
+	var readerAgent *models.Agent
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if readerAgent, err = tx.EnsureAgent(world.reader.ID); err != nil {
+			t.Fatalf("EnsureAgent: %s", err)
+		}
+	})
+	allowed := &permittedOperations{permissions: models.NewEffectivePermissions([]models.Grant{{Permission: models.PermissionCircleUse}})}
+	turn := func() *AskRun {
+		return &AskRun{agent: worker, settings: &AskSettings{
+			Agent: readerAgent, Owner: world.reader, Operations: allowed,
+			Conversation: &models.AgentConversation{ID: "conversation-of-the-reader"},
+		}}
+	}
+
+	first := turn()
+	knowledge, _ := first.personSnapshot(context.Background())
+	if strings.Contains(strings.Join(knowledge, "\n"), "Shared with you") {
+		t.Errorf("the snapshot a conversation keeps holds shared pages: %q", knowledge)
+	}
+	if block := first.sharedIndexOverlay(context.Background()); !strings.HasPrefix(block, "<shared_with_you>\nShared with you") || !strings.Contains(block, "people/a") {
+		t.Fatalf("the turn carries the shared pages after the history: %q", block)
+	}
+
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		shares, err := tx.ListPageSharesBy(world.owner.ID)
+		if err != nil || len(shares) != 1 {
+			t.Fatalf("ListPageSharesBy: %+v %v", shares, err)
+		}
+		if err := tx.DeletePageShare(shares[0].ID); err != nil {
+			t.Fatalf("DeletePageShare: %s", err)
+		}
+	})
+	// The same turn keeps what it read; the next one reads again, within the
+	// half hour the snapshot lasts.
+	if block := first.sharedIndexOverlay(context.Background()); block == "" {
+		t.Error("a turn reads the shared pages once")
+	}
+	next := turn()
+	if knowledge, _ := next.personSnapshot(context.Background()); strings.Contains(strings.Join(knowledge, "\n"), "people/a") {
+		t.Errorf("the snapshot: %q", knowledge)
+	}
+	if block := next.sharedIndexOverlay(context.Background()); block != "" {
+		t.Errorf("the next turn still lists a share that was taken back: %q", block)
+	}
+}

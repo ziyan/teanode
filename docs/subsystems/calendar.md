@@ -459,8 +459,13 @@ iCalendar file that has the repeat, the moved occurrences and the time zone, and
 nothing else the level does not allow. The ETag is taken over what is given, so
 the version a listing names is the version a fetch returns. An event its owner
 marked private (`CLASS:PRIVATE` or `CONFIDENTIAL`, in any of the events of the
-file) is busy to everybody else at every level, and so is a file this server
-cannot read. Such an event carries `X-TEANODE-BUSY:TRUE`, which is how the
+file) is busy to everybody else at every level, an editor included, and so is
+a file this server cannot read. An editor who is shown such an event as busy is
+refused when they try to change or remove it ("this event is private to its
+owner"), over the command line, the tools, the API and CalDAV alike, since a
+change from the busy copy would write it over the real event. A circle's
+calendar has no owner, so its events are never redacted for its members. A redacted event carries
+`X-TEANODE-BUSY:TRUE`, which is how the
 dashboard tells "Busy" the label from an event somebody called Busy. The rule
 that decides it, `calendar.IsPrivateClass`, sits beside the four judgements of
 what makes somebody busy and changes nothing about whether the owner is busy:

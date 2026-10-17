@@ -56,7 +56,7 @@ struct SharedKnowledgeSection: View {
 }
 
 /// SharedKnowledgeSections is a shared page as it is read, and as its owner
-/// sees it before they confirm a share: the opening, the overview, the facts
+/// sees it before they confirm a share: the opening, the facts
 /// with where they were read (and the words, where the owner shared them),
 /// the links to other shared pages and the pages under it. With an owner the
 /// links and the pages under it open; without one (the preview) they do not.
@@ -74,17 +74,7 @@ struct SharedKnowledgeSections: View {
             } else {
                 MarkdownView(text: page.opening)
             }
-        }
-        if !page.overview.isEmpty {
-            Section {
-                MarkdownView(text: page.overview)
-            } header: {
-                Text("Overview")
-            } footer: {
-                if let written = ServerTime.date(page.overviewWrittenAt) {
-                    Text("Written \(written.formatted(date: .abbreviated, time: .omitted))")
-                }
-            }
+            Text("The owner's longer overview of this page is not shared.").font(.footnote).foregroundStyle(.secondary)
         }
         Section {
             if page.presentFacts.isEmpty {
@@ -275,7 +265,7 @@ struct KnowledgeShareSheet: View {
                     Section {
                         Toggle("Also show the words each fact was read in", isOn: $isQuoteShared)
                     } footer: {
-                        Text("Those words are quoted from your mail, chats and documents. Off, they see what a fact says and what kind of thing it was read in, not the words.")
+                        Text("Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat are never shown, since they are other people's too.")
                     }
                     Section {
                         NavigationLink {

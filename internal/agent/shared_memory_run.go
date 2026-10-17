@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/db"
@@ -121,6 +122,30 @@ func searchSharedPagesOf(ctx context.Context, database db.Database, readerUserId
 		return err
 	})
 	return hits, err
+}
+
+// sharedIndexOverlay is the "Shared with you" section as a block after the
+// history, read afresh for every turn and kept for its rounds. It is not in the
+// system prompt or its snapshot, which a conversation keeps for half an hour
+// so that the front of every request is a cache hit: a share taken back, or a
+// circle left, would otherwise still be listed to the model for that long, and
+// a share made would not show. Here it costs no cache, since everything after
+// the history is new each round. Empty when nothing is shared with the person
+// or the run may not read shared pages.
+func (self *AskRun) sharedIndexOverlay(ctx context.Context) string {
+	self.mutex.Lock()
+	isRead, lines := self.isSharedIndexRead, self.sharedIndex
+	self.mutex.Unlock()
+	if !isRead {
+		lines = self.sharedKnowledgeLines(ctx)
+		self.mutex.Lock()
+		self.sharedIndex, self.isSharedIndexRead = lines, true
+		self.mutex.Unlock()
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "<shared_with_you>\n" + strings.Join(lines, "\n") + "\n</shared_with_you>"
 }
 
 // sharedKnowledgeLines is the "Shared with you" section of this turn's index:

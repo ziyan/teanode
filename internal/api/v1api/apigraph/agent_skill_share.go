@@ -51,10 +51,20 @@ type AgentSkillShareMutation interface {
 	// loses the tools at once. Needs agent:use.
 	UnshareSkill(ctx context.Context, arguments UnshareSkillArguments) (bool, error)
 
-	// Answer a call that is waiting for approval, as its owner and as a
-	// person, never as an agent: approving runs exactly the call that was
-	// shown, once, on the owner's computer, and declining stops it. Answering
-	// a call that is not waiting any more is refused. Needs agent:use.
+	// Answer a call that is waiting for approval, as its owner: approving
+	// runs exactly the call that was shown, once, on the owner's computer, and
+	// declining stops it. Answering a call that is not waiting any more is
+	// refused. Needs agent:use.
+	//
+	// What is guaranteed is narrower than "a person answers": the operation
+	// is refused to the agent's own operations, which carry the agent as the
+	// actor, and to an operator signed in as the owner. A request with the
+	// owner's own sign-in is the owner's, whoever typed it, so a command the
+	// agent runs on the owner's computer with their saved sign-in arrives as
+	// the owner. That path is held by the agent's tools instead: a shell or
+	// terminal call whose words look like the command that answers
+	// (tools.AnswersSkillShareCall) always asks the owner, as money, and
+	// nothing they allow for when they are away covers it.
 	AnswerSkillShareCall(ctx context.Context, arguments AnswerSkillShareCallArguments) (*SkillShareCallView, error)
 }
 
@@ -398,9 +408,11 @@ func (self *graph) AnswerSkillShareCall(ctx context.Context, arguments AnswerSki
 	if principal.User == nil {
 		return nil, api.ErrNotLoggedIn
 	}
-	// An approval is a person's act. The agent's own operations carry the
-	// agent as the actor, and an operator signed in as the owner is not the
-	// owner: neither answers a call that spends the owner's money.
+	// The agent's own operations carry the agent as the actor, and an
+	// operator signed in as the owner is not the owner: neither answers a
+	// call that spends the owner's money. A request that carries the owner's
+	// own sign-in is not told apart from the owner (see the operation's
+	// comment for what holds that case).
 	if db.PrincipalFromContext(ctx).ActorKind == models.AuditActorAgent || principal.Impersonator != nil {
 		return nil, api.ErrNotFound
 	}

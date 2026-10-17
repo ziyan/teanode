@@ -122,6 +122,8 @@ import {
   linesWithSaid,
   linesWithStreamedText,
   linesWithUnsaid,
+  linesWithoutStreaming,
+  isStreamingKey,
   mentionAt,
   readersByMessage,
   startsRun,
@@ -486,6 +488,9 @@ interface Attachment {
   name: string
   contentType: string
   size: number
+  // The file went with the account that held it; the message it came with
+  // is kept.
+  isRemoved?: boolean | null
 }
 
 // CitedFile is one picture or file the fact behind a citation was read
@@ -706,7 +711,7 @@ const CONVERSATION = `
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
-        attachments { id name contentType size }
+        attachments { id name contentType size isRemoved }
         references { itemId threadId subject from path name recordingId recordingTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
@@ -747,7 +752,7 @@ const FEED = `
       kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
       message {
         id createdAt role content
-        attachments { id name contentType size }
+        attachments { id name contentType size isRemoved }
         references { agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
@@ -1677,10 +1682,15 @@ function QuestionCard({
 // AttachmentChips are the files under a turn: a picture shown small, the
 // rest named, each a link to the file itself.
 function AttachmentChips({ attachments }: { attachments: Attachment[] }) {
+  const { t } = useTranslation()
   return (
     <div className="agent-attachments">
       {attachments.map((attachment) =>
-        attachment.id.startsWith('pending-') ? (
+        attachment.isRemoved ? (
+          <span key={attachment.id} className="agent-attachment-chip muted">
+            <PaperclipIcon size={12} /> {t('chat.fileRemoved')}
+          </span>
+        ) : attachment.id.startsWith('pending-') ? (
           <span key={attachment.id} className="agent-attachment-chip">
             <PaperclipIcon size={12} /> {attachment.name} <span className="muted">{formatBytes(attachment.size)}</span>
           </span>
@@ -3728,6 +3738,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return
       case 'unsaid':
         if (!event.messageId) return
+        // The words of a turn that was stopped or failed, drawn while they
+        // came: no message was stored, so the line goes.
+        if (isStreamingKey(event.messageId)) {
+          const streamingKey = event.messageId
+          setLines((previous) => linesWithoutStreaming(previous, streamingKey))
+          return
+        }
         patchStored(event.messageId, { content: '', isDeleted: true })
         setLines((previous) => linesWithUnsaid(previous, event.messageId as string))
         return
@@ -3763,8 +3780,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         setLines((previous) => linesWithStreamedText(previous, event))
         return
       case 'members': {
-        // Somebody changed what their agent does here: who can be asked
-        // and who remembers the chat.
+        // Somebody was added, taken out or left, or changed what their
+        // agent does here (who can be asked, who remembers the chat): the
+        // members are read again, and the list, which shows who a chat is
+        // with.
+        void loadConversations().catch(() => undefined)
         const memberOf = conversationRef.current
         void graphql<{ ReadAgentConversation: { conversation: { id: string; chat: ChatSummary | null } } }>(
           READ_CHAT_MEMBERS,

@@ -28,6 +28,12 @@ type skillShareAnswer struct {
 	call      *models.SkillShareCall
 	ownerName string
 	skillName string
+
+	// chatLabel is the chat the call was made from, in words, when it was
+	// made while the agent was answering in a chat; empty for any other
+	// conversation. The outcome is told in the person's main conversation
+	// then, never in the chat, whose turns post to the room.
+	chatLabel string
 }
 
 // skillShareCallInFlight is the key a call is held under in the background
@@ -48,12 +54,31 @@ func (self *Agent) wakeForSkillShareCall(answer *skillShareAnswer) {
 	now := time.Now()
 	var isClaimed bool
 	var agentId string
+	// wokenConversationId is the conversation that is woken: the one the
+	// call was made in, except that a chat is never woken. A turn in a chat
+	// conversation answers into the room, so the other people in it would
+	// read what came of the owner's payment; the person's main conversation
+	// is woken instead, and told which chat the call came from.
+	wokenConversationId := call.GranteeConversationID
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		conversation, err := tx.GetAgentConversation(call.GranteeConversationID)
 		if err != nil || conversation == nil {
 			return err
 		}
 		agentId = conversation.AgentID
+		if conversation.Kind == models.AgentConversationChat {
+			main, err := scheduleConversation(tx, agentId, "")
+			if err != nil {
+				return err
+			}
+			wokenConversationId = main.ID
+			answer.chatLabel = "a chat"
+			if chat, err := tx.GetChatOfConversation(conversation.ID); err != nil {
+				return err
+			} else if chat != nil {
+				answer.chatLabel = chatLabelFor(chat, conversation.AgentID)
+			}
+		}
 		isClaimed, err = tx.ClaimSkillShareCallWake(call.ID, now, now.Add(-skillShareWakeClaimExpiry))
 		return err
 	}); err != nil {
@@ -70,13 +95,32 @@ func (self *Agent) wakeForSkillShareCall(answer *skillShareAnswer) {
 		return
 	}
 	self.backgroundInFlight[skillShareCallInFlight(call.ID)] = true
-	wake := self.backgroundWakes[call.GranteeConversationID]
+	wake := self.backgroundWakes[wokenConversationId]
 	if wake == nil {
 		wake = &backgroundWake{agentId: agentId}
-		self.backgroundWakes[call.GranteeConversationID] = wake
+		self.backgroundWakes[wokenConversationId] = wake
 	}
 	wake.shareCalls = append(wake.shareCalls, answer)
-	self.queueWakeLocked(call.GranteeConversationID, wake, backgroundWakeGather)
+	self.queueWakeLocked(wokenConversationId, wake, backgroundWakeGather)
+}
+
+// chatLabelFor names a chat for the person whose agent made the call: the
+// group's title, else the other people in it.
+func chatLabelFor(chat *models.Chat, agentId string) string {
+	if title := strings.TrimSpace(chat.Title); title != "" {
+		return "the chat " + title
+	}
+	names := []string{}
+	for _, member := range chat.ActiveMembers() {
+		if member.AgentID == agentId {
+			continue
+		}
+		names = append(names, member.Name)
+	}
+	if len(names) == 0 {
+		return "a chat"
+	}
+	return "the chat with " + strings.Join(names, ", ")
 }
 
 // markSkillShareCallsWoken records that the conversation was told.
@@ -171,6 +215,9 @@ func skillShareWakeMessage(answers []*skillShareAnswer) string {
 		call := answer.call
 		builder.WriteString("\n")
 		fmt.Fprintf(&builder, "%s call id: %s\nskill: %s's %s, tool %s\noutcome: %s\n", models.BackgroundWorkMarker, call.ID, answer.ownerName, answer.skillName, call.ToolName, skillShareOutcome(call))
+		if answer.chatLabel != "" {
+			builder.WriteString("made while answering in " + answer.chatLabel + "; you are not in that chat now, so tell your person here, and do not repeat it to the others in the chat unless they ask you to\n")
+		}
 		if call.AmountMinor != nil {
 			fmt.Fprintf(&builder, "amount: %s\n", models.FormatMinor(*call.AmountMinor, call.CurrencyCode))
 		}

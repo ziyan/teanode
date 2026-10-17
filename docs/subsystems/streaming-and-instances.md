@@ -16,7 +16,7 @@ per-run sequence and a time.
 | Kind | When |
 | --- | --- |
 | `asked` | first, before anything else: what was said, and the surface it came from |
-| `text` | a piece of the answer, as it streams. In a chat the pieces of an agent's answer are of no run's feed: they go to every member's conversation through the chat hub, with `runId`, `authorAgentId` and `name`, at most four times a second, and a client draws them as a provisional message that the stored `said` (its `message.agentRunId` is the run) replaces |
+| `text` | a piece of the answer, as it streams. In a chat the pieces of an agent's answer are of no run's feed: they go to every member's conversation through the chat hub, with `runId`, `authorAgentId` and `name`, at most four times a second, and a client draws them as a provisional message that the stored `said` (its `message.agentRunId` is the run) replaces; if the turn is stopped or fails, or what it said comes to nothing, an `unsaid` named `streaming-<runId>` takes the provisional line off every screen |
 | `message` | the whole answer of a round, once it is stored |
 | `tool_call` | the model asked for a tool |
 | `tool_result` | the tool answered: the bounded, wrapped content, plus a line for the drawer |
@@ -31,7 +31,7 @@ per-run sequence and a time.
 | `unsaid` | a chat conversation only: a message was taken back; `messageId` |
 | `read` | a chat conversation only: a member's read mark moved to `messageId`; `userId` is whose |
 | `typing` | a chat conversation only: `userId` and `name` of the member who is writing, or, while an agent's turn in the chat runs, `authorAgentId`, `name` and `authorOwnerName` of the agent that is thinking (the `text` events of its answer carry the same), sent when the turn starts and every four seconds to every member but the agent's owner; nothing is stored |
-| `members` | a chat conversation only: a member changed what their agent does in the chat (remembers it, may be asked by the others); read the chat's members again |
+| `members` | a chat conversation only: somebody was added, taken out or left, or a member changed what their agent does in the chat (remembers it, may be asked by the others); read the chat's members again |
 | `error` | the turn failed |
 | `done` | always last |
 
@@ -68,7 +68,10 @@ whatever the agent configuration is and handed to the GraphQL settings.
 with or without an agent worker; the worker's feed of that conversation is
 followed beside it when there is one, for the agent's own turns in a chat. For
 any other conversation the worker is still the only feed, and a server without
-one answers "agent: unavailable".
+one answers "agent: unavailable". Only the worker's feed is held to "each event
+of a run is delivered once", by its sequence, because that feed replays a running
+run to a late subscriber; the hub's events of a run (typing, text) carry the
+run's identifier and no sequence, and counting them would drop all but the first.
 
 What the people say is stored once, in the chat, and published once for each
 member who is in it now, to that member's own conversation, with the message

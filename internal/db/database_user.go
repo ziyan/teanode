@@ -298,6 +298,14 @@ func (self *transaction) UpdateUser(userId string, modify func(*models.User) err
 		if err := tx.Model(&userModel{}).Where("\"id\" = ?", userId).Select("*").Omit("id", "created_at").Updates(model).Error; err != nil {
 			return err
 		}
+		// The name the chats the person is in call them by is a copy of this
+		// one, kept for the chats they have left and after the account is
+		// gone; renamed, it is renamed everywhere so that the names agree.
+		if after.DisplayName() != before.DisplayName() {
+			if err := tx.Model(&chatMemberModel{}).Where("\"user_id\" = ?", userId).Update("member_name", after.DisplayName()).Error; err != nil {
+				return err
+			}
+		}
 		return replaceUserGroups(tx, userId, after.GroupIDs)
 	}); err != nil {
 		return nil, err

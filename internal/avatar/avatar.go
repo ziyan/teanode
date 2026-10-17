@@ -10,6 +10,7 @@ package avatar
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"image"
@@ -17,6 +18,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
+	"time"
 )
 
 const (
@@ -43,11 +45,51 @@ const (
 // not a picture needs the same instruction.
 var ErrUnusable = errors.New("the picture must be a PNG or JPEG of at most 20 megapixels")
 
+// ConcurrentNormalizations is how many pictures are decoded at once. A
+// picture of 20 megapixels is 80 MB of pixels once decoded, and again for the
+// square cut from it, whatever its few megabytes as a file; a handful of people
+// setting their pictures together should not take the server's memory with
+// them, so the others wait their turn.
+const ConcurrentNormalizations = 2
+
+// normalizeWait is how long a picture waits for its turn before the server
+// says it is busy.
+var normalizeWait = 5 * time.Second
+
+// ErrBusy is a picture turned away because others were being processed for
+// longer than it was willing to wait. Unlike ErrUnusable, sending the same
+// picture again in a moment is the answer.
+var ErrBusy = errors.New("avatar: too many pictures are being processed, try again in a moment")
+
+// normalizeSlots are the turns: a slot taken for as long as one picture is
+// decoded.
+var normalizeSlots = make(chan struct{}, ConcurrentNormalizations)
+
+// takeNormalizeSlot waits for a turn, and gives up with ErrBusy after
+// normalizeWait or when the context ends.
+func takeNormalizeSlot(ctx context.Context) error {
+	select {
+	case normalizeSlots <- struct{}{}:
+		return nil
+	default:
+	}
+	timer := time.NewTimer(normalizeWait)
+	defer timer.Stop()
+	select {
+	case normalizeSlots <- struct{}{}:
+		return nil
+	case <-timer.C:
+		return ErrBusy
+	case <-ctx.Done():
+		return ErrBusy
+	}
+}
+
 // Normalize decodes a PNG or JPEG, crops the largest centered square, scales
 // it to Size by Size and encodes it as a PNG. A JPEG's orientation tag is
 // applied first, because the tag is dropped with the rest of the metadata and
 // a sideways portrait is worse than a location left behind.
-func Normalize(content []byte) ([]byte, error) {
+func Normalize(ctx context.Context, content []byte) ([]byte, error) {
 	if len(content) == 0 || len(content) > MaxInputBytes {
 		return nil, ErrUnusable
 	}
@@ -62,6 +104,13 @@ func Normalize(content []byte) ([]byte, error) {
 		int64(configuration.Width)*int64(configuration.Height) > MaxPixels {
 		return nil, ErrUnusable
 	}
+
+	// The size is checked before the turn is waited for, so that a file that
+	// is not usable is refused at once and never holds anyone up.
+	if err := takeNormalizeSlot(ctx); err != nil {
+		return nil, err
+	}
+	defer func() { <-normalizeSlots }()
 
 	var decoded image.Image
 	if format == "png" {

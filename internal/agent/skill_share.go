@@ -125,6 +125,27 @@ type SharedOutcome struct {
 	OutcomeText string
 }
 
+// sharedPartiesAvailable says the two accounts a skill share is between can
+// take part in it now: the owner's is enabled and holds agent:use (the same
+// check a recording's work makes of its owner, since the call runs the owner's
+// skill on the owner's computer), and the grantee's is enabled. A share made
+// while they could is not a reason to go on after an operator disabled either.
+func sharedPartiesAvailable(tx db.Transaction, ownerUserId, granteeUserId string) (bool, error) {
+	owner, err := tx.GetUser(ownerUserId)
+	if err != nil || owner == nil || owner.Disabled() {
+		return false, err
+	}
+	permissions, err := tx.EffectivePermissions(ownerUserId)
+	if err != nil || !permissions.Has(models.PermissionAgentUse) {
+		return false, err
+	}
+	grantee, err := tx.GetUser(granteeUserId)
+	if err != nil || grantee == nil || grantee.Disabled() {
+		return false, err
+	}
+	return true, nil
+}
+
 // readSharedSkill reads the share, the people, the skill and the tool a call
 // is about, and refuses with ErrSharedUnavailable when any of them is not
 // there to be used: the share, the circle the two still share, the tool among
@@ -147,6 +168,13 @@ func (self *Agent) readSharedSkill(ctx context.Context, shareId, granteeUserId, 
 			return err
 		}
 		if !isMutual {
+			return ErrSharedUnavailable
+		}
+		isAvailable, err := sharedPartiesAvailable(tx, share.OwnerUserID, granteeUserId)
+		if err != nil {
+			return err
+		}
+		if !isAvailable {
 			return ErrSharedUnavailable
 		}
 		shared.share = share
@@ -563,9 +591,12 @@ func (self *Agent) tellOwnerOfWaitingCall(mainConversationId string, shared *sha
 	})
 }
 
-// AnswerSharedCall is the owner's answer to a call that waits. It is the owner's
-// alone, given as a person: the API refuses an agent's operations before it
-// gets here, and no tool calls it.
+// AnswerSharedCall is the owner's answer to a call that waits. The API refuses
+// an agent's operations before it gets here, and no tool calls it; what the API
+// cannot tell, a program run with the owner's own sign-in, is held by the shell
+// and terminal tools (tools.AnswersSkillShareCall). Refused with
+// ErrSharedUnavailable while either account is disabled or the owner lacks
+// agent:use.
 //
 // Approving runs exactly the call that was stored, with the arguments that
 // were shown, through the owner's own runner; the limits are skipped, since
@@ -574,17 +605,26 @@ func (self *Agent) tellOwnerOfWaitingCall(mainConversationId string, shared *sha
 func (self *Agent) AnswerSharedCall(ctx context.Context, ownerUserId, callId string, isApproved bool, decisionNote string) (*models.SkillShareCall, error) {
 	var call *models.SkillShareCall
 	var share *models.SkillShare
+	var isAvailable bool
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if call, err = tx.GetSkillShareCall(callId); err != nil || call == nil {
 			return err
 		}
-		share, err = tx.GetSkillShare(call.SkillShareID)
+		if share, err = tx.GetSkillShare(call.SkillShareID); err != nil || share == nil {
+			return err
+		}
+		isAvailable, err = sharedPartiesAvailable(tx, share.OwnerUserID, share.GranteeUserID)
 		return err
 	}); err != nil {
 		return nil, err
 	}
 	if call == nil || share == nil || share.OwnerUserID != ownerUserId {
 		return nil, db.ErrNotFound
+	}
+	// An account an operator disabled, or one that lost agent:use, answers
+	// nothing and is answered by nothing; the call waits out its day.
+	if !isAvailable {
+		return nil, ErrSharedUnavailable
 	}
 	decisionNote = cutRunes(strings.TrimSpace(decisionNote), sharedReasonCharacters)
 	if call.CallState != models.SkillShareCallWaitingForApproval {
@@ -791,15 +831,21 @@ func (self *Agent) SharedSkillTools(ctx context.Context, granteeAgent *models.Ag
 	for _, row := range installed {
 		rows[row.Name] = row
 	}
+	// An owner's tools are offered while their agent is on, their account is
+	// enabled and holds agent:use, and the person's own account is enabled.
 	ownerAgentActive := map[string]bool{}
 	for _, share := range shares {
 		if _, known := ownerAgentActive[share.OwnerAgentID]; !known {
 			var ownerAgent *models.Agent
+			isAvailable := false
 			_ = self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-				ownerAgent, err = tx.GetAgent(share.OwnerAgentID)
+				if ownerAgent, err = tx.GetAgent(share.OwnerAgentID); err != nil {
+					return err
+				}
+				isAvailable, err = sharedPartiesAvailable(tx, share.OwnerUserID, granteeAgent.UserID)
 				return err
 			})
-			ownerAgentActive[share.OwnerAgentID] = ownerAgent.Active()
+			ownerAgentActive[share.OwnerAgentID] = ownerAgent.Active() && isAvailable
 		}
 	}
 	var made []*Tool
@@ -871,7 +917,7 @@ func sharedLimitsSentence(share *models.SkillShare, declared *skills.Tool, owner
 		limits = append(limits, "up to "+models.FormatMinor(*share.PaymentLimitMinor, share.CurrencyCode)+" for one payment")
 	}
 	if share.MonthlyLimitMinor != nil {
-		limits = append(limits, "up to "+models.FormatMinor(*share.MonthlyLimitMinor, share.CurrencyCode)+" a month")
+		limits = append(limits, "up to "+models.FormatMinor(*share.MonthlyLimitMinor, share.CurrencyCode)+" a month, failed calls included")
 	}
 	return fmt.Sprintf("It goes ahead without asking %s %s; above that, or when the amount cannot be read, it waits for their approval and you are told how it comes out.", ownerName, strings.Join(limits, " and "))
 }
@@ -983,4 +1029,61 @@ func (self *Agent) sharedRunner(shareId, toolName string) func(context.Context, 
 		result.Note = "shared " + toolName + ": " + string(outcome.Call.CallState)
 		return result, nil
 	}
+}
+
+// skillShareNoteRetryEvery and skillShareNoteTries bound how long the note that
+// a share now asks every time waits for a turn in the owner's main conversation
+// to end.
+var (
+	skillShareNoteRetryEvery = 10 * time.Second
+	skillShareNoteTries      = 6
+)
+
+// TellSkillSharesNowAsk says, in each owner's main conversation, that an
+// update of a skill made the shares listed ask them before every call, and why.
+// It returns at once; the note is written while no turn runs there, so it waits
+// for a running one to end, a bounded number of times, and gives up with a
+// warning. The shares are already changed; the note only tells the owner.
+func (self *Agent) TellSkillSharesNowAsk(skillName string, shares []*models.SkillShare) {
+	byAgent := map[string][]*models.SkillShare{}
+	for _, share := range shares {
+		byAgent[share.OwnerAgentID] = append(byAgent[share.OwnerAgentID], share)
+	}
+	for agentId, held := range byAgent {
+		go func() {
+			for attempt := 0; attempt < skillShareNoteTries; attempt++ {
+				err := self.tellSkillSharesNowAsk(self.ctx, agentId, skillName, held)
+				if err == nil {
+					return
+				}
+				if !errors.Is(err, errTurnRunning) {
+					log.Warningf("cannot tell agent %s that its shares of the %s skill now ask every time: %s", agentId, skillName, err)
+					return
+				}
+				select {
+				case <-self.ctx.Done():
+					return
+				case <-time.After(skillShareNoteRetryEvery):
+				}
+			}
+			log.Warningf("agent %s was not told that its shares of the %s skill now ask every time: a turn kept running in its conversation", agentId, skillName)
+		}()
+	}
+}
+
+// tellSkillSharesNowAsk writes the note once. errTurnRunning when a turn runs
+// in the owner's main conversation.
+func (self *Agent) tellSkillSharesNowAsk(ctx context.Context, agentId, skillName string, shares []*models.SkillShare) error {
+	lines := make([]string, 0, len(shares))
+	for _, share := range shares {
+		grantee := share.GranteeName
+		if grantee == "" {
+			grantee = share.GranteeUsername
+		}
+		lines = append(lines, fmt.Sprintf("- %s, tools %s", grantee, strings.Join(share.ToolNames, ", ")))
+	}
+	checkIn := models.AlertMarker + " The " + skillName + " skill was updated, and some of the shares you made of it no longer meet the rule for sharing a tool that pays; you told the person. This is not the person speaking. What you said follows."
+	summary := "The " + skillName + " skill was updated, and the update changed what its tools do with money. These shares of it no longer have a limit that fits, so each now asks you before every call:\n\n" +
+		strings.Join(lines, "\n") + "\n\nNothing is paid on any of them until you approve a call. You can set a limit on a share, or take it back, in the sharing settings."
+	return self.tellAgent(ctx, self.settings.Database, agentId, checkIn, summary)
 }

@@ -57936,22 +57936,6 @@
         }
       }
     },
-    "Those words are quoted from your mail, chats and documents. Off, they see what a fact says and what kind of thing it was read in, not the words.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この文面はあなたのメール、チャット、文書からの引用です。オフのままだと、事実の内容と、何から読み取ったかだけが見え、文面は見えません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这些原文引自你的邮件、聊天和文档。不开启时，对方只能看到事实本身和它出自哪一类内容，看不到原文。"
-          }
-        }
-      }
-    },
     "Titles": {
       "localizations": {
         "ja": {
@@ -59536,22 +59520,6 @@
         }
       }
     },
-    "Above these limits, or when the amount cannot be read, a use waits for you. The limits are in the currency you give.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上限を超える場合や金額が読み取れない場合は、あなたの承認を待ちます。上限は入力した通貨で数えます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "超过上限，或无法读出金额时，使用会等待你的确认。上限以你填写的币种计算。"
-          }
-        }
-      }
-    },
     "Share %@": {
       "localizations": {
         "ja": {
@@ -59820,6 +59788,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "批准这笔付款"
+          }
+        }
+      }
+    },
+    "The owner's longer overview of this page is not shared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "持ち主によるこのページの長い概要は共有されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主人对这个页面写的较长概述不会共享。"
+          }
+        }
+      }
+    },
+    "Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat are never shown, since they are other people's too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったかだけが見え、文面は見えません。チャットの文面は、他の人の言葉でもあるため、常に表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些原文引自你的邮件和文档。不开启时，对方只能看到事实本身和它出自哪一类内容，看不到原文。聊天里的原文永远不会显示，因为那也是别人的话。"
+          }
+        }
+      }
+    },
+    "A file that was removed with the account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントとともに削除されたファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随账号一起删除的文件"
+          }
+        }
+      }
+    },
+    "Above these limits, or when the amount cannot be read, a use waits for you. The limits are in the currency you give. A use that failed still counts toward the month, because a failure after the command acted looks the same as one before.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限を超える場合や金額が読み取れない場合は、あなたの承認を待ちます。上限は入力した通貨で数えます。失敗した利用も、コマンドが動いた後の失敗は動く前の失敗と見分けがつかないため、その月の合計に数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过上限，或无法读出金额时，使用会等待你的确认。上限以你填写的币种计算。失败的使用也计入当月，因为命令已经执行之后的失败与执行之前的失败看起来一样。"
           }
         }
       }

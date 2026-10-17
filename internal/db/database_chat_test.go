@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -519,6 +520,46 @@ func TestADeletedAgentsMessageStaysAnAgents(t *testing.T) {
 	})
 }
 
+// When a person's agent is deleted the chats they are in stop saying it reads
+// them or may be asked there, and the chats of the others are untouched.
+func TestADeletedAgentIsNotReadingOrAskableInAChat(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice := newCircleTestUser(t, tx, "gone-alice")
+		bob := newCircleTestUser(t, tx, "gone-bob")
+		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, owner := range []*models.User{alice, bob} {
+			if _, err := tx.SetChatAgentReading(chat.ID, owner.ID, true); err != nil {
+				t.Fatalf("SetChatAgentReading: %s", err)
+			}
+			if err := tx.SetChatAgentAskableByOthers(chat.ID, owner.ID, true); err != nil {
+				t.Fatalf("SetChatAgentAskableByOthers: %s", err)
+			}
+		}
+		aliceAgent, err := tx.GetAgentByUser(alice.ID)
+		if err != nil || aliceAgent == nil {
+			t.Fatalf("Alice has no agent: %v", err)
+		}
+		if err := tx.DeleteAgent(aliceAgent.ID); err != nil {
+			t.Fatalf("DeleteAgent: %s", err)
+		}
+		kept, err := tx.GetChat(chat.ID)
+		if err != nil || kept == nil {
+			t.Fatalf("GetChat: %v %v", kept, err)
+		}
+		if member := kept.Member(alice.ID); member == nil || member.IsAgentReading || member.IsAgentAskableByOthers {
+			t.Errorf("Alice, whose agent is gone, is %+v", member)
+		}
+		if member := kept.Member(bob.ID); member == nil || !member.IsAgentReading || !member.IsAgentAskableByOthers {
+			t.Errorf("Bob's agent was not deleted, and his chat says %+v", member)
+		}
+	})
+}
+
 // Two people's agents that both keep the name "Agent" are told apart by the
 // owner's name, which the chat message keeps as it knew them, so it still
 // reads once the owner's account is gone.
@@ -569,6 +610,99 @@ func TestAnAgentsMessageKeepsWhoseAgentItIs(t *testing.T) {
 			t.Fatalf("DeleteUser: %s", err)
 		}
 		check(bob, "Alice Example", "whose-bob", "")
+	})
+}
+
+// A person who changes their name is renamed in the chats they are in: the
+// agent's messages written from then on name the owner as they are called now,
+// and the name the chat keeps for them, which is what remains once the account
+// is gone, is the new one.
+func TestARenamedPersonIsRenamedInTheirChats(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice := newCircleTestUser(t, tx, "renamed-alice")
+		bob := newCircleTestUser(t, tx, "renamed-bob")
+		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		aliceAgent, err := tx.GetAgentByUser(alice.ID)
+		if err != nil || aliceAgent == nil {
+			t.Fatalf("Alice has no agent: %v", err)
+		}
+		speak := func() {
+			t.Helper()
+			if _, err := tx.AppendChatMessage(&models.ChatMessage{
+				ChatID: chat.ID, AuthorUserID: alice.ID, AuthorName: models.AgentDefaultName, AuthorAgentID: aliceAgent.ID, Body: "on it",
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		speak()
+		if _, err := tx.UpdateUser(alice.ID, func(user *models.User) error {
+			user.Name = "Alice Renamed"
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateUser: %s", err)
+		}
+		speak()
+		messages, _, err := tx.ListChatConversationMessages(conversationOf(t, tx, bob, chat.ID), 100, 0)
+		if err != nil || len(messages) != 2 {
+			t.Fatalf("Bob reads %d: %v", len(messages), err)
+		}
+		if messages[1].AuthorOwnerName != "Alice Renamed" {
+			t.Errorf("the message written after the rename names its owner %q", messages[1].AuthorOwnerName)
+		}
+		if err := tx.DeleteUser(alice.ID); err != nil {
+			t.Fatalf("DeleteUser: %s", err)
+		}
+		kept, err := tx.GetChat(chat.ID)
+		if err != nil || kept == nil {
+			t.Fatalf("GetChat: %v %v", kept, err)
+		}
+		for _, member := range kept.Members {
+			if member.IsDeletedAccount && member.Name != "Alice Renamed" {
+				t.Errorf("the chat keeps the name %q for the account that is gone", member.Name)
+			}
+		}
+	})
+}
+
+// The files a person sent go with their account, and the messages they came
+// with stay: the file is marked removed instead of left as a link to nothing.
+func TestAFileSentByADeletedAccountIsMarkedRemoved(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice := newCircleTestUser(t, tx, "removed-alice")
+		bob := newCircleTestUser(t, tx, "removed-bob")
+		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, author := range []*models.User{alice, bob} {
+			if _, err := tx.AppendChatMessage(&models.ChatMessage{
+				ChatID: chat.ID, AuthorUserID: author.ID, Body: "the plan",
+				Attachments: []models.AgentAttachment{{ID: "file-of-" + author.Username, Name: "plan.pdf", ContentType: "application/pdf", Size: 1200}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tx.DeleteUser(alice.ID); err != nil {
+			t.Fatalf("DeleteUser: %s", err)
+		}
+		messages, _, err := tx.ListChatConversationMessages(conversationOf(t, tx, bob, chat.ID), 100, 0)
+		if err != nil || len(messages) != 2 {
+			t.Fatalf("Bob reads %d: %v", len(messages), err)
+		}
+		gone, kept := messages[0].Attachments, messages[1].Attachments
+		if len(gone) != 1 || !gone[0].IsRemoved || gone[0].Name != "plan.pdf" || gone[0].Size != 1200 {
+			t.Errorf("the deleted account's file is %+v; want it marked removed and still named", gone)
+		}
+		if len(kept) != 1 || kept[0].IsRemoved {
+			t.Errorf("Bob's own file is %+v; want it left alone", kept)
+		}
 	})
 }
 
@@ -677,4 +811,342 @@ func TestAChatCanBeMutedForAWhile(t *testing.T) {
 			t.Errorf("a mute by somebody who is not in the chat: %v", err)
 		}
 	})
+}
+
+// A turn somebody else asked an owner's agent for answers to the whole room,
+// so it reads only what every current member could read: nothing from before
+// the latest member joined. The owner's own turn keeps the owner's window.
+// Somebody who left no longer limits it.
+func TestAMemberTurnReadsOnlyWhatEveryCurrentMemberCouldRead(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice := newCircleTestUser(t, tx, "window-alice")
+		bob := newCircleTestUser(t, tx, "window-bob")
+		carol := newCircleTestUser(t, tx, "window-carol")
+		chat, err := tx.CreateGroupChat(alice.ID, "Weekend", []string{bob.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		aliceConversation := conversationOf(t, tx, alice, chat.ID)
+		time.Sleep(5 * time.Millisecond)
+		say(t, tx, chat.ID, alice, "before carol, about the surprise")
+		time.Sleep(5 * time.Millisecond)
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: aliceConversation.ID, Role: "tool", Content: "a private tool result"}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+		if chat, err = tx.AddChatMembers(chat.ID, []string{carol.ID}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(5 * time.Millisecond)
+		say(t, tx, chat.ID, bob, "with carol")
+		carolConversation := conversationOf(t, tx, carol, chat.ID)
+
+		bodies := func(messages []*models.AgentMessage) string {
+			var found []string
+			for _, message := range messages {
+				found = append(found, message.Content)
+			}
+			return strings.Join(found, "|")
+		}
+		ownerRows, err := tx.ListChatTurnRows(aliceConversation, 100, false)
+		if err != nil || !strings.Contains(bodies(ownerRows), "before carol, about the surprise") || !strings.Contains(bodies(ownerRows), "private tool result") {
+			t.Errorf("the owner's turn keeps the owner's window: %v %q", err, bodies(ownerRows))
+		}
+		memberRows, err := tx.ListChatTurnRows(aliceConversation, 100, true)
+		if err != nil || bodies(memberRows) != "with carol" {
+			t.Errorf("a turn somebody else asked reads from the latest join: %v %q", err, bodies(memberRows))
+		}
+		toolRows, total, err := tx.ListChatMemberTurnMessages(aliceConversation, 100, 0)
+		if err != nil || total != 1 || bodies(toolRows) != "with carol" {
+			t.Errorf("the conversation tool in that turn reads the same: %v %d %q", err, total, bodies(toolRows))
+		}
+		ownerRead, total, err := tx.ListChatConversationMessages(aliceConversation, 100, 0)
+		if err != nil || total != 3 || len(ownerRead) != 3 {
+			t.Errorf("the owner reads all of it: %v %d %q", err, total, bodies(ownerRead))
+		}
+		if rows, _ := tx.ListChatTurnRows(carolConversation, 100, true); bodies(rows) != "with carol" {
+			t.Errorf("the latest member's own window: %q", bodies(rows))
+		}
+
+		// Carol leaves; the room is Alice and Bob again.
+		time.Sleep(5 * time.Millisecond)
+		if _, err := tx.RemoveChatMember(chat.ID, carol.ID); err != nil {
+			t.Fatal(err)
+		}
+		memberRows, err = tx.ListChatTurnRows(aliceConversation, 100, true)
+		if err != nil || !strings.Contains(bodies(memberRows), "before carol, about the surprise") {
+			t.Errorf("a member who left no longer limits the window: %v %q", err, bodies(memberRows))
+		}
+	})
+}
+
+// Deleting a circle, or its last member leaving, does for each member what
+// leaving does: out of the group chats in which they now share a circle with
+// none of the others, and their agents stop reading the circle's chat.
+func TestADeletedCircleTakesItsMembersOutOfTheChatsItHeld(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		maker := newCircleTestUser(t, tx, "gone-maker")
+		friend := newCircleTestUser(t, tx, "gone-friend")
+		circle, err := tx.CreateCircle(&models.Circle{Name: "Home", CircleKind: models.CircleKindFamily}, maker.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.AddCircleMember(circle.ID, friend.ID, models.MemberRoleMember, maker.ID); err != nil {
+			t.Fatal(err)
+		}
+		group, err := tx.CreateGroupChat(maker.ID, "Trip", []string{friend.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The friend's agent remembers the circle's chat.
+		friendAgent, err := tx.GetAgentByUser(friend.ID)
+		if err != nil || friendAgent == nil {
+			t.Fatalf("the friend has no agent: %v", err)
+		}
+		circleChatId := ""
+		conversations, err := tx.ListChatConversations(friendAgent.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, conversation := range conversations {
+			if chat, _ := tx.GetChat(conversation.ChatID); chat != nil && chat.CircleID == circle.ID {
+				circleChatId = chat.ID
+			}
+		}
+		if circleChatId == "" {
+			t.Fatal("the circle has no chat")
+		}
+		source, err := tx.SetChatAgentReading(circleChatId, friend.ID, true)
+		if err != nil || source == nil || !source.Enabled {
+			t.Fatalf("SetChatAgentReading: %v %+v", err, source)
+		}
+
+		if err := tx.DeleteCircle(circle.ID); err != nil {
+			t.Fatal(err)
+		}
+		if found, err := tx.GetChat(group.ID); err != nil || found != nil {
+			t.Errorf("the group chat of two who now share no circle is still there: %v %+v", err, found)
+		}
+		switched, err := tx.GetAgentSource(friendAgent.ID, source.ID)
+		if err != nil || switched == nil || switched.Enabled {
+			t.Errorf("the friend's agent still reads the circle's chat: %v %+v", err, switched)
+		}
+
+		// A circle whose last member leaves: the member leaves the chats the
+		// circle's departure strands them in.
+		other := newCircleTestUser(t, tx, "gone-other")
+		second, err := tx.CreateCircle(&models.Circle{Name: "Club", CircleKind: models.CircleKindFriends}, maker.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.AddCircleMember(second.ID, other.ID, models.MemberRoleMember, maker.ID); err != nil {
+			t.Fatal(err)
+		}
+		pair, err := tx.CreateGroupChat(maker.ID, "Pair", []string{other.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.RemoveCircleMember(second.ID, other.ID); err != nil {
+			t.Fatal(err)
+		}
+		if reloaded, _ := tx.GetChat(pair.ID); reloaded == nil || len(reloaded.ActiveMembers()) != 1 {
+			t.Fatalf("the other left: %+v", reloaded)
+		}
+		if _, err := tx.RemoveCircleMember(second.ID, maker.ID); err != nil {
+			t.Fatal(err)
+		}
+		if found, err := tx.GetChat(pair.ID); err != nil || found != nil {
+			t.Errorf("the last member is left in a group chat with nobody: %v %+v", err, found)
+		}
+	})
+}
+
+// A group chat holds only so many people, and one person starts only so many
+// in a day.
+func TestAGroupChatAndWhoStartsOneAreBounded(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		maker := newCircleTestUser(t, tx, "full-maker")
+		var people []string
+		for count := 0; count < models.ChatMembersMost; count++ {
+			people = append(people, newCircleTestUser(t, tx, fmt.Sprintf("full-person-%02d", count)).ID)
+		}
+		// The maker and forty-nine of them is fifty; all fifty and the maker is not.
+		if _, err := tx.CreateGroupChat(maker.ID, "Too many", people); !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "at most 50 people") {
+			t.Fatalf("fifty-one people: %v", err)
+		}
+		full, err := tx.CreateGroupChat(maker.ID, "Everyone", people[:models.ChatMembersMost-1])
+		if err != nil || len(full.ActiveMembers()) != models.ChatMembersMost {
+			t.Fatalf("fifty people: %v", err)
+		}
+		if _, err := tx.AddChatMembers(full.ID, people[models.ChatMembersMost-1:]); !errors.Is(err, db.ErrLimitReached) {
+			t.Errorf("a fifty-first person: %v", err)
+		}
+		// Somebody who is in already is not counted again, and a place frees up.
+		if _, err := tx.AddChatMembers(full.ID, people[:2]); err != nil {
+			t.Errorf("people already in: %v", err)
+		}
+		if _, err := tx.RemoveChatMember(full.ID, people[0]); err != nil {
+			t.Fatal(err)
+		}
+		if chat, err := tx.AddChatMembers(full.ID, people[models.ChatMembersMost-1:]); err != nil || len(chat.ActiveMembers()) != models.ChatMembersMost {
+			t.Errorf("after one left: %v", err)
+		}
+
+		// Twenty a day, the one above counted.
+		for count := 1; count < models.GroupChatsMadePerDayMost; count++ {
+			if _, err := tx.CreateGroupChat(maker.ID, fmt.Sprintf("Trip %d", count), people[:1]); err != nil {
+				t.Fatalf("group chat %d: %s", count+1, err)
+			}
+		}
+		if _, err := tx.CreateGroupChat(maker.ID, "One more", people[:1]); !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "20 group chats") {
+			t.Errorf("the twenty-first group chat: %v", err)
+		}
+		// Somebody else starts their own, and a direct chat is no group.
+		if _, err := tx.CreateGroupChat(people[1], "Theirs", people[2:3]); err != nil {
+			t.Errorf("another person's first group chat: %v", err)
+		}
+		if _, err := tx.OpenDirectChat(maker.ID, people[5]); err != nil {
+			t.Errorf("a direct chat: %v", err)
+		}
+	})
+}
+
+// A chat is read in the order its messages were stored and then by identifier,
+// and the read mark, the unread count and the cursors of an agent reading the
+// chat follow that order: identifiers made by different server instances are
+// not in the order of their clocks. Here the identifier order is A, B, C and
+// the time order is A, C, B.
+func TestAChatCursorFollowsWhenMessagesWereStoredNotTheirIdentifiers(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	var chatId, firstId, secondId, thirdId string
+	var alice, bob *models.User
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		alice = newCircleTestUser(t, tx, "cursor-alice")
+		bob = newCircleTestUser(t, tx, "cursor-bob")
+		chat, err := tx.OpenDirectChat(alice.ID, bob.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chatId = chat.ID
+		firstId = say(t, tx, chat.ID, alice, "A").ID
+		secondId = say(t, tx, chat.ID, alice, "B").ID
+		thirdId = say(t, tx, chat.ID, alice, "C").ID
+	})
+	if firstId >= secondId || secondId >= thirdId {
+		t.Fatalf("the identifiers are not in order: %s %s %s", firstId, secondId, thirdId)
+	}
+	rawExec := database.(interface{ RawExec(string) error }).RawExec
+	for id, offset := range map[string]string{firstId: "1 hour", thirdId: "2 hours", secondId: "3 hours"} {
+		if err := rawExec(fmt.Sprintf(`UPDATE chat_message SET created_at = now() + interval '%s' WHERE id = '%s'`, offset, id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		unreadFor := func() int {
+			t.Helper()
+			conversation := conversationOf(t, tx, bob, chatId)
+			if err := tx.ChatViewsFor(bob.ID, []*models.AgentConversation{conversation}); err != nil {
+				t.Fatal(err)
+			}
+			return conversation.Chat.UnreadCount
+		}
+		if unreadFor() != 3 {
+			t.Fatalf("Bob has %d unread; want 3", unreadFor())
+		}
+		// Read through C: by time, B is still to come.
+		if moved, err := tx.MarkChatRead(chatId, bob.ID, thirdId); err != nil || !moved {
+			t.Fatalf("reading through C: moved %v, %v", moved, err)
+		}
+		if count := unreadFor(); count != 1 {
+			t.Errorf("after reading through C, %d are unread; want B alone", count)
+		}
+		// B is later than C by time, though earlier by identifier: the mark moves to it.
+		if moved, err := tx.MarkChatRead(chatId, bob.ID, secondId); err != nil || !moved {
+			t.Errorf("reading through B: moved %v, %v; want it moved forward", moved, err)
+		}
+		if count := unreadFor(); count != 0 {
+			t.Errorf("after reading through B, %d are unread", count)
+		}
+		// And C is behind the mark now, though ahead of B by identifier.
+		if moved, err := tx.MarkChatRead(chatId, bob.ID, thirdId); err != nil || moved {
+			t.Errorf("reading through C again: moved %v, %v; want it left", moved, err)
+		}
+
+		newest, err := tx.NewestChatMessageID(chatId)
+		if err != nil || newest != secondId {
+			t.Errorf("the newest message is %s, %v; want B (%s)", newest, err, secondId)
+		}
+		after, err := tx.ListChatMessagesAfter(chatId, thirdId, 10)
+		if err != nil || len(after) != 1 || after[0].ID != secondId {
+			t.Errorf("after C there is %v, %v; want B alone", after, err)
+		}
+		all, err := tx.ListChatMessagesAfter(chatId, "", 10)
+		if err != nil || len(all) != 3 || all[0].ID != firstId || all[1].ID != thirdId || all[2].ID != secondId {
+			t.Errorf("a source reads %v, %v; want A, C, B", all, err)
+		}
+	})
+}
+
+// Adding the same people to two chats at once, named in opposite orders, ends
+// without a deadlock: joining takes each person's row, and takes them in the
+// order of their identifiers whatever order they were named in.
+func TestAddingTheSamePeopleToTwoGroupsInOppositeOrdersDoesNotDeadlock(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	const peopleCount = 14
+	var firstGroup, secondGroup string
+	userIds := make([]string, 0, peopleCount)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		adder := newCircleTestUser(t, tx, "opposite-adder")
+		for index := 0; index < peopleCount; index++ {
+			user := newCircleTestUser(t, tx, fmt.Sprintf("opposite-%02d", index))
+			if _, err := tx.EnsureAgent(user.ID); err != nil {
+				t.Fatal(err)
+			}
+			userIds = append(userIds, user.ID)
+		}
+		for _, target := range []*string{&firstGroup, &secondGroup} {
+			group, err := tx.CreateGroupChat(adder.ID, "Trip", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			*target = group.ID
+		}
+	})
+	reversed := make([]string, len(userIds))
+	for index, userId := range userIds {
+		reversed[len(userIds)-1-index] = userId
+	}
+	start := make(chan struct{})
+	finished := make(chan error, 2)
+	for _, adding := range []struct {
+		chatId  string
+		userIds []string
+	}{{firstGroup, userIds}, {secondGroup, reversed}} {
+		go func() {
+			<-start
+			finished <- database.Transaction(func(tx db.Transaction) error {
+				_, err := tx.AddChatMembers(adding.chatId, adding.userIds)
+				return err
+			})
+		}()
+	}
+	close(start)
+	for range 2 {
+		select {
+		case err := <-finished:
+			if err != nil {
+				t.Fatalf("adding people to a group: %s", err)
+			}
+		case <-time.After(20 * time.Second):
+			t.Fatal("adding people to two groups in opposite orders did not finish")
+		}
+	}
 }

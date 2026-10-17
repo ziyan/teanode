@@ -285,6 +285,12 @@ func (self *graph) OpenDirectChat(ctx context.Context, arguments OpenDirectChatA
 	if err != nil {
 		return nil, translateError(err)
 	}
+	// The other person has a new chat in their list.
+	if existing == nil {
+		if err := self.publishChatMembersChanged(ctx, chat.ID); err != nil {
+			return nil, err
+		}
+	}
 	return self.chatConversationOf(ctx, user.ID, conversation)
 }
 
@@ -316,6 +322,9 @@ func (self *graph) CreateGroupChat(ctx context.Context, arguments CreateGroupCha
 		return nil, translateError(err)
 	}
 	log.Noticef("%s made a group chat with %d others", user.Username, len(userIds))
+	if err := self.publishChatMembersChanged(ctx, chat.ID); err != nil {
+		return nil, err
+	}
 	return self.chatConversationOf(ctx, user.ID, conversation)
 }
 
@@ -376,6 +385,9 @@ func (self *graph) AddChatMembers(ctx context.Context, arguments AddChatMembersA
 	if _, err := tx.AddChatMembers(session.Chat.ID, userIds); err != nil {
 		return nil, translateError(err)
 	}
+	if err := self.publishChatMembersChanged(ctx, session.Chat.ID); err != nil {
+		return nil, err
+	}
 	return self.chatConversationOf(ctx, session.User.ID, session.Conversation)
 }
 
@@ -398,6 +410,9 @@ func (self *graph) RemoveChatMember(ctx context.Context, arguments RemoveChatMem
 	if remaining == nil {
 		return nil, api.ErrNotFound
 	}
+	if err := self.publishChatMembersChanged(ctx, session.Chat.ID, userId); err != nil {
+		return nil, err
+	}
 	return self.chatConversationOf(ctx, session.User.ID, session.Conversation)
 }
 
@@ -416,6 +431,9 @@ func (self *graph) LeaveChat(ctx context.Context, arguments LeaveChatArguments) 
 	}
 	if _, err := self.transaction(ctx).RemoveChatMember(session.Chat.ID, session.User.ID); err != nil {
 		return false, translateError(err)
+	}
+	if err := self.publishChatMembersChanged(ctx, session.Chat.ID, session.User.ID); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -481,6 +499,22 @@ func describeChatAuthors(messages []*models.AgentMessage, users map[string]*mode
 }
 
 // copyForMember is the message as another member's conversation shows it.
+// withoutQuoteBeforeJoining is the member's copy of a reply without the words
+// of the message it is to, when that was said before they joined: the reply
+// still says which message it is to. The copy is shallow, so the references
+// are copied before they are changed.
+func withoutQuoteBeforeJoining(copied *models.AgentMessage, member *models.ChatMember, repliedAt time.Time) *models.AgentMessage {
+	if repliedAt.IsZero() || !repliedAt.Before(member.JoinedAt) || len(copied.References) == 0 {
+		return copied
+	}
+	references := slices.Clone(copied.References)
+	for index := range references {
+		references[index].QuotedText = ""
+	}
+	copied.References = references
+	return copied
+}
+
 func copyForMember(message *models.AgentMessage, member *models.ChatMember) *models.AgentMessage {
 	copied := *message
 	copied.ConversationID = member.ConversationID
@@ -534,6 +568,15 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, bo
 			return nil, api.ErrNotFound
 		}
 	}
+	// A reply is to a message the caller could read: what was said before they
+	// joined is not theirs to quote.
+	if replyToMessageId = strings.TrimSpace(replyToMessageId); replyToMessageId != "" {
+		if replied, err := tx.GetChatMessage(replyToMessageId); err != nil {
+			return nil, err
+		} else if replied != nil && replied.ChatID == session.Chat.ID && !isReadableByMember(replied, session.Member) {
+			return nil, api.ErrNotFound
+		}
+	}
 	message := &models.ChatMessage{
 		ChatID:           session.Chat.ID,
 		AuthorUserID:     session.User.ID,
@@ -562,22 +605,25 @@ func (self *graph) postChatMessage(ctx context.Context, session *chatSession, bo
 		stored.Attachments[index].AgentID = ""
 	}
 	quoted := map[string]*models.ChatMessage{}
+	var repliedAt time.Time
 	if stored.ReplyToMessageID != "" {
 		if replied, err := tx.GetChatMessage(stored.ReplyToMessageID); err == nil && replied != nil {
 			quoted[replied.ID] = replied
+			repliedAt = replied.CreatedAt
 		}
 	}
 	shown, err := self.chatMessageFor(tx, stored, quoted, session.Conversation.ID, session.User.ID)
 	if err != nil {
 		return nil, err
 	}
-	self.publishSaid(ctx, session, shown)
+	self.publishSaid(ctx, session, shown, repliedAt)
 	return shown, nil
 }
 
 // publishSaid tells the members what was said, and their phones, once it is
-// committed.
-func (self *graph) publishSaid(ctx context.Context, session *chatSession, shown *models.AgentMessage) {
+// committed. repliedAt is when the message it replies to was said, zero for
+// none: a member who joined after that is not shown what it said.
+func (self *graph) publishSaid(ctx context.Context, session *chatSession, shown *models.AgentMessage, repliedAt time.Time) {
 	hub := self.chatHub()
 	if hub == nil {
 		return
@@ -588,7 +634,7 @@ func (self *graph) publishSaid(ctx context.Context, session *chatSession, shown 
 		if member.ConversationID == "" {
 			continue
 		}
-		events = append(events, agent.Event{Kind: agent.EventSaid, ConversationID: member.ConversationID, MessageID: shown.ID, Message: copyForMember(shown, member)})
+		events = append(events, agent.Event{Kind: agent.EventSaid, ConversationID: member.ConversationID, MessageID: shown.ID, Message: withoutQuoteBeforeJoining(copyForMember(shown, member), member, repliedAt)})
 		// What a person writes they have read; what their agent writes, they
 		// have yet to.
 		if shown.AuthorKind == models.ChatAuthorPerson {

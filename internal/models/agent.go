@@ -929,6 +929,12 @@ const (
 // careful.
 const UnattendedRiskOperatorListed UnattendedRisk = "operatorListed"
 
+// UnattendedRiskPersonsAnswer is the other reason no person can allow: the
+// call answers something that waits for the person's own word, such as the
+// call a person they shared a paying skill with is waiting on. Only the person
+// gives that, so an allowance for when they are not there never covers it.
+const UnattendedRiskPersonsAnswer UnattendedRisk = "personsAnswer"
+
 // UnattendedRisks is every reason a person may allow, in the order the
 // settings show them.
 var UnattendedRisks = []UnattendedRisk{UnattendedRiskOutward, UnattendedRiskMoney, UnattendedRiskDestructive, UnattendedRiskGranting, UnattendedRiskListed}

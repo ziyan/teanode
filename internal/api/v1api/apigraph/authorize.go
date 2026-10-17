@@ -212,6 +212,9 @@ func translateError(err error) error {
 		return api.ErrAlreadyExists
 	case errors.Is(err, db.ErrInvalidArguments):
 		return api.ErrInvalidArguments
+	case errors.Is(err, db.ErrLimitReached):
+		// A bound on what one person makes, with the words that say which.
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	case errors.Is(err, db.ErrTooMuchAsked):
 		// The caller's to narrow, so the caller is told rather than shown
 		// a server that looks broken.

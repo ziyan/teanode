@@ -69,8 +69,6 @@ export type SharedPage = {
   nodeKind: string
   aliases: string[]
   opening: string
-  overview: string
-  overviewWrittenAt?: string | null
   isQuoteShared: boolean
   facts: SharedFact[]
   edges: SharedEdge[]
@@ -78,7 +76,7 @@ export type SharedPage = {
 }
 
 const PAGE_FIELDS = `ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
-    path name nodeKind aliases opening overview overviewWrittenAt isQuoteShared
+    path name nodeKind aliases opening isQuoteShared
     facts { number factKind text happenedAt isInferred evidenceSource evidenceQuote }
     edges { fromPath toPath fromName toName relation note isProposed }
     children { path name nodeKind opening }`
@@ -265,20 +263,8 @@ export function SharedPageBody({ page, ownerUsername }: { page: SharedPage; owne
         ) : (
           <SettingsEmpty>{t('knowledge.noSummary')}</SettingsEmpty>
         )}
+        <p className="muted">{t('knowledge.shared.overviewNotShared')}</p>
       </SettingsSection>
-      {page.overview ? (
-        <SettingsSection
-          card
-          title={t('knowledge.overview')}
-          description={t('knowledge.overviewHint', {
-            when: page.overviewWrittenAt ? new Date(page.overviewWrittenAt).toLocaleDateString() : '',
-          })}
-        >
-          <div className="knowledge-overview">
-            <Markdown text={page.overview} />
-          </div>
-        </SettingsSection>
-      ) : null}
       <SettingsSection card title={t('knowledge.facts')} description={t('knowledge.shared.factsHint')}>
         <SharedFacts facts={page.facts} />
       </SettingsSection>

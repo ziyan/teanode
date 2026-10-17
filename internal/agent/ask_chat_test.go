@@ -244,8 +244,14 @@ func TestAnOwnerTurnAnswersInTheChatAndKeepsItsToolsToItself(t *testing.T) {
 				t.Errorf("what was said in the chat is stored in the chat, not again as a row of the owner's: %+v", row)
 			}
 		}
-		if strings.Join(roles, " ") != "assistant tool" {
+		// The round that called, its result, and the answering round's cost: a
+		// row with no words and no calls, so that the turn is paid for in full
+		// on the owner's rows and the chat's message carries no cost.
+		if strings.Join(roles, " ") != "assistant tool assistant" {
 			t.Errorf("the owner's own rows are %v", roles)
+		}
+		if last := rows[len(rows)-1]; last.Usage == nil || last.Usage.PromptTokens == 0 || strings.TrimSpace(last.Content) != "" || len(last.ToolCalls) != 0 {
+			t.Errorf("the answering round's row is %+v; want its cost and nothing to read", last)
 		}
 		// Ben's conversation holds none of Ann's rows, and reads the answer.
 		benRows, err := tx.ListChatTurnRows(fixture.benThread, 100, false)

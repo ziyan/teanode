@@ -441,8 +441,8 @@ func (self *Agent) watchRefusal(ctx context.Context, run *Run, skill *skills.Ski
 		if !isJudged {
 			return "its commands could not be judged yet"
 		}
-		if callRisk == callRiskOutward || callRisk == callRiskDestructive {
-			return fmt.Sprintf("the judge says %s would %s", tool.Name, map[string]string{callRiskOutward: "speak for the person", callRiskDestructive: "destroy something"}[callRisk])
+		if callRisk == callRiskOutward || callRisk == callRiskDestructive || callRisk == callRiskMoney {
+			return fmt.Sprintf("the judge says %s would %s", tool.Name, map[string]string{callRiskOutward: "speak for the person", callRiskDestructive: "destroy something", callRiskMoney: "spend or move the person's money"}[callRisk])
 		}
 	}
 	return ""

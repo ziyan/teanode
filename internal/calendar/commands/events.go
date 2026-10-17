@@ -52,6 +52,9 @@ func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal
 			if existing == nil {
 				return db.ErrNotFound
 			}
+			if err := refusePrivate(owned, isOwner, existing); err != nil {
+				return err
+			}
 		}
 		if prepare == nil {
 			return db.ErrInvalidArguments
@@ -82,6 +85,9 @@ func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal
 				}
 				if existing == nil {
 					return db.ErrNotFound
+				}
+				if err := refusePrivate(owned, isOwner, existing); err != nil {
+					return err
 				}
 			} else if twin.ID != existing.ID {
 				return fmt.Errorf("%w: another event in this calendar already has that identifier", db.ErrInvalidArguments)
@@ -146,6 +152,9 @@ func (self *Commands) DeleteEvent(ctx context.Context, principal *access.Princip
 		}
 		if object == nil {
 			return db.ErrNotFound
+		}
+		if err := refusePrivate(owned, isOwner, object); err != nil {
+			return err
 		}
 		if err := refuseGuests(owned, isOwner, object); err != nil {
 			return err

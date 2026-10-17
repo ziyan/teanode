@@ -3720,6 +3720,7 @@ export const ja: Catalog = {
   'knowledge.shared.quotesShown': '引用あり',
   'knowledge.shared.back': 'あなたのページ',
   'knowledge.shared.noPage': 'このページはあなたと共有されていないか、共有が終了しました。',
+  'knowledge.shared.overviewNotShared': '持ち主によるこのページの長い概要は共有されません。',
   'knowledge.shared.noFacts': 'このページで共有されている事実はありません。',
   'knowledge.shared.factsHint':
     '持ち主のエージェントが最後に書いたとおりの内容です。事実は持ち主の名前つきで引用され、あなたのページにはコピーされません。',
@@ -3740,7 +3741,7 @@ export const ja: Catalog = {
     'まだ誰ともサークルを共有していません。サークルを作成するか参加すると、ページを共有できます。',
   'knowledge.share.quotes': '各事実の出典となった文面も表示する',
   'knowledge.share.quotesHint':
-    'この文面はあなたのメール、チャット、文書からの引用です。オフのままだと、事実の内容と、何から読み取ったか（たとえばあなたのメール）だけが見え、文面は見えません。',
+    'この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったか（たとえばあなたのメール）だけが見え、文面は見えません。チャットの文面は、他の人の言葉でもあるため、常に表示されません。',
   'knowledge.share.preview': '{name}に見える内容',
   'knowledge.share.previewing': '相手に見える内容を確認しています…',
   'knowledge.share.reachesOne': 'このページと、その下のすべてを含め、{count}ページを共有します。',
@@ -5634,6 +5635,7 @@ export const ja: Catalog = {
   'chat.placeholder': '{title}にメッセージ…',
   'chat.empty': 'まだ何も書かれていません。声をかけてみましょう。',
   'chat.deleted': 'メッセージは削除されました',
+  'chat.fileRemoved': 'アカウントとともに削除されたファイル',
   'chat.deleteTitle': 'このメッセージを削除しますか？',
   'chat.deleteBody': 'チャットの全員に「メッセージは削除されました」と表示されます。',
   'chat.edited': '編集済み',
@@ -5691,7 +5693,8 @@ export const ja: Catalog = {
   'skillShare.monthlyLimit': '1か月の上限',
   'skillShare.currency': '通貨',
   'skillShare.currencyHint': 'usd のように3文字で入力します。上限はこの通貨です。',
-  'skillShare.limitsHint': '上限を超える場合や金額が読み取れない場合は、あなたの承認を待ちます。',
+  'skillShare.limitsHint':
+    '上限を超える場合や金額が読み取れない場合は、あなたの承認を待ちます。失敗した利用も、コマンドが動いた後の失敗は動く前の失敗と見分けがつかないため、その月の合計に数えます。',
   'skillShare.needsBound': '支払うツールは、上限を付けるか「毎回確認する」にして共有します。',
   'skillShare.shared': '{skill}を{name}さんと共有しました。',
   'skillShare.failed': 'スキルを共有できませんでした。',

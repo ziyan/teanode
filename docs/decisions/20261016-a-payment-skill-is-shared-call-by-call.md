@@ -44,9 +44,12 @@ child.
 The owner approves or declines from a card in their drawer or their
 phone. Approving runs exactly the call that was asked, with the arguments
 that were shown, on the owner's computer; nothing else is decided when it
-is answered. An approval is answered by the owner and never by an agent,
-the same rule that keeps the unattended setting on a card the person
-answered, and nobody's unattended allowances answer one.
+is answered. The server refuses an approval to the agent's own operations,
+and the agent's shell and terminal ask the owner before running the command
+that approves, whatever they allowed for when they are away. Both are best
+effort: an approval made with the owner's own sign-in is the owner's, so the
+guard is the card, not a certainty (`docs/subsystems/skills.md` says what is
+and is not held).
 
 The owner sees every call made through a share, its arguments and its
 outcome; the other person sees their own.
