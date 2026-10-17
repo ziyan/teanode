@@ -544,6 +544,24 @@ export function HerdrSendForm({
           placeholder={isSendable ? t('herdr.sendPlaceholder') : t('herdr.sendDisabled')}
           aria-label={t('herdr.sendPlaceholder')}
           onChange={(event) => setText(event.target.value)}
+          // A pasted picture, a screenshot say, is attached as the paperclip
+          // would; pasted text is typed as usual. Each is named afresh, as a
+          // clipboard calls every picture image.png.
+          onPaste={(event) => {
+            const pictures = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
+            if (pictures.length === 0) return
+            event.preventDefault()
+            const stamp = Date.now()
+            setPending((previous) => [
+              ...previous,
+              ...pictures.map(
+                (picture, index) =>
+                  new File([picture], `pasted-${stamp}-${index + 1}.${picture.type.split('/')[1] || 'png'}`, {
+                    type: picture.type,
+                  }),
+              ),
+            ])
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()

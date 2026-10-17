@@ -16265,7 +16265,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 /* On a phone the page is the list, as the mailbox is: the frame runs to the
    screen's edges with no border at the sides, rather than spending the
-   width on the page's padding and a box. */
+   width on the page's padding and a box. The terminal's screen, wider than
+   a phone already, takes every column of it. */
 @media (max-width: 600px) {
   .coding-split {
     margin-left: calc(var(--space-3) * -1);
@@ -16273,6 +16274,20 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
     border-left: none;
     border-right: none;
     border-radius: 0;
+  }
+
+  .coding-scroll.showing-screen {
+    padding: 0;
+  }
+
+  .coding-scroll.showing-screen .herdr-screen {
+    min-height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+
+  .coding-scroll.showing-screen .coding-question {
+    margin: var(--space-3);
   }
 }
 

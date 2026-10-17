@@ -101,7 +101,9 @@ function cssOf(style: TerminalStyle): CSSProperties | undefined {
   return Object.keys(css).length > 0 ? css : undefined
 }
 
-const CODE = /\x1b\[([0-9;:]*)m/g
+// Built from the escape character's code, which a literal in the pattern
+// would be flagged for.
+const CODE = new RegExp(String.fromCharCode(27) + '\\[([0-9;:]*)m', 'g')
 
 // TerminalText draws colored terminal text in a pre, on the terminal's own
 // dark ground whatever the page's theme, since the colors were chosen

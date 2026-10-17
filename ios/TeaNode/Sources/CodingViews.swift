@@ -1115,6 +1115,19 @@ struct CodingComposer: View {
                         } label: {
                             Label("Files", systemImage: "folder")
                         }
+                        // A picture copied elsewhere, a screenshot say,
+                        // attached as the dashboard attaches a pasted one.
+                        if UIPasteboard.general.hasImages {
+                            Button {
+                                for image in UIPasteboard.general.images ?? [] {
+                                    if let file = PendingFile(picture: image, index: pendingFiles.count) {
+                                        pendingFiles.append(file)
+                                    }
+                                }
+                            } label: {
+                                Label("Paste picture", systemImage: "doc.on.clipboard")
+                            }
+                        }
                     } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.medium))
