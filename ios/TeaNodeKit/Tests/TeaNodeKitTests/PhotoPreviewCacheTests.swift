@@ -66,8 +66,9 @@ final class PhotoPreviewCacheTests: XCTestCase {
 
     func testTheOldestFilesGoWhenTheCacheIsOverItsLimit() async throws {
         let (connection, _) = try connection(previewBytes: 60)
-        // Room for two previews of 60 bytes, not three.
-        let cache = PhotoPreviewCache(directory: directory, limitBytes: 130)
+        // Room for two previews of 60 bytes, not three; going over takes the
+        // files down to 80% of the limit (136 bytes), which is two.
+        let cache = PhotoPreviewCache(directory: directory, limitBytes: 170)
         let paths = (1...3).map { "/api/v1/photos/p\($0)/previews/small?v=1" }
         _ = try await cache.data(for: paths[0], using: connection)
         _ = try await cache.data(for: paths[1], using: connection)
@@ -84,7 +85,7 @@ final class PhotoPreviewCacheTests: XCTestCase {
 
     func testAPreviewSeenAgainIsTheLastToGo() async throws {
         let (connection, fake) = try connection(previewBytes: 60)
-        let first = PhotoPreviewCache(directory: directory, limitBytes: 130)
+        let first = PhotoPreviewCache(directory: directory, limitBytes: 170)
         let paths = (1...3).map { "/api/v1/photos/p\($0)/previews/small?v=1" }
         _ = try await first.data(for: paths[0], using: connection)
         _ = try await first.data(for: paths[1], using: connection)
@@ -92,12 +93,34 @@ final class PhotoPreviewCacheTests: XCTestCase {
         try setAge(500, ofFileFor: paths[1], accountKey: connection.accountKey)
         // The person scrolls back to the first one, in a later launch, so it
         // is read from its file and its date moves up to now.
-        let later = PhotoPreviewCache(directory: directory, limitBytes: 130)
+        let later = PhotoPreviewCache(directory: directory, limitBytes: 170)
         _ = try await later.data(for: paths[0], using: connection)
         XCTAssertEqual(fake.sent.count, 2)
         _ = try await later.data(for: paths[2], using: connection)
         let kept = Set(try files())
         XCTAssertEqual(kept, [PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: paths[0]), PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: paths[2])])
+    }
+
+    func testGoingOverTheLimitMakesRoomForTheNextWritesWithoutReadingTheDirectoryAgain() async throws {
+        let (connection, _) = try connection(previewBytes: 100)
+        let cache = PhotoPreviewCache(directory: directory, limitBytes: 1_000)
+        for number in 1...10 {
+            _ = try await cache.data(for: "/api/v1/photos/p\(number)/previews/small?v=1", using: connection)
+        }
+        var names = try files()
+        XCTAssertEqual(names.count, 10, "at the limit, not over it")
+        _ = try await cache.data(for: "/api/v1/photos/p11/previews/small?v=1", using: connection)
+        names = try files()
+        XCTAssertEqual(names.count, 8, "over the limit, the files are taken down to 80% of it")
+        var size = await cache.sizeBytes()
+        XCTAssertEqual(size, 800)
+        for number in 12...13 {
+            _ = try await cache.data(for: "/api/v1/photos/p\(number)/previews/small?v=1", using: connection)
+        }
+        names = try files()
+        XCTAssertEqual(names.count, 10, "the next writes fit in the room that was made, and nothing is removed")
+        size = await cache.sizeBytes()
+        XCTAssertEqual(size, 1_000)
     }
 
     func testAPreviewLargerThanTheWholeLimitIsStillReturned() async throws {

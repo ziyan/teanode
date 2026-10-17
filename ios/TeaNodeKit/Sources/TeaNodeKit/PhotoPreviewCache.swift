@@ -10,7 +10,9 @@ import Foundation
 /// again is a new address and the old file simply ages out. The files together
 /// stay under a limit, 500 MB by default: when a write takes them over it,
 /// the files least recently used (the oldest by modification date; a read
-/// brings a file's date up to now) are removed until they fit again.
+/// brings a file's date up to now) are removed until the rest take about 80%
+/// of the limit, so that the next writes have room and the directory is not
+/// read again after every one of them.
 ///
 /// The files are only a cache. Any failure to read or write one is ignored and
 /// the preview is fetched from the server instead.
@@ -146,11 +148,13 @@ public actor PhotoPreviewCache {
         return counted
     }
 
-    /// Removes the files least recently used until the rest fit.
+    /// Removes the files least recently used until the rest take about 80% of
+    /// the limit.
     private func removeOldestFiles() {
         var files = filesInDirectory().sorted { $0.modifiedAt < $1.modifiedAt }
         var remainingBytes = files.reduce(0) { $0 + $1.sizeBytes }
-        while remainingBytes > limitBytes, !files.isEmpty {
+        let targetBytes = limitBytes / 10 * 8
+        while remainingBytes > targetBytes, !files.isEmpty {
             let oldest = files.removeFirst()
             if (try? FileManager.default.removeItem(at: oldest.address)) != nil {
                 remainingBytes -= oldest.sizeBytes

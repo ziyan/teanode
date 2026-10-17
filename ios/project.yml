@@ -46,8 +46,8 @@ targets:
       properties:
         UIBackgroundModes: [audio, voip, processing]
         BGTaskSchedulerPermittedIdentifiers:
-          - com.teanode.app.photo-backup
-          - com.teanode.app.photo-backup-now
+          - $(TEANODE_BUNDLE_IDENTIFIER).photo-backup
+          - $(TEANODE_BUNDLE_IDENTIFIER).photo-backup-now
         NSSupportsLiveActivities: true
         TeaNodeAppGroup: $(TEANODE_APP_GROUP)
     entitlements:

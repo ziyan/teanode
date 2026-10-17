@@ -71,12 +71,16 @@ public struct PhotoBackupResource: Equatable, Sendable {
     /// Whether the file is on the phone, rather than only in iCloud. A hint:
     /// it decides whether getting it may use the network.
     public let isLocallyAvailable: Bool
+    /// The size of the file as the library reports it, when it does: a large
+    /// video that does not fit in the room left is not exported to find out.
+    public let fileSizeBytes: Int64?
 
-    public init(role: PhotoBackupFileRole, originalFilename: String, contentType: String, isLocallyAvailable: Bool) {
+    public init(role: PhotoBackupFileRole, originalFilename: String, contentType: String, isLocallyAvailable: Bool, fileSizeBytes: Int64? = nil) {
         self.role = role
         self.originalFilename = originalFilename
         self.contentType = contentType
         self.isLocallyAvailable = isLocallyAvailable
+        self.fileSizeBytes = fileSizeBytes
     }
 }
 
@@ -178,6 +182,8 @@ public struct PhotoBackupUpload: Equatable, Sendable {
     public let filename: String
     public let contentType: String
     public let isLocallyAvailable: Bool
+    /// The size the library reports for the file, nil when it does not say.
+    public let fileSizeBytes: Int64?
     /// The item's modification date when this was planned, kept in the index
     /// once the file is up so that a later edit is noticed.
     public let assetModificationDate: Date?
@@ -236,7 +242,8 @@ public enum PhotoBackupPlanner {
                     PhotoBackupUpload(
                         localIdentifier: item.localIdentifier, role: resource.role, clientPhotoId: clientPhotoId,
                         filename: resource.originalFilename, contentType: resource.contentType,
-                        isLocallyAvailable: resource.isLocallyAvailable, assetModificationDate: item.modificationDate,
+                        isLocallyAvailable: resource.isLocallyAvailable, fileSizeBytes: resource.fileSizeBytes,
+                        assetModificationDate: item.modificationDate,
                         headers: headers(for: item, resource: resource, clientPhotoId: clientPhotoId)))
             }
         }
@@ -399,6 +406,11 @@ public actor PhotoBackupIndex {
     private var contents = Contents()
     private var unwrittenChangeCount = 0
     private var lastWriteAt: Date
+    /// Items whose original is on the server, and files refused often enough
+    /// to be left alone: kept up to date as records are written, so that the
+    /// status, published after every upload, does not walk every record.
+    private var backedUpItemCount = 0
+    private var refusedFileCount = 0
     /// Whether the file existed and could not be read when the index was opened.
     public private(set) var wasStartedOver = false
 
@@ -419,6 +431,34 @@ public actor PhotoBackupIndex {
                 wasStartedOver = true
             }
         }
+        (backedUpItemCount, refusedFileCount) = Self.counts(of: contents.records.values)
+    }
+
+    /// How many records have their original on the server, and how many of
+    /// their files the server refused often enough to be left alone.
+    private static func counts(of records: some Sequence<PhotoBackupRecord>) -> (backedUp: Int, refused: Int) {
+        var backedUp = 0
+        var refused = 0
+        for record in records {
+            if record.isOriginalOnServer { backedUp += 1 }
+            refused += record.roles.values.filter { $0.refusalCount >= PhotoBackupPlanner.maximumRefusalCount }.count
+        }
+        return (backedUp, refused)
+    }
+
+    /// The only way a record is written, so that the counters follow it.
+    private func store(_ record: PhotoBackupRecord?, for localIdentifier: String) {
+        if let old = contents.records[localIdentifier] {
+            let (backedUp, refused) = Self.counts(of: [old])
+            backedUpItemCount -= backedUp
+            refusedFileCount -= refused
+        }
+        if let record {
+            let (backedUp, refused) = Self.counts(of: [record])
+            backedUpItemCount += backedUp
+            refusedFileCount += refused
+        }
+        contents.records[localIdentifier] = record
     }
 
     // MARK: Account
@@ -432,6 +472,8 @@ public actor PhotoBackupIndex {
     public func forget(accountKey: String) {
         guard contents.accountKey == accountKey else { return }
         contents = Contents()
+        backedUpItemCount = 0
+        refusedFileCount = 0
         unwrittenChangeCount = 0
         try? fileManager.removeItem(at: fileURL)
     }
@@ -440,6 +482,8 @@ public actor PhotoBackupIndex {
         guard contents.accountKey != accountKey else { return }
         let hadAccount = contents.accountKey != nil
         contents = Contents()
+        backedUpItemCount = 0
+        refusedFileCount = 0
         contents.accountKey = accountKey
         if hadAccount { wasStartedOver = true }
         didChange(force: true)
@@ -468,14 +512,8 @@ public actor PhotoBackupIndex {
     public var changeToken: Data? { contents.changeToken }
 
     public func summary() -> PhotoBackupSummary {
-        var backedUp = 0
-        var refused = 0
-        for record in contents.records.values {
-            if record.isOriginalOnServer { backedUp += 1 }
-            refused += record.roles.values.filter { $0.refusalCount >= PhotoBackupPlanner.maximumRefusalCount }.count
-        }
-        return PhotoBackupSummary(
-            backedUpItemCount: backedUp, libraryItemCount: contents.libraryItemCount, refusedFileCount: refused,
+        PhotoBackupSummary(
+            backedUpItemCount: backedUpItemCount, libraryItemCount: contents.libraryItemCount, refusedFileCount: refusedFileCount,
             lastFailure: contents.lastFailure, isSignInNeeded: contents.isSignInNeeded,
             lastPassFinishedAt: contents.lastPassFinishedAt)
     }
@@ -517,7 +555,7 @@ public actor PhotoBackupIndex {
             for photoFileRole in found.photoFileRoles where PhotoBackupFileRole(rawValue: photoFileRole) != nil {
                 record.roles[photoFileRole] = PhotoBackupRoleRecord(isOnServer: true, serverPhotoId: found.id)
             }
-            contents.records[item.localIdentifier] = record
+            store(record, for: item.localIdentifier)
         }
         didChange()
     }
@@ -529,7 +567,7 @@ public actor PhotoBackupIndex {
         for upload in uploads {
             var record = contents.records[upload.localIdentifier] ?? PhotoBackupRecord(clientPhotoId: upload.clientPhotoId)
             if record.roles[upload.role.rawValue] == nil { record.roles[upload.role.rawValue] = PhotoBackupRoleRecord() }
-            contents.records[upload.localIdentifier] = record
+            store(record, for: upload.localIdentifier)
         }
         didChange(force: true)
     }
@@ -541,7 +579,7 @@ public actor PhotoBackupIndex {
         for localIdentifier in localIdentifiers {
             guard var record = contents.records[localIdentifier] else { continue }
             record.roles = record.roles.filter { $0.value.isOnServer }
-            contents.records[localIdentifier] = record.roles.isEmpty ? nil : record
+            store(record.roles.isEmpty ? nil : record, for: localIdentifier)
         }
         didChange()
     }
@@ -561,7 +599,7 @@ public actor PhotoBackupIndex {
         // its date is kept: the file holds a record for every photo.
         record.roles[role.rawValue] = PhotoBackupRoleRecord(
             isOnServer: true, serverPhotoId: serverPhotoId, assetModificationDate: role == .edited ? assetModificationDate : nil)
-        contents.records[localIdentifier] = record
+        store(record, for: localIdentifier)
         didChange()
     }
 
@@ -572,11 +610,14 @@ public actor PhotoBackupIndex {
         state.refusalCount += 1
         state.refusalFailure = failure
         record.roles[role.rawValue] = state
-        contents.records[localIdentifier] = record
+        store(record, for: localIdentifier)
         didChange()
     }
 
-    /// Lets every refused file be tried again, which "Back up now" does.
+    /// Lets every refused file be tried again, which "Back up now" does. A
+    /// file that is not on the server becomes a fresh file still to send, not
+    /// nothing: with no record of the role it would be neither pending nor
+    /// listed again.
     public func clearRefusals() {
         for (localIdentifier, var record) in contents.records {
             var isChanged = false
@@ -586,11 +627,11 @@ public actor PhotoBackupIndex {
                     state.refusalFailure = nil
                     record.roles[roleName] = state
                 } else {
-                    record.roles[roleName] = nil
+                    record.roles[roleName] = PhotoBackupRoleRecord()
                 }
                 isChanged = true
             }
-            if isChanged { contents.records[localIdentifier] = record }
+            if isChanged { store(record, for: localIdentifier) }
         }
         didChange()
     }
@@ -606,18 +647,21 @@ public actor PhotoBackupIndex {
     }
 
     /// Records what went wrong, to be shown. A sign-in refusal is remembered
-    /// apart: it stops the backup until the person signs in again.
-    public func setError(failure: PhotoBackupFailure?, isSignInNeeded: Bool = false) {
+    /// apart: it stops the backup until the person signs in again. Only an
+    /// explicit `isSignInNeeded` changes that: a problem recorded while it is
+    /// set (the uploads cancelled because of it, say) leaves it as it is.
+    public func setError(failure: PhotoBackupFailure?, isSignInNeeded: Bool? = nil) {
         contents.lastFailure = failure
-        contents.isSignInNeeded = isSignInNeeded
+        if let isSignInNeeded { contents.isSignInNeeded = isSignInNeeded }
         // A refused sign-in is written at once, as it stops the backup; any
         // other problem is written with the next change.
-        didChange(force: isSignInNeeded)
+        didChange(force: isSignInNeeded == true)
     }
 
+    /// Clears the last error and the refused sign-in with it.
     public func clearError() {
         guard contents.lastFailure != nil || contents.isSignInNeeded else { return }
-        setError(failure: nil)
+        setError(failure: nil, isSignInNeeded: false)
     }
 
     /// Clears the last error, unless it is the server not accepting the device

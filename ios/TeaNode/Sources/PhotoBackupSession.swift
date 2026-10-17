@@ -90,10 +90,13 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
         let body = lock.withLock { bodies.removeValue(forKey: task.taskIdentifier) } ?? Data()
         guard let job = Self.job(of: task) else { return }
         let response = task.response as? HTTPURLResponse
+        // The app cancels tasks itself (backup turned off, a setting changed):
+        // that is no error to show and no failure to count.
+        let isCancelled = (error as NSError?).map { $0.domain == NSURLErrorDomain && $0.code == NSURLErrorCancelled } ?? false
         let outcome = PhotoBackupOutcome.interpret(
             statusCode: response?.statusCode, photoIdHeader: response?.value(forHTTPHeaderField: PhotoBackupHeader.photoId),
             bodyText: String(data: body, encoding: .utf8), errorDescription: error?.localizedDescription,
-            isConnectivityFailure: error.map(RecordingLibrary.isConnectivityFailure) ?? false)
+            isConnectivityFailure: error.map(RecordingLibrary.isConnectivityFailure) ?? false, isCancelled: isCancelled)
         lock.lock()
         defer { lock.unlock() }
         guard let finishHandler else {

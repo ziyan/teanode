@@ -149,6 +149,15 @@ public protocol PhotoBackupServerLookup: Sendable {
 /// data or a personal hotspot.
 public protocol PhotoBackupNetwork: Sendable {
     func isExpensive() async -> Bool
+    /// Whether the phone can reach the network at all, and whether it costs.
+    func state() async -> PhotoBackupNetworkState
+}
+
+extension PhotoBackupNetwork {
+    /// For a network that only knows whether it costs: it is taken to be reachable.
+    public func state() async -> PhotoBackupNetworkState {
+        PhotoBackupNetworkState(isSatisfied: true, isExpensive: await isExpensive())
+    }
 }
 
 // MARK: How much is in flight
@@ -191,6 +200,10 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     case refused(failure: PhotoBackupFailure)
     /// It did not work this time; the file is sent again by a later pass.
     case retryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool)
+    /// The task was cancelled by the app (backup turned off, a setting changed,
+    /// a sign-in refused): not an error and not counted, and the file is still
+    /// to send, as the index has it.
+    case cancelled
 
     /// What the server says when the device password is right but was made
     /// without access to photos: the person signs in again for a new one.
@@ -202,10 +215,15 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     /// password does not grant photos, mean signing in again: any other 403
     /// (photos are not available on this server, the account has no photo
     /// library, uploads need HTTPS) is the server's reason to show, and the
-    /// file is sent again later.
+    /// file is sent again later. A 404, 409 or 410 is not the file's fault
+    /// either (the upload was lost on the way, or the photo is being made): it
+    /// is started again. Only a 400, 413, 415 or 422, and any other 4xx, is
+    /// the server refusing the file.
     public static func interpret(
-        statusCode: Int?, photoIdHeader: String?, bodyText: String?, errorDescription: String?, isConnectivityFailure: Bool
+        statusCode: Int?, photoIdHeader: String?, bodyText: String?, errorDescription: String?, isConnectivityFailure: Bool,
+        isCancelled: Bool = false
     ) -> PhotoBackupOutcome {
+        if isCancelled { return .cancelled }
         if let errorDescription {
             return .retryLater(failure: .systemDescription(errorDescription), isConnectivityFailure: isConnectivityFailure)
         }
@@ -222,7 +240,7 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
         case 403:
             if reason?.lowercased().contains(passwordWithoutPhotosReason) == true { return .signInNeeded }
             return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
-        case 408, 425, 429, 500...599:
+        case 404, 408, 409, 410, 425, 429, 500...599:
             return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
         case 400...499:
             return .refused(failure: .fileRefused(serverReason: reason))
@@ -448,9 +466,15 @@ public actor PhotoBackupCoordinator {
     private struct Outstanding {
         let sizeBytes: Int64
         let filename: String
+        /// The exported file the upload reads, which tells an upload from a
+        /// later one of the same file.
+        let fileName: String
     }
 
     private static let findPhotosBatchSize = 500
+    /// After this many uploads in a row that the server failed on (not the
+    /// network), nothing more is queued and the pass ends waiting.
+    static let serverFailureLimit = 3
 
     private let index: PhotoBackupIndex
     private let library: any PhotoBackupLibrary
@@ -462,6 +486,7 @@ public actor PhotoBackupCoordinator {
     private let accountKey: String
     private let credential: PhotoBackupCredential
     private let budget: PhotoBackupBudget
+    private let idleTimeoutSeconds: TimeInterval
     private let now: @Sendable () -> Date
     private let fileManager: FileManager
 
@@ -477,12 +502,22 @@ public actor PhotoBackupCoordinator {
     private var refusedFileCount = 0
     private var leftForLaterFileCount = 0
     private var currentFilename: String?
+    /// Uploads finished (any way) since the coordinator was made, which tells
+    /// a wait that ended because one finished from one that ran out of time.
+    private var completionCount = 0
+    /// Uploads in a row the server answered with a failure; any other answer
+    /// starts the count again.
+    private var consecutiveServerFailureCount = 0
+    /// The size each file had when it was exported in this pass, so that one
+    /// held back for want of room is not exported again to find out.
+    private var exportedSizes: [String: Int64] = [:]
     private var statusHandler: (@Sendable (PhotoBackupStatus) -> Void)?
 
     public init(
         index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, lookup: (any PhotoBackupServerLookup)?,
         network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String, credential: PhotoBackupCredential,
-        budget: PhotoBackupBudget = .standard, now: @escaping @Sendable () -> Date = { Date() }, fileManager: FileManager = .default
+        budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, now: @escaping @Sendable () -> Date = { Date() },
+        fileManager: FileManager = .default
     ) {
         self.index = index
         self.library = library
@@ -494,6 +529,7 @@ public actor PhotoBackupCoordinator {
         self.accountKey = accountKey
         self.credential = credential
         self.budget = budget
+        self.idleTimeoutSeconds = idleTimeoutSeconds
         self.now = now
         self.fileManager = fileManager
     }
@@ -539,6 +575,8 @@ public actor PhotoBackupCoordinator {
         uploadedFileCount = 0
         refusedFileCount = 0
         leftForLaterFileCount = 0
+        consecutiveServerFailureCount = 0
+        exportedSizes = [:]
         result = await performPass()
         result.uploadedFileCount = uploadedFileCount
         result.refusedFileCount = refusedFileCount
@@ -571,7 +609,7 @@ public actor PhotoBackupCoordinator {
         outstanding.removeAll()
         let queuedJobs = await transfer.queuedJobs()
         for job in queuedJobs {
-            outstanding[job.key] = Outstanding(sizeBytes: job.sizeBytes, filename: job.filename)
+            outstanding[job.key] = Outstanding(sizeBytes: job.sizeBytes, filename: job.filename, fileName: job.fileName)
         }
         removeLeftoverFiles(keeping: Set(queuedJobs.map(\.fileName)))
 
@@ -590,6 +628,9 @@ public actor PhotoBackupCoordinator {
         }
         await index.setLibraryItemCount(totalCount)
         await askServerWhichPhotosItHas(items)
+        // Asked once: the network does not change between two files in a way
+        // that matters, and each question costs a look at the path.
+        let networkState = await network.state()
 
         let uploads = await index.plan(items: items, inFlight: Set(outstanding.keys))
         plannedFileCount = uploads.count
@@ -601,17 +642,35 @@ public actor PhotoBackupCoordinator {
         await index.markPending(uploads)
         if let newToken { await index.setChangeToken(newToken) }
         var position = 0
+        var isIdle = false
         while position < uploads.count, !isStopRequested {
             let upload = uploads[position]
+            if consecutiveServerFailureCount >= Self.serverFailureLimit { break }
             if !budget.allowsAnother(outstandingCount: outstanding.count, outstandingBytes: outstandingBytes) {
                 phase = .uploading
                 await publish()
-                await waitForCompletion()
+                if await !waitForCompletion() {
+                    isIdle = true
+                    break
+                }
+                continue
+            }
+            // A file known to be too large for the room left is not exported
+            // to find that out, which for a large video costs minutes.
+            if let sizeBytes = upload.fileSizeBytes ?? exportedSizes[upload.key],
+                !budget.allowsFile(sizeBytes: sizeBytes, outstandingCount: outstanding.count, outstandingBytes: outstandingBytes)
+            {
+                phase = .uploading
+                await publish()
+                if await !waitForCompletion() {
+                    isIdle = true
+                    break
+                }
                 continue
             }
             // A file that has to come down from iCloud uses the network, so on
             // a network that costs it waits, unless the person allowed it.
-            if !upload.isLocallyAvailable, !settings.usesMobileData, await network.isExpensive() {
+            if !upload.isLocallyAvailable, !settings.usesMobileData, networkState.isExpensive {
                 result.deferredFileCount += 1
                 leftForLaterFileCount += 1
                 position += 1
@@ -624,7 +683,9 @@ public actor PhotoBackupCoordinator {
             case .queued:
                 position += 1
             case .mustWait:
-                await waitForCompletion()
+                if await !waitForCompletion() {
+                    isIdle = true
+                }
             case .deferred:
                 result.deferredFileCount += 1
                 leftForLaterFileCount += 1
@@ -632,15 +693,27 @@ public actor PhotoBackupCoordinator {
             case .refused:
                 position += 1
             }
+            if isIdle { break }
+        }
+        // What was not queued, because the server kept failing or nothing
+        // finished for a long time, is left for a later pass.
+        if position < uploads.count, !isStopRequested {
+            let leftCount = uploads.count - position
+            result.deferredFileCount += leftCount
+            leftForLaterFileCount += leftCount
         }
 
         currentFilename = nil
-        while !outstanding.isEmpty, !isStopRequested {
+        // Then the pass waits for the session to finish what is queued, but
+        // not for days: when nothing finishes for a while the pass ends and
+        // leaves the uploads to the session, which reports each one when it is
+        // done, with the app closed or not.
+        while !outstanding.isEmpty, !isStopRequested, !isIdle {
             phase = .uploading
             await publish()
-            await waitForCompletion()
+            if await !waitForCompletion() { isIdle = true }
         }
-        if !isStopRequested {
+        if !isStopRequested, !isIdle, position >= uploads.count {
             await index.finishPass(at: now())
         }
         // A pass that leaves files for later ends waiting for the network, not
@@ -648,6 +721,16 @@ public actor PhotoBackupCoordinator {
         // everything is backed up.
         if await index.summary().isSignInNeeded {
             phase = .needsSignIn
+        } else if isIdle, !outstanding.isEmpty {
+            // Uploads are still with the session. If the network does not let
+            // them run (no network, or mobile data that is not allowed) say so.
+            let current = await network.state()
+            if !current.isSatisfied || (current.isExpensive && !settings.usesMobileData) {
+                leftForLaterFileCount += outstanding.count
+                phase = .waitingForNetwork
+            } else {
+                phase = leftForLaterFileCount > 0 ? .waitingForNetwork : .uploading
+            }
         } else {
             phase = leftForLaterFileCount > 0 ? .waitingForNetwork : .idle
         }
@@ -725,7 +808,11 @@ public actor PhotoBackupCoordinator {
         do {
             exported = try await library.export(
                 upload, to: outgoingDirectory, mayUseExpensiveNetwork: settings.usesMobileData, includesHidden: settings.includesHidden)
-        } catch PhotoBackupLibraryError.unavailable {
+        } catch PhotoBackupLibraryError.unavailable(let failure) {
+            // Shown, so that a full disk or a locked phone is not a silence.
+            // A file that waits for a network that is allowed to cost nothing
+            // is the usual wait, not a problem.
+            if failure != .fileIsInICloudOnMobileData { await index.setError(failure: failure) }
             return .deferred
         } catch PhotoBackupLibraryError.failed(let failure) {
             await index.markRefused(localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role, failure: failure)
@@ -734,8 +821,10 @@ public actor PhotoBackupCoordinator {
             await index.setError(failure: failure)
             return .refused
         } catch {
+            await index.setError(failure: Self.failure(of: error))
             return .deferred
         }
+        exportedSizes[upload.key] = exported.sizeBytes
         if isStopRequested {
             removeTemporaryFile(named: exported.fileName)
             return .deferred
@@ -749,7 +838,7 @@ public actor PhotoBackupCoordinator {
             filename: upload.filename, assetModificationDate: upload.assetModificationDate, fileName: exported.fileName,
             sizeBytes: exported.sizeBytes)
         let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: settings.usesMobileData)
-        outstanding[job.key] = Outstanding(sizeBytes: exported.sizeBytes, filename: upload.filename)
+        outstanding[job.key] = Outstanding(sizeBytes: exported.sizeBytes, filename: upload.filename, fileName: exported.fileName)
         do {
             try await transfer.start(request: request, job: job, fileURL: outgoingDirectory.appendingPathComponent(exported.fileName))
         } catch {
@@ -764,10 +853,16 @@ public actor PhotoBackupCoordinator {
     /// The session reports a finished upload. It may arrive while no pass runs,
     /// when the app was started to hear of it.
     public func finished(_ job: PhotoBackupJob, outcome: PhotoBackupOutcome) async {
-        outstanding[job.key] = nil
+        // Only the entry of this upload: a cancelled task reports late, and by
+        // then the same file may have been queued again under the same key.
+        if outstanding[job.key]?.fileName == job.fileName { outstanding[job.key] = nil }
         removeTemporaryFile(named: job.fileName)
+        completionCount += 1
         switch outcome {
+        case .cancelled:
+            break
         case .uploaded(let serverPhotoId):
+            consecutiveServerFailureCount = 0
             await index.markUploaded(
                 localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, serverPhotoId: serverPhotoId,
                 assetModificationDate: job.assetModificationDate)
@@ -779,11 +874,13 @@ public actor PhotoBackupCoordinator {
             await transfer.cancelAll()
             outstanding.removeAll()
         case .refused(let failure):
+            consecutiveServerFailureCount = 0
             await index.markRefused(localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, failure: failure)
             refusedFileCount += 1
             finishedFileCount += 1
             await index.setError(failure: failure)
         case .retryLater(let failure, let isConnectivityFailure):
+            if !isConnectivityFailure { consecutiveServerFailureCount += 1 }
             if let failure, !isConnectivityFailure { await index.setError(failure: failure) }
             // The file is still to send and nothing in this pass sends it
             // again: it is counted, so that the pass ends waiting for the
@@ -792,6 +889,9 @@ public actor PhotoBackupCoordinator {
             leftForLaterFileCount += 1
             if !isRunning { phase = .waitingForNetwork }
         }
+        // With no pass running nobody writes the index afterwards, and the app
+        // may be suspended at once: what this upload came to is written now.
+        if !isRunning { await index.flush() }
         resumeWaiters()
         await publish()
     }
@@ -803,12 +903,23 @@ public actor PhotoBackupCoordinator {
     }
 
     /// Suspends until an upload finishes or the pass is stopped; at once if
-    /// nothing is outstanding, as nothing would wake it.
-    private func waitForCompletion() async {
-        if isStopRequested || outstanding.isEmpty { return }
+    /// nothing is outstanding, as nothing would wake it. Returns false when
+    /// nothing finished for `idleTimeoutSeconds`: the uploads are waiting for
+    /// something (the network, the server) and the pass should not.
+    private func waitForCompletion() async -> Bool {
+        if isStopRequested || outstanding.isEmpty { return true }
+        let completionCountBefore = completionCount
+        let seconds = idleTimeoutSeconds
+        let timer = Task {
+            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self.resumeWaiters()
+        }
         await withCheckedContinuation { continuation in
             waiters.append(continuation)
         }
+        timer.cancel()
+        return isStopRequested || completionCount != completionCountBefore
     }
 
     private func resumeWaiters() {

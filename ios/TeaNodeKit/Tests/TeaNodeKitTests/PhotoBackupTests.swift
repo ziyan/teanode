@@ -27,7 +27,8 @@ private final class ManualClock: @unchecked Sendable {
 
 private func makeItem(
     _ localIdentifier: String, cloudIdentifier: String? = nil, secondsSince2026 seconds: Double? = 0, modifiedSecondsSince2026: Double? = nil,
-    kind: PhotoBackupMediaKind = .picture, location: PhotoBackupLocation? = nil, roles: [PhotoBackupFileRole] = [.original]
+    kind: PhotoBackupMediaKind = .picture, location: PhotoBackupLocation? = nil, roles: [PhotoBackupFileRole] = [.original],
+    sizeBytes: Int64? = nil
 ) -> PhotoBackupItem {
     let start = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01T00:00:00Z
     return PhotoBackupItem(
@@ -37,7 +38,7 @@ private func makeItem(
         resources: roles.map {
             PhotoBackupResource(
                 role: $0, originalFilename: "\(localIdentifier)-\($0.rawValue).heic", contentType: $0 == .liveVideo ? "video/quicktime" : "image/heic",
-                isLocallyAvailable: true)
+                isLocallyAvailable: true, fileSizeBytes: sizeBytes)
         })
 }
 
@@ -110,6 +111,13 @@ final class PhotoBackupPlannerTests: XCTestCase {
         XCTAssertEqual(PhotoBackupPlanner.headerSafeFilename("holiday 写真.jpg"), "holiday __.jpg")
         XCTAssertEqual(PhotoBackupPlanner.headerSafeFilename("a/b\\c\r\nd"), "a_b_c__d")
         XCTAssertEqual(PhotoBackupPlanner.headerSafeFilename("   "), "")
+    }
+
+    func testTheSizeTheLibraryReportsIsCarriedToTheUpload() throws {
+        let upload = try XCTUnwrap(PhotoBackupPlanner.plan(items: [makeItem("a", sizeBytes: 4_000_000_000)], records: [:]).first)
+        XCTAssertEqual(upload.fileSizeBytes, 4_000_000_000)
+        let unknown = try XCTUnwrap(PhotoBackupPlanner.plan(items: [makeItem("b")], records: [:]).first)
+        XCTAssertNil(unknown.fileSizeBytes)
     }
 
     func testAnImpossibleCoordinateIsNotSent() throws {
@@ -386,10 +394,75 @@ final class PhotoBackupIndexTests: XCTestCase {
         var summary = await index.summary()
         XCTAssertTrue(plan.isEmpty)
         XCTAssertEqual(summary.refusedFileCount, 1)
+        var pending = await index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending, [])
         await index.clearRefusals()
         plan = await index.plan(items: items)
         summary = await index.summary()
+        pending = await index.pendingLocalIdentifiers()
         XCTAssertEqual(plan.map(\.key), ["a|original"])
+        XCTAssertEqual(pending, ["a"], "a cleared file is still to send, so a pass reads the item again")
+        XCTAssertEqual(summary.refusedFileCount, 0)
+        let record = await index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles["original"], PhotoBackupRoleRecord())
+    }
+
+    func testRefusalsOfAFileOnTheServerAreResetToo() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        await index.markUploaded(localIdentifier: "a", clientPhotoId: "local:a", role: .original, serverPhotoId: "p1", assetModificationDate: nil)
+        for _ in 0..<PhotoBackupPlanner.maximumRefusalCount {
+            await index.markRefused(localIdentifier: "a", clientPhotoId: "local:a", role: .edited, failure: .fileRefused(serverReason: nil))
+        }
+        await index.clearRefusals()
+        let record = await index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles["original"]?.isOnServer, true)
+        XCTAssertEqual(record?.roles["edited"]?.refusalCount, 0)
+        let plan = await index.plan(items: [makeItem("a", roles: [.original, .edited])])
+        XCTAssertEqual(plan.map(\.key), ["a|edited"])
+    }
+
+    func testTheSummaryCountsFollowEveryWriteAndMatchAFreshCount() async throws {
+        let directory = try temporaryDirectory(self)
+        let index = try PhotoBackupIndex(directory: directory)
+        await index.adopt(accountKey: "photos.example.com|robin")
+        for number in 0..<20 {
+            await index.markUploaded(localIdentifier: "up\(number)", clientPhotoId: "local:up\(number)", role: .original, serverPhotoId: "p", assetModificationDate: nil)
+        }
+        // An edit going up does not count a second item; an item known only by its edit does not count at all.
+        await index.markUploaded(localIdentifier: "up0", clientPhotoId: "local:up0", role: .edited, serverPhotoId: "p", assetModificationDate: nil)
+        await index.markUploaded(localIdentifier: "editOnly", clientPhotoId: "local:editOnly", role: .edited, serverPhotoId: "p", assetModificationDate: nil)
+        for _ in 0..<PhotoBackupPlanner.maximumRefusalCount {
+            await index.markRefused(localIdentifier: "refused", clientPhotoId: "local:refused", role: .original, failure: .fileRefused(serverReason: nil))
+            await index.markRefused(localIdentifier: "up1", clientPhotoId: "local:up1", role: .liveVideo, failure: .fileRefused(serverReason: nil))
+        }
+        await index.markPending([
+            PhotoBackupUpload(
+                localIdentifier: "up2", role: .edited, clientPhotoId: "local:up2", filename: "x", contentType: "image/heic", isLocallyAvailable: true,
+                fileSizeBytes: nil, assetModificationDate: nil, headers: [:])
+        ])
+        var summary = await index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 20)
+        XCTAssertEqual(summary.refusedFileCount, 2)
+        await index.forgetPending(of: ["refused", "up2"])
+        summary = await index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 20)
+        XCTAssertEqual(summary.refusedFileCount, 1, "a refused file of an item that left the library is forgotten with it")
+        await index.clearRefusals()
+        summary = await index.summary()
+        XCTAssertEqual(summary.refusedFileCount, 0)
+        await index.markServerHas([PhotoBackupServerPhoto(id: "s", clientPhotoId: "local:found")], for: [makeItem("found")])
+        summary = await index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 21)
+
+        await index.flush()
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let counted = await reopened.summary()
+        XCTAssertEqual(counted.backedUpItemCount, summary.backedUpItemCount, "the running count is what a count of every record says")
+        XCTAssertEqual(counted.refusedFileCount, summary.refusedFileCount)
+
+        await index.forget(accountKey: "photos.example.com|robin")
+        summary = await index.summary()
+        XCTAssertEqual(summary.backedUpItemCount, 0)
         XCTAssertEqual(summary.refusedFileCount, 0)
     }
 
@@ -402,6 +475,21 @@ final class PhotoBackupIndexTests: XCTestCase {
         summary = await index.summary()
         XCTAssertFalse(summary.isSignInNeeded)
         XCTAssertNil(summary.lastFailure)
+    }
+
+    func testAnotherProblemRecordedWhileSignInIsNeededLeavesItSet() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        await index.setError(failure: .signInRefused, isSignInNeeded: true)
+        await index.setError(failure: .systemDescription("cancelled"))
+        var summary = await index.summary()
+        XCTAssertTrue(summary.isSignInNeeded, "only an explicit value changes the flag")
+        XCTAssertEqual(summary.lastFailure, .systemDescription("cancelled"))
+        await index.setError(failure: nil)
+        summary = await index.summary()
+        XCTAssertTrue(summary.isSignInNeeded)
+        await index.setError(failure: nil, isSignInNeeded: false)
+        summary = await index.summary()
+        XCTAssertFalse(summary.isSignInNeeded)
     }
 }
 
@@ -449,12 +537,32 @@ final class PhotoBackupServerTests: XCTestCase {
         XCTAssertEqual(
             PhotoBackupOutcome.interpret(statusCode: 415, photoIdHeader: nil, bodyText: "", errorDescription: nil, isConnectivityFailure: false),
             .refused(failure: .fileRefused(serverReason: nil)))
-        for status in [408, 429, 500, 502, 503] {
+        for status in [400, 413, 415, 422] {
+            guard case .refused = PhotoBackupOutcome.interpret(
+                statusCode: status, photoIdHeader: nil, bodyText: "no", errorDescription: nil, isConnectivityFailure: false)
+            else { return XCTFail("\(status) is the server refusing the file") }
+        }
+        for status in [404, 408, 409, 410, 425, 429, 500, 502, 503] {
             guard case .retryLater(_, let isConnectivityFailure) = PhotoBackupOutcome.interpret(
                 statusCode: status, photoIdHeader: nil, bodyText: nil, errorDescription: nil, isConnectivityFailure: false)
             else { return XCTFail("\(status) is the server's trouble, not the file's") }
             XCTAssertFalse(isConnectivityFailure)
         }
+    }
+
+    func testALostOrConflictingUploadIsStartedAgainNotRefused() {
+        for status in [404, 409, 410] {
+            XCTAssertEqual(
+                PhotoBackupOutcome.interpret(statusCode: status, photoIdHeader: nil, bodyText: "gone\n", errorDescription: nil, isConnectivityFailure: false),
+                .retryLater(failure: .serverReason("gone"), isConnectivityFailure: false), "\(status)")
+        }
+    }
+
+    func testACancelledTaskIsNeitherAnErrorNorACount() {
+        XCTAssertEqual(
+            PhotoBackupOutcome.interpret(
+                statusCode: nil, photoIdHeader: nil, bodyText: nil, errorDescription: "cancelled", isConnectivityFailure: false, isCancelled: true),
+            .cancelled)
     }
 
     func testATransportErrorIsRetriedAndSaysWhetherTheNetworkWasTheCause() {
@@ -578,6 +686,7 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private var allItems: [PhotoBackupItem]
     private var exportedBytes: [String: Int64] = [:]
     private var unavailableKeys: Set<String> = []
+    private var unavailableFailures: [String: PhotoBackupFailure] = [:]
     private var failedKeys: Set<String> = []
     private var accessLevel = PhotoBackupAccess.full
     private var tokenIsExpired = false
@@ -591,10 +700,21 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
 
     /// The Hidden album setting each export was asked with.
     var exportsIncludedHidden: [Bool] { lock.withLock { exportedIncludesHidden } }
+    /// How many files were exported.
+    var exportCount: Int { lock.withLock { exportedIncludesHidden.count } }
 
     func set(access: PhotoBackupAccess) { lock.withLock { accessLevel = access } }
     func set(bytes: Int64, for key: String) { lock.withLock { exportedBytes[key] = bytes } }
-    func set(unavailable key: String, _ isUnavailable: Bool) { lock.withLock { if isUnavailable { unavailableKeys.insert(key) } else { unavailableKeys.remove(key) } } }
+    func set(unavailable key: String, _ isUnavailable: Bool, failure: PhotoBackupFailure = .systemDescription("in iCloud")) {
+        lock.withLock {
+            if isUnavailable {
+                unavailableKeys.insert(key)
+                unavailableFailures[key] = failure
+            } else {
+                unavailableKeys.remove(key)
+            }
+        }
+    }
     func set(failed key: String) { lock.withLock { _ = failedKeys.insert(key) } }
     func set(tokenIsExpired: Bool) { lock.withLock { self.tokenIsExpired = tokenIsExpired } }
     func set(changes: [PhotoBackupItem]) { lock.withLock { changedItems = changes } }
@@ -631,7 +751,9 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
             exportedIncludesHidden.append(includesHidden)
             return (exportedBytes[upload.key] ?? 10, unavailableKeys.contains(upload.key), failedKeys.contains(upload.key))
         }
-        if isUnavailable { throw PhotoBackupLibraryError.unavailable(.systemDescription("in iCloud")) }
+        if isUnavailable {
+            throw PhotoBackupLibraryError.unavailable(lock.withLock { unavailableFailures[upload.key] } ?? .systemDescription("in iCloud"))
+        }
         if isFailed { throw PhotoBackupLibraryError.failed(.systemDescription("cannot be read")) }
         let fileName = UUID().uuidString
         try Data(count: Int(min(bytes, 1000))).write(to: directory.appendingPathComponent(fileName))
@@ -669,9 +791,25 @@ private final class FakeTransfer: PhotoBackupTransfer, @unchecked Sendable {
     func cancelAll() async { lock.withLock { wasCancelled = true; heldJobs.removeAll() } }
 }
 
+private final class NetworkQuestions: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func add() { lock.withLock { count += 1 } }
+    var total: Int { lock.withLock { count } }
+}
+
 private struct FakeNetwork: PhotoBackupNetwork {
     var isExpensiveNetwork = false
-    func isExpensive() async -> Bool { isExpensiveNetwork }
+    var isReachable = true
+    let questions = NetworkQuestions()
+    func isExpensive() async -> Bool {
+        questions.add()
+        return isExpensiveNetwork
+    }
+    func state() async -> PhotoBackupNetworkState {
+        questions.add()
+        return PhotoBackupNetworkState(isSatisfied: isReachable, isExpensive: isExpensiveNetwork)
+    }
 }
 
 private final class FakeLookup: PhotoBackupServerLookup, @unchecked Sendable {
@@ -702,7 +840,7 @@ private struct Rig {
 
 private func makeRig(
     _ test: XCTestCase, items: [PhotoBackupItem], lookup: FakeLookup? = nil, network: FakeNetwork = FakeNetwork(), budget: PhotoBackupBudget = .standard,
-    index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil
+    index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -714,7 +852,7 @@ private func makeRig(
         index: index, library: library, transfer: transfer, lookup: lookup, network: network, outgoingDirectory: outgoing,
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
-        budget: budget, now: { Date(timeIntervalSince1970: 1_800_000_000) })
+        budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, now: { Date(timeIntervalSince1970: 1_800_000_000) })
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, coordinator: coordinator)
 }
 
@@ -1225,6 +1363,233 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         XCTAssertEqual(statuses.last?.backedUpItemCount, 2)
         XCTAssertEqual(statuses.last?.finishedFileCount, 2)
         XCTAssertEqual(statuses.last?.fractionBackedUp, 1)
+    }
+
+    func testAFinishedUploadIsWrittenAtOnceWhenNoPassRuns() async throws {
+        let directory = try temporaryDirectory(self)
+        let clock = ManualClock()
+        let index = try PhotoBackupIndex(directory: directory, now: { clock.now })
+        let rig = try makeRig(self, items: [], index: index, directory: directory)
+        let job = PhotoBackupJob(
+            accountKey: "photos.example.com|robin", localIdentifier: "a", role: .original, clientPhotoId: "cloud-a", filename: "a.heic",
+            assetModificationDate: nil, fileName: "temporary", sizeBytes: 3)
+        await rig.coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p1"))
+        // The app may be suspended now, before the timer of the index would write.
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let record = await reopened.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.serverPhotoId, "p1")
+    }
+
+    func testACancelledUploadChangesNothingAndLeavesTheSignInFlagAlone() async throws {
+        let rig = try makeRig(self, items: [makeItem("a"), makeItem("b", secondsSince2026: 1)], budget: PhotoBackupBudget(maximumUploadCount: 1, maximumOutstandingBytes: 1_000))
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("the first upload queued") { rig.transfer.startedJobs.count == 1 }
+        let queued = try XCTUnwrap(rig.transfer.startedJobs.first)
+        await rig.index.setError(failure: .signInRefused, isSignInNeeded: true)
+        // The same file queued again by a later pass is not undone by the late report of the first.
+        let earlier = PhotoBackupJob(
+            accountKey: queued.accountKey, localIdentifier: queued.localIdentifier, role: queued.role, clientPhotoId: queued.clientPhotoId,
+            filename: queued.filename, assetModificationDate: nil, fileName: "an-earlier-export", sizeBytes: 10)
+        await coordinator.finished(earlier, outcome: .cancelled)
+        var status = await coordinator.status()
+        XCTAssertEqual(status.queuedFileCount, 1)
+        XCTAssertEqual(status.leftForLaterFileCount, 0, "a cancelled upload is not counted")
+        let summary = await rig.index.summary()
+        XCTAssertTrue(summary.isSignInNeeded)
+        XCTAssertEqual(summary.refusedFileCount, 0)
+        await coordinator.stop()
+        _ = await pass.value
+        rig.transfer.release(queued)
+        await coordinator.finished(queued, outcome: .cancelled)
+        status = await coordinator.status()
+        XCTAssertEqual(status.queuedFileCount, 0)
+        XCTAssertEqual(status.leftForLaterFileCount, 0)
+        let after = await rig.index.summary()
+        XCTAssertNil(after.lastFailure.flatMap { $0 == .systemDescription("cancelled") ? $0 : nil })
+        let pending = await rig.index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending.count, 2, "what was cancelled is still to send")
+    }
+
+    func testAPassThatHearsNothingForAWhileEndsAndLeavesTheUploadsToTheSession() async throws {
+        let rig = try makeRig(self, items: [makeItem("a", secondsSince2026: 1), makeItem("b", secondsSince2026: 2)], idleTimeoutSeconds: 0.15)
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertFalse(result.wasStopped)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 2, "everything was queued")
+        let status = await rig.coordinator.status()
+        XCTAssertEqual(status.queuedFileCount, 2, "the uploads stay with the session")
+        XCTAssertEqual(status.phase, .uploading)
+        let isRunning = await rig.coordinator.isPassRunning
+        XCTAssertFalse(isRunning)
+        let summary = await rig.index.summary()
+        XCTAssertNil(summary.lastPassFinishedAt, "a pass that left uploads running did not finish")
+        // They report whenever the session finishes them.
+        for job in rig.transfer.startedJobs { await rig.coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p")) }
+        let done = await rig.index.summary()
+        XCTAssertEqual(done.backedUpItemCount, 2)
+    }
+
+    func testAnIdlePassSaysWaitingForTheNetworkWhenTheNetworkDoesNotLetUploadsRun() async throws {
+        for network in [FakeNetwork(isExpensiveNetwork: false, isReachable: false), FakeNetwork(isExpensiveNetwork: true, isReachable: true)] {
+            let rig = try makeRig(self, items: [makeItem("a")], network: network, idleTimeoutSeconds: 0.1)
+            let result = await rig.coordinator.runPass(settings: settings)
+            XCTAssertEqual(result.leftForLaterFileCount, 1, "the queued upload that cannot run is left for later")
+            let status = await rig.coordinator.status()
+            XCTAssertEqual(status.phase, .waitingForNetwork)
+            XCTAssertEqual(status.leftForLaterFileCount, 1)
+            XCTAssertEqual(status.queuedFileCount, 1)
+        }
+        // Mobile data allowed: the uploads are not waiting for the network.
+        let rig = try makeRig(self, items: [makeItem("a")], network: FakeNetwork(isExpensiveNetwork: true), idleTimeoutSeconds: 0.1)
+        _ = await rig.coordinator.runPass(settings: PhotoBackupCoordinator.Settings(usesMobileData: true, includesHidden: false))
+        let status = await rig.coordinator.status()
+        XCTAssertEqual(status.phase, .uploading)
+    }
+
+    func testAPassWaitingForRoomEndsWhenNothingFinishesAndLeavesTheRestPending() async throws {
+        let rig = try makeRig(
+            self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
+            budget: PhotoBackupBudget(maximumUploadCount: 2, maximumOutstandingBytes: 1_000), idleTimeoutSeconds: 0.15)
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 2)
+        XCTAssertEqual(result.deferredFileCount, 4)
+        XCTAssertEqual(result.leftForLaterFileCount, 4)
+        let pending = await rig.index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending.count, 6)
+        let status = await rig.coordinator.status()
+        XCTAssertEqual(status.phase, .waitingForNetwork)
+    }
+
+    func testAfterAFewServerFailuresInARowNothingMoreIsQueued() async throws {
+        let rig = try makeRig(
+            self, items: (0..<10).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
+            budget: PhotoBackupBudget(maximumUploadCount: 1, maximumOutstandingBytes: 1_000))
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .retryLater(failure: .serverReason("photo storage is unavailable"), isConnectivityFailure: false)) }
+        }
+        let result = await coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.transfer.startedJobs.count, PhotoBackupCoordinator.serverFailureLimit)
+        XCTAssertEqual(result.leftForLaterFileCount, 10)
+        XCTAssertEqual(result.uploadedFileCount, 0)
+        let status = await coordinator.status()
+        XCTAssertEqual(status.phase, .waitingForNetwork)
+        XCTAssertEqual(status.lastFailure, .serverReason("photo storage is unavailable"))
+        let pending = await rig.index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending.count, 10)
+    }
+
+    func testAnUploadThatWorksStartsTheServerFailureCountAgain() async throws {
+        let rig = try makeRig(
+            self, items: (0..<8).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
+            budget: PhotoBackupBudget(maximumUploadCount: 1, maximumOutstandingBytes: 1_000))
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            // Two failures, then one that works, over and over: never three in a row.
+            let number = Int(job.localIdentifier.dropFirst(4)) ?? 0
+            let outcome: PhotoBackupOutcome =
+                number % 3 == 2 ? .uploaded(serverPhotoId: "p") : .retryLater(failure: .serverReason("busy"), isConnectivityFailure: false)
+            Task { await coordinator.finished(job, outcome: outcome) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 8)
+    }
+
+    func testAConnectionFailureDoesNotCountAsTheServerFailing() async throws {
+        let rig = try makeRig(
+            self, items: (0..<6).map { makeItem("item\($0)", secondsSince2026: Double($0)) },
+            budget: PhotoBackupBudget(maximumUploadCount: 1, maximumOutstandingBytes: 1_000))
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .retryLater(failure: .systemDescription("offline"), isConnectivityFailure: true)) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 6)
+    }
+
+    func testTheNetworkIsAskedOnceInAPassHoweverManyFilesWaitOnIt() async throws {
+        let cloudOnly = (0..<5).map { number in
+            PhotoBackupItem(
+                localIdentifier: "cloud\(number)", creationDate: Date(timeIntervalSince1970: Double(number)), mediaKind: .picture,
+                resources: [PhotoBackupResource(role: .original, originalFilename: "IMG.HEIC", contentType: "image/heic", isLocallyAvailable: false)])
+        }
+        let network = FakeNetwork(isExpensiveNetwork: true)
+        let rig = try makeRig(self, items: cloudOnly, network: network)
+        let result = await rig.coordinator.runPass(settings: settings)
+        XCTAssertEqual(result.deferredFileCount, 5)
+        XCTAssertEqual(network.questions.total, 1)
+    }
+
+    func testAFileKnownToBeTooLargeForTheRoomLeftIsNotExportedToFindOut() async throws {
+        let rig = try makeRig(
+            self, items: [makeItem("a", secondsSince2026: 1, sizeBytes: 80), makeItem("b", secondsSince2026: 2, sizeBytes: 80)],
+            budget: PhotoBackupBudget(maximumUploadCount: 4, maximumOutstandingBytes: 100))
+        rig.library.set(bytes: 80, for: "a|original")
+        rig.library.set(bytes: 80, for: "b|original")
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("the first upload queued") { rig.transfer.startedJobs.count == 1 }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(rig.library.exportCount, 1, "the second file is not exported while there is no room for it")
+        let first = try XCTUnwrap(rig.transfer.startedJobs.first)
+        rig.transfer.release(first)
+        await coordinator.finished(first, outcome: .uploaded(serverPhotoId: "p"))
+        try await waitUntil("the second upload queued") { rig.transfer.startedJobs.count == 2 }
+        let second = try XCTUnwrap(rig.transfer.startedJobs.last)
+        rig.transfer.release(second)
+        await coordinator.finished(second, outcome: .uploaded(serverPhotoId: "p"))
+        let result = await pass.value
+        XCTAssertEqual(result.uploadedFileCount, 2)
+        XCTAssertEqual(rig.library.exportCount, 2)
+    }
+
+    func testAFileOfUnknownSizeHeldBackIsExportedOnceNotAtEveryFinish() async throws {
+        let rig = try makeRig(
+            self, items: [makeItem("a", secondsSince2026: 1), makeItem("c", secondsSince2026: 2), makeItem("b", secondsSince2026: 3)],
+            budget: PhotoBackupBudget(maximumUploadCount: 4, maximumOutstandingBytes: 100))
+        rig.library.set(bytes: 60, for: "a|original")
+        rig.library.set(bytes: 30, for: "c|original")
+        rig.library.set(bytes: 60, for: "b|original")
+        let coordinator = rig.coordinator
+        let pass = Task { await coordinator.runPass(settings: settings) }
+        try await waitUntil("two uploads queued and the third exported") { rig.transfer.startedJobs.count == 2 && rig.library.exportCount == 3 }
+        let jobs = rig.transfer.startedJobs
+        let small = try XCTUnwrap(jobs.first { $0.localIdentifier == "c" })
+        rig.transfer.release(small)
+        await coordinator.finished(small, outcome: .uploaded(serverPhotoId: "p"))
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(rig.library.exportCount, 3, "there is still no room for it, and it is not exported again to find out")
+        let large = try XCTUnwrap(jobs.first { $0.localIdentifier == "a" })
+        rig.transfer.release(large)
+        await coordinator.finished(large, outcome: .uploaded(serverPhotoId: "p"))
+        try await waitUntil("the held back file queued") { rig.transfer.startedJobs.count == 3 }
+        XCTAssertEqual(rig.library.exportCount, 4)
+        let last = try XCTUnwrap(rig.transfer.startedJobs.last)
+        rig.transfer.release(last)
+        await coordinator.finished(last, outcome: .uploaded(serverPhotoId: "p"))
+        let result = await pass.value
+        XCTAssertEqual(result.uploadedFileCount, 3)
+    }
+
+    func testAnExportThatFailsForWantOfRoomOrALockedPhoneIsShown() async throws {
+        let rig = try makeRig(self, items: [makeItem("a")])
+        rig.library.set(unavailable: "a|original", true)
+        _ = await rig.coordinator.runPass(settings: settings)
+        let summary = await rig.index.summary()
+        XCTAssertEqual(summary.lastFailure, .systemDescription("in iCloud"))
+    }
+
+    func testAFileWaitingForICloudOnMobileDataIsNotShownAsAProblem() async throws {
+        let rig = try makeRig(self, items: [makeItem("a")])
+        rig.library.set(unavailable: "a|original", true, failure: .fileIsInICloudOnMobileData)
+        _ = await rig.coordinator.runPass(settings: settings)
+        let summary = await rig.index.summary()
+        XCTAssertNil(summary.lastFailure)
+        let status = await rig.coordinator.status()
+        XCTAssertEqual(status.phase, .waitingForNetwork)
     }
 }
 

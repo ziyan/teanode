@@ -69,7 +69,11 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
                 localIdentifiers.formUnion(details.insertedLocalIdentifiers)
                 localIdentifiers.formUnion(details.updatedLocalIdentifiers)
             }
-        } catch let error as PHPhotosError where error.code == .persistentChangeTokenExpired || error.code == .persistentChangeDetailsUnavailable {
+        } catch {
+            // Whatever the library says (the token expired, its details are
+            // gone, or it is a token this library does not know, from another
+            // device or a restored backup), changes since it cannot be read:
+            // the library is listed again, skipping what the index has.
             throw PhotoBackupLibraryError.changeTokenExpired
         }
         let assets = Self.assets(withLocalIdentifiers: Array(localIdentifiers), includesHidden: includesHidden)
@@ -166,9 +170,21 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
             // finds out, and waits on a network that costs.
             resources.append(
                 PhotoBackupResource(
-                    role: role, originalFilename: resource.originalFilename, contentType: contentType(of: resource), isLocallyAvailable: true))
+                    role: role, originalFilename: resource.originalFilename, contentType: contentType(of: resource), isLocallyAvailable: true,
+                    fileSizeBytes: fileSizeBytes(of: resource)))
         }
         return resources
+    }
+
+    /// The size of the file as PhotoKit knows it, where it says: it has no
+    /// public property for it, but the resource answers `fileSize` on the
+    /// versions that do. The size lets a large video wait for room without
+    /// being exported to find out how large it is.
+    private static func fileSizeBytes(of resource: PHAssetResource) -> Int64? {
+        let fileSizeKey = "fileSize"
+        guard resource.responds(to: NSSelectorFromString(fileSizeKey)) else { return nil }
+        guard let size = (resource.value(forKey: fileSizeKey) as? NSNumber)?.int64Value, size > 0 else { return nil }
+        return size
     }
 
     private static func contentType(of resource: PHAssetResource) -> String {
@@ -277,7 +293,11 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
 /// or a personal hotspot.
 struct DeviceNetwork: PhotoBackupNetwork {
     func isExpensive() async -> Bool {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        await state().isExpensive
+    }
+
+    func state() async -> PhotoBackupNetworkState {
+        await withCheckedContinuation { (continuation: CheckedContinuation<PhotoBackupNetworkState, Never>) in
             let reader = PathReader(continuation)
             reader.start()
         }
@@ -285,24 +305,27 @@ struct DeviceNetwork: PhotoBackupNetwork {
 }
 
 /// PathReader takes the first network path NWPathMonitor reports, and gives up
-/// after a second, as no path then means no network to judge.
+/// after a second, as no path then means no network to judge: it is taken to
+/// be reachable and to cost nothing, so that backup tries rather than waits.
 private final class PathReader: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Bool, Never>?
+    private var continuation: CheckedContinuation<PhotoBackupNetworkState, Never>?
     private let monitor = NWPathMonitor()
-    private let queue = DispatchQueue(label: "com.teanode.app.photo-backup.network")
+    private let queue = DispatchQueue(label: PhotoBackupEngine.identifierPrefix + ".photo-backup.network")
 
-    init(_ continuation: CheckedContinuation<Bool, Never>) {
+    init(_ continuation: CheckedContinuation<PhotoBackupNetworkState, Never>) {
         self.continuation = continuation
     }
 
     func start() {
-        monitor.pathUpdateHandler = { [self] path in finish(path.isExpensive) }
+        monitor.pathUpdateHandler = { [self] path in
+            finish(PhotoBackupNetworkState(isSatisfied: path.status == .satisfied, isExpensive: path.isExpensive))
+        }
         monitor.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 1) { [self] in finish(false) }
+        queue.asyncAfter(deadline: .now() + 1) { [self] in finish(PhotoBackupNetworkState(isSatisfied: true, isExpensive: false)) }
     }
 
-    private func finish(_ isExpensive: Bool) {
+    private func finish(_ state: PhotoBackupNetworkState) {
         let waiting = lock.withLock {
             let waiting = continuation
             continuation = nil
@@ -311,6 +334,6 @@ private final class PathReader: @unchecked Sendable {
         guard let waiting else { return }
         monitor.pathUpdateHandler = nil
         monitor.cancel()
-        waiting.resume(returning: isExpensive)
+        waiting.resume(returning: state)
     }
 }

@@ -18,11 +18,16 @@ import UIKit
 final class PhotoBackupEngine {
     static let shared = PhotoBackupEngine()
 
+    /// The app's bundle identifier, which the task identifiers and the queue
+    /// names start with. The identifiers are listed in Info.plist as
+    /// `$(TEANODE_BUNDLE_IDENTIFIER).photo-backup` and `.photo-backup-now`
+    /// (project.yml), so a build under another identifier names the same ones.
+    nonisolated static var identifierPrefix: String { Bundle.main.bundleIdentifier ?? "com.teanode.app" }
     /// A pass overnight, on power and a network.
-    static let processingIdentifier = "com.teanode.app.photo-backup"
+    static let processingIdentifier = identifierPrefix + ".photo-backup"
     /// A pass the person asked for, which the system shows in a Live Activity
     /// and lets run with the app in the background.
-    static let continuedIdentifier = "com.teanode.app.photo-backup-now"
+    static let continuedIdentifier = identifierPrefix + ".photo-backup-now"
 
     // MARK: What the screens read
 
@@ -36,7 +41,14 @@ final class PhotoBackupEngine {
     var doneText: String?
 
     var usesMobileData: Bool {
-        didSet { preferences.usesMobileData = usesMobileData }
+        didSet {
+            preferences.usesMobileData = usesMobileData
+            // Each queued upload was made with the old setting (a request says
+            // whether it may use mobile data), so they are cancelled and a new
+            // pass queues them again under the new one.
+            guard usesMobileData != oldValue else { return }
+            Task { await self.restartPasses() }
+        }
     }
     var includesHidden: Bool {
         didSet {
@@ -50,6 +62,19 @@ final class PhotoBackupEngine {
     var isEnabled: Bool { enabledAccountKey != nil }
     private(set) var enabledAccountKey: String?
 
+    /// The account backup is on for, as the person knows it, such as
+    /// "robin on photos.example.com"; nil when backup is off.
+    var enabledAccountName: String? {
+        enabledAccountKey.map(Self.name(ofAccountKey:))
+    }
+
+    /// An account key is the server, a bar and the lowercase username.
+    nonisolated static func name(ofAccountKey accountKey: String) -> String {
+        let parts = accountKey.split(separator: "|", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return accountKey }
+        return String(localized: "\(parts[1]) on \(parts[0])")
+    }
+
     // MARK: What it keeps
 
     @ObservationIgnored private let preferences = PhotoBackupPreferences()
@@ -58,6 +83,12 @@ final class PhotoBackupEngine {
     @ObservationIgnored private var coordinator: PhotoBackupCoordinator?
     @ObservationIgnored private var coordinatorAccountKey: String?
     @ObservationIgnored private var passTask: Task<Void, Never>?
+    /// Counts the passes started, so that a pass that ends late does not clear
+    /// the task of the one that replaced it.
+    @ObservationIgnored private var passGeneration = 0
+    /// True while backup is being turned off: no pass starts and no finished
+    /// upload is recorded, including the cancelled ones the turning off causes.
+    @ObservationIgnored private var isTurningOff = false
     /// Told of every status while a continued processing task runs, to report
     /// progress to the system.
     @ObservationIgnored private var progressSink: (@MainActor (PhotoBackupStatus) -> Void)?
@@ -70,6 +101,11 @@ final class PhotoBackupEngine {
         usesMobileData = preferences.usesMobileData
         includesHidden = preferences.includesHidden
         enabledAccountKey = preferences.enabledAccountKey
+        // The index is written every thirty seconds at most; going to the
+        // background writes what is left, as the app may be suspended at once.
+        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { PhotoBackupEngine.shared.sceneWentToBackground() }
+        }
     }
 
     // MARK: Where the files are
@@ -92,9 +128,21 @@ final class PhotoBackupEngine {
 
     private func makeIndex() throws -> PhotoBackupIndex {
         if let index { return index }
-        let made = try PhotoBackupIndex(directory: Self.directory())
+        let folder = try Self.directory()
+        let made = try PhotoBackupIndex(directory: folder)
+        // The whole folder stays out of the device backup, the index and the
+        // library's change token with the files being sent: restored on
+        // another phone they would be taken for that phone's own.
+        Self.excludeFromDeviceBackup(folder)
         index = made
         return made
+    }
+
+    private static func excludeFromDeviceBackup(_ url: URL) {
+        var excluded = URLResourceValues()
+        excluded.isExcludedFromBackup = true
+        var excludedURL = url
+        try? excludedURL.setResourceValues(excluded)
     }
 
     // MARK: Launch
@@ -102,14 +150,16 @@ final class PhotoBackupEngine {
     /// Registers the two background tasks. It has to be done before the app has
     /// finished launching, or the system refuses them.
     static func registerBackgroundTasks() {
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: processingIdentifier, using: nil) { task in
+        // On the main queue, where the handler's main actor isolation holds:
+        // with no queue the system calls it on one of its own.
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: processingIdentifier, using: .main) { task in
             nonisolated(unsafe) let task = task
             Task { @MainActor in
                 guard let task = task as? BGProcessingTask else { return task.setTaskCompleted(success: false) }
                 await shared.runOvernight(task)
             }
         }
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: continuedIdentifier, using: nil) { task in
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: continuedIdentifier, using: .main) { task in
             nonisolated(unsafe) let task = task
             Task { @MainActor in
                 guard let task = task as? BGContinuedProcessingTask else { return task.setTaskCompleted(success: false) }
@@ -125,10 +175,27 @@ final class PhotoBackupEngine {
             completion()
             return
         }
+        attachSession()
+        PhotoBackupSession.shared.keep(backgroundCompletion: completion)
+    }
+
+    /// Says to the background session who hears of a finished upload. Done
+    /// wherever a pass can start, the launch of a background task included,
+    /// or an upload that finishes with nobody attached is not recorded.
+    private func attachSession() {
         PhotoBackupSession.shared.attach { job, outcome in
             await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
         }
-        PhotoBackupSession.shared.keep(backgroundCompletion: completion)
+    }
+
+    /// The app has gone to the background: writes the index.
+    func sceneWentToBackground() {
+        guard isEnabled, let index else { return }
+        let assertion = UIApplication.shared.beginBackgroundTask(withName: "Photo backup index")
+        Task {
+            await index.flush()
+            UIApplication.shared.endBackgroundTask(assertion)
+        }
     }
 
     /// The app has come to the foreground, or has started: read the library
@@ -138,9 +205,7 @@ final class PhotoBackupEngine {
             if DemoServer.isRequested { return }
         #endif
         guard isEnabled else { return }
-        PhotoBackupSession.shared.attach { job, outcome in
-            await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
-        }
+        attachSession()
         startWatchingNetwork()
         Task {
             await self.refresh()
@@ -160,7 +225,7 @@ final class PhotoBackupEngine {
             let state = PhotoBackupNetworkState(isSatisfied: path.status == .satisfied, isExpensive: path.isExpensive)
             Task { @MainActor in PhotoBackupEngine.shared.networkChanged(to: state) }
         }
-        monitor.start(queue: DispatchQueue(label: "com.teanode.app.photo-backup.path"))
+        monitor.start(queue: .main)
         networkMonitor = monitor
     }
 
@@ -236,6 +301,11 @@ final class PhotoBackupEngine {
     /// photos only, keeps it in the keychain, and starts the first pass.
     func turnOn(connection: Connection) async {
         guard !isWorking, AppModel.shared.isPhotosOffered else { return }
+        if let enabledAccountName, enabledAccountKey != connection.accountKey {
+            // One account at a time: the person turns the other off first.
+            problemText = String(localized: "Photo backup is already on for \(enabledAccountName). Turn it off for that account first.")
+            return
+        }
         isWorking = true
         defer { isWorking = false }
         problemText = nil
@@ -248,15 +318,16 @@ final class PhotoBackupEngine {
         do {
             let credential = try await connection.createPhotoBackupCredential(named: Self.passwordName())
             try await saveOrRevoke(credential, accountKey: connection.accountKey, connection: connection)
+            // The new password has not been refused: a sign-in flag kept from
+            // before backup was turned off would stop the first pass.
+            try await makeIndex().clearError()
             preferences.enabledAccountKey = connection.accountKey
             enabledAccountKey = connection.accountKey
             credentialName = credential.credentialName
             coordinator = nil
             coordinatorAccountKey = nil
             await refresh()
-            PhotoBackupSession.shared.attach { job, outcome in
-                await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
-            }
+            attachSession()
             startWatchingNetwork()
             startPasses()
         } catch {
@@ -291,10 +362,14 @@ final class PhotoBackupEngine {
     /// The part of turning off that waits for nothing: the pass that is
     /// working is cancelled first, then backup is turned off.
     private func turnOffNow(accountKey: String, connection: Connection?) async {
-        await stopEverything()
-        stopWatchingNetwork()
+        // First of all: a pass that is stopped, and the uploads that are
+        // cancelled, report back, and none of that may start another pass.
+        isTurningOff = true
+        defer { isTurningOff = false }
         preferences.enabledAccountKey = nil
         enabledAccountKey = nil
+        await stopEverything()
+        stopWatchingNetwork()
         credentialName = nil
         accessProblem = nil
         status = PhotoBackupStatus(phase: .off)
@@ -373,6 +448,7 @@ final class PhotoBackupEngine {
         if let working { await Self.wait(for: working, upTo: .seconds(5)) }
         await PhotoBackupSession.shared.cancelAll()
         passTask = nil
+        passGeneration += 1
         coordinator = nil
         coordinatorAccountKey = nil
         if let outgoing = try? Self.outgoingDirectory() { try? FileManager.default.removeItem(at: outgoing) }
@@ -414,14 +490,16 @@ final class PhotoBackupEngine {
     @discardableResult
     func startPasses() -> Task<Void, Never>? {
         if let passTask { return passTask }
-        guard let coordinator = try? makeCoordinator() else { return nil }
+        guard !isTurningOff, let coordinator = try? makeCoordinator() else { return nil }
+        passGeneration += 1
+        let generation = passGeneration
         let task = Task { [weak self] in
             var result: PhotoBackupPassResult
             repeat {
                 guard let self else { return }
                 result = await coordinator.runPass(settings: self.currentSettings)
             } while result.uploadedFileCount > 0 && !result.wasStopped && !result.wasAlreadyRunning && !Task.isCancelled
-            await self?.passesEnded()
+            await self?.passesEnded(generation: generation)
         }
         passTask = task
         return task
@@ -431,14 +509,31 @@ final class PhotoBackupEngine {
         PhotoBackupCoordinator.Settings(usesMobileData: usesMobileData, includesHidden: includesHidden)
     }
 
-    private func passesEnded() async {
-        passTask = nil
+    private func passesEnded(generation: Int) async {
+        if generation == passGeneration { passTask = nil }
         await refresh()
         scheduleOvernightPass()
     }
 
     func stopPasses() {
         Task { await self.coordinator?.stop() }
+    }
+
+    /// A setting the queued uploads were made with has changed: the pass is
+    /// stopped, the session's tasks are cancelled, and a new pass queues the
+    /// files again under the new setting.
+    private func restartPasses() async {
+        guard isEnabled, !isTurningOff else { return }
+        let working = passTask
+        working?.cancel()
+        await coordinator?.stop()
+        if let working { await Self.wait(for: working, upTo: .seconds(5)) }
+        // Not for a backup turned off while this waited.
+        guard isEnabled, !isTurningOff else { return }
+        await PhotoBackupSession.shared.cancelAll()
+        passTask = nil
+        passGeneration += 1
+        startPasses()
     }
 
     /// The coordinator for the account backup is on for, made once.
@@ -450,16 +545,16 @@ final class PhotoBackupEngine {
         else { return nil }
         let outgoing = try Self.outgoingDirectory()
         try FileManager.default.createDirectory(at: outgoing, withIntermediateDirectories: true)
-        var excluded = URLResourceValues()
-        excluded.isExcludedFromBackup = true
-        var outgoingURL = outgoing
-        try? outgoingURL.setResourceValues(excluded)
+        Self.excludeFromDeviceBackup(outgoing)
         let connection = Self.makeConnection(accountKey: accountKey)
         let made = PhotoBackupCoordinator(
             index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, lookup: connection, network: DeviceNetwork(),
             outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential)
         coordinator = made
         coordinatorAccountKey = accountKey
+        // A pass started by a background task launch has not come through the
+        // scene, and the uploads it queues report to whoever is attached.
+        attachSession()
         Task {
             await made.setStatusHandler { newStatus in
                 DispatchQueue.main.async {
@@ -473,14 +568,16 @@ final class PhotoBackupEngine {
     /// An upload finished in the background session, perhaps while the app was
     /// closed. It is recorded, and a pass is started to queue more.
     func sessionFinished(_ job: PhotoBackupJob, outcome: PhotoBackupOutcome) async {
-        guard enabledAccountKey == job.accountKey || preferences.enabledAccountKey == job.accountKey,
+        guard !isTurningOff, enabledAccountKey == job.accountKey || preferences.enabledAccountKey == job.accountKey,
             let coordinator = try? makeCoordinator()
         else {
             PhotoBackupSession.removeTemporaryFile(of: job)
             return
         }
         await coordinator.finished(job, outcome: outcome)
-        startPasses()
+        // A task the app cancelled (backup turned off, a setting changed, a
+        // sign-in refused) is not a reason to start a pass.
+        if outcome != .cancelled { startPasses() }
     }
 
     // MARK: Background tasks

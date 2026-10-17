@@ -14,12 +14,18 @@ struct PhotoBackupView: View {
     @State private var libraryFailureText: String?
     private let engine = PhotoBackupEngine.shared
 
+    /// Backup is on for another account than the one signed in now.
+    private var isOnForOtherAccount: Bool {
+        engine.isEnabled && engine.enabledAccountKey != connection.accountKey
+    }
+
     var body: some View {
         PhotoBackupContent(
             status: engine.status, credentialName: engine.credentialName, accessProblem: engine.accessProblem, isWorking: engine.isWorking,
-            isPermitted: app.isPhotosOffered, library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary() } },
+            isPermitted: app.isPhotosOffered, enabledAccountName: engine.enabledAccountName, isOnForOtherAccount: isOnForOtherAccount,
+            library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary() } },
             isOn: Binding(
-                get: { engine.isEnabled },
+                get: { engine.isEnabled && !isOnForOtherAccount },
                 set: { isOn in
                     if isOn {
                         Task { await engine.turnOn(connection: connection) }
@@ -74,6 +80,12 @@ struct PhotoBackupContent: View {
     /// Whether the person may use Photos on this server (`photos:use`); the
     /// switch is off limits to someone who may not, but can still turn it off.
     let isPermitted: Bool
+    /// The account backup is on for, such as "robin on photos.example.com";
+    /// nil when it is off.
+    let enabledAccountName: String?
+    /// Backup is on, for an account other than the one signed in now: its
+    /// numbers are not shown here, and it is not turned off or on from here.
+    let isOnForOtherAccount: Bool
     let library: PhotoLibrary?
     let libraryFailureText: String?
     let readLibrary: () -> Void
@@ -89,14 +101,16 @@ struct PhotoBackupContent: View {
         Form {
             Section {
                 Toggle("Back up this iPhone", isOn: $isOn)
-                    .disabled(isWorking || (!isPermitted && !isOn))
+                    .disabled(isWorking || isOnForOtherAccount || (!isPermitted && !isOn))
                     .confirmationDialog("Turn off photo backup?", isPresented: $isConfirmingTurnOff, titleVisibility: .visible) {
                         Button("Turn off", role: .destructive, action: turnOff)
                     } message: {
                         Text("This iPhone stops backing up and its backup password is revoked. Photos already on TeaNode stay there.")
                     }
             } footer: {
-                if isPermitted || isOn {
+                if isOnForOtherAccount {
+                    Text("This iPhone's photos are backed up to a different account. Sign in as that account to turn it off.")
+                } else if isPermitted || isOn {
                     Text("Photos and videos on this iPhone are copied to your TeaNode server. Deleting a photo on this iPhone does not delete it from TeaNode.")
                 } else {
                     Text("Your account may not keep photos on this server. Ask whoever runs it to allow it.")
@@ -107,7 +121,13 @@ struct PhotoBackupContent: View {
                 accessSection(accessProblem)
             }
 
-            if status.isEnabled {
+            if isOnForOtherAccount, let enabledAccountName {
+                Section {
+                    Label("Photo backup is on for \(enabledAccountName).", systemImage: "person.crop.circle")
+                } footer: {
+                    Text("Its progress shows when you are signed in as that account.")
+                }
+            } else if status.isEnabled {
                 statusSection
                 if status.phase == .needsSignIn {
                     signInSection
@@ -193,6 +213,9 @@ struct PhotoBackupContent: View {
 
     private var statusSection: some View {
         Section("Status") {
+            if let enabledAccountName {
+                LabeledContent("Account", value: enabledAccountName)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(status.backedUpItemCount) of \(status.libraryItemCount) backed up")
                     .contentTransition(.numericText())
@@ -275,14 +298,15 @@ struct PhotoBackupContent: View {
 
 private func previewContent(
     _ status: PhotoBackupStatus, credentialName: String? = "Robin's iPhone photo backup", accessProblem: PhotoBackupAccess? = nil, isPermitted: Bool = true,
-    usesMobileData: Bool = false
+    usesMobileData: Bool = false, isOnForOtherAccount: Bool = false
 ) -> some View {
     NavigationStack {
         PhotoBackupContent(
             status: status, credentialName: credentialName, accessProblem: accessProblem, isWorking: false, isPermitted: isPermitted,
+            enabledAccountName: status.isEnabled ? "robin on demo.example.com" : nil, isOnForOtherAccount: isOnForOtherAccount,
             library: PhotoLibrary(photoCount: 3_800, videoCount: 112, favoriteCount: 90, trashedCount: 4, usedBytes: 21_400_000_000, trashRetentionDays: 30, maximumFileBytes: 2_000_000_000, maximumAccountBytes: 50_000_000_000),
             libraryFailureText: nil, readLibrary: {},
-            isOn: .constant(status.isEnabled), usesMobileData: .constant(usesMobileData), includesHidden: .constant(false),
+            isOn: .constant(status.isEnabled && !isOnForOtherAccount), usesMobileData: .constant(usesMobileData), includesHidden: .constant(false),
             isConfirmingTurnOff: .constant(false), backUpNow: {}, signInAgain: {}, turnOff: {})
     }
 }
@@ -310,6 +334,9 @@ private let previewUploading = PhotoBackupStatus(
         PhotoBackupStatus(
             phase: .waitingForNetwork, backedUpItemCount: 1284, libraryItemCount: 3912, refusedFileCount: 2, leftForLaterFileCount: 6,
             lastFailure: .serverReason("photo storage is unavailable")))
+}
+#Preview("On for another account, light") {
+    previewContent(previewUploading, isOnForOtherAccount: true)
 }
 #Preview("Not allowed, light") {
     previewContent(PhotoBackupStatus(phase: .off), credentialName: nil, isPermitted: false)

@@ -148,6 +148,10 @@ struct PictureLightbox: View {
 struct ZoomablePicture: UIViewRepresentable {
     let picture: UIImage
     @Binding var isZoomed: Bool
+    /// Whether this picture is the one on screen. A picture that stops being it
+    /// (the person paged to another) goes back to its whole size, so that it is
+    /// not still zoomed when it is paged back to.
+    var isCurrent = true
 
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
@@ -178,7 +182,16 @@ struct ZoomablePicture: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // The coordinator was made with the binding of the first update. A page
+        // built while it was not the current one was given a binding that does
+        // nothing, and would keep it: a zoomed photo then pages instead of
+        // panning. Every update hands it the binding as it is now.
+        context.coordinator.isZoomed = $isZoomed
+        if !isCurrent, scrollView.zoomScale > 1 {
+            scrollView.setZoomScale(1, animated: false)
+        }
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(isZoomed: $isZoomed)
