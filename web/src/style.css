@@ -15110,13 +15110,21 @@ button.idea-history-title {
 
 /* The pane as it stands: kept as drawn, so its forms line up, and scrolled
    sideways in its own box rather than the page's. */
+/* A terminal's ground and text in either theme: the colors a program
+   draws on its screen were chosen against a dark one. */
+.terminal-text {
+  --terminal-background: #1e1e1e;
+  --terminal-text: #d4d4d4;
+  background: var(--terminal-background);
+  color: var(--terminal-text);
+}
+
 .herdr-screen {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: var(--field);
   font-size: 12px;
   line-height: 1.4;
   white-space: pre;
@@ -15151,6 +15159,49 @@ button.idea-history-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A tool call with its detail: the line is what is clicked, and opens to
+   the input and the answer in the terminal's face. */
+.herdr-tool > summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+}
+
+.herdr-tool > summary::-webkit-details-marker {
+  display: none;
+}
+
+.herdr-tool > summary:hover {
+  color: var(--text);
+}
+
+.herdr-tool-detail {
+  margin: var(--space-1) 0 var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+}
+
+.herdr-tool-detail h5 {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.herdr-tool-detail pre {
+  margin: 0 0 var(--space-2);
+  max-height: 24em;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.herdr-tool-detail pre:last-child {
+  margin-bottom: 0;
 }
 
 .herdr-send {
@@ -15857,35 +15908,46 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   min-height: 0;
 }
 
+/* One row: the way back, the title over where the session is, and the
+   actions. The title and the directory give way to the actions. */
 .coding-header {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border);
 }
 
 .coding-header-text {
-  flex: 1 1 200px;
+  flex: 1 1 0;
   min-width: 0;
 }
 
 .coding-header h2 {
   margin: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .coding-header p {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0 0;
   font-size: var(--text-label);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.coding-header p > .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .coding-header .row-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   align-items: center;
 }
 
@@ -15937,9 +15999,26 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   background: none;
 }
 
-.coding-view-switch {
+
+/* The transcript, or the screen, with the button that switches between
+   them floating over its top right corner. */
+.coding-body {
+  position: relative;
   display: flex;
-  padding: var(--space-2) var(--space-3);
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.coding-view-toggle {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  z-index: 1;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
 }
 
 .coding-scroll {
@@ -15957,10 +16036,18 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: var(--space-2);
 }
 
-.coding-question,
 .coding-composer {
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+.coding-composer[hidden] {
+  display: none;
+}
+
+/* At the end of the transcript, scrolling with it. */
+.coding-question {
+  margin-top: var(--space-3);
 }
 
 .coding-composer .agent-attachments {

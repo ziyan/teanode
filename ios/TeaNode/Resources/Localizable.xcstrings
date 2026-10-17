@@ -4373,22 +4373,6 @@
         }
       }
     },
-    "Screen": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画面"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "屏幕"
-          }
-        }
-      }
-    },
     "Show earlier turns": {
       "localizations": {
         "ja": {
@@ -4417,6 +4401,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "在电脑上显示"
+          }
+        }
+      }
+    },
+    "Show the screen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示屏幕"
+          }
+        }
+      }
+    },
+    "Show the turns": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "やり取りを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示对话"
           }
         }
       }
@@ -4529,22 +4545,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "这会结束 %3$@ 上 %2$@ 中的 %1$@ 并关闭其窗格。对话会保留在历史中。"
-          }
-        }
-      }
-    },
-    "Turns": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "やり取り"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对话"
           }
         }
       }
@@ -31745,6 +31745,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "恢复"
+          }
+        }
+      }
+    },
+    "Result": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果"
           }
         }
       }

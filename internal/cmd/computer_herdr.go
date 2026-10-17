@@ -46,8 +46,9 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "read",
 				Usage:     "print the last turns of a session",
 				ArgsUsage: "<pane>",
-				Flags:     []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default, 100 at most"}, JSONFlag()},
-				Action:    runComputerHerdrRead,
+				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "turns", Usage: "how many of the last turns; 10 by default, 100 at most"},
+					&cli.BoolFlag{Name: "detail", Usage: "print each tool call's whole input and what the tool answered"}, JSONFlag()},
+				Action: runComputerHerdrRead,
 			},
 			{
 				Name:      "screen",
@@ -301,7 +302,7 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	read, err := client.ReadAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("turns")))
+	read, err := client.ReadAgentHerdrSession(ctx, connection, command.String("computer"), paneId, int(command.Int("turns")), command.Bool("detail"))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -312,12 +313,24 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Writer, "(earlier turns not shown)")
 	}
 	for _, turn := range read.Turns {
-		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
+		_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", turn.HerdrTurnRole, forTerminal(turn.TurnText))
+		if turn.ToolInputText != "" {
+			_, _ = fmt.Fprintf(command.Writer, "  input:\n%s\n", indentLines(forTerminal(turn.ToolInputText), "    "))
+		}
+		if turn.ToolResultText != "" {
+			_, _ = fmt.Fprintf(command.Writer, "  answered:\n%s\n", indentLines(forTerminal(turn.ToolResultText), "    "))
+		}
+		_, _ = fmt.Fprintln(command.Writer)
 	}
 	session := read.HerdrSession
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s\n", herdrPaneWords(session), herdrStateWords(session))
 	printHerdrQuestion(command, session.Question, "")
 	return nil
+}
+
+// indentLines puts prefix before every line of text.
+func indentLines(text, prefix string) string {
+	return prefix + strings.ReplaceAll(text, "\n", "\n"+prefix)
 }
 
 // colorForTerminal is forTerminal that lets through the codes selecting a

@@ -18,6 +18,7 @@ import { ThemeToggle } from './components/theme'
 import { LanguagePicker, useTranslation } from './i18n/i18n'
 import { AccountMenu } from './components/accountMenu'
 import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
+import { useEdgeSwipe } from './components/edgeSwipe'
 import { MenuIcon, ShieldIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
 import { PasskeyNudge } from './components/passkeyNudge'
@@ -165,6 +166,13 @@ export function App() {
   const [collapsed, toggleSidebar] = useSidebar()
   const desktop = useIsDesktop()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // On a phone the side menu also opens with a swipe in from the left edge.
+  useEdgeSwipe(
+    !desktop,
+    drawerOpen,
+    () => setDrawerOpen(true),
+    () => setDrawerOpen(false),
+  )
   const [session, setSession] = useState<Session | null>(null)
   const location = useLocation()
 

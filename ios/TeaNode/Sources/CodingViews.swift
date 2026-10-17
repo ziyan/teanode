@@ -337,13 +337,6 @@ enum CodingPart: String, CaseIterable, Identifiable {
     case turns, screen
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .turns: String(localized: "Turns")
-        case .screen: String(localized: "Screen")
-        }
-    }
 }
 
 /// CodingSessionView is one coding session: its workspace's tabs, what was
@@ -440,21 +433,36 @@ struct CodingSessionView: View {
     private func content(_ session: HerdrSession) -> some View {
         VStack(spacing: 0) {
             tabStrip(session)
-            Picker("Show", selection: $part) {
-                ForEach(CodingPart.allCases) { part in
-                    Text(part.title).tag(part)
+            // Turns or the screen, by one round button floating over the
+            // top right of what is shown, rather than a row of its own.
+            Group {
+                switch part {
+                case .turns: transcript(session)
+                case .screen: screen(session)
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-            switch part {
-            case .turns: transcript(session)
-            case .screen: screen(session)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    part = part == .turns ? .screen : .turns
+                } label: {
+                    Image(systemName: part == .turns ? "terminal" : "text.bubble")
+                        .font(.body.weight(.medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel(part == .turns ? Text("Show the screen") : Text("Show the turns"))
+                .padding(.trailing)
+                .padding(.top, 4)
             }
         }
+        // Nothing can be sent while the session asks, and its question takes
+        // a typed answer of its own, so the box gives its room to it.
         .safeAreaInset(edge: .bottom) {
-            composer(session)
+            if !session.isAsking {
+                composer(session)
+            }
         }
     }
 
@@ -463,20 +471,30 @@ struct CodingSessionView: View {
     /// largest text size does not cut any off; the plus stays in place.
     private func tabStrip(_ session: HerdrSession) -> some View {
         HStack(spacing: 4) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(model.siblings(of: session)) { tab in
-                        Button {
-                            selectedId = tab.id
-                        } label: {
-                            CodingTabChip(session: tab, isSelected: tab.id == selectedId)
+            // The chosen tab is kept in view: when the session opens, and
+            // whenever another is chosen or the tabs change.
+            ScrollViewReader { reader in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(model.siblings(of: session)) { tab in
+                            Button {
+                                selectedId = tab.id
+                            } label: {
+                                CodingTabChip(session: tab, isSelected: tab.id == selectedId)
+                            }
+                            .buttonStyle(.plain)
+                            .id(tab.id)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
+                .scrollIndicators(.hidden)
+                .onAppear { reader.scrollTo(selectedId) }
+                .onChange(of: selectedId) {
+                    withAnimation { reader.scrollTo(selectedId) }
+                }
+                .onChange(of: model.siblings(of: session).count) { reader.scrollTo(selectedId) }
             }
-            .scrollIndicators(.hidden)
             Menu {
                 Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
                 Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
@@ -555,13 +573,37 @@ struct CodingSessionView: View {
         }
     }
 
+    /// The screen as the program in the pane colored it, on a terminal's
+    /// dark ground whatever the app's appearance, since its colors were
+    /// chosen against one.
+    private var coloredScreen: AttributedString {
+        var screen = AttributedString()
+        for run in terminalRuns(screenText) {
+            var part = AttributedString(run.text)
+            var foreground = run.foreground.map(Color.init(terminal:)) ?? .terminalText
+            var background = run.background.map(Color.init(terminal:))
+            if run.isInverse {
+                (foreground, background) = (background ?? .terminalBackground, foreground)
+            }
+            part.foregroundColor = run.isDim ? foreground.opacity(0.6) : foreground
+            if let background { part.backgroundColor = background }
+            if run.isBold { part.inlinePresentationIntent = .stronglyEmphasized }
+            if run.isItalic { part.inlinePresentationIntent = (part.inlinePresentationIntent ?? []).union(.emphasized) }
+            if run.isUnderlined { part.underlineStyle = .single }
+            screen += part
+        }
+        return screen
+    }
+
     private func screen(_ session: HerdrSession) -> some View {
         ScrollView([.vertical, .horizontal]) {
             VStack(alignment: .leading, spacing: 12) {
-                Text(verbatim: screenText)
+                Text(coloredScreen)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                     .fixedSize()
+                    .padding(10)
+                    .background(Color.terminalBackground, in: .rect(cornerRadius: 8))
                 questionCard(session)
             }
             .padding()
@@ -838,6 +880,59 @@ struct CodingTabChip: View {
 /// CodingTurnView is one thing said or done in a session: the person's words
 /// on the right in a bubble, the agent's on the left, a tool as one quiet
 /// line.
+/// CodingToolTurnView is a tool call: one line, which opens, when the read
+/// gave them, to the tool's whole input and what it answered.
+struct CodingToolTurnView: View {
+    let turn: HerdrTurn
+    @State private var isOpen = false
+
+    var body: some View {
+        if turn.hasToolDetail {
+            // The system's own disclosure, which says open or closed to
+            // VoiceOver as it does everywhere else.
+            DisclosureGroup(isExpanded: $isOpen) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let input = turn.toolInputText, !input.isEmpty {
+                        detail(title: String(localized: "Input"), text: input)
+                    }
+                    if let result = turn.toolResultText, !result.isEmpty {
+                        detail(title: String(localized: "Result"), text: result)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+                .padding(.top, 6)
+            } label: {
+                line
+            }
+            .tint(.secondary)
+            .padding(.horizontal, 4)
+        } else {
+            line.padding(.horizontal, 4)
+        }
+    }
+
+    private var line: some View {
+        Text(verbatim: turn.turnText)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(isOpen ? nil : 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func detail(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(verbatim: text)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+        }
+    }
+}
+
 struct CodingTurnView: View {
     let turn: HerdrTurn
 
@@ -853,12 +948,7 @@ struct CodingTurnView: View {
                     .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
             }
         case "tool":
-            Text(verbatim: turn.turnText)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
+            CodingToolTurnView(turn: turn)
         default:
             AgentBubble {
                 Text(Self.markdown(turn.turnText))
@@ -1229,3 +1319,13 @@ struct CodingOpenSheet: View {
         .padding()
     }
 #endif
+
+extension Color {
+    /// A terminal's ground and its text before any color is chosen.
+    static let terminalBackground = Color(red: 30 / 255, green: 30 / 255, blue: 30 / 255)
+    static let terminalText = Color(red: 212 / 255, green: 212 / 255, blue: 212 / 255)
+
+    init(terminal color: TerminalColor) {
+        self.init(red: Double(color.red) / 255, green: Double(color.green) / 255, blue: Double(color.blue) / 255)
+    }
+}

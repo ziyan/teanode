@@ -185,9 +185,9 @@
             if query.contains("ListAgentHerdrSessions") {
                 return #"{"data":{"ListAgentHerdrSessions":{"computerNames":["laptop","desk"],"failedComputerNames":[],"sessions":["# + sessions.joined(separator: ",") + "]}}}"
             } else if query.contains("ReadAgentHerdrSession") {
-                return #"{"data":{"ReadAgentHerdrSession":{"herdrSession":"# + named + #","turns":[{"herdrTurnRole":"person","turnText":"Add a Contact link to the footer, after About.","turnAt":null},{"herdrTurnRole":"agent","turnText":"I will look at the footer component first.","turnAt":null},{"herdrTurnRole":"tool","turnText":"Read src/Footer.tsx","turnAt":null},{"herdrTurnRole":"agent","turnText":"The footer lists its links from one array, so the new link is one more entry. I have added it and updated the snapshot test.","turnAt":null}],"isTruncated":false}}}"#
+                return #"{"data":{"ReadAgentHerdrSession":{"herdrSession":"# + named + #","turns":[{"herdrTurnRole":"person","turnText":"Add a Contact link to the footer, after About.","turnAt":null},{"herdrTurnRole":"agent","turnText":"I will look at the footer component first.","turnAt":null},{"herdrTurnRole":"tool","turnText":"Read src/Footer.tsx","turnAt":null,"toolInputText":"{\n  \"file_path\": \"src/Footer.tsx\"\n}","toolResultText":"export const footerLinks = [\"About\", \"Privacy\"]"},{"herdrTurnRole":"agent","turnText":"The footer lists its links from one array, so the new link is one more entry. I have added it and updated the snapshot test.","turnAt":null}],"isTruncated":false}}}"#
             } else if query.contains("ReadAgentHerdrScreen") {
-                return #"{"data":{"ReadAgentHerdrScreen":{"herdrSession":"# + named + #","screenText":"$ npm test\n PASS  src/Footer.test.tsx\n Tests: 4 passed, 4 total"}}}"#
+                return #"{"data":{"ReadAgentHerdrScreen":{"herdrSession":"# + named + #","screenText":"$ npm test\n \u001b[1;42;30m PASS \u001b[0m src/Footer.test.tsx\n \u001b[1mTests:\u001b[22m \u001b[32m4 passed\u001b[39m, 4 total"}}}"#
             }
             if query.contains("AnswerAgentHerdrQuestion") {
                 return #"{"data":{"AnswerAgentHerdrQuestion":{"herdrSession":"# + named + #","isAnswerAccepted":true,"answeredWith":"Plain text link"}}}"#

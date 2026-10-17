@@ -78,13 +78,17 @@ final class HerdrTests: XCTestCase {
 
     func testAReadAsksForTheTurnsAndDecodesThem() async throws {
         let (connection, fake) = try connection(
-            answering: #"{"data":{"ReadAgentHerdrSession":{"herdrSession":\#(sessionJSON),"turns":[{"herdrTurnRole":"person","turnText":"hello","turnAt":"2026-01-01T00:00:00Z"},{"herdrTurnRole":"tool","turnText":"Read a file","turnAt":null}],"isTruncated":true}}}"#)
+            answering: #"{"data":{"ReadAgentHerdrSession":{"herdrSession":\#(sessionJSON),"turns":[{"herdrTurnRole":"person","turnText":"hello","turnAt":"2026-01-01T00:00:00Z"},{"herdrTurnRole":"tool","turnText":"Read a file","turnAt":null,"toolInputText":"{\"file_path\": \"a.txt\"}","toolResultText":"hello"}],"isTruncated":true}}}"#)
         let read = try await connection.readHerdrSession(computer: "laptop", paneId: "w1-2", turnCount: 50)
         XCTAssertEqual(read.turns.map(\.herdrTurnRole), ["person", "tool"])
         XCTAssertNil(read.turns[1].turnAt)
+        XCTAssertFalse(read.turns[0].hasToolDetail)
+        XCTAssertTrue(read.turns[1].hasToolDetail)
+        XCTAssertEqual(read.turns[1].toolResultText, "hello")
         XCTAssertTrue(read.isTruncated)
         XCTAssertEqual(
-            try sentVariables(fake), ["computer": .string("laptop"), "paneId": .string("w1-2"), "turnCount": .number(50)])
+            try sentVariables(fake),
+            ["computer": .string("laptop"), "paneId": .string("w1-2"), "turnCount": .number(50), "shouldIncludeToolDetail": .bool(true)])
     }
 
     func testTheScreenIsRead() async throws {
@@ -92,7 +96,7 @@ final class HerdrTests: XCTestCase {
             answering: #"{"data":{"ReadAgentHerdrScreen":{"herdrSession":\#(sessionJSON),"screenText":"$ ready"}}}"#)
         let screen = try await connection.readHerdrScreen(computer: "laptop", paneId: "w1-2")
         XCTAssertEqual(screen.screenText, "$ ready")
-        XCTAssertEqual(try sentVariables(fake), ["computer": .string("laptop"), "paneId": .string("w1-2")])
+        XCTAssertEqual(try sentVariables(fake), ["computer": .string("laptop"), "paneId": .string("w1-2"), "shouldKeepColor": .bool(true)])
     }
 
     func testSendCarriesTheTextAndOnlyTheAttachmentsThereAre() async throws {

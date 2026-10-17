@@ -81,6 +81,10 @@ export interface HerdrTurn {
   herdrTurnRole: 'person' | 'agent' | 'tool'
   turnText: string
   turnAt?: string | null
+  // A tool call's whole input and what the tool answered, when the read
+  // asked for them.
+  toolInputText?: string
+  toolResultText?: string
 }
 
 // The fields of a session, the same as the command line's
@@ -92,13 +96,13 @@ export const HERDR_DOCUMENTS = {
   ListAgentHerdrSessions: `query ($computer: String) {
     ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ${SESSION_FIELDS} } }
   }`,
-  ReadAgentHerdrSession: `query ($computer: String, $paneId: String!, $turnCount: Int) {
-    ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
-      herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt } isTruncated
+  ReadAgentHerdrSession: `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
+    ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
+      herdrSession { ${SESSION_FIELDS} } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
     }
   }`,
-  ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int) {
-    ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) { herdrSession { ${SESSION_FIELDS} } screenText }
+  ReadAgentHerdrScreen: `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
+    ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount, shouldKeepColor: $shouldKeepColor) { herdrSession { ${SESSION_FIELDS} } screenText }
   }`,
   SendAgentHerdrSession: `mutation ($computer: String, $paneId: String!, $text: String, $attachmentIds: [String!]) {
     SendAgentHerdrSession(computer: $computer, paneId: $paneId, text: $text, attachmentIds: $attachmentIds) { ${SESSION_FIELDS} }
@@ -374,6 +378,7 @@ function chosenOf(question: HerdrQuestion, answeredWith: string): { chosenNumber
 // page draws a conversation: what the person typed as bubbles on the right,
 // what the agent wrote as text, and each tool call as one muted line.
 export function HerdrTurnsList({ turns }: { turns: HerdrTurn[] }) {
+  const { t } = useTranslation()
   return (
     <ol className="herdr-turns">
       {turns.map((turn, index) => (
@@ -384,6 +389,25 @@ export function HerdrTurnsList({ turns }: { turns: HerdrTurn[] }) {
             <div className="agent-line assistant">
               <Markdown text={turn.turnText} />
             </div>
+          ) : turn.toolInputText || turn.toolResultText ? (
+            // A tool call opens to its whole input and what it answered.
+            <details className="herdr-tool">
+              <summary className="agent-line tool herdr-tool-line">{turn.turnText}</summary>
+              <div className="herdr-tool-detail">
+                {turn.toolInputText ? (
+                  <>
+                    <h5>{t('herdr.toolInput')}</h5>
+                    <pre>{turn.toolInputText}</pre>
+                  </>
+                ) : null}
+                {turn.toolResultText ? (
+                  <>
+                    <h5>{t('herdr.toolResult')}</h5>
+                    <pre>{turn.toolResultText}</pre>
+                  </>
+                ) : null}
+              </div>
+            </details>
           ) : (
             <div className="agent-line tool herdr-tool-line">{turn.turnText}</div>
           )}

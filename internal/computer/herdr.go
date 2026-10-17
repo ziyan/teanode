@@ -148,6 +148,9 @@ type HerdrArguments struct {
 	PaneID    string `json:"paneId,omitempty"`
 	TurnCount int    `json:"turnCount,omitempty"`
 	LineCount int    `json:"lineCount,omitempty"`
+	// ShouldIncludeToolDetail asks a read for each tool turn's whole input
+	// and what the tool answered.
+	ShouldIncludeToolDetail bool `json:"shouldIncludeToolDetail,omitempty"`
 	// ShouldKeepColor asks for the screen with its colors, as the codes
 	// that select them and nothing else a terminal would act on.
 	ShouldKeepColor     bool   `json:"shouldKeepColor,omitempty"`
@@ -928,6 +931,11 @@ func (self *Herdr) read(ctx context.Context, arguments *HerdrArguments) (*HerdrR
 	turns, isTruncated, err := readTranscriptTail(session.TranscriptPath, session.CodingAgentKind, min(turnCount, herdrMostTurnCount))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the history of %s: %w", session.named(), err)
+	}
+	if !arguments.ShouldIncludeToolDetail {
+		for _, turn := range turns {
+			turn.ToolInputText, turn.ToolResultText = "", ""
+		}
 	}
 	return &HerdrReadResult{HerdrSession: session, Turns: turns, IsTruncated: isTruncated}, nil
 }

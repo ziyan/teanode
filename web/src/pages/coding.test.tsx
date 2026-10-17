@@ -129,6 +129,12 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+// chooseAction opens the session's menu of actions and chooses one.
+function chooseAction(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+  fireEvent.click(screen.getByRole('menuitem', { name }))
+}
+
 it('groups sessions by computer, then workspace in number order, then tab in tab order', () => {
   const groups = groupSessions(list)
   // Computers by name; their workspaces by number, and tabs in tab order.
@@ -207,7 +213,7 @@ it('opens a new tab beside the session with the agent chosen', async () => {
 it('shows the tab on the computer', async () => {
   renderAt('/coding?computer=laptop&pane=w1%3Ap2')
   await screen.findByText('hello w1:p2')
-  fireEvent.click(screen.getByRole('button', { name: 'Show on computer' }))
+  chooseAction('Show on computer')
   await waitFor(() =>
     expect(execute).toHaveBeenCalledWith(HERDR_DOCUMENTS.FocusAgentHerdrSession, {
       computer: 'laptop',
@@ -219,7 +225,7 @@ it('shows the tab on the computer', async () => {
 it('asks before closing a tab, then closes it', async () => {
   renderAt('/coding?computer=laptop&pane=w1%3Ap2')
   await screen.findByText('hello w1:p2')
-  fireEvent.click(screen.getByRole('button', { name: 'Close session' }))
+  chooseAction('Close session')
   expect(execute).not.toHaveBeenCalledWith(HERDR_DOCUMENTS.CloseAgentHerdrSession, expect.anything())
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Close session' }))
   await waitFor(() =>
@@ -235,7 +241,8 @@ it('asks before closing a tab, then closes it', async () => {
 it('does not close a session that is working', async () => {
   renderAt('/coding?computer=laptop&pane=w1%3Ap1')
   await screen.findByText('hello w1:p1')
-  expect((screen.getByRole('button', { name: 'Close session' }) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+  expect((screen.getByRole('menuitem', { name: 'Close session' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 it('shows a session that has not said anything yet as empty, without asking for its history', async () => {
@@ -294,7 +301,7 @@ it('keeps the open session while its computer does not answer', async () => {
     execute.mock.calls.filter(([document]) => document === HERDR_DOCUMENTS.ListAgentHerdrSessions).length
   const before = listCount()
   // Showing the tab on the computer reads the list again at once.
-  fireEvent.click(screen.getByRole('button', { name: 'Show on computer' }))
+  chooseAction('Show on computer')
   await waitFor(() => expect(listCount()).toBeGreaterThan(before))
   await waitFor(() => expect(screen.getByText(/did not answer/)).toBeTruthy())
   expect(screen.queryByText('This session is no longer open.')).toBeNull()
@@ -313,4 +320,12 @@ it('folds a computer away and keeps it folded in the address', async () => {
   // Choosing a session keeps the fold.
   fireEvent.click(screen.getByRole('button', { name: /build/ }))
   expect(screen.getByTestId('where').textContent).toBe('?computer=laptop&pane=w1%3Ap1&closed=desk')
+})
+
+it('switches between the turns and the screen with one floating button', async () => {
+  renderAt('/coding?computer=laptop&pane=w1%3Ap1')
+  await screen.findByText('hello w1:p1')
+  fireEvent.click(screen.getByRole('button', { name: 'Show the screen' }))
+  expect(screen.getByTestId('where').textContent).toContain('view=screen')
+  expect(screen.getByRole('button', { name: 'Show the turns' })).toBeTruthy()
 })

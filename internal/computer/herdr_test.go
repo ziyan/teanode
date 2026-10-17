@@ -1144,3 +1144,35 @@ func TestAPromptTypedDuringATurnIsAPersonsTurn(t *testing.T) {
 		t.Errorf("turns:\n%s\nwant:\n%s", strings.Join(said, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// TestAToolCallCarriesItsInputAndWhatItAnswered checks that each tool turn
+// is given its whole input and the result a later line holds for it, and
+// that the results are not turns of their own.
+func TestAToolCallCarriesItsInputAndWhatItAnswered(t *testing.T) {
+	claude := strings.Join([]string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Running the tests."},{"type":"tool_use","id":"call-1","name":"Bash","input":{"command":"npm test","timeout":60000}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"call-1","content":[{"type":"text","text":"4 passed"}]}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"All pass."}]}}`,
+	}, "\n")
+	turns, _, err := readTurnsFrom(strings.NewReader(claude), int64(len(claude)), CodingAgentKindClaude, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 3 || turns[1].HerdrTurnRole != HerdrTurnRoleTool {
+		t.Fatalf("turns: %+v", turns)
+	}
+	if turns[1].ToolInputText != "{\n  \"command\": \"npm test\",\n  \"timeout\": 60000\n}" || turns[1].ToolResultText != "4 passed" {
+		t.Errorf("claude tool turn: %q, %q", turns[1].ToolInputText, turns[1].ToolResultText)
+	}
+	codex := strings.Join([]string{
+		`{"type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":[\"ls\"]}","call_id":"call-7"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","call_id":"call-7","output":"README.md"}}`,
+	}, "\n")
+	turns, _, err = readTurnsFrom(strings.NewReader(codex), int64(len(codex)), CodingAgentKindCodex, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 || turns[0].ToolResultText != "README.md" || !strings.Contains(turns[0].ToolInputText, `"ls"`) {
+		t.Errorf("codex: %+v", turns)
+	}
+}

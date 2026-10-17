@@ -180,3 +180,26 @@ it('draws person turns as bubbles, agent turns as text and tool turns as one lin
   expect(container.querySelector('.agent-line.assistant strong')?.textContent).toBe('it')
   expect(container.querySelector('.agent-line.tool')?.textContent).toBe('Edit(main.go)')
 })
+
+it('opens a tool call to its whole input and what it answered', () => {
+  const { container } = render(
+    <HerdrTurnsList
+      turns={[
+        {
+          herdrTurnRole: 'tool',
+          turnText: 'Bash: npm test',
+          toolInputText: '{\n  "command": "npm test"\n}',
+          toolResultText: '4 passed',
+        },
+      ]}
+    />,
+  )
+  const details = container.querySelector('details.herdr-tool') as HTMLDetailsElement
+  expect(details.querySelector('summary')?.textContent).toBe('Bash: npm test')
+  expect(details.open).toBe(false)
+  fireEvent.click(details.querySelector('summary') as HTMLElement)
+  expect([...details.querySelectorAll('pre')].map((pre) => pre.textContent)).toEqual([
+    '{\n  "command": "npm test"\n}',
+    '4 passed',
+  ])
+})
