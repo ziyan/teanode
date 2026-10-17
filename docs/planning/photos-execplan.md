@@ -21,12 +21,15 @@ To see it working: switch Photos on in the server's services, drop a few picture
 - [x] (2026-10-16 23:20 EDT) Milestone 0: prototypes. The face reader works (0.2 s a picture, 42 MB of libraries and 39 MB of models when it reads raw pixels); ffmpeg cannot assemble tiled HEIC, libheif's `heif-dec` can; a 104 passes the middleware chain. See Surprises & Discoveries.
 - [x] (2026-10-16 23:40 EDT) Milestone 1, part one: service switch (off until chosen), `photos:use`, the `photos` settings, migration 0220, models and queries, the resumable upload endpoint with device password sign-in, S3 multipart, serving, cleanup, operations including `offset` and `CountPhotos`.
 - [x] (2026-10-16 23:50 EDT) Milestone 1, part two: processing (metadata, places, previews) without faces, which wait for Milestone 5; deleting forever by marking and cleanup in batches; the allow-list of file types; a ready photo without a small preview is processed again.
-- [x] (2026-10-16 23:50 EDT) Milestone 2, command line (`teanode photo`) and the agent's `photo` tool. The dashboard and the iPhone are still to do.
-- [ ] Milestone 2: the library on every surface (dashboard, command line, agent tool, iPhone app), with the service switch and setup.
-- [ ] Milestone 3: albums.
+- [x] (2026-10-16 23:50 EDT) Milestone 2, command line (`teanode photo`) and the agent's `photo` tool.
+- [x] (2026-10-17 00:00 EDT) Milestone 2, the dashboard: Photos page, viewer, uploads, selection, trash, Photos in setup, device passwords that grant photos, the limits on the server's storage page.
+- [x] (2026-10-17 00:20 EDT) Milestone 2, the iPhone: Photos section, viewer, Save to Photos, disk cache of previews; it compiles on CI's macOS build and its screenshots were checked.
+- [x] (2026-10-17 01:00 EDT) Walk-through on a dev server in headless Chrome: setup with Photos chosen, restart, uploads from the dashboard and the command line (a file sent from both is stored once), dates in each photo's own zone, place names, search, the agent listing, looking at and showing photos. Findings fixed: a ward named instead of its city, idle jobs logging not-found, words that differed between the command line and the dashboard, the agent giving UTC dates, a Select mode for touch screens.
+- [x] (2026-10-17 01:30 EDT) Milestone 3: albums on the server, the command line, the agent tool, the dashboard and the iPhone, with suggestions from trips.
+- [x] (2026-10-17 01:00 EDT) Milestone 6, in the app: backup with a device password that grants photos only, a background URLSession, the library's persistent change token, a continued processing task for the first backup and a processing task overnight. The Photos background upload extension is not built: it needs a device test of `BackgroundUploadURLBase` (see Surprises).
+- [x] (2026-10-17 02:00 EDT) Signed playback addresses (`PhotoPlaybackAddress`) for players that cannot sign in; `FindPhotos` says which files the server holds; a `Z` taken-at is an instant whose offset comes from the file.
 - [ ] Milestone 4: descriptions and search.
 - [ ] Milestone 5: faces and people.
-- [ ] Milestone 6: iPhone backup.
 - [ ] Milestone 7: albums shared in circles (after the circles branch has its circles and invitations).
 - [ ] Milestone 8: getting started, documentation, review until it converges, visual walk-through, deploy.
 
