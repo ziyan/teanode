@@ -248,11 +248,13 @@ struct CircleDetailView: View {
 
     var body: some View {
         #if DEBUG
-            // `-TeaNodeScreen circle-detail`: scrolled to the invitation waiting for an answer.
+            // `-TeaNodeScreen circle-detail`: scrolled to the invitation waiting for an answer;
+            // `circle-detail-operator` the same for somebody who runs the server, with the
+            // row that makes an account above it.
             ScrollViewReader { scroller in
                 list
                     .task(id: directory.isLoaded) {
-                        guard DemoServer.isRequested, DemoServer.screen == "circle-detail", directory.isLoaded,
+                        guard DemoServer.isRequested, ["circle-detail", "circle-detail-operator"].contains(DemoServer.screen), directory.isLoaded,
                             let invitation = circle?.pendingInvitations.first
                         else { return }
                         try? await Task.sleep(for: .seconds(1))
