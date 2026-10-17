@@ -30,7 +30,7 @@ import (
 // isSteerable says whether a turn is one a person is typing into: not a
 // run with nobody present, and not a turn a background command woke.
 func isSteerable(settings *AskSettings) bool {
-	return !settings.Headless && settings.Surface != backgroundSurface
+	return !settings.Headless && !isWokenSurface(settings.Surface)
 }
 
 // steer hands this turn a message the person wrote while it runs, and says
@@ -227,5 +227,5 @@ func keepPersonTurn(tx db.Transaction, settings *AskSettings) (*models.AgentMess
 // a turn with nobody present, and not one an ended command or finished
 // work woke.
 func isPersonWriting(settings *AskSettings) bool {
-	return !settings.Headless && settings.Surface != backgroundSurface
+	return !settings.Headless && !isWokenSurface(settings.Surface)
 }

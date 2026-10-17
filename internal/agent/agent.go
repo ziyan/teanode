@@ -205,6 +205,11 @@ type Agent struct {
 	backgroundWakes     map[string]*backgroundWake
 	runningWork         map[string]context.CancelCauseFunc
 	lastBackgroundSweep time.Time
+	// startedAt is when Start ran, and hasResumedCutTurns that the
+	// conversations a restart cut short have been looked at; see
+	// resume.go.
+	startedAt          time.Time
+	hasResumedCutTurns atomic.Bool
 	// herdrTold is when each herdr question was written into the main
 	// conversation, by computer, pane and fingerprint, so a question said
 	// again after a reconnect is written once. Under the background lock.
@@ -362,6 +367,7 @@ func (self *Agent) Start() {
 	}); err != nil {
 		log.Warningf("cannot put back the jobs held before the restart: %s", err)
 	}
+	self.startedAt = time.Now()
 	self.worker = periodic.New(self.ctx, &self.waitGroup, self.tick, &periodic.Settings{
 		Interval: self.settings.Tick,
 		Name:     "agent:worker",
@@ -371,8 +377,11 @@ func (self *Agent) Start() {
 	self.startPhonePushes()
 }
 
-// Stop ends the worker and waits for the runs in flight.
+// Stop ends the worker and waits for the runs in flight. A turn a person is
+// reading gets stopGrace first to give its answer, so that a deploy does not
+// cut it off; whatever is left is cancelled then.
 func (self *Agent) Stop() {
+	self.waitForInteractiveTurns(stopGrace)
 	self.cancel()
 	if self.worker != nil {
 		self.worker.Stop()
@@ -467,6 +476,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	if !configuration.Agent.Enabled {
 		return nil
 	}
+	self.resumeCutTurnsOnce(ctx)
 	// Queueing first, and whether or not there is a slot free.
 	//
 	// These write rows; they do not take a slot. Returning early when

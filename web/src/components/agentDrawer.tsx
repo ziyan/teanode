@@ -55,6 +55,7 @@ import {
   PencilIcon,
   StarIcon,
   PlusIcon,
+  RefreshIcon,
   SparkIcon,
   CalendarIcon,
   TargetIcon,
@@ -198,6 +199,11 @@ const HERDR_ASKED_NOTE = 'herdr_asked'
 // watched has finished, which is models.HerdrSessionMarker on the server.
 const HERDR_SESSION_MARKER = '[herdr session]'
 
+// The marker a turn begins with when the server restarted in the middle
+// of a turn that answered the person and the agent carries on, which is
+// models.RestartResumeMarker on the server.
+const RESTART_RESUME_MARKER = '[resuming after a restart]'
+
 // What a question card answers when the person would rather talk than
 // pick, which is askuser.ChatAboutIt on the server: the same in every
 // language, so the tool can tell it from an answer.
@@ -222,6 +228,7 @@ type CheckInOrigin =
   | 'alert'
   | 'herdrQuestion'
   | 'herdrSession'
+  | 'restartResume'
   | 'approved'
   | 'declined'
 
@@ -243,6 +250,7 @@ function checkInOriginOf(text: string): CheckInOrigin | null {
   if (text.startsWith(ALERT_MARKER)) return 'alert'
   if (text.startsWith(HERDR_QUESTION_MARKER)) return 'herdrQuestion'
   if (text.startsWith(HERDR_SESSION_MARKER)) return 'herdrSession'
+  if (text.startsWith(RESTART_RESUME_MARKER)) return 'restartResume'
   if (text.startsWith(APPROVED_MARKER)) return 'approved'
   if (text.startsWith(DECLINED_MARKER)) return 'declined'
   return null
@@ -1935,6 +1943,7 @@ const CHECK_IN_LABEL = {
   alert: 'agentDrawer.alertTurn',
   herdrQuestion: 'agentDrawer.herdrQuestionTurn',
   herdrSession: 'agentDrawer.herdrSessionTurn',
+  restartResume: 'agentDrawer.restartResumeTurn',
   approved: 'agentDrawer.approvedLater',
   declined: 'agentDrawer.declinedLater',
 } as const
@@ -1945,6 +1954,7 @@ function CheckInIcon({ origin }: { origin: CheckInOrigin }) {
   if (origin === 'backgroundWork') return <ListIcon size={12} />
   if (origin === 'schedule') return <CalendarIcon size={12} />
   if (origin === 'speakFirst') return <SparkIcon size={12} />
+  if (origin === 'restartResume') return <RefreshIcon size={12} />
   if (origin === 'alert') return <WarningIcon size={12} />
   if (origin === 'approved') return <CheckIcon size={12} />
   if (origin === 'declined') return <CloseIcon size={12} />

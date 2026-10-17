@@ -242,6 +242,28 @@ watchers see the turn end with the context already gone, then closes every
 subscriber, confirmation and question channel. The run stays findable for ten
 minutes, so a drawer that reconnects late can still replay it.
 
+## A restart in the middle of a turn
+
+`Agent.Stop` waits up to `stopGrace` (5 seconds) for the turns a person is
+reading to finish, then cancels what is left. A turn cancelled that way writes
+nothing, not even `stopped`; only the person pressing Stop does. At the first
+tick after a start, once the way to act as a person is set (`resume.go`), the
+agent looks at each active agent's 50 newest main and named conversations and
+carries on, at most three per agent and newest first, those that end on the
+person's message, or on a tool call or result of a turn that began with it,
+written in the 15 minutes before the start. A conversation that ends on an
+answer, on a note that ended the turn (`stopped`, `failed`, the round limit),
+on a card still waiting for the person, or in a turn the agent began on its
+own, is left alone, and so is an agent that is off or out of budget. The turn
+opens with `models.RestartResumeMarker`, on the surface `resume`, and tells the
+model to carry on from the transcript without repeating a call whose result is
+there; it is read like any turn the agent began, by the drawer, the phone
+push and the chat relay. The turn it makes is not counted as a person's, and it
+is looked for only once per start, so one that is cut again by the next restart
+is not carried on a third time. No switch of the person's governs it: the
+speak-first switches are for the agent starting a conversation, and this
+finishes an answer they asked for.
+
 ## Every model call is a turn
 
 Nothing in the agent asks a model except through this loop. A job's work,
@@ -286,12 +308,18 @@ deliberately absent.
 | `concurrentToolCalls` | 6 | calls of one batch running at once |
 | `attachmentImagesPerTurn` | 8 | pictures in one turn |
 | `maxRoundsPerAsk` | 40 | rounds, operator-set |
+| `stopGrace` | 5 seconds | how long `Stop` lets the turns people are reading finish |
+| `resumeWindow` | 15 minutes | how old a cut turn may be and still be carried on |
+| `resumeMostPerAgent` | 3 | conversations carried on per agent at a start |
 | `MaxTokens` | 4000 | one answer |
 
 ## Caveats
 
 - **The event backlog keeps the first 500 events, not the last.** A late
   subscriber to a long turn replays its beginning and then follows live.
+- **A restart is carried on by one instance's look at the database.** Two
+  instances started at once, or a turn still running on another, are not told
+  apart from one a restart cut; the single-instance assumption above applies.
 - **A budget that runs out before the first round is an error event; from the
   first round on it is a note.** Same condition, two surfaces.
 - **`self.offered` is computed once per turn.** A computer or a tab attached

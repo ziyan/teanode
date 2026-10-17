@@ -535,7 +535,7 @@ func firstWords(text string, characters int) string {
 // asked them, and resuming it would take a check-in a minute later that
 // finds nothing new.
 func (self *AskRun) resumeGoalAfterPerson() {
-	if self.settings.Headless || self.settings.Surface == backgroundSurface || !self.isGoalWaitingAtStart {
+	if self.settings.Headless || isWokenSurface(self.settings.Surface) || !self.isGoalWaitingAtStart {
 		return
 	}
 	conversationId := self.settings.Conversation.ID
@@ -562,7 +562,7 @@ func (self *AskRun) resumeGoalAfterPerson() {
 // isGoalWaiting says whether the conversation's goal is waiting for the
 // person, read when a turn of theirs begins.
 func (self *AskRun) isGoalWaiting() bool {
-	if self.settings.Headless || self.settings.Surface == backgroundSurface {
+	if self.settings.Headless || isWokenSurface(self.settings.Surface) {
 		return false
 	}
 	var conversation *models.AgentConversation

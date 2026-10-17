@@ -936,7 +936,12 @@ func (self *AskRun) loop() {
 	self.chooseDepth()
 	self.isGoalWaitingAtStart = self.isGoalWaiting()
 	if err := self.turn(); err != nil {
-		if errors.Is(err, context.Canceled) {
+		if self.isCutShortByStop() {
+			// Nothing is written: a conversation that ends on the person's
+			// message or a tool's result is what the next start looks for
+			// to carry the turn on (resume.go), and a note would end it.
+			log.Noticef("a turn of the agent of %q was cut short by the server stopping", self.settings.Owner.Username)
+		} else if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
 			// read as cut short after a reload.
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
@@ -965,6 +970,13 @@ func (self *AskRun) loop() {
 	self.mutex.Unlock()
 	self.notifyAnswer(answer)
 	self.emit(Event{Kind: EventDone})
+}
+
+// isCutShortByStop says the server stopping ended this turn, which a
+// person is reading: not the person pressing Stop, and not a run with
+// nobody there.
+func (self *AskRun) isCutShortByStop() bool {
+	return self.agent.ctx.Err() != nil && !self.isStoppedByPerson.Load() && !self.settings.Headless && !self.settings.isUnattended
 }
 
 func (self *AskRun) turn() error {
@@ -2581,7 +2593,7 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 	where := surfaceOf(settings.Surface)
 	if where.situationLine != "" {
 		situation := where.situationLine
-		if !where.canLocate && !settings.Headless && settings.Surface != backgroundSurface {
+		if !where.canLocate && !settings.Headless && !isWokenSurface(settings.Surface) {
 			situation += " " + locationLine
 		}
 		blocks = append(blocks, "<where>\n"+situation+"\n</where>")
