@@ -44,6 +44,14 @@ struct PhotoViewer: View {
     private var photos: [Photo] { model.photos(in: listKey) }
     private var current: Photo? { photos.first { $0.id == currentPhotoId } }
 
+    /// "Photos taken near here", when this viewer can show the library it
+    /// filters; spelled out with its type, which the compiler could not work out
+    /// from a conditional inside the sheet's builder.
+    private var showNearbyAction: ((PhotoNearFilter) -> Void)? {
+        guard canShowNearby else { return nil }
+        return { photoNearFilter in showNearby(photoNearFilter) }
+    }
+
     var body: some View {
         NavigationStack {
             pager
@@ -53,7 +61,7 @@ struct PhotoViewer: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $isShowingInfo) {
-                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent, onShowNearby: canShowNearby ? showNearby : nil) }
+                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent, onShowNearby: showNearbyAction) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
