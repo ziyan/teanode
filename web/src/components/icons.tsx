@@ -965,17 +965,6 @@ export function ReceiptIcon(props: IconProps) {
   )
 }
 
-// EyeIcon is an eye: to watch something, as the agent watches a coding session
-// and says when it finishes.
-export function EyeIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-    </Icon>
-  )
-}
-
 // CodeIcon is a pair of angle brackets: the coding sessions.
 export function CodeIcon(props: IconProps) {
   return (

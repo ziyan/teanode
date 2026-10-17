@@ -25,10 +25,11 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   ComputerIcon,
-  EyeIcon,
   FolderIcon,
+  ListIcon,
+  MoreIcon,
   PlusIcon,
-  TrashIcon,
+  TerminalIcon,
 } from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty } from '../components/settingsList'
@@ -664,42 +665,61 @@ function CodingSession({
         </Tooltip>
         <div className="coding-header-text">
           <h2>{latest.workspaceLabel || paneNameOf(latest)}</h2>
+          {/* The state sits with where the session is, so the actions share
+              the title's row and the header stays one row on a phone. */}
           <p className="muted">
+            <HerdrStateTag session={latest} />
             <span>{latest.computer}</span>
             {latest.workingDirectory ? <span className="mono">{latest.workingDirectory}</span> : null}
           </p>
         </div>
-        <div className="row-actions">
-          <HerdrStateTag session={latest} />
-          <Tooltip label={t('herdr.showOnComputer')}>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('herdr.showOnComputer')}
-              onClick={() => void focus()}
-            >
-              <ComputerIcon size={18} />
-            </button>
-          </Tooltip>
-          {latest.isWatched ? null : (
-            <Tooltip label={t('herdr.watch')}>
-              <button type="button" className="icon-button" aria-label={t('herdr.watch')} onClick={() => void watch()}>
-                <EyeIcon size={18} />
-              </button>
-            </Tooltip>
-          )}
-          <Tooltip label={isWorking ? t('herdr.closeWhileWorking') : t('herdr.closeSession')}>
-            <button
-              type="button"
-              className="icon-button danger"
-              aria-label={t('herdr.closeSession')}
-              disabled={isWorking}
-              onClick={() => setClosing(true)}
-            >
-              <TrashIcon size={18} />
-            </button>
-          </Tooltip>
-        </div>
+        {/* Used now and then, so behind one button rather than a row. */}
+        <Tooltip label={t('herdr.moreActions')}>
+          <MenuButton
+            label={t('herdr.moreActions')}
+            className="icon-button"
+            icon={<MoreIcon size={18} />}
+            render={(closeMenu) => (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu()
+                    void focus()
+                  }}
+                >
+                  {t('herdr.showOnComputer')}
+                </button>
+                {latest.isWatched ? null : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu()
+                      void watch()
+                    }}
+                  >
+                    {t('herdr.watch')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger"
+                  disabled={isWorking}
+                  title={isWorking ? t('herdr.closeWhileWorking') : undefined}
+                  onClick={() => {
+                    closeMenu()
+                    setClosing(true)
+                  }}
+                >
+                  {t('herdr.closeSession')}
+                </button>
+              </>
+            )}
+          />
+        </Tooltip>
       </header>
       <div className="coding-tabstrip">
         <div ref={tabStrip} className="tabs herdr-tabs" role="tablist">
@@ -744,71 +764,65 @@ function CodingSession({
           />
         </Tooltip>
       </div>
-      <div className="coding-view-switch">
-        <div className="segmented" role="group">
+      {/* Turns or the screen, by one round button floating over the top
+          right of what is shown, rather than a row of its own. */}
+      <div className="coding-body">
+        <Tooltip label={view === 'turns' ? t('herdr.showScreen') : t('herdr.showTurns')}>
           <button
             type="button"
-            className={view === 'turns' ? 'active' : ''}
-            aria-pressed={view === 'turns'}
-            onClick={() => setView('turns')}
+            className="icon-button coding-view-toggle"
+            aria-label={view === 'turns' ? t('herdr.showScreen') : t('herdr.showTurns')}
+            onClick={() => setView(view === 'turns' ? 'screen' : 'turns')}
           >
-            {t('herdr.turns')}
+            {view === 'turns' ? <TerminalIcon size={18} /> : <ListIcon size={18} />}
           </button>
-          <button
-            type="button"
-            className={view === 'screen' ? 'active' : ''}
-            aria-pressed={view === 'screen'}
-            onClick={() => setView('screen')}
-          >
-            {t('herdr.screen')}
-          </button>
-        </div>
-      </div>
-      <div
-        ref={scroller}
-        className="coding-scroll"
-        onScroll={(event) => {
-          const element = event.currentTarget
-          isAtEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX
-        }}
-      >
-        {shown === null ? (
-          read.error ? null : (
-            <Loading />
-          )
-        ) : view === 'screen' ? (
-          <TerminalText className="herdr-screen" text={shown.screenText} />
-        ) : (
-          <>
-            {shown.isTruncated && turnCount < MOST_TURN_COUNT ? (
-              <button type="button" className="coding-earlier" onClick={showEarlier}>
-                {t('herdr.earlierTurns')}
-              </button>
-            ) : null}
-            {shown.turns.length === 0 ? (
-              <p className="coding-empty muted">{t('herdr.noTurns')}</p>
-            ) : (
-              <HerdrTurnsList turns={shown.turns} />
-            )}
-          </>
-        )}
-        {/* The question is the end of the conversation, and scrolls with it,
+        </Tooltip>
+        <div
+          ref={scroller}
+          className="coding-scroll"
+          onScroll={(event) => {
+            const element = event.currentTarget
+            isAtEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX
+          }}
+        >
+          {shown === null ? (
+            read.error ? null : (
+              <Loading />
+            )
+          ) : view === 'screen' ? (
+            <TerminalText className="herdr-screen" text={shown.screenText} />
+          ) : (
+            <>
+              {shown.isTruncated && turnCount < MOST_TURN_COUNT ? (
+                <button type="button" className="coding-earlier" onClick={showEarlier}>
+                  {t('herdr.earlierTurns')}
+                </button>
+              ) : null}
+              {shown.turns.length === 0 ? (
+                <p className="coding-empty muted">{t('herdr.noTurns')}</p>
+              ) : (
+                <HerdrTurnsList turns={shown.turns} />
+              )}
+            </>
+          )}
+          {/* The question is the end of the conversation, and scrolls with it,
             rather than a panel that leaves a phone's transcript a sliver. */}
-        {latest.question ? (
-          <div className="coding-question">
-            <HerdrQuestionAnswer
-              key={latest.question.questionFingerprint}
-              session={latest}
-              question={latest.question}
-              onAnswered={(after) => {
-                if (after) setLatest(after)
-                isAtEnd.current = true
-                reloadRead()
-                onChanged()
-              }}
-            />
-          </div>
-        ) : null}
+          {latest.question ? (
+            <div className="coding-question">
+              <HerdrQuestionAnswer
+                key={latest.question.questionFingerprint}
+                session={latest}
+                question={latest.question}
+                onAnswered={(after) => {
+                  if (after) setLatest(after)
+                  isAtEnd.current = true
+                  reloadRead()
+                  onChanged()
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
       {/* Nothing can be sent while the session asks, and the question takes
           a typed answer of its own, so the box gives its room to it. */}
