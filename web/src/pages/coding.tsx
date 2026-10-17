@@ -559,6 +559,14 @@ function CodingSession({
   const isAtEnd = useRef(true)
   const placeToKeep = useRef<{ height: number; top: number } | null>(null)
   const shown = read.data
+  // A question that arrives is scrolled to, wherever the person was.
+  const questionFingerprint = latest.question?.questionFingerprint
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (!element || !questionFingerprint) return
+    element.scrollTop = element.scrollHeight
+    isAtEnd.current = true
+  }, [questionFingerprint])
   useLayoutEffect(() => {
     const element = scroller.current
     if (!element) return
@@ -779,22 +787,27 @@ function CodingSession({
             )}
           </>
         )}
+        {/* The question is the end of the conversation, and scrolls with it,
+            rather than a panel that leaves a phone's transcript a sliver. */}
+        {latest.question ? (
+          <div className="coding-question">
+            <HerdrQuestionAnswer
+              key={latest.question.questionFingerprint}
+              session={latest}
+              question={latest.question}
+              onAnswered={(after) => {
+                if (after) setLatest(after)
+                isAtEnd.current = true
+                reloadRead()
+                onChanged()
+              }}
+            />
+          </div>
+        ) : null}
       </div>
-      {latest.question ? (
-        <div className="coding-question">
-          <HerdrQuestionAnswer
-            key={latest.question.questionFingerprint}
-            session={latest}
-            question={latest.question}
-            onAnswered={(after) => {
-              if (after) setLatest(after)
-              reloadRead()
-              onChanged()
-            }}
-          />
-        </div>
-      ) : null}
-      <div className="coding-composer">
+      {/* Nothing can be sent while the session asks, and the question takes
+          a typed answer of its own, so the box gives its room to it. */}
+      <div className="coding-composer" hidden={Boolean(latest.question)}>
         <HerdrSendForm
           session={latest}
           draft={draft ?? { text: '', pending: [] }}

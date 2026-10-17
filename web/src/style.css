@@ -15285,10 +15285,18 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: var(--space-2);
 }
 
-.coding-question,
 .coding-composer {
   padding: var(--space-2) var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+.coding-composer[hidden] {
+  display: none;
+}
+
+/* At the end of the transcript, scrolling with it. */
+.coding-question {
+  margin-top: var(--space-3);
 }
 
 .coding-composer .agent-attachments {

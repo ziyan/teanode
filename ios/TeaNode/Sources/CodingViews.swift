@@ -453,8 +453,12 @@ struct CodingSessionView: View {
             case .screen: screen(session)
             }
         }
+        // Nothing can be sent while the session asks, and its question takes
+        // a typed answer of its own, so the box gives its room to it.
         .safeAreaInset(edge: .bottom) {
-            composer(session)
+            if !session.isAsking {
+                composer(session)
+            }
         }
     }
 
