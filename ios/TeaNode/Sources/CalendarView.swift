@@ -279,19 +279,18 @@ extension CalendarModel.ViewMode {
 }
 
 extension CalendarModel {
-    /// A few system colors for a calendar the server sent no place in its
-    /// spread of colors for. Green is left out: in this app green is what can be
-    /// pressed.
+    /// Eight system colors for calendars, as many as the server spreads them
+    /// over. Green is left out: in this app green is what can be pressed.
     static let palette: [Color] = [.blue, .orange, .purple, .teal, .indigo, .pink, .brown, .cyan]
 
     /// The color of a calendar that has none of its own: the place the server
     /// gave it among the colors of the person's calendars, which it spreads so
-    /// that no two are alike, painted in the first eight colors of the avatar
-    /// palette, which are the dashboard's `calendar-tone-0` to `calendar-tone-7`.
-    /// Only when the server sent no place is the id hashed into the palette.
+    /// that no two are alike, painted in this app's palette (the dashboard
+    /// paints the same places in its own tones). Only when the server sent no
+    /// place is the id hashed into the palette.
     private func spreadColor(of calendar: AgentCalendar?, calendarId: String) -> Color {
         if let colorIndex = calendar?.colorIndex {
-            return AvatarPalette.color(at: CalendarPalette.spreadIndex(serverIndex: colorIndex))
+            return Self.palette[CalendarPalette.spreadIndex(serverIndex: colorIndex)]
         }
         return Self.palette[CalendarPalette.index(calendarId: calendarId, paletteCount: Self.palette.count)]
     }

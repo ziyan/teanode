@@ -45,9 +45,9 @@ type ChatRecipient struct {
 	// they have not asked for any.
 	MutedUntil *time.Time
 
-	// IsArchived says the member put the chat away: it is as quiet for them as
+	// IsConversationArchived says the member put the chat away: it is as quiet for them as
 	// a muted one.
-	IsArchived bool
+	IsConversationArchived bool
 }
 
 // PublishChatEvents hands events of a chat to the chat hub: what the agent

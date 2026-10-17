@@ -55,7 +55,7 @@ func (self *Hub) NotifyChatMessage(message *models.AgentMessage, chatTitle strin
 		if recipient.AgentID == "" || (recipient.UserID == message.AuthorUserID && message.AuthorKind != models.ChatAuthorAgent) {
 			continue
 		}
-		if recipient.IsArchived || (recipient.MutedUntil != nil && recipient.MutedUntil.After(now)) {
+		if recipient.IsConversationArchived || (recipient.MutedUntil != nil && recipient.MutedUntil.After(now)) {
 			continue
 		}
 		if self.settings.Presence.IsWatchingConversation(recipient.UserID, recipient.ConversationID, now) {

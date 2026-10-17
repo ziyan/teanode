@@ -55,6 +55,8 @@ function startReadingInvitationCount() {
   void readOpenInvitationCount()
   invitationCountTimer = window.setInterval(readOpenInvitationCountUnlessHidden, INVITATION_COUNT_EVERY)
   window.addEventListener(CIRCLES_CHANGED_EVENT, readOpenInvitationCountUnlessHidden)
+  // A tab coming back reads at once, as the queries the pages use do.
+  document.addEventListener('visibilitychange', readOpenInvitationCountUnlessHidden)
   return stopReadingInvitationCount
 }
 
@@ -65,6 +67,7 @@ function stopReadingInvitationCount() {
   }
   window.clearInterval(invitationCountTimer)
   window.removeEventListener(CIRCLES_CHANGED_EVENT, readOpenInvitationCountUnlessHidden)
+  document.removeEventListener('visibilitychange', readOpenInvitationCountUnlessHidden)
   // Whoever shows it next starts from a new reading, not this person's number.
   invitationCountReadNumber++
   openInvitationCountNow = 0

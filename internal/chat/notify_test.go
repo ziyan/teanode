@@ -143,11 +143,11 @@ func TestAChatMessageIsNotNotifiedToAMemberWhoArchivedTheChat(t *testing.T) {
 		Content: "are you there?",
 	}
 	archived := world.recipient
-	archived.IsArchived = true
+	archived.IsConversationArchived = true
 	world.hub.NotifyChatMessage(message, "Weekend trip", true, []Recipient{archived})
 	world.expectSent(t, 0, "an archived chat")
 
-	archived.IsArchived = false
+	archived.IsConversationArchived = false
 	world.hub.NotifyChatMessage(message, "Weekend trip", true, []Recipient{archived})
 	world.expectSent(t, 1, "a chat put back")
 }
