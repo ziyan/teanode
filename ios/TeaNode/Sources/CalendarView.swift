@@ -1178,7 +1178,7 @@ struct EventOpener: View {
             if let draft {
                 EventEditor(model: model, draft: draft)
             } else if let reading {
-                EventReader(model: model, calendar: model.calendar(withId: event.calendarId), detail: reading)
+                EventReader(model: model, calendar: model.calendar(withId: event.calendarId), eventDetail: reading)
             } else if let problemText {
                 ContentUnavailableView("That event could not be read", systemImage: "calendar.badge.exclamationmark", description: Text(problemText))
             } else {
@@ -1187,11 +1187,11 @@ struct EventOpener: View {
         }
         .task {
             do {
-                let detail = try await model.connection.calendarEvent(calendarId: event.calendarId, id: event.id)
+                let eventDetail = try await model.connection.calendarEvent(calendarId: event.calendarId, id: event.id)
                 if let calendar = model.calendar(withId: event.calendarId), !calendar.canWrite {
-                    reading = detail
+                    reading = eventDetail
                 } else {
-                    draft = EventDraft(detail, calendarId: event.calendarId)
+                    draft = EventDraft(eventDetail, calendarId: event.calendarId)
                 }
             } catch {
                 problemText = error.localizedDescription

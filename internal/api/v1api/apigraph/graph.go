@@ -152,6 +152,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		}
 		if principal != nil {
 			principal.Impersonator = impersonator
+			principal.CredentialKind = api.CredentialKindFromRequest(request)
 		}
 		ctx = api.ContextWithPrincipal(ctx, principal)
 

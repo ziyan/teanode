@@ -20,6 +20,10 @@ type presenceReport struct {
 	reportedAt  time.Time
 	isVisible   bool
 	idleSeconds int
+	// conversationId is the conversation this tab or phone shows, empty when
+	// it shows none or does not say. It is the report's own, so a person with
+	// two tabs on two chats is looking at both.
+	conversationId string
 }
 
 // Presence is who has a dashboard or the app open, kept in memory and
@@ -51,10 +55,11 @@ func NewPresence() *Presence {
 
 // Report records one tab's or one phone's report for a person:
 // whether it is shown, and how long since their last keypress, click or
-// scroll in it. reporterId names the tab or phone; a report without one is
-// an older dashboard, whose hidden tab is not taken to hide a visible one
-// that reported lately, since it cannot say which tab it is.
-func (self *Presence) Report(userId, reporterId string, isVisible bool, idleSeconds int, now time.Time) {
+// scroll in it, and which conversation it shows, if any. reporterId names the
+// tab or phone; a report without one is an older dashboard, whose hidden tab
+// is not taken to hide a visible one that reported lately, since it cannot
+// say which tab it is.
+func (self *Presence) Report(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time) {
 	if userId == "" {
 		return
 	}
@@ -93,7 +98,7 @@ func (self *Presence) Report(userId, reporterId string, isVisible bool, idleSeco
 	if isVisible && !hasVisibleReport(reporters, now) {
 		self.hasArrival = true
 	}
-	reporters[reporterId] = presenceReport{reportedAt: now, isVisible: isVisible, idleSeconds: max(idleSeconds, 0)}
+	reporters[reporterId] = presenceReport{reportedAt: now, isVisible: isVisible, idleSeconds: max(idleSeconds, 0), conversationId: conversationId}
 }
 
 // hasVisibleReport says whether any of a person's tabs or phones reported
@@ -156,10 +161,32 @@ func (self *Presence) IsWatching(userId string, lastWroteAt, now time.Time) bool
 	return idle < phoneQuietAfter
 }
 
+// IsWatchingConversation says whether one of the person's tabs or phones is
+// shown, used lately, and has that conversation on screen, so that a message
+// in it need not be told to their phone. Looking at the app on another
+// screen, or at another conversation, does not count: the message is news.
+func (self *Presence) IsWatchingConversation(userId, conversationId string, now time.Time) bool {
+	if conversationId == "" {
+		return false
+	}
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	for _, report := range self.reports[userId] {
+		if !report.isVisible || report.conversationId != conversationId || now.Sub(report.reportedAt) > presenceFresh {
+			continue
+		}
+		reportIdle := time.Duration(report.idleSeconds)*time.Second + now.Sub(report.reportedAt)
+		if reportIdle < phoneQuietAfter {
+			return true
+		}
+	}
+	return false
+}
+
 // ReportPresence records a report for a person in the presence the agent
 // shares with the chat hub; see Presence.Report.
-func (self *Agent) ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, now time.Time) {
-	self.presence.Report(userId, reporterId, isVisible, idleSeconds, now)
+func (self *Agent) ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time) {
+	self.presence.Report(userId, reporterId, isVisible, idleSeconds, conversationId, now)
 }
 
 // isWatching is Presence.IsWatching for the agent's own notifications.

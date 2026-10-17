@@ -96,12 +96,25 @@ func newAvatarWorld(t *testing.T) *avatarWorld {
 
 // ask sends GraphQL as the named account and returns the data and the error
 // messages.
+//
+// The account is signed in the way the dashboard is, with a session: askWith
+// is the same with another credential.
 func (self *avatarWorld) ask(t *testing.T, user *models.User, query string) (map[string]any, []string) {
+	t.Helper()
+	return self.askWith(t, user, models.CredentialSession, query)
+}
+
+// askWith is ask with the credential the request signed in with, as the
+// authentication middleware reports it.
+func (self *avatarWorld) askWith(t *testing.T, user *models.User, credentialKind models.CredentialKind, query string) (map[string]any, []string) {
 	t.Helper()
 	body, _ := json.Marshal(graphRequest{Query: query})
 	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(api.AuthenticatedUsernameHeader, user.Username)
+	if credentialKind != "" {
+		request.Header.Set(api.CredentialKindHeader, string(credentialKind))
+	}
 	response := httptest.NewRecorder()
 	self.graph.graphView(response, request)
 	var outcome struct {

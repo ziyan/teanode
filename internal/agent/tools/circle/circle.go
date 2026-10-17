@@ -64,7 +64,7 @@ func init() {
 				Name: "circle_people", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionCircleUse},
 				Description: "Everybody the person shares a circle with, once each, by name and username. These are the people " +
-					"a chat or a share can be offered to; nobody else on the server is visible to them.",
+					"a share can be offered to; nobody else on the server is visible to them.",
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					result, err := operator.Execute(ctx, `query { ListCirclePeople { userId username name } }`, nil)
 					if err != nil {

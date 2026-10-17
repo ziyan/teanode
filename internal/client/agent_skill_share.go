@@ -42,6 +42,7 @@ type SkillShare struct {
 type SkillShareCall struct {
 	ID           string `json:"id"`
 	SkillShareID string `json:"skillShareId"`
+	IsShareEnded bool   `json:"isShareEnded"`
 	SkillName    string `json:"skillName"`
 
 	GranteeUserID           string  `json:"granteeUserId"`
@@ -64,6 +65,10 @@ type SkillShareCall struct {
 	DecisionNote string     `json:"decisionNote"`
 	ExpiresAt    *time.Time `json:"expiresAt"`
 	CreatedAt    time.Time  `json:"createdAt"`
+
+	// ApproveAddress is where a call that waits is approved, filled in by the
+	// command line from the server it talked to; the server does not send it.
+	ApproveAddress string `json:"approveAddress,omitempty"`
 }
 
 const (
@@ -71,7 +76,7 @@ const (
     granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
     paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor createdAt`
 
-	skillShareCallFields = `id skillShareId skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex ownerName
+	skillShareCallFields = `id skillShareId isShareEnded skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex ownerName
     toolName toolArguments requestReason amountMinor currencyCode callState toolOutput decidedAt decisionNote expiresAt createdAt`
 
 	// DocumentListSkillShares lists the shares the caller made and was given.
@@ -90,6 +95,11 @@ const (
 	// DocumentListSkillShareCalls lists the calls made through a share.
 	DocumentListSkillShareCalls = `query ($shareId: String!, $callState: String, $limit: Int) {
   ListSkillShareCalls(shareId: $shareId, callState: $callState, limit: $limit) { ` + skillShareCallFields + ` }
+}`
+
+	// DocumentListEndedSkillShareCalls lists the calls of shares that ended.
+	DocumentListEndedSkillShareCalls = `query ($callState: String, $limit: Int) {
+  ListSkillShareCalls(isShareEnded: true, callState: $callState, limit: $limit) { ` + skillShareCallFields + ` }
 }`
 
 	// DocumentAnswerSkillShareCall approves or declines a call that waits.
@@ -166,6 +176,23 @@ func ListSkillShareCalls(ctx context.Context, connection *Client, shareId, callS
 		ListSkillShareCalls []*SkillShareCall `json:"ListSkillShareCalls"`
 	}
 	if err := connection.Execute(ctx, DocumentListSkillShareCalls, variables, &answer); err != nil {
+		return nil, err
+	}
+	return answer.ListSkillShareCalls, nil
+}
+
+// ListEndedSkillShareCalls are the calls of shares that have ended, which the
+// owner keeps as a record: every one for the owner, the caller's own for the
+// person it was shared with. A state narrows them; empty is every state.
+func ListEndedSkillShareCalls(ctx context.Context, connection *Client, callState string) ([]*SkillShareCall, error) {
+	variables := map[string]any{"callState": nil, "limit": nil}
+	if callState != "" {
+		variables["callState"] = callState
+	}
+	var answer struct {
+		ListSkillShareCalls []*SkillShareCall `json:"ListSkillShareCalls"`
+	}
+	if err := connection.Execute(ctx, DocumentListEndedSkillShareCalls, variables, &answer); err != nil {
 		return nil, err
 	}
 	return answer.ListSkillShareCalls, nil

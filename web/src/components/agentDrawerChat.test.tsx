@@ -580,6 +580,31 @@ it('tells the server the person is present when the agent is off, for the chats'
   )
 })
 
+// The presence reports the drawer sends, in order.
+function presenceReports() {
+  return vi
+    .mocked(graphql)
+    .mock.calls.filter(([document]) => document.includes('ReportAgentPresence'))
+    .map(([, variables]) => variables as { isVisible: boolean; conversationId?: string })
+}
+
+it('names the chat on show in its presence reports, so that its messages stay off the phone', async () => {
+  answerWith({ isAgentOn: false })
+  localStorage.setItem(OPEN_KEY, '1')
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  await waitFor(() => expect(presenceReports().slice(-1)[0]?.conversationId).toBe('chat-conversation'))
+  expect(presenceReports().slice(-1)[0]?.isVisible).toBe(true)
+})
+
+it('names no conversation in its presence reports while the drawer is closed', async () => {
+  answerWith({ isAgentOn: false })
+  localStorage.removeItem(OPEN_KEY)
+  renderDrawer()
+  await waitFor(() => expect(presenceReports().length).toBeGreaterThan(0))
+  expect(presenceReports().every((report) => !report.conversationId)).toBe(true)
+})
+
 it('opens on the chat spoken in last when the agent is off, whichever the list holds first', async () => {
   answerWith({ isAgentOn: false, hasOlderChat: true })
   localStorage.setItem(OPEN_KEY, '1')

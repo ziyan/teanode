@@ -299,6 +299,7 @@ struct CalendarShareScreen: View {
                 doneText = String(localized: "Shared")
                 chosenPersonId = nil
                 chosenCircleId = nil
+                level = .titles
                 shares = try await model.connection.calendarShares(calendarId: calendar.id)
             } catch {
                 problemText = error.localizedDescription
@@ -327,28 +328,28 @@ struct CalendarShareScreen: View {
 struct EventReader: View {
     let model: CalendarModel
     let calendar: AgentCalendar?
-    let detail: CalendarEventDetail
+    let eventDetail: CalendarEventDetail
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Text(detail.summary.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "(no title)"))
+                    Text(eventDetail.summary.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "(no title)"))
                         .font(.headline)
                     Text(whenText)
-                    if let location = detail.location, !location.isEmpty {
+                    if let location = eventDetail.location, !location.isEmpty {
                         Label(location, systemImage: "mappin.and.ellipse")
                     }
                 }
-                if let guests = detail.attendees, !guests.isEmpty {
+                if let guests = eventDetail.attendees, !guests.isEmpty {
                     Section("Invited") {
                         ForEach(guests, id: \.address) { guest in
                             Text(guest.name.flatMap { $0.isEmpty ? nil : $0 } ?? guest.address)
                         }
                     }
                 }
-                if let notes = detail.description, !notes.isEmpty {
+                if let notes = eventDetail.description, !notes.isEmpty {
                     Section("Notes") {
                         Text(notes)
                     }
@@ -371,16 +372,16 @@ struct EventReader: View {
     }
 
     private var whenText: String {
-        if detail.allDay {
+        if eventDetail.allDay {
             // The day it is on, read from the parts the server wrote and then
             // placed in this zone, so that it is the same day everywhere.
-            guard let first = CalendarDates.day(ofAllDay: detail.startsAt), let date = Calendar.current.date(from: first) else {
+            guard let first = CalendarDates.day(ofAllDay: eventDetail.startsAt), let date = Calendar.current.date(from: first) else {
                 return String(localized: "All day")
             }
             return String(localized: "\(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())), all day")
         }
-        guard let start = ServerTime.date(detail.startsAt) else { return "" }
-        let end = ServerTime.date(detail.endsAt) ?? start
+        guard let start = ServerTime.date(eventDetail.startsAt) else { return "" }
+        let end = ServerTime.date(eventDetail.endsAt) ?? start
         return "\(start.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())) \((start..<max(start, end)).formatted(date: .omitted, time: .shortened))"
     }
 }

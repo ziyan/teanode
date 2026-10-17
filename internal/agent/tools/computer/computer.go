@@ -151,7 +151,8 @@ func init() {
 // answersSkillShareCall says a shell call runs the command that approves or
 // declines a call waiting on the person (tools.AnswersSkillShareCall). That
 // is the person's act, so the call asks, whatever the person allowed the agent
-// to do alone.
+// to do alone. A courtesy: the server is what refuses an approval that is not a
+// person's tap.
 func answersSkillShareCall(arguments json.RawMessage) bool {
 	var call shellArguments
 	if json.Unmarshal(arguments, &call) != nil {

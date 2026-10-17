@@ -71,7 +71,7 @@ enum AvatarPalette {
     ]
 
     static func color(at index: Int) -> Color {
-        let position = (0..<AvatarColor.count).contains(index) ? index : 0
+        let position = (0..<AvatarColor.colorCount).contains(index) ? index : 0
         return Color(
             UIColor { traits in
                 color(hex: traits.userInterfaceStyle == .dark ? darkHexValues[position] : lightHexValues[position])

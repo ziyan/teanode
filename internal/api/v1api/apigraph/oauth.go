@@ -207,6 +207,16 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		return nil, fmt.Errorf("%w: an app is signed in by the person themselves, not while signed in as them", api.ErrPermissionDenied)
 	}
 
+	// The app's own sign-in is marked as such only when the approval was a
+	// person's tap, on the dashboard or in the app. An approval made with a
+	// command line token could have been made by a program on the person's
+	// computer, which would then hold an app's token and with it the right
+	// to approve a call that spends money. It still gets its token, unmarked.
+	var clientKind models.TokenClientKind
+	if isWholeAccount && principal.IsPersonsTap() {
+		clientKind = models.ClientKindApp
+	}
+
 	// The secret half of the approval. The program collects by presenting it
 	// alongside the verifier, and only the hash is kept here.
 	key := security.GenerateRandomString(32, security.LowerAlphaNumeric)
@@ -217,6 +227,7 @@ func (self *graph) ApproveOAuthAuthorization(ctx context.Context, arguments Appr
 		RedirectURI:   arguments.RedirectURI,
 		CodeChallenge: challenge,
 		Resource:      resource,
+		ClientKind:    clientKind,
 		ExpiresAt:     time.Now().Add(authorizationLifetime),
 	}, hashOf(key))
 	if err != nil {

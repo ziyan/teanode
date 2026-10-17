@@ -325,7 +325,10 @@ takes them from the next turn; and every call is checked again when it is made.
    the limit for one payment; or when it would take the calendar month (UTC)
    past the monthly limit. The month's total is the calls that ran and the calls
    that failed, in the share's currency, counted from when they ran, and nothing
-   else. A failed call counts because a failure after the command acted cannot be
+   else. It is counted by who the calls were between, the owner's agent, the
+   other person and the skill, and not by the share: a call carries those
+   itself, so a share made again after the first ended starts the month where
+   it was. A failed call counts because a failure after the command acted cannot be
    told from one before it, and the limit is the owner's bound on what could have
    been spent. A tool that declares an amount waits too on a share with no limit
    of either kind that is not set to ask every time: there is nothing a call
@@ -362,8 +365,9 @@ the kind `payment_waiting`) with who asked, the tool, what it was given, the
 amount, and the reason their agent gave, shown as that person's words and never
 as an instruction; and a notification of the kind `payment` on her phones,
 whether or not she is looking at a screen, which only opens the app. She
-answers with `AnswerSkillShareCall`, from the card, the agent page or
-`teanode agent skill approve`. Approving runs exactly the stored call with the
+answers with `AnswerSkillShareCall`, from the card, the agent page or the
+iPhone app; `teanode agent skill calls` lists what waits, with where to
+approve it, and `decline` says no. Approving runs exactly the stored call with the
 stored arguments, skipping the limits and the judge, since the approval is her
 word on this call, and it needs her computer connected first: with it away the
 approval is refused and the call keeps waiting. The answer is a conditional
@@ -371,24 +375,58 @@ update from `waiting_for_approval`, so two answers at once, from the phone and
 the drawer, change the row once and run the call once. A call nobody answers in
 a day expires, in the worker's sweep.
 
-An approval is meant to be the person's act, and what is guaranteed is this.
-The API refuses `AnswerSkillShareCall` to the agent's own operations, which
-carry the agent as the actor, and to an operator signed in as the owner. The
-`skill` tool has actions to share, unshare, list shares and list calls, and none
-that answers a call; the parity test fails if one is added. A request that
-carries the owner's own sign-in is the owner's whoever typed it, so a command
-the agent runs on her computer with her saved sign-in (`teanode agent skill
-approve` or `decline`) arrives as her; no token is minted for an agent run or a
-coding session hook that the API could refuse instead. That path is held in the
-tools: a `shell` call, or a `terminal` start or typed text, whose words look
-like that command (`tools.AnswersSkillShareCall`: the words agent, skill and
-approve or decline in that order, with a few between) always asks her, as
-money, and the reason `personsAnswer`, which nobody can allow, keeps it from
-running in a turn with nobody present even when she allowed every other
-reason. A skill whose command contains those words is held the same way. It is a
-guess over words, not a parse of the shell: a command assembled from pieces, or
-typed into a terminal one key at a time, is not seen, and a request made straight
-to the API with her sign-in is out of its reach.
+Approving, and lending money, are a person's tap, and the server holds that.
+`AnswerSkillShareCall` with `isApproved` and `ShareSkill` (making a share,
+raising its limits or its tools, or turning off asking every time) are accepted
+only from the dashboard's session, which has passed the check against forms on
+other sites, or from the iPhone app's own sign-in. A command line token, an API
+token, the console and the agent's own operations are refused, with "approve it
+on the dashboard or in the iPhone app". That is the whole guard, because an
+agent can drive the owner's computer (the `shell`, `terminal`, `claude_code`,
+`codex` and `herdr` tools reach it, and her saved command line sign-in is
+there), and anything it types arrives as her token.
+
+How the server tells the phone app's token from a command line token: the
+token row has a `client_kind`, `app` or empty, and `Principal.CredentialKind`
+carries it (`session`, `app` or `token`) for the operations that need a tap
+(`Principal.IsPersonsTap`). The app's sign-in marks its token, by a connect code
+or by its own consent, only when the code or the approval was made where a
+person was tapping, that is on the dashboard or in an app already marked. A code
+made with a command line token (`teanode agent phone pair`, or a card an agent
+shows) is not marked: its phone works for everything but these two things, and
+connecting it again from the dashboard's Connect page marks it. A renewal keeps
+its token's kind. Tokens the app held before the column existed are marked when
+the migration runs.
+
+What only takes away stays open to every sign-in of the owner: declining a call,
+taking a share back, lowering a share's limits or tools in the same currency,
+and turning asking every time on. The agent's own operations may do the last two
+and not the others, and are refused declining and approving both, since an
+agent speaking for the owner is the thing the answer is not. The `skill` tool
+has actions to share, unshare, list shares and list calls, and none that
+answers a call; the parity test fails if one is added. Its `share` action is a
+granting call on a card the person answers, and shares only so that every call
+asks (`is_approval_required` true, no limits): the card is answered by a request
+the tool cannot see the kind of, so a share that lets calls through unasked is
+left to the dashboard and the app, which the server enforces. Nothing the tool
+shares runs without the owner's approval.
+
+On top of that is a courtesy: a `shell` call, or a `terminal` start or typed
+text, whose words look like `teanode agent skill approve` or `decline`
+(`tools.AnswersSkillShareCall`: the words agent, skill and approve or decline in
+that order, with a few between) asks her first, as money, and `personsAnswer`,
+which nobody can allow, keeps it from running in a turn with nobody present.
+It is a guess over words, not a parse of the shell, and it does not have to
+hold: the server refuses the approval however the command was written.
+
+**When a share ends,** because the owner took it back or because the two stopped
+sharing a circle, its calls stay. A call carries the owner's agent, the other
+person, the skill and the tool it was a call of, and loses only the share it
+was made through; the ones that were waiting are expired, since nobody can
+approve a call of a share that is gone. The owner lists the calls of ended
+shares (`ListSkillShareCalls` with `isShareEnded`, the dashboard's "Shares that
+ended", `teanode agent skill calls --ended`, the tool's `calls` with
+`is_share_ended`), and the other person lists their own.
 
 **Telling the other person.** The conversation the call came from is woken with
 how it came out (approved and ran, approved and failed, declined, expired), the
@@ -410,8 +448,9 @@ transaction, and its owner is told in their main conversation which shares and
 why (`Agent.TellSkillSharesNowAsk`). Nothing else about the share changes.
 
 **Leaving a circle** deletes the skill shares between two people who no longer
-share any circle, in the same transaction, beside the calendar and page shares.
-Taking a skill off the server deletes the shares of its tools.
+share any circle, in the same transaction, beside the calendar and page shares,
+and keeps their calls as above. Taking a skill off the server deletes the shares
+of its tools.
 
 | | |
 | --- | --- |
@@ -448,15 +487,18 @@ Taking a skill off the server deletes the shares of its tools.
                                           your own value, read without echo
     teanode agent skill secret clear news NEWSAPI_KEY
 
-    teanode agent skill share payments ben --tools pay --payment-limit 100.00 \
-        --monthly-limit 400.00 --currency usd
-                                          let ben use pay on your computer
     teanode agent skill share payments ben --tools pay --ask-every-time
+                                          let ben ask to use pay on your computer
     teanode agent skill shares            what you shared, and what is shared with you
     teanode agent skill calls <share-id> [--waiting]
-    teanode agent skill approve <call-id> [--note ...]
+                                          what was asked, and where to approve it
+    teanode agent skill calls --ended     the calls of shares that ended
     teanode agent skill decline <call-id> [--note ...]
     teanode agent skill unshare <share-id>
+
+Sharing with limits, which lets a call through unasked, and approving a call are
+done on the dashboard's agent page or in the iPhone app; from a terminal the
+server accepts only asking every time, and lowering what a share allows.
 
 ## Caveats
 

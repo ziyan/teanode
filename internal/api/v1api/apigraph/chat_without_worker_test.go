@@ -238,19 +238,34 @@ func TestAChatMessageReachesAPhoneOnAServerWithNoAgentWorker(t *testing.T) {
 		t.Errorf("the notification says %+v", content)
 	}
 
-	// Bob has the app open: the report reaches the hub, with no worker to take
-	// it, and the next message is not sent to the phone.
-	if reported := world.call(t, world.bob, `mutation { ReportAgentPresence(isVisible: true, idleSeconds: 0, reporterId: "the-app") }`)["ReportAgentPresence"]; reported != true {
+	// Bob has the app open on that chat: the report reaches the hub, with no
+	// worker to take it, and the next message is not sent to the phone.
+	reportOn := func(isVisible bool, conversationId string) any {
+		return world.call(t, world.bob, fmt.Sprintf(`mutation { ReportAgentPresence(isVisible: %t, idleSeconds: 0, reporterId: "the-app", conversationId: %q) }`, isVisible, conversationId))["ReportAgentPresence"]
+	}
+	if reported := reportOn(true, content.ConversationID); reported != true {
 		t.Fatalf("ReportAgentPresence answered %v with no worker", reported)
 	}
 	world.say(t, world.alice, aliceChat, "bring the salad")
 	if sent := relay.settled(2); len(sent) != 1 {
-		t.Errorf("a person with the app open was notified: %d", len(sent))
+		t.Errorf("a person with the app open on the chat was notified: %d", len(sent))
 	}
-	// And the app goes to the background: the next one is.
-	world.call(t, world.bob, `mutation { ReportAgentPresence(isVisible: false, idleSeconds: 0, reporterId: "the-app") }`)
+	// The app is open on another screen: the next one is.
+	reportOn(true, "")
 	world.say(t, world.alice, aliceChat, "and the wine")
 	if sent := relay.settled(2); len(sent) != 2 {
-		t.Errorf("%d notifications in all, want 2", len(sent))
+		t.Errorf("%d notifications in all after the app moved to another screen, want 2", len(sent))
+	}
+	// Back on the chat, and then in the background: the chat is quiet only
+	// while it is on screen.
+	reportOn(true, content.ConversationID)
+	world.say(t, world.alice, aliceChat, "and the bread")
+	if sent := relay.settled(3); len(sent) != 2 {
+		t.Errorf("%d notifications in all with the app back on the chat, want 2", len(sent))
+	}
+	reportOn(false, content.ConversationID)
+	world.say(t, world.alice, aliceChat, "and the cheese")
+	if sent := relay.settled(3); len(sent) != 3 {
+		t.Errorf("%d notifications in all after the app went to the background, want 3", len(sent))
 	}
 }

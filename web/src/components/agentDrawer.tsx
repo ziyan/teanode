@@ -3284,9 +3284,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // Whether this tab is in front of the person, told to the server so that
   // the agent starts a conversation on its own only with somebody who is
   // there, and a chat is sent to their phone only when they are not looking
-  // at it. Not from the extension's frame: the page behind it reports
-  // already. With the agent off a person who chats is still reported.
-  useAgentPresence(isReachable && !standalone)
+  // at that conversation, which is why the one on show is named: the drawer
+  // closed, or still reading another conversation, names none. Not from the
+  // extension's frame: the page behind it reports already. With the agent
+  // off a person who chats is still reported.
+  const presenceConversationId = open && loaded && (!conversationId || loaded.id === conversationId) ? loaded.id : ''
+  useAgentPresence(isReachable && !standalone, presenceConversationId)
 
   // A turn the agent starts on its own in the main conversation -- its
   // introduction, a memory check, an idea, an alert -- opens the drawer on

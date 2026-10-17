@@ -90,6 +90,15 @@ type CircleOperation interface {
 	// belongs to one circle.
 	ListCirclePeople(userId string) ([]*models.CircleMember, error)
 
+	// RecordCircleInvitationSend counts one call that invites somebody against
+	// the person who made it, and refuses it with ErrLimitReached when they
+	// have sent models.CircleInvitationsPerHourMost in the hour before sentAt.
+	// It is called for every invitation however it ends, before anything about
+	// the person invited is looked at, and its rows outlive the circles the
+	// invitations were to, so neither whether a username exists nor deleting
+	// a circle changes the count.
+	RecordCircleInvitationSend(inviterUserId string, sentAt time.Time) error
+
 	// CreateCircleInvitation writes an invitation, and says whether it is a
 	// new one. A person already in the circle is not invited again and
 	// nothing is written (nil, false). A waiting invitation to the same
@@ -718,6 +727,30 @@ func (self *transaction) ListCirclePeople(userId string) ([]*models.CircleMember
 	return people, nil
 }
 
+func (self *transaction) RecordCircleInvitationSend(inviterUserId string, sentAt time.Time) error {
+	if inviterUserId == "" {
+		return ErrInvalidArguments
+	}
+	// Taken in turns by the person's row, so that two calls at once cannot
+	// both find room for the same last one.
+	if err := self.tx.Exec(`SELECT 1 FROM "user" WHERE "id" = ? FOR UPDATE`, inviterUserId).Error; err != nil {
+		return err
+	}
+	var sentCount int64
+	if err := self.tx.Table("circle_invitation_send").
+		Where(`"user_id" = ? AND "sent_at" > ?`, inviterUserId, sentAt.Add(-time.Hour)).
+		Count(&sentCount).Error; err != nil {
+		return err
+	}
+	if sentCount >= models.CircleInvitationsPerHourMost {
+		return limitReached("you have sent %d invitations in the last hour, the most one person sends; try again later", models.CircleInvitationsPerHourMost)
+	}
+	if err := self.tx.Exec(`DELETE FROM "circle_invitation_send" WHERE "user_id" = ? AND "sent_at" <= ?`, inviterUserId, sentAt.Add(-24*time.Hour)).Error; err != nil {
+		return err
+	}
+	return self.tx.Exec(`INSERT INTO "circle_invitation_send" ("user_id", "sent_at") VALUES (?, ?)`, inviterUserId, sentAt).Error
+}
+
 func (self *transaction) CreateCircleInvitation(invitation *models.CircleInvitation) (*models.CircleInvitation, bool, error) {
 	if !invitation.MemberRole.IsValid() || invitation.InvitedUserID == "" {
 		return nil, false, ErrInvalidArguments
@@ -739,19 +772,6 @@ func (self *transaction) CreateCircleInvitation(invitation *models.CircleInvitat
 	}
 	invitationId := waiting.ID
 	isNew := result.RowsAffected == 0
-	// New or renewed, an invitation is one more card for someone, and one
-	// person sends only so many in an hour.
-	if invitation.InvitedByUserID != "" {
-		var sentCount int64
-		if err := self.tx.Model(&circleInvitationModel{}).
-			Where(`"invited_by_user_id" = ? AND "created_at" > ?`, invitation.InvitedByUserID, invitation.CreatedAt.Add(-time.Hour)).
-			Count(&sentCount).Error; err != nil {
-			return nil, false, err
-		}
-		if sentCount >= models.CircleInvitationsPerHourMost {
-			return nil, false, limitReached("you have sent %d invitations in the last hour, the most one person sends; try again later", models.CircleInvitationsPerHourMost)
-		}
-	}
 	if isNew {
 		invitationId = newID()
 		if err := self.tx.Create(&circleInvitationModel{

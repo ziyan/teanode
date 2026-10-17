@@ -62,7 +62,6 @@ type SharedAgentEdge struct {
 	FromName   string `json:"fromName"`
 	ToName     string `json:"toName"`
 	Relation   string `json:"relation"`
-	Note       string `json:"note"`
 	IsProposed bool   `json:"isProposed"`
 }
 
@@ -108,7 +107,7 @@ const (
 	sharedAgentPageFields = `ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
     path name nodeKind aliases opening isQuoteShared
     facts { number factKind text happenedAt happenedPrecision saidAt isInferred evidenceSource evidenceQuote }
-    edges { fromPath toPath fromName toName relation note isProposed }
+    edges { fromPath toPath fromName toName relation isProposed }
     children { path name nodeKind opening }`
 
 	// DocumentListAgentPageShares lists the shares the caller made.

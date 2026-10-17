@@ -85,8 +85,13 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 		}
 		for _, item := range found {
 			starts, ends := moments(item, where)
-			row := map[string]any{
-				"whose": each.whose(), "level": each.ShareLevel, "calendar": each.ID,
+			row := map[string]any{"whose": each.whose(), "level": each.ShareLevel}
+			// The value calendar_edit and calendar_remove take to reach this
+			// calendar, so an entry can be acted on without another lookup.
+			if each.IsCircleCalendar {
+				row["circle"] = each.CircleName
+			} else {
+				row["person"] = each.OwnerUsername
 			}
 			if item.IsBusyOnly {
 				row["what"] = "busy"

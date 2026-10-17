@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/chat"
+	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -181,6 +182,10 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 				return "", err
 			}
 		}
+		effort, err := effortOf(turn, arguments)
+		if err != nil {
+			return "", err
+		}
 		settings := &agent.AskSettings{
 			RunID:        security.NewULID(),
 			Agent:        ownerAgent,
@@ -190,7 +195,7 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 			Message:      arguments.Message,
 			Attachments:  attachments,
 			Surface:      "chat",
-			Effort:       effortOf(turn, arguments),
+			Effort:       effort,
 			Chat: &agent.ChatTurn{
 				ChatID: session.Chat.ID, MessageID: shown.ID,
 				AskerUserID: session.User.ID, AskerName: session.User.DisplayName(),
@@ -221,11 +226,27 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 // effortOf is how hard the turn thinks: as the asker chose for their own agent,
 // and the default for anybody else's, since the owner's budget is not theirs
 // to spend more of (applyChatSettings holds the same rule for every caller).
-func effortOf(turn chat.AgentTurn, arguments AskAgentArguments) string {
+//
+// The effort is checked as AskAgent checks it, for the owner's own agent, so
+// that a word that is not an effort is refused here too and not handed on to
+// the model service.
+func effortOf(turn chat.AgentTurn, arguments AskAgentArguments) (string, error) {
 	if turn.AgentTurnKind == chat.AgentTurnMember {
-		return ""
+		return "", nil
 	}
-	return arguments.Effort
+	if err := checkEffort(arguments.Effort); err != nil {
+		return "", err
+	}
+	return arguments.Effort, nil
+}
+
+// checkEffort refuses an effort that is not low, medium, high or empty.
+func checkEffort(effort string) error {
+	switch effort {
+	case "", llm.EffortLow, llm.EffortMedium, llm.EffortHigh:
+		return nil
+	}
+	return fmt.Errorf("%w: effort is low, medium or high", api.ErrInvalidArguments)
 }
 
 func firstError(first, second error) error {

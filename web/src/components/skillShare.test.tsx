@@ -27,6 +27,7 @@ function call(overrides: Partial<SkillShareCall> = {}): SkillShareCall {
   return {
     id: 'call-1',
     skillShareId: 'share-1',
+    isShareEnded: false,
     skillName: 'payments',
     granteeUserId: 'ben-id',
     granteeUsername: 'ben',

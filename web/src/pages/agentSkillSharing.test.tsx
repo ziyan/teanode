@@ -154,12 +154,14 @@ it('shares with Ask me every time instead of limits, sending none', async () => 
 
 it('lists a share with its limits and the month so far, its waiting requests first, and the shares made to the person', async () => {
   vi.mocked(graphql).mockImplementation(async (query: string) => {
+    if (query.includes('isShareEnded: true')) return { ListSkillShareCalls: [] }
     if (query.includes('ListSkillShareCalls')) {
       return {
         ListSkillShareCalls: [
           {
             id: 'call-1',
             skillShareId: 'share-1',
+            isShareEnded: false,
             skillName: 'payments',
             granteeUserId: 'ben-id',
             granteeUsername: 'ben',
@@ -207,4 +209,82 @@ it('lists a share with its limits and the month so far, its waiting requests fir
   fireEvent.click(screen.getAllByRole('button', { name: 'Requests' })[0])
   expect(await screen.findByRole('button', { name: 'Approve and run it' })).toBeTruthy()
   expect(screen.getByText('Example Store')).toBeTruthy()
+})
+
+it('keeps the record of the calls of shares that ended, in a section of their own', async () => {
+  vi.mocked(graphql).mockImplementation(async (query: string) => {
+    if (query.includes('isShareEnded: true')) {
+      return {
+        ListSkillShareCalls: [
+          {
+            id: 'call-9',
+            skillShareId: '',
+            isShareEnded: true,
+            skillName: 'payments',
+            granteeUserId: 'ben-id',
+            granteeUsername: 'ben',
+            granteeName: 'Ben Example',
+            granteeAvatarUrl: null,
+            granteeAvatarColorIndex: 2,
+            ownerName: 'Ada Example',
+            toolName: 'pay',
+            toolArguments: '{}',
+            requestReason: 'the weekly groceries',
+            amountMinor: 2500,
+            currencyCode: 'usd',
+            callState: 'ran',
+            toolOutput: '',
+            decidedAt: null,
+            decisionNote: '',
+            expiresAt: null,
+            createdAt: '2026-10-17T10:00:00Z',
+          },
+        ],
+      }
+    }
+    return overview([])
+  })
+  inApp(<SkillSharesCard />)
+  expect(await screen.findByText('Shares that ended')).toBeTruthy()
+  expect(screen.getByText('payments, pay, with Ben Example')).toBeTruthy()
+  expect(screen.getByText('Ran')).toBeTruthy()
+  expect(screen.getByText(/25\.00 USD/)).toBeTruthy()
+})
+
+it('draws the record of ended shares even when there is nothing left to lend or share', async () => {
+  vi.mocked(graphql).mockImplementation(async (query: string) => {
+    if (query.includes('isShareEnded: true')) {
+      return {
+        ListSkillShareCalls: [
+          {
+            id: 'call-9',
+            skillShareId: '',
+            isShareEnded: true,
+            skillName: 'payments',
+            granteeUserId: 'ben-id',
+            granteeUsername: 'ben',
+            granteeName: '',
+            granteeAvatarUrl: null,
+            granteeAvatarColorIndex: 2,
+            ownerName: 'Ada Example',
+            toolName: 'pay',
+            toolArguments: '{}',
+            requestReason: '',
+            amountMinor: null,
+            currencyCode: '',
+            callState: 'expired',
+            toolOutput: '',
+            decidedAt: null,
+            decisionNote: '',
+            expiresAt: null,
+            createdAt: '2026-10-17T10:00:00Z',
+          },
+        ],
+      }
+    }
+    return { ListSkillShares: [], ListAgentSkills: [], ListCirclePeople: [] }
+  })
+  inApp(<SkillSharesCard />)
+  expect(await screen.findByText('payments, pay, with ben')).toBeTruthy()
+  expect(screen.getByText('Expired')).toBeTruthy()
 })

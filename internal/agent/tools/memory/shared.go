@@ -62,7 +62,7 @@ func refuseWritingToAnotherOwner(run tools.Run, item *memoryItem) error {
 func sharedMemoryOf(run tools.Run) (tools.SharedMemory, error) {
 	shared, ok := run.(tools.SharedMemory)
 	if !ok || !shared.CanReadSharedPages() {
-		return nil, fmt.Errorf("this run cannot read pages other people shared with the person")
+		return nil, fmt.Errorf("pages other people shared are read only in a one-to-one conversation with the person, not in a chat with others or a background run; tell the person to ask in their own drawer")
 	}
 	return shared, nil
 }

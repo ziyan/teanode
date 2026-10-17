@@ -601,4 +601,97 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(
             try sentVariables(try XCTUnwrap(fake.sent.last)), ["conversationId": .string("c"), "isAgentAskableByOthers": .bool(false)])
     }
+
+    // MARK: Reading a chat again
+
+    func testReadingAChatAgainKeepsTheWordsOfAnAnswerStillBeingWritten() throws {
+        var earlier = Transcript(messages: [], isChat: true)
+        earlier.apply(AgentEvent(kind: "text", runId: "run-1", sequence: 0, text: "Thursday at", name: "Robin", authorAgentId: "agent-1"))
+        var reread = Transcript(
+            messages: try messages([message("01J0000000000000000000001", "Dinner?", authorUserId: "user-b", authorName: "Person B", isMine: false)]),
+            isChat: true)
+        reread.keepStreaming(from: earlier)
+        XCTAssertEqual(reread.lines.map(\.text), ["Dinner?", "Thursday at"])
+        XCTAssertEqual(reread.lines.last?.isStreaming, true)
+        // The stored message later takes the place of the words, as it does when nothing was read again.
+        let storedMessage = message(
+            "01J0000000000000000000002", "Thursday at 3.", authorUserId: "user-a", authorName: "Robin", isMine: false, authorKind: "agent",
+            extra: #","agentRunId":"run-1""#)
+        let stored = try event(#"{"kind":"said","runId":"","sequence":0,"message":\#(storedMessage)}"#)
+        reread.apply(stored)
+        XCTAssertEqual(reread.lines.map(\.text), ["Dinner?", "Thursday at 3."])
+        XCTAssertEqual(reread.lines.last?.isStreaming, false)
+    }
+
+    func testWordsThatAreAlreadyStoredAreNotKeptBesideTheirMessage() throws {
+        var earlier = Transcript(messages: [], isChat: true)
+        earlier.apply(AgentEvent(kind: "text", runId: "run-1", sequence: 0, text: "Thursday at", name: "Robin", authorAgentId: "agent-1"))
+        var reread = Transcript(
+            messages: try messages([
+                message(
+                    "01J0000000000000000000002", "Thursday at 3.", authorUserId: "user-a", authorName: "Robin", isMine: false, authorKind: "agent",
+                    extra: #","agentRunId":"run-1""#)
+            ]),
+            isChat: true)
+        reread.keepStreaming(from: earlier)
+        XCTAssertEqual(reread.lines.map(\.text), ["Thursday at 3."])
+    }
+
+    func testAReactionThatNamesNobodyInAChatIsNeverTheReadersOwn() throws {
+        var transcript = Transcript(
+            messages: try messages([
+                message(
+                    "01J0000000000000000000001", "Dinner?", authorUserId: "user-b", authorName: "Person B", isMine: false,
+                    extra:
+                        #","reactions":[{"emoji":"👍","reactorKind":"person","reactedAt":"2030-01-01T10:01:00Z","reactorUserId":null,"reactorName":null},{"emoji":"👍","reactorKind":"person","reactedAt":"2030-01-01T10:02:00Z","reactorUserId":null,"reactorName":null}]"#
+                )
+            ]),
+            isChat: true)
+        let line = try XCTUnwrap(transcript.lines.first)
+        XCTAssertEqual(line.reactions.count, 2)
+        // Two accounts that are gone do not share one identity in a list.
+        XCTAssertEqual(Set(line.reactions.map(\.id)).count, 2)
+        XCTAssertNil(line.reaction(of: "person", userId: "user-a"))
+        XCTAssertNil(line.reaction(of: "person", userId: nil))
+        // The reader reacting replaces nothing of theirs and removes nobody else's.
+        transcript.apply(
+            try event(
+                #"{"kind":"reacted","runId":"","sequence":0,"messageId":"01J0000000000000000000001","emoji":"🎉","reactorKind":"person","reactorUserId":"user-a","reactorName":"Person A"}"#
+            ))
+        XCTAssertEqual(transcript.lines.first?.reactions.map(\.emoji), ["👍", "👍", "🎉"])
+        XCTAssertEqual(transcript.lines.first?.reaction(of: "person", userId: "user-a"), "🎉")
+    }
+
+    func testAReactionThatNamesNobodyInAConversationWithTheAgentIsTheReaders() {
+        var line = TranscriptLine(id: "m", kind: .answer, text: "Hello")
+        line.reactions = [AgentMessageReaction(emoji: "👍", reactorKind: "person")]
+        XCTAssertEqual(line.reaction(of: "person", userId: "user-a"), "👍")
+    }
+
+    func testTheAgentSwitchesOfOneMemberMoveAndNobodyElses() {
+        let chat = ChatSummary(
+            chatId: "chat-1", chatKind: "group",
+            members: [
+                ChatMember(userId: "user-a", username: "person-a", isAgentReading: false, isAgentAskableByOthers: false),
+                ChatMember(userId: "user-b", username: "person-b", isAgentReading: false, isAgentAskableByOthers: false),
+            ])
+        let changed = chat.withAgentSwitches(userId: "user-a", isAgentReading: true)
+        XCTAssertEqual(changed.members.map(\.isAgentReading), [true, false])
+        XCTAssertEqual(changed.members.map(\.isAgentAskableByOthers), [false, false])
+        let askable = changed.withAgentSwitches(userId: "user-a", isAgentAskableByOthers: true)
+        XCTAssertEqual(askable.members.map(\.isAgentReading), [true, false])
+        XCTAssertEqual(askable.members.map(\.isAgentAskableByOthers), [true, false])
+    }
+
+    func testAPersonWithNoAgentIsToldApartFromOneWhoseAgentIsOff() async throws {
+        let (none, _) = connection(answering: #"{"data":{"ReadAgent":{"agent":null}}}"#)
+        let noAgent = try await none.agentIdentity()
+        XCTAssertFalse(noAgent.hasAgent)
+        XCTAssertFalse(noAgent.isOn)
+        let (off, _) = connection(answering: #"{"data":{"ReadAgent":{"agent":{"name":"Robin","enabled":false}}}}"#)
+        let agentOff = try await off.agentIdentity()
+        XCTAssertTrue(agentOff.hasAgent)
+        XCTAssertFalse(agentOff.isOn)
+        XCTAssertEqual(agentOff.name, "Robin")
+    }
 }

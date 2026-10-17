@@ -112,9 +112,10 @@ func (self *Hub) Phones() *agent.PhoneNotifier {
 
 // ReportPresence records one tab's or one phone's report for a person; see
 // agent.Presence.Report. A chat is only notified to a phone while nobody is
-// looking at it, so the dashboard and the app report whether they are shown.
-func (self *Hub) ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, now time.Time) {
-	self.settings.Presence.Report(userId, reporterId, isVisible, idleSeconds, now)
+// looking at that conversation, so the dashboard and the app report whether
+// they are shown and which conversation they show.
+func (self *Hub) ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time) {
+	self.settings.Presence.Report(userId, reporterId, isVisible, idleSeconds, conversationId, now)
 }
 
 // Start starts the relay to the other instances and the listener for theirs.

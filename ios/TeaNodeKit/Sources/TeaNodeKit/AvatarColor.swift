@@ -8,7 +8,7 @@ import Foundation
 /// the app's palette are the twelve colors it indexes.
 public enum AvatarColor {
     /// How many colors there are.
-    public static let count = 12
+    public static let colorCount = 12
 
     /// An FNV-1a hash of the UTF-8 bytes of the text, modulo the color count.
     public static func index(of text: String) -> Int {
@@ -17,14 +17,14 @@ public enum AvatarColor {
             hash ^= UInt32(byte)
             hash = hash &* 0x0100_0193
         }
-        return Int(hash % UInt32(count))
+        return Int(hash % UInt32(colorCount))
     }
 
     /// The color to draw: the one the server chose when it sent a usable
     /// index, otherwise the one worked out from the text (the person's id, or
     /// their name when only that is known).
     public static func index(serverIndex: Int?, fallbackText: String) -> Int {
-        if let serverIndex, (0..<count).contains(serverIndex) { return serverIndex }
+        if let serverIndex, (0..<colorCount).contains(serverIndex) { return serverIndex }
         return index(of: fallbackText)
     }
 }

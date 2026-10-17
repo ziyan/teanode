@@ -84,11 +84,17 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     }
 
     /// The emoji one reactor put on it. With the person's id, a person's
-    /// reaction is theirs only if it names them or names nobody.
+    /// reaction is theirs only if it names them; in a conversation with the
+    /// agent, which has no other people, one that names nobody is theirs too.
+    /// In a chat a reaction that names nobody (an account that is gone) is
+    /// never the reader's own.
     public func reaction(of reactorKind: String, userId: String?) -> String? {
-        reactions.first { reaction in
-            reaction.reactorKind == reactorKind
-                && (userId == nil || userId == "" || reaction.reactorUserId == nil || reaction.reactorUserId == userId)
+        let isChatLine = author != nil && reactorKind == "person"
+        return reactions.first { reaction in
+            guard reaction.reactorKind == reactorKind else { return false }
+            if userId == nil || userId == "" { return !isChatLine }
+            if reaction.namedUserId == nil { return !isChatLine }
+            return reaction.namedUserId == userId
         }?.emoji
     }
 
@@ -422,6 +428,23 @@ public struct Transcript: Sendable {
         lines.insert(contentsOf: whole.lines.filter { line in !skippedLineIds.contains(line.id) }, at: 0)
     }
 
+    /// Carries over the answers of agents in a chat that are still being
+    /// written from the transcript this one replaces, so that reading the chat
+    /// again in the middle of a turn does not wipe the words that have come.
+    /// One whose words the stored messages already hold is left out: it is
+    /// the message it was about to become.
+    public mutating func keepStreaming(from earlier: Transcript) {
+        for line in earlier.lines where line.isStreaming && line.id.hasPrefix(Self.streamingPrefix) {
+            if lines.contains(where: { $0.id == line.id }) { continue }
+            let words = line.streamedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isStored = lines.contains { stored in
+                stored.runId == line.runId && stored.author?.isAgent == true && !stored.isStreaming && !words.isEmpty
+                    && stored.text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(words)
+            }
+            if !isStored { lines.append(line) }
+        }
+    }
+
     /// How far back a turn's opening is looked for, so one the feed replays
     /// is matched with the line already there rather than drawn again.
     static let replayLookBack = 8
@@ -543,10 +566,15 @@ public struct Transcript: Sendable {
     public mutating func react(messageId: String, emoji: String, reactorKind: String, reactorUserId: String? = nil, reactorName: String? = nil) {
         guard let index = lines.lastIndex(where: { $0.messageId == messageId }) else { return }
         // With a person named only theirs is replaced, in a chat where
-        // others' stay; without, the kind is the reactor.
+        // others' stay; without, the kind is the reactor. In a chat a
+        // reaction that names nobody is an account that is gone, never the
+        // one being replaced.
+        let isChatLine = lines[index].author != nil && reactorKind == "person"
+        let namedUserId = reactorUserId.flatMap { $0.isEmpty ? nil : $0 }
         lines[index].reactions.removeAll { reaction in
-            reaction.reactorKind == reactorKind
-                && (reactorUserId == nil || reaction.reactorUserId == nil || reaction.reactorUserId == reactorUserId)
+            guard reaction.reactorKind == reactorKind else { return false }
+            if isChatLine { return namedUserId != nil && reaction.namedUserId == namedUserId }
+            return namedUserId == nil || reaction.namedUserId == nil || reaction.namedUserId == namedUserId
         }
         if !emoji.isEmpty {
             lines[index].reactions.append(

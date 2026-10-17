@@ -187,8 +187,9 @@ type Weighing struct {
 	// tool pays nothing.
 	Amount *Amount
 
-	// IsApprovalNeeded says the call needs the owner's approval, and WaitReason says
-	// why in words the owner is shown and the other person's agent is told.
+	// IsApprovalNeeded says the call needs the owner's approval, and WaitReason
+	// says why. The other person's agent reads it, so it speaks of the owner in
+	// the third person.
 	IsApprovalNeeded bool
 	WaitReason       string
 
@@ -211,7 +212,7 @@ type Weighing struct {
 func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotalMinor int64) Weighing {
 	weighing := Weighing{ScopedName: self.ScopedIDName()}
 	if limits.IsApprovalRequired {
-		weighing.IsApprovalNeeded, weighing.WaitReason = true, "this share asks for your approval on every call"
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "this share asks for the owner's approval on every call"
 	}
 	if weighing.ScopedName != "" {
 		weighing.ScopedID = self.ScopedIDOf(arguments)
@@ -226,9 +227,9 @@ func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotal
 	case amount == nil:
 		weighing.IsApprovalNeeded = true
 		if self.DoesDeclareAmount() {
-			weighing.WaitReason = "the amount cannot be read from this call, so only you can say whether it is within what you meant to allow"
+			weighing.WaitReason = "the amount cannot be read from this call, so only the owner can say whether it is within what they meant to allow"
 		} else {
-			weighing.WaitReason = "the skill does not say what this tool costs, so only you can say whether it is within what you meant to allow"
+			weighing.WaitReason = "the skill does not say what this tool costs, so only the owner can say whether it is within what they meant to allow"
 		}
 	case limits.PaymentLimitMinor == nil && limits.MonthlyLimitMinor == nil:
 		// Reaching here with an amount that was read and no limit of any kind
@@ -236,18 +237,18 @@ func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotal
 		// of a tool that pays is made with a limit or with asking every time
 		// (CheckShareable), but a skill updated since may declare an amount
 		// the tool did not have when it was shared.
-		weighing.IsApprovalNeeded, weighing.WaitReason = true, "this share has no limit for a payment, so only you can say whether it is within what you meant to allow"
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "this share has no limit for a payment, so only the owner can say whether it is within what they meant to allow"
 	case limits.CurrencyCode != "" && amount.CurrencyCode != limits.CurrencyCode:
 		weighing.IsApprovalNeeded = true
 		if amount.CurrencyCode == "" {
-			weighing.WaitReason = "the call does not say which currency it pays in, and your limits are in " + strings.ToUpper(limits.CurrencyCode)
+			weighing.WaitReason = "the call does not say which currency it pays in, and the owner's limits are in " + strings.ToUpper(limits.CurrencyCode)
 		} else {
-			weighing.WaitReason = "the call pays in " + strings.ToUpper(amount.CurrencyCode) + ", and your limits are in " + strings.ToUpper(limits.CurrencyCode)
+			weighing.WaitReason = "the call pays in " + strings.ToUpper(amount.CurrencyCode) + ", and the owner's limits are in " + strings.ToUpper(limits.CurrencyCode)
 		}
 	case limits.PaymentLimitMinor != nil && amount.Minor > *limits.PaymentLimitMinor:
-		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it is above your limit for one payment"
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it is above the owner's limit for one payment"
 	case limits.MonthlyLimitMinor != nil && monthTotalMinor+amount.Minor > *limits.MonthlyLimitMinor:
-		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it would take this month past your monthly limit (a use that failed counts toward it)"
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it would take this month past the owner's monthly limit (a use that failed counts toward it)"
 	}
 	return weighing
 }

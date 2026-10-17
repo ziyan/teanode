@@ -111,14 +111,15 @@ func (self *SharedFact) Line() string {
 }
 
 // SharedEdge is a link between two shared pages. A link to a page that is not
-// shared with the reader is not part of the view at all.
+// shared with the reader is not part of the view at all, and neither is the
+// note the owner's agent wrote on it: a note is free text written from the
+// owner's other pages and their sources, and says what nobody chose to share.
 type SharedEdge struct {
 	FromPath string            `json:"fromPath"`
 	ToPath   string            `json:"toPath"`
 	FromName string            `json:"fromName,omitempty"`
 	ToName   string            `json:"toName,omitempty"`
 	Relation AgentEdgeRelation `json:"relation"`
-	Note     string            `json:"note,omitempty"`
 
 	// IsProposed says the owner's agent only guessed the link.
 	IsProposed bool `json:"isProposed"`

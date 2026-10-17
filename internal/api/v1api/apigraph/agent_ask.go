@@ -16,7 +16,6 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -1000,10 +999,8 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	if len(drawerId) > drawerIdLength {
 		return nil, fmt.Errorf("%w: a drawer id is at most %d characters", api.ErrInvalidArguments, drawerIdLength)
 	}
-	switch arguments.Effort {
-	case "", llm.EffortLow, llm.EffortMedium, llm.EffortHigh:
-	default:
-		return nil, fmt.Errorf("%w: effort is low, medium or high", api.ErrInvalidArguments)
+	if err := checkEffort(arguments.Effort); err != nil {
+		return nil, err
 	}
 	// The files, which must be this agent's own and not yet another
 	// turn's.
@@ -1273,7 +1270,7 @@ func (self *graph) reactToChatMessage(ctx context.Context, principal *api.Princi
 		return false, translateError(err)
 	}
 	if isChanged {
-		self.publishChatEvents(ctx, chat.ID, func(*models.ChatMember) agent.Event {
+		self.publishChatMessageEvents(ctx, message, func(*models.ChatMember) agent.Event {
 			return agent.Event{
 				Kind: agent.EventReacted, MessageID: message.ID, Emoji: reactionEmoji, ReactorKind: string(models.ReactorPerson),
 				ReactorUserID: principal.User.ID, ReactorName: reactorName,

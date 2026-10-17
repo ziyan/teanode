@@ -263,7 +263,14 @@ the other members through the attachment URL. A file sent by a person whose
 agent is off is kept, but the text read out of it for a model is not, because
 there is no model to spend it on. A person may send 60 messages a
 minute on one instance (`ratelimit`), a message is at most 16,000 characters,
-and it needs words or a file. `SayInChatAsAgent`, which the `conversation`
+and it needs words or a file. A person keeps at most 1GB of the files they sent
+in chats (`agent.limits.maxChatAttachmentAccountBytes`, `db.ChatAttachmentBytes`):
+a message with files stays until somebody deletes it, and nothing sweeps
+them, so a send past the limit is refused with how much they keep and that
+deleting old messages with files makes room. An edit, a reaction and a message
+taken back are told only to the members the message was readable by
+(`publishChatMessageEvents`), so somebody added to a group later is never handed
+the new words of what was said before them. `SayInChatAsAgent`, which the `conversation`
 tool's `send` action calls, writes the same message as the agent: its name, and
 `author_agent_id` set. Unread counts come from the member's read mark, which
 only moves forward (`MarkChatRead`) and which writing a message also moves.
@@ -283,12 +290,18 @@ builds whether or not it has a language model, so chats are live, typing and
 read marks show, and phones are told on a server that runs no agent. A phone is
 told of a message (the notification kind `chat`, titled with the author's name
 and, in a group, the chat's) when its person is not the author, has not muted
-the chat and is not looking at a dashboard or the app (`Hub.NotifyChatMessage`);
-the phone's thread is the member's own conversation. The phones hang from the
+the chat and is not looking at that chat in a dashboard or the app
+(`Hub.NotifyChatMessage`): a shown tab or the app on another screen, or on
+another conversation, does not hold a message back; the phone's thread is the
+member's own conversation. The phones hang from the
 person's `agent` row, switched off or not, and the operations that register,
 list and remove them need `circle:use` as well as `agent:use` for that reason.
 Who is looking is the `agent.Presence` the hub and the agent share, which the
-dashboard and the app report to even with the agent off.
+dashboard and the app report to even with the agent off. Each report names its
+reporter and the conversation it shows (`conversationId`, empty when it shows
+none: the drawer closed, or the app on another screen), and
+`Presence.IsWatchingConversation` is true while a shown, recently used reporter
+has that conversation on screen.
 
 **Agents in a chat.** A message starts a turn of an agent only when its author
 addresses that agent: the composer's `@` chooses it, or replying to one of its

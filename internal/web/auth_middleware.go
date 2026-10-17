@@ -46,6 +46,7 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 			// Never trust this header from outside; it is ours to set.
 			request.Header.Del(api.AuthenticatedUsernameHeader)
 			request.Header.Del(api.ImpersonatorUsernameHeader)
+			request.Header.Del(api.CredentialKindHeader)
 
 			path := request.URL.Path
 
@@ -67,6 +68,9 @@ func MakeAuthenticationMiddleware(authenticator Authenticator, challengePath str
 			username := identity.Username
 			if ok && username != "" {
 				request.Header.Set(api.AuthenticatedUsernameHeader, username)
+				if identity.CredentialKind != "" {
+					request.Header.Set(api.CredentialKindHeader, string(identity.CredentialKind))
+				}
 				if identity.ImpersonatorUsername != "" {
 					request.Header.Set(api.ImpersonatorUsernameHeader, identity.ImpersonatorUsername)
 				}

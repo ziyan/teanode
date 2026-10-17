@@ -515,8 +515,14 @@ func TestConversationListsReadsAndSendsInAChat(t *testing.T) {
 	if tool.RiskFor(sending) != tools.RiskOutward || !tools.NeedsConfirmation(tool, sending, nil, nil) {
 		t.Errorf("sending is %s and %v", tool.RiskFor(sending), tools.NeedsConfirmation(tool, sending, nil, nil))
 	}
-	if line := tool.PreviewLine(ctx, sending); !strings.Contains(line, "I will be late.") {
+	// The card says which chat, and that everyone there reads it under the
+	// agent's name; no other action is previewed as a look through the
+	// conversations.
+	if line := tool.PreviewLine(ctx, sending); !strings.Contains(line, "I will be late.") || !strings.Contains(line, `the chat "Example Friend"`) || !strings.Contains(line, "to everyone there") {
 		t.Errorf("the card says %q", line)
+	}
+	if line := tool.PreviewLine(ctx, json.RawMessage(`{"action":"list"}`)); strings.Contains(line, "Look through") {
+		t.Errorf("a list is not a send: %q", line)
 	}
 	answered, _, err := call(string(sending))
 	if err != nil || answered["message_id"] != "a-message" {

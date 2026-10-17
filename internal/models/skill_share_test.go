@@ -62,3 +62,40 @@ func TestAPaymentWaitingNoteReadsBack(t *testing.T) {
 		t.Errorf("the note in English: %q", got)
 	}
 }
+
+// A share changed from somewhere that is not a person's tap is let through
+// only when it hands over nothing more than the share it replaces did: asking
+// every time always, and otherwise the same tools or fewer, in the same
+// currency, with each limit at or below the old one (no limit being the
+// highest there is).
+func TestASharedSkillChangeThatOnlyTakesAwayOpensNothingBeyond(t *testing.T) {
+	amount := func(minor int64) *int64 { return &minor }
+	existing := &SkillShare{
+		ToolNames: []string{"pay", "balance"}, PaymentLimitMinor: amount(10000), MonthlyLimitMinor: amount(40000), CurrencyCode: "usd",
+	}
+	unlimited := &SkillShare{ToolNames: []string{"balance"}}
+	asking := &SkillShare{ToolNames: []string{"pay"}, IsApprovalRequired: true, PaymentLimitMinor: amount(90000), CurrencyCode: "usd"}
+
+	for name, test := range map[string]struct {
+		terms    *SkillShare
+		replaced *SkillShare
+		expected bool
+	}{
+		"asking every time, with no share before":    {&SkillShare{ToolNames: []string{"pay"}, IsApprovalRequired: true}, nil, true},
+		"asking every time over a share with limits": {&SkillShare{ToolNames: []string{"pay", "wire"}, IsApprovalRequired: true}, existing, true},
+		"a new share with limits":                    {&SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: amount(1), CurrencyCode: "usd"}, nil, false},
+		"the same terms":                             {existing, existing, true},
+		"lower limits":                               {&SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: amount(500), MonthlyLimitMinor: amount(40000), CurrencyCode: "usd"}, existing, true},
+		"a higher payment limit":                     {&SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: amount(10001), MonthlyLimitMinor: amount(40000), CurrencyCode: "usd"}, existing, false},
+		"a limit dropped":                            {&SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: amount(500), CurrencyCode: "usd"}, existing, false},
+		"another tool":                               {&SkillShare{ToolNames: []string{"pay", "wire"}, PaymentLimitMinor: amount(500), MonthlyLimitMinor: amount(500), CurrencyCode: "usd"}, existing, false},
+		"another currency":                           {&SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: amount(500), MonthlyLimitMinor: amount(500), CurrencyCode: "eur"}, existing, false},
+		"limits where there were none":               {&SkillShare{ToolNames: []string{"balance"}, PaymentLimitMinor: amount(500), CurrencyCode: "usd"}, unlimited, true},
+		"turning asking every time off":              {&SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: amount(500), CurrencyCode: "usd"}, asking, false},
+		"turning asking every time off, no limits":   {&SkillShare{ToolNames: []string{"balance"}}, &SkillShare{ToolNames: []string{"balance"}, IsApprovalRequired: true}, false},
+	} {
+		if got := test.terms.OpensNothingBeyond(test.replaced); got != test.expected {
+			t.Errorf("%s: %v, expected %v", name, got, test.expected)
+		}
+	}
+}

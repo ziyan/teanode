@@ -362,7 +362,7 @@ func TestAMemberTurnIsHeldToTheWebAndTheChat(t *testing.T) {
 			t.Errorf("the prompt of a member turn carries %q of the owner's", secret)
 		}
 	}
-	if !strings.Contains(system, "Ben Example asked you") {
+	if !strings.Contains(system, `"Ben Example" asked you`) {
 		t.Error("the conduct should say who asked")
 	}
 	last := messages[len(messages)-2].(map[string]any)

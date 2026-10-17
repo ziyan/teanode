@@ -1078,7 +1078,7 @@ func TestTheOutcomeOfACallMadeInAChatIsToldInTheMainConversation(t *testing.T) {
 		t.Fatalf("the chat is woken: %v; the main conversation is woken: %v", isWokenInChat, isWokenInMain)
 	}
 	message := skillShareWakeMessage([]*skillShareAnswer{answer})
-	if !strings.Contains(message, "made while answering in the chat with Ada") {
+	if !strings.Contains(message, `made while answering in the chat with "Ada"`) {
 		t.Fatalf("the wake says which chat the call came from:\n%s", message)
 	}
 	fixture.waitUntilTold(t, call.ID)

@@ -197,3 +197,16 @@ func TestOnlyAnOpenAIProviderTakesABillingKey(t *testing.T) {
 		t.Fatalf("a billing key on an anthropic provider was accepted: %v", err)
 	}
 }
+
+// The files one person keeps from chats are bounded at a gigabyte unless the
+// operator says otherwise.
+func TestTheChatFileAllowanceResolvesItsZeroToAGigabyte(t *testing.T) {
+	limits := &AgentLimits{}
+	if got := limits.EffectiveMaxChatAttachmentAccountBytes(); got != 1<<30 {
+		t.Errorf("unset resolves to %d", got)
+	}
+	limits.MaxChatAttachmentAccountBytes = 200 << 20
+	if got := limits.EffectiveMaxChatAttachmentAccountBytes(); got != 200<<20 {
+		t.Errorf("set resolves to %d", got)
+	}
+}

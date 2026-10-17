@@ -151,7 +151,7 @@ struct PreferencesView: View {
         isChangingPicture = true
         defer { isChangingPicture = false }
         do {
-            guard let data = try await item.loadTransferable(type: Data.self), let jpeg = AvatarPicture.jpeg(from: data) else {
+            guard let pictureData = try await item.loadTransferable(type: Data.self), let jpeg = AvatarPicture.jpeg(from: pictureData) else {
                 problemText = String(localized: "That photo could not be read.")
                 return
             }
@@ -228,8 +228,8 @@ enum AvatarPicture {
     /// taken as. Drawing it again also turns it upright and leaves every
     /// metadata block, the location included, behind. Nil when the bytes are
     /// not a picture.
-    static func jpeg(from data: Data) -> Data? {
-        guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0 else { return nil }
+    static func jpeg(from pictureData: Data) -> Data? {
+        guard let image = UIImage(data: pictureData), image.size.width > 0, image.size.height > 0 else { return nil }
         let scale = min(1, longestSide / max(image.size.width, image.size.height))
         let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
         let format = UIGraphicsImageRendererFormat()

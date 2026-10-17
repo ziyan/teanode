@@ -188,7 +188,7 @@ func TestARunThatMayNotReadSharedPagesIsRefused(t *testing.T) {
 		`{"action":"search","query":"appointment","owner":"ada"}`,
 		`{"action":"shared"}`,
 	} {
-		if _, err := callMemory(t, run, arguments); err == nil || !strings.Contains(err.Error(), "cannot read pages other people shared") {
+		if _, err := callMemory(t, run, arguments); err == nil || !strings.Contains(err.Error(), "pages other people shared are read only in a one-to-one conversation") {
 			t.Errorf("%s: %v", arguments, err)
 		}
 	}

@@ -396,3 +396,36 @@ tools:
 		t.Errorf("a payment within the limit waits: %+v", weighing)
 	}
 }
+
+// The reason a call waits is read by the other person's agent, so it speaks of
+// the owner in the third person: "your limit" would be read as that agent's
+// own.
+func TestEveryWaitReasonIsWrittenAboutTheOwner(t *testing.T) {
+	pay := paymentsSkill(t).Tool("pay")
+	asksEveryTime := usdLimits(whole(10000), nil)
+	asksEveryTime.IsApprovalRequired = true
+	reasons := map[string]string{
+		"asks every time":  pay.Weigh(cardOf(100, "usd"), asksEveryTime, 0).WaitReason,
+		"no amount":        pay.Weigh(map[string]any{"action": "card"}, usdLimits(whole(10000), nil), 0).WaitReason,
+		"no declared cost": paymentsSkill(t).Tool("balance").Weigh(map[string]any{}, usdLimits(whole(10000), nil), 0).WaitReason,
+		"no limit":         pay.Weigh(cardOf(100, "usd"), ShareLimits{}, 0).WaitReason,
+		"other currency":   pay.Weigh(cardOf(100, "eur"), usdLimits(whole(10000), nil), 0).WaitReason,
+		"no currency":      pay.Weigh(map[string]any{"action": "card", "amount_minor": float64(100)}, usdLimits(whole(10000), nil), 0).WaitReason,
+		"over one payment": pay.Weigh(cardOf(10001, "usd"), usdLimits(whole(10000), nil), 0).WaitReason,
+		"over the month":   pay.Weigh(cardOf(2500, "usd"), usdLimits(nil, whole(40000)), 37501).WaitReason,
+	}
+	for name, reason := range reasons {
+		if reason == "" {
+			t.Errorf("%s: no reason", name)
+			continue
+		}
+		for _, word := range strings.Fields(strings.ToLower(strings.NewReplacer(",", " ", ".", " ", "(", " ", ")", " ").Replace(reason))) {
+			if word == "you" || word == "your" || word == "yours" {
+				t.Errorf("%s: the reason speaks to the owner, not about them: %q", name, reason)
+			}
+		}
+	}
+	if !strings.Contains(reasons["over one payment"], "the owner's limit for one payment") {
+		t.Errorf("the owner is named in the third person: %q", reasons["over one payment"])
+	}
+}

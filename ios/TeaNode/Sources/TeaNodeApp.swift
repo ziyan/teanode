@@ -86,27 +86,30 @@ struct ConversationsSheet: View {
                     if found.isEmpty {
                         Text("Nothing matches.").foregroundStyle(.secondary)
                     }
-                    ForEach(found) { conversation in row(conversation) }
+                    ForEach(found) { conversation in listRow(conversation) }
                 } else {
                     Section {
-                        Button {
-                            onChoose(nil)
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Main chat")
-                                    if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
-                                        WaitingMark()
+                        // A person with no agent has no main chat to open.
+                        if app.hasAgent {
+                            Button {
+                                onChoose(nil)
+                            } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Main chat")
+                                        if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
+                                            WaitingMark()
+                                        }
                                     }
+                                } icon: {
+                                    Image(systemName: "bubble.left")
                                 }
-                            } icon: {
-                                Image(systemName: "bubble.left")
+                                // Marked by its highlight when it is the one on
+                                // screen; green only marks what can be pressed.
+                                .foregroundStyle(.primary)
                             }
-                            // Marked by its highlight when it is the one on
-                            // screen; green only marks what can be pressed.
-                            .foregroundStyle(.primary)
+                            .menuRow(isSelected: currentId == nil)
                         }
-                        .menuRow(isSelected: currentId == nil)
                         if !isPanel, app.isAgentOn {
                             Button {
                                 Task { await start() }
@@ -150,7 +153,7 @@ struct ConversationsSheet: View {
                                 if archived.isEmpty {
                                     Text("Nothing has been archived.").foregroundStyle(.secondary)
                                 }
-                                ForEach(archived) { conversation in row(conversation) }
+                                ForEach(archived) { conversation in listRow(conversation) }
                             } else {
                                 ProgressView()
                             }
@@ -304,7 +307,7 @@ struct ConversationsSheet: View {
                         .accessibilityLabel("Muted")
                 }
                 if unreadCount > 0 {
-                    UnreadBadge(count: unreadCount)
+                    UnreadBadge(unreadCount: unreadCount)
                 }
             }
         }
@@ -330,6 +333,18 @@ struct ConversationsSheet: View {
                     Label("Mute until I unmute", systemImage: "bell.slash")
                 }
             }
+        }
+    }
+
+    /// A row for either kind of conversation: a chat with people has none of
+    /// the menu a side chat with the agent has (rename, make main, archive,
+    /// delete), wherever the list is drawn, search results included.
+    @ViewBuilder
+    private func listRow(_ conversation: AgentConversation) -> some View {
+        if conversation.isChat {
+            chatRow(conversation)
+        } else {
+            row(conversation)
         }
     }
 

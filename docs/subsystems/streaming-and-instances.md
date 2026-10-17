@@ -146,10 +146,11 @@ This is the important list.
 
 - **Who is looking is local.** The dashboard and the app report each minute
   whether they are shown (`ReportAgentPresence`), to the instance their
-  request reached, into one `agent.Presence` shared by the chat hub and the
-  agent. A chat message is sent to a phone only when its person is not looking
-  as that instance knows it, so behind a load balancer a person may be sent
-  what they were reading on another instance.
+  request reached, with the conversation each shows, into one `agent.Presence`
+  shared by the chat hub and the agent. A chat message is sent to a phone unless
+  its person is looking at that chat as that instance knows it, so behind a
+  load balancer a person may be sent what they were reading on another
+  instance.
 - **A run is local.** Reading a run's events, or polling it, only works on the
   instance running it. Only stop, answer, resolve and locate have a way across.
 - **The one-turn-at-a-time rule is local.** Two instances can run two turns of

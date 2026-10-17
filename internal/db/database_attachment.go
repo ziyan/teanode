@@ -44,6 +44,12 @@ type AttachmentOperation interface {
 
 	DeleteAgentAttachment(attachmentId string) error
 
+	// ChatAttachmentBytes is how much the agent's person keeps of the files
+	// they sent in chats: the size of the agent's files that came with a chat
+	// message that is still there. A file handed to the agent, or one
+	// uploaded and not sent yet, is not counted.
+	ChatAttachmentBytes(agentId string) (int64, error)
+
 	// SetAgentAttachmentFinanceTransaction records the finance transaction
 	// an upload of the agent's is the receipt for. ErrNotFound when the
 	// agent has no such upload or no such finance transaction.
@@ -105,6 +111,16 @@ func (self *transaction) CreateAgentAttachment(attachment *models.AgentAttachmen
 		return nil, err
 	}
 	return attachmentFromModel(model), nil
+}
+
+func (self *transaction) ChatAttachmentBytes(agentId string) (int64, error) {
+	var total int64
+	if err := self.tx.Raw(`SELECT COALESCE(SUM(attachment."size"), 0) FROM "agent_attachment" attachment
+		WHERE attachment."agent_id" = ? AND attachment."message_id" <> ''
+		  AND EXISTS (SELECT 1 FROM "chat_message" message WHERE message."id" = attachment."message_id")`, agentId).Scan(&total).Error; err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 func (self *transaction) GetAgentAttachment(attachmentId string) (*models.AgentAttachment, error) {

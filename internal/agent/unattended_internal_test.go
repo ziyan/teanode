@@ -165,7 +165,7 @@ func TestAnAgentCannotAnswerAWaitingCallAlone(t *testing.T) {
 	turn := &AskRun{agent: &Agent{settings: &Settings{Configuration: func() *config.Configuration { return configuration }}}, settings: settings}
 	said := turn.runTool(context.Background(), configuration, []*Tool{shell}, nil,
 		llm.ToolCall{ID: "call01", Name: "shell", Arguments: `{"command":"teanode agent skill approve 01abc"}`}).content
-	if !strings.Contains(said, "needs_confirmation") || !strings.Contains(said, "personsAnswer") || ran != 0 {
+	if !strings.Contains(said, "needs_confirmation") || !strings.Contains(said, "only the person can answer a call that waits for them") || ran != 0 {
 		t.Errorf("a run with nobody present: %q, %d ran", said, ran)
 	}
 	// The setting cannot hold the reason either.

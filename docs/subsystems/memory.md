@@ -1090,14 +1090,24 @@ the prompt all go through it, so what is left out is left out once:
 * A summary that quotes somebody, unless the owner shared the quotes: the page's
   opening is left out of the view, of a listing and of a search hit when it has
   a span between quotation marks of four words or more (`quotesSomebody`, in
-  straight, curly, angle and corner quotation marks; eight characters for a
-  language written without spaces). The rest of the sentence would be built
-  around the quote, so none of it is kept.
+  straight and curly double and single quotation marks, angle and corner
+  brackets; eight characters for a language written without spaces; a single
+  quotation mark opens a span only when it does not follow a letter or a
+  digit, so an apostrophe does not). The rest of the sentence would be built
+  around the quote, so none of it is kept. And even when the owner shared the
+  quotes, one that quotes somebody is left out of a page that has a fact read in
+  a chat (`sharedSummaryFor`): the model that wrote it copied words it was
+  given, which in a chat may be the others' there.
 * A link, unless the page at its other end is shared with the reader too, so
   a link never names a page the reader was not given. The owner's other pages
-  are not named anywhere.
+  are not named anywhere. And never the note on a link: the owner's agent wrote
+  it from pages and sources that are not shared, and it is not filtered, it is
+  not there.
 * The dream's reflections and lessons. They cite the owner's other pages and
   say what nobody said.
+* Anything of an owner whose account is disabled: the shares stay for the
+  owner to take back, but `ListPageSharesReaching` joins the owner's account, so
+  they reach nobody while it is off.
 * Everything about a page that is not what it says: its importance, its
   contact card, its history, the identifiers of its rows.
 
@@ -1110,7 +1120,10 @@ same way: not found.
 **Reading it.** In the memory tool, `get`, `index` and `search` take `owner`,
 the sharer's username. `search` without it also searches what is shared, after
 the person's own results, each hit marked with its owner; the search is by
-words, because the vectors are the owner's. A write that names an owner other
+words, because the vectors are the owner's, and it matches only what the
+reader is shown of a page: its path, name and aliases, its summary when that is
+shown, and its facts. A word that is only on a summary that is left out finds
+nothing. A write that names an owner other
 than the person is refused before it is looked at, and so is every other
 action that is not a read of shared pages. `shared` lists everything shared
 with the person, `share`, `shares` and `unshare` are the person's own, and

@@ -2045,7 +2045,7 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			isRestricted := self.ReadOnly() || self.settings.Allow != nil
 			if slices.Contains(unattendedRisks, models.UnattendedRiskPersonsAnswer) {
 				// Not something they can allow for when they are away.
-				return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "needs_confirmation: this answers something that waits for the person, and only the person gives that answer (personsAnswer); tell them it is waiting."}`)}
+				return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "needs_confirmation: only the person can answer a call that waits for them; tell them it is waiting."}`)}
 			}
 			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
 				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
@@ -2643,15 +2643,20 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		log.Debugf("cannot list the collections of %q for the prompt: %s", self.settings.Owner.Username, err)
 	}
 	calendars, reminderLists, books, shared := 0, 0, 0, 0
+	isOwnCalendarGranted := false
 	for _, calendar := range answer.ListCalendars {
 		// Somebody else's calendar, or a circle's, is not one of theirs to
-		// grant or withhold: the calendar tool reads it at the level it was
-		// shared at, whatever the grant says.
+		// grant or withhold: it is read at the level it was shared at, but
+		// only through the person's own calendar's grant (theCalendar in the
+		// calendar tool refuses without it).
 		if calendar.ShareLevel != "" && calendar.ShareLevel != string(models.ShareLevelOwner) {
 			shared++
 			continue
 		}
 		isReminders := calendar.CalendarKind == string(models.CalendarReminders)
+		if calendar.AgentGranted && !isReminders {
+			isOwnCalendarGranted = true
+		}
 		switch {
 		case !calendar.AgentGranted && isReminders:
 			reminderLists++
@@ -2670,11 +2675,14 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		}
 		granted = append(granted, fmt.Sprintf("- the address book %q, with %d people in it", book.Name, book.Contacts))
 	}
-	if shared > 0 {
-		granted = append(granted, fmt.Sprintf("- %d calendar(s) other people or their circles share with them, read through calendar_agenda with whose, at the level each was shared at", shared))
+	if shared > 0 && isOwnCalendarGranted {
+		granted = append(granted, fmt.Sprintf("- %d calendars other people or their circles share with them; read with calendar agenda and whose, at the level each was shared at", shared))
 	}
 	if calendars > 0 {
 		withheld = append(withheld, "their calendar")
+	}
+	if shared > 0 && !isOwnCalendarGranted {
+		withheld = append(withheld, "calendars others share with them (closed while their own calendar is closed to you)")
 	}
 	if reminderLists > 0 {
 		withheld = append(withheld, "their reminders list")

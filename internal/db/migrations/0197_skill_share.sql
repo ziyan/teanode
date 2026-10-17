@@ -42,11 +42,24 @@ CREATE INDEX "skill_share_grantee" ON "skill_share" ("grantee_user_id");
 -- computer), failed (it was tried and did not complete, or could not be tried
 -- because the computer was not connected), refused (the server turned it back
 -- before it ran), waiting_for_approval, declined (the owner said no) and
--- expired (the owner did not answer within a day).
+-- expired (the owner did not answer within a day, or the share ended while the
+-- call waited).
+--
+-- A call outlives its share. The owner's record of what was asked of their
+-- money stays when the share ends, whether they took it back or the other
+-- person left the circle, so the call carries what it was a call of
+-- (owner_agent_id, grantee_user_id, skill_name) and skill_share_id is emptied
+-- when the share goes. The month's total of a new share between the same two
+-- people counts these, whether or not the earlier share is still there.
+-- A call that was waiting when its share ended is expired, since nobody can
+-- approve a call of a share that is gone.
 --
 -- A call is written as ran before it is carried out, and changed to failed if
 -- it then errors, so that the month's total counts a call still in flight and
--- two at once cannot both pass the limit. The total is of ran calls only.
+-- two at once cannot both pass the limit. The total is of the calls that ran
+-- and the ones that failed after they were started, since a failure after the
+-- command acted cannot be told from one before it; a refused, declined,
+-- expired or waiting call paid nothing and is not counted.
 --
 -- tool_arguments are the arguments the owner is shown and that approving runs,
 -- unchanged. request_reason is the other person's agent's own words for why,
@@ -63,7 +76,10 @@ CREATE TABLE "skill_share_call" (
     "id"                      character varying(32)  NOT NULL PRIMARY KEY,
     "created_at"              timestamp with time zone NOT NULL,
     "modified_at"             timestamp with time zone NOT NULL,
-    "skill_share_id"          character varying(32)  NOT NULL REFERENCES "skill_share" ("id") ON DELETE CASCADE,
+    "skill_share_id"          character varying(32)  REFERENCES "skill_share" ("id") ON DELETE SET NULL,
+    "owner_agent_id"          character varying(32)  NOT NULL REFERENCES "agent" ("id") ON DELETE CASCADE,
+    "grantee_user_id"         character varying(32)  NOT NULL REFERENCES "user" ("id") ON DELETE CASCADE,
+    "skill_name"              character varying(100) NOT NULL,
     "grantee_run_id"          character varying(32),
     "grantee_conversation_id" character varying(32) REFERENCES "agent_conversation" ("id") ON DELETE SET NULL,
     "tool_name"               character varying(100) NOT NULL,
@@ -83,5 +99,10 @@ CREATE TABLE "skill_share_call" (
 );
 
 CREATE INDEX "skill_share_call_share" ON "skill_share_call" ("skill_share_id", "created_at" DESC);
+
+-- The month's total, and the owner's calls of shares that ended.
+CREATE INDEX "skill_share_call_parties" ON "skill_share_call" ("owner_agent_id", "grantee_user_id", "skill_name", "created_at");
+CREATE INDEX "skill_share_call_ended" ON "skill_share_call" ("owner_agent_id", "created_at" DESC) WHERE "skill_share_id" IS NULL;
+CREATE INDEX "skill_share_call_ended_grantee" ON "skill_share_call" ("grantee_user_id", "created_at" DESC) WHERE "skill_share_id" IS NULL;
 CREATE INDEX "skill_share_call_waiting" ON "skill_share_call" ("expires_at") WHERE "call_state" = 'waiting_for_approval';
 CREATE INDEX "skill_share_call_unwoken" ON "skill_share_call" ("decided_at") WHERE "decided_at" IS NOT NULL AND "woken_at" IS NULL;

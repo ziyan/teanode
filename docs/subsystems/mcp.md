@@ -120,7 +120,13 @@ The phone's camera opens the app, which presents the code at
 `urn:teanode:params:oauth:grant-type:connect-code` and is handed a token for
 the whole API as that person. A code lasts ten minutes and signs in one phone; it is
 made only by the person themselves (not by an operator signed in as them) and
-only over https or on the server's own machine, since the link carries it. The code travels from
+only over https or on the server's own machine, since the link carries it. A
+token made this way, or by the app's own consent, is marked as the phone app's
+(`token.client_kind` is `app`) only when the code or the approval was made on
+the dashboard or in an app already marked; one made with a command line token
+(`teanode agent phone pair`, or a card an agent shows) yields a token that works
+the same but is not taken for a person's tap, so it cannot approve a call that
+spends money or lend it (`docs/subsystems/skills.md`). The code travels from
 the person's screen to their own phone, never the other way: RFC 8628's
 device flow, where a device shows a code for the person to approve, lets a
 stranger send the person a link to approve the stranger's code. The exchange

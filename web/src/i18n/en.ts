@@ -5298,6 +5298,10 @@ export const en = {
   'skillShare.waiting': '{count} waiting',
   'skillShare.requests': 'Requests',
   'skillShare.noRequests': 'Nothing has been asked through this yet.',
+  'skillShare.ended': 'Shares that ended',
+  'skillShare.endedHint':
+    'Taken back, or ended when you and the other person stopped sharing a circle. What was asked through them stays here as your record; nothing waiting can be approved any more.',
+  'skillShare.endedRow': '{skill}, {tool}, with {name}',
   'skillShare.stop': 'Stop sharing',
   'skillShare.stopTitle': 'Stop sharing {skill} with {name}?',
   'skillShare.stopBody': 'They lose it at once, and the record of what was asked through it goes with it.',

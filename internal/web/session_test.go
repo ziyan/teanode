@@ -781,7 +781,7 @@ func TestAnAppIsRenamedAndDisconnectedWhole(t *testing.T) {
 
 	issue := func(userId, clientId, name string) *models.Token {
 		t.Helper()
-		token, _, _, err := authenticator.IssueAuthorizedToken(userId, name, clientId, "https://mail.example.com/mcp", time.Hour)
+		token, _, _, err := authenticator.IssueAuthorizedToken(userId, name, clientId, "https://mail.example.com/mcp", "", time.Hour)
 		if err != nil {
 			t.Fatalf("IssueAuthorizedToken: %s", err)
 		}

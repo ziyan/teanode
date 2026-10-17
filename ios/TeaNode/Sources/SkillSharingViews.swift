@@ -546,7 +546,7 @@ struct PaymentCard: View {
         // Approving spends money, so it takes the phone's owner and not just
         // whoever holds it unlocked; declining spends nothing and needs no one.
         if isApproved {
-            guard await DeviceOwner.confirm(reason: String(localized: "Approve this payment")) else { return }
+            guard await DeviceOwner.confirm(approvalPrompt: String(localized: "Approve this payment")) else { return }
         }
         do {
             onAnswered(try await connection.answerSkillShareCall(callId: call.id, isApproved: isApproved, decisionNote: note))
@@ -561,12 +561,12 @@ struct PaymentCard: View {
 /// anyone else, so confirming is not refused there: the server's approval is
 /// still the person's own, signed in.
 enum DeviceOwner {
-    static func confirm(reason: String) async -> Bool {
+    static func confirm(approvalPrompt: String) async -> Bool {
         let context = LAContext()
         var problem: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &problem) else { return true }
         do {
-            return try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+            return try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: approvalPrompt)
         } catch {
             return false
         }
@@ -579,7 +579,7 @@ enum DeviceOwner {
 /// A call that is gone, because the share was taken back, says so.
 struct PaymentWaitingCard: View {
     let connection: Connection
-    let detail: String
+    let noteDetail: String
     @State private var call: SkillShareCall?
     @State private var isGone = false
     @State private var isLoaded = false
@@ -595,12 +595,12 @@ struct PaymentWaitingCard: View {
                 ProgressView()
             }
         }
-        .task(id: detail) { await load() }
+        .task(id: noteDetail) { await load() }
     }
 
     private func load() async {
         defer { isLoaded = true }
-        guard let note = SkillShareNote.parsing(detail) else {
+        guard let note = SkillShareNote.parsing(noteDetail) else {
             isGone = true
             return
         }

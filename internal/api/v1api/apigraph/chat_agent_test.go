@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent"
+	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/chat"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -668,5 +671,40 @@ func TestAFailedChatTurnRetractsTheWordsItStreamed(t *testing.T) {
 	retracted := nextFeedEvent(graceFeed, agent.EventUnsaid)
 	if retracted == nil || retracted.MessageID != agent.ChatStreamingKey(runId) || retracted.ConversationID != graceChat {
 		t.Fatalf("Grace was told %+v; want the provisional line of the run %s taken back", retracted, runId)
+	}
+}
+
+// The effort of a turn in a chat is checked as AskAgent checks it: a word that
+// is not low, medium, high or empty is refused before the message is stored,
+// and for the owner's own agent in the turn itself; the turn of another
+// person's agent takes no effort at all, so the word is not looked at there.
+func TestTheEffortOfATurnInAChatIsChecked(t *testing.T) {
+	owner := chat.AgentTurn{AgentTurnKind: chat.AgentTurnOwner}
+	member := chat.AgentTurn{AgentTurnKind: chat.AgentTurnMember}
+	for effort, isValid := range map[string]bool{"": true, "low": true, "medium": true, "high": true, "extreme": false, "LOW": false, " low": false} {
+		got, err := effortOf(owner, AskAgentArguments{Effort: effort})
+		if (err == nil) != isValid || (err == nil && got != effort) || (err != nil && !errors.Is(err, api.ErrInvalidArguments)) {
+			t.Errorf("effort %q for the owner's agent: %q, %v", effort, got, err)
+		}
+		if got, err := effortOf(member, AskAgentArguments{Effort: effort}); err != nil || got != "" {
+			t.Errorf("effort %q for another person's agent: %q, %v", effort, got, err)
+		}
+	}
+}
+
+func TestAWordThatIsNotAnEffortIsRefusedBeforeAChatMessageIsStored(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.bob)
+	aliceChat := world.openDirect(t, world.alice, world.bob)
+	said := world.refused(t, world.alice, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "hello", effort: "extreme") { runId } }`, aliceChat))
+	if !strings.Contains(said, "effort is low, medium or high") {
+		t.Errorf("the refusal: %q", said)
+	}
+	if messages := world.read(t, world.alice, aliceChat); len(messages) != 0 {
+		t.Errorf("the words were stored all the same: %v", messages)
+	}
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "hello", effort: "low") { runId } }`, aliceChat))
+	if messages := world.read(t, world.alice, aliceChat); len(messages) != 1 {
+		t.Errorf("with a real effort: %v", messages)
 	}
 }

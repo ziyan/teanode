@@ -107,6 +107,11 @@ final class ConversationModel {
     private var typingToldAt = Date.distantPast
     private var typingPruning: Task<Void, Never>?
     private var readThroughMessageId = ""
+    /// Whether ownUserId was read from this model's own connection, which
+    /// is the one thing that says whose chat this is: the id the app held
+    /// when the model was made may be an earlier account's.
+    private var isOwnUserIdConfirmed = false
+    private let confirmingSent = ConfirmingTasks()
 
     /// Whether this is a chat: a conversation with people in it.
     var isChat: Bool { conversation?.isChat == true }
@@ -174,7 +179,7 @@ final class ConversationModel {
         var delay = Duration.seconds(1)
         while !Task.isCancelled {
             do {
-                try await load()
+                try await load(isFeedReplaying: true)
                 guard let conversationId else { return }
                 for try await event in ConversationFeed.events(connection: connection, conversationId: conversationId) {
                     apply(event)
@@ -193,13 +198,18 @@ final class ConversationModel {
         }
     }
 
-    /// Reads the conversation's newest messages and open cards. A turn
-    /// still running is replayed by the feed that follows, which says it
-    /// runs again; one that ended while the feed was down is not.
-    func load() async throws {
+    /// Reads the conversation's newest messages and open cards. When the
+    /// feed is about to be opened anew, a turn still running is replayed by
+    /// it, which says it runs again, and one that ended while the feed was
+    /// down is not; the turns running and the words of an answer being
+    /// written are then forgotten. Read again while the feed is up (a member
+    /// changed, a message was too long to travel whole) they are kept, since
+    /// nothing will say them again.
+    func load(isFeedReplaying: Bool = false) async throws {
         let page = try await connection.conversation(conversationId, first: max(100, messages.count))
-        if page.conversation?.isChat == true, ownUserId == nil {
-            ownUserId = try? await connection.userId()
+        if page.conversation?.isChat == true, !isOwnUserIdConfirmed, let userId = try? await connection.userId() {
+            isOwnUserIdConfirmed = true
+            if userId != ownUserId { ownUserId = userId }
         }
         if let conversation = page.conversation {
             conversationId = conversation.id
@@ -211,8 +221,13 @@ final class ConversationModel {
         total = page.total
         todos = page.todos
         actingAs = page.actingAs
-        runningRunIds = []
+        let earlier = transcript
         transcript = Transcript(messages: messages, interactions: interactions, isChat: isChat)
+        if isFeedReplaying {
+            runningRunIds = []
+        } else {
+            transcript.keepStreaming(from: earlier)
+        }
         isLoaded = true
         loadProblemText = nil
         loadSharedOwnersIfCited()
@@ -260,7 +275,7 @@ final class ConversationModel {
         }
     }
 
-    /// Reads the page of messages before those shown.
+    /// Reads who shared the pages cited in the answers, once.
     private func loadSharedOwnersIfCited() {
         guard !didAskSharedOwners,
             messages.contains(where: { $0.role == "assistant" && SharedCitations.hasCitation(in: $0.content) })
@@ -274,6 +289,7 @@ final class ConversationModel {
         }
     }
 
+    /// Reads the page of messages before those shown.
     func loadEarlier() async {
         guard earlierCount > 0, !isLoadingEarlier else { return }
         isLoadingEarlier = true
@@ -396,8 +412,6 @@ final class ConversationModel {
         return Date().timeIntervalSince(at) < Self.cardFresh ? question : nil
     }
 
-    /// Sends what is typed: an answer to the question waiting, when one is
-    /// fresh, or a new message.
     /// The reactions offered first when a message is held, as Messages
     /// offers its own.
     static let quickReactions = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "🎉"]
@@ -419,10 +433,13 @@ final class ConversationModel {
         }
     }
 
+    /// Sends what is typed: an answer to the question waiting, when one is
+    /// fresh, or a new message. In a chat typing never answers a card: the
+    /// words are for the people in it.
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canSend else { return }
-        if let question = freshQuestion, pendingFiles.isEmpty, references.isEmpty {
+        if !isChat, let question = freshQuestion, pendingFiles.isEmpty, references.isEmpty {
             isSending = true
             defer { isSending = false }
             draft = ""
@@ -469,7 +486,9 @@ final class ConversationModel {
             }
             // Files added while these were sent stay for the next message.
             pendingFiles.removeAll { sendingIds.contains($0.id) }
-            let message = text.isEmpty ? "(files)" : text
+            // A chat takes files with no words; a turn with the agent needs
+            // something to read.
+            let message = text.isEmpty && !isChat ? "(files)" : text
             sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply, author: ownAuthor)
             let asked = try await connection.ask(
                 message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
@@ -577,16 +596,30 @@ final class ConversationModel {
         return ChatMention.addressed(in: text, chosen: chosenAgents, repliedToAgentId: repliedToAgentId)
     }
 
-    /// Makes the person's agent remember this chat from now on, or stop.
-    func setAgentReading(_ isReading: Bool) async {
-        guard let conversationId else { return }
-        await changeChat { try await connection.setChatAgentReading(conversationId, isReading: isReading) }
+    /// Makes the person's agent remember this chat from now on, or stop. The
+    /// switch moves at once and goes back if the server refuses; the refusal
+    /// is returned for the members sheet to say.
+    func setAgentReading(_ isReading: Bool) async -> String? {
+        guard let conversationId, let ownUserId, let before = chat?.member(ownUserId) else { return nil }
+        conversation?.chat = chat?.withAgentSwitches(userId: ownUserId, isAgentReading: isReading)
+        return await changeChatReporting(
+            isReportedOnScreen: false,
+            undo: { self.conversation?.chat = self.chat?.withAgentSwitches(userId: ownUserId, isAgentReading: before.isAgentReading) }
+        ) { try await connection.setChatAgentReading(conversationId, isReading: isReading) }
     }
 
-    /// Lets the others in this chat address the person's agent, or stops them.
-    func setAgentAskableByOthers(_ isAskable: Bool) async {
-        guard let conversationId else { return }
-        await changeChat { try await connection.setChatAgentAskableByOthers(conversationId, isAskable: isAskable) }
+    /// Lets the others in this chat address the person's agent, or stops them,
+    /// as setAgentReading does.
+    func setAgentAskableByOthers(_ isAskable: Bool) async -> String? {
+        guard let conversationId, let ownUserId, let before = chat?.member(ownUserId) else { return nil }
+        conversation?.chat = chat?.withAgentSwitches(userId: ownUserId, isAgentAskableByOthers: isAskable)
+        return await changeChatReporting(
+            isReportedOnScreen: false,
+            undo: {
+                self.conversation?.chat = self.chat?.withAgentSwitches(
+                    userId: ownUserId, isAgentAskableByOthers: before.isAgentAskableByOthers ?? false)
+            }
+        ) { try await connection.setChatAgentAskableByOthers(conversationId, isAskable: isAskable) }
     }
 
     /// The person as the author of a message they have just sent in a chat,
@@ -598,8 +631,10 @@ final class ConversationModel {
     /// Reads the chat again if a message just sent has not come back as the
     /// chat's own within a few seconds.
     private func confirmSoon(_ lineId: String) {
-        Task {
+        confirmingSent.tasks[lineId] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, let self else { return }
+            confirmingSent.tasks[lineId] = nil
             if transcript.lines.contains(where: { $0.id == lineId }) { try? await load() }
         }
     }
@@ -674,9 +709,13 @@ final class ConversationModel {
         try? await load()
     }
 
-    func removeMember(_ member: ChatMember) async {
-        guard let conversationId else { return }
-        await changeChat { try await connection.removeChatMember(conversationId, userId: member.userId) }
+    /// Takes somebody out of the group; the refusal is returned for the
+    /// members sheet to say, since the screen under it is not in view.
+    func removeMember(_ member: ChatMember) async -> String? {
+        guard let conversationId else { return nil }
+        return await changeChatReporting(isReportedOnScreen: false, undo: nil) {
+            try await connection.removeChatMember(conversationId, userId: member.userId)
+        }
     }
 
     /// Leaves the group; false when the server refused.
@@ -693,14 +732,25 @@ final class ConversationModel {
     }
 
     /// Makes a change to the chat and reads it again, so what the server
-    /// now has is what shows; a refusal is told as any send problem is.
+    /// now has is what shows. A refusal is told as any send problem is, or,
+    /// when the change was made from a sheet that covers the screen, only
+    /// returned, for the sheet to say; `undo` first puts back what was shown
+    /// ahead of the answer.
     private func changeChat(_ change: () async throws -> Void) async {
+        _ = await changeChatReporting(isReportedOnScreen: true, undo: nil, change)
+    }
+
+    private func changeChatReporting(isReportedOnScreen: Bool, undo: (() -> Void)?, _ change: () async throws -> Void) async -> String? {
+        var problemText: String?
         do {
             try await change()
         } catch {
-            sendProblemText = app.describe(error)
+            undo?()
+            problemText = app.describe(error)
+            if isReportedOnScreen { sendProblemText = problemText }
         }
         try? await load()
+        return problemText
     }
 
     func approve(_ line: TranscriptLine, isApproved: Bool) async {
@@ -794,6 +844,17 @@ final class ConversationModel {
                 longitudeDegrees: reading.longitudeDegrees, accuracyMeters: reading.accuracyMeters,
                 measuredAt: reading.measuredAt, errorMessage: reading.problemText)
         }
+    }
+}
+
+/// ConfirmingTasks holds the reads waiting to confirm a message just sent,
+/// and cancels them when the conversation model that started them goes away,
+/// which a model's own deinit cannot do from outside the main actor.
+final class ConfirmingTasks: @unchecked Sendable {
+    var tasks: [String: Task<Void, Never>] = [:]
+
+    deinit {
+        for task in tasks.values { task.cancel() }
     }
 }
 

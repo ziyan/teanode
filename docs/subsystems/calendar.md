@@ -444,7 +444,9 @@ it is the highest of the direct share and the shares to circles the reader is
 in. The lookup joins `circle_member` for the reader and for the calendar's
 owner, so a share to a circle stops reaching a reader when the owner leaves that
 circle, and a direct share stops when the two no longer share one, whether or
-not any row has been deleted yet. Nothing compares a calendar's `UserID` with
+not any row has been deleted yet. It joins the owner's account too: the shares
+of a disabled account reach nobody while it is off, and reach them again when it
+is switched back on. Nothing compares a calendar's `UserID` with
 the caller: a circle's calendar has none (`user_id` is NULL and `circle_id` set,
 exactly one of them). The dashboard's API (`reachCalendar`), CalDAV
 (`calendarAt`), the commands that write (`writableCalendar`) and the agent

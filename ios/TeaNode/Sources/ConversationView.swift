@@ -665,11 +665,15 @@ struct ConversationItemView: View {
                         line: line, author: author, startsRun: line.beginsRun(after: previous?.line),
                         readers: line.messageId.flatMap { readers[$0] } ?? []
                     ) {
-                        AgentBubble(reactions: line.reactions) {
-                            MarkdownView(text: line.text, isSelectable: false)
-                        }
-                        .onLongPressGesture(minimumDuration: 0.35) {
-                            MessageActionsPresenter.present(line: line, model: model)
+                        if line.isDeleted {
+                            DeletedMessageBubble()
+                        } else {
+                            AgentBubble(reactions: line.reactions) {
+                                MarkdownView(text: line.text, isSelectable: false)
+                            }
+                            .onLongPressGesture(minimumDuration: 0.35) {
+                                MessageActionsPresenter.present(line: line, model: model)
+                            }
                         }
                     }
                 }
@@ -701,7 +705,7 @@ struct ConversationItemView: View {
                 if line.detail == "payment_waiting" {
                     // A call of a skill the person shared that waits for
                     // their word: the card reads the call for how it stands.
-                    PaymentWaitingCard(connection: model.connection, detail: line.text)
+                    PaymentWaitingCard(connection: model.connection, noteDetail: line.text)
                 } else {
                     NoteLine(line: line)
                 }
@@ -1126,6 +1130,21 @@ enum UsageWords {
     }
 }
 
+/// DeletedMessageBubble is what stands where a message of a chat was taken
+/// back, whether a person or an agent said it.
+struct DeletedMessageBubble: View {
+    var body: some View {
+        Text("Message deleted")
+            .italic()
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color(.separator), lineWidth: 1)
+            }
+    }
+}
+
 /// PersonBubble is what the person said: on the right, in the accent color,
 /// with what it replies to above it.
 struct PersonBubble: View {
@@ -1156,14 +1175,7 @@ struct PersonBubble: View {
             if !isOthers { Spacer(minLength: 56) }
             VStack(alignment: isOthers ? .leading : .trailing, spacing: 4) {
                 if line.isDeleted {
-                    Text("Message deleted")
-                        .italic()
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color(.separator), lineWidth: 1)
-                        }
+                    DeletedMessageBubble()
                 } else {
                     content
                 }
@@ -1840,6 +1852,16 @@ struct NoteLine: View {
         case "goal_cleared": return String(localized: "Goal cleared: \(detail)")
         case "goal_met": return String(localized: "Goal met: \(detail)")
         case "goal_stalled": return String(localized: "Goal stalled: \(detail) turns since you last wrote and it is not met. Write to keep going, or clear or change it.")
+        // What a person is told when they addressed an agent in a chat and no
+        // turn of it started; the detail is the agent's name.
+        case "chat_agent_owner_only":
+            return detail.isEmpty
+                ? String(localized: "Only its owner can ask that agent in this chat.") : String(localized: "Only \(detail)'s owner can ask it in this chat.")
+        case "chat_agent_off":
+            return detail.isEmpty ? String(localized: "That agent is switched off.") : String(localized: "\(detail) is switched off.")
+        case "chat_agent_absent":
+            return detail.isEmpty
+                ? String(localized: "That agent's owner is not in this chat.") : String(localized: "\(detail)'s owner is not in this chat.")
         case "circle_invited":
             // Two names travel as JSON, since one plain detail cannot hold
             // both; a detail that is not JSON is shown as the server wrote it.

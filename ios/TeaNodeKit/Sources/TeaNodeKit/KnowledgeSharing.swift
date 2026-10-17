@@ -23,7 +23,6 @@ public struct SharedKnowledgeEdge: Codable, Hashable, Sendable {
     public let fromPath: String
     public let toPath: String
     public let relation: String
-    public let note: String?
     public let isProposed: Bool
 }
 
@@ -158,7 +157,7 @@ extension Documents {
         ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
         path name nodeKind aliases opening isQuoteShared
         facts { number factKind text happenedAt isInferred evidenceSource evidenceQuote }
-        edges { fromPath toPath relation note isProposed }
+        edges { fromPath toPath relation isProposed }
         children { path name opening }
         """
     public static let knowledgeShares = """
