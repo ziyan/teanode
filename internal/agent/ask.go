@@ -2201,6 +2201,7 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),
 		"Situation":         self.promptData.situation,
 		"Instructions":      strings.TrimSpace(settings.Agent.Instructions),
+		"Voice":             describeVoice(settings.Agent.Voice),
 		"Knowledge":         self.promptData.knowledge,
 		// The month as a path, so the prompt can say where this month's
 		// page is without the clock itself going into the cacheable part.
