@@ -63051,6 +63051,138 @@
           }
         }
       }
+    },
+    "A file took too long to come from your photo library or iCloud. Backup went on without it and tries it again later.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真ライブラリまたは iCloud からファイルを取得するのに時間がかかりすぎました。バックアップはそのファイルを除いて続行し、後でもう一度試します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有个文件从照片图库或 iCloud 读取耗时过长。备份已跳过它继续进行，稍后会再试。"
+          }
+        }
+      }
+    },
+    "Uploading in the background: %lld files queued": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Uploading in the background: %lld file queued"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Uploading in the background: %lld files queued"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "バックグラウンドでアップロード中: %lld 個のファイルが待機中"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "バックグラウンドでアップロード中: %lld 個のファイルが待機中"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在后台上传：已排队 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在后台上传：已排队 %lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file waits until you open TeaNode or the phone charges overnight. A photo kept in iCloud or a large video waits this way."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 個のファイルは、TeaNode を開くか、夜間に充電されるまで待機します。iCloud にある写真や大きなビデオはこのように待機します。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个文件要等到你打开 TeaNode，或手机在夜间充电时才会发送。存放在 iCloud 的照片和较大的视频会这样等待。"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version": "1.0"

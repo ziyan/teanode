@@ -354,8 +354,9 @@
 
         /// The screen Settings opens for a screenshot: `-TeaNodeScreen people`.
         /// `photos-backup-off` and `photos-backup-on` open Photo backup off, and
-        /// part way through a library, and `photos-backup-waiting` with files
-        /// waiting for the network; the engine takes its invented counts from
+        /// part way through a library, `photos-backup-waiting` with files
+        /// waiting for the network, and `photos-backup-background` with a long
+        /// queue the system is sending with the app closed; the engine takes its invented counts from
         /// this name (PhotoBackupEngine.applyDemo), so no server is asked.
         static var screen: String? {
             let arguments = ProcessInfo.processInfo.arguments

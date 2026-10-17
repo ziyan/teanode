@@ -13,6 +13,13 @@ import UIKit
 /// foreground, when the network comes back while files wait for it, when the
 /// person taps Back up now (a continued processing task, so that it goes on with
 /// the app in the background), and overnight on power (a processing task).
+///
+/// The background session is handed a long queue (PhotoBackupBudget.standard),
+/// which iOS goes on sending after the person has left the app. When iOS wakes
+/// the app because some of it finished, the app queues more files that are on
+/// the phone already in the few seconds it has (`topUpAfterWake`); a whole pass,
+/// which lists the library and may wait on iCloud, runs only while the app is
+/// in the foreground or a background task is running.
 @MainActor
 @Observable
 final class PhotoBackupEngine {
@@ -88,6 +95,10 @@ final class PhotoBackupEngine {
     /// Counts the passes started, so that a pass that ends late does not clear
     /// the task of the one that replaced it.
     @ObservationIgnored private var passGeneration = 0
+    /// Set when an upload finished while the pass task was still winding up
+    /// (it had stopped queueing, and had not yet been cleared), so that the
+    /// task runs once more instead of the finished upload being lost.
+    @ObservationIgnored private var isAnotherPassWanted = false
     /// True while backup is being turned off: no pass starts and no finished
     /// upload is recorded, including the cancelled ones the turning off causes.
     @ObservationIgnored private var isTurningOff = false
@@ -191,7 +202,27 @@ final class PhotoBackupEngine {
             },
             flushHandler: {
                 await PhotoBackupEngine.shared.flushIndex()
+            },
+            topUpHandler: {
+                await PhotoBackupEngine.shared.topUpAfterWake()
             })
+    }
+
+    /// How long the app spends queueing files when the system wakes it because
+    /// uploads finished. The system gives a woken app about 30 seconds before
+    /// it must call the completion handler; this stays well inside that, and
+    /// leaves time for the index to be written.
+    nonisolated static let wakeTopUpSeconds: TimeInterval = 18
+
+    /// The app was woken in the background because uploads finished: the
+    /// session has room again, so more files that are on the phone already are
+    /// exported and queued, smallest first, until the deadline. Files in
+    /// iCloud wait for the app to be opened or for the night. A pass that is
+    /// working is left to do this itself.
+    func topUpAfterWake() async {
+        guard isEnabled, !isTurningOff, let coordinator = try? makeCoordinator() else { return }
+        await coordinator.topUp(settings: currentSettings, until: Date().addingTimeInterval(Self.wakeTopUpSeconds))
+        await refresh()
     }
 
     /// Writes the index, if there is one yet. The background session asks for
@@ -278,7 +309,9 @@ final class PhotoBackupEngine {
         let access = PhotoKitLibrary().access()
         accessProblem = access == .full ? nil : access
         if let coordinator, coordinatorAccountKey == accountKey {
-            apply(await coordinator.status())
+            // With no pass running, uploads go on with the system: the session
+            // is asked what it holds, so that the screen can say so.
+            apply(await coordinator.refreshedStatus())
             return
         }
         guard let index = try? makeIndex() else { return }
@@ -497,8 +530,11 @@ final class PhotoBackupEngine {
         await refresh()
     }
 
-    /// Runs passes until one sends nothing new. A pass already running is
-    /// joined, not started twice.
+    /// Runs passes until one sends nothing new, and then again whenever an
+    /// upload finishes (`sessionFinished`) while files are still to send, so
+    /// that the library keeps being worked through as uploads finish, not only
+    /// when the app is next opened. A pass already running is joined, not
+    /// started twice.
     @discardableResult
     func startPasses() -> Task<Void, Never>? {
         if let passTask { return passTask }
@@ -507,10 +543,13 @@ final class PhotoBackupEngine {
         let generation = passGeneration
         let task = Task { [weak self] in
             var result: PhotoBackupPassResult
+            var wantsAnotherPass: Bool
             repeat {
                 guard let self else { return }
+                self.isAnotherPassWanted = false
                 result = await coordinator.runPass(settings: self.currentSettings)
-            } while result.uploadedFileCount > 0 && !result.wasStopped && !result.wasAlreadyRunning && !Task.isCancelled
+                wantsAnotherPass = self.isAnotherPassWanted
+            } while (result.uploadedFileCount > 0 || wantsAnotherPass) && !result.wasStopped && !result.wasAlreadyRunning && !Task.isCancelled
             await self?.passesEnded(generation: generation)
         }
         passTask = task
@@ -575,7 +614,8 @@ final class PhotoBackupEngine {
         let connection = Self.makeConnection(accountKey: accountKey)
         let made = PhotoBackupCoordinator(
             index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, lookup: connection, network: DeviceNetwork(),
-            outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential)
+            outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential,
+            freeSpaceBytes: { Self.freeSpaceBytes(at: outgoing) })
         coordinator = made
         coordinatorAccountKey = accountKey
         // A pass started by a background task launch has not come through the
@@ -592,7 +632,12 @@ final class PhotoBackupEngine {
     }
 
     /// An upload finished in the background session, perhaps while the app was
-    /// closed. It is recorded, and a pass is started to queue more.
+    /// closed. It is recorded. When it went up and files are still to send, a
+    /// pass is started to queue more, if the app is not in the background: in the
+    /// background the app has seconds, not a pass, and `topUpAfterWake` queues
+    /// files when the system has delivered everything it woke the app for. A
+    /// refused file, one to try again later, and one the app cancelled start
+    /// nothing, so a file that always fails cannot start passes in a loop.
     func sessionFinished(_ job: PhotoBackupJob, outcome: PhotoBackupOutcome) async {
         guard !isTurningOff, enabledAccountKey == job.accountKey || preferences.enabledAccountKey == job.accountKey,
             let coordinator = try? makeCoordinator()
@@ -600,10 +645,23 @@ final class PhotoBackupEngine {
             PhotoBackupSession.removeTemporaryFile(of: job)
             return
         }
-        await coordinator.finished(job, outcome: outcome)
-        // A task the app cancelled (backup turned off, a setting changed, a
-        // sign-in refused) is not a reason to start a pass.
-        if outcome != .cancelled { startPasses() }
+        let shouldStartPass = await coordinator.finished(job, outcome: outcome)
+        guard shouldStartPass, !isTurningOff, UIApplication.shared.applicationState != .background else { return }
+        if passTask != nil {
+            // The pass task is still there, perhaps just about to end: it runs
+            // once more before it does.
+            isAnotherPassWanted = true
+        } else {
+            startPasses()
+        }
+    }
+
+    /// The room the phone has left for the person's own use, which is what the
+    /// system counts as available (it can clear caches to make more). The
+    /// queue of exported files is held to a quarter of this.
+    nonisolated static func freeSpaceBytes(at url: URL) -> Int64? {
+        let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
     }
 
     // MARK: Background tasks
@@ -616,7 +674,7 @@ final class PhotoBackupEngine {
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = true
         // Soon when files wait for the network, otherwise only a look for new photos.
-        request.earliestBeginDate = Date(timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: status.leftForLaterFileCount))
+        request.earliestBeginDate = Date(timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: status.leftForLaterFileCount + status.waitingFileCount))
         try? BGTaskScheduler.shared.submit(request)
     }
 
@@ -663,7 +721,10 @@ final class PhotoBackupEngine {
         /// The two Photo Backup screens CI photographs, with invented counts.
         private func applyDemo() {
             let isWaiting = DemoServer.screen == "photos-backup-waiting"
-            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting
+            // `photos-backup-background`: the app was left, the system is sending a long queue, and
+            // more files wait for the app to be opened or for the night.
+            let isInBackground = DemoServer.screen == "photos-backup-background"
+            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting || isInBackground
             // `settings-photo-backup-other-account` and `photos-backup-other-account` have backup on for a
             // different account than the one signed in.
             let isOnForOtherAccount = DemoServer.screen == "settings-photo-backup-other-account" || DemoServer.screen == "photos-backup-other-account"
@@ -674,6 +735,12 @@ final class PhotoBackupEngine {
                 status = PhotoBackupStatus(
                     phase: .waitingForNetwork, backedUpItemCount: 3_890, libraryItemCount: 3_912, leftForLaterFileCount: 22,
                     lastFailure: .serverReason("photo storage is unavailable"), lastPassFinishedAt: Date(timeIntervalSinceNow: -600))
+                return
+            }
+            if isInBackground {
+                status = PhotoBackupStatus(
+                    phase: .idle, backedUpItemCount: 1_284, libraryItemCount: 3_912, queuedFileCount: 200,
+                    lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600), waitingFileCount: 1_407)
                 return
             }
             status =
