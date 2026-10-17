@@ -330,6 +330,13 @@ public struct WatchedPlace: Hashable, Sendable {
     public let latitudeDegrees: Double
     public let longitudeDegrees: Double
     public let radiusMeters: Double
+
+    public init(placeId: String, latitudeDegrees: Double, longitudeDegrees: Double, radiusMeters: Double) {
+        self.placeId = placeId
+        self.latitudeDegrees = latitudeDegrees
+        self.longitudeDegrees = longitudeDegrees
+        self.radiusMeters = radiusMeters
+    }
 }
 
 /// LocationPlaceWatch chooses which places are watched. iOS allows twenty
