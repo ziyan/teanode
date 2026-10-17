@@ -15230,6 +15230,10 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 }
 
 .coding-tabstrip .tabs button {
+  /* Holds the hidden "On screen" words inside the strip, which scrolls:
+     placed against the page instead, a tab far along the strip pushed the
+     page wider than a phone. */
+  position: relative;
   min-height: 44px;
   white-space: nowrap;
 }
