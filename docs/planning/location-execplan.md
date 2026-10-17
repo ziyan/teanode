@@ -32,9 +32,10 @@ To see it working at the end: two accounts in one family circle, each with the a
 - [x] (2026-10-17) Fix round 1 (four fixers: server data, server API, dashboard, iPhone), review round 2 (43 findings, mostly low), fix round 2, review round 3 (dashboard none; words 2 low; iPhone 4; server 8), fix round 3.
 - [x] (2026-10-17) Walked Location in headless Chrome at 1400 and 390 px, light and dark, for a person with a home, a family member sharing at history, and a person with nothing (the setup): found the map had no height (MapLibre's stylesheet), a labeled place shown by its street, a place named "6", one named after a lift, the map credits covering a phone's map, and three phone layout breaks; fixed.
 - [x] (2026-10-17) Rebased onto main after circles (#528) merged as v0.170.0.
-- [ ] Review round 4, until a round finds nothing.
-- [ ] The iPhone screenshots from CI looked at; the ux-review skill on every screen.
-- [ ] Deploy (backup first: migration 0240) on top of what production runs, and use it for real with the maintainer's phone and the agent.
+- [x] (2026-10-17) Review rounds 4 and 5: the server's round 5 and the iPhone's round 4 found nothing a merge would be blocked on; the dashboard was clean from round 3.
+- [x] (2026-10-17) The iPhone screenshots from CI looked at with the ux-review skill: the person's own row first and labeled You, button rows in label colors, map contents clear of the Maps logo, red destructive icons, a labeled name field; fixed.
+- [x] (2026-10-17) Deployed to production on top of what it ran (deploy/combined-20261017i: the newest combined branch plus location), after a backup; migration 0240 applied, v0.170.0-167-gbcb85558. Used there: the command line, the settings, a search (which found nothing for "coffee": fixed by asking again in OpenStreetMap's word), the map proxy behind the real host, and the agent answering where the person went and finding playgrounds. A TestFlight build of the same branch was dispatched.
+- [ ] The maintainer's phone: a day of real visits, and the timings of visit arrivals and departures (Milestone 0's third question).
 - [ ] Milestone 6: documentation, the security review section, review rounds, use it for real, deploy.
 
 ## Surprises & Discoveries
@@ -126,7 +127,13 @@ To see it working at the end: two accounts in one family circle, each with the a
 
 ## Outcomes & Retrospective
 
-Nothing built yet.
+Built in one pull request (#536) on every surface: the iPhone records visits, significant moves and the person's named places while closed and follows them while open; every visit is at a place named from OpenStreetMap that the person can rename and label; check-in and search find places by name or kind; a location is shared at current or history with a circle or a person in one, live on the map, with notifications for named and labeled places; the agent reads it all through the location tool, a day journal and a monthly digest; Location is set up from its first screen, the phone tour and the offer on joining a family circle. Deployed to production on 2026-10-17.
+
+What changed from the plan, and why. Places are named right after a report, not by the agent's job alone, because a server with the agent off never named them. Visits are normalized after every report (ordered, open ones ended at the next arrival, same-place ones joined), because a phone delivers arrivals and departures out of order and offline; all 720 orders of a day's events now give one answer. A visit with nothing after it lasts while the person is still there, up to 72 hours after their last report, because the phone sends nothing while they stay put. Search asks again in OpenStreetMap's own word for a kind of place. The map goes through the server (`/api/v1/map`), and its element needed an explicit size because MapLibre's stylesheet overrides the page's.
+
+What is left. A day on the maintainer's phone, to see how late iOS reports arrivals and departures and whether the recorder behaves across a real day. The App Store privacy answers need Precise Location added before a build with Location goes to review; that is the maintainer's to do.
+
+Lessons. Each review round found real defects until the fifth; the reviewers' throwaway tests (`go test -overlay`) reproduced the subtle ones without touching the repository. A walkthrough in a real browser found what four reviews could not: a map with no height and a CSS rule the browser dropped.
 
 ## Context and Orientation
 
@@ -308,6 +315,8 @@ New dependencies: `maplibre-gl` in `web/package.json` (the dashboard's map); no 
 At the end of Milestone 1 these exist: `place.Provider`, `place.Found`, `place.NewProvider(configuration config.Places) (place.Provider, error)` (nil provider when `ProviderKind` is empty); `models.LocationPoint`, `models.Place`, `models.PlaceVisit`, `models.LocationShare`, `models.LocationShareLevel`; `apigraph.LocationQuery` and `apigraph.LocationMutation` with the operations named in Milestone 1; `cmd.NewLocationCommand()`; the `location` tool with the actions named above.
 
 Revision note (2026-10-17): first version, written after the research and the maintainer's answers to the seven open questions.
+
+Revision note (2026-10-17): progress through five review rounds, the walkthrough, the deploy, and the outcomes.
 
 Revision note (2026-10-17): Milestone 5b, getting started, because the maintainer asked that Location be easy to set up as part of getting started; `ListLocationPoints` added for drawing a day's path; `NearbyPlaces` is `ListNearbyPlaces`, the list operations' form.
 
