@@ -32,12 +32,16 @@ const PhoneKeyBytes = 32
 type Content struct {
 	// NotificationKind is what this is: alert, herdr_question,
 	// goal_needs_you, speak_first, approval, question, answer, circle, chat,
-	// skill_share_call or test.
+	// skill_share_call, location or test.
 	NotificationKind string `json:"notificationKind"`
 
 	ConversationID string `json:"conversationId,omitempty"`
 	RunID          string `json:"runId,omitempty"`
 	CallID         string `json:"callId,omitempty"`
+
+	// LocationUserID is, for a location notification, the person whose
+	// arrival or departure it is, so that the app opens Location with them.
+	LocationUserID string `json:"locationUserId,omitempty"`
 
 	Title string `json:"title"`
 	Body  string `json:"body"`

@@ -107,6 +107,11 @@ const (
 	LocationShareLevelCurrent LocationShareLevel = "current"
 	// LocationShareLevelHistory adds the person's visits.
 	LocationShareLevelHistory LocationShareLevel = "history"
+	// LocationShareLevelOwner is a person looking at their own location. It
+	// is not a level anybody can be given: it lets "how much of this
+	// person's location may this person see" have one answer for the owner
+	// too.
+	LocationShareLevelOwner LocationShareLevel = "owner"
 )
 
 // IsGrantable reports whether a share may be made at this level.
@@ -125,6 +130,8 @@ func (self LocationShareLevel) Rank() int {
 		return 1
 	case LocationShareLevelHistory:
 		return 2
+	case LocationShareLevelOwner:
+		return 3
 	}
 	return 0
 }
@@ -250,4 +257,10 @@ type LocationShare struct {
 
 	// CreatedByUserID is empty once that account is gone.
 	CreatedByUserID string `json:"createdByUserId,omitempty"`
+
+	// GranteeUsername, GranteeName and GranteeCircleName are filled in by the
+	// listing, for a screen that says who a location is shared with.
+	GranteeUsername   string `json:"granteeUsername,omitempty"`
+	GranteeName       string `json:"granteeName,omitempty"`
+	GranteeCircleName string `json:"granteeCircleName,omitempty"`
 }

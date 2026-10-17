@@ -881,6 +881,21 @@ export const ja: Catalog = {
   'serverSettings.geoipDatabaseFileHint':
     'GeoLite2-Country.mmdb または GeoLite2-City.mmdb のパス。相対パスはデータディレクトリから解決されます。',
 
+  'serverSettings.placesTitle': '場所と地図',
+  'serverSettings.placesIntro':
+    '人が訪れた場所の名前の出どころと、「位置情報」ページに描く地図です。どちらもこのサーバーが問い合わせ、誰のブラウザーも接続しません。名前は OpenStreetMap の貢献者によるものです。',
+  'serverSettings.placesProviderKind': '場所の名前の提供元',
+  'serverSettings.placesProviderNominatim': 'Nominatim（OpenStreetMap）',
+  'serverSettings.placesProviderPhoton': 'Photon（OpenStreetMap のデータ）',
+  'serverSettings.placesProviderOff': 'オフ：場所を市区町村の名前で呼ぶ',
+  'serverSettings.placesProviderKindHint':
+    'OpenStreetMap 財団の公開 Nominatim サーバーは、名乗ったうえで場所ごとに一度だけ尋ねる軽い利用を認めており、このサーバーはそのとおりに動きます。オフにすると場所は市区町村の名前のままになり、本人が名前を付けることはできます。',
+  'serverSettings.placesProviderUrl': '提供元のアドレス',
+  'serverSettings.placesProviderUrlHint': 'https のアドレスです。このマシンや自分のネットワーク上のサーバーなら http も使えます。',
+  'serverSettings.placesMapStyleUrl': '地図スタイルのアドレス',
+  'serverSettings.placesMapStyleUrlHint':
+    '地図の描画に使う MapLibre スタイルです。このサーバーがそのアドレスのホストからスタイルとタイルを取得し、ブラウザーに渡します。',
+
   'serverSettings.certificateHosts': 'このサーバーの証明書が覆う名前',
   'serverSettings.certificateHostsHint':
     'カンマ区切り。サーバー自身の証明書が覆う名前で、ダッシュボードのアドレスとこのサーバーのメールサーバー名です。*.example.com のようなワイルドカードには dns-01 が要ります。',

@@ -141,7 +141,7 @@ readonly ALLOWED_HOSTS=(
   # the configuration defaults to. Both are addresses of public services that
   # the code and the location plan have to name.
   operations.osmfoundation.org
-  tiles.openfreemap.org
+  .openfreemap.org
 
   # The services the published skills call. They are in the fixtures under
   # internal/skills/testdata, which are the registry's own files kept

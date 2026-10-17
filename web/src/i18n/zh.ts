@@ -852,6 +852,21 @@ export const zh: Catalog = {
   'serverSettings.geoipDatabaseFileHint':
     'GeoLite2-Country.mmdb 或 GeoLite2-City.mmdb 的路径。相对路径按数据目录解析。',
 
+  'serverSettings.placesTitle': '地点与地图',
+  'serverSettings.placesIntro':
+    '人们去过的地点的名称从哪里来，以及“位置”页面所用的地图。两者都由本服务器去请求，任何人的浏览器都不会连接它们。名称来自 OpenStreetMap 贡献者。',
+  'serverSettings.placesProviderKind': '地点名称来源',
+  'serverSettings.placesProviderNominatim': 'Nominatim（OpenStreetMap）',
+  'serverSettings.placesProviderPhoton': 'Photon（OpenStreetMap 数据）',
+  'serverSettings.placesProviderOff': '关闭：用所在城市命名地点',
+  'serverSettings.placesProviderKindHint':
+    'OpenStreetMap 基金会的公共 Nominatim 服务器允许应用轻量使用，前提是表明身份并且每个地点只查询一次，本服务器照此行事。关闭后，地点以所在城市命名，人们仍可自行命名。',
+  'serverSettings.placesProviderUrl': '来源地址',
+  'serverSettings.placesProviderUrlHint': '使用 https 地址；本机或内网上自己运行的服务器可以用 http。',
+  'serverSettings.placesMapStyleUrl': '地图样式地址',
+  'serverSettings.placesMapStyleUrlHint':
+    '绘制地图所用的 MapLibre 样式。本服务器从该地址所在的主机取得样式和图块，再交给浏览器。',
+
   'serverSettings.certificateHosts': '本服务器证书覆盖的名字',
   'serverSettings.certificateHostsHint':
     '逗号分隔。服务器自身证书覆盖的名字 —— 控制台的地址，以及本服务器的邮件服务器名。像 *.example.com 这样的通配符需要 dns-01 验证方式。',

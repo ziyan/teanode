@@ -33,9 +33,28 @@ type LocationOperation interface {
 	// when there is none.
 	GetLatestLocationPoint(userId string) (*models.LocationPoint, error)
 
+	// ListLocationPoints reads the positions measured in a range, oldest
+	// first, at most limitCount of them. A caller that must refuse a range
+	// holding more asks for one more than it will take.
+	ListLocationPoints(userId string, from, until time.Time, limitCount int) ([]*models.LocationPoint, error)
+
 	// FindPlaceAt is the person's place whose radius holds the point, the
 	// nearest centre first, or nil when there is none.
 	FindPlaceAt(userId string, latitudeDegrees, longitudeDegrees float64) (*models.Place, error)
+
+	// ListPlacesNear is the person's places that hold the point or whose
+	// centre is within radiusMeters of it, nearest first, at most limitCount.
+	// Each carries its distance.
+	ListPlacesNear(userId string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*PlaceDistance, error)
+
+	// FindPlaceIDsByOSM maps the OpenStreetMap objects the person already has
+	// a place for to that place. A place with no OpenStreetMap object is never
+	// in the answer.
+	FindPlaceIDsByOSM(userId string, references []OSMReference) (map[OSMReference]string, error)
+
+	// SummarizePlaceVisits counts the stays at each of the places and says
+	// when the last one was, for the places that have any.
+	SummarizePlaceVisits(userId string, placeIds []string) (map[string]*PlaceVisitSummary, error)
 
 	// CreatePlace makes a place for the person. ErrInvalidArguments for a
 	// position off the earth, a radius outside what a person can set (zero
@@ -69,6 +88,10 @@ type LocationOperation interface {
 	// the person's, ErrInvalidArguments for a stay with neither time or that
 	// ends before it starts.
 	PutPlaceVisit(userId string, visit *models.PlaceVisit) (isNew bool, err error)
+
+	// GetPlaceVisitByClientKey is the stay the phone calls by this key, with
+	// its place, or nil when there is none.
+	GetPlaceVisitByClientKey(userId, clientVisitKey string) (*models.PlaceVisit, error)
 
 	// GetOpenPlaceVisit is the stay in progress, the latest one with no
 	// departure, with its place; nil when there is none.
@@ -147,6 +170,25 @@ type PlaceVisitFilter struct {
 
 	Offset     int
 	LimitCount int
+}
+
+// OSMReference names an object on the OpenStreetMap map.
+type OSMReference struct {
+	OSMType string
+	OSMID   int64
+}
+
+// PlaceDistance is one of the person's places and how far its centre is from
+// a point that was asked about.
+type PlaceDistance struct {
+	Place          *models.Place
+	DistanceMeters float64
+}
+
+// PlaceVisitSummary is how often a place was visited and when last.
+type PlaceVisitSummary struct {
+	VisitCount  int
+	LastVisitAt *time.Time
 }
 
 // NamedPlace is what a provider knows about a spot, for SetPlaceNamed.
@@ -979,4 +1021,119 @@ func (self *transaction) SetPlaceNamed(placeId string, found *NamedPlace, errorM
 		}
 	}
 	return self.tx.Model(&placeModel{}).Where("\"id\" = ?", placeId).Updates(updates).Error
+}
+
+func (self *transaction) ListLocationPoints(userId string, from, until time.Time, limitCount int) ([]*models.LocationPoint, error) {
+	if limitCount <= 0 || !from.Before(until) {
+		return nil, ErrInvalidArguments
+	}
+	var rows []locationPointModel
+	if err := self.tx.Where("\"user_id\" = ? AND \"measured_at\" >= ? AND \"measured_at\" < ?", userId, from, until).
+		Order("\"measured_at\" ASC, \"id\" ASC").Limit(limitCount).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	points := make([]*models.LocationPoint, 0, len(rows))
+	for index := range rows {
+		points = append(points, rows[index].toModel())
+	}
+	return points, nil
+}
+
+func (self *transaction) ListPlacesNear(userId string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*PlaceDistance, error) {
+	if !isOnEarth(latitudeDegrees, longitudeDegrees) || radiusMeters < 0 || math.IsNaN(radiusMeters) || limitCount <= 0 {
+		return nil, ErrInvalidArguments
+	}
+	// The latitude band keeps the exact distance from being worked out for
+	// every place the person has, as in FindPlaceAt: a place reaches no
+	// further than the larger of the radius asked for and its own radius.
+	bandDegrees := (math.Max(radiusMeters, models.PlaceRadiusMaximumMeters))/111000.0 + 0.001
+	var rows []struct {
+		Place          placeModel `gorm:"embedded"`
+		DistanceMeters float64    `gorm:"column:distance_meters"`
+	}
+	if err := self.tx.Raw(`SELECT place.*, `+placeDistanceSQL+` AS distance_meters FROM "place" place
+		WHERE place.user_id = @user
+		  AND place.latitude_degrees BETWEEN @south AND @north
+		  AND `+placeDistanceSQL+` <= GREATEST(@radius, place.radius_meters)
+		ORDER BY distance_meters ASC, place.created_at ASC, place.id ASC
+		LIMIT @limit`,
+		sql.Named("user", userId), sql.Named("latitude", latitudeDegrees), sql.Named("longitude", longitudeDegrees),
+		sql.Named("south", latitudeDegrees-bandDegrees), sql.Named("north", latitudeDegrees+bandDegrees),
+		sql.Named("radius", radiusMeters), sql.Named("limit", limitCount)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	near := make([]*PlaceDistance, 0, len(rows))
+	for index := range rows {
+		near = append(near, &PlaceDistance{Place: rows[index].Place.toModel(), DistanceMeters: rows[index].DistanceMeters})
+	}
+	return near, nil
+}
+
+func (self *transaction) FindPlaceIDsByOSM(userId string, references []OSMReference) (map[OSMReference]string, error) {
+	found := map[OSMReference]string{}
+	if len(references) == 0 {
+		return found, nil
+	}
+	conditions := make([]string, 0, len(references))
+	arguments := []any{userId}
+	for _, reference := range references {
+		if reference.OSMType == "" || reference.OSMID == 0 {
+			continue
+		}
+		conditions = append(conditions, `("osm_type" = ? AND "osm_id" = ?)`)
+		arguments = append(arguments, reference.OSMType, reference.OSMID)
+	}
+	if len(conditions) == 0 {
+		return found, nil
+	}
+	var rows []placeModel
+	if err := self.tx.Where(`"user_id" = ? AND (`+strings.Join(conditions, " OR ")+`)`, arguments...).
+		Order(`"created_at" DESC, "id" DESC`).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	// Newest first, so that the oldest place for an object is the one left in
+	// the map when a person has two.
+	for index := range rows {
+		if rows[index].OSMID != nil {
+			found[OSMReference{OSMType: rows[index].OSMType, OSMID: *rows[index].OSMID}] = rows[index].ID
+		}
+	}
+	return found, nil
+}
+
+func (self *transaction) SummarizePlaceVisits(userId string, placeIds []string) (map[string]*PlaceVisitSummary, error) {
+	summaries := map[string]*PlaceVisitSummary{}
+	if len(placeIds) == 0 {
+		return summaries, nil
+	}
+	var rows []struct {
+		PlaceID     string     `gorm:"column:place_id"`
+		VisitCount  int        `gorm:"column:visit_count"`
+		LastVisitAt *time.Time `gorm:"column:last_visit_at"`
+	}
+	if err := self.tx.Raw(`SELECT place_id, count(*) AS visit_count, max(GREATEST(arrived_at, departed_at)) AS last_visit_at
+		FROM "place_visit" WHERE user_id = ? AND place_id IN ? GROUP BY place_id`, userId, uniqueStrings(placeIds)).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		summaries[rows[index].PlaceID] = &PlaceVisitSummary{VisitCount: rows[index].VisitCount, LastVisitAt: localTime(rows[index].LastVisitAt)}
+	}
+	return summaries, nil
+}
+
+func (self *transaction) GetPlaceVisitByClientKey(userId, clientVisitKey string) (*models.PlaceVisit, error) {
+	var found []placeVisitModel
+	if err := self.tx.Where("\"user_id\" = ? AND \"client_visit_key\" = ?", userId, clientVisitKey).Limit(1).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	visit := found[0].toModel()
+	places, err := self.loadPlacesById([]string{visit.PlaceID})
+	if err != nil {
+		return nil, err
+	}
+	visit.Place = places[visit.PlaceID]
+	return visit, nil
 }

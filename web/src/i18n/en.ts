@@ -885,6 +885,22 @@ export const en = {
   'serverSettings.geoipDatabaseFileHint':
     'Path to a GeoLite2-Country.mmdb or GeoLite2-City.mmdb. Relative paths are resolved against the data directory.',
 
+  'serverSettings.placesTitle': 'Places and maps',
+  'serverSettings.placesIntro':
+    'Where the names of the places people go to come from, and the map the Location page is drawn on. Both are asked by this server; nobody’s browser contacts them. Names come from OpenStreetMap contributors.',
+  'serverSettings.placesProviderKind': 'Place name provider',
+  'serverSettings.placesProviderNominatim': 'Nominatim (OpenStreetMap)',
+  'serverSettings.placesProviderPhoton': 'Photon (OpenStreetMap data)',
+  'serverSettings.placesProviderOff': 'Off: name places after their city',
+  'serverSettings.placesProviderKindHint':
+    'The OpenStreetMap Foundation’s public Nominatim server allows light use from an application that says who it is and asks about each place once, which this server does. Switch it off and places keep the name of their city, and people can still name them.',
+  'serverSettings.placesProviderUrl': 'Provider address',
+  'serverSettings.placesProviderUrlHint':
+    'An https address, or http for a server on this machine or your own network, such as one you run yourself.',
+  'serverSettings.placesMapStyleUrl': 'Map style address',
+  'serverSettings.placesMapStyleUrlHint':
+    'The MapLibre style the maps are drawn from. This server fetches the style and its tiles from this address’s host and hands them to the browser.',
+
   'serverSettings.certificateHosts': 'Names on this server’s certificate',
   'serverSettings.certificateHostsHint':
     'Comma separated. The names the server’s own certificate covers — the dashboard’s address and this server’s mail server names. A wildcard such as *.example.com needs the dns-01 challenge.',

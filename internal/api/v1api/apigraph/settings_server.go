@@ -153,6 +153,21 @@ type GeoIPSettings struct {
 	DatabaseFile string `json:"databaseFile,omitempty"`
 }
 
+// PlacesSettings is where the names of the spots people go to come from, and
+// the map they are drawn on.
+type PlacesSettings struct {
+	// ProviderKind is nominatim or photon; empty is off, and places are then
+	// named after their city.
+	ProviderKind string `json:"providerKind"`
+
+	// ProviderURL is the provider's address.
+	ProviderURL string `json:"providerUrl"`
+
+	// MapStyleURL is the style the dashboard's maps are drawn from; the server
+	// fetches it and its tiles for the browser.
+	MapStyleURL string `json:"mapStyleUrl"`
+}
+
 // SMTPParameters are the limits an operator can change.
 type SMTPParameters struct {
 	MaxMessageSize        *string   `json:"maxMessageSize"`
@@ -218,6 +233,14 @@ type GeoIPParameters struct {
 	DatabaseFile *string `json:"databaseFile"`
 }
 
+// PlacesParameters are the place settings an operator can change. An empty
+// providerKind switches the provider off.
+type PlacesParameters struct {
+	ProviderKind *string `json:"providerKind"`
+	ProviderURL  *string `json:"providerUrl"`
+	MapStyleURL  *string `json:"mapStyleUrl"`
+}
+
 // describeServerSettings fills in the groups above. Held by describeSettings,
 // which owns the struct being filled.
 func describeServerSettings(configuration *config.Configuration, settings *Settings) {
@@ -269,6 +292,11 @@ func describeServerSettings(configuration *config.Configuration, settings *Setti
 	settings.GeoIP = &GeoIPSettings{
 		Enabled:      configuration.GeoIP.Enabled,
 		DatabaseFile: configuration.GeoIP.DatabaseFile,
+	}
+	settings.Places = &PlacesSettings{
+		ProviderKind: configuration.Places.ProviderKind,
+		ProviderURL:  configuration.Places.ProviderURL,
+		MapStyleURL:  configuration.Places.MapStyleURL,
 	}
 }
 
@@ -342,6 +370,12 @@ func applyServerSettings(configuration *config.Configuration, arguments UpdateSe
 	if parameters := arguments.GeoIP; parameters != nil {
 		applyBool(&configuration.GeoIP.Enabled, parameters.Enabled)
 		applyString(&configuration.GeoIP.DatabaseFile, parameters.DatabaseFile)
+	}
+
+	if parameters := arguments.Places; parameters != nil {
+		applyString(&configuration.Places.ProviderKind, parameters.ProviderKind)
+		applyString(&configuration.Places.ProviderURL, parameters.ProviderURL)
+		applyString(&configuration.Places.MapStyleURL, parameters.MapStyleURL)
 	}
 
 	return nil

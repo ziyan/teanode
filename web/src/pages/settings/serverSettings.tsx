@@ -6,6 +6,7 @@ import { Select } from '../../components/select'
 import { useTranslation } from '../../i18n/i18n'
 import {
   GeoIP,
+  Places,
   Identity,
   Listen,
   Passkey,
@@ -617,6 +618,67 @@ export function GeoIPForm({ settings, onSaved }: { settings: GeoIP; onSaved: () 
       </div>
 
       <RestartNote />
+
+      <SaveRow busy={busy} saved={saved} problem={problem} />
+    </form>
+  )
+}
+
+// PlacesForm is where the names of the spots people go to come from, and the
+// map the Location page is drawn on. Both are reached from this server only:
+// a viewer's browser never talks to either.
+export function PlacesForm({ settings, onSaved }: { settings: Places; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const { busy, problem, saved, save } = useSaver(onSaved)
+
+  const [providerKind, setProviderKind] = useState(settings.providerKind)
+  const [providerUrl, setProviderUrl] = useState(settings.providerUrl)
+  const [mapStyleUrl, setMapStyleUrl] = useState(settings.mapStyleUrl)
+
+  useEffect(() => {
+    setProviderKind(settings.providerKind)
+    setProviderUrl(settings.providerUrl)
+    setMapStyleUrl(settings.mapStyleUrl)
+  }, [settings])
+
+  return (
+    <form
+      className="card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save({ places: { providerKind, providerUrl, mapStyleUrl } })
+      }}
+    >
+      <h3>{t('serverSettings.placesTitle')}</h3>
+      <p className="muted">{t('serverSettings.placesIntro')}</p>
+
+      <div className="form-narrow">
+        <label>
+          <span>{t('serverSettings.placesProviderKind')}</span>
+          <select value={providerKind} onChange={(event) => setProviderKind(event.target.value)}>
+            <option value="nominatim">{t('serverSettings.placesProviderNominatim')}</option>
+            <option value="photon">{t('serverSettings.placesProviderPhoton')}</option>
+            <option value="">{t('serverSettings.placesProviderOff')}</option>
+          </select>
+        </label>
+        <p className="muted field-hint">{t('serverSettings.placesProviderKindHint')}</p>
+
+        {providerKind !== '' && (
+          <>
+            <label>
+              <span>{t('serverSettings.placesProviderUrl')}</span>
+              <input className="mono" value={providerUrl} onChange={(event) => setProviderUrl(event.target.value)} />
+            </label>
+            <p className="muted field-hint">{t('serverSettings.placesProviderUrlHint')}</p>
+          </>
+        )}
+
+        <label>
+          <span>{t('serverSettings.placesMapStyleUrl')}</span>
+          <input className="mono" value={mapStyleUrl} onChange={(event) => setMapStyleUrl(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.placesMapStyleUrlHint')}</p>
+      </div>
 
       <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>

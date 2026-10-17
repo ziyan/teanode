@@ -58,7 +58,7 @@ type AgentPhoneList struct {
 	IsPushEnabled bool `json:"isPushEnabled"`
 
 	// NotificationKinds are every kind a phone may choose: message,
-	// approval, question, answer
+	// approval, question, answer, circle, chat, skill_share_call, location
 	NotificationKinds []string `json:"notificationKinds"`
 }
 

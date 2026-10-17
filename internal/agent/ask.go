@@ -1315,17 +1315,6 @@ func (self *AskRun) turn() error {
 		}
 		self.offered = withoutDashboard
 	}
-	// A tool that asks the person's browser goes wherever they are not
-	// writing in one; the prompt says so instead (see locationLine).
-	if settings.Headless || !surfaceOf(settings.Surface).canLocate {
-		withoutBrowser := self.offered[:0:0]
-		for _, tool := range self.offered {
-			if !tool.BrowserOnly {
-				withoutBrowser = append(withoutBrowser, tool)
-			}
-		}
-		self.offered = withoutBrowser
-	}
 	if settings.ReadOnly || settings.Allow != nil {
 		kept := self.offered[:0:0]
 		for _, tool := range self.offered {

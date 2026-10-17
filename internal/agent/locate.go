@@ -20,9 +20,10 @@ var _ tools.Locating = (*AskRun)(nil)
 const locationWait = time.Minute
 
 // locationLine tells a turn written anywhere but the dashboard in a
-// browser that it has no way to know where the person is, so the agent
-// asks instead of guessing. The location tool is not offered there.
-const locationLine = "Their location is not available here: it comes only from their browser while they chat with you in the dashboard. Ask them where they are when it matters."
+// browser or the app that it cannot ask where the person is right now. The
+// location tool still answers from the positions their phone kept, when it
+// kept any, so the agent is pointed at that before it asks them.
+const locationLine = "Their location cannot be asked for here: that works only while they chat with you in the dashboard or the app. The location tool tells you where they were last reported to be, if their phone reports; otherwise ask them where they are when it matters."
 
 // LocationAnswer is what the browser says to a location call: where it
 // is, or, in ErrorMessage, why it cannot say.
@@ -34,11 +35,18 @@ type LocationAnswer struct {
 	ErrorMessage     string    `json:"errorMessage,omitempty"`
 }
 
+// CanLocate says whether this turn has a browser or app to ask where the person
+// is (tools.Locating): one written in the dashboard in a browser or in the
+// app, with somebody present.
+func (self *AskRun) CanLocate() bool {
+	return !self.settings.Headless && surfaceOf(self.settings.Surface).canLocate
+}
+
 // Locate asks the browser the person is writing in where it is
 // (tools.Locating): the drawer that sent the turn answers the event with
 // AnswerLocation. A turn not written in the dashboard in a browser has
-// none to ask, and says so; the tool is not offered there (BrowserOnly),
-// and a subagent's turn is not one.
+// none to ask, and says so; the location tool then answers from the positions
+// kept (CanLocate), and a subagent's turn is not one.
 func (self *AskRun) Locate(ctx context.Context, callId string) (*tools.BrowserLocation, error) {
 	if self.settings.Headless || !surfaceOf(self.settings.Surface).canLocate {
 		where := strings.TrimSpace(self.settings.Surface)
