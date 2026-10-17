@@ -560,6 +560,9 @@ struct CodingSessionView: View {
     // MARK: Reading
 
     private func refresh() async {
+        // Opened before the list was read (from a link or a notification):
+        // read it first, rather than wait for the next turn of the loop.
+        if session == nil { await model.load() }
         guard let session else { return }
         let reading = session.id
         let readingPart = part
@@ -974,6 +977,9 @@ struct CodingComposer: View {
                     .disabled(!canSend)
                     .accessibilityLabel(isSending ? Text("Sending…") : Text("Send"))
                 }
+                // The icons sit in circles of a fixed size; past this size
+                // their glyphs would not fit in them.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .padding(.horizontal, 6)
                 .padding(.bottom, 4)
             }
