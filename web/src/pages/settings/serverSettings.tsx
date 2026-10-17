@@ -3,7 +3,9 @@ import { ErrorMessage, SaveRow } from '../../components/common'
 import { Link } from 'react-router-dom'
 
 import { Select } from '../../components/select'
+import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
+import { readPhotoLibrary } from '../../photos/api'
 import {
   GeoIP,
   Identity,
@@ -624,6 +626,17 @@ export function GeoIPForm({ settings, onSaved }: { settings: GeoIP; onSaved: () 
   )
 }
 
+// Why this server is not finding people in photos right now, in the words the
+// server has for it, for the operator who can do something about it. A person
+// whose server cannot is told in a sentence of their own, without this.
+function FaceRecognitionReason() {
+  const { t } = useTranslation()
+  const library = useQuery(() => readPhotoLibrary(), [], { refresh: false })
+  const reason = library.data?.faceRecognitionUnavailableMessage ?? ''
+  if (reason === '') return null
+  return <p className="muted field-hint">{t('serverSettings.photosFacesReason', { reason })}</p>
+}
+
 // PhotosForm holds the limits on each person's photo library. They are read
 // when a file is uploaded or a photo is deleted, so a change applies to the
 // next one and there is nothing to restart.
@@ -663,6 +676,7 @@ export function PhotosForm({ settings, onSaved }: { settings: PhotosSettings; on
         {t('serverSettings.photosFaces')}
       </label>
       <p className="muted field-hint">{t('serverSettings.photosFacesHint')}</p>
+      <FaceRecognitionReason />
 
       <div className="form-narrow">
         <label>
@@ -673,10 +687,13 @@ export function PhotosForm({ settings, onSaved }: { settings: PhotosSettings; on
 
         <label>
           <span>{t('serverSettings.photosMaxAccountBytes')}</span>
+          {/* 0 is how the setting says no limit; the field says it in words
+              and leaves itself empty for it. */}
           <input
             className="mono"
-            value={maxAccountBytes}
-            onChange={(event) => setMaxAccountBytes(event.target.value)}
+            value={maxAccountBytes.trim() === '0' ? '' : maxAccountBytes}
+            placeholder={t('serverSettings.photosNoLimit')}
+            onChange={(event) => setMaxAccountBytes(event.target.value.trim() === '' ? '0' : event.target.value)}
           />
         </label>
         <p className="muted field-hint">{t('serverSettings.photosMaxAccountBytesHint')}</p>

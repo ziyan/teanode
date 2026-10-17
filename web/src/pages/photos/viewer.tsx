@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { Avatar } from '../../components/avatar'
 import {
+  AlbumCoverIcon,
   AlbumRemoveIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -13,7 +14,6 @@ import {
   MoreIcon,
   PencilIcon,
   PhotoSaveIcon,
-  PictureIcon,
   RefreshIcon,
   RestoreIcon,
   SparkIcon,
@@ -34,7 +34,14 @@ import {
   type PhotoFileRole,
   type PhotoLibrary,
 } from '../../photos/api'
-import { formatByteSize, formatDuration, formatDate, personTimeZone, photoDateTime } from '../../photos/days'
+import {
+  formatByteSize,
+  formatDuration,
+  formatDate,
+  personTimeZone,
+  photoDateTime,
+  trashDaysLeft,
+} from '../../photos/days'
 import { listCirclePeople } from '../../photos/sharing'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu } from './albumControls'
@@ -55,10 +62,14 @@ const DISPLAYABLE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp',
 // How far a finger must travel sideways to turn to the next photo.
 const SWIPE_DISTANCE = 60
 
-// How often a description that is on its way is looked for, and how long the
-// viewer keeps looking before it leaves the rest to the person coming back.
+// How often a description that is on its way is looked for, how long it takes
+// before the viewer says it is taking longer than usual, and how often it
+// looks after that. It looks for as long as the viewer is on the photo: a
+// description that arrives while the person reads should be there without a
+// reload.
 const DESCRIPTION_POLL_MS = 3000
-const DESCRIPTION_POLL_LIMIT_MS = 2 * 60 * 1000
+const DESCRIPTION_SLOW_AFTER_MS = 2 * 60 * 1000
+const DESCRIPTION_SLOW_POLL_MS = 15 * 1000
 
 // The files of a photo that can be downloaded, in the order the menu lists them.
 const DOWNLOADABLE_ROLES: {
@@ -121,6 +132,7 @@ export function PhotoViewer({
   isPaused,
   photoAlbumId,
   onNavigate,
+  onShowNearby,
   onClose,
   onToggleFavorite,
   onTrash,
@@ -151,6 +163,8 @@ export function PhotoViewer({
   // The album the photo is being looked at in, if any.
   photoAlbumId?: string
   onNavigate: (photo: Photo) => void
+  // Opens the library narrowed to the photos taken near this one.
+  onShowNearby?: (photo: Photo) => void
   onClose: () => void
   onToggleFavorite: (photo: Photo) => void
   onTrash: (photo: Photo) => void
@@ -181,7 +195,7 @@ export function PhotoViewer({
   // at the offset it is shown at. Rejects with what went wrong.
   onChangeDate?: (photo: Photo, takenAt: string) => Promise<void>
 }) {
-  const { t, language } = useTranslation()
+  const { t, plural, language } = useTranslation()
   const altText = usePhotoAltText()
   const assistantWords = useAssistantWords()
   const files = useQuery(() => readPhoto(photo.id), [photo.id], { refresh: false })
@@ -192,7 +206,13 @@ export function PhotoViewer({
   const detail = isRead ? files.data!.photo : null
   const isDescriptionRequested = detail?.isDescriptionRequested === true
   const [isAskingToDescribe, setIsAskingToDescribe] = useState(false)
-  const [hasGivenUpWaiting, setHasGivenUpWaiting] = useState(false)
+  // Asked for here and not yet seen to arrive. The server says a description is
+  // on its way once it has the request; this covers the moment before it does,
+  // and a description that is asked for again, which has one already.
+  const [isWaitingForDescription, setIsWaitingForDescription] = useState(false)
+  const [isDescriptionSlow, setIsDescriptionSlow] = useState(false)
+  const describedAtWhenAsked = useRef<string | null>(null)
+  const hasSeenRequest = useRef(false)
   const [isZoomed, setIsZoomed] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -214,27 +234,41 @@ export function PhotoViewer({
   useEffect(() => {
     setIsZoomed(false)
     setIsLive(false)
-    setHasGivenUpWaiting(false)
+    setIsWaitingForDescription(false)
+    setIsDescriptionSlow(false)
     setIsChangingDate(false)
   }, [photo.id])
 
   // A description that is on its way is looked for every few seconds while
-  // the viewer stays on the photo, and not for longer than two minutes: after
-  // that the person comes back to it, the job goes on without the page.
+  // the viewer stays on the photo, and every fifteen after two minutes, when
+  // the viewer also says it is taking longer than usual. It is shown when it
+  // arrives, which is when the photo says it was described again, and it stops
+  // when the server says nothing is on its way any more.
+  const isDescribing = isDescriptionRequested || isWaitingForDescription
   const reloadFiles = files.reload
   useEffect(() => {
-    if (!isDescriptionRequested) return
+    if (!isDescribing) return
     const startedAt = Date.now()
-    const timer = window.setInterval(() => {
-      if (Date.now() - startedAt >= DESCRIPTION_POLL_LIMIT_MS) {
-        window.clearInterval(timer)
-        setHasGivenUpWaiting(true)
-        return
-      }
+    let timer = 0
+    const look = () => {
+      const isSlow = Date.now() - startedAt >= DESCRIPTION_SLOW_AFTER_MS
+      if (isSlow) setIsDescriptionSlow(true)
       void reloadFiles(true)
-    }, DESCRIPTION_POLL_MS)
-    return () => window.clearInterval(timer)
-  }, [isDescriptionRequested, photo.id, reloadFiles])
+      timer = window.setTimeout(look, isSlow ? DESCRIPTION_SLOW_POLL_MS : DESCRIPTION_POLL_MS)
+    }
+    timer = window.setTimeout(look, DESCRIPTION_POLL_MS)
+    return () => window.clearTimeout(timer)
+  }, [isDescribing, photo.id, reloadFiles])
+  useEffect(() => {
+    if (!isWaitingForDescription || !isRead) return
+    if (isDescriptionRequested) hasSeenRequest.current = true
+    const hasArrived = (detail?.describedAt ?? null) !== describedAtWhenAsked.current
+    const hasBeenDropped = hasSeenRequest.current && !isDescriptionRequested
+    if (hasArrived || hasBeenDropped) {
+      setIsWaitingForDescription(false)
+      setIsDescriptionSlow(false)
+    }
+  }, [isWaitingForDescription, isRead, isDescriptionRequested, detail?.describedAt])
 
   async function saveToLibrary() {
     if (!onSaveToLibrary) return
@@ -263,10 +297,16 @@ export function PhotoViewer({
   async function describe(isRedescribed: boolean) {
     if (!onDescribe) return
     setIsAskingToDescribe(true)
-    setHasGivenUpWaiting(false)
+    setIsDescriptionSlow(false)
+    describedAtWhenAsked.current = detail?.describedAt ?? null
+    hasSeenRequest.current = false
     try {
+      // The caller has said what went wrong when this rejects.
       await onDescribe(photo, isRedescribed)
+      setIsWaitingForDescription(true)
       await files.reload(true)
+    } catch {
+      // Said already.
     } finally {
       setIsAskingToDescribe(false)
     }
@@ -364,7 +404,16 @@ export function PhotoViewer({
   const cameraText = [photo.cameraMake, photo.cameraModel]
     .filter((part, index, parts) => part && !(index === 1 && part.startsWith(parts[0])))
     .join(' ')
+  // A reader of somebody else's photo may be given none of what a model wrote:
+  // then there is no description to show, and no empty row for it.
+  const hasDescriptionText = Boolean(detail?.photoDescription || detail?.descriptionVisibleText)
   const canChangeDate = isOwn && !isTrashed && onChangeDate !== undefined
+  // What is not offered on the bar itself, because it is done once in a while
+  // and the bar is for what is done to most photos: choosing the album's cover,
+  // taking the photo out of the album, making its thumbnails again.
+  const canMakeThumbnailsAgain = isOwn && onRetryProcessing !== undefined && photo.photoProcessingState === 'ready'
+  const hasMoreActions = onSetCover !== undefined || onRemoveFromAlbum !== undefined || canMakeThumbnailsAgain
+  const daysLeftInTrash = trashDaysLeft(photo.trashedAt, photoLibrary?.trashRetentionDays ?? 0, new Date())
   const details: [string, string][] = [
     [t('photos.detailDate'), photoDateTime(photo, language, personTimeZone())],
     [t('photos.detailPlace'), photo.placeName],
@@ -386,6 +435,14 @@ export function PhotoViewer({
     [t('photos.detailLength'), isVideo ? formatDuration(photo.durationMS) : ''],
     [t('photos.detailFileSize'), originalFile ? formatByteSize(originalFile.fileSizeBytes) : ''],
     [t('photos.detailFileName'), photo.originalFilename || originalFile?.originalFilename || ''],
+    [
+      t('photos.inTrash'),
+      daysLeftInTrash === null
+        ? ''
+        : daysLeftInTrash === 0
+          ? t('photos.trashLeftNone')
+          : plural(daysLeftInTrash, { one: 'photos.trashLeftOne', other: 'photos.trashLeftOther' }),
+    ],
   ]
 
   return (
@@ -503,30 +560,6 @@ export function PhotoViewer({
                       </button>
                     )
                   )}
-                  {onSetCover && (
-                    <Tooltip label={t('photos.useAsCover')}>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={t('photos.useAsCover')}
-                        onClick={() => void onSetCover(photo)}
-                      >
-                        <PictureIcon size={18} />
-                      </button>
-                    </Tooltip>
-                  )}
-                  {onRemoveFromAlbum && (
-                    <Tooltip label={t('photos.removeFromAlbum')}>
-                      <button
-                        type="button"
-                        className="icon-button"
-                        aria-label={t('photos.removeFromAlbum')}
-                        onClick={() => void onRemoveFromAlbum(photo)}
-                      >
-                        <AlbumRemoveIcon size={18} />
-                      </button>
-                    </Tooltip>
-                  )}
                   {downloadChoices.length > 1 ? (
                     <Tooltip label={t('photos.download')}>
                       <MenuButton
@@ -573,24 +606,55 @@ export function PhotoViewer({
                       </button>
                     </Tooltip>
                   )}
-                  {isOwn && onRetryProcessing && photo.photoProcessingState === 'ready' && (
+                  {hasMoreActions && (
                     <Tooltip label={t('photos.more')}>
                       <MenuButton
                         label={t('photos.more')}
                         className="icon-button"
                         icon={<MoreIcon size={18} />}
                         render={(close) => (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            disabled={isBusy}
-                            onClick={() => {
-                              close()
-                              void onRetryProcessing(photo)
-                            }}
-                          >
-                            {t('photos.makePreviewsAgain')}
-                          </button>
+                          <>
+                            {onSetCover && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  close()
+                                  void onSetCover(photo)
+                                }}
+                              >
+                                <AlbumCoverIcon size={16} />
+                                {t('photos.useAsCover')}
+                              </button>
+                            )}
+                            {onRemoveFromAlbum && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  close()
+                                  void onRemoveFromAlbum(photo)
+                                }}
+                              >
+                                <AlbumRemoveIcon size={16} />
+                                {t('photos.removeFromAlbum')}
+                              </button>
+                            )}
+                            {canMakeThumbnailsAgain && onRetryProcessing && (
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={isBusy}
+                                onClick={() => {
+                                  close()
+                                  void onRetryProcessing(photo)
+                                }}
+                              >
+                                <RefreshIcon size={16} />
+                                {t('photos.makeThumbnailsAgain')}
+                              </button>
+                            )}
+                          </>
                         )}
                       />
                     </Tooltip>
@@ -744,6 +808,14 @@ export function PhotoViewer({
                       <dt>{label}</dt>
                       <dd>
                         {value}
+                        {label === t('photos.detailPlace') &&
+                          onShowNearby &&
+                          typeof photo.latitude === 'number' &&
+                          typeof photo.longitude === 'number' && (
+                            <button type="button" className="photo-near-button" onClick={() => onShowNearby(photo)}>
+                              {t('photos.showNearby')}
+                            </button>
+                          )}
                         {canChangeDate && label === t('photos.detailDate') && (
                           <Tooltip label={t('photos.changeDate')}>
                             <button
@@ -799,7 +871,7 @@ export function PhotoViewer({
                   </ul>
                 </section>
               )}
-              {isRead && (isOwn || detail?.describedAt) && (
+              {isRead && (isOwn || (detail?.describedAt && hasDescriptionText)) && (
                 <section className="photo-viewer-section" aria-labelledby="photo-viewer-description-heading">
                   <div className="photo-viewer-section-head">
                     <h3 id="photo-viewer-description-heading">{t('photos.description')}</h3>
@@ -809,7 +881,7 @@ export function PhotoViewer({
                           type="button"
                           className="icon-action"
                           aria-label={t('photos.describeAgain')}
-                          disabled={isAskingToDescribe || isDescriptionRequested}
+                          disabled={isAskingToDescribe || isDescribing}
                           onClick={() => void describe(true)}
                         >
                           <RefreshIcon size={16} />
@@ -817,9 +889,9 @@ export function PhotoViewer({
                       </Tooltip>
                     )}
                   </div>
-                  {detail?.describedAt && (
+                  {detail?.describedAt && hasDescriptionText && (
                     <>
-                      <p className="photo-description">{detail.photoDescription}</p>
+                      {detail.photoDescription && <p className="photo-description">{detail.photoDescription}</p>}
                       {detail.descriptionVisibleText && (
                         <>
                           <p className="photo-description-label muted">{t('photos.visibleText')}</p>
@@ -833,10 +905,10 @@ export function PhotoViewer({
                       </p>
                     </>
                   )}
-                  {isDescriptionRequested || isAskingToDescribe ? (
+                  {isDescribing || isAskingToDescribe ? (
                     <p className="muted photo-describing" role="status">
                       <span className="photo-spinner" aria-hidden="true" />
-                      {hasGivenUpWaiting
+                      {isDescriptionSlow
                         ? t('photos.describingSlow')
                         : detail?.describedAt
                           ? t('photos.describingAgain')
@@ -845,9 +917,9 @@ export function PhotoViewer({
                   ) : !detail?.describedAt && photoLibrary && isOwn ? (
                     photoLibrary.isDescriptionAvailable && onDescribe ? (
                       <>
-                        <p className="muted">{assistantWords.describeHint}</p>
-                        <button type="button" onClick={() => void describe(false)}>
-                          {t('photos.describe')}
+                        <p className="muted">{assistantWords.describeHint(isVideo)}</p>
+                        <button type="button" className="photo-viewer-action" onClick={() => void describe(false)}>
+                          {isVideo ? t('photos.describeVideo') : t('photos.describe')}
                         </button>
                       </>
                     ) : (
@@ -857,8 +929,8 @@ export function PhotoViewer({
                     )
                   ) : null}
                   {onAskAssistant && fittedSource && (
-                    <button type="button" className="photo-ask-assistant" onClick={() => onAskAssistant(photo)}>
-                      <SparkIcon size={16} /> {assistantWords.askAboutPhoto}
+                    <button type="button" className="photo-viewer-action" onClick={() => onAskAssistant(photo)}>
+                      <SparkIcon size={16} /> {assistantWords.askAbout(isVideo)}
                     </button>
                   )}
                 </section>

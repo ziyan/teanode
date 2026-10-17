@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDay, parsePhotoKind, startOfDay, startOfNextDay } from './filters'
+import { isFoundByMeaningOnly, parseDay, parsePhotoKind, startOfDay, startOfNextDay } from './filters'
 
 describe('the filters in the address', () => {
   it('knows the kinds the server knows and nothing else', () => {
@@ -22,5 +22,33 @@ describe('the filters in the address', () => {
     expect([first.getFullYear(), first.getMonth(), first.getDate(), first.getHours()]).toEqual([2030, 6, 12, 0])
     expect([after.getFullYear(), after.getMonth(), after.getDate(), after.getHours()]).toEqual([2030, 6, 15, 0])
     expect(startOfNextDay('2030-12-31')!.slice(0, 4)).toMatch(/2030|2031/)
+  })
+})
+
+describe('a search that found photos only by what they mean', () => {
+  const photo = (overrides: Record<string, string> = {}) => ({
+    placeName: '',
+    originalFilename: 'one.jpg',
+    cameraMake: '',
+    cameraModel: '',
+    photoDescription: '',
+    descriptionVisibleText: '',
+    ...overrides,
+  })
+
+  it('is one where no photo, person or album has a word of the search', () => {
+    expect(isFoundByMeaningOnly('zzqx', [photo(), photo({ placeName: 'Harbor' })], ['Ada', 'Picnic'])).toBe(true)
+  })
+
+  it('is not one when a word is in a place, a description, or the name of a person or album', () => {
+    expect(isFoundByMeaningOnly('harbor', [photo({ placeName: 'Old Harbor' })], [])).toBe(false)
+    expect(isFoundByMeaningOnly('kite', [photo({ photoDescription: 'A red kite.' })], [])).toBe(false)
+    expect(isFoundByMeaningOnly('ada', [photo()], ['Ada Example'])).toBe(false)
+    expect(isFoundByMeaningOnly('picnic', [photo()], ['Picnic'])).toBe(false)
+  })
+
+  it('says nothing for no results or no words', () => {
+    expect(isFoundByMeaningOnly('zzqx', [], [])).toBe(false)
+    expect(isFoundByMeaningOnly('  ', [photo()], [])).toBe(false)
   })
 })

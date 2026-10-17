@@ -165,7 +165,7 @@ it('reads the photo again every three seconds while a description is on its way'
   try {
     serveRead({ photo: { ...undescribedPhoto, isDescriptionRequested: true } })
     show(vi.fn(), { photoLibrary: library(), onDescribe: vi.fn() })
-    expect(await screen.findByText('Describing…')).toBeTruthy()
+    expect(await screen.findByText(/Describing… this can take a minute/)).toBeTruthy()
     const reads = () => vi.mocked(graphql).mock.calls.length
     const before = reads()
     await vi.advanceTimersByTimeAsync(3100)
@@ -173,23 +173,27 @@ it('reads the photo again every three seconds while a description is on its way'
     serveRead({ photo: describedPhoto })
     await vi.advanceTimersByTimeAsync(3100)
     expect(await screen.findByText('A red kite over a field.')).toBeTruthy()
-    expect(screen.queryByText('Describing…')).toBeNull()
+    expect(screen.queryByText(/Describing… this can take a minute/)).toBeNull()
   } finally {
     vi.useRealTimers()
   }
 })
 
-it('stops looking for a description after two minutes and says it goes on in the background', async () => {
+it('keeps looking for a description after two minutes, less often, and says it is taking longer than usual', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   try {
     serveRead({ photo: { ...undescribedPhoto, isDescriptionRequested: true } })
     show(vi.fn(), { photoLibrary: library(), onDescribe: vi.fn() })
-    await screen.findByText('Describing…')
+    await screen.findByText(/Describing… this can take a minute/)
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000 + 3100)
     expect(await screen.findByText(/taking longer than usual/)).toBeTruthy()
     const reads = vi.mocked(graphql).mock.calls.length
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(vi.mocked(graphql).mock.calls.length).toBe(reads)
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect(vi.mocked(graphql).mock.calls.length).toBeGreaterThan(reads)
+    // It arrives without the page being read again by hand.
+    serveRead({ photo: describedPhoto })
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect(await screen.findByText('A red kite over a field.')).toBeTruthy()
   } finally {
     vi.useRealTimers()
   }
@@ -390,14 +394,85 @@ it('offers no Try again on a failed photo in the Trash, or to a page that cannot
 
 // A ready photo can have its previews made again from the menu; a photo that
 // is waiting or failed has no such item, since nothing is ready to redo.
-it('puts Make previews again in the menu of a ready photo', async () => {
+it('puts Make thumbnails again in the menu of a ready photo', async () => {
   const onRetryProcessing = vi.fn(async () => {})
   show(vi.fn(), { onRetryProcessing })
   fireEvent.click(await screen.findByRole('button', { name: 'More' }))
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make thumbnails again' }))
   expect(onRetryProcessing).toHaveBeenCalledWith(expect.objectContaining({ id: 'photo-1' }))
   cleanup()
   show(vi.fn(), { photo: failedPhoto, onRetryProcessing })
   await screen.findByText('This photo could not be read: the file is cut short')
   expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
+})
+
+// ---- what the bar holds, and what it says of a video ----
+
+it('keeps the cover and the take-out in More with the thumbnails, each with its own icon, and not on the bar', async () => {
+  show(vi.fn(), {
+    onSetCover: vi.fn(async () => {}),
+    onRemoveFromAlbum: vi.fn(async () => {}),
+    onRetryProcessing: vi.fn(),
+  })
+  await screen.findByRole('button', { name: 'More' })
+  expect(screen.queryByRole('button', { name: 'Use as album cover' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Remove from album' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'More' }))
+  const items = await screen.findAllByRole('menuitem')
+  expect(items.map((item) => item.textContent)).toEqual([
+    'Use as album cover',
+    'Remove from album',
+    'Make thumbnails again',
+  ])
+  const paths = items.map((item) => item.querySelector('svg')?.innerHTML)
+  expect(new Set(paths).size).toBe(3)
+})
+
+it('has no More when there is nothing in it', async () => {
+  show()
+  await screen.findByRole('button', { name: 'Details' })
+  expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
+})
+
+it('says video, not photo, for what can be done with a video', async () => {
+  const video = { ...undescribedPhoto, photoKind: 'video' }
+  serveRead({ photo: video })
+  show(vi.fn(), { photo: video as Photo, photoLibrary: library(), onDescribe: vi.fn(), onAskAssistant: vi.fn() })
+  expect(await screen.findByRole('button', { name: 'Describe this video' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Ask the assistant about this video' })).toBeTruthy()
+  expect(screen.getByText(/looks at the video's poster/)).toBeTruthy()
+})
+
+it('shows no Description section to a reader who was given no description', async () => {
+  const shared = {
+    ...photo,
+    isOwnedByCaller: false,
+    ownerName: 'Ben',
+    userId: 'person-2',
+    originalFilename: '',
+  } as Photo
+  serveRead({
+    photo: {
+      ...shared,
+      photoDescription: '',
+      descriptionVisibleText: '',
+      describedAt: '2030-07-13T10:00:00Z',
+      isDescriptionRequested: false,
+    },
+  })
+  show(vi.fn(), { photo: shared, photoLibrary: library() })
+  await screen.findByText('Ben')
+  expect(screen.queryByText('Description')).toBeNull()
+  expect(screen.queryByText('File name')).toBeNull()
+})
+
+it('says how long a photo in the Trash has left', async () => {
+  const trashed = { ...photo, trashedAt: new Date().toISOString() } as Photo
+  serveRead({ photo: trashed })
+  show(vi.fn(), {
+    photo: trashed,
+    isTrashed: true,
+    photoLibrary: { ...library(), trashRetentionDays: 30 } as PhotoLibrary,
+  })
+  expect(await screen.findByText('Deleted forever in 30 days')).toBeTruthy()
 })

@@ -9,9 +9,12 @@ import {
   firstSentence,
   formatOffset,
   groupByDay,
+  groupByTrashDay,
   indexRange,
   photoAltText,
   photoDateTime,
+  sortByTrashedAt,
+  trashDaysLeft,
 } from './days'
 
 const photoAt = (
@@ -176,5 +179,28 @@ describe('alternative text', () => {
     expect(photoAltText(named, 'A kite. More.', 'en', words)).toBe('A kite.')
     expect(photoAltText(named, '', 'en', words)).toBe('Fixtureville on July 12, 2030')
     expect(photoAltText({ ...photo, placeName: '' }, '  ', 'en', words)).toBe('taken July 12, 2030')
+  })
+})
+
+describe('the Trash', () => {
+  const now = new Date('2030-07-20T12:00:00Z')
+
+  it('says how many whole days a photo has left, and none when the server keeps it for no set time', () => {
+    expect(trashDaysLeft('2030-07-20T08:00:00Z', 30, now)).toBe(30)
+    expect(trashDaysLeft('2030-07-10T08:00:00Z', 30, now)).toBe(20)
+    expect(trashDaysLeft('2030-06-01T08:00:00Z', 30, now)).toBe(0)
+    expect(trashDaysLeft('2030-07-10T08:00:00Z', 0, now)).toBeNull()
+    expect(trashDaysLeft(null, 30, now)).toBeNull()
+  })
+
+  it('groups photos under the day they were trashed, newest first, whatever order they came in', () => {
+    const photos = [
+      { id: 'a', trashedAt: '2030-07-10T08:00:00Z' },
+      { id: 'b', trashedAt: '2030-07-19T08:00:00Z' },
+      { id: 'c', trashedAt: '2030-07-10T09:00:00Z' },
+    ]
+    const days = groupByTrashDay(sortByTrashedAt(photos), 30, now, 'UTC')
+    expect(days.map((day) => day.photos.map((photo) => photo.id))).toEqual([['b'], ['c', 'a']])
+    expect(days.map((day) => day.daysLeft)).toEqual([29, 20])
   })
 })

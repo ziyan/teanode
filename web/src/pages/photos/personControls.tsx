@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react'
 import { FormDialog } from '../../components/dialog'
-import { MoreIcon } from '../../components/icons'
-import { MenuButton } from '../../components/menuButton'
+import { EyeIcon, EyeOffIcon, MergeIcon, PencilIcon, UnlinkIcon } from '../../components/icons'
 import { useDebounced } from '../../components/preview'
+import { useToast } from '../../components/toast'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { contactChoiceLabel, findContactChoices, personName, type PhotoFaceGroup } from '../../photos/people'
+import {
+  NoAddressBookError,
+  contactChoiceLabel,
+  createContact,
+  findContactChoices,
+  listPhotoFaceGroups,
+  namePhotoFaceGroup,
+  personName,
+  type PhotoFaceGroup,
+} from '../../photos/people'
+import { PhotoIconAction } from './toolbar'
 
 // The pieces the people pages and the viewer share: a person's round picture,
 // the dialog that names a person from the address book, the dialog that says
@@ -52,17 +62,26 @@ export type PersonNaming = { kind: 'contact'; contactId: string } | { kind: 'new
 // The most characters a contact's name may have, as the dialog lets it be typed.
 const MOST_CONTACT_NAME_CHARACTERS = 255
 
+// The most contacts the dialog lists for one search, as findContactChoices
+// asks for them: more than that are reached by typing.
+const CONTACTS_LISTED = 20
+
 // NamePersonDialog names a person by choosing a contact from the address
 // book, as the server asks, or by typing a name the address book does not
-// have yet: that makes a contact with it first.
+// have yet: that makes a contact with it first. A contact that already names
+// another person is marked, since two people with one name are usually one
+// person who should be merged.
 export function NamePersonDialog({
   currentName,
+  linkedContactIds = new Set<string>(),
   isBusy,
   error,
   onSubmit,
   onClose,
 }: {
   currentName: string
+  // The contacts that name some other person.
+  linkedContactIds?: ReadonlySet<string>
   isBusy?: boolean
   error?: string | null
   onSubmit: (naming: PersonNaming) => void
@@ -118,32 +137,102 @@ export function NamePersonDialog({
       </label>
       <div className="contact-picker" role="radiogroup" aria-label={t('photos.contactSearch')}>
         {canMakeContact && (
-          <label className="checkbox contact-picker-row">
+          <label className={isNewChosen ? 'contact-picker-row is-chosen' : 'contact-picker-row'}>
             <input type="radio" name="named-contact" checked={isNewChosen} onChange={() => setChosen(NEW_CONTACT)} />
-            <span>{t('photos.newContactNamed', { name: typedName })}</span>
+            <span className="contact-picker-text">
+              <span className="contact-picker-name">{t('photos.newContactNamed', { name: typedName })}</span>
+            </span>
           </label>
         )}
         {contacts.length === 0 && !choices.loading && !canMakeContact ? (
-          <p className="muted">{t('photos.noContacts')}</p>
+          <p className="muted contact-picker-empty">{t('photos.noContacts')}</p>
         ) : null}
-        {contacts.map((contact) => (
-          <label key={contact.id} className="checkbox contact-picker-row">
-            <input
-              type="radio"
-              name="named-contact"
-              checked={chosenContact?.id === contact.id}
-              onChange={() => setChosen(contact.id)}
-            />
-            <span>
-              {contactChoiceLabel(contact)}
-              {contact.emails[0] && contactChoiceLabel(contact) !== contact.emails[0] ? (
-                <span className="muted"> {contact.emails[0]}</span>
-              ) : null}
-            </span>
-          </label>
-        ))}
+        {contacts.map((contact) => {
+          const label = contactChoiceLabel(contact)
+          const secondary = [
+            contact.emails[0] && label !== contact.emails[0] ? contact.emails[0] : '',
+            linkedContactIds.has(contact.id) ? t('photos.contactIsLinked') : '',
+          ].filter(Boolean)
+          return (
+            <label
+              key={contact.id}
+              className={chosenContact?.id === contact.id ? 'contact-picker-row is-chosen' : 'contact-picker-row'}
+            >
+              <input
+                type="radio"
+                name="named-contact"
+                checked={chosenContact?.id === contact.id}
+                onChange={() => setChosen(contact.id)}
+              />
+              <span className="contact-picker-text">
+                <span className="contact-picker-name">{label}</span>
+                {secondary.length > 0 && <span className="contact-picker-detail">{secondary.join(' · ')}</span>}
+              </span>
+            </label>
+          )
+        })}
       </div>
+      {contacts.length >= CONTACTS_LISTED && <p className="muted field-hint">{t('photos.contactsMore')}</p>}
     </FormDialog>
+  )
+}
+
+// NamePersonFlow is the naming dialog with what happens when it is answered:
+// the contact is made when a new name was typed, the group is named, and a
+// toast says so. The people page and a person's page both name people, and
+// both are done when this calls back.
+export function NamePersonFlow({
+  group,
+  onClose,
+  onNamed,
+}: {
+  group: PhotoFaceGroup
+  onClose: () => void
+  onNamed: (named: PhotoFaceGroup) => void
+}) {
+  const { t } = useTranslation()
+  const toast = useToast()
+  const displayedName = useDisplayedPersonName()
+  const [isBusy, setIsBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const people = useQuery(() => listPhotoFaceGroups(true), [], { refresh: false })
+  const linkedContactIds = new Set(
+    (people.data ?? [])
+      .filter((other) => other.id !== group.id && other.contactId !== '')
+      .map((other) => other.contactId),
+  )
+
+  async function name(naming: PersonNaming) {
+    setIsBusy(true)
+    setError(null)
+    try {
+      const contactId = naming.kind === 'new' ? (await createContact(naming.contactName)).id : naming.contactId
+      const named = await namePhotoFaceGroup(group.id, contactId)
+      toast.done(t('photos.personNamed', { name: displayedName(named) }))
+      onNamed(named)
+      onClose()
+    } catch (caught) {
+      setError(
+        caught instanceof NoAddressBookError
+          ? t('photos.noAddressBook')
+          : caught instanceof Error
+            ? caught.message
+            : String(caught),
+      )
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  return (
+    <NamePersonDialog
+      currentName={group.contactName}
+      linkedContactIds={linkedContactIds}
+      isBusy={isBusy}
+      error={error}
+      onSubmit={(naming) => void name(naming)}
+      onClose={onClose}
+    />
   )
 }
 
@@ -218,10 +307,11 @@ export function MergePersonDialog({
   )
 }
 
-// PersonMenu is the button that lists what can be done to a person: name them
-// or change the name, take the name away, put them together with another,
-// hide them from People or show them again.
-export function PersonMenu({
+// PersonActions are the icons of what can be done to a person, in the actions
+// of their page: name them or change the name, take the name away, put them
+// together with another, hide them from People or show them again. Each is its
+// own icon with its name in the tooltip, as the actions of any one thing are.
+export function PersonActions({
   person,
   onName,
   onRemoveName,
@@ -237,34 +327,21 @@ export function PersonMenu({
   const { t } = useTranslation()
   const isNamed = personName(person) !== ''
   return (
-    <MenuButton
-      label={t('photos.personMenu')}
-      className="icon-button"
-      icon={<MoreIcon size={18} />}
-      render={(close) => {
-        const choose = (run: () => void) => () => {
-          close()
-          run()
-        }
-        return (
-          <>
-            <button type="button" role="menuitem" onClick={choose(onName)}>
-              {isNamed ? t('photos.changeName') : t('photos.nameThisPerson')}
-            </button>
-            {isNamed && (
-              <button type="button" role="menuitem" onClick={choose(onRemoveName)}>
-                {t('photos.removeName')}
-              </button>
-            )}
-            <button type="button" role="menuitem" onClick={choose(onMerge)}>
-              {t('photos.mergeWith')}
-            </button>
-            <button type="button" role="menuitem" onClick={choose(onToggleHidden)}>
-              {person.isHidden ? t('photos.showPerson') : t('photos.hidePerson')}
-            </button>
-          </>
-        )
-      }}
-    />
+    <span className="photo-icon-actions">
+      <PhotoIconAction
+        label={isNamed ? t('photos.changeName') : t('photos.nameThisPerson')}
+        icon={<PencilIcon size={16} />}
+        onClick={onName}
+      />
+      {isNamed && (
+        <PhotoIconAction label={t('photos.removeName')} icon={<UnlinkIcon size={16} />} onClick={onRemoveName} />
+      )}
+      <PhotoIconAction label={t('photos.mergeWith')} icon={<MergeIcon size={16} />} onClick={onMerge} />
+      <PhotoIconAction
+        label={person.isHidden ? t('photos.showPerson') : t('photos.hidePerson')}
+        icon={person.isHidden ? <EyeIcon size={16} /> : <EyeOffIcon size={16} />}
+        onClick={onToggleHidden}
+      />
+    </span>
   )
 }

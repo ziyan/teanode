@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { PageHeadingActions } from '../../components/breadcrumb'
 import { ErrorMessage, Loading } from '../../components/common'
-import { AlbumIcon, PlusIcon } from '../../components/icons'
+import { AlbumIcon, CloseIcon, PlusIcon } from '../../components/icons'
 import { SettingsEmpty } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
+import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import {
@@ -21,6 +21,7 @@ import { formatDateRange, personTimeZone } from '../../photos/days'
 import { useSession } from '../../session'
 import { AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AlbumOwnerMark } from './albumSharing'
+import { PhotoToolbar } from './toolbar'
 
 // The Albums page: a grid of the person's albums by their covers, then the
 // albums of the circles they are in, then the ones shared with them, and above
@@ -42,6 +43,40 @@ export function sectionAddress(section: PhotoSection): string {
         : `/photos?view=${section}`
 }
 
+// The suggestions a person has said "not now" to, kept in this browser under
+// the person's id: the server keeps none, and a suggestion that comes back
+// every visit after it was refused is a list nobody trusts. A suggestion is
+// told by the dates it spans, which is all that is the same when the server
+// finds it again. Where the browser keeps nothing, they come back.
+const DISMISSED_KEY = 'teanode.photos.dismissedSuggestions.'
+
+function suggestionKey(suggestion: Pick<PhotoAlbumSuggestion, 'takenAfter' | 'takenBefore'>): string {
+  return `${suggestion.takenAfter}|${suggestion.takenBefore}`
+}
+
+function readDismissed(userId: string): string[] {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(DISMISSED_KEY + userId) ?? '[]')
+    return Array.isArray(stored) ? stored.filter((entry): entry is string => typeof entry === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function useDismissedSuggestions(userId: string): [ReadonlySet<string>, (suggestion: PhotoAlbumSuggestion) => void] {
+  const [dismissed, setDismissed] = useState<string[]>(() => readDismissed(userId))
+  const dismiss = (suggestion: PhotoAlbumSuggestion) => {
+    const next = [...dismissed, suggestionKey(suggestion)]
+    setDismissed(next)
+    try {
+      window.localStorage.setItem(DISMISSED_KEY + userId, JSON.stringify(next))
+    } catch {
+      // Not kept; it is gone from the page until the next visit.
+    }
+  }
+  return [useMemo(() => new Set(dismissed), [dismissed]), dismiss]
+}
+
 export function PhotoAlbumsPage() {
   const session = useSession()
   return <AccountAlbumsPage key={session.userId ?? ''} />
@@ -49,6 +84,8 @@ export function PhotoAlbumsPage() {
 
 function AccountAlbumsPage() {
   const { t, plural, language } = useTranslation()
+  const session = useSession()
+  const [dismissedKeys, dismissSuggestion] = useDismissedSuggestions(session.userId ?? '')
   const toast = useToast()
   const navigate = useNavigate()
   const albums = useQuery(() => listPhotoAlbums(), [])
@@ -81,20 +118,18 @@ function AccountAlbumsPage() {
   const ownAlbums = list.filter((album) => album.isOwnedByCaller)
   const circleAlbums = list.filter((album) => album.circleId !== null)
   const sharedAlbums = list.filter((album) => !album.isOwnedByCaller && album.circleId === null)
-  const suggested = suggestions.data ?? []
+  const suggested = (suggestions.data ?? []).filter((entry) => !dismissedKeys.has(suggestionKey(entry)))
   // The sections are named only when there is more than one kind of album.
   const hasOtherSections = circleAlbums.length > 0 || sharedAlbums.length > 0
   return (
     <div className="photos-page">
       <ErrorMessage error={albums.error} />
-      <PageHeadingActions>
+      <PhotoSections current="albums" onSelect={(section) => navigate(sectionAddress(section))} />
+      <PhotoToolbar>
         <button type="button" className="primary" onClick={() => setIsNaming(true)}>
           <PlusIcon size={16} /> {t('photos.newAlbum')}
         </button>
-      </PageHeadingActions>
-      <div className="photo-toolbar">
-        <PhotoSections current="albums" onSelect={(section) => navigate(sectionAddress(section))} />
-      </div>
+      </PhotoToolbar>
 
       {suggested.length > 0 && (
         <section className="photo-suggestions" aria-labelledby="photo-suggestions-heading">
@@ -128,9 +163,21 @@ function AccountAlbumsPage() {
                     <span className="muted">{entry.placeNames.join(', ')}</span>
                   )}
                 </div>
-                <button type="button" onClick={() => setSuggestion(entry)}>
-                  {t('photos.createAlbum')}
-                </button>
+                <div className="photo-suggestion-actions">
+                  <button type="button" onClick={() => setSuggestion(entry)}>
+                    {t('photos.createAlbum')}
+                  </button>
+                  <Tooltip label={t('photos.notNow')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${entry.albumTitle}: ${t('photos.notNow')}`}
+                      onClick={() => dismissSuggestion(entry)}
+                    >
+                      <CloseIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </div>
               </li>
             ))}
           </ul>

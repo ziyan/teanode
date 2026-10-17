@@ -240,7 +240,7 @@ export function SetupPage() {
         </div>
         <h3>{t('services.custom')}</h3>
         {hostedKeys.map((serviceKey) => (
-          <label className="checkbox" key={serviceKey}>
+          <label className="checkbox is-plain" key={serviceKey}>
             <input
               type="checkbox"
               checked={choices[serviceKey]}

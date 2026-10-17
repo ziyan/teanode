@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { graphql } from '../../api'
 import { ToastProvider } from '../../components/toast'
 import { TranslationProvider } from '../../i18n/i18n'
-import { PhotoSections } from './albumControls'
+import { PhotoSections, forgetKnownPeople } from './albumControls'
 import { FaceRecognitionPreferences, PhotoPeoplePage } from './people'
 import { NoAddressBookError, createContact } from '../../photos/people'
 import { MergePersonDialog, NamePersonDialog } from './personControls'
@@ -24,6 +24,7 @@ vi.mock('../../session', async (importOriginal) => ({
 
 beforeEach(() => {
   vi.mocked(graphql).mockReset()
+  forgetKnownPeople()
 })
 afterEach(cleanup)
 
@@ -92,13 +93,13 @@ it('lists the hidden people only after Show hidden is chosen', async () => {
   showPeoplePage()
   await screen.findByRole('link', { name: /Sample Person/ })
   expect(screen.queryByRole('link', { name: /Hidden Person/ })).toBeNull()
-  fireEvent.click(screen.getByLabelText('Show hidden'))
+  fireEvent.click(screen.getByLabelText('Show hidden people'))
   expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
   const listed = vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('ListPhotoFaceGroups'))
   expect(listed.some(([, variables]) => variables?.isHiddenIncluded === true)).toBe(true)
 })
 
-it('says why faces are not found when the server cannot find them', async () => {
+it("says that finding people is not set up in a sentence of its own, not in the server's words", async () => {
   serve(
     [],
     photoLibrary({
@@ -107,13 +108,14 @@ it('says why faces are not found when the server cannot find them', async () => 
     }),
   )
   showPeoplePage()
-  expect(await screen.findByText('No face reader is installed.')).toBeTruthy()
+  expect(await screen.findByText('Finding people is not set up on this server. Ask whoever runs it.')).toBeTruthy()
+  expect(screen.queryByText('No face reader is installed.')).toBeNull()
 })
 
 it('offers the switch on the page while it is off, and turns it on', async () => {
   serve([], photoLibrary({ isPhotoFaceRecognitionEnabled: false }))
   showPeoplePage()
-  const box = (await screen.findByLabelText('Find faces in my photos')) as HTMLInputElement
+  const box = (await screen.findByLabelText('Find people in my photos')) as HTMLInputElement
   expect(box.checked).toBe(false)
   fireEvent.click(box)
   await waitFor(() => {
@@ -131,11 +133,11 @@ it('asks before turning faces off, because it deletes the faces found and their 
       </ToastProvider>
     </TranslationProvider>,
   )
-  const box = (await screen.findByLabelText('Find faces in my photos')) as HTMLInputElement
+  const box = (await screen.findByLabelText('Find people in my photos')) as HTMLInputElement
   expect(box.checked).toBe(true)
   fireEvent.click(box)
   const dialog = await screen.findByRole('alertdialog')
-  expect(within(dialog).getByText(/deletes every face found/)).toBeTruthy()
+  expect(within(dialog).getByText(/deletes every person found/)).toBeTruthy()
   expect(vi.mocked(graphql).mock.calls.some(([document]) => document.includes('SetPhotoFaceRecognition'))).toBe(false)
   fireEvent.click(within(dialog).getByRole('button', { name: 'Turn off and delete' }))
   await waitFor(() => {
@@ -286,4 +288,47 @@ it('merges with the person chosen, after saying what it does', async () => {
   expect(within(dialog).getByText('Merge Third Person into Sample Person? This cannot be undone.')).toBeTruthy()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Merge' }))
   expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ id: 'group-3' }))
+})
+
+it('tags a hidden person and offers the way to name one who is nobody yet', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('ReadPhotoLibrary')) return { ReadPhotoLibrary: photoLibrary() } as never
+    if (document.includes('ListPhotoFaceGroups'))
+      return {
+        ListPhotoFaceGroups: [
+          group({ id: 'group-2', contactId: '', contactName: '' }),
+          group({ isHidden: true, contactName: 'Hidden Person' }),
+        ],
+      } as never
+    if (document.includes('ListAddressBooks')) return { ListAddressBooks: [{ id: 'book-1' }] } as never
+    if (document.includes('ListContacts'))
+      return { ListContacts: [{ id: 'contact-1', name: 'Hidden Person', organization: '', emails: [] }] } as never
+    throw new Error(`unexpected document ${document} ${JSON.stringify(variables)}`)
+  })
+  showPeoplePage()
+  fireEvent.click(await screen.findByLabelText('Show hidden people'))
+  expect(await screen.findByText('Hidden')).toBeTruthy()
+})
+
+it('marks a contact that already names another person, and leaves it choosable', async () => {
+  serveContacts([
+    { id: 'contact-1', name: 'Sample Person' },
+    { id: 'contact-2', name: 'Other Person' },
+  ])
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <NamePersonDialog
+          currentName=""
+          linkedContactIds={new Set(['contact-1'])}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const marked = (await screen.findByRole('radio', { name: /Sample Person/ })).closest('label') as HTMLElement
+  expect(marked.textContent).toContain('Already names another person')
+  const plain = screen.getByRole('radio', { name: /Other Person/ }).closest('label') as HTMLElement
+  expect(plain.textContent).not.toContain('Already names')
 })

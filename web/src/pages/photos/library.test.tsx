@@ -70,11 +70,13 @@ const photoFixture = (id: string, overrides: Record<string, unknown> = {}) => ({
   isFavorite: false,
   processingErrorMessage: '',
   placeName: '',
+  latitude: null as number | null,
+  longitude: null as number | null,
   cameraMake: '',
   cameraModel: '',
   widthPixels: 0,
   heightPixels: 0,
-  trashedAt: null,
+  trashedAt: null as string | null,
   isOwnedByCaller: true,
   ownerName: '',
   userId: 'person-1',
@@ -262,7 +264,7 @@ it('sends the search to the address once typing pauses, and keeps typing that go
 it('does not run a search again on the timer, and still refreshes a list that is not one', async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   show('/photos?search=kite')
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findByRole('button', { name: 'Open photo-1.jpg' })
   const searches = () => callsTo('ListPhotos').length + callsTo('CountPhotos').length
   const before = searches()
   expect(before).toBeGreaterThan(0)
@@ -404,6 +406,7 @@ it('asks for the kind and the days in the address, and writes them back when the
   const before = new Date(String(variables.takenBefore))
   expect([after.getMonth(), after.getDate(), after.getHours()]).toEqual([6, 12, 0])
   expect([before.getMonth(), before.getDate(), before.getHours()]).toEqual([6, 15, 0])
+  fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
   fireEvent.change(screen.getByLabelText('From'), { target: { value: '2030-07-13' } })
   await waitFor(() => expect(address()).toBe('/photos?kind=video&from=2030-07-13&to=2030-07-14'))
   fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
@@ -414,8 +417,8 @@ it('asks for the kind and the days in the address, and writes them back when the
 it('offers the kind of photo to keep, and writes the choice to the address', async () => {
   show('/photos')
   await screen.findByText('Friday, July 12, 2030')
-  fireEvent.click(screen.getByRole('combobox', { name: 'Kind' }))
-  fireEvent.click(await screen.findByRole('option', { name: 'Videos' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
+  fireEvent.click(await screen.findByRole('radio', { name: 'Videos' }))
   await waitFor(() => expect(address()).toBe('/photos?kind=video'))
 })
 
@@ -576,7 +579,7 @@ it('offers no Try again when a selected photo has not failed', async () => {
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
-it('retries the photo of the viewer, and makes previews again for a ready one', async () => {
+it('retries the photo of the viewer, and makes thumbnails again for a ready one', async () => {
   library = library.map((photo) =>
     photo.id === 'photo-1'
       ? { ...photo, photoProcessingState: 'failed', smallPreviewUrl: '', largePreviewUrl: '' }
@@ -589,7 +592,7 @@ it('retries the photo of the viewer, and makes previews again for a ready one', 
   cleanup()
   show('/photos/photo-2')
   fireEvent.click(await screen.findByRole('button', { name: 'More' }))
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make thumbnails again' }))
   await waitFor(() => expect(callsTo('RetryPhotoProcessing')).toHaveLength(2))
   expect(callsTo('RetryPhotoProcessing')[1]).toEqual({ photoIds: ['photo-2'] })
 })
@@ -598,7 +601,7 @@ it('says so when nothing was moved, and when the server refuses', async () => {
   retryAnswer = async () => ({ RetryPhotoProcessing: 0 })
   show('/photos/photo-2')
   fireEvent.click(await screen.findByRole('button', { name: 'More' }))
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make thumbnails again' }))
   expect(await screen.findByText('Nothing to try again.')).toBeTruthy()
 })
 
@@ -816,4 +819,131 @@ it('says the browser’s zone when the photo has no offset of its own', async ()
   fireEvent.click(await screen.findByRole('button', { name: 'Change date' }))
   const dialog = await screen.findByRole('dialog', { name: 'Change the date' })
   expect(within(dialog).getByText(/In your browser's time zone \(UTC[+-]\d\d:\d\d\)/)).toBeTruthy()
+})
+
+// ---- one toolbar on every page ----
+
+it('shows the timeline under day headings, and a search without them, in the order it ranks them', async () => {
+  show('/photos')
+  expect(await screen.findByText('Friday, July 12, 2030')).toBeTruthy()
+  cleanup()
+  show('/photos?search=kite')
+  await screen.findByRole('button', { name: 'Open photo-1.jpg' })
+  expect(screen.queryByText('Friday, July 12, 2030')).toBeNull()
+})
+
+it('says the closest matches when no photo has a word of the search, and not when one does', async () => {
+  show('/photos?search=zzqx')
+  expect(await screen.findByText('Closest matches')).toBeTruthy()
+  cleanup()
+  library = library.map((photo) => ({ ...photo, placeName: 'Kite Hill' }))
+  show('/photos?search=kite')
+  await screen.findByRole('button', { name: 'Open photo-1.jpg' })
+  expect(screen.queryByText('Closest matches')).toBeNull()
+})
+
+it('offers no search or filter on a list with nothing in it, and keeps them once a search has found nothing', async () => {
+  library = []
+  show('/photos')
+  await screen.findByText(/No photos yet/)
+  expect(screen.queryByRole('searchbox')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Filter' })).toBeNull()
+  cleanup()
+  show('/photos?search=kite')
+  await screen.findByText('No photos match your search.')
+  expect(screen.getByRole('searchbox')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Filter' })).toBeTruthy()
+})
+
+it('says how many are selected in the bar, short enough for a phone', async () => {
+  show('/photos')
+  await selectPhotos('photo-1', 'photo-2')
+  expect((await screen.findByRole('toolbar')).textContent).toContain('2 selected')
+})
+
+it('puts rename and delete of an album among its actions as icons, not in a menu', async () => {
+  show('/photos/albums/album-1')
+  await screen.findByRole('button', { name: 'Rename album' })
+  expect(screen.getByRole('button', { name: 'Delete album' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Album options' })).toBeNull()
+})
+
+it('says an album was renamed', async () => {
+  extraAnswer = (document) =>
+    document.includes('RenamePhotoAlbum(')
+      ? { RenamePhotoAlbum: { id: 'album-1', albumTitle: 'Lake', ...ownAlbum } }
+      : undefined
+  show('/photos/albums/album-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Rename album' }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Title'), { target: { value: 'Lake' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+  expect(await screen.findByText('Album renamed.')).toBeTruthy()
+})
+
+it('names the album in the toast that says its cover was changed', async () => {
+  extraAnswer = (document) =>
+    document.includes('SetPhotoAlbumCover(')
+      ? { SetPhotoAlbumCover: { id: 'album-1', albumTitle: 'Picnic' } }
+      : undefined
+  show('/photos/albums/album-1/photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Use as album cover' }))
+  expect(await screen.findByText('Changed the cover of “Picnic”.')).toBeTruthy()
+})
+
+it('says so with a way to add photos when the album has none, and offers none to somebody who cannot add', async () => {
+  library = []
+  show('/photos/albums/album-1')
+  expect(await screen.findByText(/This album has no photos yet\. Add some from your library\./)).toBeTruthy()
+  expect(screen.getAllByRole('button', { name: 'Add photos' })).toHaveLength(2)
+  cleanup()
+  albumOwnership = sharedWithMe
+  show('/photos/albums/album-1')
+  await screen.findByText('This album has no photos yet.')
+  expect(screen.queryByRole('button', { name: 'Add photos' })).toBeNull()
+})
+
+it('offers no upload in the Trash, and says how long each day of it has left', async () => {
+  library = library.map((photo) => ({ ...photo, trashedAt: new Date().toISOString() }))
+  show('/photos?view=trash')
+  expect(await screen.findByText('Deleted forever in 30 days')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Upload photos' })).toBeNull()
+  cleanup()
+  show('/photos')
+  expect(await screen.findByRole('button', { name: 'Upload photos' })).toBeTruthy()
+})
+
+it('offers to show a restored photo in the library', async () => {
+  library = library.map((photo) => ({ ...photo, trashedAt: new Date().toISOString() }))
+  extraAnswer = (document) => (document.includes('RestorePhotos(') ? { RestorePhotos: 1 } : undefined)
+  show('/photos?view=trash')
+  await selectPhotos('photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Restore' }))
+  expect(await screen.findByText('Restored 1 photo.')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Show in library' })).toBeTruthy()
+})
+
+it('opens the library near where a photo was taken, as a filter that stays in the address and can be taken off', async () => {
+  library = library.map((photo) => ({ ...photo, placeName: 'Old Harbor', latitude: 48.8584, longitude: 2.2945 }))
+  show('/photos/albums/album-1/photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Photos taken near here' }))
+  await waitFor(() => expect(address()).toBe('/photos?near=48.85840%2C2.29450&nearPlace=Old+Harbor'))
+  expect(await screen.findByText('Near Old Harbor')).toBeTruthy()
+  await waitFor(() =>
+    expect(
+      callsTo('ListPhotos').some(
+        (variables) => variables.nearLatitude === 48.8584 && variables.nearDistanceKilometers === 1,
+      ),
+    ).toBe(true),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Remove the filter “Near Old Harbor”' }))
+  await waitFor(() => expect(address()).toBe('/photos'))
+  expect(screen.queryByText('Near Old Harbor')).toBeNull()
+})
+
+it('offers nothing near here for a photo with no place', async () => {
+  show('/photos/photo-1')
+  await screen.findByRole('button', { name: 'Details' })
+  expect(screen.queryByRole('button', { name: 'Photos taken near here' })).toBeNull()
 })

@@ -254,3 +254,20 @@ it('does not offer an album that is only to view in the add menu', async () => {
   expect(screen.getByRole('menuitem', { name: /Holiday/ }).textContent).toContain('Family')
   expect(screen.queryByRole('menuitem', { name: /Wedding/ })).toBeNull()
 })
+
+it('lets a suggestion be put off, and keeps it off for this person in this browser', async () => {
+  window.localStorage.clear()
+  serve()
+  const first = showPage()
+  const panel = (await screen.findByText('Suggested')).closest('section') as HTMLElement
+  fireEvent.click(within(panel).getByRole('button', { name: 'Fixtureville: Not now' }))
+  expect(screen.queryByText('Suggested')).toBeNull()
+  expect(window.localStorage.getItem('teanode.photos.dismissedSuggestions.person-1')).toBe(
+    JSON.stringify([`${suggestion.takenAfter}|${suggestion.takenBefore}`]),
+  )
+  first.unmount()
+  showPage()
+  await screen.findByRole('link', { name: /Picnic/ })
+  expect(screen.queryByText('Suggested')).toBeNull()
+  window.localStorage.clear()
+})

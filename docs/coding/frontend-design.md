@@ -271,6 +271,15 @@ paragraph and the fields in a `.row` are already rules; so is right-aligning a
 lone action, with `page-actions-end`.
 
 A checkbox and its label on one line is `label.checkbox`.
+A checkbox or radio whose words are the page's own, not a hint under a field,
+is `label.checkbox.is-plain`: the text size and color, with its explanation
+muted under it.
+
+Toasts are at the foot of the window, at the left of the page (past the rail),
+and on a phone above the agent's button. They were at the top right, where they
+covered the buttons a page keeps at the right of its header and took the click
+meant for the next one. A page's floating things go at the right, above the
+agent's button (the upload tray, the recording bar), so the two never meet.
 
 Nothing moves when it is hovered, chosen or opened. A row that is selected,
 a menu item that is the current page and a button that is pressed keep

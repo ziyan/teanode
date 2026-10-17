@@ -1068,3 +1068,36 @@ export function AlbumRemoveIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// Make this photo the face of its album: the album with a star on its front
+// photo, so that it is not mistaken for adding to the album or taking out of it.
+export function AlbumCoverIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+      <path d="m10 11 1.1 2.2 2.4.35-1.75 1.7.42 2.4L10 16.5l-2.17 1.15.42-2.4-1.75-1.7 2.4-.35L10 11Z" />
+    </Icon>
+  )
+}
+
+// An eye: shown, or show again.
+export function EyeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  )
+}
+
+// An eye with a stroke through it: hidden, or hide.
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.9 5.2A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.8 17.8 0 0 1-3.2 4.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="m3 3 18 18" />
+    </Icon>
+  )
+}

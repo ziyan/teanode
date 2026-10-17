@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { askAgentAbout } from '../../api'
-import { PageHeadingActions, useBreadcrumbDetail } from '../../components/breadcrumb'
-import { ErrorMessage, Loading } from '../../components/common'
+import { useBreadcrumbDetail } from '../../components/breadcrumb'
+import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { PhotoBackupGuide } from '../../components/photoBackupGuide'
 import {
@@ -11,7 +11,7 @@ import {
   CloseIcon,
   DownloadIcon,
   HeartIcon,
-  MoreIcon,
+  PencilIcon,
   PhotoSaveIcon,
   PlusIcon,
   RefreshIcon,
@@ -19,10 +19,8 @@ import {
   TrashIcon,
   UploadIcon,
 } from '../../components/icons'
-import { MenuButton } from '../../components/menuButton'
 import { Pager, useKeepPageInRange, usePageInAddress } from '../../components/pager'
-import { Select } from '../../components/select'
-import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
+import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
@@ -36,6 +34,7 @@ import {
   deletePhotosForever,
   describePhoto,
   emptyPhotoTrash,
+  listPhotoAlbums,
   listPhotos,
   photoFilePath,
   readPhoto,
@@ -53,15 +52,21 @@ import {
   type Photo,
   type PhotoAlbum,
   type PhotoFace,
-  type PhotoKind,
   type PhotoListKind,
 } from '../../photos/api'
 import { usePhotosChanged } from '../../photos/changes'
-import { FILTER_KINDS, parseDay, parsePhotoKind, startOfDay, startOfNextDay } from '../../photos/filters'
-import { formatByteSize, indexRange, personTimeZone, photoReferenceTitle } from '../../photos/days'
 import {
-  NoAddressBookError,
-  createContact,
+  NEARBY_KILOMETERS,
+  isFoundByMeaningOnly,
+  nearText,
+  parseDay,
+  parseNear,
+  parsePhotoKind,
+  startOfDay,
+  startOfNextDay,
+} from '../../photos/filters'
+import { formatByteSize, indexRange, personTimeZone, photoReferenceTitle, sortByTrashedAt } from '../../photos/days'
+import {
   hidePhotoFaceGroup,
   listPhotoFaceGroups,
   mergePhotoFaceGroups,
@@ -75,16 +80,16 @@ import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
-import { PhotoGrid } from './grid'
+import { PhotoGrid, type PhotoGrouping } from './grid'
 import {
   FacePicture,
   MergePersonDialog,
-  NamePersonDialog,
-  PersonMenu,
+  NamePersonFlow,
+  PersonActions,
   personAddress,
   useDisplayedPersonName,
-  type PersonNaming,
 } from './personControls'
+import { PhotoFilterMenu, PhotoIconAction, PhotoToolbar } from './toolbar'
 import { PhotoViewer } from './viewer'
 
 // The Photos page: the timeline of the person's library with its three
@@ -101,12 +106,6 @@ const FAVORITE_CONCURRENCY = 6
 // The gap between downloads when several are saved together, which browsers
 // otherwise take for a flood and block.
 const DOWNLOAD_GAP_MS = 300
-
-const KIND_LABELS: Record<PhotoKind, 'photos.kindPicture' | 'photos.kindLivePhoto' | 'photos.kindVideo'> = {
-  picture: 'photos.kindPicture',
-  livePhoto: 'photos.kindLivePhoto',
-  video: 'photos.kindVideo',
-}
 
 type Confirmation =
   | { kind: 'trash'; photos: Photo[] }
@@ -169,11 +168,16 @@ function AccountPhotosPage() {
       : parameters.get('view') === 'trash'
         ? 'trash'
         : 'library'
+  const isTrash = listKind === 'trash'
   const searchText = parameters.get('search') ?? ''
   const photoKind = parsePhotoKind(parameters.get('kind'))
   const fromDay = parseDay(parameters.get('from'))
   const toDay = parseDay(parameters.get('to'))
-  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== ''
+  // "Photos taken near here": a point in the address, and the place's name to
+  // say it by.
+  const near = parseNear(parameters.get('near'))
+  const nearPlace = parameters.get('nearPlace') ?? ''
+  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== '' || near !== null
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
   const takenAfter = fromDay ? startOfDay(fromDay) : undefined
   const takenBefore = toDay ? startOfNextDay(toDay) : undefined
@@ -186,8 +190,22 @@ function AccountPhotosPage() {
       photoKind: photoKind || undefined,
       takenAfter,
       takenBefore,
+      nearLatitude: near?.latitude,
+      nearLongitude: near?.longitude,
+      nearDistanceKilometers: near ? NEARBY_KILOMETERS : undefined,
     }),
-    [listKind, searchText, photoAlbumId, photoFaceGroupId, photoKind, takenAfter, takenBefore],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      listKind,
+      searchText,
+      photoAlbumId,
+      photoFaceGroupId,
+      photoKind,
+      takenAfter,
+      takenBefore,
+      near?.latitude,
+      near?.longitude,
+    ],
   )
   const userId = session.userId ?? ''
   // A search costs something every time it runs, so a list that is a search
@@ -259,10 +277,18 @@ function AccountPhotosPage() {
       written.delete('page')
       return written
     })
+  const clearNear = () =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      written.delete('near')
+      written.delete('nearPlace')
+      written.delete('page')
+      return written
+    })
   const clearFilters = () =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
-      for (const name of ['kind', 'from', 'to']) written.delete(name)
+      for (const name of ['kind', 'from', 'to', 'near', 'nearPlace']) written.delete(name)
       written.delete('page')
       return written
     })
@@ -285,6 +311,19 @@ function AccountPhotosPage() {
     [photoFaceGroupId, userId],
   )
   const people = useQuery(async () => (isMergingPerson ? await listPhotoFaceGroups(true) : []), [isMergingPerson])
+  // The names a search may have found photos by without a word being in the
+  // photo itself: the people in it and the albums it is in.
+  const searchNames = useQuery(
+    async () =>
+      isSearching
+        ? [
+            ...(await listPhotoFaceGroups(true)).map((group) => group.contactName),
+            ...(await listPhotoAlbums()).map((each) => each.albumTitle),
+          ]
+        : [],
+    [isSearching],
+    { refresh: false },
+  )
   // What was read for a different album or person is not this one's.
   const shownAlbum = album.data?.id === photoAlbumId ? album.data : null
   const shownPerson = person.data?.id === photoFaceGroupId ? person.data : null
@@ -306,7 +345,12 @@ function AccountPhotosPage() {
       favoriteOverrides.has(photo.id) ? { ...photo, isFavorite: favoriteOverrides.get(photo.id)! } : photo,
     [favoriteOverrides],
   )
-  const photos = useMemo(() => (listedPhotos ?? []).map(withFavoriteOverride), [listedPhotos, withFavoriteOverride])
+  // The Trash is read newest trashed first, under the days the photos were
+  // moved there; the server lists it by when the photos were taken.
+  const photos = useMemo(() => {
+    const withOverrides = (listedPhotos ?? []).map(withFavoriteOverride)
+    return isTrash ? sortByTrashedAt(withOverrides) : withOverrides
+  }, [listedPhotos, withFavoriteOverride, isTrash])
 
   // A favorite changed here shows at once and is sent in the order it was
   // chosen, one request after another for the same photo; the heart and the
@@ -334,7 +378,18 @@ function AccountPhotosPage() {
     setSelectedIds(new Set())
     setIsSelectionMode(false)
     anchorIndex.current = null
-  }, [listKind, searchText, photoKind, fromDay, toDay, offset, photoAlbumId, photoFaceGroupId])
+  }, [
+    listKind,
+    searchText,
+    photoKind,
+    fromDay,
+    toDay,
+    near?.latitude,
+    near?.longitude,
+    offset,
+    photoAlbumId,
+    photoFaceGroupId,
+  ])
 
   // ---- The viewer's photo, when it is not in the list ----
 
@@ -431,8 +486,11 @@ function AccountPhotosPage() {
     if (info.data?.uploadPartBytes) photoUploads.setPartBytes(info.data.uploadPartBytes)
   }, [info.data?.uploadPartBytes])
 
-  // Files go into the library; an album is filled from the photos in it.
+  // Files go into the library; an album is filled from the photos in it. The
+  // Trash is no place to offer to upload to, though a file dropped on it is
+  // still taken into the library.
   const canUpload = !isInsideCollection
+  const isUploadShown = canUpload && !isTrash
   const addFiles = (files: File[]) => {
     if (!canUpload) {
       toast.failed(t('photos.uploadInLibrary'))
@@ -476,6 +534,15 @@ function AccountPhotosPage() {
       { pathname: `${basePath}/${encodeURIComponent(photo.id)}`, search },
       { replace: true, state: location.state },
     )
+  }
+  // The library, narrowed to a kilometer around where a photo was taken, which
+  // is the whole of the library and not the album or person the viewer was
+  // opened in.
+  const showNearby = (photo: Photo) => {
+    if (typeof photo.latitude !== 'number' || typeof photo.longitude !== 'number') return
+    const written = new URLSearchParams({ near: nearText(photo.latitude, photo.longitude) })
+    if (photo.placeName.trim()) written.set('nearPlace', photo.placeName.trim())
+    navigate({ pathname: '/photos', search: `?${written.toString()}` })
   }
   const closeViewer = useCallback(() => {
     // Opened from the grid, the viewer is one step on the way back; opened
@@ -524,7 +591,10 @@ function AccountPhotosPage() {
     setIsBusy(true)
     try {
       const restoredCount = await restorePhotos(targets.map((photo) => photo.id))
-      toast.done(plural(restoredCount, { one: 'photos.restoredOne', other: 'photos.restoredOther' }))
+      toast.done(plural(restoredCount, { one: 'photos.restoredOne', other: 'photos.restoredOther' }), {
+        label: t('photos.showInLibrary'),
+        run: () => navigate(targets.length === 1 ? `/photos/${encodeURIComponent(targets[0].id)}` : '/photos'),
+      })
       if (targets.some((photo) => photo.id === photoId)) moveViewerOn()
       clearSelection()
       void refresh()
@@ -670,7 +740,7 @@ function AccountPhotosPage() {
     if (!photoAlbumId) return
     try {
       await setPhotoAlbumCover(photoAlbumId, photo.id)
-      toast.done(t('photos.coverSet'))
+      toast.done(t('photos.coverSet', { title: shownAlbum?.albumTitle ?? '' }))
       void refresh()
     } catch (caught) {
       failedWith(caught)
@@ -707,6 +777,7 @@ function AccountPhotosPage() {
     try {
       await renamePhotoAlbum(photoAlbumId, albumTitle)
       setIsRenamingAlbum(false)
+      toast.done(t('photos.albumRenamed'))
       await album.reload(true)
     } catch (caught) {
       failedWith(caught)
@@ -732,13 +803,15 @@ function AccountPhotosPage() {
 
   // ---- Describing, asking, and people ----
 
-  // Asks for a description and says so when that failed; the viewer reads
-  // the photo again and shows it arriving.
+  // Asks for a description and says so when that failed, and then rejects,
+  // so that the viewer does not wait for one that is not coming; when it
+  // worked the viewer reads the photo again and shows it arriving.
   async function describe(photo: Photo, isRedescribed: boolean) {
     try {
       await describePhoto(photo.id, isRedescribed)
     } catch (caught) {
       failedWith(caught)
+      throw caught
     }
   }
 
@@ -784,29 +857,6 @@ function AccountPhotosPage() {
       void refresh()
     } catch (caught) {
       failedWith(caught)
-    }
-  }
-
-  async function nameGroup(naming: PersonNaming) {
-    if (!photoFaceGroupId) return
-    setIsBusy(true)
-    setPersonError(null)
-    try {
-      const contactId = naming.kind === 'new' ? (await createContact(naming.contactName)).id : naming.contactId
-      const named = await namePhotoFaceGroup(photoFaceGroupId, contactId)
-      setIsNamingPerson(false)
-      toast.done(t('photos.personNamed', { name: displayedName(named) }))
-      await person.reload(true)
-    } catch (caught) {
-      setPersonError(
-        caught instanceof NoAddressBookError
-          ? t('photos.noAddressBook')
-          : caught instanceof Error
-            ? caught.message
-            : String(caught),
-      )
-    } finally {
-      setIsBusy(false)
     }
   }
 
@@ -940,7 +990,6 @@ function AccountPhotosPage() {
 
   // ---- Drawing ----
 
-  const isTrash = listKind === 'trash'
   const emptyText =
     searchText !== '' && !hasFilters
       ? t('photos.emptySearch')
@@ -964,6 +1013,13 @@ function AccountPhotosPage() {
     searchText === '' && !hasFilters && !photoAlbumId && !photoFaceGroupId && listKind === 'library'
   const trashedCount = info.data?.trashedCount ?? 0
   const trashDays = info.data?.trashRetentionDays ?? 0
+  const isSelecting = isSelectionMode || selectedIds.size > 0
+  // Nothing in the list and nothing asked for: no search or filter to offer.
+  const isListEmpty = library.data !== null && photos.length === 0 && !isListStale && searchText === '' && !hasFilters
+  // Day headings are the timeline's. A search is in the order of how well it
+  // matches and is under none; the Trash is under the days it was filled.
+  const grouping: PhotoGrouping = isSearching ? 'none' : isTrash ? 'trash' : 'day'
+  const isMeaningOnly = isSearching && !isListStale && isFoundByMeaningOnly(searchText, photos, searchNames.data ?? [])
 
   return (
     <div
@@ -989,75 +1045,6 @@ function AccountPhotosPage() {
       }}
     >
       <ErrorMessage error={library.error} />
-      <PageHeadingActions>
-        {canUpload && (
-          <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
-            <UploadIcon size={16} /> {t('photos.upload')}
-          </button>
-        )}
-        {photos.length > 0 && (
-          <button
-            type="button"
-            aria-pressed={isSelectionMode || selectedIds.size > 0}
-            onClick={() => (isSelectionMode || selectedIds.size > 0 ? clearSelection() : setIsSelectionMode(true))}
-          >
-            {isSelectionMode || selectedIds.size > 0 ? t('common.cancel') : t('photos.select')}
-          </button>
-        )}
-        {photoAlbumId && canContributeToAlbum && (
-          <button type="button" onClick={() => setIsAddingPhotos(true)}>
-            <PlusIcon size={16} /> {t('photos.addPhotos')}
-          </button>
-        )}
-        {photoAlbumId && canManageAlbum && shownAlbum?.circleId === null && (
-          <button type="button" onClick={() => setIsSharingAlbum(true)}>
-            <AddPersonIcon size={16} /> {t('photos.share')}
-          </button>
-        )}
-        {photoAlbumId && canManageAlbum && (
-          <MenuButton
-            label={t('photos.albumMenu')}
-            className="icon-button"
-            icon={<MoreIcon size={18} />}
-            render={(close) => (
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    close()
-                    setIsRenamingAlbum(true)
-                  }}
-                >
-                  {t('photos.renameAlbum')}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    close()
-                    setConfirmation({ kind: 'deleteAlbum' })
-                  }}
-                >
-                  {t('photos.deleteAlbum')}
-                </button>
-              </>
-            )}
-          />
-        )}
-        {shownPerson && (
-          <PersonMenu
-            person={shownPerson}
-            onName={startNamingPerson}
-            onRemoveName={() => void removeName()}
-            onMerge={() => {
-              setPersonError(null)
-              setIsMergingPerson(true)
-            }}
-            onToggleHidden={() => void toggleHidden()}
-          />
-        )}
-      </PageHeadingActions>
       <input
         ref={fileInput}
         type="file"
@@ -1072,6 +1059,39 @@ function AccountPhotosPage() {
           event.target.value = ''
         }}
       />
+
+      {!isInsideCollection && <PhotoSections current={listKind} onSelect={selectSection} />}
+
+      {shownAlbum && !shownAlbum.isOwnedByCaller && (
+        <div className="photo-album-head">
+          <AlbumOwnerMark album={shownAlbum} />
+          <span className="muted">
+            {shownAlbum.circleId
+              ? t('photos.albumHeadCircle')
+              : shownAlbum.shareLevel === 'contribute'
+                ? t('photos.albumHeadContribute')
+                : t('photos.albumHeadView')}
+            {shownAlbum.isLocationIncluded ? '' : ` ${t('photos.albumHeadNoPlaces')}`}
+          </span>
+        </div>
+      )}
+
+      {shownPerson && (
+        <div className="photo-person-head">
+          <FacePicture facePictureUrl={shownPerson.facePictureUrl} name={displayedName(shownPerson)} size="large" />
+          <div className="photo-person-head-body">
+            <span className="muted">
+              {plural(shownPerson.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
+            </span>
+            {shownPerson.isHidden && <Tag value={t('photos.hiddenTag')} />}
+            {shownPerson.contactName.trim() === '' && (
+              <button type="button" onClick={startNamingPerson}>
+                {t('photos.nameThisPerson')}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {selectedPhotos.length > 0 ? (
         <div
@@ -1089,7 +1109,7 @@ function AccountPhotosPage() {
               <CloseIcon size={18} />
             </button>
           </Tooltip>
-          <strong>{plural(selectedPhotos.length, { one: 'photos.selectedOne', other: 'photos.selectedOther' })}</strong>
+          <strong>{t('photos.selectedCount', { count: selectedPhotos.length })}</strong>
           <span className="photo-viewer-spacer" />
           {isTrash ? (
             <>
@@ -1200,92 +1220,104 @@ function AccountPhotosPage() {
           )}
         </div>
       ) : (
-        <div className="photo-toolbar">
-          <input
-            type="search"
-            value={searchInput}
-            placeholder={t('photos.search')}
-            aria-label={t('photos.search')}
-            onChange={(event) => typeSearch(event.target.value)}
-          />
-          {!isInsideCollection && <PhotoSections current={listKind} onSelect={selectSection} />}
-          {isTrash && trashedCount > 0 && (
-            <button type="button" className="danger" onClick={() => setConfirmation({ kind: 'emptyTrash' })}>
-              {t('photos.emptyTrashButton')}
+        <PhotoToolbar
+          tools={
+            // A list with nothing in it has nothing to search or narrow.
+            isListEmpty ? null : (
+              <>
+                <input
+                  type="search"
+                  value={searchInput}
+                  placeholder={t('photos.search')}
+                  aria-label={t('photos.searchLabel')}
+                  onChange={(event) => typeSearch(event.target.value)}
+                />
+                <PhotoFilterMenu
+                  photoKind={photoKind}
+                  fromDay={fromDay}
+                  toDay={toDay}
+                  onChange={setFilterParameter}
+                  onClear={clearFilters}
+                />
+                {near && (
+                  <span className="table-pinned photo-near-filter">
+                    {nearPlace ? t('photos.nearPlace', { place: nearPlace }) : t('photos.nearHere')}
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={t('photos.removeFilter', {
+                        filter: nearPlace ? t('photos.nearPlace', { place: nearPlace }) : t('photos.nearHere'),
+                      })}
+                      onClick={clearNear}
+                    >
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                )}
+              </>
+            )
+          }
+        >
+          {isUploadShown && (
+            <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
+              <UploadIcon size={16} /> {t('photos.upload')}
             </button>
           )}
-        </div>
-      )}
-      {selectedPhotos.length === 0 && (
-        <div className="row photo-filters">
-          <label>
-            <span>{t('photos.filterKind')}</span>
-            <Select
-              block
-              value={photoKind}
-              label={t('photos.filterKind')}
-              options={[
-                { value: '', label: t('photos.kindAll') },
-                ...FILTER_KINDS.map((kind) => ({ value: kind, label: t(KIND_LABELS[kind]) })),
-              ]}
-              onChange={(value) => setFilterParameter('kind', value)}
-            />
-          </label>
-          <label>
-            <span>{t('photos.filterFrom')}</span>
-            <input
-              type="date"
-              value={fromDay}
-              max={toDay || undefined}
-              onChange={(event) => setFilterParameter('from', parseDay(event.target.value))}
-            />
-          </label>
-          <label>
-            <span>{t('photos.filterTo')}</span>
-            <input
-              type="date"
-              value={toDay}
-              min={fromDay || undefined}
-              onChange={(event) => setFilterParameter('to', parseDay(event.target.value))}
-            />
-          </label>
-          {hasFilters && (
-            <button type="button" className="shrink" onClick={clearFilters}>
-              {t('photos.clearFilters')}
+          {photos.length > 0 && (
+            <button
+              type="button"
+              aria-pressed={isSelecting}
+              onClick={() => (isSelecting ? clearSelection() : setIsSelectionMode(true))}
+            >
+              {isSelecting ? t('common.cancel') : t('photos.select')}
             </button>
           )}
-        </div>
-      )}
-
-      {shownAlbum && !shownAlbum.isOwnedByCaller && (
-        <div className="photo-album-head">
-          <AlbumOwnerMark album={shownAlbum} />
-          <span className="muted">
-            {shownAlbum.circleId
-              ? t('photos.albumHeadCircle')
-              : shownAlbum.shareLevel === 'contribute'
-                ? t('photos.albumHeadContribute')
-                : t('photos.albumHeadView')}
-            {shownAlbum.isLocationIncluded ? '' : ` ${t('photos.albumHeadNoPlaces')}`}
-          </span>
-        </div>
-      )}
-
-      {shownPerson && (
-        <div className="photo-person-head">
-          <FacePicture facePictureUrl={shownPerson.facePictureUrl} name={displayedName(shownPerson)} size="large" />
-          <div className="photo-person-head-body">
-            <span className="muted">
-              {plural(shownPerson.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
-              {shownPerson.isHidden ? ` · ${t('photos.hiddenFromPeople')}` : ''}
+          {photoAlbumId && canContributeToAlbum && (
+            <button type="button" onClick={() => setIsAddingPhotos(true)}>
+              <PlusIcon size={16} /> {t('photos.addPhotos')}
+            </button>
+          )}
+          {photoAlbumId && canManageAlbum && shownAlbum?.circleId === null && (
+            <button type="button" onClick={() => setIsSharingAlbum(true)}>
+              <AddPersonIcon size={16} /> {t('photos.share')}
+            </button>
+          )}
+          {photoAlbumId && canManageAlbum && (
+            <span className="photo-icon-actions">
+              <PhotoIconAction
+                label={t('photos.renameAlbum')}
+                icon={<PencilIcon size={16} />}
+                onClick={() => setIsRenamingAlbum(true)}
+              />
+              <PhotoIconAction
+                label={t('photos.deleteAlbum')}
+                icon={<TrashIcon size={16} />}
+                isDangerous
+                onClick={() => setConfirmation({ kind: 'deleteAlbum' })}
+              />
             </span>
-            {shownPerson.contactName.trim() === '' && (
-              <button type="button" onClick={startNamingPerson}>
-                {t('photos.nameThisPerson')}
-              </button>
-            )}
-          </div>
-        </div>
+          )}
+          {shownPerson && (
+            <PersonActions
+              person={shownPerson}
+              onName={startNamingPerson}
+              onRemoveName={() => void removeName()}
+              onMerge={() => {
+                setPersonError(null)
+                setIsMergingPerson(true)
+              }}
+              onToggleHidden={() => void toggleHidden()}
+            />
+          )}
+          {isTrash && trashedCount > 0 && (
+            <PhotoIconAction
+              label={t('photos.emptyTrashButton')}
+              icon={<TrashIcon size={16} />}
+              isDangerous
+              onClick={() => setConfirmation({ kind: 'emptyTrash' })}
+            />
+          )}
+        </PhotoToolbar>
       )}
 
       {isTrash && trashDays > 0 && (
@@ -1294,17 +1326,33 @@ function AccountPhotosPage() {
         </p>
       )}
 
+      {isSearching && isMeaningOnly && (
+        <div className="photo-closest">
+          <h2 className="photo-day-heading">{t('photos.closestMatches')}</h2>
+          <p className="muted">{t('photos.closestMatchesHint')}</p>
+        </div>
+      )}
+
       {library.loading && !library.data ? (
         <Loading />
       ) : photos.length === 0 && !isListStale ? (
         <>
           <SettingsEmpty>{emptyText}</SettingsEmpty>
+          {photoAlbumId && canContributeToAlbum && searchText === '' && !hasFilters && (
+            <div className="page-actions page-actions-end">
+              <button type="button" className="primary" onClick={() => setIsAddingPhotos(true)}>
+                <PlusIcon size={16} /> {t('photos.addPhotos')}
+              </button>
+            </div>
+          )}
           {isLibraryEmpty && <PhotoBackupGuide />}
         </>
       ) : (
         <div className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
           <PhotoGrid
             photos={photos}
+            grouping={grouping}
+            trashRetentionDays={trashDays}
             selectedIds={selectedIds}
             isSelectionMode={isSelectionMode}
             onOpen={openPhoto}
@@ -1327,25 +1375,20 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {info.data && !searchText && !isInsideCollection && listKind === 'library' && (
-        <SettingsSection card title={t('photos.libraryTitle')} description={t('photos.libraryHint')}>
-          <SettingsRow
-            title={t('photos.libraryContents')}
-            subtitle={libraryContents(info.data.photoCount + info.data.videoCount, info.data.videoCount, plural, t)}
-          />
-          <SettingsRow
-            title={t('photos.spaceUsed')}
-            subtitle={
-              info.data.maximumAccountBytes > 0
-                ? t('photos.spaceUsedOf', {
-                    used: formatByteSize(info.data.usedBytes),
-                    limit: formatByteSize(info.data.maximumAccountBytes),
-                  })
-                : `${formatByteSize(info.data.usedBytes)} · ${t('photos.noLimit')}`
-            }
-          />
-          <SettingsRow title={t('photos.largestFile')} subtitle={formatByteSize(info.data.maximumFileBytes)} />
-        </SettingsSection>
+      {info.data && !searchText && !hasFilters && !isInsideCollection && listKind === 'library' && (
+        <SettingsSection
+          card
+          title={libraryContents(info.data.photoCount + info.data.videoCount, info.data.videoCount, plural, t)}
+          description={[
+            info.data.maximumAccountBytes > 0
+              ? t('photos.spaceUsedOf', {
+                  used: formatByteSize(info.data.usedBytes),
+                  limit: formatByteSize(info.data.maximumAccountBytes),
+                })
+              : t('photos.spaceUsedNoLimit', { used: formatByteSize(info.data.usedBytes) }),
+            t('photos.largestFileOf', { size: formatByteSize(info.data.maximumFileBytes) }),
+          ].join(' · ')}
+        />
       )}
 
       {isDragging && canUpload && (
@@ -1380,6 +1423,7 @@ function AccountPhotosPage() {
           onRetryProcessing={(photo) => retryProcessing([photo])}
           onRemoveFaceFromGroup={removeFaceFromGroup}
           onNavigate={showPhoto}
+          onShowNearby={showNearby}
           onClose={closeViewer}
           onToggleFavorite={(photo) => void setFavorites([photo], !photo.isFavorite)}
           onTrash={(photo) => setConfirmation({ kind: 'trash', photos: [photo] })}
@@ -1459,12 +1503,10 @@ function AccountPhotosPage() {
         />
       )}
       {isNamingPerson && shownPerson && (
-        <NamePersonDialog
-          currentName={shownPerson.contactName}
-          isBusy={isBusy}
-          error={personError}
-          onSubmit={(naming) => void nameGroup(naming)}
+        <NamePersonFlow
+          group={shownPerson}
           onClose={() => setIsNamingPerson(false)}
+          onNamed={() => void person.reload(true)}
         />
       )}
       {isMergingPerson && shownPerson && (

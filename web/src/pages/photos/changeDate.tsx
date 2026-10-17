@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { FormDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
+import { DateFormatHint } from './dateFormatHint'
 import type { Photo } from '../../photos/api'
 import { browserOffsetMinutes, formatOffset, localFieldValue, takenAtFromField } from '../../photos/takenAt'
 
@@ -22,7 +23,7 @@ export function ChangeDateDialog({
   onSubmit: (takenAt: string) => void
   onClose: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   // A photo with no date of its own is placed where it arrived.
   const instant = photo.takenAt ?? photo.createdAt
   const ownOffsetMinutes = photo.takenAtOffsetMinutes
@@ -48,8 +49,14 @@ export function ChangeDateDialog({
       <p className="muted">{t('photos.changeDateHint')}</p>
       <label>
         <span>{t('photos.changeDateField')}</span>
-        <input type="datetime-local" value={fieldValue} onChange={(event) => setFieldValue(event.target.value)} />
+        <input
+          type="datetime-local"
+          lang={language}
+          value={fieldValue}
+          onChange={(event) => setFieldValue(event.target.value)}
+        />
       </label>
+      <DateFormatHint />
       <p className="muted field-hint">
         {t(ownOffsetMinutes === null ? 'photos.changeDateZoneBrowser' : 'photos.changeDateZonePhoto', {
           zone: `UTC${formatOffset(offsetMinutes)}`,

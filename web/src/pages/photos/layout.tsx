@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../components/toast'
 import { useTranslation } from '../../i18n/i18n'
 import { restorePhotos } from '../../photos/api'
@@ -26,6 +26,7 @@ export function PhotosLayout() {
 function AccountPhotosLayout({ userId }: { userId: string }) {
   const { t, plural } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const uploadItems = useUploadItems()
   const isUploading = uploadItems.some(
     (item) => item.state === 'waiting' || item.state === 'hashing' || item.state === 'sending',
@@ -44,8 +45,8 @@ function AccountPhotosLayout({ userId }: { userId: string }) {
     return () => window.removeEventListener('beforeunload', warn)
   }, [isUploading])
 
-  const speak = useRef({ toast, t, plural })
-  speak.current = { toast, t, plural }
+  const speak = useRef({ toast, t, plural, navigate })
+  speak.current = { toast, t, plural, navigate }
   useEffect(() => {
     let refreshTimer: number | null = null
     let hasToldOfFailure = false
@@ -84,6 +85,15 @@ function AccountPhotosLayout({ userId }: { userId: string }) {
                     const restoredCount = await restorePhotos(trashedPhotoIds)
                     speak.current.toast.done(
                       speak.current.plural(restoredCount, { one: 'photos.restoredOne', other: 'photos.restoredOther' }),
+                      {
+                        label: speak.current.t('photos.showInLibrary'),
+                        run: () =>
+                          speak.current.navigate(
+                            trashedPhotoIds.length === 1
+                              ? `/photos/${encodeURIComponent(trashedPhotoIds[0])}`
+                              : '/photos',
+                          ),
+                      },
                     )
                     announcePhotosChanged()
                   } catch (caught) {

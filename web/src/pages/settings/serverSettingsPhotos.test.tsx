@@ -39,3 +39,26 @@ it('turns finding faces off for everybody, and says that is what it does', async
     photos: { maxFileBytes: '8GB', maxAccountBytes: '0', trashRetention: '30d', isFaceRecognitionEnabled: false },
   })
 })
+
+it('says no limit in words for 0, and writes 0 back when the field is emptied', async () => {
+  vi.mocked(graphql).mockResolvedValue({} as never)
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <MemoryRouter>
+          <PhotosForm settings={settings} onSaved={vi.fn()} />
+        </MemoryRouter>
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const field = screen.getByLabelText('Space per person') as HTMLInputElement
+  expect(field.value).toBe('')
+  expect(field.placeholder).toBe('No limit')
+  fireEvent.change(field, { target: { value: '5GB' } })
+  expect(field.value).toBe('5GB')
+  fireEvent.change(field, { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  const saved = () => vi.mocked(graphql).mock.calls.find(([document]) => document.includes('UpdateSettings'))
+  await waitFor(() => expect(saved()).toBeTruthy())
+  expect((saved()?.[1] as { photos: { maxAccountBytes: string } }).photos.maxAccountBytes).toBe('0')
+})

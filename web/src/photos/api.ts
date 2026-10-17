@@ -45,6 +45,10 @@ export interface Photo {
   isOwnedByCaller: boolean
   ownerName: string
   userId: string
+  // Only the list of a search carries these, to see which photos have a word
+  // of the search in them; any other list leaves them out.
+  photoDescription?: string
+  descriptionVisibleText?: string
 }
 
 export interface PhotoFile {
@@ -209,10 +213,15 @@ const PHOTO_ALBUM_FIELDS =
 const PHOTO_ALBUM_SHARE_FIELDS =
   'id photoAlbumId granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex granteeCircleId granteeCircleName shareLevel isLocationIncluded createdAt'
 
+function listPhotosDocument(fields: string): string {
+  return `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { ${fields} } }`
+}
+
 export const PHOTO_DOCUMENTS = {
-  ListPhotos: `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { ${PHOTO_FIELDS} } }`,
+  ListPhotos: listPhotosDocument(PHOTO_FIELDS),
+  ListPhotosOfSearch: listPhotosDocument(`${PHOTO_FIELDS} photoDescription descriptionVisibleText`),
   CountPhotos:
-    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) }',
+    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) }',
   ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_DETAIL_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } faces { ${PHOTO_FACE_FIELDS} } } }`,
   ReadPhotoLibrary:
     'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
@@ -264,6 +273,11 @@ export interface PhotoFilter {
   // both are this.
   takenAfter?: string
   takenBefore?: string
+  // Keeps the photos taken within a distance of a point: "photos taken near
+  // here". All three or none.
+  nearLatitude?: number
+  nearLongitude?: number
+  nearDistanceKilometers?: number
 }
 
 function filterVariables(filter: PhotoFilter) {
@@ -276,6 +290,9 @@ function filterVariables(filter: PhotoFilter) {
     photoKind: filter.photoKind || null,
     takenAfter: filter.takenAfter || null,
     takenBefore: filter.takenBefore || null,
+    nearLatitude: filter.nearLatitude ?? null,
+    nearLongitude: filter.nearLongitude ?? null,
+    nearDistanceKilometers: filter.nearDistanceKilometers ?? null,
   }
 }
 
@@ -286,7 +303,7 @@ export async function listPhotos(
   signal?: AbortSignal,
 ): Promise<Photo[]> {
   const answer = await graphql<{ ListPhotos: Photo[] }>(
-    PHOTO_DOCUMENTS.ListPhotos,
+    filter.searchText ? PHOTO_DOCUMENTS.ListPhotosOfSearch : PHOTO_DOCUMENTS.ListPhotos,
     { ...filterVariables(filter), offset, pageSize },
     signal,
   )

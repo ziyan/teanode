@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ErrorMessage, Loading } from '../../components/common'
+import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
@@ -11,7 +11,8 @@ import { listPhotoFaceGroups, setPhotoFaceRecognition, type PhotoFaceGroup } fro
 import { hasPermission, useSession } from '../../session'
 import { PhotoSections } from './albumControls'
 import { sectionAddress } from './albums'
-import { FacePicture, personAddress, useDisplayedPersonName } from './personControls'
+import { FacePicture, NamePersonFlow, personAddress, useDisplayedPersonName } from './personControls'
+import { PhotoToolbar } from './toolbar'
 
 // The People page: a round picture for each person the server found in the
 // photos, with the name of the contact the person gave it, or an invitation
@@ -28,6 +29,10 @@ function AccountPeoplePage() {
   const navigate = useNavigate()
   const displayedName = useDisplayedPersonName()
   const [isHiddenShown, setIsHiddenShown] = useState(false)
+  const [naming, setNaming] = useState<PhotoFaceGroup | null>(null)
+  const session = useSession()
+  const canNamePeople =
+    session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
   const library = useQuery(() => readPhotoLibrary(), [])
   const groups = useQuery(() => listPhotoFaceGroups(isHiddenShown), [isHiddenShown])
   const list = groups.data ?? []
@@ -36,7 +41,7 @@ function AccountPeoplePage() {
   const emptyText = !info
     ? t('photos.emptyPeople')
     : !info.isFaceRecognitionAvailable
-      ? info.faceRecognitionUnavailableMessage || t('photos.facesUnavailable')
+      ? t('photos.facesUnavailable')
       : !info.isPhotoFaceRecognitionEnabled
         ? t('photos.emptyPeopleOff')
         : t('photos.emptyPeople')
@@ -44,13 +49,19 @@ function AccountPeoplePage() {
   return (
     <div className="photos-page">
       <ErrorMessage error={groups.error} />
-      <div className="photo-toolbar">
-        <PhotoSections current="people" onSelect={(section) => navigate(sectionAddress(section))} />
-        <label className="checkbox photo-show-hidden">
-          <input type="checkbox" checked={isHiddenShown} onChange={(event) => setIsHiddenShown(event.target.checked)} />
-          <span>{t('photos.showHidden')}</span>
-        </label>
-      </div>
+      <PhotoSections current="people" onSelect={(section) => navigate(sectionAddress(section))} />
+      <PhotoToolbar
+        tools={
+          <label className="checkbox is-plain photo-show-hidden">
+            <input
+              type="checkbox"
+              checked={isHiddenShown}
+              onChange={(event) => setIsHiddenShown(event.target.checked)}
+            />
+            <span>{t('photos.showHidden')}</span>
+          </label>
+        }
+      />
 
       {info && info.isFaceRecognitionAvailable && !info.isPhotoFaceRecognitionEnabled && (
         <FaceRecognitionSetting info={info} isCard onChanged={() => void library.reload(true)} />
@@ -66,36 +77,61 @@ function AccountPeoplePage() {
           <ul className="photo-person-grid">
             {list.map((group) => (
               <li key={group.id}>
-                <PersonCell group={group} name={displayedName(group)} plural={plural} />
+                <PersonCell
+                  group={group}
+                  name={displayedName(group)}
+                  plural={plural}
+                  canName={canNamePeople}
+                  onName={() => setNaming(group)}
+                />
               </li>
             ))}
           </ul>
         </>
       )}
+      {naming && (
+        <NamePersonFlow group={naming} onClose={() => setNaming(null)} onNamed={() => void groups.reload(true)} />
+      )}
     </div>
   )
 }
 
-// One person: the round picture, the name under it (or what to do about the
-// lack of one, in muted text) and how many photos they are in.
+// One person: the round picture, the name under it, how many photos they are
+// in, and for a person who is nobody yet the way to name them. A hidden person
+// is dimmed, picture and name, and says so in a tag, so that dimmed is not the
+// only way it is told. The tile's link is the picture, the name and the count,
+// and the button beside it is its own: a button in a link is neither.
 function PersonCell({
   group,
   name,
   plural,
+  canName,
+  onName,
 }: {
   group: PhotoFaceGroup
   name: string
   plural: ReturnType<typeof useTranslation>['plural']
+  canName: boolean
+  onName: () => void
 }) {
+  const { t } = useTranslation()
   const isNamed = group.contactName.trim() !== ''
   return (
-    <Link className={group.isHidden ? 'photo-person-cell is-hidden' : 'photo-person-cell'} to={personAddress(group.id)}>
-      <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
-      <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
-      <span className="photo-person-details muted">
-        {plural(group.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
-      </span>
-    </Link>
+    <div className={group.isHidden ? 'photo-person-cell is-hidden' : 'photo-person-cell'}>
+      <Link className="photo-person-link" to={personAddress(group.id)}>
+        <FacePicture facePictureUrl={group.facePictureUrl} name={name} size="large" />
+        <span className={isNamed ? 'photo-person-name' : 'photo-person-name muted'}>{name}</span>
+        <span className="photo-person-details muted">
+          {plural(group.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
+        </span>
+      </Link>
+      {group.isHidden && <Tag value={t('photos.hiddenTag')} />}
+      {!isNamed && canName && (
+        <button type="button" className="photo-person-name-button" onClick={onName}>
+          {t('photos.nameAction')}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -135,7 +171,7 @@ export function FaceRecognitionSetting({
 
   return (
     <SettingsSection card={isCard} title={t('photos.facesTitle')} description={t('photos.facesHint')}>
-      <label className="checkbox">
+      <label className="checkbox is-plain">
         <input
           type="checkbox"
           checked={isEnabled}
@@ -145,9 +181,7 @@ export function FaceRecognitionSetting({
         <span>{t('photos.facesSwitch')}</span>
       </label>
       <p className="muted field-hint">
-        {info.isFaceRecognitionAvailable
-          ? t('photos.facesOffWarning')
-          : info.faceRecognitionUnavailableMessage || t('photos.facesUnavailable')}
+        {info.isFaceRecognitionAvailable ? t('photos.facesOffWarning') : t('photos.facesUnavailable')}
       </p>
       {isConfirmingOff && (
         <ConfirmDialog

@@ -7815,12 +7815,17 @@ button.agent-reaction:focus-visible {
 .agent-reference-photo {
   display: block;
   flex: none;
-  width: 20px;
-  height: 20px;
-  margin-left: -4px;
-  border-radius: 5px;
+  width: 32px;
+  height: 32px;
+  margin: 0 2px 0 -6px;
+  border-radius: 7px;
   object-fit: cover;
   background: var(--border);
+}
+
+/* A photo's chip is as tall as its picture, which is the picture of it. */
+.agent-reference-chip:has(.agent-reference-photo) {
+  padding-block: 1px;
 }
 
 /* The cross that takes a chip off: an icon action, at the chip's size
@@ -8757,18 +8762,20 @@ p.notice.domain-logo-note {
   white-space: nowrap;
 }
 
-/* Where the program says what just happened: the top right corner, just
-   under the bar, out of the way of what is being read and never over the
-   thing that was acted on. It used to be the foot of the window on the left,
-   where it covered the person's own menu at the bottom of the rail, which is
-   what they reach for next. Stacked downward, newest at the top. */
+/* Where the program says what just happened: the foot of the window, at the
+   left of the page and not of the rail, which is as wide as the window's
+   left margin where the person's own menu is, newest at the bottom. It was the
+   top right corner, where it covered the buttons that a page keeps at the
+   right of its header (New event, Upload, Share) and took the click of
+   whoever reached for the next one; the foot is where nothing is acted on,
+   and the right of it is the agent's button and the upload tray. */
 .toasts {
   position: fixed;
-  top: calc(56px + env(safe-area-inset-top) + var(--space-2));
-  right: var(--space-4);
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  left: calc(232px + var(--space-4));
   z-index: 80;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: var(--space-2);
   /* The strip takes no clicks; each message does. Otherwise an invisible
      column down the side of the window would swallow them. */
@@ -8838,7 +8845,7 @@ p.notice.domain-logo-note {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(6px);
   }
 }
 
@@ -8848,31 +8855,23 @@ p.notice.domain-logo-note {
   }
 }
 
+/* Where the rail is a drawer and not a column, the strip starts at the
+   window's own margin. */
+@media (max-width: 760px) {
+  .toasts {
+    left: var(--space-4);
+  }
+}
+
 /* On a phone the strip is the width of the screen, because 420px of message
-   beside 30px of margin is neither, and at the bottom, where the thumb is
-   and the eye goes after acting: at the top it covered the page's title.
-   It stands clear of the agent's button, which keeps the same 84 pixels
-   free, and the newest is the lowest, rising into place. */
+   beside 30px of margin is neither, and stands clear of the agent's button,
+   which keeps the same 84 pixels free. A page that has the upload tray there
+   too puts the toasts above it (the tray says how tall it is). */
 @media (max-width: 600px) {
   .toasts {
-    top: auto;
-    bottom: calc(84px + env(safe-area-inset-bottom));
+    bottom: calc(84px + env(safe-area-inset-bottom) + var(--photo-tray-height, 0px));
     left: var(--space-2);
     right: var(--space-2);
-    flex-direction: column;
-  }
-}
-
-@media (max-width: 600px) and (prefers-reduced-motion: no-preference) {
-  .toast {
-    animation-name: toast-up;
-  }
-}
-
-@keyframes toast-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
   }
 }
 
@@ -11536,7 +11535,7 @@ main.content:has(> .knowledge-frame) {
 }
 
 .photo-show-hidden {
-  margin-left: auto;
+  margin: 0;
 }
 
 .photo-person-grid {
@@ -11552,27 +11551,47 @@ main.content:has(> .knowledge-frame) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
   padding: var(--space-2);
   border-radius: var(--radius-2);
-  color: var(--text);
   text-align: center;
-  text-decoration: none;
 }
 
 .photo-person-cell:hover {
   background: var(--field);
 }
 
-.photo-person-cell:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+/* The picture, the name and the count are one link; what is beside it (the
+   tag, the way to name) is not part of it. */
+.photo-person-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text);
+  text-decoration: none;
 }
 
-/* A person hidden from the list, shown because Show hidden is on. */
-.photo-person-cell.is-hidden .face-picture {
-  opacity: 0.45;
+.photo-person-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-2);
+}
+
+/* A person hidden from the list, shown because Show hidden is on: the picture
+   and the name dimmed, and the tag says why. */
+.photo-person-cell.is-hidden .face-picture,
+.photo-person-cell.is-hidden .photo-person-name,
+.photo-person-cell.is-hidden .photo-person-details {
+  opacity: 0.5;
+}
+
+.photo-person-name-button {
+  padding: 4px 12px;
+  font-size: var(--text-body);
 }
 
 .photo-person-cell .face-picture.is-large {
@@ -11610,7 +11629,17 @@ main.content:has(> .knowledge-frame) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.photo-person-head-body strong {
+  font-size: var(--text-title);
+  overflow-wrap: anywhere;
+}
+
+.photo-person-head-body strong.muted {
+  font-weight: 400;
 }
 
 .photo-person-choices {
@@ -11653,10 +11682,13 @@ main.content:has(> .knowledge-frame) {
   border-top: 1px solid var(--border);
 }
 
+/* A section of the details is labeled as the rows above it are: muted and
+   regular, at the label size. */
 .photo-viewer-section h3 {
   margin: 0;
+  color: var(--muted);
   font-size: var(--text-label);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .photo-viewer-section-head {
@@ -11756,15 +11788,18 @@ main.content:has(> .knowledge-frame) {
   margin: 0 0 var(--space-2);
 }
 
-.photo-ask-assistant {
-  display: inline-flex;
+/* Describe and Ask are the two things to do with the picture, and look it:
+   one width, one weight, the whole of the panel. */
+.photo-viewer-action {
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
-  margin-top: var(--space-3);
-  text-align: left;
+  width: 100%;
+  margin-top: var(--space-2);
 }
 
-.photo-ask-assistant svg {
+.photo-viewer-action svg {
   flex: 0 0 auto;
 }
 
@@ -11777,15 +11812,82 @@ main.content:has(> .knowledge-frame) {
 .contact-picker {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  max-height: 16rem;
+  max-height: min(55vh, 22rem);
   overflow-y: auto;
   margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background:
+    linear-gradient(var(--background) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--background) 70%) bottom / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 22%), transparent) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 22%), transparent) bottom / 100% 8px no-repeat scroll,
+    var(--background);
 }
 
+/* A row of the list, the way a row of a list is drawn here: the name at the
+   text size and color, what else there is to say about it under it in muted
+   text, a line between. */
 .contact-picker-row {
-  align-items: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  min-height: 48px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--text-body);
   overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.contact-picker-row:first-child {
+  border-top: none;
+}
+
+.contact-picker-row:hover {
+  background: var(--sidebar-hover);
+}
+
+.contact-picker-row.is-chosen {
+  background: var(--field);
+}
+
+.contact-picker label.contact-picker-row {
+  margin: 0;
+}
+
+/* A tick or a radio is as big as it draws itself, whatever height a phone gives
+   the fields. */
+.contact-picker-row input,
+label.checkbox.is-plain input {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+.contact-picker-text {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contact-picker-text > span {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.contact-picker-text > .contact-picker-detail {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.contact-picker-empty {
+  margin: 0;
+  padding: var(--space-3);
 }
 
 /* A picture or a file a fact was read out of, under the fact. Small
@@ -15595,33 +15697,141 @@ body.has-recording-bar .content {
   margin-top: var(--space-4);
 }
 
+/* The one row under the tabs, on every page of Photos: what the page searches
+   with at the left and what can be done on it at the right. Its height is the
+   height of a control, so that the row is as tall with a selection (the bar
+   takes its place) as without, with nothing to search as with, and the page
+   does not move when any of them changes. */
 .photo-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2) var(--space-3);
   margin-bottom: var(--space-4);
-  /* As tall with a selection as without, so the grid does not move when the
-     first cell is ticked. */
   min-height: 40px;
 }
 
-.photo-toolbar input[type='search'] {
-  flex: 1 1 220px;
+.photo-toolbar-tools {
+  display: flex;
+  flex: 1 1 280px;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.photo-toolbar-tools:empty {
+  display: none;
+}
+
+.photo-toolbar-tools input[type='search'] {
+  flex: 1 1 160px;
   max-width: 440px;
+  min-width: 0;
   width: auto;
 }
 
-.photo-toolbar .segmented {
-  align-self: stretch;
+.photo-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
-.photo-toolbar .segmented button {
-  height: 100%;
-  padding: 4px 12px;
+.photo-toolbar-actions:empty {
+  display: none;
 }
 
+/* Every control of the row is one height, whatever it is: the search, the
+   filter, the words and the icons. */
+.photo-toolbar input[type='search'],
+.photo-toolbar .photo-filter-button,
+.photo-toolbar-actions > button {
+  min-height: 40px;
+}
+
+.photo-toolbar-actions > button,
+.photo-filter-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* An icon in the row is a button of the row's height with the border the
+   others have, not the bare 28px a table row's icon is. */
+.photo-toolbar-actions .icon-action {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.photo-toolbar-actions .icon-action.danger {
+  color: var(--bad);
+}
+
+.photo-toolbar-actions .icon-action:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+}
+
+.photo-filter-button.active {
+  border-color: var(--border-strong);
+  background: var(--field);
+}
+
+/* What the Filter button opens: the kinds one under the other, then the two
+   dates, then the way to clear them. */
+.photo-filter-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2);
+}
+
+.photo-filter-form label {
+  margin-bottom: 0;
+}
+
+.photo-filter-kinds {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.photo-filter-kinds legend {
+  padding: 0;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.photo-filter-kinds label.checkbox {
+  margin-top: 0;
+  padding: 6px 0;
+}
+
+.photo-filter-form .menu-clear {
+  margin-bottom: 0;
+}
+
+/* The same strip of tabs on every page. */
+.photo-sections .tabs {
+  margin-bottom: var(--space-4);
+}
+
+/* The bar that takes the toolbar's place while photos are selected stays at
+   the top of the page while the photos scroll under it, with a ground of its
+   own, so that what can be done to them is in reach however far down the
+   selecting went. */
 .photo-selection-bar {
+  position: sticky;
+  /* Flush with the top of the scrolling page, not with the padding inside it:
+     the page's padding is above the bar and photos would show through it. */
+  top: calc(-1 * var(--space-6));
+  z-index: 6;
   /* Close, the count and five buttons at most (Remove from album is the
      fifth) have to fit a phone's width. */
   column-gap: var(--space-1);
@@ -15629,11 +15839,20 @@ body.has-recording-bar .content {
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   background: var(--surface);
+  box-shadow: var(--shadow-raised);
   flex-wrap: nowrap;
+  justify-content: flex-start;
 }
 
 .photo-selection-bar .icon-button {
   flex: 0 0 auto;
+}
+
+/* The page's padding is smaller where the rail is a drawer. */
+@media (max-width: 760px) {
+  .photo-selection-bar {
+    top: calc(-1 * var(--space-4));
+  }
 }
 
 /* One line, even with a button more in the bar (Remove from album): the count
@@ -15647,21 +15866,6 @@ body.has-recording-bar .content {
 
 .photo-trash-note {
   margin: 0 0 var(--space-3);
-}
-
-/* Kind and dates beside the search: three fields and the way to clear them,
-   folding to a line each on a phone. */
-.photo-filters {
-  margin-bottom: var(--space-4);
-}
-
-.photo-filters > label {
-  flex: 0 1 180px;
-  min-width: 140px;
-}
-
-.photo-filters > .shrink {
-  align-self: flex-end;
 }
 
 /* Rows left over from the list the person has just left, until this list's
@@ -16128,10 +16332,13 @@ body.has-recording-bar .content {
 }
 
 /* --- the upload tray --- */
+/* Above the agent's button (44px high, 20px from the corner), as the recording
+   bar is, so that neither covers the other; the toasts are at the other end of
+   the window. */
 .photo-tray {
   position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
+  right: 20px;
+  bottom: 76px;
   z-index: 45;
   width: 340px;
   max-width: calc(100vw - 2 * var(--space-4));
@@ -16262,26 +16469,11 @@ body.has-recording-bar .content {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  /* The kind on a line of its own, the two dates side by side, the way to
-     clear them under. */
-  .photo-filters {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2) var(--space-3);
-  }
-
-  .photo-filters > label {
-    min-width: 0;
-  }
-
-  .photo-filters > label:first-child,
-  .photo-filters > .shrink {
-    grid-column: 1 / -1;
-  }
-
+  /* The width of the screen, standing above the agent's button; the toasts
+     rise above it (the tray says how tall it is in --photo-tray-height). */
   .photo-tray {
     right: var(--space-2);
-    bottom: var(--space-2);
+    bottom: calc(84px + env(safe-area-inset-bottom));
     left: var(--space-2);
     width: auto;
     max-width: none;
@@ -17172,25 +17364,41 @@ body.has-recording-bar .content {
   white-space: nowrap;
 }
 
+/* The tick's room is there whether the row is chosen or not, so a row is as
+   tall chosen as not. */
+.photo-share-choice-check {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 28px;
+}
+
 .photo-share-levels {
-  margin: var(--space-3) 0 var(--space-2);
-  padding: 0;
-  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
-.photo-share-levels legend {
-  padding: 0;
-  margin-bottom: var(--space-1);
+/* A choice and what it means: the choice at the text size, the meaning under
+   it in muted text, in line with the words and not with the box. */
+.photo-share-option {
+  margin-top: var(--space-2);
+}
+
+.photo-share-levels .photo-share-option {
+  margin-top: 0;
+}
+
+.photo-share-option label.checkbox {
+  margin: 0;
+}
+
+.photo-share-option-hint {
+  margin: 2px 0 0 calc(13px + var(--space-2));
   font-size: var(--text-label);
-  color: var(--muted);
-}
-
-.photo-share-level {
-  align-items: flex-start;
-}
-
-.photo-share-level + .photo-share-level {
-  margin-top: var(--space-1);
 }
 
 .photo-picker {
@@ -17267,4 +17475,219 @@ body.has-recording-bar .content {
     flex-wrap: wrap;
     row-gap: 0;
   }
+}
+
+/* --- photos, the second look ------------------------------------------------
+   One toolbar under one strip of tabs, rows that say what they are, and a hit
+   area a thumb can find. */
+
+/* A checkbox or a radio whose words are the page's own, not a hint under a
+   field: the text size and color, with the explanation under it muted. */
+label.checkbox.is-plain {
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+label.checkbox.is-plain > span {
+  color: var(--text);
+  font-size: var(--text-body);
+  margin-bottom: 0;
+}
+
+label.checkbox.is-plain > span > .muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* A picture that has not arrived is the cell's neutral ground, not the alt text
+   in a broken-image box. The alt text is still there for a screen reader. */
+.photo-image:not(.is-loaded) {
+  opacity: 0;
+}
+
+.photo-day-heading .photo-day-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-label);
+  font-weight: 400;
+}
+
+.photo-closest {
+  margin-bottom: var(--space-3);
+}
+
+.photo-closest .photo-day-heading {
+  margin: 0;
+}
+
+.photo-closest p {
+  margin: 2px 0 0;
+  font-size: var(--text-label);
+}
+
+.photo-suggestion-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.photo-show-hidden.checkbox {
+  margin-top: 0;
+}
+
+@media (max-width: 600px) {
+  /* The strip of tabs is the width of the page and its tabs share it; four
+     tabs of a few words each fit the narrowest phone, and a tab is as tall as
+     a finger. */
+  .photo-sections .tabs {
+    gap: 0;
+  }
+
+  .photo-sections .tabs button {
+    flex: 1 1 auto;
+    min-height: 44px;
+    margin-right: 0;
+    padding: 8px var(--space-1);
+    text-align: center;
+  }
+
+  /* The tools take the line and the actions are the one under it, at its
+     right. */
+  .photo-toolbar-tools {
+    flex-basis: 100%;
+  }
+
+  .photo-toolbar-actions {
+    flex: 1 1 100%;
+  }
+
+  /* Whatever is touched is at least 44px each way. */
+  .photos-page input[type='search'],
+  .photos-page .photo-toolbar button,
+  .photo-filter-button {
+    min-height: 44px;
+  }
+
+  .photo-toolbar-actions .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-selection-bar .icon-button,
+  .photo-viewer .icon-button,
+  .photo-viewer-bar .photo-save-button,
+  .photo-tray .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-viewer-bar .photo-save-button,
+  .photo-viewer-bar .photo-live-button {
+    min-height: 44px;
+  }
+
+  .photo-selection-bar {
+    padding-inline: 2px;
+  }
+
+  .photo-viewer-bar {
+    gap: 0;
+    padding-inline: 4px;
+  }
+
+  .photo-viewer-step {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-viewer-person-not,
+  .photo-viewer-details .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* The corner tick is 22px to look at and 44px to hit. */
+  .photo-check {
+    top: 0;
+    left: 0;
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-check-box {
+    inset: auto;
+    top: 8px;
+    left: 8px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .photo-show-hidden,
+  .photo-filter-kinds label.checkbox,
+  .photo-share-option label.checkbox,
+  .photo-person-name-button {
+    min-height: 44px;
+  }
+
+  .contact-picker-row {
+    min-height: 48px;
+  }
+
+  .photo-suggestion-actions .icon-action,
+  .photo-share-row .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-share-choice,
+  .photo-suggestion-actions button,
+  .photo-viewer-action {
+    min-height: 44px;
+  }
+
+  /* The choice is 44px to hit; its explanation reads as under its words, not
+     under its box. */
+  .photo-share-option-hint {
+    margin-top: -8px;
+  }
+}
+
+.photo-share-names-hint {
+  margin-left: 0;
+  margin-top: var(--space-3);
+}
+
+/* The one thing the details offer to do with a place: look around it. A button
+   under the place's name, at the size of a row's own. */
+.photo-near-button {
+  display: block;
+  margin-top: var(--space-1);
+  padding: 4px 12px;
+  font-size: var(--text-label);
+}
+
+.photo-near-filter {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding-left: var(--space-3);
+  font-size: var(--text-body);
+}
+
+@media (max-width: 600px) {
+  .photo-near-button {
+    min-height: 44px;
+  }
+
+  .photo-near-filter {
+    min-height: 44px;
+  }
+}
+
+/* A page's icons stay together when its row of actions wraps: two icons on a
+   line of their own, not one left over. */
+.photo-icon-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
 }

@@ -1,4 +1,4 @@
-import type { PhotoKind } from './api'
+import type { Photo, PhotoKind } from './api'
 
 // The filters of the library that live in the address, so that a link keeps
 // them: the kind of photo, and the dates it was taken between. The search and
@@ -38,4 +38,57 @@ export function startOfNextDay(day: string): string | undefined {
   const match = DAY_PATTERN.exec(day)
   if (!match) return undefined
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1).toISOString()
+}
+
+// Whether a search found its photos by what they mean and not by any word of
+// the search. The server does not say which way a photo was found, so this
+// looks for the words where the server looks for them: in each photo's place,
+// file name, camera, description and the words read in it, and in the names of
+// the people and albums the person has. One word found in any of them is a
+// word match, so that when this is unsure it says nothing rather than saying
+// the closest are only the closest.
+export function isFoundByMeaningOnly(
+  searchText: string,
+  photos: Pick<
+    Photo,
+    'placeName' | 'originalFilename' | 'cameraMake' | 'cameraModel' | 'photoDescription' | 'descriptionVisibleText'
+  >[],
+  otherNames: string[],
+): boolean {
+  const words = searchText.toLowerCase().split(/\s+/).filter(Boolean)
+  if (words.length === 0 || photos.length === 0) return false
+  const hasWord = (text: string | undefined) => {
+    const lowered = (text ?? '').toLowerCase()
+    return words.some((word) => lowered.includes(word))
+  }
+  return (
+    !photos.some((photo) =>
+      [
+        photo.placeName,
+        photo.originalFilename,
+        photo.cameraMake,
+        photo.cameraModel,
+        photo.photoDescription,
+        photo.descriptionVisibleText,
+      ].some(hasWord),
+    ) && !otherNames.some(hasWord)
+  )
+}
+
+// How near is near: a kilometer, as a person says "around here".
+export const NEARBY_KILOMETERS = 1
+
+// A point in the address, "48.8584,2.2945", or nothing when it is not one on
+// the earth.
+export function parseNear(text: string | null): { latitude: number; longitude: number } | null {
+  const match = text ? /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(text) : null
+  if (!match) return null
+  const [latitude, longitude] = [Number(match[1]), Number(match[2])]
+  return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 ? { latitude, longitude } : null
+}
+
+// The point of a photo as the address writes it: to about a meter, so that the
+// address is short and the same photo always writes the same one.
+export function nearText(latitude: number, longitude: number): string {
+  return `${latitude.toFixed(5)},${longitude.toFixed(5)}`
 }

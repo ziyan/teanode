@@ -1,22 +1,37 @@
+import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, HeartIcon, WarningIcon } from '../../components/icons'
 import { useTranslation } from '../../i18n/i18n'
 import type { Photo } from '../../photos/api'
-import { formatDuration, groupByDay, personTimeZone } from '../../photos/days'
+import { dayHeading, formatDuration, groupByDay, groupByTrashDay, personTimeZone } from '../../photos/days'
 import { usePhotoAltText } from './altText'
 
 // The timeline's grid: day headings, and under each the day's photos as
 // square cells. A cell opens the photo; its checkbox selects it. The checkbox
 // shows on hover, and on every cell once anything is selected or the page is in
 // selection mode (the way a touch screen, which has no hover, selects).
+//
+// What the photos are under depends on what the list is. A timeline is under
+// the days they were taken. The Trash is under the days they were moved there,
+// with how long each group has left, since that is what somebody looking at
+// the Trash asks. The results of a search are under nothing: they are in the
+// order of how well they match, and day headings over them would be out of
+// order.
+
+export type PhotoGrouping = 'day' | 'trash' | 'none'
 
 export function PhotoGrid({
   photos,
+  grouping = 'day',
+  trashRetentionDays = 0,
   selectedIds,
   isSelectionMode,
   onOpen,
   onToggle,
 }: {
   photos: Photo[]
+  grouping?: PhotoGrouping
+  // How long the server keeps a photo in the Trash; 0 when it does not say.
+  trashRetentionDays?: number
   selectedIds: ReadonlySet<string>
   // True from the Select button until Cancel, even while nothing is chosen yet.
   isSelectionMode: boolean
@@ -24,17 +39,45 @@ export function PhotoGrid({
   // The index is into photos, for the range a shift-click selects.
   onToggle: (index: number, isRange: boolean) => void
 }) {
-  const { language } = useTranslation()
-  const days = groupByDay(photos, language, personTimeZone())
+  const { t, plural, language } = useTranslation()
+  const timeZone = personTimeZone()
+  const groups: { key: string; heading: string | null; note: string | null; photos: Photo[] }[] =
+    grouping === 'none'
+      ? photos.length > 0
+        ? [{ key: 'results', heading: null, note: null, photos }]
+        : []
+      : grouping === 'trash'
+        ? groupByTrashDay(photos, trashRetentionDays, new Date(), timeZone).map((day) => ({
+            key: day.key,
+            heading: t('photos.trashedOn', { date: dayHeading(day.heading, language, timeZone) }),
+            note:
+              day.daysLeft === null
+                ? null
+                : day.daysLeft === 0
+                  ? t('photos.trashLeftNone')
+                  : plural(day.daysLeft, { one: 'photos.trashLeftOne', other: 'photos.trashLeftOther' }),
+            photos: day.photos,
+          }))
+        : groupByDay(photos, language, timeZone).map((day) => ({
+            key: day.key,
+            heading: day.heading,
+            note: null,
+            photos: day.photos,
+          }))
   const isSelecting = isSelectionMode || selectedIds.size > 0
   let index = 0
   return (
     <div className={isSelecting ? 'photo-timeline is-selecting' : 'photo-timeline'}>
-      {days.map((day) => (
-        <section className="photo-day" key={`${day.key}-${day.photos[0].id}`}>
-          <h2 className="photo-day-heading">{day.heading}</h2>
+      {groups.map((group) => (
+        <section className="photo-day" key={`${group.key}-${group.photos[0].id}`}>
+          {group.heading !== null && (
+            <h2 className="photo-day-heading">
+              {group.heading}
+              {group.note && <span className="photo-day-note muted">{group.note}</span>}
+            </h2>
+          )}
           <div className="photo-grid">
-            {day.photos.map((photo) => {
+            {group.photos.map((photo) => {
               const photoIndex = index++
               return (
                 <PhotoCell
@@ -104,13 +147,7 @@ function PhotoCell({
             <WarningIcon size={22} />
           </span>
         ) : (
-          <img
-            className="photo-image"
-            src={photo.smallPreviewUrl}
-            alt={altText(photo)}
-            loading="lazy"
-            draggable={false}
-          />
+          <PhotoImage src={photo.smallPreviewUrl} alt={altText(photo)} />
         )}
         {photo.photoKind === 'livePhoto' && (
           <span className="photo-mark photo-mark-live" title={t('photos.livePhoto')}>
@@ -144,5 +181,28 @@ function PhotoCell({
         </span>
       </label>
     </div>
+  )
+}
+
+// The picture of a cell. Until it has arrived the cell shows its neutral ground
+// and not the alt text in a broken-image box, which is what a browser draws
+// for a picture still on its way; the alt text stays for a screen reader.
+function PhotoImage({ src, alt }: { src: string; alt: string }) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const element = useRef<HTMLImageElement>(null)
+  // A picture the browser had already will not say it has loaded again.
+  useEffect(() => {
+    setIsLoaded(element.current?.complete === true && element.current.naturalWidth > 0)
+  }, [src])
+  return (
+    <img
+      ref={element}
+      className={isLoaded ? 'photo-image is-loaded' : 'photo-image'}
+      src={src}
+      alt={alt}
+      loading="lazy"
+      draggable={false}
+      onLoad={() => setIsLoaded(true)}
+    />
   )
 }

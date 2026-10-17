@@ -52,6 +52,24 @@ export function UploadTray() {
     wasBusy.current = activeCount > 0
   }, [activeCount, failedCount])
 
+  // The toasts on a phone rise above the tray, which is as tall as what is in
+  // it, so the tray says how tall that is.
+  const tray = useRef<HTMLElement>(null)
+  const isShown = items.length > 0
+  useEffect(() => {
+    const element = tray.current
+    if (!isShown || !element) return
+    const root = document.documentElement
+    const report = () => root.style.setProperty('--photo-tray-height', `${element.offsetHeight + 8}px`)
+    report()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(report)
+    observer?.observe(element)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty('--photo-tray-height')
+    }
+  }, [isShown])
+
   if (items.length === 0) return null
   const finishedCount = items.length - activeCount
   const activeItems = items.filter(isActive)
@@ -67,7 +85,7 @@ export function UploadTray() {
         ? t('photos.trayFailed', { count: failedCount })
         : t('photos.trayDone')
   return (
-    <section className="photo-tray" aria-label={title}>
+    <section className="photo-tray" aria-label={title} ref={tray}>
       <header className="photo-tray-head">
         <strong role="status">{title}</strong>
         <span className="photo-viewer-spacer" />

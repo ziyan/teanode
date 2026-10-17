@@ -311,9 +311,9 @@ export function IntegrationsSection({ section, part }: { section: Section; part?
       {section === 'storage' && (
         <>
           <StorageForm settings={settings.storage} onSaved={reload} />
+          <PhotosForm settings={settings.photos} onSaved={reload} />
           <ObjectStoreForm settings={settings.s3} onSaved={reload} />
           <GeoIPForm settings={settings.geoip} onSaved={reload} />
-          <PhotosForm settings={settings.photos} onSaved={reload} />
         </>
       )}
       {section === 'certificates' && (

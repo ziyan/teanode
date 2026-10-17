@@ -110,6 +110,58 @@ export function groupByDay<T extends PlacedPhoto>(
   return days
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// trashDaysLeft is how many whole days a photo trashed at a moment stays in
+// the Trash, counting from now, when the server keeps it for retentionDays.
+// Zero from the last day on; null when the server keeps it for no set time or
+// the photo has no moment.
+export function trashDaysLeft(trashedAt: string | null, retentionDays: number, now: Date): number | null {
+  if (!trashedAt || retentionDays <= 0) return null
+  const trashed = new Date(trashedAt)
+  if (Number.isNaN(trashed.getTime())) return null
+  const elapsedDays = Math.floor((now.getTime() - trashed.getTime()) / DAY_MS)
+  return Math.max(0, retentionDays - elapsedDays)
+}
+
+// The photos of the Trash newest first by when they were trashed: the order
+// the groups of the Trash are read in, whatever order the server listed them.
+export function sortByTrashedAt<T extends { trashedAt: string | null }>(photos: T[]): T[] {
+  const momentOf = (photo: T) => (photo.trashedAt ? new Date(photo.trashedAt).getTime() : 0)
+  return [...photos].sort((left, right) => momentOf(right) - momentOf(left))
+}
+
+export interface TrashDay<T> {
+  key: string
+  heading: Date
+  daysLeft: number | null
+  photos: T[]
+}
+
+// groupByTrashDay splits photos in the Trash, newest trashed first, into runs
+// under the day they were moved there, each with how long it has left: what a
+// person looking at the Trash asks is when each photo goes, not when it was
+// taken. The days are the person's own, as the timeline's are.
+export function groupByTrashDay<T extends { trashedAt: string | null }>(
+  photos: T[],
+  retentionDays: number,
+  now: Date,
+  browserTimeZone?: string,
+): TrashDay<T>[] {
+  const days: TrashDay<T>[] = []
+  for (const photo of photos) {
+    const moment = new Date(photo.trashedAt ?? 0)
+    const key = dayKey(moment, browserTimeZone)
+    const last = days[days.length - 1]
+    if (last && last.key === key) {
+      last.photos.push(photo)
+    } else {
+      days.push({ key, heading: moment, daysLeft: trashDaysLeft(photo.trashedAt, retentionDays, now), photos: [photo] })
+    }
+  }
+  return days
+}
+
 // photoDateTime is the date and time of a photo for its details, on the
 // clock where it was taken, with the offset said when it is known so that a
 // reader sees it is not their own clock.

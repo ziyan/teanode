@@ -277,7 +277,7 @@ export function ShareAlbumDialog({
                     size={28}
                   />
                   <span className="photo-share-choice-name">{circlePersonName(person)}</span>
-                  {choice === key && <CheckIcon size={16} />}
+                  <span className="photo-share-choice-check">{choice === key && <CheckIcon size={16} />}</span>
                 </button>
               )
             })}
@@ -296,42 +296,46 @@ export function ShareAlbumDialog({
                     <PeopleIcon size={16} />
                   </span>
                   <span className="photo-share-choice-name">{everyoneIn(circle.name)}</span>
-                  {choice === key && <CheckIcon size={16} />}
+                  <span className="photo-share-choice-check">{choice === key && <CheckIcon size={16} />}</span>
                 </button>
               )
             })}
           </div>
 
-          <fieldset className="photo-share-levels">
-            <legend>{t('photos.shareLevelLabel')}</legend>
+          <h4 className="photo-share-heading" id="photo-share-level-heading">
+            {t('photos.shareLevelLabel')}
+          </h4>
+          <div className="photo-share-levels" role="radiogroup" aria-labelledby="photo-share-level-heading">
             {SHARE_LEVELS.map((level) => (
-              <label key={level} className="checkbox photo-share-level">
-                <input
-                  type="radio"
-                  name="photo-share-level"
-                  checked={shareLevel === level}
-                  onChange={() => setShareLevel(level)}
-                />
-                <span>
-                  {t(level === 'contribute' ? 'photos.levelContribute' : 'photos.levelView')}
-                  <span className="muted">
-                    {' '}
-                    {t(level === 'contribute' ? 'photos.levelContributeHint' : 'photos.levelViewHint')}
-                  </span>
-                </span>
-              </label>
+              <div key={level} className="photo-share-option">
+                <label className="checkbox is-plain">
+                  <input
+                    type="radio"
+                    name="photo-share-level"
+                    checked={shareLevel === level}
+                    onChange={() => setShareLevel(level)}
+                  />
+                  <span>{t(level === 'contribute' ? 'photos.levelContribute' : 'photos.levelView')}</span>
+                </label>
+                <p className="muted photo-share-option-hint">
+                  {t(level === 'contribute' ? 'photos.levelContributeHint' : 'photos.levelViewHint')}
+                </p>
+              </div>
             ))}
-          </fieldset>
+          </div>
 
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={isLocationIncluded}
-              onChange={(event) => setIsLocationIncluded(event.target.checked)}
-            />
-            <span>{t('photos.shareIncludePlaces')}</span>
-          </label>
-          <p className="muted field-hint">{t('photos.shareIncludePlacesHint')}</p>
+          <div className="photo-share-option">
+            <label className="checkbox is-plain">
+              <input
+                type="checkbox"
+                checked={isLocationIncluded}
+                onChange={(event) => setIsLocationIncluded(event.target.checked)}
+              />
+              <span>{t('photos.shareIncludePlaces')}</span>
+            </label>
+            <p className="muted photo-share-option-hint">{t('photos.shareIncludePlacesHint')}</p>
+          </div>
+          <p className="muted photo-share-option-hint photo-share-names-hint">{t('photos.sharePeopleNamesHint')}</p>
         </>
       )}
     </FormDialog>

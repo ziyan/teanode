@@ -65,39 +65,39 @@ const show = (shared: ReturnType<typeof file>) =>
     </TranslationProvider>,
   )
 
-it('keeps a picture of the conversation in Photos, and the toast opens the photo', async () => {
+it('keeps a picture of the conversation in the library, and the toast opens the photo', async () => {
   show(file())
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Photos' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save to my library' }))
   await waitFor(() => expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ agentAttachmentId: 'attachment-1' }))
   expect(vi.mocked(graphql).mock.calls[0][0]).toContain('SavePhotoFromAttachment(')
   // Kept, the card is about the photo: it links there and offers nothing more to save.
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Save to Photos' })).toBeNull())
-  expect(await screen.findByText('Saved to Photos.')).toBeTruthy()
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Save to my library' })).toBeNull())
+  expect(await screen.findByText('Saved to your library.')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Open in Photos' }))
   expect(await screen.findByText('The photo page')).toBeTruthy()
 })
 
 it('offers it for a video too', () => {
   show(file({ name: 'clip.mp4', content_type: 'video/mp4' }))
-  expect(screen.getByRole('button', { name: 'Save to Photos' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Save to my library' })).toBeTruthy()
 })
 
 it('offers nothing for a file that is not a picture or video, a photo already, or without Photos', () => {
   show(file({ name: 'notes.pdf', content_type: 'application/pdf' }))
-  expect(screen.queryByRole('button', { name: 'Save to Photos' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Save to my library' })).toBeNull()
   cleanup()
   show(file({ photo_id: 'photo-1' }))
-  expect(screen.queryByRole('button', { name: 'Save to Photos' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Save to my library' })).toBeNull()
   cleanup()
   hasPhotos = false
   show(file())
-  expect(screen.queryByRole('button', { name: 'Save to Photos' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Save to my library' })).toBeNull()
 })
 
 it('says so when it could not be saved, and keeps the button', async () => {
   vi.mocked(graphql).mockRejectedValue(new Error('api: over quota'))
   show(file())
-  fireEvent.click(screen.getByRole('button', { name: 'Save to Photos' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save to my library' }))
   expect(await screen.findByText('api: over quota')).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Save to Photos' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Save to my library' })).toBeTruthy()
 })

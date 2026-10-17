@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FormDialog } from '../../components/dialog'
 import { AlbumAddIcon } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
 import { Select } from '../../components/select'
+import { Tabs, type TabItem } from '../../components/tabs'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 import { listPhotoAlbums, readPhotoLibrary, type PhotoAlbum } from '../../photos/api'
 import { listPhotoFaceGroups } from '../../photos/people'
 import { listCircleChoices, type CircleChoice } from '../../photos/sharing'
+import { useSession } from '../../session'
 
 // The pieces the library, the albums page and the viewer share: the choice
 // between the library's views, the question that asks for an album's title,
@@ -16,10 +18,7 @@ import { listCircleChoices, type CircleChoice } from '../../photos/sharing'
 
 export type PhotoSection = 'library' | 'favorites' | 'albums' | 'people' | 'trash'
 
-const SECTIONS: {
-  section: PhotoSection
-  label: 'photos.listLibrary' | 'photos.listFavorites' | 'photos.listAlbums' | 'photos.listPeople' | 'photos.listTrash'
-}[] = [
+const SECTIONS: { section: PhotoSection; label: TabItem['label'] }[] = [
   { section: 'library', label: 'photos.listLibrary' },
   { section: 'favorites', label: 'photos.listFavorites' },
   { section: 'albums', label: 'photos.listAlbums' },
@@ -27,12 +26,23 @@ const SECTIONS: {
   { section: 'trash', label: 'photos.listTrash' },
 ]
 
-// Whether People is offered: when faces can be found on this server, or when
+// What was last found out about People for a person, so that the next Photos
+// page draws its tabs at once instead of waiting for the same answer again.
+let lastKnownPeople: { userId: string; isShown: boolean } | null = null
+
+// For a test, which starts from knowing nothing.
+export function forgetKnownPeople() {
+  lastKnownPeople = null
+}
+
+// Whether People is offered: when people can be found on this server, or when
 // the person has people from before (the server may have been changed since).
-// Read once when the choice is first drawn; until then it is left out, so that
-// the other choices do not shift when it arrives on a server that has faces.
-function useIsPeopleShown(): boolean {
-  const library = useQuery(() => readPhotoLibrary(), [], { refresh: false })
+// Null until that is known, so that the strip is drawn once, with the tabs it
+// is going to have, and the ones after People do not move when it arrives.
+function useIsPeopleShown(): boolean | null {
+  const session = useSession()
+  const userId = session.userId ?? ''
+  const library = useQuery(() => readPhotoLibrary(), [userId], { refresh: false })
   const isAvailable = library.data?.isFaceRecognitionAvailable === true
   const hasAnswered = library.data !== null
   const groups = useQuery(
@@ -40,12 +50,20 @@ function useIsPeopleShown(): boolean {
     [hasAnswered, isAvailable],
     { refresh: false },
   )
-  return isAvailable || (groups.data?.length ?? 0) > 0
+  // A library that cannot be read has no people to offer either.
+  const isSettled = library.error !== null ? true : hasAnswered && (isAvailable || groups.data !== null)
+  const isShown = isAvailable || (groups.data?.length ?? 0) > 0
+  const remembered = lastKnownPeople?.userId === userId ? lastKnownPeople.isShown : null
+  useEffect(() => {
+    if (isSettled) lastKnownPeople = { userId, isShown }
+  }, [isSettled, isShown, userId])
+  return isSettled ? isShown : remembered
 }
 
-// The segmented choice at the head of Photos. Choosing leaves the page's own
-// state to the caller: the library keeps its search when it changes list,
-// and Albums is a page of its own.
+// The choice at the head of Photos: the dashboard's own tabs, the same
+// strip on every page of it. Choosing leaves the page's own state to the
+// caller: the library keeps its search when it changes list, and Albums is a
+// page of its own.
 export function PhotoSections({
   current,
   onSelect,
@@ -55,19 +73,27 @@ export function PhotoSections({
 }) {
   const { t } = useTranslation()
   const isPeopleShown = useIsPeopleShown()
+  if (isPeopleShown === null && current !== 'people') {
+    // The room the strip will take, so that what is under it does not move.
+    return (
+      <div className="photo-sections" aria-hidden="true">
+        <div className="tabs">
+          <button type="button" tabIndex={-1} disabled>
+            &nbsp;
+          </button>
+        </div>
+      </div>
+    )
+  }
   return (
-    <div className="segmented" role="group" aria-label={t('photos.show')}>
-      {SECTIONS.filter((entry) => entry.section !== 'people' || isPeopleShown || current === 'people').map((entry) => (
-        <button
-          key={entry.section}
-          type="button"
-          className={entry.section === current ? 'active' : ''}
-          aria-pressed={entry.section === current}
-          onClick={() => onSelect(entry.section)}
-        >
-          {t(entry.label)}
-        </button>
-      ))}
+    <div className="photo-sections" role="group" aria-label={t('photos.show')}>
+      <Tabs
+        items={SECTIONS.filter((entry) => entry.section !== 'people' || isPeopleShown || current === 'people').map(
+          (entry) => ({ id: entry.section, label: entry.label }),
+        )}
+        active={current}
+        onSelect={(id) => onSelect(id as PhotoSection)}
+      />
     </div>
   )
 }
