@@ -36,9 +36,9 @@ type photonFeature struct {
 	} `json:"properties"`
 }
 
-// photonOSMTypes maps the one letter Photon uses to the words the rest of the
+// photonOsmTypes maps the one letter Photon uses to the words the rest of the
 // program uses.
-var photonOSMTypes = map[string]string{"N": "node", "W": "way", "R": "relation"}
+var photonOsmTypes = map[string]string{"N": "node", "W": "way", "R": "relation"}
 
 // toFound turns a feature into a Found, or nil when it has no usable position.
 func (self *photonFeature) toFound() *Found {
@@ -59,7 +59,7 @@ func (self *photonFeature) toFound() *Found {
 	}
 	found := &Found{
 		PlaceName:        properties.Name,
-		OSMType:          photonOSMTypes[properties.OSMType],
+		OSMType:          photonOsmTypes[properties.OSMType],
 		OSMID:            properties.OSMID,
 		AddressText:      strings.Join(addressParts, ", "),
 		LatitudeDegrees:  latitude,
@@ -89,7 +89,7 @@ func (self *photonAnswer) found() []*Found {
 	return found
 }
 
-// Name answers the first thing Photon finds at the point.
+// Name answers the first place Photon finds at the point.
 func (self *photonProvider) Name(ctx context.Context, latitudeDegrees, longitudeDegrees float64) (*Found, error) {
 	var answer photonAnswer
 	if err := self.get(ctx, "/reverse", url.Values{

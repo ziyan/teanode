@@ -54,8 +54,8 @@ func (self *nominatimPlace) toFound() *Found {
 	return found
 }
 
-// Name asks for the smallest named thing at the point first (layer=poi), since
-// naming a stay by its street when the map knows it was a café is a poorer
+// Name asks for the smallest named place at the point first (layer=poi), since
+// naming a visit by its street when the map knows it was a café is a poorer
 // answer, and for the address there when there is none.
 func (self *nominatimProvider) Name(ctx context.Context, latitudeDegrees, longitudeDegrees float64) (*Found, error) {
 	for _, layer := range []string{"poi", "address"} {
@@ -85,7 +85,7 @@ func (self *nominatimProvider) Name(ctx context.Context, latitudeDegrees, longit
 // Search looks inside a box around the point (the server cannot search by
 // radius) and keeps what is within the radius. Nominatim cannot search for
 // nothing, so an empty query names the point instead, which is the one thing
-// it knows about a spot without words.
+// it knows about a position without words.
 func (self *nominatimProvider) Search(ctx context.Context, query string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*Found, error) {
 	query = strings.TrimSpace(query)
 	if query == "" {

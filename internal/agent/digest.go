@@ -64,7 +64,7 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 		// The days of the location journal are summed up under their own
 		// heading from the visits, not listed one by one among their notes.
 		documents = slices.DeleteFunc(documents, func(document *models.AgentDocument) bool {
-			return strings.HasPrefix(document.ExternalID, locationDayExternalIDPrefix)
+			return strings.HasPrefix(document.ExternalID, locationDayExternalIdPrefix)
 		})
 		if facts, err = tx.ListAgentFactsBetween(agent.ID, from, until, 500); err != nil {
 			return err

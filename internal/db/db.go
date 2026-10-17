@@ -109,8 +109,9 @@ type Database interface {
 
 	// NotifyLocationEvent and ListenLocationEvents are the same for a
 	// person's location having been reported: the payload is a LocationEvent
-	// holding the person's id and never a coordinate.
-	NotifyLocationEvent(userId string) error
+	// holding the person's id and never a coordinate, and the ids of people who
+	// were reading it and now cannot, when a share ended.
+	NotifyLocationEvent(userId string, endedForUserIds ...string) error
 	ListenLocationEvents(ctx context.Context) (<-chan string, error)
 
 	// NotifyAgentCommand and ListenAgentCommands are the same for a word
@@ -187,6 +188,7 @@ type Transaction interface {
 	CircleOperation
 	CalendarShareOperation
 	LocationOperation
+	LocationLockOperation
 	LocationKnowledgeOperation
 	LocationShareOperation
 	PageShareOperation

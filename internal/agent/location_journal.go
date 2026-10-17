@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -21,10 +22,10 @@ import (
 // documents are put in directly (db.PutLocationDayDocument); the location
 // source has no schedule and nothing reads it from anywhere.
 
-// locationDayExternalIDPrefix begins the external ID of every day document
+// locationDayExternalIdPrefix begins the external ID of every day document
 // (location:2026-03-04), so that anything reading documents can tell them
 // from the rest.
-const locationDayExternalIDPrefix = "location:"
+const locationDayExternalIdPrefix = "location:"
 
 const (
 	// locationJournalEvery is how often the worker looks for days to write.
@@ -50,7 +51,7 @@ const (
 // the text rather than shown as a tag nobody would say.
 var locationCategoryWords = map[string]string{
 	"leisure=park": "park", "leisure=playground": "playground", "leisure=garden": "garden",
-	"leisure=fitness_centre": "gym", "leisure=sports_centre": "sports centre",
+	"leisure=fitness_centre": "gym", "leisure=sports_centre": "sports center",
 	"leisure=swimming_pool": "swimming pool", "leisure=pitch": "sports field",
 	"leisure=dog_park": "dog park", "leisure=nature_reserve": "nature reserve",
 	"amenity=restaurant": "restaurant", "amenity=cafe": "cafe", "amenity=fast_food": "fast food",
@@ -60,7 +61,7 @@ var locationCategoryWords = map[string]string{
 	"amenity=hospital": "hospital", "amenity=clinic": "clinic", "amenity=doctors": "doctor",
 	"amenity=dentist": "dentist", "amenity=pharmacy": "pharmacy", "amenity=bank": "bank",
 	"amenity=place_of_worship": "place of worship", "amenity=cinema": "cinema",
-	"amenity=theatre": "theatre", "amenity=marketplace": "market", "amenity=parking": "parking",
+	"amenity=theatre": "theater", "amenity=marketplace": "market", "amenity=parking": "parking",
 	"amenity=fuel": "gas station", "amenity=post_office": "post office",
 	"shop=supermarket": "supermarket", "shop=convenience": "convenience store",
 	"shop=bakery": "bakery", "shop=mall": "shopping mall", "shop=clothes": "clothes shop",
@@ -93,10 +94,66 @@ func locationDurationText(duration time.Duration) string {
 	return fmt.Sprintf("%d h %d min", hours, minutes)
 }
 
-// locationVisitSpan is when a stay began and ended within one day, cut to the
-// day. A stay with no departure is taken to last to the end of the day: a
-// finished day ended with the person still there, as far as anyone reported.
-// A stay with no arrival (iOS reported only the departure) is a moment.
+// placeTextRunesMost is how long a place's name or address may be when it is
+// put in front of the model.
+const placeTextRunesMost = 80
+
+// placeTextForModel is a place's name or address made safe to put in text the
+// model reads. The text comes from OpenStreetMap, where anybody writes a name,
+// or from the person, and it ends up in the middle of a line the model reads
+// as the person's own record: line breaks and other control characters would
+// forge a line, angle brackets would close a tag the prompt reads, and length
+// would crowd out the rest. Whitespace runs become one space, control and
+// invisible formatting characters and angle brackets are dropped, and the text
+// is cut to placeTextRunesMost.
+func placeTextForModel(text string) string {
+	cleaned := strings.Map(func(character rune) rune {
+		switch {
+		case unicode.IsSpace(character):
+			return ' '
+		case unicode.IsControl(character), unicode.Is(unicode.Cf, character), character == '<', character == '>':
+			return -1
+		}
+		return character
+	}, text)
+	return strings.TrimSpace(cutRunes(strings.Join(strings.Fields(cleaned), " "), placeTextRunesMost))
+}
+
+// openVisitEnds says when each visit with an arrival and no departure was
+// over, for the visits that a later visit followed: the moment the next visit
+// began. A phone that never delivered a departure would otherwise leave the
+// person at the first place for ever, in the day documents and in the digest's
+// hours, next to the places they really went on to. The visit that is last is
+// not in the answer: it may be going on. The key is the visit's ID.
+func openVisitEnds(visits []*models.PlaceVisit) map[string]time.Time {
+	starts := make([]time.Time, 0, len(visits))
+	for _, visit := range visits {
+		switch {
+		case visit.ArrivedAt != nil:
+			starts = append(starts, *visit.ArrivedAt)
+		case visit.DepartedAt != nil:
+			starts = append(starts, *visit.DepartedAt)
+		}
+	}
+	sort.Slice(starts, func(left, right int) bool { return starts[left].Before(starts[right]) })
+	ends := map[string]time.Time{}
+	for _, visit := range visits {
+		if visit.DepartedAt != nil || visit.ArrivedAt == nil {
+			continue
+		}
+		next := sort.Search(len(starts), func(index int) bool { return starts[index].After(*visit.ArrivedAt) })
+		if next < len(starts) {
+			ends[visit.ID] = starts[next]
+		}
+	}
+	return ends
+}
+
+// locationVisitSpan is when a visit began and ended within one day, cut to the
+// day. A visit with no departure is taken to last to the end of the day: a
+// finished day ended with the person still there, as far as anyone reported,
+// unless a later visit began, which ended it.
+// A visit with no arrival (iOS reported only the departure) is a moment.
 type locationVisitSpan struct {
 	visit               *models.PlaceVisit
 	start, end          time.Time
@@ -109,6 +166,7 @@ type locationVisitSpan struct {
 // of when they began, leaving out those that do not touch it.
 func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time) []locationVisitSpan {
 	spans := []locationVisitSpan{}
+	laterVisitStarts := openVisitEnds(visits)
 	for _, visit := range visits {
 		span := locationVisitSpan{visit: visit}
 		switch {
@@ -120,9 +178,12 @@ func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time)
 		default:
 			continue
 		}
+		laterVisitStart, isFollowed := laterVisitStarts[visit.ID]
 		switch {
 		case visit.DepartedAt != nil:
 			span.end = *visit.DepartedAt
+		case isFollowed:
+			span.end = laterVisitStart
 		default:
 			span.end = dayEnd
 		}
@@ -138,7 +199,7 @@ func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time)
 		if span.start.Before(dayStart) {
 			span.start, span.beganEarlier = dayStart, true
 		}
-		if span.end.After(dayEnd) || visit.DepartedAt == nil {
+		if span.end.After(dayEnd) || (visit.DepartedAt == nil && !isFollowed) {
 			span.end, span.continuesNextDay = dayEnd, true
 		}
 		spans = append(spans, span)
@@ -165,15 +226,17 @@ func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, hasHomePla
 	if len(spans) == 0 {
 		return ""
 	}
-	placeIDs := map[string]bool{}
+	placeIds := map[string]bool{}
 	var awayFromHome time.Duration
-	var lines []string
-	for index, span := range spans {
-		placeIDs[span.visit.PlaceID] = true
-		place := span.visit.Place
-		if place == nil || place.PlaceLabel != models.PlaceLabelHome {
+	for _, span := range spans {
+		placeIds[span.visit.PlaceID] = true
+		if place := span.visit.Place; place == nil || place.PlaceLabel != models.PlaceLabelHome {
 			awayFromHome += span.end.Sub(span.start)
 		}
+	}
+	// The totals above are over every visit of the day; only the list is cut.
+	var lines []string
+	for index, span := range spans {
 		if index == locationJournalVisitsMost {
 			lines = append(lines, fmt.Sprintf("and %d more", len(spans)-index))
 			break
@@ -181,18 +244,17 @@ func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, hasHomePla
 		lines = append(lines, locationVisitLine(span, dayEnd))
 	}
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Places: %d", len(placeIDs))
+	fmt.Fprintf(&builder, "Places: %d", len(placeIds))
 	if hasHomePlace {
 		fmt.Fprintf(&builder, ", time away from home: %s", locationDurationText(awayFromHome))
 	}
-	builder.WriteString("\n")
-	for _, line := range lines {
-		builder.WriteString(line + "\n")
-	}
-	return strings.TrimSpace(builder.String())
+	// The lines carry names that strangers wrote, so they are fenced as other
+	// record text is.
+	builder.WriteString("\n" + fenced(strings.Join(lines, "\n")))
+	return builder.String()
 }
 
-// locationVisitLine is one stay: "09:40 to 11:30 (1 h 50 min): Riverside Park
+// locationVisitLine is one visit: "09:40 to 11:30 (1 h 50 min): Riverside Park
 // (park), labeled gym". The label is the person's word for the place, so it
 // is said even when the place has a name of its own.
 func locationVisitLine(span locationVisitSpan, dayEnd time.Time) string {
@@ -205,8 +267,8 @@ func locationVisitLine(span locationVisitSpan, dayEnd time.Time) string {
 	}
 	name := "an unnamed place"
 	place := span.visit.Place
-	if place != nil && strings.TrimSpace(place.PlaceName) != "" {
-		name = strings.TrimSpace(place.PlaceName)
+	if place != nil && placeTextForModel(place.PlaceName) != "" {
+		name = placeTextForModel(place.PlaceName)
 	}
 	line += ": " + name
 	if place != nil {
@@ -237,8 +299,11 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, zone)
 	writtenCount := 0
 	err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-		latestPoint, err := tx.GetLatestLocationPoint(owner.ID)
-		if err != nil || latestPoint == nil {
+		// A person who has no visit has nothing to write about, whether or not
+		// a phone reported positions: a person who only checks in from the
+		// dashboard has visits and no positions.
+		anyVisits, _, err := tx.ListPlaceVisits(owner.ID, db.PlaceVisitFilter{LimitCount: 1})
+		if err != nil || len(anyVisits) == 0 {
 			return err
 		}
 		source, err := tx.EnsureLocationSource(agent.ID)
@@ -279,6 +344,11 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		for dayStart := from; dayStart.Before(today); dayStart = dayStart.AddDate(0, 0, 1) {
 			text := locationDayText(visits, dayStart, len(homes) > 0)
 			if text == "" {
+				// A day filed before its visits were erased or its places
+				// forgotten has nothing left to say.
+				if err := tx.DeleteLocationDayDocument(source.ID, dayStart); err != nil {
+					return err
+				}
 				continue
 			}
 			isChanged, err := tx.PutLocationDayDocument(agent.ID, source.ID, dayStart, text)

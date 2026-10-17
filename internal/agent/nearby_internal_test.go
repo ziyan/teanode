@@ -955,9 +955,11 @@ func TestAlertTextKeepsOnlyTheFollowUpsPages(t *testing.T) {
 	}
 }
 
-// The town of the place labeled home is read from its address when the
-// address is short enough to say which part is the city, and otherwise from
-// the nearest city to its coordinates; a street or a number never goes in.
+// The town of the place labeled home is read from its address when the address
+// has exactly three parts (street, city, country), and otherwise from the
+// nearest city to its coordinates; a street or a number never goes in. Two
+// parts can be a city and a country or a street and a country, so they say
+// nothing about which part is the city.
 func TestNearbyTownOf(t *testing.T) {
 	for _, test := range []struct {
 		name  string
@@ -965,7 +967,9 @@ func TestNearbyTownOf(t *testing.T) {
 		want  string
 	}{
 		{"street, city, country", models.Place{AddressText: "12 Elm Street, Foxglove Hollow, Exampleland"}, "Foxglove Hollow"},
-		{"city, country", models.Place{AddressText: "Foxglove Hollow, Exampleland"}, "Foxglove Hollow"},
+		{"city, country", models.Place{AddressText: "Foxglove Hollow, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"street, country", models.Place{AddressText: "12 Elm Street, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
+		{"street, city", models.Place{AddressText: "12 Elm Street, Foxglove Hollow", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
 		{"a street that reads as a street", models.Place{AddressText: "Elm Street, Elm Road, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
 		{"a long address", models.Place{AddressText: "4, Elm Street, Quarter, Foxglove Hollow, County, Region, 12345, Exampleland", LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},
 		{"no address", models.Place{LatitudeDegrees: 48.8566, LongitudeDegrees: 2.3522}, "Paris, France"},

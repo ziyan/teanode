@@ -2,6 +2,7 @@ package location
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -19,10 +20,10 @@ const (
 	foundFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId`
 
 	documentGetLocation = `query ($userId: String) {
-  GetLocation(userId: $userId) { username name locationShareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
+  GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
 }`
 	documentListSharedLocations = `query {
-  ListSharedLocations { userId username name locationShareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
+  ListSharedLocations { userId username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
 }`
 	documentListVisits = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String, $offset: Int, $limitCount: Int) {
   ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel, offset: $offset, limitCount: $limitCount) {
@@ -50,7 +51,7 @@ const (
   CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) { ` + visitFields + ` }
 }`
 	documentErase = `mutation ($from: DateTime, $until: DateTime) {
-  ForgetLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
+  EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
 	documentListShares = `query { ListLocationShares { id granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName shareLevel } }`
 	documentShare      = `mutation ($granteeUserId: String, $granteeCircleId: String, $shareLevel: String!) {
@@ -90,12 +91,12 @@ type visitData struct {
 }
 
 type locationData struct {
-	UserID             string     `json:"userId"`
-	Username           string     `json:"username"`
-	Name               string     `json:"name"`
-	LocationShareLevel string     `json:"locationShareLevel"`
-	LatestPoint        *pointData `json:"latestPoint"`
-	OpenVisit          *visitData `json:"openVisit"`
+	UserID      string     `json:"userId"`
+	Username    string     `json:"username"`
+	Name        string     `json:"name"`
+	ShareLevel  string     `json:"shareLevel"`
+	LatestPoint *pointData `json:"latestPoint"`
+	OpenVisit   *visitData `json:"openVisit"`
 }
 
 type foundData struct {
@@ -156,12 +157,23 @@ func (self *scope) timeText(value *time.Time) string {
 	return value.In(self.where).Format("2006-01-02 15:04")
 }
 
-// personID is the account of somebody who shares their location with the
-// person, by username; empty is the person's own.
-func (self *scope) personID(ctx context.Context, username string) (*string, error) {
+// errOthersInChat is what an action answers when it is asked for somebody
+// else's location in a chat: the answer would be posted to everybody in the
+// room, and the person shared it with the owner of the agent alone.
+var errOthersInChat = errors.New("another person's location is not repeated into a chat, because everybody in it would read it: " +
+	"the person can ask in a private conversation with you instead")
+
+// personId is the account of somebody who shares their location with the
+// person, by username; empty is the person's own. With needsHistory, somebody
+// who shares only where they are now is refused in those words. In a chat
+// turn nobody else's location is read.
+func (self *scope) personId(ctx context.Context, username string, needsHistory bool) (*string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, nil
+	}
+	if tools.IsAnsweringInChat(self.run) {
+		return nil, errOthersInChat
 	}
 	var result struct {
 		ListSharedLocations []locationData `json:"ListSharedLocations"`
@@ -171,6 +183,9 @@ func (self *scope) personID(ctx context.Context, username string) (*string, erro
 	}
 	for _, each := range result.ListSharedLocations {
 		if strings.EqualFold(each.Username, username) {
+			if needsHistory && each.ShareLevel != "history" {
+				return nil, fmt.Errorf("%s shares only where they are now", each.Username)
+			}
 			return &each.UserID, nil
 		}
 	}
@@ -244,36 +259,38 @@ func (self *scope) placeRow(place *placeData) map[string]any {
 	return row
 }
 
-// stay is where the person is, as far as is known.
-func (self *scope) stay(visit *visitData) map[string]any {
+// openVisitRow is where the person is, as far as is known: the visit in
+// progress, or the word that there is none.
+func (self *scope) openVisitRow(visit *visitData) map[string]any {
 	if visit == nil || visit.Place == nil {
-		return map[string]any{"in_progress": false}
+		return map[string]any{"is_in_progress": false}
 	}
 	row := self.placeRow(visit.Place)
-	row["in_progress"] = true
+	row["is_in_progress"] = true
 	if visit.ArrivedAt != nil {
 		row["arrived"] = self.timeText(visit.ArrivedAt)
-		row["stayed_so_far"] = durationWords(self.now.Sub(*visit.ArrivedAt))
+		row["visit_duration_so_far"] = durationWords(self.now.Sub(*visit.ArrivedAt))
 	}
 	return row
 }
 
-func pageOf(offset, limit int) (int, int) {
-	if limit <= 0 {
-		limit = 20
+// withPaging passes on the page asked for. What is left out is the API's
+// default (50 visits or places, 20 results of a search), and a number it
+// refuses is refused in its words.
+func withPaging(variables map[string]any, offset, limit *int) {
+	if offset != nil {
+		variables["offset"] = *offset
 	}
-	return max(offset, 0), min(limit, 50)
+	if limit != nil {
+		variables["limitCount"] = *limit
+	}
 }
 
-func withPaging(variables map[string]any, offset, limit int) {
-	offset, limit = pageOf(offset, limit)
-	variables["offset"], variables["limitCount"] = offset, limit
-}
-
+// withNext says whether a page was the last, and where the next one starts.
 func withNext(answer map[string]any, nextOffset *int) {
+	answer["has_more"] = nextOffset != nil
 	if nextOffset != nil {
 		answer["next_offset"] = *nextOffset
-		answer["more"] = fmt.Sprintf("there are more; ask again with offset %d", *nextOffset)
 	}
 }
 
@@ -294,22 +311,22 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	userID, err := here.personID(ctx, arguments.Person)
+	userId, err := here.personId(ctx, arguments.Person, false)
 	if err != nil {
 		return nil, err
 	}
 	variables := map[string]any{}
-	if userID != nil {
-		variables["userId"] = *userID
+	if userId != nil {
+		variables["userId"] = *userId
 	}
 
 	var liveNote string
-	if userID == nil {
+	if userId == nil {
 		if locating, ok := here.run.(tools.Locating); ok && locating.CanLocate() {
 			found, askErr := locating.Locate(ctx, call.ID)
 			if askErr == nil {
 				// The API stored the answer as the latest position, so the
-				// stay in progress is worked out from it.
+				// visit in progress is worked out from it.
 				var current struct {
 					GetLocation *locationData `json:"GetLocation"`
 				}
@@ -319,7 +336,7 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 					AccuracyMeters: found.AccuracyMeters, MeasuredAt: nonZero(found.MeasuredAt, here.now), LocationSource: "browser",
 				})
 				if here.operations.Execute(ctx, documentGetLocation, variables, &current) == nil && current.GetLocation != nil {
-					answer["at"] = here.stay(current.GetLocation.OpenVisit)
+					answer["at"] = here.openVisitRow(current.GetLocation.OpenVisit)
 				}
 				result, err := tools.JSONResult(answer)
 				if err != nil {
@@ -347,20 +364,20 @@ func runNow(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			return nil, fmt.Errorf("%s", liveNote)
 		}
 		who := "the person"
-		if userID != nil {
+		if userId != nil {
 			who = arguments.Person
 		}
 		return nil, fmt.Errorf("no position of %s is kept, and this turn cannot ask a browser or phone for one. Location can be set up in the TeaNode app on their iPhone (set_up opens the page), or ask them where they are", who)
 	}
 	answer := map[string]any{"timezone": here.where.String(), "asked_just_now": false}
-	if userID != nil {
+	if userId != nil {
 		answer["person"] = found.Username
-		answer["share_level"] = found.LocationShareLevel
+		answer["share_level"] = found.ShareLevel
 	}
 	if found.LatestPoint != nil {
 		answer["position"] = here.position(found.LatestPoint)
 	}
-	answer["at"] = here.stay(found.OpenVisit)
+	answer["at"] = here.openVisitRow(found.OpenVisit)
 	if liveNote != "" {
 		answer["note"] = "a fresh position could not be had (" + liveNote + "); this is the last one kept"
 	}
@@ -383,13 +400,13 @@ func metersWords(meters float64) string {
 }
 
 type visitsArguments struct {
-	From    string `json:"from"`
-	Until   string `json:"until"`
-	PlaceID string `json:"place_id"`
-	Label   string `json:"label"`
-	Person  string `json:"person"`
-	Limit   int    `json:"limit"`
-	Offset  int    `json:"offset"`
+	From       string `json:"from"`
+	Until      string `json:"until"`
+	PlaceID    string `json:"place_id"`
+	PlaceLabel string `json:"place_label"`
+	Person     string `json:"person"`
+	Limit      *int   `json:"limit"`
+	Offset     *int   `json:"offset"`
 }
 
 func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -415,15 +432,15 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if place := strings.TrimSpace(arguments.PlaceID); place != "" {
 		variables["placeId"] = place
 	}
-	if label := strings.TrimSpace(arguments.Label); label != "" {
+	if label := strings.TrimSpace(arguments.PlaceLabel); label != "" {
 		variables["placeLabel"] = strings.ToLower(label)
 	}
-	userID, err := here.personID(ctx, arguments.Person)
+	userId, err := here.personId(ctx, arguments.Person, true)
 	if err != nil {
 		return nil, err
 	}
-	if userID != nil {
-		variables["userId"] = *userID
+	if userId != nil {
+		variables["userId"] = *userId
 	}
 	var result struct {
 		ListLocationVisits struct {
@@ -448,7 +465,7 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			row["left"] = here.timeText(visit.DepartedAt)
 		}
 		if visit.DurationSeconds != nil {
-			row["stayed"] = durationWords(time.Duration(*visit.DurationSeconds) * time.Second)
+			row["visit_duration"] = durationWords(time.Duration(*visit.DurationSeconds) * time.Second)
 		}
 		rows = append(rows, row)
 	}
@@ -458,11 +475,11 @@ func runVisits(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 }
 
 type placesArguments struct {
-	Label  string `json:"label"`
-	Query  string `json:"query"`
-	Person string `json:"person"`
-	Limit  int    `json:"limit"`
-	Offset int    `json:"offset"`
+	PlaceLabel string `json:"place_label"`
+	Query      string `json:"query"`
+	Person     string `json:"person"`
+	Limit      *int   `json:"limit"`
+	Offset     *int   `json:"offset"`
 }
 
 func runPlaces(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -476,18 +493,18 @@ func runPlaces(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	variables := map[string]any{}
 	withPaging(variables, arguments.Offset, arguments.Limit)
-	if label := strings.TrimSpace(arguments.Label); label != "" {
+	if label := strings.TrimSpace(arguments.PlaceLabel); label != "" {
 		variables["placeLabel"] = strings.ToLower(label)
 	}
 	if query := strings.TrimSpace(arguments.Query); query != "" {
 		variables["query"] = query
 	}
-	userID, err := here.personID(ctx, arguments.Person)
+	userId, err := here.personId(ctx, arguments.Person, true)
 	if err != nil {
 		return nil, err
 	}
-	if userID != nil {
-		variables["userId"] = *userID
+	if userId != nil {
+		variables["userId"] = *userId
 	}
 	var result struct {
 		ListPlaces struct {
@@ -514,7 +531,7 @@ func runPlaces(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 }
 
 // lastPosition is where the person was last reported to be, for the actions
-// that look around a point and were given none.
+// that look around a position and were given none.
 func (self *scope) lastPosition(ctx context.Context) (float64, float64, error) {
 	var result struct {
 		GetLocation *locationData `json:"GetLocation"`
@@ -585,7 +602,7 @@ func runNearby(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return untrusted(tools.JSONResult(map[string]any{"places": rows}))
 }
 
-// aroundPoint is the point given, or the person's last reported position.
+// aroundPoint is the position given, or the person's last reported position.
 func (self *scope) aroundPoint(ctx context.Context, latitude, longitude *float64) (float64, float64, error) {
 	if (latitude == nil) != (longitude == nil) {
 		return 0, 0, fmt.Errorf("give both latitude_degrees and longitude_degrees")
@@ -602,8 +619,8 @@ type searchArguments struct {
 	LatitudeDegrees  *float64 `json:"latitude_degrees"`
 	LongitudeDegrees *float64 `json:"longitude_degrees"`
 	RadiusMeters     *float64 `json:"radius_meters"`
-	Limit            int      `json:"limit"`
-	Offset           int      `json:"offset"`
+	Limit            *int     `json:"limit"`
+	Offset           *int     `json:"offset"`
 }
 
 func runSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -665,11 +682,11 @@ func runSavePlace(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	if place := strings.TrimSpace(arguments.PlaceID); place != "" {
 		variables["placeId"] = place
 	}
-	if arguments.Name != nil {
-		variables["placeName"] = *arguments.Name
+	if arguments.PlaceName != nil {
+		variables["placeName"] = *arguments.PlaceName
 	}
-	if arguments.Label != nil {
-		label := strings.ToLower(strings.TrimSpace(*arguments.Label))
+	if arguments.PlaceLabel != nil {
+		label := strings.ToLower(strings.TrimSpace(*arguments.PlaceLabel))
 		if label == "none" {
 			label = ""
 		}
@@ -721,7 +738,7 @@ func runForgetPlace(ctx context.Context, call *tools.Call) (*tools.Result, error
 	if err := here.operations.Execute(ctx, documentForgetPlace, map[string]any{"placeId": place}, &discard); err != nil {
 		return nil, err
 	}
-	return tools.JSONResult(map[string]any{"forgotten": true, "place_id": place})
+	return tools.JSONResult(map[string]any{"is_forgotten": true, "place_id": place})
 }
 
 func runCheckIn(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -757,10 +774,10 @@ func runCheckIn(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	if result.CheckIn.Place == nil {
-		return tools.JSONResult(map[string]any{"checked_in": true})
+		return tools.JSONResult(map[string]any{"is_checked_in": true})
 	}
 	answer := here.placeRow(result.CheckIn.Place)
-	answer["checked_in"] = true
+	answer["is_checked_in"] = true
 	answer["arrived"] = here.timeText(result.CheckIn.ArrivedAt)
 	return untrusted(tools.JSONResult(answer))
 }
@@ -788,23 +805,26 @@ func runErase(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 	}
 	var result struct {
-		ForgetLocationHistory struct {
+		EraseLocationHistory struct {
 			PointCount int `json:"pointCount"`
 			VisitCount int `json:"visitCount"`
 			PlaceCount int `json:"placeCount"`
-		} `json:"ForgetLocationHistory"`
+		} `json:"EraseLocationHistory"`
 	}
 	if err := here.operations.Execute(ctx, documentErase, variables, &result); err != nil {
 		return nil, err
 	}
-	erased := result.ForgetLocationHistory
-	return tools.JSONResult(map[string]any{"deleted_position_count": erased.PointCount, "deleted_visit_count": erased.VisitCount, "deleted_place_count": erased.PlaceCount})
+	erased := result.EraseLocationHistory
+	return tools.JSONResult(map[string]any{"erased_position_count": erased.PointCount, "erased_visit_count": erased.VisitCount, "erased_place_count": erased.PlaceCount})
 }
 
 func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	here, err := scopeOf(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if tools.IsAnsweringInChat(here.run) {
+		return nil, errOthersInChat
 	}
 	var result struct {
 		ListSharedLocations []locationData `json:"ListSharedLocations"`
@@ -815,11 +835,11 @@ func runPeople(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	rows := make([]map[string]any, 0, len(result.ListSharedLocations))
 	for index := range result.ListSharedLocations {
 		each := &result.ListSharedLocations[index]
-		row := map[string]any{"person": each.Username, "name": each.Name, "share_level": each.LocationShareLevel}
+		row := map[string]any{"person": each.Username, "name": each.Name, "share_level": each.ShareLevel}
 		if each.LatestPoint != nil {
 			row["position"] = here.position(each.LatestPoint)
 		}
-		row["at"] = here.stay(each.OpenVisit)
+		row["at"] = here.openVisitRow(each.OpenVisit)
 		rows = append(rows, row)
 	}
 	return untrusted(tools.JSONResult(map[string]any{"timezone": here.where.String(), "people": rows}))
@@ -906,30 +926,46 @@ func runUnshare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err := here.operations.Execute(ctx, documentUnshare, map[string]any{"shareId": strings.TrimSpace(arguments.ShareID)}, &discard); err != nil {
 		return nil, err
 	}
-	return tools.JSONResult(map[string]any{"unshared": true})
+	return tools.JSONResult(map[string]any{"is_unshared": true})
 }
+
+// pagePath is the Location page of the dashboard.
+const pagePath = "/location"
+
+// placeNamesWords says where place names come from and what leaves the server.
+const placeNamesWords = "Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name."
 
 // runSetUp takes the dashboard the person reads this in to the Location page,
 // or says where to find it where there is no dashboard to take.
 func runSetUp(ctx context.Context, call *tools.Call) (*tools.Result, error) {
-	const path = "/location"
 	showing, ok := tools.MustRun(ctx).(tools.Showing)
 	if !ok || !showing.CanShowPages() {
-		return &tools.Result{Content: fmt.Sprintf(`{"shown": false, "where": %q}`,
-			"Location is in the side menu of the dashboard, and in the TeaNode app on their iPhone, which is what records where they go")}, nil
+		return tools.JSONResult(map[string]any{
+			"is_shown": false,
+			"setup_instructions": "Location is in the side menu of the dashboard, and in the TeaNode app on their iPhone, which is what records where they go. " +
+				placeNamesWords,
+		})
 	}
-	showing.ShowPage(path)
-	return &tools.Result{Content: fmt.Sprintf(`{"shown": %q, "note": %q}`, path,
-		"Location is open. Recording where they go happens in the TeaNode app on their iPhone: install it, then allow Location when it asks."),
-		Note: "Opened " + path}, nil
+	showing.ShowPage(pagePath)
+	result, err := tools.JSONResult(map[string]any{
+		"is_shown":  true,
+		"page_path": pagePath,
+		"setup_instructions": "Location is open. Recording where they go happens in the TeaNode app on their iPhone: install it, then allow Location when it asks. " +
+			placeNamesWords,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "Opened " + pagePath
+	return result, nil
 }
 
 // placeNameOf is the name of one of the person's places, for a card, or empty
 // when it cannot be looked up. It reads the first page of places, which holds
 // the place for anybody but a person with a great many.
-func placeNameOf(ctx context.Context, placeID string) string {
-	placeID = strings.TrimSpace(placeID)
-	if placeID == "" {
+func placeNameOf(ctx context.Context, placeId string) string {
+	placeId = strings.TrimSpace(placeId)
+	if placeId == "" {
 		return ""
 	}
 	here, err := scopeOf(ctx)
@@ -945,7 +981,7 @@ func placeNameOf(ctx context.Context, placeID string) string {
 		return ""
 	}
 	for _, place := range result.ListPlaces.Places {
-		if place.ID == placeID {
+		if place.ID == placeId {
 			return place.PlaceName
 		}
 	}

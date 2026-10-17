@@ -10,7 +10,7 @@ import (
 
 // The lookups the API's listings and check-ins use: positions in a range,
 // places near a point, places by their OpenStreetMap object, how often each
-// place was visited, and a stay by the key the phone gave it.
+// place was visited, and a visit by the key the phone gave it.
 func TestLocationLookups(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
@@ -42,7 +42,7 @@ func TestLocationLookups(t *testing.T) {
 		}
 
 		// Places near a point: by distance, the person's own, and one whose
-		// own radius holds the point though its centre is further than asked.
+		// own radius holds the point though its center is further than asked.
 		near := locationPlace(t, tx, userId, "Near", locationLatitude+0.0003)
 		far := locationPlace(t, tx, userId, "Far", locationLatitude+0.0050)
 		big, err := tx.CreatePlace(userId, &models.Place{PlaceName: "Big", LatitudeDegrees: locationLatitude + 0.0060, LongitudeDegrees: locationLongitude, RadiusMeters: 1000})

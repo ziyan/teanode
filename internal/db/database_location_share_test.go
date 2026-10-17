@@ -12,6 +12,24 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
+// newLocationShareWorld is the people and circles the share tests use, all
+// with the permission to use Location, as the ordinary roles give it.
+func newLocationShareWorld(t *testing.T, tx db.Transaction) *shareWorld {
+	t.Helper()
+	world := newShareWorld(t, tx)
+	role, err := tx.CreateRole(&models.Role{Name: "Location users", Permissions: []models.Permission{models.PermissionLocationUse}})
+	if err != nil {
+		t.Fatalf("CreateRole: %s", err)
+	}
+	if _, err := tx.CreateGroup(&models.Group{
+		Name: "Location users", RoleIDs: []string{role.ID},
+		UserIDs: []string{world.ada.ID, world.ben.ID, world.cora.ID, world.dave.ID},
+	}); err != nil {
+		t.Fatalf("CreateGroup: %s", err)
+	}
+	return world
+}
+
 func locationLevelOf(t *testing.T, tx db.Transaction, viewerUserId, ownerUserId string) models.LocationShareLevel {
 	t.Helper()
 	level, err := tx.GetLocationShareLevel(viewerUserId, ownerUserId)
@@ -29,7 +47,7 @@ func TestLocationShareNeedsACircleInCommonAndChangesLevelWhenRepeated(t *testing
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newLocationShareWorld(t, tx)
 
 		share, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent})
 		if err != nil || share.ID == "" || share.UserID != world.ada.ID || share.ShareLevel != models.LocationShareLevelCurrent {
@@ -82,7 +100,7 @@ func TestOnlyTheSharerTakesALocationShareBack(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newLocationShareWorld(t, tx)
 		share, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent})
 		if err != nil {
 			t.Fatalf("ShareLocation: %s", err)
@@ -112,7 +130,7 @@ func TestAViewerGetsTheHighestLocationLevelReachingThem(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newLocationShareWorld(t, tx)
 		if level := locationLevelOf(t, tx, world.ada.ID, world.ada.ID); level != models.LocationShareLevelOwner {
 			t.Fatalf("their own: %q", level)
 		}
@@ -162,7 +180,7 @@ func TestLocationSharersAndGranteesAreTheTwoSidesOfTheShares(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newLocationShareWorld(t, tx)
 		// Ben shares with ada directly at history and, through "club", with
 		// cora; cora shares with the circle "club" at current.
 		agents := map[string]*models.Agent{}
@@ -247,7 +265,7 @@ func TestLeavingACircleEndsLocationSharesAtOnce(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newLocationShareWorld(t, tx)
 		for _, each := range []struct {
 			sharer string
 			share  *models.LocationShare
@@ -306,7 +324,7 @@ func TestACircleLocationShareStopsWhenOneSideLeaves(t *testing.T) {
 	defer closeDatabase()
 
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		world := newShareWorld(t, tx)
+		world := newLocationShareWorld(t, tx)
 		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeCircleID: world.home.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
 			t.Fatalf("ShareLocation: %s", err)
 		}
@@ -346,4 +364,74 @@ func TestALocationEventCarriesOnlyThePersonsID(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("nothing was heard")
 	}
+}
+
+// A person who is disabled, or whose roles no longer give location:use, cannot
+// read a location, so a location does not reach them: not in what they may
+// see and not in who is told when the owner arrives somewhere.
+func TestALocationDoesNotReachSomeoneDisabledOrWithoutThePermission(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		role, err := tx.CreateRole(&models.Role{Name: "Location users", Permissions: []models.Permission{models.PermissionLocationUse}})
+		if err != nil {
+			t.Fatalf("CreateRole: %s", err)
+		}
+		// Cora is not in the group, so she has no permission.
+		if _, err := tx.CreateGroup(&models.Group{
+			Name: "Location users", RoleIDs: []string{role.ID},
+			UserIDs: []string{world.ada.ID, world.ben.ID},
+		}); err != nil {
+			t.Fatalf("CreateGroup: %s", err)
+		}
+		for _, person := range []*models.User{world.ada, world.cora} {
+			if found, err := tx.GetAgentByUser(person.ID); err != nil {
+				t.Fatalf("GetAgentByUser: %s", err)
+			} else if found == nil {
+				if _, err := tx.CreateAgent(&models.Agent{UserID: person.ID, Enabled: true, Name: "Tea"}); err != nil {
+					t.Fatalf("CreateAgent: %s", err)
+				}
+			}
+		}
+		// Ben shares with ada directly and with cora through "club".
+		for _, share := range []*models.LocationShare{
+			{GranteeUserID: world.ada.ID, ShareLevel: models.LocationShareLevelCurrent},
+			{GranteeCircleID: world.club.ID, ShareLevel: models.LocationShareLevelHistory},
+		} {
+			if _, err := tx.ShareLocation(world.ben.ID, share); err != nil {
+				t.Fatalf("ShareLocation: %s", err)
+			}
+		}
+
+		if level := locationLevelOf(t, tx, world.cora.ID, world.ben.ID); level != "" {
+			t.Errorf("cora has no location:use and sees ben at %q", level)
+		}
+		if sharers, err := tx.ListLocationSharers(world.cora.ID); err != nil || len(sharers) != 0 {
+			t.Errorf("cora has no location:use and is offered sharers: %+v %v", sharers, err)
+		}
+		grantees, err := tx.ListLocationGrantees(world.ben.ID)
+		if err != nil || len(grantees) != 1 || grantees[0].UserID != world.ada.ID {
+			t.Fatalf("only ada, who can use Location, is told: %+v %v", grantees, err)
+		}
+		if grantees[0].SharedAt.IsZero() || time.Since(grantees[0].SharedAt) > time.Minute {
+			t.Errorf("the grantee carries when the share was made: %v", grantees[0].SharedAt)
+		}
+
+		// Disabling ada ends it for her too.
+		if _, err := tx.UpdateUser(world.ada.ID, func(user *models.User) error {
+			disabledAt := time.Now()
+			user.DisabledAt = &disabledAt
+			return nil
+		}); err != nil {
+			t.Fatalf("UpdateUser: %s", err)
+		}
+		if level := locationLevelOf(t, tx, world.ada.ID, world.ben.ID); level != "" {
+			t.Errorf("a disabled ada sees ben at %q", level)
+		}
+		if grantees, err := tx.ListLocationGrantees(world.ben.ID); err != nil || len(grantees) != 0 {
+			t.Errorf("a disabled ada is told: %+v %v", grantees, err)
+		}
+	})
 }

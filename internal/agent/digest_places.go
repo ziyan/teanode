@@ -51,20 +51,22 @@ func listVisitsBetween(tx db.Transaction, userId string, from, until time.Time) 
 // with one label.
 type digestPlaceTotals struct {
 	name       string
-	placeIDs   map[string]bool
+	placeIds   map[string]bool
 	visitCount int
 	duration   time.Duration
 	startedAt  []time.Time
 }
 
-// placesTheyWent is the lines of the section, or empty when the stretch has
-// no visits. A stay is counted in the stretch it began in, and its hours are
-// cut to the stretch. A stay still in progress lasts until now. Places with a
-// label come first, one line for each label, then the places with no label
-// that took the most hours.
+// placesTheyWent is the lines of the section, fenced as record text is because
+// the place names in them were written by strangers, or empty when the stretch
+// has no visits. A visit is counted in the stretch it began in, and its hours
+// are cut to the stretch. A visit still in progress lasts until now, unless a
+// later visit began, which ended it. Places with a label come first, one line
+// for each label, then the places with no label that took the most hours.
 func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zone *time.Location) string {
 	byLabel := map[models.PlaceLabel]*digestPlaceTotals{}
 	byPlace := map[string]*digestPlaceTotals{}
+	laterVisitStarts := openVisitEnds(visits)
 	for _, visit := range visits {
 		place := visit.Place
 		if place == nil {
@@ -80,10 +82,13 @@ func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zon
 			continue
 		}
 		endedAt := startedAt
+		laterVisitStart, isFollowed := laterVisitStarts[visit.ID]
 		switch {
 		case visit.ArrivedAt == nil:
 		case visit.DepartedAt != nil:
 			endedAt = *visit.DepartedAt
+		case isFollowed && laterVisitStart.Before(now):
+			endedAt = laterVisitStart
 		case now.After(startedAt):
 			endedAt = now
 		}
@@ -97,19 +102,19 @@ func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zon
 		var totals *digestPlaceTotals
 		if place.PlaceLabel != "" {
 			if totals = byLabel[place.PlaceLabel]; totals == nil {
-				totals = &digestPlaceTotals{placeIDs: map[string]bool{}}
+				totals = &digestPlaceTotals{placeIds: map[string]bool{}}
 				byLabel[place.PlaceLabel] = totals
 			}
 		} else {
 			if totals = byPlace[place.ID]; totals == nil {
-				totals = &digestPlaceTotals{placeIDs: map[string]bool{}}
+				totals = &digestPlaceTotals{placeIds: map[string]bool{}}
 				byPlace[place.ID] = totals
 			}
 		}
 		if totals.name == "" || place.PlaceLabel == "" {
-			totals.name = strings.TrimSpace(place.PlaceName)
+			totals.name = placeTextForModel(place.PlaceName)
 		}
-		totals.placeIDs[place.ID] = true
+		totals.placeIds[place.ID] = true
 		if !startedAt.Before(from) && startedAt.Before(until) {
 			totals.visitCount++
 			totals.startedAt = append(totals.startedAt, startedAt.In(zone))
@@ -127,8 +132,8 @@ func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zon
 		}
 		subject := string(label)
 		switch {
-		case len(totals.placeIDs) > 1:
-			subject += fmt.Sprintf(" (%d places)", len(totals.placeIDs))
+		case len(totals.placeIds) > 1:
+			subject += fmt.Sprintf(" (%d places)", len(totals.placeIds))
 		case totals.name != "":
 			subject += " (" + totals.name + ")"
 		}
@@ -154,7 +159,10 @@ func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zon
 		}
 		lines = append(lines, digestPlaceLine(name, totals))
 	}
-	return strings.Join(lines, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return fenced(strings.Join(lines, "\n"))
 }
 
 // digestPlaceLine is one line: "- work (Harbor Office): 18 visits, 142 h,

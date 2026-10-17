@@ -156,13 +156,19 @@ const LocationEventChannel = "location_event"
 // reads the latest position from the tables, checking what the viewer may see.
 type LocationEvent struct {
 	UserID string `json:"userId"`
+
+	// EndedForUserIDs are people who could read this person's location until
+	// now and cannot any longer, because a share ended. They are told too,
+	// though they may not see the location any more, so that a map they have
+	// open reads it again and drops it.
+	EndedForUserIDs []string `json:"endedForUserIds,omitempty"`
 }
 
 // NotifyLocationEvent is outside any transaction, like NotifyChatEvent: the
 // report itself is stored already, and this is only a word to the instances
 // listening now. A viewer that missed the word reads the location again.
-func (self *database) NotifyLocationEvent(userId string) error {
-	payload, err := json.Marshal(&LocationEvent{UserID: userId})
+func (self *database) NotifyLocationEvent(userId string, endedForUserIds ...string) error {
+	payload, err := json.Marshal(&LocationEvent{UserID: userId, EndedForUserIDs: endedForUserIds})
 	if err != nil {
 		return err
 	}

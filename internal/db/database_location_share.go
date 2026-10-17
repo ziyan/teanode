@@ -49,7 +49,10 @@ type LocationShareOperation interface {
 	ListLocationSharers(viewerUserId string) ([]*LocationSharer, error)
 
 	// ListLocationGrantees are the people the owner's location reaches now,
-	// once each, who have an agent row their phones hang from. Not the owner.
+	// once each, who have an agent row their phones hang from. Not the owner,
+	// and not a person whose account is disabled or whose roles no longer give
+	// location:use: they cannot read the location, so they are not told of it
+	// either.
 	ListLocationGrantees(ownerUserId string) ([]*LocationGrantee, error)
 }
 
@@ -70,6 +73,10 @@ type LocationSharer struct {
 type LocationGrantee struct {
 	UserID  string
 	AgentID string
+
+	// SharedAt is when the earliest share that reaches them was made. What the
+	// owner did before it is not theirs to be told.
+	SharedAt time.Time
 }
 
 type locationShareModel struct {
@@ -229,13 +236,17 @@ func (self *transaction) ListLocationShares(sharerUserId string) ([]*models.Loca
 // stop reaching someone the moment the circle it depended on is gone: a share
 // to a person needs the two to share a circle, and a share to a circle needs
 // both the viewer and the owner to be in it. The join on the owner's account
-// is what stops a disabled account's location reaching anybody.
-const reachingLocationSharesQuery = `
+// is what stops a disabled account's location reaching anybody, and the two
+// conditions on the viewer stop it reaching a viewer whose account is disabled
+// or whose roles do not give location:use (@permission).
+var reachingLocationSharesQuery = `
 SELECT share.user_id AS owner_user_id, share.share_level AS share_level
 FROM "location_share" share
 JOIN "user" owner_user ON owner_user.id = share.user_id AND owner_user.disabled_at IS NULL
 WHERE share.user_id <> @viewer
   AND (@owner = '' OR share.user_id = @owner)
+  AND EXISTS (SELECT 1 FROM "user" viewer_user WHERE viewer_user.id = @viewer AND viewer_user.disabled_at IS NULL)
+  AND ` + userHasPermissionSQL("@viewer") + `
   AND (
     (share.grantee_user_id = @viewer AND EXISTS (
         SELECT 1 FROM "circle_member" mine
@@ -246,6 +257,14 @@ WHERE share.user_id <> @viewer
      AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = @viewer)
      AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = share.user_id))
   )`
+
+// userHasPermissionSQL is a condition that is true when the user, an SQL
+// expression, has the permission @permission through a group's role.
+func userHasPermissionSQL(userExpression string) string {
+	return `EXISTS (SELECT 1 FROM "user_group" JOIN "group_role" ON group_role.group_id = user_group.group_id
+		JOIN "role_permission" ON role_permission.role_id = group_role.role_id
+		WHERE user_group.user_id = ` + userExpression + ` AND role_permission.permission_key = @permission)`
+}
 
 type reachingLocationShareRow struct {
 	OwnerUserID string `gorm:"column:owner_user_id"`
@@ -258,7 +277,8 @@ type reachingLocationShareRow struct {
 func (self *transaction) reachingLocationLevels(viewerUserId, ownerUserId string) (map[string]models.LocationShareLevel, error) {
 	var rows []reachingLocationShareRow
 	if err := self.tx.Raw(reachingLocationSharesQuery,
-		sql.Named("viewer", viewerUserId), sql.Named("owner", ownerUserId)).Scan(&rows).Error; err != nil {
+		sql.Named("viewer", viewerUserId), sql.Named("owner", ownerUserId),
+		sql.Named("permission", string(models.PermissionLocationUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	levels := make(map[string]models.LocationShareLevel, len(rows))
@@ -325,37 +345,41 @@ func (self *transaction) ListLocationGrantees(ownerUserId string) ([]*LocationGr
 	if ownerUserId == "" {
 		return []*LocationGrantee{}, nil
 	}
-	// The same two conditions as reachingLocationSharesQuery, read from the
+	// The same conditions as reachingLocationSharesQuery, read from the
 	// owner's side.
 	var rows []struct {
-		UserID  string `gorm:"column:user_id"`
-		AgentID string `gorm:"column:agent_id"`
+		UserID   string    `gorm:"column:user_id"`
+		AgentID  string    `gorm:"column:agent_id"`
+		SharedAt time.Time `gorm:"column:shared_at"`
 	}
 	if err := self.tx.Raw(`
-SELECT grantee.user_id AS user_id, grantee_agent.id AS agent_id FROM (
-  SELECT share.grantee_user_id AS user_id
+SELECT grantee.user_id AS user_id, grantee_agent.id AS agent_id, min(grantee.shared_at) AS shared_at FROM (
+  SELECT share.grantee_user_id AS user_id, share.created_at AS shared_at
   FROM "location_share" share
   WHERE share.user_id = @owner AND share.grantee_user_id IS NOT NULL
     AND EXISTS (
         SELECT 1 FROM "circle_member" mine
         JOIN "circle_member" theirs ON theirs.circle_id = mine.circle_id
         WHERE mine.user_id = @owner AND theirs.user_id = share.grantee_user_id)
-  UNION
-  SELECT member.user_id AS user_id
+  UNION ALL
+  SELECT member.user_id AS user_id, share.created_at AS shared_at
   FROM "location_share" share
   JOIN "circle_member" member ON member.circle_id = share.grantee_circle_id
   WHERE share.user_id = @owner AND share.grantee_circle_id IS NOT NULL
     AND EXISTS (SELECT 1 FROM "circle_member" WHERE circle_id = share.grantee_circle_id AND user_id = @owner)
 ) grantee
 JOIN "user" owner_user ON owner_user.id = @owner AND owner_user.disabled_at IS NULL
+JOIN "user" grantee_user ON grantee_user.id = grantee.user_id AND grantee_user.disabled_at IS NULL
 JOIN "agent" grantee_agent ON grantee_agent.user_id = grantee.user_id
-WHERE grantee.user_id <> @owner
-ORDER BY grantee.user_id ASC`, sql.Named("owner", ownerUserId)).Scan(&rows).Error; err != nil {
+WHERE grantee.user_id <> @owner AND `+userHasPermissionSQL("grantee.user_id")+`
+GROUP BY grantee.user_id, grantee_agent.id
+ORDER BY grantee.user_id ASC`, sql.Named("owner", ownerUserId),
+		sql.Named("permission", string(models.PermissionLocationUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	grantees := make([]*LocationGrantee, 0, len(rows))
 	for _, row := range rows {
-		grantees = append(grantees, &LocationGrantee{UserID: row.UserID, AgentID: row.AgentID})
+		grantees = append(grantees, &LocationGrantee{UserID: row.UserID, AgentID: row.AgentID, SharedAt: row.SharedAt.In(time.Local)})
 	}
 	return grantees, nil
 }

@@ -22,6 +22,12 @@ import (
 // added to a visit that had none. It goes through the PhoneNotifier chats use,
 // which needs no worker, so it works on a server with no model.
 
+// placeVisitNoticeWindow is how recent an arrival or a departure must be to be
+// told. A phone that was offline sends its queue when it reconnects, and a
+// notice that "Sam arrived at home" for last night would be wrong now. The
+// visit is stored and shown on the map all the same.
+const placeVisitNoticeWindow = 15 * time.Minute
+
 // placeVisitNoticeInterval is how long the same arrival or departure, at the
 // same place by the same person to the same receiver, is told only once.
 const placeVisitNoticeInterval = 10 * time.Minute
@@ -111,10 +117,22 @@ func PlaceVisitBody(place *models.Place, isArrival bool) string {
 // them. visit.Place is read when it is there and looked up when it is not.
 //
 // It does nothing for a visit with no place, an unnamed and unlabeled place,
-// or a notice already told in the last placeVisitNoticeInterval to the same
-// receiver. The sending is in the background, as NotifyPhones is.
+// an arrival or departure more than placeVisitNoticeWindow ago, or a notice
+// already told in the last placeVisitNoticeInterval to the same receiver. A
+// receiver is told only of what happened after the share that reaches them was
+// made, since what the owner did before it is not theirs to know; for a share
+// to a circle that is the share's own date. The sending is in the background,
+// as NotifyPhones is.
 func (self *PhoneNotifier) NotifyPlaceVisit(ctx context.Context, ownerUserId string, visit *models.PlaceVisit, isArrival bool) {
 	if visit == nil || ownerUserId == "" {
+		return
+	}
+	happenedAt := visit.DepartedAt
+	if isArrival {
+		happenedAt = visit.ArrivedAt
+	}
+	now := time.Now()
+	if happenedAt == nil || now.Sub(*happenedAt) > placeVisitNoticeWindow {
 		return
 	}
 	place := visit.Place
@@ -142,8 +160,10 @@ func (self *PhoneNotifier) NotifyPlaceVisit(ctx context.Context, ownerUserId str
 	if body == "" || owner == nil {
 		return
 	}
-	now := time.Now()
 	for _, grantee := range grantees {
+		if happenedAt.Before(grantee.SharedAt) {
+			continue
+		}
 		if !self.placeVisitNotices.claim(ownerUserId, place.ID, grantee.UserID, isArrival, now) {
 			continue
 		}

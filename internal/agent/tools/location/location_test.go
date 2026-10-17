@@ -101,7 +101,7 @@ func act(t *testing.T, run tools.Run, action, arguments string, confirmed bool) 
 }
 
 func storedLocation(measuredAt time.Time) string {
-	return fmt.Sprintf(`{"userId":"u-ada","username":"ada","name":"Ada","locationShareLevel":"owner",
+	return fmt.Sprintf(`{"userId":"u-ada","username":"ada","name":"Ada","shareLevel":"owner",
 		"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":%q,"locationSource":"phone"},
 		"openVisit":{"arrivedAt":%q,"place":{"id":"p1","placeName":"Maple Park","placeLabel":"","visitCount":3}}}`,
 		measuredAt.Format(time.RFC3339), measuredAt.Add(-25*time.Minute).Format(time.RFC3339))
@@ -119,14 +119,14 @@ func TestNowAnswersWhatIsKeptWhereNobodyCanBeAsked(t *testing.T) {
 	if position["latitude_degrees"] != 40.0005 || position["age"] != "4 minutes ago" || position["reported_by"] != "phone" {
 		t.Errorf("the position and how old it is: %v", position)
 	}
-	if at := answer["at"].(map[string]any); at["place_name"] != "Maple Park" || at["in_progress"] != true {
+	if at := answer["at"].(map[string]any); at["place_name"] != "Maple Park" || at["is_in_progress"] != true {
 		t.Errorf("the place they are at: %v", at)
 	}
 	if !result.Untrusted {
 		t.Error("a place name is data, not an instruction")
 	}
 
-	nothing := &routing{answers: map[string]string{"GetLocation": `{"userId":"u-ada","username":"ada","locationShareLevel":"owner","latestPoint":null,"openVisit":null}`}}
+	nothing := &routing{answers: map[string]string{"GetLocation": `{"userId":"u-ada","username":"ada","shareLevel":"owner","latestPoint":null,"openVisit":null}`}}
 	if _, _, err := act(t, runOf(nothing), "now", `{}`, false); err == nil || !strings.Contains(err.Error(), "iPhone") {
 		t.Errorf("nothing kept should point at the app: %v", err)
 	}
@@ -166,19 +166,19 @@ func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ListLocationVisits": `{"nextOffset":20,"placeVisits":[
 		{"arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T10:15:00Z","durationSeconds":2700,"place":{"id":"p1","placeName":"Maple Park","placeLabel":"home"}},
 		{"arrivedAt":"2026-10-17T11:00:00Z","place":{"id":"p2","placeName":"Elm Library"}}]}`}}
-	answer, result, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-19","label":"Home","limit":20}`, false)
+	answer, result, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-19","place_label":"Home","limit":20}`, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	visits := answer["visits"].([]any)
 	first, second := visits[0].(map[string]any), visits[1].(map[string]any)
-	if first["place_name"] != "Maple Park" || first["place_label"] != "home" || first["stayed"] != "45 minutes" || first["arrived"] != "2026-10-17 09:30" {
+	if first["place_name"] != "Maple Park" || first["place_label"] != "home" || first["visit_duration"] != "45 minutes" || first["arrived"] != "2026-10-17 09:30" {
 		t.Errorf("a finished visit: %v", first)
 	}
 	if second["left"] != "still there" {
 		t.Errorf("a visit in progress: %v", second)
 	}
-	if answer["next_offset"] != float64(20) || answer["more"] == nil {
+	if answer["next_offset"] != float64(20) || answer["has_more"] != true {
 		t.Errorf("it says there is more: %v", answer)
 	}
 	sent := operations.sent["ListLocationVisits"]
@@ -249,11 +249,11 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	}
 
 	operations := &routing{answers: map[string]string{
-		"SavePlace":             `{"id":"p1","placeName":"Grandma's","placeLabel":"family","radiusMeters":75,"isNamedByPerson":true}`,
-		"ForgetPlace":           `true`,
-		"ForgetLocationHistory": `{"pointCount":3,"visitCount":1,"placeCount":0}`,
+		"SavePlace":            `{"id":"p1","placeName":"Grandma's","placeLabel":"family","radiusMeters":75,"isNamedByPerson":true}`,
+		"ForgetPlace":          `true`,
+		"EraseLocationHistory": `{"pointCount":3,"visitCount":1,"placeCount":0}`,
 	}}
-	answer, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","name":"Grandma's","label":"family"}`, false)
+	answer, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","place_name":"Grandma's","place_label":"family"}`, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestWritesAndTheirRisks(t *testing.T) {
 	if answer["place_name"] != "Grandma's" || sent["placeName"] != "Grandma's" || sent["placeLabel"] != "family" || sent["radiusMeters"] != nil {
 		t.Errorf("only what was given: %v %v", answer, sent)
 	}
-	if _, _, err := act(t, runOf(operations), "save_place", `{"name":"Nowhere"}`, false); err == nil {
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_name":"Nowhere"}`, false); err == nil {
 		t.Error("a new place needs coordinates")
 	}
 
@@ -275,7 +275,7 @@ func TestWritesAndTheirRisks(t *testing.T) {
 		t.Error("erase unconfirmed")
 	}
 	answer, _, err = act(t, runOf(operations), "erase", `{"until":"2026-10-01"}`, true)
-	if err != nil || answer["deleted_position_count"] != float64(3) {
+	if err != nil || answer["erased_position_count"] != float64(3) {
 		t.Errorf("erase: %v %v", answer, err)
 	}
 }
@@ -291,7 +291,7 @@ func TestCheckInSendsAFoundPlaceAsItWasFound(t *testing.T) {
 	if sent["osmType"] != "node" || sent["osmId"] != int64(42) || sent["placeName"] != "Corner Cafe" || sent["placeId"] != nil {
 		t.Errorf("what the map called it: %v", sent)
 	}
-	if answer["checked_in"] != true || answer["place_id"] != "p5" {
+	if answer["is_checked_in"] != true || answer["place_id"] != "p5" {
 		t.Errorf("the answer: %v", answer)
 	}
 	if _, _, err := act(t, runOf(operations), "check_in", `{}`, false); err == nil {
@@ -302,7 +302,7 @@ func TestCheckInSendsAFoundPlaceAsItWasFound(t *testing.T) {
 // People are read by username, and set_up takes the dashboard to Location.
 func TestPeopleAndSettingUp(t *testing.T) {
 	operations := &routing{answers: map[string]string{
-		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","locationShareLevel":"history","latestPoint":null,"openVisit":null}]`,
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history","latestPoint":null,"openVisit":null}]`,
 		"ListLocationVisits":  `{"placeVisits":[]}`,
 	}}
 	answer, _, err := act(t, runOf(operations), "people", `{}`, false)
@@ -325,11 +325,11 @@ func TestPeopleAndSettingUp(t *testing.T) {
 	run := runOf(operations)
 	run.canShow = true
 	answer, _, err = act(t, run, "set_up", `{}`, false)
-	if err != nil || run.shownPath != "/location" || answer["shown"] != "/location" {
+	if err != nil || run.shownPath != "/location" || answer["is_shown"] != true || answer["page_path"] != "/location" || !strings.Contains(fmt.Sprint(answer["setup_instructions"]), "OpenStreetMap") {
 		t.Errorf("the dashboard was taken to Location: %v %q %v", answer, run.shownPath, err)
 	}
 	answer, _, err = act(t, runOf(operations), "set_up", `{}`, false)
-	if err != nil || answer["shown"] != false {
+	if err != nil || answer["is_shown"] != false {
 		t.Errorf("where there is no dashboard it says where Location is: %v %v", answer, err)
 	}
 }
@@ -350,5 +350,82 @@ func TestShareResolvesWhoItIsFor(t *testing.T) {
 	}
 	if _, _, err := act(t, runOf(operations), "share", `{"with":"nobody","share_level":"history"}`, true); err == nil {
 		t.Error("nobody to share with")
+	}
+}
+
+// A person who shares only where they are now is said to, in those words,
+// rather than answered as if the place did not exist.
+func TestHistoryOfSomebodySharingOnlyNowIsRefusedInWords(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current","latestPoint":null,"openVisit":null}]`,
+		"ListLocationVisits":  `{"placeVisits":[]}`,
+		"GetLocation":         `{"userId":"u-cleo","username":"cleo","shareLevel":"current","latestPoint":null,"openVisit":{"place":{"id":"p1","placeName":"Elm Cafe"}}}`,
+	}}
+	for _, action := range []string{"visits", "places"} {
+		if _, _, err := act(t, runOf(operations), action, `{"person":"cleo"}`, false); err == nil || !strings.Contains(err.Error(), "cleo shares only where they are now") {
+			t.Errorf("%s: %v", action, err)
+		}
+	}
+	if _, _, err := act(t, runOf(operations), "now", `{"person":"cleo"}`, false); err != nil {
+		t.Errorf("where they are now is shared: %v", err)
+	}
+}
+
+// chatRun is a run whose words are posted to the people of a chat.
+type chatRun struct{ *fakeRun }
+
+func (self chatRun) IsAnsweringInChat() bool { return true }
+
+// In a chat the tool answers only about the person's own location: what
+// somebody shared with the person is not repeated to everybody there.
+func TestAnotherPersonsLocationIsNotRepeatedIntoAChat(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListSharedLocations": `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history","latestPoint":null,"openVisit":null}]`,
+		"ListLocationVisits":  `{"placeVisits":[]}`,
+		"GetLocation":         storedLocation(time.Now().Add(-4 * time.Minute)),
+	}}
+	run := chatRun{runOf(operations)}
+	if _, _, err := act(t, run, "people", `{}`, false); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+		t.Errorf("people in a chat: %v", err)
+	}
+	for _, action := range []string{"now", "visits", "places"} {
+		if _, _, err := act(t, run, action, `{"person":"ben"}`, false); err == nil || !strings.Contains(err.Error(), "not repeated into a chat") {
+			t.Errorf("%s about somebody else in a chat: %v", action, err)
+		}
+	}
+	if _, _, err := act(t, run, "now", `{}`, false); err != nil {
+		t.Errorf("the person's own location is read in a chat: %v", err)
+	}
+	if _, _, err := act(t, run, "visits", `{}`, false); err != nil {
+		t.Errorf("the person's own visits are read in a chat: %v", err)
+	}
+}
+
+// A page is asked for as given, so that the API's defaults (50, at most 200
+// for visits and places; 20, at most 50 for a search) and its refusals are the
+// ones said.
+func TestPagingIsPassedOnAsGiven(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListLocationVisits": `{"placeVisits":[]}`,
+		"ListPlaces":         `{"places":[]}`,
+		"SearchPlaces":       `{"foundPlaces":[]}`,
+	}}
+	if answer, _, err := act(t, runOf(operations), "visits", `{}`, false); err != nil || answer["has_more"] != false {
+		t.Fatalf("a last page says so: %v %v", answer, err)
+	}
+	if sent := operations.sent["ListLocationVisits"]; sent["limitCount"] != nil || sent["offset"] != nil {
+		t.Errorf("nothing asked for, so the API's defaults: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "places", `{"limit":200,"offset":50}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["ListPlaces"]; sent["limitCount"] != 200 || sent["offset"] != 50 {
+		t.Errorf("200 is passed on and not cut to 50: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "search", `{"query":"bakery","limit":0}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["SearchPlaces"]; sent["limitCount"] != 0 {
+		t.Errorf("a number the API refuses is left to it to refuse: %v", sent)
 	}
 }

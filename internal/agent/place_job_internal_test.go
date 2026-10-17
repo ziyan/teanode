@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -22,11 +22,17 @@ func (self *fakeProvider) Name(_ context.Context, latitudeDegrees, longitudeDegr
 	self.asked = append(self.asked, latitudeDegrees)
 	switch latitudeDegrees {
 	case 10:
-		return &place.Found{PlaceName: "Maple Park", OSMType: "way", OSMID: 7, OSMCategory: "leisure=park", AddressText: "Maple Park, Elm"}, nil
+		return &place.Found{
+			PlaceName: "Maple Park", OSMType: "way", OSMID: 7, OSMCategory: "leisure=park", AddressText: "Maple Park, Elm",
+			LatitudeDegrees: 10.0003, LongitudeDegrees: longitudeDegrees,
+		}, nil
 	case 20:
 		return nil, nil
+	case 40:
+		// The nearest thing the provider has is 5 km away, which is not the place.
+		return &place.Found{PlaceName: "Faraway Shop", OSMType: "node", OSMID: 9, LatitudeDegrees: 40.045, LongitudeDegrees: longitudeDegrees}, nil
 	}
-	return nil, errors.New("place: the provider answered 503")
+	return nil, fmt.Errorf("%w: dial tcp 10.0.0.5:2322 for lat=%v", place.ErrProviderUnreachable, latitudeDegrees)
 }
 
 func (self *fakeProvider) Search(context.Context, string, float64, float64, float64, int) ([]*place.Found, error) {
@@ -40,13 +46,13 @@ func TestPlacesThatWaitAreNamed(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
 	var user *models.User
-	var placeIds [3]string
+	var placeIds [4]string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		var err error
 		if user, err = tx.CreateUser(&models.User{Username: "place-job-person"}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
-		for index, latitude := range []float64{10, 20, 30} {
+		for index, latitude := range []float64{10, 20, 30, 40} {
 			made, err := tx.CreatePlace(user.ID, &models.Place{PlaceName: "Somewhere, Country", LatitudeDegrees: latitude, LongitudeDegrees: 5})
 			if err != nil {
 				t.Fatalf("CreatePlace: %s", err)
@@ -60,7 +66,7 @@ func TestPlacesThatWaitAreNamed(t *testing.T) {
 	if err := agent.namePlaces(context.Background(), provider, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if len(provider.asked) != 3 {
+	if len(provider.asked) != 4 {
 		t.Errorf("each place was asked about once: %v", provider.asked)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -73,8 +79,12 @@ func TestPlacesThatWaitAreNamed(t *testing.T) {
 			t.Errorf("known to the map as nothing: it keeps its city and is not asked again: %+v %v", unknown, err)
 		}
 		failed, err := tx.GetPlace(user.ID, placeIds[2])
-		if err != nil || failed.NamedAt != nil || failed.NamingErrorMessage == "" {
-			t.Errorf("a failure is recorded on the place and it waits: %+v %v", failed, err)
+		if err != nil || failed.NamedAt != nil || failed.NamingErrorMessage != "could not reach the place provider" {
+			t.Errorf("a failure is recorded on the place as a sentence that names no address, and it waits: %+v %v", failed, err)
+		}
+		faraway, err := tx.GetPlace(user.ID, placeIds[3])
+		if err != nil || faraway.NamedAt == nil || faraway.PlaceName != "Somewhere, Country" || faraway.OSMID != 0 || faraway.OSMName != "" {
+			t.Errorf("an answer farther than the place's radius is nothing known, and the place is not asked about again: %+v %v", faraway, err)
 		}
 	})
 

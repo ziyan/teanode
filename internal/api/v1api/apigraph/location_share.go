@@ -2,7 +2,6 @@ package apigraph
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
 // Sharing where a person is: with one person or one circle, at a level, as a
@@ -88,7 +88,7 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 		if user == nil {
 			continue
 		}
-		view, err := describeLocation(tx, &locationReach{User: user, LocationShareLevel: sharer.ShareLevel})
+		view, err := describeLocation(tx, &locationReach{User: user, ShareLevel: sharer.ShareLevel})
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +124,7 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 	}
 	shareLevel := models.LocationShareLevel(strings.ToLower(strings.TrimSpace(arguments.ShareLevel)))
 	if !shareLevel.IsGrantable() {
-		return nil, fmt.Errorf("%w: location is shared at current (where you are now) or history (that, and where you have been)", api.ErrInvalidArguments)
+		return nil, fmt.Errorf("%w: location is shared at current (where you are now) or history (where you are and where you have been)", api.ErrInvalidArguments)
 	}
 	granteeUserId, granteeCircleId := strings.TrimSpace(arguments.GranteeUserID), strings.TrimSpace(arguments.GranteeCircleID)
 	if (granteeUserId == "") == (granteeCircleId == "") {
@@ -140,6 +140,9 @@ func (self *graph) ShareLocation(ctx context.Context, arguments ShareLocationArg
 		// caller is not in: all the same answer.
 		return nil, locationFailure(err)
 	}
+	// The people it is now shared with, or shared with at a different level,
+	// are told that there is something to read.
+	self.afterLocationChange(ctx, tx, principal.User.ID, nil, nil)
 	shares, err := tx.ListLocationShares(principal.User.ID)
 	if err != nil {
 		return nil, err
@@ -157,16 +160,46 @@ func (self *graph) UnshareLocation(ctx context.Context, arguments UnshareLocatio
 	if err != nil {
 		return false, err
 	}
-	if err := self.transaction(ctx).UnshareLocation(principal.User.ID, strings.TrimSpace(arguments.ShareID)); err != nil {
+	tx := self.transaction(ctx)
+	// Who the location reaches before and after, to tell the ones it stops
+	// reaching: they are not shown the event for a location they can no longer
+	// see, and their map would keep the last position.
+	before, err := tx.ListLocationGrantees(principal.User.ID)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.UnshareLocation(principal.User.ID, strings.TrimSpace(arguments.ShareID)); err != nil {
 		return false, locationFailure(err)
 	}
+	after, err := tx.ListLocationGrantees(principal.User.ID)
+	if err != nil {
+		return false, err
+	}
+	stillReached := map[string]bool{}
+	for _, grantee := range after {
+		stillReached[grantee.UserID] = true
+	}
+	endedForUserIds := []string{}
+	for _, grantee := range before {
+		if !stillReached[grantee.UserID] {
+			endedForUserIds = append(endedForUserIds, grantee.UserID)
+		}
+	}
+	userId := principal.User.ID
+	tx.AfterCommit(func() {
+		if err := self.database.NotifyLocationEvent(userId, endedForUserIds...); err != nil {
+			log.Warningf("cannot tell the listeners that a location was unshared: %s", err)
+		}
+	})
 	return true, nil
 }
 
-// LocationEvents tells the viewer each time a person they may see moves. The
-// share level is read again for every event, so that a person who stopped
-// sharing, or who left the circle that made it possible, is not followed any
-// longer from that moment, whatever the subscription was started with.
+// LocationEvents tells the viewer each time a person they may see changes
+// where they are or what of it is shown. Whether the viewer may see the person
+// is decided again for every event, so that a person who stopped sharing, or
+// who left the circle that made it possible, is not followed any longer from
+// that moment, whatever the subscription was started with. At most
+// locationEventSubscriptionsMost are open for one account.
 func (self *graph) LocationEvents(ctx context.Context) (<-chan *LocationEventView, error) {
 	var viewer *models.User
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
@@ -179,28 +212,20 @@ func (self *graph) LocationEvents(ctx context.Context) (<-chan *LocationEventVie
 	}); err != nil {
 		return nil, err
 	}
-	payloads, err := self.database.ListenLocationEvents(ctx)
+	received, release, err := self.locationEvents.subscribe(self.database, viewer.ID)
 	if err != nil {
 		return nil, err
 	}
 	events := make(chan *LocationEventView)
 	go func() {
+		defer deferutil.Recover()
 		defer close(events)
+		defer release()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case payload, isOpen := <-payloads:
-				if !isOpen {
-					return
-				}
-				var event db.LocationEvent
-				if json.Unmarshal([]byte(payload), &event) != nil || event.UserID == "" {
-					continue
-				}
-				if !self.canViewerSeeLocationEvent(ctx, viewer.ID, event.UserID) {
-					continue
-				}
+			case event := <-received:
 				select {
 				case events <- &LocationEventView{UserID: event.UserID}:
 				case <-ctx.Done():
@@ -210,21 +235,4 @@ func (self *graph) LocationEvents(ctx context.Context) (<-chan *LocationEventVie
 		}
 	}()
 	return events, nil
-}
-
-// canViewerSeeLocationEvent says whether the viewer may see where this person
-// is now: their own, or a person who shares with them at any level.
-func (self *graph) canViewerSeeLocationEvent(ctx context.Context, viewerUserId, ownerUserId string) bool {
-	if viewerUserId == ownerUserId {
-		return true
-	}
-	var level models.LocationShareLevel
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		level, err = tx.GetLocationShareLevel(viewerUserId, ownerUserId)
-		return err
-	}); err != nil {
-		log.Warningf("cannot work out whether a location event is for a viewer: %s", err)
-		return false
-	}
-	return level.AtLeast(models.LocationShareLevelCurrent)
 }

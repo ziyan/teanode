@@ -3,6 +3,7 @@ package place
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -25,11 +26,17 @@ const requestInterval = time.Second
 // requestTimeout is how long one request to a provider may take.
 const requestTimeout = 10 * time.Second
 
+// maximumRequestWait is the longest a caller waits for its turn. A caller whose
+// turn is further away is refused: a search a person is waiting for gives up
+// and says so, and the place-naming job tries again on its next run, where a
+// queue that grows without end would keep every other caller waiting behind it.
+const maximumRequestWait = 5 * time.Second
+
 // maximumResponseBytes bounds what is read from a provider, since the
 // address is the operator's to set and the answer is not ours to trust.
 const maximumResponseBytes = 4 << 20
 
-// Found is a named thing on the map: what a provider answered for a point or
+// Found is a named place on the map: what a provider answered for a point or
 // for a search. DistanceMeters is its distance from the point that was asked
 // about, for the answers that have one.
 type Found struct {
@@ -46,7 +53,7 @@ type Found struct {
 // Provider names points and finds places from OpenStreetMap data. Every call
 // waits its turn behind the one limiter all providers in the process share.
 type Provider interface {
-	// Name answers the named thing at a point, or the address there. It is nil
+	// Name answers the named place at a point, or the address there. It is nil
 	// with no error when the provider knows nothing at that point.
 	Name(ctx context.Context, latitudeDegrees, longitudeDegrees float64) (*Found, error)
 
@@ -64,12 +71,12 @@ func NewProvider(places config.Places, userAgent string) (Provider, error) {
 	if places.ProviderKind == "" {
 		return nil, nil
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(places.ProviderURL), "/")
-	if baseURL == "" {
+	baseUrl := strings.TrimRight(strings.TrimSpace(places.ProviderURL), "/")
+	if baseUrl == "" {
 		return nil, fmt.Errorf("place: the %s provider has no address", places.ProviderKind)
 	}
 	providersRequester := &requester{
-		baseURL:   baseURL,
+		baseUrl:   baseUrl,
 		userAgent: userAgent,
 		client:    &http.Client{Timeout: requestTimeout},
 		limiter:   sharedLimiter,
@@ -83,24 +90,76 @@ func NewProvider(places config.Places, userAgent string) (Provider, error) {
 	return nil, fmt.Errorf("place: %q is not a provider kind this server knows", places.ProviderKind)
 }
 
+// The ways asking a provider fails. An error from a Provider wraps one of
+// these (or is a ProviderStatusError), and carries the detail for the log,
+// which can hold the provider's address and the coordinates asked about. What a
+// person is shown, and what is stored on a place, is FailureSentence.
+var (
+	// ErrProviderBusy is a request that was not made because the turn it
+	// would have waited for was more than maximumRequestWait away.
+	ErrProviderBusy = errors.New("place: the place provider is busy")
+
+	// ErrProviderUnreachable is a request that got no answer.
+	ErrProviderUnreachable = errors.New("place: could not reach the place provider")
+
+	// ErrProviderAnswerUnreadable is an answer that was not what was expected.
+	ErrProviderAnswerUnreadable = errors.New("place: the place provider's answer could not be read")
+)
+
+// ProviderStatusError is an answer with a status other than 200.
+type ProviderStatusError struct {
+	StatusCode int
+}
+
+func (self *ProviderStatusError) Error() string {
+	return fmt.Sprintf("place: the place provider answered %d", self.StatusCode)
+}
+
+// FailureSentence is why asking a provider failed, in a sentence that names no
+// address and no coordinate, for the person who sees the place and for the
+// place's record: "could not reach the place provider", "the place provider
+// answered 503", "the place provider's answer could not be read" or "the place
+// provider is busy". The detail of the error goes to the log.
+func FailureSentence(err error) string {
+	var statusError *ProviderStatusError
+	switch {
+	case errors.Is(err, ErrProviderBusy):
+		return "the place provider is busy"
+	case errors.As(err, &statusError):
+		return fmt.Sprintf("the place provider answered %d", statusError.StatusCode)
+	case errors.Is(err, ErrProviderUnreachable):
+		return "could not reach the place provider"
+	case errors.Is(err, ErrProviderAnswerUnreadable):
+		return "the place provider's answer could not be read"
+	}
+	return "could not ask the place provider"
+}
+
 // limiter spaces requests out. Both providers use the one in sharedLimiter, so
 // that the limit holds for the process whichever of them is asked and however
-// many people are being named at once.
+// many people are being named at once. The limit is per server instance: each
+// instance of a multi-instance deployment has its own limiter, so n instances
+// send up to n requests a second to the provider.
 type limiter struct {
 	mutex         sync.Mutex
 	interval      time.Duration
 	lastRequestAt time.Time
+
+	// maximumWait is the longest a caller waits for its turn; zero is
+	// maximumRequestWait.
+	maximumWait time.Duration
 }
 
 // sharedLimiter is the process-wide limiter.
 var sharedLimiter = &limiter{interval: requestInterval}
 
-// wait returns when the caller may make a request, or with the context's error
-// if it ends first. Each caller reserves the next free time before sleeping,
-// so waiting callers go in turn and none of them is let through early by
-// another's cancellation. A cancelled caller's time is not given back: the
-// next one waits a little longer than it had to, which is the safe side of a
-// limit.
+// wait returns when the caller may make a request, with ErrProviderBusy at once
+// if its turn is more than the longest wait away, or with the context's error
+// if the context ends first. Each caller reserves the next free time before
+// sleeping, so waiting callers go in turn and none of them is let through early
+// by another's cancellation. A canceled caller gives its turn back when it is
+// the last one in line; a caller in the middle leaves a gap, which is the safe
+// side of a limit.
 func (self *limiter) wait(ctx context.Context) error {
 	self.mutex.Lock()
 	now := time.Now()
@@ -108,12 +167,32 @@ func (self *limiter) wait(ctx context.Context) error {
 	if allowedAt.Before(now) {
 		allowedAt = now
 	}
+	maximumWait := self.maximumWait
+	if maximumWait == 0 {
+		maximumWait = maximumRequestWait
+	}
+	if allowedAt.Sub(now) > maximumWait {
+		self.mutex.Unlock()
+		return ErrProviderBusy
+	}
+	previousRequestAt := self.lastRequestAt
 	self.lastRequestAt = allowedAt
 	self.mutex.Unlock()
 
+	giveBack := func() {
+		self.mutex.Lock()
+		defer self.mutex.Unlock()
+		if self.lastRequestAt.Equal(allowedAt) {
+			self.lastRequestAt = previousRequestAt
+		}
+	}
 	delay := allowedAt.Sub(now)
 	if delay <= 0 {
-		return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			giveBack()
+			return err
+		}
+		return nil
 	}
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
@@ -121,6 +200,7 @@ func (self *limiter) wait(ctx context.Context) error {
 	case <-timer.C:
 		return nil
 	case <-ctx.Done():
+		giveBack()
 		return ctx.Err()
 	}
 }
@@ -128,7 +208,7 @@ func (self *limiter) wait(ctx context.Context) error {
 // requester is what both providers share: the address, the identity the
 // provider is told, the limiter and the plumbing of one request.
 type requester struct {
-	baseURL   string
+	baseUrl   string
 	userAgent string
 	client    *http.Client
 	limiter   *limiter
@@ -137,25 +217,28 @@ type requester struct {
 // get asks for a path with parameters and reads the JSON answer into target.
 func (self *requester) get(ctx context.Context, path string, parameters url.Values, target any) error {
 	if err := self.limiter.wait(ctx); err != nil {
-		return fmt.Errorf("place: stopped waiting to ask the provider: %w", err)
+		if errors.Is(err, ErrProviderBusy) {
+			return err
+		}
+		return fmt.Errorf("place: stopped waiting to ask the place provider: %w", err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, self.baseURL+path+"?"+parameters.Encode(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, self.baseUrl+path+"?"+parameters.Encode(), nil)
 	if err != nil {
-		return fmt.Errorf("place: the provider's address is not usable: %w", err)
+		return fmt.Errorf("%w: the provider's address is not usable: %s", ErrProviderUnreachable, err)
 	}
 	request.Header.Set("User-Agent", self.userAgent)
 	request.Header.Set("Accept", "application/json")
 	response, err := self.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("place: could not reach the provider: %w", err)
+		return fmt.Errorf("%w: %s", ErrProviderUnreachable, err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
-		return fmt.Errorf("place: the provider answered %d", response.StatusCode)
+		return &ProviderStatusError{StatusCode: response.StatusCode}
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, maximumResponseBytes)).Decode(target); err != nil {
-		return fmt.Errorf("place: the provider's answer could not be read: %w", err)
+		return fmt.Errorf("%w: %s", ErrProviderAnswerUnreadable, err)
 	}
 	return nil
 }

@@ -14,7 +14,10 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/place"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 )
 
 // The map: the style and the vector tiles the dashboard draws, fetched by this
@@ -39,6 +42,20 @@ const (
 	// followed.
 	mapRedirectsMost = 3
 )
+
+// mapRequestsPerMinute is how many files of the map one account may fetch a
+// minute on this instance: a screen of tiles is a few dozen, and panning
+// around for a while a few hundred.
+const mapRequestsPerMinute = 600
+
+// mapLimits are the limits on the map files one account fetches, made the
+// first time they are wanted.
+func (self *graph) mapLimits() *ratelimit.Registry {
+	self.mapLimitsOnce.Do(func() {
+		self.mapLimitsValue = ratelimit.NewRegistry(float64(mapRequestsPerMinute)/60, mapRequestsPerMinute, 10000, 5*time.Minute)
+	})
+	return self.mapLimitsValue
+}
 
 // mapStyleAlias is the path that always means the style itself, wherever on
 // its host the configured style is.
@@ -78,18 +95,32 @@ var mapClient = &http.Client{
 // on as they are.
 var mapPassedHeaders = []string{"Cache-Control", "ETag", "Last-Modified"}
 
-// mapView serves one file of the map. It is for a signed-in account only; the
-// fetch is a cost to the style host that nobody anonymous should be able to
-// cause from here.
+// mapView serves one file of the map. It is for a signed-in account that may
+// use Location, and for a limited number of files a minute: each is a fetch
+// from the style host, a cost that nobody else should be able to cause from
+// here.
 func (self *graph) mapView(response http.ResponseWriter, request *http.Request) {
 	username := api.UsernameFromRequest(request)
 	if username == "" {
 		http.Error(response, "not signed in", http.StatusUnauthorized)
 		return
 	}
+	limitKey := username
 	if username != config.LocalUsername {
-		found, err := self.database.GetUserByUsername(username)
-		if err != nil {
+		var found *models.User
+		var canUseLocation bool
+		if err := self.database.TransactionContext(request.Context(), func(tx db.Transaction) error {
+			var err error
+			if found, err = tx.GetUserByUsername(username); err != nil || found == nil || found.Disabled() {
+				return err
+			}
+			permissions, err := tx.EffectivePermissions(found.ID)
+			if err != nil {
+				return err
+			}
+			canUseLocation = permissions.Has(models.PermissionLocationUse)
+			return nil
+		}); err != nil {
 			http.Error(response, "cannot read that just now", http.StatusInternalServerError)
 			return
 		}
@@ -97,6 +128,17 @@ func (self *graph) mapView(response http.ResponseWriter, request *http.Request) 
 			http.Error(response, "not signed in", http.StatusUnauthorized)
 			return
 		}
+		// Answered as every refusal here is, as if there were nothing there.
+		if !canUseLocation {
+			http.Error(response, "no such map file", http.StatusNotFound)
+			return
+		}
+		limitKey = found.ID
+	}
+	if !self.mapLimits().Allow(limitKey) {
+		response.Header().Set("Retry-After", "10")
+		http.Error(response, "too many map files asked for; wait a moment", http.StatusTooManyRequests)
+		return
 	}
 
 	styleAddress, err := url.Parse(self.config.Current().Places.MapStyleURL)
@@ -104,7 +146,7 @@ func (self *graph) mapView(response http.ResponseWriter, request *http.Request) 
 		http.Error(response, "this server has no map style set", http.StatusNotFound)
 		return
 	}
-	upstream, isAllowed := mapUpstreamURL(styleAddress, request.URL)
+	upstream, isAllowed := mapUpstreamUrl(styleAddress, request.URL)
 	if !isAllowed {
 		http.Error(response, "no such map file", http.StatusNotFound)
 		return
@@ -225,11 +267,11 @@ func (self *graph) writeRewrittenMapJSON(response http.ResponseWriter, request *
 	_, _ = response.Write(body)
 }
 
-// mapUpstreamURL is the address on the style host that a request is for, or
+// mapUpstreamUrl is the address on the style host that a request is for, or
 // false for a path no map file has. Built from the style's own scheme and host
 // and the cleaned path: nothing of the request but its path and query decides
 // anything, and the path cannot reach another host or climb out of its place.
-func mapUpstreamURL(styleAddress *url.URL, requested *url.URL) (*url.URL, bool) {
+func mapUpstreamUrl(styleAddress *url.URL, requested *url.URL) (*url.URL, bool) {
 	filePath := strings.TrimPrefix(requested.Path, api.PathMap)
 	if filePath == mapStyleAlias {
 		// The style itself, wherever on its host it is.

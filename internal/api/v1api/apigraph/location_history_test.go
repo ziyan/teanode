@@ -35,6 +35,14 @@ func newLocationWorld(t *testing.T) *locationWorld {
 			}
 		}
 	})
+	// No test reaches the public place provider: the ones about naming set up
+	// a provider of their own.
+	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
+		configuration.Places.ProviderKind = ""
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	return world
 }
 
@@ -66,10 +74,10 @@ func visitInput(key string, latitude, longitude float64, arrivedAt, departedAt s
 
 const visitFieldsForTest = `id arrivedAt departedAt durationSeconds accuracyMeters visitSource place { id placeName placeLabel isNamedByPerson }`
 
-// A report is safe to send twice, an arrival and its departure are one stay
-// that keeps its arrival and its accuracy, and a stay is at a place that is
+// A report is safe to send twice, an arrival and its departure are one visit
+// that keeps its arrival and its accuracy, and a visit is at a place that is
 // named for now after its city.
-func TestAReportIsOneStayWhenSentInPieces(t *testing.T) {
+func TestAReportIsOneVisitWhenSentInPieces(t *testing.T) {
 	world := newLocationWorld(t)
 	arrival := ago(40 * time.Minute)
 	departure := ago(10 * time.Minute)
@@ -86,14 +94,14 @@ func TestAReportIsOneStayWhenSentInPieces(t *testing.T) {
 	// The departure carries no arrival, and an accuracy of zero.
 	departureInput := fmt.Sprintf(`{clientVisitKey: "k1", latitudeDegrees: 40.0005, longitudeDegrees: -75.0003, accuracyMeters: 0, departedAt: %q, visitSource: "visit"}`, departure)
 	if sent := world.report(t, world.ada, "", departureInput); sent["newVisitCount"] != float64(0) || sent["updatedVisitCount"] != float64(1) {
-		t.Errorf("the departure completes the stay: %v", sent)
+		t.Errorf("the departure completes the visit: %v", sent)
 	}
 
 	data := world.call(t, world.ada, `query { ListLocationVisits { nextOffset placeVisits { `+visitFieldsForTest+` } } }`)
 	page := data["ListLocationVisits"].(map[string]any)
 	visits := page["placeVisits"].([]any)
 	if len(visits) != 1 || page["nextOffset"] != nil {
-		t.Fatalf("one stay: %v", page)
+		t.Fatalf("one visit: %v", page)
 	}
 	visit := visits[0].(map[string]any)
 	if visit["arrivedAt"] == nil || visit["departedAt"] == nil || visit["durationSeconds"] != float64(30*60) || visit["accuracyMeters"] != float64(20) {
@@ -101,15 +109,15 @@ func TestAReportIsOneStayWhenSentInPieces(t *testing.T) {
 	}
 
 	// Nobody is at the place any more.
-	location := world.call(t, world.ada, `query { GetLocation { username locationShareLevel latestPoint { latitudeDegrees } openVisit { id } } }`)["GetLocation"].(map[string]any)
-	if location["openVisit"] != nil || location["latestPoint"] == nil || location["locationShareLevel"] != "owner" {
+	location := world.call(t, world.ada, `query { GetLocation { username shareLevel latestPoint { latitudeDegrees } openVisit { id } } }`)["GetLocation"].(map[string]any)
+	if location["openVisit"] != nil || location["latestPoint"] == nil || location["shareLevel"] != "owner" {
 		t.Errorf("where they are: %v", location)
 	}
 }
 
-// A stay that is still going is reported while the latest position is at the
+// A visit that is still going is reported while the latest position is at the
 // place, and not once a later position is somewhere else.
-func TestAStayNobodyEndedIsNotForEver(t *testing.T) {
+func TestAVisitNobodyEndedIsNotForEver(t *testing.T) {
 	world := newLocationWorld(t)
 	world.report(t, world.ada, pointInput(40.0, -75.0, ago(50*time.Minute)), visitInput("k1", 40.0, -75.0, ago(60*time.Minute), ""))
 	stillThere := world.call(t, world.ada, `query { GetLocation { openVisit { id place { placeName } } } }`)["GetLocation"].(map[string]any)
@@ -123,9 +131,9 @@ func TestAStayNobodyEndedIsNotForEver(t *testing.T) {
 	}
 }
 
-// A second stay near the first is at the same place, and a place keeps the
+// A second visit near the first is at the same place, and a place keeps the
 // name and label the person gave it.
-func TestStaysAtOnePlaceAndNamingIt(t *testing.T) {
+func TestVisitsAtOnePlaceAndNamingIt(t *testing.T) {
 	world := newLocationWorld(t)
 	world.report(t, world.ada, "", visitInput("k1", 40.0, -75.0, ago(300*time.Minute), ago(280*time.Minute)))
 	world.report(t, world.ada, "", visitInput("k2", 40.0002, -75.0002, ago(100*time.Minute), ago(80*time.Minute)))
@@ -156,13 +164,13 @@ func TestStaysAtOnePlaceAndNamingIt(t *testing.T) {
 	world.refused(t, world.cora, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
 	world.call(t, world.ada, fmt.Sprintf(`mutation { ForgetPlace(placeId: %q) }`, placeId))
 	if visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { id } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any); len(visits) != 0 {
-		t.Errorf("a forgotten place takes its stays with it: %v", visits)
+		t.Errorf("a forgotten place takes its visits with it: %v", visits)
 	}
 }
 
-// A check-in ends the stay in progress and starts one, at an existing place or
+// A check-in ends the visit in progress and starts one, at an existing place or
 // a found one.
-func TestCheckInEndsTheStayInProgress(t *testing.T) {
+func TestCheckInEndsTheVisitInProgress(t *testing.T) {
 	world := newLocationWorld(t)
 	world.report(t, world.ada, pointInput(40.0, -75.0, ago(20*time.Minute)), visitInput("k1", 40.0, -75.0, ago(60*time.Minute), ""))
 	checked := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 40.0004, longitudeDegrees: -75.0004, placeName: "Corner Cafe", osmType: "node", osmId: 42, osmCategory: "amenity=cafe") { `+visitFieldsForTest+` } }`)["CheckIn"].(map[string]any)
@@ -171,11 +179,11 @@ func TestCheckInEndsTheStayInProgress(t *testing.T) {
 	}
 	visits := world.call(t, world.ada, `query { ListLocationVisits { placeVisits { departedAt place { placeName } } } }`)["ListLocationVisits"].(map[string]any)["placeVisits"].([]any)
 	if len(visits) != 2 {
-		t.Fatalf("two stays: %v", visits)
+		t.Fatalf("two visits: %v", visits)
 	}
-	// Newest first: the check-in is in progress; the earlier stay ended.
+	// Newest first: the check-in is in progress; the earlier visit ended.
 	if visits[0].(map[string]any)["departedAt"] != nil || visits[1].(map[string]any)["departedAt"] == nil {
-		t.Errorf("the first stay ended and the check-in is going: %v", visits)
+		t.Errorf("the first visit ended and the check-in is going: %v", visits)
 	}
 	// The same object again is the same place.
 	again := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 40.0004, longitudeDegrees: -75.0004, placeName: "Corner Cafe", osmType: "node", osmId: 42) { place { id } } }`)["CheckIn"].(map[string]any)
@@ -235,11 +243,11 @@ func TestThePathOfADayHasLimits(t *testing.T) {
 func TestErasingHistory(t *testing.T) {
 	world := newLocationWorld(t)
 	world.report(t, world.ada, pointInput(1, 1, ago(5*time.Hour)), visitInput("k1", 1, 1, ago(5*time.Hour), ago(4*time.Hour)))
-	erased := world.call(t, world.ada, `mutation { ForgetLocationHistory { pointCount visitCount placeCount } }`)["ForgetLocationHistory"].(map[string]any)
+	erased := world.call(t, world.ada, `mutation { EraseLocationHistory { pointCount visitCount placeCount } }`)["EraseLocationHistory"].(map[string]any)
 	if erased["pointCount"] != float64(1) || erased["visitCount"] != float64(1) || erased["placeCount"] != float64(1) {
 		t.Errorf("what was deleted: %v", erased)
 	}
-	world.refused(t, world.ada, fmt.Sprintf(`mutation { ForgetLocationHistory(from: %q, until: %q) { pointCount } }`, ago(0), ago(time.Hour)))
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { EraseLocationHistory(from: %q, until: %q) { pointCount } }`, ago(0), ago(time.Hour)))
 }
 
 // Another person's location is reached only as far as it is shared, and only
@@ -265,8 +273,8 @@ func TestWhoReachesWhoseLocation(t *testing.T) {
 	if share["shareLevel"] != "current" || share["granteeUsername"] != world.ben.Username {
 		t.Fatalf("shared: %v", share)
 	}
-	seen := world.call(t, world.ben, fmt.Sprintf(`query { GetLocation(%s) { username locationShareLevel latestPoint { latitudeDegrees } } }`, asAda))["GetLocation"].(map[string]any)
-	if seen["username"] != world.ada.Username || seen["locationShareLevel"] != "current" || seen["latestPoint"] == nil {
+	seen := world.call(t, world.ben, fmt.Sprintf(`query { GetLocation(%s) { username shareLevel latestPoint { latitudeDegrees } } }`, asAda))["GetLocation"].(map[string]any)
+	if seen["username"] != world.ada.Username || seen["shareLevel"] != "current" || seen["latestPoint"] == nil {
 		t.Errorf("at current, where she is: %v", seen)
 	}
 	world.refused(t, world.ben, fmt.Sprintf(`query { ListLocationVisits(%s) { nextOffset } }`, asAda))
@@ -277,8 +285,8 @@ func TestWhoReachesWhoseLocation(t *testing.T) {
 	if visits := world.call(t, world.ben, fmt.Sprintf(`query { ListLocationVisits(%s) { placeVisits { id } } }`, asAda))["ListLocationVisits"].(map[string]any)["placeVisits"].([]any); len(visits) != 1 {
 		t.Errorf("at history, the visits: %v", visits)
 	}
-	people := world.call(t, world.ben, `query { ListSharedLocations { username locationShareLevel } }`)["ListSharedLocations"].([]any)
-	if len(people) != 1 || people[0].(map[string]any)["locationShareLevel"] != "history" {
+	people := world.call(t, world.ben, `query { ListSharedLocations { username shareLevel } }`)["ListSharedLocations"].([]any)
+	if len(people) != 1 || people[0].(map[string]any)["shareLevel"] != "history" {
 		t.Errorf("who shares with ben: %v", people)
 	}
 
@@ -296,16 +304,23 @@ func TestWhoReachesWhoseLocation(t *testing.T) {
 	world.refused(t, world.ben, fmt.Sprintf(`query { GetLocation(%s) { username } }`, asAda))
 }
 
-// A person without location:use is refused everything, as not found.
-func TestLocationNeedsItsPermission(t *testing.T) {
-	world := newLocationWorld(t)
+// makeNobody is an account that may use nothing.
+func (self *locationWorld) makeNobody(t *testing.T) *models.User {
+	t.Helper()
 	var nobody *models.User
-	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
 		var err error
 		if nobody, err = tx.CreateUser(&models.User{Username: "location-nobody"}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
 	})
+	return nobody
+}
+
+// A person without location:use is refused everything, as not found.
+func TestLocationNeedsItsPermission(t *testing.T) {
+	world := newLocationWorld(t)
+	nobody := world.makeNobody(t)
 	for _, document := range []string{
 		`query { GetLocation { username } }`,
 		`mutation { ReportLocation(points: [], visits: []) { newPointCount } }`,
@@ -327,8 +342,14 @@ func TestPlacesFromTheProvider(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	message := world.refused(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40, longitudeDegrees: -75) { placeName } }`)
-	if !strings.Contains(message, "operator") || !strings.Contains(message, "OpenStreetMap") {
+	// A check-in list still offers the person's own places while the provider
+	// is off, and only a search is refused.
+	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.0001, longitudeDegrees: -75.0001, placeName: "Home") { id } }`)
+	own := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40, longitudeDegrees: -75) { placeName placeId } }`)["ListNearbyPlaces"].([]any)
+	if len(own) != 1 || own[0].(map[string]any)["placeName"] != "Home" || own[0].(map[string]any)["placeId"] == nil {
+		t.Errorf("their own places with the provider off: %v", own)
+	}
+	if message := world.refused(t, world.ada, `query { SearchPlaces(query: "playground", latitudeDegrees: 40, longitudeDegrees: -75) { foundPlaces { placeName } } }`); !strings.Contains(message, "operator") || !strings.Contains(message, "OpenStreetMap") {
 		t.Errorf("whose switch it is: %s", message)
 	}
 	world.refused(t, world.ada, `query { SearchPlaces(query: "playground", latitudeDegrees: 40, longitudeDegrees: -75) { foundPlaces { placeName } } }`)
@@ -355,7 +376,6 @@ func TestPlacesFromTheProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.0001, longitudeDegrees: -75.0001, placeName: "Home") { id } }`)
 	rows := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40.0005, longitudeDegrees: -75.0003) { placeName osmId distanceMeters placeId } }`)["ListNearbyPlaces"].([]any)
 	if len(rows) != 2 {
 		t.Fatalf("the map's answer and the person's place: %v", rows)
@@ -383,26 +403,32 @@ func TestPlacesFromTheProvider(t *testing.T) {
 	world.refused(t, world.ada, `query { SearchPlaces(query: "  ", latitudeDegrees: 40, longitudeDegrees: -75) { foundPlaces { placeName } } }`)
 }
 
-// A viewer is told that a person moved only while that person shares with
-// them: the level is read again for each event.
-func TestAViewerFollowsOnlyThoseSharingWithThem(t *testing.T) {
+// A place a report made is named at once, whether or not the agent runs, and
+// not before the report is answered; a person's own name is never replaced.
+func TestANewPlaceIsNamedRightAfterTheReport(t *testing.T) {
 	world := newLocationWorld(t)
-	ctx := t.Context()
-	if !world.graph.canViewerSeeLocationEvent(ctx, world.ada.ID, world.ada.ID) {
-		t.Error("everyone follows themselves")
+	provider := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"osm_type":"node","osm_id":42,"lat":"40.0001","lon":"-75.0001","category":"amenity","type":"cafe","name":"Corner Cafe","display_name":"Corner Cafe, 1 Elm Street"}`))
+	}))
+	defer provider.Close()
+	if err := world.graph.config.Update(func(configuration *config.Configuration) error {
+		configuration.Places.ProviderKind = config.PlacesProviderNominatim
+		configuration.Places.ProviderURL = provider.URL
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
-	if world.graph.canViewerSeeLocationEvent(ctx, world.ben.ID, world.ada.ID) {
-		t.Error("nothing is shared yet")
-	}
-	share := world.call(t, world.ada, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))["ShareLocation"].(map[string]any)
-	if !world.graph.canViewerSeeLocationEvent(ctx, world.ben.ID, world.ada.ID) {
-		t.Error("shared at current")
-	}
-	if world.graph.canViewerSeeLocationEvent(ctx, world.cora.ID, world.ada.ID) {
-		t.Error("cora shares no circle with her")
-	}
-	world.call(t, world.ada, fmt.Sprintf(`mutation { UnshareLocation(shareId: %q) }`, share["id"]))
-	if world.graph.canViewerSeeLocationEvent(ctx, world.ben.ID, world.ada.ID) {
-		t.Error("no longer shared, no longer followed")
+	world.report(t, world.ada, "", visitInput("k1", 40.0, -75.0, ago(30*time.Minute), ""))
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		places := world.call(t, world.ada, `query { ListPlaces { places { placeName osmId } } }`)["ListPlaces"].(map[string]any)["places"].([]any)
+		if len(places) == 1 && places[0].(map[string]any)["placeName"] == "Corner Cafe" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the place was not named: %v", places)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }

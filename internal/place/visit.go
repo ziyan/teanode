@@ -29,9 +29,9 @@ func ProviderFor(configuration *config.Configuration) (Provider, error) {
 	return NewProvider(configuration.Places, UserAgent(configuration))
 }
 
-// IsStillThere reports whether a stay with no departure is believed to be
+// IsStillThere reports whether a visit with no departure is believed to be
 // going on. A phone that never sent the departure would otherwise leave the
-// person at a place for ever, so the stay counts only while nothing the phone
+// person at a place for ever, so the visit counts only while nothing the phone
 // reported since contradicts it: there is no position at all, or the latest
 // one is older than the arrival, or it is inside the place, allowing for the
 // error the phone gave with it.

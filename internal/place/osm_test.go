@@ -2,6 +2,7 @@ package place
 
 import (
 	"context"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -21,7 +22,7 @@ func say(writer http.ResponseWriter, answer string) { _, _ = io.WriteString(writ
 func quickLimiter() *limiter { return &limiter{interval: time.Millisecond} }
 
 func newTestRequester(server *httptest.Server) *requester {
-	return &requester{baseURL: server.URL, userAgent: "TeaNode/test (+https://teanode.example)", client: server.Client(), limiter: quickLimiter()}
+	return &requester{baseUrl: server.URL, userAgent: "TeaNode/test (+https://teanode.example)", client: server.Client(), limiter: quickLimiter()}
 }
 
 // The points of the tests: a person at 10.5, 20.5, a playground a few
@@ -43,8 +44,8 @@ func TestNewProviderFollowsTheConfiguration(t *testing.T) {
 	if _, isNominatim := nominatim.(*nominatimProvider); !isNominatim || err != nil {
 		t.Errorf("nominatim is %T, %v", nominatim, err)
 	}
-	if nominatim.(*nominatimProvider).baseURL != "https://nominatim.example.com" {
-		t.Errorf("the trailing slash stayed: %q", nominatim.(*nominatimProvider).baseURL)
+	if nominatim.(*nominatimProvider).baseUrl != "https://nominatim.example.com" {
+		t.Errorf("the trailing slash stayed: %q", nominatim.(*nominatimProvider).baseUrl)
 	}
 	photon, err := NewProvider(config.Places{ProviderKind: config.PlacesProviderPhoton, ProviderURL: "http://localhost:2322"}, "TeaNode/test")
 	if _, isPhoton := photon.(*photonProvider); !isPhoton || err != nil {
@@ -164,13 +165,18 @@ func TestAProviderThatFailsSaysSoInPlainWords(t *testing.T) {
 	provider := &nominatimProvider{requester: newTestRequester(server)}
 
 	_, err := provider.Name(context.Background(), 13, 23)
-	if err == nil || err.Error() != "place: the provider answered 503" {
-		t.Errorf("the error is %v", err)
+	var statusError *ProviderStatusError
+	if !errors.As(err, &statusError) || statusError.StatusCode != 503 || FailureSentence(err) != "the place provider answered 503" {
+		t.Errorf("the error is %v, said as %q", err, FailureSentence(err))
 	}
 
 	server.Close()
-	if _, err = provider.Name(context.Background(), 10.5, 20.5); err == nil || !strings.HasPrefix(err.Error(), "place: could not reach the provider") {
-		t.Errorf("a provider that is gone gives %v", err)
+	if _, err = provider.Name(context.Background(), 10.5, 20.5); !errors.Is(err, ErrProviderUnreachable) || FailureSentence(err) != "could not reach the place provider" {
+		t.Errorf("a provider that is gone gives %v, said as %q", err, FailureSentence(err))
+	}
+	// The sentence names no address and no coordinate, which the error does.
+	if strings.Contains(FailureSentence(err), "127.0.0.1") || strings.Contains(FailureSentence(err), "10.5") {
+		t.Errorf("the sentence gives away where the provider is: %q", FailureSentence(err))
 	}
 }
 
@@ -369,7 +375,7 @@ func TestTheLimiterAllowsOneRequestAtATimeInTurn(t *testing.T) {
 func TestTheLimiterStopsWaitingWhenTheContextEnds(t *testing.T) {
 	t.Parallel()
 
-	limit := &limiter{interval: time.Hour}
+	limit := &limiter{interval: time.Hour, maximumWait: 2 * time.Hour}
 	if err := limit.wait(context.Background()); err != nil {
 		t.Fatalf("the first request should go at once: %s", err)
 	}
@@ -387,11 +393,73 @@ func TestTheLimiterStopsWaitingWhenTheContextEnds(t *testing.T) {
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) { called = true }))
 	defer server.Close()
-	provider := &nominatimProvider{requester: &requester{baseURL: server.URL, userAgent: "TeaNode/test", client: server.Client(), limiter: limit}}
+	provider := &nominatimProvider{requester: &requester{baseUrl: server.URL, userAgent: "TeaNode/test", client: server.Client(), limiter: limit}}
 	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
 	if _, err := provider.Name(ctx, 10.5, 20.5); err == nil || !strings.Contains(err.Error(), "stopped waiting") || called {
-		t.Errorf("a cancelled wait gave %v, and the server was called: %v", err, called)
+		t.Errorf("a canceled wait gave %v, and the server was called: %v", err, called)
+	}
+}
+
+// A caller whose turn is more than a few seconds away is told the provider is
+// busy at once, and does not take a turn, so one account asking in a loop does
+// not push everybody else's turn minutes away.
+func TestTheLimiterRefusesACallerWhoseTurnIsTooFarAway(t *testing.T) {
+	t.Parallel()
+
+	limit := &limiter{interval: time.Second, maximumWait: 1500 * time.Millisecond}
+	if err := limit.wait(context.Background()); err != nil {
+		t.Fatalf("the first request should go at once: %s", err)
+	}
+	// The second is a second away, which is within the longest wait.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = limit.wait(ctx) }()
+	reservedAt := func() time.Time {
+		limit.mutex.Lock()
+		defer limit.mutex.Unlock()
+		return limit.lastRequestAt
+	}
+	started := time.Now()
+	for time.Since(started) < 2*time.Second && reservedAt().Sub(started) < 500*time.Millisecond {
+		time.Sleep(time.Millisecond)
+	}
+	before := reservedAt()
+
+	// The third would be two seconds away.
+	if err := limit.wait(context.Background()); !errors.Is(err, ErrProviderBusy) {
+		t.Fatalf("a request two seconds away gave %v", err)
+	}
+	if after := reservedAt(); !after.Equal(before) {
+		t.Errorf("a refused caller took a turn: %s later", after.Sub(before))
+	}
+	if FailureSentence(ErrProviderBusy) != "the place provider is busy" {
+		t.Errorf("the sentence is %q", FailureSentence(ErrProviderBusy))
+	}
+}
+
+// A caller that stops waiting gives its turn back when it is the last in line,
+// so the next one is not made to wait for a request that was never made.
+func TestTheLimiterGivesBackTheTurnOfACanceledCaller(t *testing.T) {
+	t.Parallel()
+
+	limit := &limiter{interval: time.Hour, maximumWait: 2 * time.Hour}
+	if err := limit.wait(context.Background()); err != nil {
+		t.Fatalf("the first request should go at once: %s", err)
+	}
+	reservedAt := func() time.Time {
+		limit.mutex.Lock()
+		defer limit.mutex.Unlock()
+		return limit.lastRequestAt
+	}
+	before := reservedAt()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := limit.wait(ctx); err == nil {
+		t.Fatal("a request an hour away went through")
+	}
+	if after := reservedAt(); !after.Equal(before) {
+		t.Errorf("the canceled caller kept its turn: %s later", after.Sub(before))
 	}
 }
 

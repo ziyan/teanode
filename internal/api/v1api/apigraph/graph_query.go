@@ -18,14 +18,19 @@ type queryExecution struct {
 	Impersonator *models.User
 }
 
-// isModelBackedQuery is the queries that ask a model, or wait on runs
-// that do, and so read in phases of their own rather than inside one
-// transaction held open while the model answers: recall for a question
-// embeds it, and a survey is minutes of runs.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true}
+// isNetworkWaitingQuery is the queries that wait on something outside the
+// database, and so read in phases of their own rather than inside one
+// transaction held open while they wait: recall for a question embeds it, a
+// survey is minutes of model runs, and a search for places waits on the place
+// provider, which answers one request a second.
+var isNetworkWaitingQuery = map[string]bool{
+	"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true,
+	"ReadAgentCodingContext": true, "RecallAgentCodingMemory": true,
+	"SearchPlaces": true, "ListNearbyPlaces": true,
+}
 
 // Queries materialize their results within each root resolver. Keeping the
-// transaction there lets model-backed resolvers use separate read phases.
+// transaction there lets resolvers that wait on the network use separate read phases.
 // Mutations retain the existing request transaction.
 func (self *graph) wrapQueryTransactions() {
 	for fieldName, field := range self.schema.QueryType().Fields() {
@@ -35,7 +40,7 @@ func (self *graph) wrapQueryTransactions() {
 		}
 		field.Resolve = func(parameters graphql.ResolveParams) (interface{}, error) {
 			execution, isQuery := parameters.Context.Value(queryExecutionKey{}).(*queryExecution)
-			if !isQuery || isModelBackedQuery[fieldName] {
+			if !isQuery || isNetworkWaitingQuery[fieldName] {
 				return resolve(parameters)
 			}
 			var resolved interface{}
@@ -94,4 +99,22 @@ func (self *graph) queryPrincipal(transaction db.Transaction, execution *queryEx
 		principal.Impersonator = execution.Impersonator
 	}
 	return principal, err
+}
+
+// readInPhase runs one short read phase of a query that waits on the network:
+// a transaction of its own, with the caller's principal read afresh in it, so
+// that a permission taken away while the wait lasted is seen by the phase
+// after it.
+func (self *graph) readInPhase(ctx context.Context, read func(phaseContext context.Context) error) error {
+	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		phaseContext := ctx
+		if execution, isQuery := ctx.Value(queryExecutionKey{}).(*queryExecution); isQuery {
+			principal, err := self.queryPrincipal(transaction, execution)
+			if err != nil {
+				return err
+			}
+			phaseContext = api.ContextWithPrincipal(phaseContext, principal)
+		}
+		return read(api.ContextWithTransaction(phaseContext, transaction))
+	})
 }

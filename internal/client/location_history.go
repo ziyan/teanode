@@ -42,7 +42,7 @@ type Place struct {
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
-// PlaceVisit is one stay at a place.
+// PlaceVisit is one visit at a place.
 type PlaceVisit struct {
 	ID               string     `json:"id"`
 	Place            *Place     `json:"place"`
@@ -57,15 +57,15 @@ type PlaceVisit struct {
 
 // Location is where a person is.
 type Location struct {
-	UserID             string         `json:"userId"`
-	Username           string         `json:"username"`
-	Name               string         `json:"name"`
-	LocationShareLevel string         `json:"locationShareLevel"`
-	LatestPoint        *LocationPoint `json:"latestPoint"`
-	OpenVisit          *PlaceVisit    `json:"openVisit"`
+	UserID      string         `json:"userId"`
+	Username    string         `json:"username"`
+	Name        string         `json:"name"`
+	ShareLevel  string         `json:"shareLevel"`
+	LatestPoint *LocationPoint `json:"latestPoint"`
+	OpenVisit   *PlaceVisit    `json:"openVisit"`
 }
 
-// PlaceVisitPage is a page of stays; NextOffset is null on the last.
+// PlaceVisitPage is a page of visits; NextOffset is null on the last.
 type PlaceVisitPage struct {
 	PlaceVisits []*PlaceVisit `json:"placeVisits"`
 	NextOffset  *int          `json:"nextOffset"`
@@ -117,7 +117,7 @@ const (
 
 	DocumentGetLocation = `query ($userId: String) {
   GetLocation(userId: $userId) {
-    userId username name locationShareLevel
+    userId username name shareLevel
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
   }
@@ -150,8 +150,8 @@ const (
   }
 }`
 
-	DocumentListLocationPoints = `query ($from: DateTime!, $until: DateTime!) {
-  ListLocationPoints(from: $from, until: $until) { ` + locationPointFields + ` }
+	DocumentListLocationPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
+  ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + locationPointFields + ` }
 }`
 
 	DocumentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float) {
@@ -168,8 +168,8 @@ const (
   }
 }`
 
-	DocumentForgetLocationHistory = `mutation ($from: DateTime, $until: DateTime) {
-  ForgetLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
+	DocumentEraseLocationHistory = `mutation ($from: DateTime, $until: DateTime) {
+  EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
 }`
 )
 
@@ -194,7 +194,7 @@ func GetLocationOf(ctx context.Context, connection *Client, userId string) (*Loc
 	return result.GetLocation, nil
 }
 
-// LocationVisitsQuery narrows and pages a listing of stays. A zero field is
+// LocationVisitsQuery narrows and pages a listing of visits. A zero field is
 // left out.
 type LocationVisitsQuery struct {
 	UserID      string
@@ -205,7 +205,7 @@ type LocationVisitsQuery struct {
 	LimitCount  int
 }
 
-// ListLocationVisits is a page of the caller's stays, newest first.
+// ListLocationVisits is a page of the caller's visits, newest first.
 func ListLocationVisits(ctx context.Context, connection *Client, query LocationVisitsQuery) (*PlaceVisitPage, error) {
 	variables := map[string]any{}
 	if query.UserID != "" {
@@ -332,12 +332,16 @@ func SearchPlaces(ctx context.Context, connection *Client, search PlaceSearch) (
 	return result.SearchPlaces, nil
 }
 
-// ListLocationPoints is the positions of up to two days, oldest first.
-func ListLocationPoints(ctx context.Context, connection *Client, from, until time.Time) ([]*LocationPoint, error) {
+// ListLocationPoints is the positions of up to two days, oldest first, of the
+// caller or, with a userId, of somebody who shares their history with them.
+func ListLocationPoints(ctx context.Context, connection *Client, userId string, from, until time.Time) ([]*LocationPoint, error) {
 	var result struct {
 		ListLocationPoints []*LocationPoint `json:"ListLocationPoints"`
 	}
 	variables := map[string]any{"from": from.UTC().Format(time.RFC3339), "until": until.UTC().Format(time.RFC3339)}
+	if userId != "" {
+		variables["userId"] = userId
+	}
 	if err := connection.Execute(ctx, DocumentListLocationPoints, variables, &result); err != nil {
 		return nil, err
 	}
@@ -387,7 +391,7 @@ func SavePlace(ctx context.Context, connection *Client, change PlaceChange) (*Pl
 	return result.SavePlace, nil
 }
 
-// ForgetPlace deletes a place and every stay at it.
+// ForgetPlace deletes a place and every visit at it.
 func ForgetPlace(ctx context.Context, connection *Client, placeId string) error {
 	var result struct {
 		ForgetPlace bool `json:"ForgetPlace"`
@@ -444,9 +448,10 @@ func CheckIn(ctx context.Context, connection *Client, at CheckInAt) (*PlaceVisit
 	return result.CheckIn, nil
 }
 
-// ForgetLocationHistory deletes positions and stays that began in a range, or
-// all of them when both ends are nil.
-func ForgetLocationHistory(ctx context.Context, connection *Client, from, until *time.Time) (*LocationHistoryErased, error) {
+// EraseLocationHistory erases positions and visits in a range, or all of them
+// when both ends are nil, and the places that leaves with no visit that were
+// not named or labeled.
+func EraseLocationHistory(ctx context.Context, connection *Client, from, until *time.Time) (*LocationHistoryErased, error) {
 	variables := map[string]any{}
 	if from != nil {
 		variables["from"] = from.UTC().Format(time.RFC3339)
@@ -455,12 +460,12 @@ func ForgetLocationHistory(ctx context.Context, connection *Client, from, until 
 		variables["until"] = until.UTC().Format(time.RFC3339)
 	}
 	var result struct {
-		ForgetLocationHistory *LocationHistoryErased `json:"ForgetLocationHistory"`
+		EraseLocationHistory *LocationHistoryErased `json:"EraseLocationHistory"`
 	}
-	if err := connection.Execute(ctx, DocumentForgetLocationHistory, variables, &result); err != nil {
+	if err := connection.Execute(ctx, DocumentEraseLocationHistory, variables, &result); err != nil {
 		return nil, err
 	}
-	return result.ForgetLocationHistory, nil
+	return result.EraseLocationHistory, nil
 }
 
 // LocationShare is one share of the caller's location.
@@ -480,7 +485,7 @@ const (
 
 	DocumentListSharedLocations = `query {
   ListSharedLocations {
-    userId username name locationShareLevel
+    userId username name shareLevel
     latestPoint { ` + locationPointFields + ` }
     openVisit { ` + placeVisitFields + ` }
   }

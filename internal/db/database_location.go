@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"gorm.io/gorm/clause"
@@ -15,7 +16,7 @@ import (
 )
 
 // LocationOperation is where a person has been: the positions their phone or
-// browser reported, the places those are at and the stays at them. All of it
+// browser reported, the places those are at and the visits to them. All of it
 // belongs to one person, and every method takes that person, so that reading
 // or changing somebody else's is not a question of which call to make.
 //
@@ -39,11 +40,11 @@ type LocationOperation interface {
 	ListLocationPoints(userId string, from, until time.Time, limitCount int) ([]*models.LocationPoint, error)
 
 	// FindPlaceAt is the person's place whose radius holds the point, the
-	// nearest centre first, or nil when there is none.
+	// nearest center first, or nil when there is none.
 	FindPlaceAt(userId string, latitudeDegrees, longitudeDegrees float64) (*models.Place, error)
 
 	// ListPlacesNear is the person's places that hold the point or whose
-	// centre is within radiusMeters of it, nearest first, at most limitCount.
+	// center is within radiusMeters of it, nearest first, at most limitCount.
 	// Each carries its distance.
 	ListPlacesNear(userId string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*PlaceDistance, error)
 
@@ -52,25 +53,30 @@ type LocationOperation interface {
 	// in the answer.
 	FindPlaceIDsByOSM(userId string, references []OSMReference) (map[OSMReference]string, error)
 
-	// SummarizePlaceVisits counts the stays at each of the places and says
+	// SummarizePlaceVisits counts the visits to each of the places and says
 	// when the last one was, for the places that have any.
 	SummarizePlaceVisits(userId string, placeIds []string) (map[string]*PlaceVisitSummary, error)
 
 	// CreatePlace makes a place for the person. ErrInvalidArguments for a
 	// position off the earth, a radius outside what a person can set (zero
-	// takes the default), or a label or OpenStreetMap type nobody knows.
+	// takes the default), or a label or OpenStreetMap type nobody knows. Names,
+	// categories and addresses are cut to the width of their columns and have
+	// line breaks and control characters taken out, as SetPlaceNamed does.
 	CreatePlace(userId string, place *models.Place) (*models.Place, error)
 
-	// SavePlace changes a place and answers it as it is now. ErrNotFound
-	// unless it is the person's, ErrInvalidArguments for a change that is not
-	// allowed.
+	// SavePlace changes a place and answers it as it is now. A place moved
+	// farther than its radius loses what the provider said about the old
+	// position (the OpenStreetMap object, name and address, and the time it was
+	// named), so that it is named again. ErrNotFound unless it is the person's,
+	// ErrInvalidArguments for a change that is not allowed.
 	SavePlace(userId, placeId string, changes PlaceChanges) (*models.Place, error)
 
 	// GetPlace is one of the person's places, or ErrNotFound.
 	GetPlace(userId, placeId string) (*models.Place, error)
 
-	// ForgetPlace deletes a place and every stay at it. ErrNotFound unless it
-	// is the person's.
+	// ForgetPlace deletes a place and every visit to it, and with them the
+	// location journal documents of the days those visits were on, in the
+	// same transaction. ErrNotFound unless it is the person's.
 	ForgetPlace(userId, placeId string) error
 
 	// ListPlaces pages the person's places, each with its number of visits and
@@ -79,36 +85,44 @@ type LocationOperation interface {
 	// the offset that reads on, and zero when this page is the last.
 	ListPlaces(userId string, filter PlaceFilter) (places []*models.Place, nextOffset int, err error)
 
-	// PutPlaceVisit stores a stay, or completes the one stored under the same
+	// PutPlaceVisit stores a visit, or completes the one stored under the same
 	// client_visit_key: a later report fills in the departure, and the
-	// arrival if it was missing. Stays at one place less than ten minutes
-	// apart are then joined into one, so that iOS splitting a stay in two
-	// does not show as two. isNew is whether the key was unknown. The visit
-	// passed in is updated to what is stored. ErrNotFound unless the place is
-	// the person's, ErrInvalidArguments for a stay with neither time or that
-	// ends before it starts.
+	// arrival if it was missing. Visits to one place less than ten minutes
+	// apart are then joined into one, so that iOS splitting a visit in two
+	// does not show as two; the key of a visit that was joined into another
+	// stays known, and a report under it completes the visit it became. A
+	// departure before the arrival already stored is the arrival. A new visit
+	// with an arrival ends every other visit of the person that is still open
+	// and began no later, at that arrival. isNew is whether the key was
+	// unknown. The visit passed in is updated to what is stored. ErrNotFound
+	// unless the place is the person's, ErrInvalidArguments for a visit with
+	// neither time or that ends before it starts.
 	PutPlaceVisit(userId string, visit *models.PlaceVisit) (isNew bool, err error)
 
-	// GetPlaceVisitByClientKey is the stay the phone calls by this key, with
-	// its place, or nil when there is none.
+	// GetPlaceVisitByClientKey is the visit the phone calls by this key, or the
+	// visit that one was joined into, with its place, or nil when there is none.
 	GetPlaceVisitByClientKey(userId, clientVisitKey string) (*models.PlaceVisit, error)
 
-	// GetOpenPlaceVisit is the stay in progress, the latest one with no
+	// GetOpenPlaceVisit is the visit in progress, the latest one with no
 	// departure, with its place; nil when there is none.
 	GetOpenPlaceVisit(userId string) (*models.PlaceVisit, error)
 
-	// EndOpenPlaceVisit sets the departure of the stay in progress and answers
+	// EndOpenPlaceVisit sets the departure of the visit in progress and answers
 	// it, or answers nil when there is none.
 	EndOpenPlaceVisit(userId string, at time.Time) (*models.PlaceVisit, error)
 
-	// ListPlaceVisits pages stays newest first, each with its place.
+	// ListPlaceVisits pages visits newest first, each with its place.
 	// nextOffset is as in ListPlaces.
 	ListPlaceVisits(userId string, filter PlaceVisitFilter) (visits []*models.PlaceVisit, nextOffset int, err error)
 
-	// ForgetLocationHistory deletes positions and stays that started in the
+	// EraseLocationHistory deletes positions and visits that started in the
 	// range (all of them when both ends are nil), and then the places left
-	// with no stay that the person neither named nor labeled.
-	ForgetLocationHistory(userId string, from, until *time.Time) (pointCount, visitCount, placeCount int, err error)
+	// with no visit that the person neither named nor labeled. It deletes in
+	// the same transaction the location journal documents of the days the
+	// range touches, with their chunks, since those say where the person was
+	// as plainly as the visits did. Anything the agent already learned from
+	// those days stays in its memory until the person removes it.
+	EraseLocationHistory(userId string, from, until *time.Time) (pointCount, visitCount, placeCount int, err error)
 
 	// ClaimPlacesToName takes up to limitCount places that wait for a name and
 	// that no instance has taken in the last ten minutes, oldest first, and
@@ -116,10 +130,17 @@ type LocationOperation interface {
 	// same place.
 	ClaimPlacesToName(limitCount int, now time.Time) ([]*models.Place, error)
 
+	// ClaimPlaceToName takes one place that waits for a name, for the caller
+	// that has just made it and names it at once, with the claim
+	// ClaimPlacesToName makes. It answers nil when the place is gone, is named
+	// already or was claimed in the last ten minutes, which is a place the
+	// caller should leave alone.
+	ClaimPlaceToName(placeId string, now time.Time) (*models.Place, error)
+
 	// SetPlaceNamed records what a provider answered for a place. With an
 	// errorMessage nothing else changes and the place stays unnamed, to be
 	// claimed again once its claim is old. Without one, found is what the
-	// provider knows about the spot, or nil when it knows nothing, and either
+	// provider knows about the position, or nil when it knows nothing, and either
 	// way the place is named from now on. A name the person gave is never
 	// replaced. ErrNotFound when there is no such place.
 	SetPlaceNamed(placeId string, found *NamedPlace, errorMessage string, now time.Time) error
@@ -142,6 +163,13 @@ type PlaceChanges struct {
 	LongitudeDegrees *float64
 
 	RadiusMeters *float64
+
+	// MovedPlaceName is the name a place the person did not name takes when it
+	// moves farther than its radius: what was learned about the old position is
+	// dropped, and the place goes back to the name of its city until it is
+	// named again. The caller looks the city up, since this package cannot.
+	// Empty leaves the place with no name until the provider names it.
+	MovedPlaceName string
 }
 
 // PlaceFilter narrows and pages a listing of places.
@@ -157,10 +185,10 @@ type PlaceFilter struct {
 	LimitCount int
 }
 
-// PlaceVisitFilter narrows and pages a listing of stays.
+// PlaceVisitFilter narrows and pages a listing of visits.
 type PlaceVisitFilter struct {
-	// From and Until keep stays that overlap the range: those that ended at
-	// or after From and began before Until. A stay still in progress has not
+	// From and Until keep visits that overlap the range: those that ended at
+	// or after From and began before Until. A visit still in progress has not
 	// ended.
 	From  *time.Time
 	Until *time.Time
@@ -178,7 +206,7 @@ type OSMReference struct {
 	OSMID   int64
 }
 
-// PlaceDistance is one of the person's places and how far its centre is from
+// PlaceDistance is one of the person's places and how far its center is from
 // a point that was asked about.
 type PlaceDistance struct {
 	Place          *models.Place
@@ -191,7 +219,7 @@ type PlaceVisitSummary struct {
 	LastVisitAt *time.Time
 }
 
-// NamedPlace is what a provider knows about a spot, for SetPlaceNamed.
+// NamedPlace is what a provider knows about a position, for SetPlaceNamed.
 type NamedPlace struct {
 	PlaceName   string
 	OSMType     string
@@ -202,12 +230,12 @@ type NamedPlace struct {
 
 const (
 	// placeListDefaultLimit and placeListMaximumLimit bound a page of places
-	// or of stays when the caller names no limit or too large a one.
+	// or of visits when the caller names no limit or too large a one.
 	placeListDefaultLimit = 50
 	placeListMaximumLimit = 200
 
-	// placeVisitJoinGap is how close two stays at one place must be to be one:
-	// iOS sometimes reports a stay as two, with a few minutes between.
+	// placeVisitJoinGap is how close two Visits to one place must be to be one:
+	// iOS sometimes reports a visit as two, with a few minutes between.
 	placeVisitJoinGap = 10 * time.Minute
 
 	// placeNamingClaimDuration is how long a place taken for naming is left
@@ -217,7 +245,11 @@ const (
 	// locationPointBatchSize is how many positions one INSERT carries.
 	locationPointBatchSize = 200
 
-	placeNameMaximumLength = 256
+	// The widths of the columns a provider's answer is kept in.
+	placeNameMaximumLength        = 256
+	placeCategoryMaximumLength    = 128
+	placeAddressMaximumLength     = 512
+	placeNamingErrorMaximumLength = 512
 )
 
 type locationPointModel struct {
@@ -358,6 +390,23 @@ func isRadiusAllowed(radiusMeters float64) bool {
 	return radiusMeters >= models.PlaceRadiusMinimumMeters && radiusMeters <= models.PlaceRadiusMaximumMeters
 }
 
+// cleanPlaceText is text a provider or a caller gave for a place, fit to keep:
+// line breaks and tabs become spaces, other control characters are dropped,
+// the ends are trimmed and it is cut to the width of its column. A name is
+// read back to the model, and a column has a width.
+func cleanPlaceText(text string, limit int) string {
+	cleaned := strings.Map(func(character rune) rune {
+		switch {
+		case unicode.IsSpace(character):
+			return ' '
+		case unicode.IsControl(character):
+			return -1
+		}
+		return character
+	}, text)
+	return truncateRunes(strings.TrimSpace(cleaned), limit)
+}
+
 // pageLimit is the size of a page the caller asked for, kept to what a page
 // may be.
 func pageLimit(limitCount int) int {
@@ -368,7 +417,7 @@ func pageLimit(limitCount int) int {
 }
 
 // placeDistanceSQL is the great circle distance in meters between a place's
-// centre and the point @latitude, @longitude: the haversine formula, with the
+// center and the point @latitude, @longitude: the haversine formula, with the
 // same earth radius as the one in internal/place that measures the same thing
 // in Go. It is done here because choosing the place a point is in is a filter
 // over a person's places, and because internal/place cannot be imported from
@@ -487,18 +536,18 @@ func (self *transaction) CreatePlace(userId string, place *models.Place) (*model
 	row := &placeModel{
 		ID:                 newID(),
 		UserID:             userId,
-		PlaceName:          strings.TrimSpace(place.PlaceName),
+		PlaceName:          cleanPlaceText(place.PlaceName, placeNameMaximumLength),
 		IsNamedByPerson:    place.IsNamedByPerson,
 		PlaceLabel:         string(place.PlaceLabel),
 		LatitudeDegrees:    place.LatitudeDegrees,
 		LongitudeDegrees:   place.LongitudeDegrees,
 		RadiusMeters:       radiusMeters,
 		OSMType:            place.OSMType,
-		OSMName:            place.OSMName,
-		OSMCategory:        place.OSMCategory,
-		AddressText:        place.AddressText,
+		OSMName:            cleanPlaceText(place.OSMName, placeNameMaximumLength),
+		OSMCategory:        cleanPlaceText(place.OSMCategory, placeCategoryMaximumLength),
+		AddressText:        cleanPlaceText(place.AddressText, placeAddressMaximumLength),
 		NamedAt:            place.NamedAt,
-		NamingErrorMessage: place.NamingErrorMessage,
+		NamingErrorMessage: cleanPlaceText(place.NamingErrorMessage, placeNamingErrorMaximumLength),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -550,7 +599,7 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 	}
 	updates := map[string]any{"updated_at": time.Now()}
 	if changes.PlaceName != nil {
-		name := strings.TrimSpace(*changes.PlaceName)
+		name := cleanPlaceText(*changes.PlaceName, placeNameMaximumLength)
 		switch {
 		case name != "":
 			updates["place_name"] = name
@@ -577,6 +626,34 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 	if changes.LatitudeDegrees != nil {
 		updates["latitude_degrees"] = *changes.LatitudeDegrees
 		updates["longitude_degrees"] = *changes.LongitudeDegrees
+
+		// Everything a provider said was said about the old position. A place moved
+		// farther than its radius is somewhere else, so that is dropped and the
+		// place waits to be named again; a place nudged within its radius is
+		// still the same place.
+		var movedMeters float64
+		if err := self.tx.Raw(`SELECT `+placeDistanceSQL+` FROM "place" place WHERE place.id = @place`,
+			sql.Named("latitude", *changes.LatitudeDegrees), sql.Named("longitude", *changes.LongitudeDegrees),
+			sql.Named("place", placeId)).Scan(&movedMeters).Error; err != nil {
+			return nil, err
+		}
+		if movedMeters > locked.RadiusMeters {
+			updates["osm_type"] = ""
+			updates["osm_id"] = nil
+			updates["osm_name"] = ""
+			updates["osm_category"] = ""
+			updates["address_text"] = ""
+			updates["named_at"] = nil
+			updates["naming_claimed_at"] = nil
+			updates["naming_error_message"] = ""
+			isNamedByPerson := locked.IsNamedByPerson
+			if value, isChanged := updates["is_named_by_person"].(bool); isChanged {
+				isNamedByPerson = value
+			}
+			if !isNamedByPerson {
+				updates["place_name"] = cleanPlaceText(changes.MovedPlaceName, placeNameMaximumLength)
+			}
+		}
 	}
 	if changes.RadiusMeters != nil {
 		updates["radius_meters"] = *changes.RadiusMeters
@@ -587,15 +664,70 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 	return self.GetPlace(userId, placeId)
 }
 
+// locationDayDocumentsSQL starts a statement over the location journal
+// documents of one person (@user): one per finished day, in the location
+// source of the person's agent, named location:YYYY-MM-DD. A condition on
+// document.happened_at, the start of the day in the person's own time zone,
+// follows it.
+const locationDayDocumentsSQL = `FROM "agent_document" document
+	JOIN "agent_source" location_source ON location_source.id = document.source_id AND location_source.kind = 'location'
+	JOIN "agent" owner_agent ON owner_agent.id = location_source.agent_id AND owner_agent.user_id = @user
+	WHERE document.external_id LIKE 'location:%'`
+
+// locationDayEndSQL is when the day a journal document is about ended, for a
+// document in a statement over locationDayDocumentsSQL. The database does not
+// know the person's time zone, and a day is 25 hours long on the day the
+// clocks go back, so the day ends where the next document begins when there is
+// one within 25 hours, and 25 hours after it began if not: a day with no
+// document after it had nothing in its last hour to be written down.
+const locationDayEndSQL = `LEAST(document.happened_at + interval '25 hours', COALESCE(
+	(SELECT min(later.happened_at) FROM "agent_document" later
+		WHERE later.source_id = document.source_id AND later.external_id LIKE 'location:%' AND later.happened_at > document.happened_at),
+	document.happened_at + interval '25 hours'))`
+
+// deleteLocationDayDocuments deletes the location journal documents of the
+// days a range touches, with their chunks and vectors (which go with the
+// document), for all days when both ends are nil.
+func (self *transaction) deleteLocationDayDocuments(userId string, from, until *time.Time) error {
+	conditions := ""
+	arguments := []any{sql.Named("user", userId)}
+	if until != nil {
+		conditions += ` AND document.happened_at < @until`
+		arguments = append(arguments, sql.Named("until", *until))
+	}
+	if from != nil {
+		conditions += ` AND ` + locationDayEndSQL + ` > @from`
+		arguments = append(arguments, sql.Named("from", *from))
+	}
+	return self.tx.Exec(`DELETE FROM "agent_document" WHERE "id" IN (SELECT document.id `+locationDayDocumentsSQL+conditions+`)`,
+		arguments...).Error
+}
+
+// deleteLocationDayDocumentsOfPlace deletes the journal documents of the days
+// on which the person had a visit to the place, since those name it.
+func (self *transaction) deleteLocationDayDocumentsOfPlace(userId, placeId string) error {
+	return self.tx.Exec(`DELETE FROM "agent_document" WHERE "id" IN (SELECT document.id `+locationDayDocumentsSQL+`
+		AND EXISTS (SELECT 1 FROM "place_visit" visit
+			WHERE visit.user_id = @user AND visit.place_id = @place
+			  AND COALESCE(visit.arrived_at, visit.departed_at) < `+locationDayEndSQL+`
+			  AND COALESCE(visit.departed_at, now()) >= document.happened_at))`,
+		sql.Named("user", userId), sql.Named("place", placeId)).Error
+}
+
 func (self *transaction) ForgetPlace(userId, placeId string) error {
-	result := self.tx.Where("\"id\" = ? AND \"user_id\" = ?", placeId, userId).Delete(&placeModel{})
-	if result.Error != nil {
-		return result.Error
+	var locked placeModel
+	if err := lockRow(self.tx, &locked, placeId); err != nil || locked.UserID != userId {
+		// Somebody else's place is no place at all.
+		if err == nil {
+			err = ErrNotFound
+		}
+		return err
 	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
+	// Before the visits go: they say which days named the place.
+	if err := self.deleteLocationDayDocumentsOfPlace(userId, placeId); err != nil {
+		return err
 	}
-	return nil
+	return self.tx.Where("\"id\" = ? AND \"user_id\" = ?", placeId, userId).Delete(&placeModel{}).Error
 }
 
 func (self *transaction) ListPlaces(userId string, filter PlaceFilter) ([]*models.Place, int, error) {
@@ -643,7 +775,7 @@ func (self *transaction) ListPlaces(userId string, filter PlaceFilter) ([]*model
 	return places, nextOffset, nil
 }
 
-// visitStart is when a stay began as far as is known: its arrival, or its
+// visitStart is when a visit began as far as is known: its arrival, or its
 // departure when iOS reported only that.
 func visitStart(visit *placeVisitModel) time.Time {
 	if visit.ArrivedAt != nil {
@@ -655,7 +787,7 @@ func visitStart(visit *placeVisitModel) time.Time {
 	return visit.CreatedAt
 }
 
-// visitEnd is when a stay ended as far as is known: its departure, or, while
+// visitEnd is when a visit ended as far as is known: its departure, or, while
 // the person is still there, the moment it began, since nothing later has been
 // reported.
 func visitEnd(visit *placeVisitModel) time.Time {
@@ -665,14 +797,49 @@ func visitEnd(visit *placeVisitModel) time.Time {
 	return visitStart(visit)
 }
 
+// placeVisitKeyModel is the client key of a visit that was joined into
+// another, and the visit it lives on in. The row of the visit that began first
+// keeps its own key in place_visit; every key of the visits joined into it
+// is here, so that a phone sending any of them again finds the visit they
+// became.
+type placeVisitKeyModel struct {
+	UserID         string     `gorm:"column:user_id;primaryKey"`
+	ClientVisitKey string     `gorm:"column:client_visit_key;primaryKey"`
+	PlaceVisitID   string     `gorm:"column:place_visit_id"`
+	ArrivedAt      *time.Time `gorm:"column:arrived_at"`
+}
+
+func (placeVisitKeyModel) TableName() string { return "place_visit_key" }
+
+// findPlaceVisitByKey is the visit the phone calls by this key: the one with
+// the key itself, or the one a visit with the key was joined into. Locked when
+// isLocked, so that two reports of one visit take turns.
+func (self *transaction) findPlaceVisitByKey(userId, clientVisitKey string, isLocked bool) (*placeVisitModel, error) {
+	locking := ""
+	if isLocked {
+		locking = " FOR UPDATE OF visit"
+	}
+	var found []placeVisitModel
+	if err := self.tx.Raw(`SELECT visit.* FROM "place_visit" visit
+		WHERE visit.user_id = @user AND (visit.client_visit_key = @key OR visit.id IN (
+			SELECT joined.place_visit_id FROM "place_visit_key" joined WHERE joined.user_id = @user AND joined.client_visit_key = @key))
+		LIMIT 1`+locking, sql.Named("user", userId), sql.Named("key", clientVisitKey)).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) == 0 {
+		return nil, nil
+	}
+	return &found[0], nil
+}
+
 func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) (bool, error) {
 	if userId == "" || visit == nil || visit.PlaceID == "" || !visit.VisitSource.IsValid() ||
 		(visit.ArrivedAt == nil && visit.DepartedAt == nil) ||
 		(visit.ArrivedAt != nil && visit.DepartedAt != nil && visit.DepartedAt.Before(*visit.ArrivedAt)) ||
 		!isOnEarth(visit.LatitudeDegrees, visit.LongitudeDegrees) || visit.AccuracyMeters < 0 {
-		return false, fmt.Errorf("%w: a stay needs a place, a source, coordinates on the earth and an arrival or a departure, and cannot end before it starts", ErrInvalidArguments)
+		return false, fmt.Errorf("%w: a visit needs a place, a source, coordinates on the earth and an arrival or a departure, and cannot end before it starts", ErrInvalidArguments)
 	}
-	// The place is locked, so that two reports of stays at it, which would
+	// The place is locked, so that two reports of visits to it, which would
 	// each join the other, take turns.
 	var lockedPlace placeModel
 	if err := lockRow(self.tx, &lockedPlace, visit.PlaceID); err != nil || lockedPlace.UserID != userId {
@@ -687,12 +854,11 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 	if key == "" {
 		key = newID()
 	}
-	var existing []placeVisitModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("\"user_id\" = ? AND \"client_visit_key\" = ?", userId, key).Limit(1).Find(&existing).Error; err != nil {
+	existing, err := self.findPlaceVisitByKey(userId, key, true)
+	if err != nil {
 		return false, err
 	}
-	isNew := len(existing) == 0
+	isNew := existing == nil
 	var kept placeVisitModel
 	if isNew {
 		kept = placeVisitModel{
@@ -712,18 +878,52 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 		if err := self.tx.Create(&kept).Error; err != nil {
 			return false, err
 		}
+		// The person is at this visit's place from its arrival, so a visit
+		// still open elsewhere, whose departure the phone never delivered, is
+		// over. Without this it would stay open for ever and count as time
+		// spent in two places at once.
+		if kept.ArrivedAt != nil {
+			if err := self.tx.Model(&placeVisitModel{}).
+				Where("\"user_id\" = ? AND \"id\" <> ? AND \"departed_at\" IS NULL AND \"arrived_at\" <= ?", userId, kept.ID, *kept.ArrivedAt).
+				Updates(map[string]any{"departed_at": *kept.ArrivedAt, "updated_at": now}).Error; err != nil {
+				return false, err
+			}
+		}
 	} else {
-		// A later report of the same stay completes it. The place, the
+		// A later report of the same visit completes it. The place, the
 		// position and the source are what the first report said.
-		kept = existing[0]
-		if visit.DepartedAt != nil {
-			kept.DepartedAt = visit.DepartedAt
+		kept = *existing
+		var absorbed struct {
+			KeyCount        int        `gorm:"column:key_count"`
+			LatestArrivedAt *time.Time `gorm:"column:latest_arrived_at"`
+		}
+		if err := self.tx.Raw(`SELECT count(*) AS key_count, max(arrived_at) AS latest_arrived_at
+			FROM "place_visit_key" WHERE place_visit_id = ?`, kept.ID).Scan(&absorbed).Error; err != nil {
+			return false, err
 		}
 		if kept.ArrivedAt == nil && visit.ArrivedAt != nil {
 			kept.ArrivedAt = visit.ArrivedAt
 		}
-		if kept.ArrivedAt != nil && kept.DepartedAt != nil && kept.DepartedAt.Before(*kept.ArrivedAt) {
-			return false, fmt.Errorf("%w: a stay cannot end before it starts", ErrInvalidArguments)
+		if visit.DepartedAt != nil {
+			// The latest arrival among the visits joined into this one: a
+			// departure before it belongs to an earlier part of the visit.
+			latestArrivedAt := kept.ArrivedAt
+			if absorbed.LatestArrivedAt != nil && (latestArrivedAt == nil || absorbed.LatestArrivedAt.After(*latestArrivedAt)) {
+				latestArrivedAt = absorbed.LatestArrivedAt
+			}
+			departedAt := *visit.DepartedAt
+			switch {
+			case latestArrivedAt == nil || !departedAt.Before(*latestArrivedAt):
+				kept.DepartedAt = &departedAt
+			case absorbed.KeyCount == 0:
+				// A departure never comes before the arrival it ends. Clamped
+				// rather than refused: a refusal would fail the whole batch,
+				// and the phone would send it again for ever.
+				kept.DepartedAt = latestArrivedAt
+			default:
+				// The earlier part of a joined visit ended here, and the
+				// visit it was joined into is still going, or ended later.
+			}
 		}
 		kept.UpdatedAt = now
 		if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", kept.ID).Updates(map[string]any{
@@ -741,20 +941,21 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 	return isNew, nil
 }
 
-// joinPlaceVisits merges the stay with every other stay at its place that
+// joinPlaceVisits merges the visit with every other visit to its place that
 // ends less than ten minutes before it starts, starts less than ten minutes
 // after it ends, or overlaps it, and answers the one that remains. The one
 // that began first stays, with the latest departure of them all, or none if
-// the latest of them is still in progress; the others are deleted.
+// the latest of them is still in progress; the others are deleted, and their
+// client keys are kept in place_visit_key.
 func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitModel, error) {
 	var group []placeVisitModel
 	if err := self.tx.Where("\"user_id\" = ? AND \"place_id\" = ?", visit.UserID, visit.PlaceID).
 		Order("COALESCE(\"arrived_at\", \"departed_at\") ASC, \"id\" ASC").Find(&group).Error; err != nil {
 		return nil, err
 	}
-	// Walk the stays in the order they began, growing a run: each stay joins
+	// Walk the visits in the order they began, growing a run: each visit joins
 	// the run if it begins before the run's end plus the gap, and starts a new
-	// run if not. The run that holds this stay is the one to merge.
+	// run if not. The run that holds this visit is the one to merge.
 	var chosen []placeVisitModel
 	runStart := 0
 	runEnd := visitEnd(&group[0])
@@ -787,7 +988,7 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 		}
 	}
 	survivor.DepartedAt = latest.DepartedAt
-	// A stay iOS saw only the end of takes the arrival of the one that did.
+	// A visit iOS saw only the end of takes the arrival of the one that did.
 	if survivor.ArrivedAt == nil {
 		for _, candidate := range chosen[1:] {
 			if candidate.ArrivedAt != nil {
@@ -800,6 +1001,19 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 	removedIds := make([]string, 0, len(chosen)-1)
 	for _, candidate := range chosen[1:] {
 		removedIds = append(removedIds, candidate.ID)
+		// The phone calls the visit it sent by its key, and will send that key
+		// again: it has to find the visit it became, not a new one.
+		if err := self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&placeVisitKeyModel{
+			UserID: candidate.UserID, ClientVisitKey: candidate.ClientVisitKey,
+			PlaceVisitID: survivor.ID, ArrivedAt: candidate.ArrivedAt,
+		}).Error; err != nil {
+			return nil, err
+		}
+	}
+	// The keys of visits joined earlier into the ones that go, before they go.
+	if err := self.tx.Model(&placeVisitKeyModel{}).Where("\"place_visit_id\" IN ?", removedIds).
+		Update("place_visit_id", survivor.ID).Error; err != nil {
+		return nil, err
 	}
 	if err := self.tx.Where("\"id\" IN ?", removedIds).Delete(&placeVisitModel{}).Error; err != nil {
 		return nil, err
@@ -812,7 +1026,7 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 	return survivor, nil
 }
 
-// loadPlacesById reads places by identifier for a listing of stays.
+// loadPlacesById reads places by identifier for a listing of visits.
 func (self *transaction) loadPlacesById(placeIds []string) (map[string]*models.Place, error) {
 	places := map[string]*models.Place{}
 	if len(placeIds) == 0 {
@@ -894,7 +1108,7 @@ func (self *transaction) ListPlaceVisits(userId string, filter PlaceVisitFilter)
 		query = query.Where("COALESCE(visit.arrived_at, visit.departed_at) < ?", *filter.Until)
 	}
 	if filter.From != nil {
-		// A stay with no departure has not ended, so it reaches any From.
+		// A visit with no departure has not ended, so it reaches any From.
 		query = query.Where("(visit.departed_at IS NULL OR visit.departed_at >= ?)", *filter.From)
 	}
 	var rows []placeVisitModel
@@ -924,7 +1138,7 @@ func (self *transaction) ListPlaceVisits(userId string, filter PlaceVisitFilter)
 	return visits, nextOffset, nil
 }
 
-func (self *transaction) ForgetLocationHistory(userId string, from, until *time.Time) (int, int, int, error) {
+func (self *transaction) EraseLocationHistory(userId string, from, until *time.Time) (int, int, int, error) {
 	if userId == "" {
 		return 0, 0, 0, ErrInvalidArguments
 	}
@@ -941,6 +1155,10 @@ func (self *transaction) ForgetLocationHistory(userId string, from, until *time.
 		points = points.Where("\"measured_at\" < ?", *until)
 		visits = visits.Where("COALESCE(\"arrived_at\", \"departed_at\") < ?", *until)
 	}
+	// The journal says where the person was as plainly as the visits do.
+	if err := self.deleteLocationDayDocuments(userId, from, until); err != nil {
+		return 0, 0, 0, err
+	}
 	pointResult := points.Delete(&locationPointModel{})
 	if pointResult.Error != nil {
 		return 0, 0, 0, pointResult.Error
@@ -950,14 +1168,26 @@ func (self *transaction) ForgetLocationHistory(userId string, from, until *time.
 		return 0, 0, 0, visitResult.Error
 	}
 	// A place nobody went to, that the person did not name or label, was only
-	// ever a guess from where they were.
-	placeResult := self.tx.Where(`"user_id" = ? AND "is_named_by_person" = false AND "place_label" = ''
-		AND NOT EXISTS (SELECT 1 FROM "place_visit" WHERE "place_visit"."place_id" = "place"."id")`, userId).
-		Delete(&placeModel{})
-	if placeResult.Error != nil {
-		return 0, 0, 0, placeResult.Error
+	// ever a guess from where they were. A report that stores a visit at such a
+	// place takes its row lock first, so the candidates are locked before the
+	// delete: the delete then waits for that report, and looks again at whether
+	// the place has a visit once it has the lock.
+	var candidateIds []string
+	if err := self.tx.Raw(`SELECT "id" FROM "place"
+		WHERE "user_id" = ? AND "is_named_by_person" = false AND "place_label" = ''
+		ORDER BY "id" FOR UPDATE`, userId).Scan(&candidateIds).Error; err != nil {
+		return 0, 0, 0, err
 	}
-	return int(pointResult.RowsAffected), int(visitResult.RowsAffected), int(placeResult.RowsAffected), nil
+	placeCount := 0
+	if len(candidateIds) > 0 {
+		placeResult := self.tx.Where(`"id" IN ? AND NOT EXISTS (SELECT 1 FROM "place_visit" WHERE "place_visit"."place_id" = "place"."id")`, candidateIds).
+			Delete(&placeModel{})
+		if placeResult.Error != nil {
+			return 0, 0, 0, placeResult.Error
+		}
+		placeCount = int(placeResult.RowsAffected)
+	}
+	return int(pointResult.RowsAffected), int(visitResult.RowsAffected), placeCount, nil
 }
 
 func (self *transaction) ClaimPlacesToName(limitCount int, now time.Time) ([]*models.Place, error) {
@@ -991,6 +1221,24 @@ func (self *transaction) ClaimPlacesToName(limitCount int, now time.Time) ([]*mo
 	return places, nil
 }
 
+func (self *transaction) ClaimPlaceToName(placeId string, now time.Time) (*models.Place, error) {
+	var rows []placeModel
+	if err := self.tx.Raw(`UPDATE "place" SET "naming_claimed_at" = @now
+		WHERE "id" = (
+			SELECT "id" FROM "place"
+			WHERE "id" = @place AND "named_at" IS NULL AND ("naming_claimed_at" IS NULL OR "naming_claimed_at" < @cutoff)
+			FOR UPDATE SKIP LOCKED)
+		RETURNING *`,
+		sql.Named("now", now), sql.Named("cutoff", now.Add(-placeNamingClaimDuration)), sql.Named("place", placeId)).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return rows[0].toModel(), nil
+}
+
 func (self *transaction) SetPlaceNamed(placeId string, found *NamedPlace, errorMessage string, now time.Time) error {
 	var locked placeModel
 	if err := lockRow(self.tx, &locked, placeId); err != nil {
@@ -998,7 +1246,7 @@ func (self *transaction) SetPlaceNamed(placeId string, found *NamedPlace, errorM
 	}
 	updates := map[string]any{"updated_at": now}
 	if errorMessage != "" {
-		updates["naming_error_message"] = truncateRunes(errorMessage, 512)
+		updates["naming_error_message"] = cleanPlaceText(errorMessage, placeNamingErrorMaximumLength)
 	} else {
 		updates["named_at"] = now
 		updates["naming_error_message"] = ""
@@ -1007,16 +1255,17 @@ func (self *transaction) SetPlaceNamed(placeId string, found *NamedPlace, errorM
 				return fmt.Errorf("%w: %q is not an OpenStreetMap type", ErrInvalidArguments, found.OSMType)
 			}
 			updates["osm_type"] = found.OSMType
-			updates["osm_name"] = truncateRunes(found.PlaceName, placeNameMaximumLength)
-			updates["osm_category"] = truncateRunes(found.OSMCategory, 128)
-			updates["address_text"] = truncateRunes(found.AddressText, 512)
+			foundName := cleanPlaceText(found.PlaceName, placeNameMaximumLength)
+			updates["osm_name"] = foundName
+			updates["osm_category"] = cleanPlaceText(found.OSMCategory, placeCategoryMaximumLength)
+			updates["address_text"] = cleanPlaceText(found.AddressText, placeAddressMaximumLength)
 			if found.OSMID != 0 {
 				updates["osm_id"] = found.OSMID
 			} else {
 				updates["osm_id"] = nil
 			}
-			if !locked.IsNamedByPerson && found.PlaceName != "" {
-				updates["place_name"] = truncateRunes(found.PlaceName, placeNameMaximumLength)
+			if !locked.IsNamedByPerson && foundName != "" {
+				updates["place_name"] = foundName
 			}
 		}
 	}
@@ -1122,14 +1371,11 @@ func (self *transaction) SummarizePlaceVisits(userId string, placeIds []string) 
 }
 
 func (self *transaction) GetPlaceVisitByClientKey(userId, clientVisitKey string) (*models.PlaceVisit, error) {
-	var found []placeVisitModel
-	if err := self.tx.Where("\"user_id\" = ? AND \"client_visit_key\" = ?", userId, clientVisitKey).Limit(1).Find(&found).Error; err != nil {
+	found, err := self.findPlaceVisitByKey(userId, clientVisitKey, false)
+	if err != nil || found == nil {
 		return nil, err
 	}
-	if len(found) == 0 {
-		return nil, nil
-	}
-	visit := found[0].toModel()
+	visit := found.toModel()
 	places, err := self.loadPlacesById([]string{visit.PlaceID})
 	if err != nil {
 		return nil, err

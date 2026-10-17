@@ -33,21 +33,21 @@ func TestLocationParity(test *testing.T) {
 		subcommand string
 		action     string
 	}{
-		"GetLocation":           {"now", "now"},
-		"ListLocationVisits":    {"visits", "visits"},
-		"ListPlaces":            {"places", "places"},
-		"ListNearbyPlaces":      {"nearby", "nearby"},
-		"SearchPlaces":          {"search", "search"},
-		"ListLocationPoints":    {"path", ""},
-		"ReportLocation":        {"", ""},
-		"SavePlace":             {"save", "save_place"},
-		"ForgetPlace":           {"forget", "forget_place"},
-		"CheckIn":               {"checkin", "check_in"},
-		"ForgetLocationHistory": {"erase", "erase"},
-		"ListSharedLocations":   {"people", "people"},
-		"ListLocationShares":    {"shares", "shares"},
-		"ShareLocation":         {"share", "share"},
-		"UnshareLocation":       {"unshare", "unshare"},
+		"GetLocation":          {"now", "now"},
+		"ListLocationVisits":   {"visits", "visits"},
+		"ListPlaces":           {"places", "places"},
+		"ListNearbyPlaces":     {"nearby", "nearby"},
+		"SearchPlaces":         {"search", "search"},
+		"ListLocationPoints":   {"path", ""},
+		"ReportLocation":       {"", ""},
+		"SavePlace":            {"save", "save_place"},
+		"ForgetPlace":          {"forget", "forget_place"},
+		"CheckIn":              {"checkin", "check_in"},
+		"EraseLocationHistory": {"erase", "erase"},
+		"ListSharedLocations":  {"people", "people"},
+		"ListLocationShares":   {"shares", "shares"},
+		"ShareLocation":        {"share", "share"},
+		"UnshareLocation":      {"unshare", "unshare"},
 		// A subscription is followed by the dashboard and the app; nothing
 		// on a command line or in a conversation follows a map.
 		"LocationEvents": {"", ""},
@@ -97,6 +97,57 @@ func TestLocationParity(test *testing.T) {
 	if !actions["set_up"] {
 		test.Error("the location tool cannot open the Location page")
 	}
+
+	// Every argument of a read operation is a flag of its subcommand and a
+	// property of its tool action, under the name that surface gives it, or
+	// is exempt with the reason.
+	flagNames := map[string]string{
+		"userId": "person", "from": "from", "until": "until", "placeId": "place", "placeLabel": "label", "query": "query",
+		"offset": "offset", "limitCount": "first", "latitudeDegrees": "latitude", "longitudeDegrees": "longitude", "radiusMeters": "radius",
+	}
+	propertyNames := map[string]string{
+		"userId": "person", "from": "from", "until": "until", "placeId": "place_id", "placeLabel": "place_label", "query": "query",
+		"offset": "offset", "limitCount": "limit", "latitudeDegrees": "latitude_degrees", "longitudeDegrees": "longitude_degrees", "radiusMeters": "radius_meters",
+	}
+	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
+	exempt := map[string]string{
+		"SearchPlaces.query.command":       "the words are the arguments of the subcommand",
+		"SearchPlaces.placeId.command":     "the flag is --near-place, since --place would read as a filter",
+		"ListLocationPoints.from.command":  "a day is given with --day",
+		"ListLocationPoints.until.command": "a day is given with --day",
+	}
+	queryOperations := reflect.TypeFor[apigraph.LocationQuery]()
+	for operation, names := range table {
+		method, isQuery := queryOperations.MethodByName(operation)
+		if !isQuery || method.Type.NumIn() < 2 || names.subcommand == "" {
+			continue
+		}
+		command := commands[names.subcommand]
+		flags := map[string]bool{}
+		for _, flag := range command.Flags {
+			for _, name := range flag.Names() {
+				flags[name] = true
+			}
+		}
+		// The tool's actions share one set of properties, so this holds the
+		// action to the tool having the property, not to the action alone.
+		properties, _ := tools.Build().Get("location").Parameters["properties"].(map[string]any)
+		argumentsType := method.Type.In(1)
+		for index := 0; index < argumentsType.NumField(); index++ {
+			argument, _, _ := strings.Cut(argumentsType.Field(index).Tag.Get("json"), ",")
+			if _, isExempt := exempt[operation+"."+argument+".command"]; !isExempt && !flags[flagNames[argument]] {
+				test.Errorf("teanode location %s has no flag for the argument %s of %s", names.subcommand, argument, operation)
+			}
+			if names.action != "" && properties[propertyNames[argument]] == nil {
+				test.Errorf("the location tool action %s has no property for the argument %s of %s", names.action, argument, operation)
+			}
+		}
+	}
+	for key, reason := range exempt {
+		if strings.TrimSpace(reason) == "" {
+			test.Errorf("the exemption %s needs a reason", key)
+		}
+	}
 }
 
 // locationServer answers the documents the location commands send with a small
@@ -107,7 +158,7 @@ func locationServer(test *testing.T) (*httptest.Server, func(string) map[string]
 	calls := map[string]map[string]any{}
 	place := `{"id":"p1","userId":"u-ada","placeName":"Maple Park","placeLabel":"","radiusMeters":75,"visitCount":2,"isNamedByPerson":false}`
 	answers := map[string]string{
-		"GetLocation": `{"userId":"u-ada","username":"ada","name":"Ada","locationShareLevel":"owner",
+		"GetLocation": `{"userId":"u-ada","username":"ada","name":"Ada","shareLevel":"owner",
 			"latestPoint":{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"},
 			"openVisit":{"id":"v1","arrivedAt":"2026-10-17T09:30:00Z","place":` + place + `}}`,
 		"ListLocationVisits": `{"nextOffset":50,"placeVisits":[{"id":"v1","arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T09:50:00Z","durationSeconds":1200,"place":` + place + `},
@@ -115,12 +166,13 @@ func locationServer(test *testing.T) (*httptest.Server, func(string) map[string]
 		"ListPlaces": `{"places":[` + place + `]}`,
 		"ListNearbyPlaces": `[{"placeName":"Corner Cafe","osmType":"node","osmId":42,"osmCategory":"amenity=cafe","addressText":"1 Elm Street","latitudeDegrees":40.0006,"longitudeDegrees":-75.0004,"distanceMeters":15},
 			{"placeName":"Maple Park","latitudeDegrees":40.0001,"longitudeDegrees":-75.0001,"distanceMeters":90,"placeId":"p1"}]`,
-		"SearchPlaces":          `{"foundPlaces":[{"placeName":"Elm Playground","osmType":"way","osmId":7,"distanceMeters":900}]}`,
-		"SavePlace":             place,
-		"ForgetPlace":           `true`,
-		"CheckIn":               `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
-		"ForgetLocationHistory": `{"pointCount":10,"visitCount":2,"placeCount":1}`,
-		"ListSharedLocations":   `[{"userId":"u-ben","username":"ben","name":"Ben","locationShareLevel":"history"}]`,
+		"SearchPlaces":         `{"foundPlaces":[{"placeName":"Elm Playground","osmType":"way","osmId":7,"distanceMeters":900}]}`,
+		"SavePlace":            place,
+		"ForgetPlace":          `true`,
+		"CheckIn":              `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
+		"EraseLocationHistory": `{"pointCount":10,"visitCount":2,"placeCount":1}`,
+		"ListSharedLocations":  `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
+		"ListLocationPoints":   `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var document struct {
@@ -165,7 +217,7 @@ func runLocationCommand(test *testing.T, server *httptest.Server, arguments ...s
 	return output, err
 }
 
-// now says where the person is and the stay in progress.
+// now says where the person is and the visit in progress.
 func TestLocationNowSaysWhereAndAt(test *testing.T) {
 	server, _ := locationServer(test)
 	output, err := runLocationCommand(test, server, "now")
@@ -177,15 +229,15 @@ func TestLocationNowSaysWhereAndAt(test *testing.T) {
 	}
 }
 
-// visits lists stays with the place and says how to read on.
-func TestLocationVisitsListsStaysAndFilters(test *testing.T) {
+// visits lists visits with the place and says how to read on.
+func TestLocationVisitsListsVisitsAndFilters(test *testing.T) {
 	server, called := locationServer(test)
 	output, err := runLocationCommand(test, server, "visits", "--from", "2026-10-17", "--label", "home", "--place", "p1", "--first", "2")
 	if err != nil {
 		test.Fatal(err)
 	}
 	if !strings.Contains(output, "Maple Park") || !strings.Contains(output, "still there") || !strings.Contains(output, "20 minutes") {
-		test.Errorf("the stays: %q", output)
+		test.Errorf("the visits: %q", output)
 	}
 	variables := called("ListLocationVisits")
 	if variables["placeLabel"] != "home" || variables["placeId"] != "p1" || variables["limitCount"] != float64(2) || variables["from"] == nil || variables["until"] != nil {
@@ -245,18 +297,18 @@ func TestLocationEraseAndForgetNeedForce(test *testing.T) {
 	if _, err := runLocationCommand(test, server, "erase"); err == nil || !strings.Contains(err.Error(), "--force") {
 		test.Errorf("erase without confirmation: %v", err)
 	}
-	if called("ForgetLocationHistory") != nil {
+	if called("EraseLocationHistory") != nil {
 		test.Error("nothing was sent")
 	}
 	output, err := runLocationCommand(test, server, "erase", "--force", "--until", "2026-10-01")
 	if err != nil {
 		test.Fatal(err)
 	}
-	if variables := called("ForgetLocationHistory"); variables["until"] == nil || variables["from"] != nil {
+	if variables := called("EraseLocationHistory"); variables["until"] == nil || variables["from"] != nil {
 		test.Errorf("the range: %v", variables)
 	}
 	if !strings.Contains(output, "10 positions") || !strings.Contains(output, "1 place") {
-		test.Errorf("what was deleted: %q", output)
+		test.Errorf("what was erased: %q", output)
 	}
 	if _, err := runLocationCommand(test, server, "forget", "p1"); err == nil {
 		test.Error("forget without confirmation")
@@ -277,5 +329,33 @@ func TestLocationPersonIsResolvedAmongThoseSharing(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, server, "visits", "--person", "stranger"); err == nil || !strings.Contains(err.Error(), "does not share") {
 		test.Errorf("a stranger: %v", err)
+	}
+}
+
+// The path of a day is a sharer's too, when they share their history.
+func TestLocationPathTakesAPerson(test *testing.T) {
+	server, called := locationServer(test)
+	if _, err := runLocationCommand(test, server, "path", "--day", "2026-10-17", "--person", "ben"); err != nil {
+		test.Fatal(err)
+	}
+	if called("ListLocationPoints")["userId"] != "u-ben" {
+		test.Errorf("ben's account was asked about: %v", called("ListLocationPoints"))
+	}
+}
+
+// Somebody who shares only where they are now is said to, in those words, for
+// what is not shared, and read for what is.
+func TestLocationSaysWhenOnlyWhereTheyAreNowIsShared(test *testing.T) {
+	server, called := locationServer(test)
+	for _, subcommand := range []string{"visits", "places", "path"} {
+		if _, err := runLocationCommand(test, server, subcommand, "--person", "cleo"); err == nil || !strings.Contains(err.Error(), "cleo shares only where they are now") {
+			test.Errorf("%s: %v", subcommand, err)
+		}
+	}
+	if called("ListLocationVisits") != nil {
+		test.Error("the server was not asked for what is not shared")
+	}
+	if _, err := runLocationCommand(test, server, "now", "--person", "cleo"); err != nil {
+		test.Errorf("where they are now is shared: %v", err)
 	}
 }

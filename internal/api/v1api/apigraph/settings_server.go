@@ -153,18 +153,21 @@ type GeoIPSettings struct {
 	DatabaseFile string `json:"databaseFile,omitempty"`
 }
 
-// PlacesSettings is where the names of the spots people go to come from, and
-// the map they are drawn on.
+// PlacesSettings is where the names of the places people go to come from, and
+// the map they are drawn on. Place names come from OpenStreetMap: your server
+// sends the position of each new place to the place provider to look up its
+// name.
 type PlacesSettings struct {
 	// ProviderKind is nominatim or photon; empty is off, and places are then
-	// named after their city.
+	// named after their city. On, the server sends the position of each new
+	// place to the provider's address to look up its name.
 	ProviderKind string `json:"providerKind"`
 
 	// ProviderURL is the provider's address.
 	ProviderURL string `json:"providerUrl"`
 
-	// MapStyleURL is the style the dashboard's maps are drawn from; the server
-	// fetches it and its tiles for the browser.
+	// MapStyleURL is the address of the style the dashboard's maps are drawn
+	// from; the server fetches it and its tiles for the browser.
 	MapStyleURL string `json:"mapStyleUrl"`
 }
 

@@ -25,13 +25,18 @@ type LocationKnowledgeOperation interface {
 	// isChanged says whether anything was written.
 	PutLocationDayDocument(agentId, sourceId string, day time.Time, text string) (isChanged bool, err error)
 
+	// DeleteLocationDayDocument deletes the document of one day, with its
+	// chunks, when there is one: a day whose visits are all gone has nothing
+	// to say, and what it said before must not stay filed.
+	DeleteLocationDayDocument(sourceId string, day time.Time) error
+
 	// GetLatestLocationDayStart answers when the newest day filed in the
 	// source began, or nil when none is.
 	GetLatestLocationDayStart(sourceId string) (*time.Time, error)
 }
 
-// locationDayExternalID is the name a day goes by in its source.
-func locationDayExternalID(day time.Time) string {
+// locationDayExternalId is the name a day goes by in its source.
+func locationDayExternalId(day time.Time) string {
 	return "location:" + day.Format(time.DateOnly)
 }
 
@@ -62,7 +67,7 @@ func (self *transaction) PutLocationDayDocument(agentId, sourceId string, day ti
 	if agentId == "" || sourceId == "" || day.IsZero() || text == "" {
 		return false, ErrInvalidArguments
 	}
-	externalId := locationDayExternalID(day)
+	externalId := locationDayExternalId(day)
 	digest := sha256.Sum256([]byte(text))
 	hash := hex.EncodeToString(digest[:])
 	existing, err := self.GetAgentDocumentByExternal(sourceId, externalId)
@@ -86,6 +91,13 @@ func (self *transaction) PutLocationDayDocument(agentId, sourceId string, day ti
 		return false, err
 	}
 	return true, nil
+}
+
+func (self *transaction) DeleteLocationDayDocument(sourceId string, day time.Time) error {
+	if sourceId == "" || day.IsZero() {
+		return ErrInvalidArguments
+	}
+	return self.tx.Where(`"source_id" = ? AND "external_id" = ?`, sourceId, locationDayExternalId(day)).Delete(&agentDocumentModel{}).Error
 }
 
 func (self *transaction) GetLatestLocationDayStart(sourceId string) (*time.Time, error) {

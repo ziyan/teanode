@@ -221,6 +221,53 @@ func TestSettingsMutationNamesRealTypes(t *testing.T) {
 		}
 	}
 
+	// And the client's own query must declare, pass on and read back every one
+	// of them: a section the schema accepts that the client leaves out cannot
+	// be read or set with "teanode settings".
+	clientSource, err := os.ReadFile(filepath.Join("..", "..", "..", "client", "settings.go"))
+	if err != nil {
+		t.Fatalf("cannot read the client's settings: %v", err)
+	}
+	clientText := string(clientSource)
+	clientDeclared := map[string]string{}
+	for _, match := range regexp.MustCompile(`\$([a-zA-Z0-9]+): ([A-Za-z0-9]+ParametersInput)`).FindAllStringSubmatch(clientText, -1) {
+		clientDeclared[match[1]] = match[2]
+	}
+	for section, name := range declared {
+		if clientDeclared[section] != name {
+			t.Errorf("the client does not declare $%s as %s", section, name)
+		}
+		if !strings.Contains(clientText, section+": $"+section) {
+			t.Errorf("the client does not pass %s on to UpdateSettings", section)
+		}
+	}
+	// And the agent's settings tool maps each section to its input type.
+	toolSource, err := os.ReadFile(filepath.Join("..", "..", "..", "agent", "tools", "server", "server.go"))
+	if err != nil {
+		t.Fatalf("cannot read the agent's server tool: %v", err)
+	}
+	toolInputs := map[string]string{}
+	for _, match := range regexp.MustCompile(`"([a-z0-9]+)": "([A-Za-z0-9]+ParametersInput)"`).FindAllStringSubmatch(string(toolSource), -1) {
+		toolInputs[match[1]] = match[2]
+	}
+	for section, name := range declared {
+		if toolInputs[section] != name {
+			t.Errorf("the agent's server tool does not map %s to %s", section, name)
+		}
+	}
+	settingsView, ok := schema.QueryType().Fields()["GetSettings"].Type.(*graphql.Object)
+	if !ok {
+		t.Fatalf("GetSettings is not an object")
+	}
+	for name, sectionField := range settingsView.Fields() {
+		if _, isObject := graphql.GetNullable(sectionField.Type).(*graphql.Object); !isObject {
+			continue
+		}
+		if !regexp.MustCompile(`(?m)^\s+` + regexp.QuoteMeta(name) + ` \{`).MatchString(clientText) {
+			t.Errorf("the client does not read the section %q back", name)
+		}
+	}
+
 	// The dashboard writes the same declarations by hand in its own mutation,
 	// and drifted the same way at the same time: after SMTPParameters was
 	// renamed, the page declared $smtp as SmtpParametersInput and nothing on

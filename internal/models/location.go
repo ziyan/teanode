@@ -21,7 +21,7 @@ func (self LocationSource) IsValid() bool {
 	return false
 }
 
-// VisitSource is how a stay came to be recorded.
+// VisitSource is how a visit came to be recorded.
 type VisitSource string
 
 // The sources of a visit.
@@ -32,9 +32,9 @@ const (
 	// VisitSourceRegion is the phone entering or leaving a place the person
 	// named.
 	VisitSourceRegion VisitSource = "region"
-	// VisitSourceCheckIn is a stay the person recorded by hand.
+	// VisitSourceCheckIn is a visit the person recorded by hand.
 	VisitSourceCheckIn VisitSource = "check_in"
-	// VisitSourceBrowser is a stay recorded from the dashboard.
+	// VisitSourceBrowser is a visit recorded from the dashboard.
 	VisitSourceBrowser VisitSource = "browser"
 )
 
@@ -167,7 +167,7 @@ type LocationPoint struct {
 	AgentPhoneID string `json:"agentPhoneId,omitempty"`
 }
 
-// Place is a spot with a name and a radius, belonging to one person.
+// Place is somewhere with a name and a radius, belonging to one person.
 type Place struct {
 	ID     string `json:"id"`
 	UserID string `json:"userId"`
@@ -211,7 +211,7 @@ type Place struct {
 	LastVisitAt *time.Time `json:"lastVisitAt,omitempty"`
 }
 
-// PlaceVisit is one stay at a place.
+// PlaceVisit is one visit to a place.
 type PlaceVisit struct {
 	ID      string `json:"id"`
 	UserID  string `json:"userId"`
@@ -228,8 +228,8 @@ type PlaceVisit struct {
 
 	VisitSource VisitSource `json:"visitSource"`
 
-	// ClientVisitKey is what the phone calls the stay, so that a report sent
-	// twice is one visit. A stay recorded by hand is given one.
+	// ClientVisitKey is what the phone calls the visit, so that a report sent
+	// twice is one visit. A visit recorded by hand is given one.
 	ClientVisitKey string `json:"clientVisitKey"`
 
 	CreatedAt time.Time `json:"createdAt"`

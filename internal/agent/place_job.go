@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -13,13 +12,14 @@ import (
 
 // Naming the places a phone's reports made.
 //
-// Reporting a stay answers before anything is asked of a provider, so a place
-// made by a report waits with the name of its city. Once a minute this takes
-// the places that wait, asks the place provider what OpenStreetMap knows at
-// each, and records the answer, or the reason there is none. It needs no model
-// and no agent, so it runs whether or not the agent is switched on, and with
-// no provider configured it does nothing: places keep the name of their city,
-// and the person can name them.
+// Reporting a visit answers before anything is asked of a provider, so a place
+// made by a report waits with the name of its city. The API names it a moment
+// later, in the background (place.NameNow), and this job is the sweeper for the
+// places that way missed: once a minute it takes the places that still wait,
+// asks the place provider what OpenStreetMap knows at each, and records the
+// answer, or the reason there is none. It needs no model, so it runs whether
+// or not the agent is switched on, and with no provider configured it does
+// nothing: places keep the name of their city, and the person can name them.
 
 const (
 	// placeNamingEvery is how often the places that wait are looked for.
@@ -72,29 +72,11 @@ func (self *Agent) namePlaces(ctx context.Context, provider place.Provider, now 
 		return err
 	}
 	for _, each := range claimed {
-		found, askErr := provider.Name(ctx, each.LatitudeDegrees, each.LongitudeDegrees)
-		// A server going down is not the provider failing. The claim runs out
-		// and the place is taken again.
-		if askErr != nil && (errors.Is(askErr, context.Canceled) || ctx.Err() != nil) {
-			return nil
-		}
-		var named *db.NamedPlace
-		errorMessage := ""
-		switch {
-		case askErr != nil:
-			errorMessage = askErr.Error()
-		case found != nil:
-			named = &db.NamedPlace{
-				PlaceName: found.PlaceName, OSMType: found.OSMType, OSMID: found.OSMID,
-				OSMCategory: found.OSMCategory, AddressText: found.AddressText,
-			}
-		}
-		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
-			return tx.SetPlaceNamed(each.ID, named, errorMessage, time.Now())
-		}); err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				// Forgotten while it was being asked about.
-				continue
+		if err := place.NameClaimed(ctx, self.settings.Database, provider, each); err != nil {
+			if ctx.Err() != nil {
+				// A server going down is not the provider failing. The claim
+				// runs out and the place is taken again.
+				return nil
 			}
 			log.Warningf("cannot record the name of place %s: %s", each.ID, err)
 		}

@@ -33,6 +33,14 @@ func newLocationNotifyFixture(t *testing.T, shareLevel models.LocationShareLevel
 		if _, err := tx.AddCircleMember(circle.ID, fixture.owner.ID, models.MemberRoleMember, fixture.sharer.ID); err != nil {
 			t.Fatalf("AddCircleMember: %s", err)
 		}
+		// The person who is told can use Location, as the ordinary roles allow.
+		role, err := tx.CreateRole(&models.Role{Name: "Location users", Permissions: []models.Permission{models.PermissionLocationUse}})
+		if err != nil {
+			t.Fatalf("CreateRole: %s", err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "Location users", RoleIDs: []string{role.ID}, UserIDs: []string{fixture.owner.ID}}); err != nil {
+			t.Fatalf("CreateGroup: %s", err)
+		}
 		if shareLevel != "" {
 			if _, err := tx.ShareLocation(fixture.sharer.ID, &models.LocationShare{GranteeUserID: fixture.owner.ID, ShareLevel: shareLevel}); err != nil {
 				t.Fatalf("ShareLocation: %s", err)
@@ -54,7 +62,8 @@ func (self *locationNotifyFixture) visitTo(t *testing.T, place *models.Place) *m
 		}
 	})
 	arrivedAt := time.Now()
-	return &models.PlaceVisit{ID: "a-visit", UserID: self.sharer.ID, PlaceID: made.ID, ArrivedAt: &arrivedAt}
+	departedAt := arrivedAt
+	return &models.PlaceVisit{ID: "a-visit", UserID: self.sharer.ID, PlaceID: made.ID, ArrivedAt: &arrivedAt, DepartedAt: &departedAt}
 }
 
 func (self *locationNotifyFixture) told() int {
@@ -199,5 +208,63 @@ func TestPlaceVisitBodyNamesTheKindsOfPlace(t *testing.T) {
 		if placeVisitLabelWords[label] == "" {
 			t.Errorf("the label %q has no words", label)
 		}
+	}
+}
+
+// An arrival or departure is told only when it happened in the last fifteen
+// minutes: a phone that was offline sends its queue when it reconnects, and
+// "arrived at home" about last night is wrong now.
+func TestOnlyAnArrivalOfTheLastFifteenMinutesIsTold(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true})
+	// The location was shared long before.
+	dbtest.Exec(t, fixture.database, `UPDATE "location_share" SET "created_at" = now() - interval '1 day'`)
+
+	arrivedAt, departedAt := time.Now().Add(-20*time.Minute), time.Now().Add(-18*time.Minute)
+	visit.ArrivedAt, visit.DepartedAt = &arrivedAt, &departedAt
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, false)
+	if fixture.told() != 0 {
+		t.Fatalf("an arrival twenty minutes ago and a departure eighteen minutes ago were sent %d notifications", fixture.told())
+	}
+
+	arrivedAt = time.Now().Add(-10 * time.Minute)
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	if fixture.told() != 1 {
+		t.Fatalf("an arrival ten minutes ago was sent %d notifications, not one", fixture.told())
+	}
+	noTime := &models.PlaceVisit{ID: "no-time", UserID: fixture.sharer.ID, PlaceID: visit.PlaceID}
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, noTime, true)
+	if fixture.told() != 1 {
+		t.Errorf("an arrival with no time was told")
+	}
+}
+
+// What the owner did before a location was shared is not told to the person it
+// was then shared with, and nobody is told who can no longer use Location.
+func TestAnArrivalBeforeTheShareIsNotToldAndNeitherIsAPersonWithoutThePermission(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true})
+
+	beforeTheShare := time.Now().Add(-time.Minute)
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		shares, err := tx.ListLocationShares(fixture.sharer.ID)
+		if err != nil || len(shares) != 1 {
+			t.Fatalf("ListLocationShares: %+v %v", shares, err)
+		}
+	})
+	visit.ArrivedAt = &beforeTheShare
+	// The share was made just now, a moment after this arrival.
+	dbtest.Exec(t, fixture.database, `UPDATE "location_share" SET "created_at" = now() + interval '1 second'`)
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	if fixture.told() != 0 {
+		t.Fatalf("an arrival from before the share was sent %d notifications", fixture.told())
+	}
+
+	dbtest.Exec(t, fixture.database, `UPDATE "location_share" SET "created_at" = now() - interval '1 hour'`)
+	dbtest.Exec(t, fixture.database, `DELETE FROM "user_group"`)
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	if fixture.told() != 0 {
+		t.Errorf("a person who can no longer use Location was sent %d notifications", fixture.told())
 	}
 }

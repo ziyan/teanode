@@ -132,7 +132,7 @@ func TestAPointIsInTheNearestPlaceThatHoldsIt(t *testing.T) {
 			t.Fatalf("CreatePlace: %s", err)
 		}
 		// 55 m north of the point: with the default radius of 75 m it holds the
-		// point, and is nearer than the wide field's centre.
+		// point, and is nearer than the wide field's center.
 		near := locationPlace(t, tx, userId, "Near Cafe", 10.5005)
 		// 200 m away, with the default radius it does not.
 		locationPlace(t, tx, userId, "Far Cafe", 10.5018)
@@ -140,13 +140,13 @@ func TestAPointIsInTheNearestPlaceThatHoldsIt(t *testing.T) {
 
 		found, err := tx.FindPlaceAt(userId, 10.5, 20.5)
 		if err != nil || found == nil || found.ID != wide.ID {
-			t.Fatalf("at the centre of the wide field: %+v, %v", found, err)
+			t.Fatalf("at the center of the wide field: %+v, %v", found, err)
 		}
 		found, err = tx.FindPlaceAt(userId, 10.5004, 20.5)
 		if err != nil || found == nil || found.ID != near.ID {
 			t.Fatalf("beside the near cafe: %+v, %v", found, err)
 		}
-		// 600 m from the wide field's centre: outside every radius.
+		// 600 m from the wide field's center: outside every radius.
 		if found, err = tx.FindPlaceAt(userId, 10.5054, 20.5); found != nil || err != nil {
 			t.Fatalf("outside every place: %+v, %v", found, err)
 		}
@@ -209,6 +209,51 @@ func TestAPlaceTakesItsDefaultsAndRefusesWhatCannotBe(t *testing.T) {
 	})
 }
 
+// Moving a place farther than its radius drops what the provider said about
+// the old position, so that it is named again; a name the person gave stays.
+func TestMovingAPlaceFartherThanItsRadiusMakesItWaitToBeNamedAgain(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-move")
+		now := time.Now()
+		named := locationPlace(t, tx, userId, "", 10.5)
+		if err := tx.SetPlaceNamed(named.ID, &db.NamedPlace{
+			PlaceName: "Example Park", OSMType: models.OSMTypeWay, OSMID: 42, OSMCategory: "leisure=park", AddressText: "Elm Street, Exampleton, Exampleland",
+		}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		kept := locationPlace(t, tx, userId, "", 11.5)
+		if err := tx.SetPlaceNamed(kept.ID, &db.NamedPlace{PlaceName: "Other Park", OSMType: models.OSMTypeNode, OSMID: 43, AddressText: "Oak Street"}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		ownName := "My Park"
+		if _, err := tx.SavePlace(userId, kept.ID, db.PlaceChanges{PlaceName: &ownName}); err != nil {
+			t.Fatalf("SavePlace: %s", err)
+		}
+
+		latitude, longitude := 10.7, 20.7
+		moved, err := tx.SavePlace(userId, named.ID, db.PlaceChanges{LatitudeDegrees: &latitude, LongitudeDegrees: &longitude, MovedPlaceName: "Exampleton, Exampleland"})
+		if err != nil || moved.OSMName != "" || moved.OSMType != "" || moved.OSMID != 0 || moved.OSMCategory != "" || moved.AddressText != "" ||
+			moved.NamedAt != nil || moved.NamingClaimedAt != nil || moved.PlaceName != "Exampleton, Exampleland" {
+			t.Fatalf("a place moved 20 km: %+v, %v", moved, err)
+		}
+		found, err := tx.FindPlaceIDsByOSM(userId, []db.OSMReference{{OSMType: models.OSMTypeWay, OSMID: 42}})
+		if err != nil || len(found) != 0 {
+			t.Errorf("the old object still matches the moved place: %v, %v", found, err)
+		}
+		claimed, err := tx.ClaimPlaceToName(named.ID, now)
+		if err != nil || claimed == nil {
+			t.Errorf("the moved place waits to be named: %v, %v", claimed, err)
+		}
+
+		movedKept, err := tx.SavePlace(userId, kept.ID, db.PlaceChanges{LatitudeDegrees: &latitude, LongitudeDegrees: &longitude, MovedPlaceName: "Exampleton, Exampleland"})
+		if err != nil || movedKept.PlaceName != "My Park" || !movedKept.IsNamedByPerson || movedKept.OSMName != "" || movedKept.NamedAt != nil {
+			t.Errorf("the person's own name stays when the place moves: %+v, %v", movedKept, err)
+		}
+	})
+}
+
 // Naming a place makes the name the person's, an empty name goes back to the
 // map's, a label can be put on and taken off, and nobody can change a place
 // that is not theirs.
@@ -239,10 +284,11 @@ func TestAPersonNamesLabelsAndMovesTheirPlaces(t *testing.T) {
 			t.Fatalf("label taken off: %+v, %v", saved, err)
 		}
 
-		latitude, longitude, radius := 10.6, 20.6, 120.0
+		// Nudged within its radius, it is still the place the map described.
+		latitude, longitude, radius := 10.5002, 20.5002, 120.0
 		if saved, err = tx.SavePlace(userId, made.ID, db.PlaceChanges{LatitudeDegrees: &latitude, LongitudeDegrees: &longitude, RadiusMeters: &radius}); err != nil ||
-			saved.LatitudeDegrees != 10.6 || saved.LongitudeDegrees != 20.6 || saved.RadiusMeters != 120 {
-			t.Fatalf("moved and widened: %+v, %v", saved, err)
+			saved.LatitudeDegrees != 10.5002 || saved.LongitudeDegrees != 20.5002 || saved.RadiusMeters != 120 || saved.OSMName != "Example Park" {
+			t.Fatalf("nudged and widened: %+v, %v", saved, err)
 		}
 
 		// An empty name gives the map's back and clears the flag.
@@ -414,9 +460,9 @@ func TestPlacesAreFoundByTheirMapNameAndAddress(t *testing.T) {
 	})
 }
 
-// Reporting a stay again completes it, and stays a few minutes apart at one
-// place are one stay.
-func TestStaysAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T) {
+// Reporting a visit again completes it, and visits a few minutes apart at one
+// place are one visit.
+func TestVisitsAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -425,7 +471,7 @@ func TestStaysAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T)
 		cafe := locationPlace(t, tx, userId, "Birch Cafe", 10.5)
 		library := locationPlace(t, tx, userId, "Elm Library", 10.6)
 
-		// An arrival, then the same stay's departure.
+		// An arrival, then the same visit's departure.
 		arrival := locationVisit(cafe.ID, "visit-1", 0, -1)
 		isNew, err := tx.PutPlaceVisit(userId, arrival)
 		if err != nil || !isNew || arrival.ID == "" || arrival.DepartedAt != nil {
@@ -433,7 +479,7 @@ func TestStaysAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T)
 		}
 		open, err := tx.GetOpenPlaceVisit(userId)
 		if err != nil || open == nil || open.ID != arrival.ID || open.Place == nil || open.Place.ID != cafe.ID {
-			t.Fatalf("the stay in progress: %+v, %v", open, err)
+			t.Fatalf("the visit in progress: %+v, %v", open, err)
 		}
 		departure := locationVisit(cafe.ID, "visit-1", -1, 40)
 		isNew, err = tx.PutPlaceVisit(userId, departure)
@@ -446,7 +492,7 @@ func TestStaysAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T)
 		// Sent again, it changes nothing.
 		again := locationVisit(cafe.ID, "visit-1", 0, 40)
 		if isNew, err = tx.PutPlaceVisit(userId, again); err != nil || isNew || again.ID != arrival.ID {
-			t.Fatalf("the same stay twice: new %v, %+v, %v", isNew, again, err)
+			t.Fatalf("the same visit twice: new %v, %+v, %v", isNew, again, err)
 		}
 
 		// A departure iOS reported without an arrival takes the arrival of a
@@ -460,47 +506,47 @@ func TestStaysAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T)
 			t.Fatalf("the arrival that was missing: %+v, %v", completed, err)
 		}
 
-		// Five minutes after leaving the cafe, a stay at the cafe starts: one stay.
+		// Five minutes after leaving the cafe, a visit at the cafe starts: one visit.
 		joinedAfter := locationVisit(cafe.ID, "visit-2", 45, 70)
 		if isNew, err = tx.PutPlaceVisit(userId, joinedAfter); err != nil || !isNew {
-			t.Fatalf("the second stay: new %v, %v", isNew, err)
+			t.Fatalf("the second visit: new %v, %v", isNew, err)
 		}
 		if joinedAfter.ID != arrival.ID || !joinedAfter.ArrivedAt.Equal(*minutesAfterNine(0)) || !joinedAfter.DepartedAt.Equal(*minutesAfterNine(70)) {
-			t.Fatalf("the two stays are not one: %+v", joinedAfter)
+			t.Fatalf("the two visits are not one: %+v", joinedAfter)
 		}
 		visits, _, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{PlaceID: cafe.ID})
 		if err != nil || len(visits) != 1 {
-			t.Fatalf("the cafe has %d stays, %v", len(visits), err)
+			t.Fatalf("the cafe has %d visits, %v", len(visits), err)
 		}
 
-		// Eleven minutes after leaving it is another stay.
+		// Eleven minutes after leaving it is another visit.
 		if _, err = tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "visit-3", 81, 90)); err != nil {
-			t.Fatalf("the third stay: %s", err)
+			t.Fatalf("the third visit: %s", err)
 		}
 		if visits, _, err = tx.ListPlaceVisits(userId, db.PlaceVisitFilter{PlaceID: cafe.ID}); err != nil || len(visits) != 2 {
-			t.Fatalf("the cafe has %d stays, %v", len(visits), err)
+			t.Fatalf("the cafe has %d visits, %v", len(visits), err)
 		}
 
-		// A stay reported late, that sits between two, joins all three.
+		// A visit reported late, that sits between two, joins all three.
 		if _, err = tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "visit-4", 74, 78)); err != nil {
-			t.Fatalf("the fourth stay: %s", err)
+			t.Fatalf("the fourth visit: %s", err)
 		}
 		if visits, _, err = tx.ListPlaceVisits(userId, db.PlaceVisitFilter{PlaceID: cafe.ID}); err != nil || len(visits) != 1 ||
 			!visits[0].ArrivedAt.Equal(*minutesAfterNine(0)) || !visits[0].DepartedAt.Equal(*minutesAfterNine(90)) {
-			t.Fatalf("the stays between join them all: %+v, %v", visits, err)
+			t.Fatalf("the visits between join them all: %+v, %v", visits, err)
 		}
 
-		// A different place is not joined, and nor is another person's stay at
+		// A different place is not joined, and nor is another person's visit at
 		// a place of their own with the same times.
 		if visits, _, err = tx.ListPlaceVisits(userId, db.PlaceVisitFilter{PlaceID: library.ID}); err != nil || len(visits) != 1 {
-			t.Fatalf("the library has %d stays, %v", len(visits), err)
+			t.Fatalf("the library has %d visits, %v", len(visits), err)
 		}
 		theirs := locationPlace(t, tx, otherId, "Their Cafe", 10.5)
 		if _, err = tx.PutPlaceVisit(otherId, locationVisit(theirs.ID, "visit-1", 0, 40)); err != nil {
 			t.Errorf("the same key for another person: %s", err)
 		}
 
-		// A stay with no key is given one.
+		// A visit with no key is given one.
 		keyless := locationVisit(library.ID, "", 600, 610)
 		keyless.VisitSource = models.VisitSourceCheckIn
 		if isNew, err = tx.PutPlaceVisit(userId, keyless); err != nil || !isNew || keyless.ClientVisitKey == "" {
@@ -514,25 +560,25 @@ func TestStaysAreCompletedByALaterReportAndJoinedWhenCloseTogether(t *testing.T)
 
 		// What cannot be stored.
 		if _, err = tx.PutPlaceVisit(userId, locationVisit(theirs.ID, "stolen", 0, 10)); !errors.Is(err, db.ErrNotFound) {
-			t.Errorf("a stay at another person's place: %v", err)
+			t.Errorf("a visit at another person's place: %v", err)
 		}
 		if _, err = tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "backwards", 20, 10)); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Errorf("a stay that ends before it starts: %v", err)
+			t.Errorf("a visit that ends before it starts: %v", err)
 		}
 		if _, err = tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "timeless", -1, -1)); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Errorf("a stay with no time: %v", err)
+			t.Errorf("a visit with no time: %v", err)
 		}
 		unsourced := locationVisit(cafe.ID, "unsourced", 0, 10)
 		unsourced.VisitSource = "guess"
 		if _, err = tx.PutPlaceVisit(userId, unsourced); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Errorf("a stay from nowhere: %v", err)
+			t.Errorf("a visit from nowhere: %v", err)
 		}
 	})
 }
 
-// A new arrival at a place the person is still recorded at is the same stay,
-// and a departure ends the stay in progress, never before it started.
-func TestTheStayInProgressIsEndedOnce(t *testing.T) {
+// A new arrival at a place the person is still recorded at is the same visit,
+// and a departure ends the visit in progress, never before it started.
+func TestTheVisitInProgressIsEndedOnce(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -551,10 +597,10 @@ func TestTheStayInProgressIsEndedOnce(t *testing.T) {
 		}
 		ended, err := tx.EndOpenPlaceVisit(userId, *minutesAfterNine(130))
 		if err != nil || ended == nil || ended.Place == nil || ended.Place.ID != library.ID || ended.DepartedAt == nil || !ended.DepartedAt.Equal(*minutesAfterNine(130)) {
-			t.Fatalf("ending the stay: %+v, %v", ended, err)
+			t.Fatalf("ending the visit: %+v, %v", ended, err)
 		}
 		if open, _ := tx.GetOpenPlaceVisit(userId); open != nil {
-			t.Fatalf("a stay is still in progress: %+v", open)
+			t.Fatalf("a visit is still in progress: %+v", open)
 		}
 
 		// An end before the arrival is the arrival.
@@ -567,7 +613,7 @@ func TestTheStayInProgressIsEndedOnce(t *testing.T) {
 	})
 }
 
-func TestStaysListNewestFirstWithTheirPlaces(t *testing.T) {
+func TestVisitsListNewestFirstWithTheirPlaces(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
@@ -602,7 +648,7 @@ func TestStaysListNewestFirstWithTheirPlaces(t *testing.T) {
 			keys := []string{}
 			for _, visit := range visits {
 				if visit.Place == nil || visit.Place.ID != visit.PlaceID {
-					t.Errorf("a stay without its place: %+v", visit)
+					t.Errorf("a visit without its place: %+v", visit)
 				}
 				keys = append(keys, visit.ClientVisitKey)
 			}
@@ -617,31 +663,31 @@ func TestStaysListNewestFirstWithTheirPlaces(t *testing.T) {
 		if got := keys(db.PlaceVisitFilter{PlaceLabel: models.PlaceLabelWork}); got != "db" {
 			t.Errorf("one label: %s", got)
 		}
-		// 09:00 plus 100 minutes to plus 500 minutes: the office stay
+		// 09:00 plus 100 minutes to plus 500 minutes: the office visit
 		// overlaps the range at both ends of it, the first and last do not.
 		if got := keys(db.PlaceVisitFilter{From: minutesAfterNine(100), Until: minutesAfterNine(500)}); got != "b" {
 			t.Errorf("overlapping a range: %s", got)
 		}
-		// A stay that ended exactly at From still overlaps it; one that began
+		// A visit that ended exactly at From still overlaps it; one that began
 		// exactly at Until does not.
 		if got := keys(db.PlaceVisitFilter{From: minutesAfterNine(30), Until: minutesAfterNine(120)}); got != "a" {
 			t.Errorf("touching a range: %s", got)
 		}
-		// The stay in progress reaches any later range.
+		// The visit in progress reaches any later range.
 		if got := keys(db.PlaceVisitFilter{From: minutesAfterNine(5000)}); got != "d" {
-			t.Errorf("the stay in progress: %s", got)
+			t.Errorf("the visit in progress: %s", got)
 		}
 
 		first, next, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{LimitCount: 3})
 		if err != nil || len(first) != 3 || next != 3 {
-			t.Fatalf("first page: %d stays, next %d, %v", len(first), next, err)
+			t.Fatalf("first page: %d visits, next %d, %v", len(first), next, err)
 		}
 		last, next, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{LimitCount: 3, Offset: 3})
 		if err != nil || len(last) != 1 || next != 0 || last[0].ClientVisitKey != "a" {
-			t.Fatalf("last page: %d stays, next %d, %v", len(last), next, err)
+			t.Fatalf("last page: %d visits, next %d, %v", len(last), next, err)
 		}
 
-		// Forgetting a place takes its stays with it.
+		// Forgetting a place takes its visits with it.
 		if err := tx.ForgetPlace(userId, cafe.ID); err != nil {
 			t.Fatalf("ForgetPlace: %s", err)
 		}
@@ -649,12 +695,12 @@ func TestStaysListNewestFirstWithTheirPlaces(t *testing.T) {
 			t.Errorf("after forgetting the cafe: %s", got)
 		}
 		if got := keys(db.PlaceVisitFilter{PlaceID: cafe.ID}); got != "" {
-			t.Errorf("the forgotten place still has stays: %s", got)
+			t.Errorf("the forgotten place still has visits: %s", got)
 		}
 	})
 }
 
-// Erasing a range takes the positions and stays that began in it, then the
+// Erasing a range takes the positions and visits that began in it, then the
 // places left with nothing, except the ones the person made their own.
 func TestErasingLocationHistoryKeepsWhatThePersonNamed(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
@@ -700,17 +746,17 @@ func TestErasingLocationHistoryKeepsWhatThePersonNamed(t *testing.T) {
 		}
 
 		// The first day: three of six positions (midnight is not in it, nine
-		// o'clock is), the cafe stay, and the cafe, which nothing else holds.
+		// o'clock is), the cafe visit, and the cafe, which nothing else holds.
 		from, until := locationDay.Add(-time.Hour), locationDay.Add(23*time.Hour)
-		pointCount, visitCount, placeCount, err := tx.ForgetLocationHistory(userId, &from, &until)
+		pointCount, visitCount, placeCount, err := tx.EraseLocationHistory(userId, &from, &until)
 		if err != nil || pointCount != 2 || visitCount != 1 || placeCount != 1 {
-			t.Fatalf("the first day: %d points, %d stays, %d places, %v", pointCount, visitCount, placeCount, err)
+			t.Fatalf("the first day: %d points, %d visits, %d places, %v", pointCount, visitCount, placeCount, err)
 		}
-		// The park has a stay left; the labeled and the named place are kept
-		// whatever happens to their stays.
-		pointCount, visitCount, placeCount, err = tx.ForgetLocationHistory(userId, nil, nil)
+		// The park has a visit left; the labeled and the named place are kept
+		// whatever happens to their visits.
+		pointCount, visitCount, placeCount, err = tx.EraseLocationHistory(userId, nil, nil)
 		if err != nil || pointCount != 4 || visitCount != 3 || placeCount != 1 {
-			t.Fatalf("everything: %d points, %d stays, %d places, %v", pointCount, visitCount, placeCount, err)
+			t.Fatalf("everything: %d points, %d visits, %d places, %v", pointCount, visitCount, placeCount, err)
 		}
 		places, _, _ := tx.ListPlaces(userId, db.PlaceFilter{})
 		names := []string{}
@@ -728,9 +774,9 @@ func TestErasingLocationHistoryKeepsWhatThePersonNamed(t *testing.T) {
 			t.Error("another person's position went")
 		}
 		if visits, _, _ := tx.ListPlaceVisits(otherId, db.PlaceVisitFilter{}); len(visits) != 1 {
-			t.Errorf("another person has %d stays", len(visits))
+			t.Errorf("another person has %d visits", len(visits))
 		}
-		if _, _, _, err = tx.ForgetLocationHistory(userId, &until, &from); !errors.Is(err, db.ErrInvalidArguments) {
+		if _, _, _, err = tx.EraseLocationHistory(userId, &until, &from); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("a range that ends before it starts: %v", err)
 		}
 	})
@@ -881,6 +927,199 @@ func TestWhatAProviderAnsweredIsRecordedWithoutReplacingAPersonsName(t *testing.
 		}
 		if err := tx.SetPlaceNamed(made.ID, &db.NamedPlace{OSMType: "area"}, "", now); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("a type nobody knows: %v", err)
+		}
+	})
+}
+
+// The key of a visit that was joined into another is not forgotten: the phone
+// sends a batch again until the server has answered, and a key it already sent
+// must find the visit it became, not make a new one.
+func TestTheKeyOfAJoinedVisitStillFindsTheVisit(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-joined-keys")
+		cafe := locationPlace(t, tx, userId, "Birch Cafe", 10.5)
+
+		// k1 ended 90 minutes before k2 began? No: five minutes, so they join
+		// into k1, which began first, and k2 is still open.
+		first := locationVisit(cafe.ID, "k1", 0, 30)
+		second := locationVisit(cafe.ID, "k2", 35, -1)
+		for _, visit := range []*models.PlaceVisit{first, second} {
+			if _, err := tx.PutPlaceVisit(userId, visit); err != nil {
+				t.Fatalf("PutPlaceVisit: %s", err)
+			}
+		}
+		if second.ID != first.ID || second.DepartedAt != nil {
+			t.Fatalf("the two visits became one, still going: %+v", second)
+		}
+
+		// Sending the batch again finds both and adds nothing.
+		for _, key := range []string{"k1", "k2"} {
+			found, err := tx.GetPlaceVisitByClientKey(userId, key)
+			if err != nil || found == nil || found.ID != first.ID {
+				t.Fatalf("the key %s finds %+v, %v", key, found, err)
+			}
+		}
+		resentFirst := locationVisit(cafe.ID, "k1", 0, 30)
+		resentSecond := locationVisit(cafe.ID, "k2", 35, -1)
+		for _, resent := range []*models.PlaceVisit{resentFirst, resentSecond} {
+			isNew, err := tx.PutPlaceVisit(userId, resent)
+			if err != nil || isNew || resent.ID != first.ID {
+				t.Fatalf("a key sent again: new %v, %+v, %v", isNew, resent, err)
+			}
+		}
+		// Sending k1's departure again did not close the visit k2 keeps open.
+		if open, err := tx.GetOpenPlaceVisit(userId); err != nil || open == nil || open.ID != first.ID {
+			t.Fatalf("the visit is still in progress: %+v, %v", open, err)
+		}
+		visits, _, err := tx.ListPlaceVisits(userId, db.PlaceVisitFilter{})
+		if err != nil || len(visits) != 1 {
+			t.Fatalf("one visit, not %d: %v", len(visits), err)
+		}
+
+		// k2's own departure closes it.
+		departure := locationVisit(cafe.ID, "k2", -1, 80)
+		if isNew, err := tx.PutPlaceVisit(userId, departure); err != nil || isNew || departure.ID != first.ID || departure.DepartedAt == nil || !departure.DepartedAt.Equal(*minutesAfterNine(80)) {
+			t.Fatalf("the departure of the second: new %v, %+v, %v", isNew, departure, err)
+		}
+
+		// A key joined into a visit that was itself joined later still finds it.
+		third := locationVisit(cafe.ID, "k3", 85, 100)
+		if _, err := tx.PutPlaceVisit(userId, third); err != nil || third.ID != first.ID {
+			t.Fatalf("the third joins the first: %+v, %v", third, err)
+		}
+		other := locationUser(t, tx, "location-joined-keys-other")
+		if found, err := tx.GetPlaceVisitByClientKey(other, "k2"); err != nil || found != nil {
+			t.Errorf("another person's key finds %+v, %v", found, err)
+		}
+	})
+}
+
+// An arrival ends every other visit of the person that is still open, at the
+// moment of the arrival; a departure alone does not, and an older arrival
+// delivered late does not end a later visit.
+func TestAnArrivalEndsTheVisitsStillOpenElsewhere(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-open-visits")
+		otherId := locationUser(t, tx, "location-open-visits-other")
+		cafe := locationPlace(t, tx, userId, "Birch Cafe", 10.5)
+		library := locationPlace(t, tx, userId, "Elm Library", 10.6)
+		park := locationPlace(t, tx, userId, "Example Park", 10.7)
+		theirs := locationPlace(t, tx, otherId, "Their Cafe", 10.5)
+
+		if _, err := tx.PutPlaceVisit(otherId, locationVisit(theirs.ID, "theirs", 0, -1)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "cafe", 0, -1)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(library.ID, "library", 200, -1)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		cafeVisit, err := tx.GetPlaceVisitByClientKey(userId, "cafe")
+		if err != nil || cafeVisit.DepartedAt == nil || !cafeVisit.DepartedAt.Equal(*minutesAfterNine(200)) {
+			t.Fatalf("the cafe visit ends where the library visit began: %+v, %v", cafeVisit, err)
+		}
+		if open, err := tx.GetOpenPlaceVisit(userId); err != nil || open == nil || open.Place.ID != library.ID {
+			t.Fatalf("only the library is open: %+v, %v", open, err)
+		}
+		// Another person's open visit is theirs.
+		if theirVisit, err := tx.GetPlaceVisitByClientKey(otherId, "theirs"); err != nil || theirVisit.DepartedAt != nil {
+			t.Fatalf("another person's visit was ended: %+v, %v", theirVisit, err)
+		}
+
+		// A visit delivered late, from before the library, does not end it.
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(park.ID, "park-early", 100, -1)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		libraryVisit, err := tx.GetPlaceVisitByClientKey(userId, "library")
+		if err != nil || libraryVisit.DepartedAt != nil {
+			t.Fatalf("an older arrival delivered late ended the library visit: %+v, %v", libraryVisit, err)
+		}
+		// A departure alone is not an arrival.
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(park.ID, "park-left", -1, 500)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if libraryVisit, err = tx.GetPlaceVisitByClientKey(userId, "library"); err != nil || libraryVisit.DepartedAt != nil {
+			t.Fatalf("a departure alone ended the library visit: %+v, %v", libraryVisit, err)
+		}
+	})
+}
+
+// A departure reported before the arrival already stored is the arrival, not a
+// refusal of the batch it came in.
+func TestADepartureBeforeTheStoredArrivalIsClamped(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-clamp")
+		cafe := locationPlace(t, tx, userId, "Birch Cafe", 10.5)
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "check-in", 60, -1)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		early := locationVisit(cafe.ID, "check-in", -1, 20)
+		isNew, err := tx.PutPlaceVisit(userId, early)
+		if err != nil || isNew || early.DepartedAt == nil || !early.DepartedAt.Equal(*minutesAfterNine(60)) {
+			t.Fatalf("the departure is clamped to the arrival: new %v, %+v, %v", isNew, early, err)
+		}
+	})
+}
+
+// A place made from text a provider or a caller supplied is held to the width
+// of its columns, and control characters do not get in.
+func TestAPlaceKeepsOnlyTextThatFitsAndIsPrintable(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-text")
+		made, err := tx.CreatePlace(userId, &models.Place{
+			PlaceName: "Birch\nCafe\x00", OSMName: "Birch Cafe\t", OSMCategory: strings.Repeat("c", 200), AddressText: strings.Repeat("a", 600),
+			LatitudeDegrees: 10.5, LongitudeDegrees: 20.5,
+		})
+		if err != nil || made.PlaceName != "Birch Cafe" || made.OSMName != "Birch Cafe" ||
+			len([]rune(made.OSMCategory)) != 128 || len([]rune(made.AddressText)) != 512 {
+			t.Fatalf("CreatePlace: %+v, %v", made, err)
+		}
+		if err := tx.SetPlaceNamed(made.ID, &db.NamedPlace{PlaceName: "Elm\r\nLibrary", OSMType: models.OSMTypeNode, OSMID: 5, AddressText: "1 Elm\nStreet"}, "", locationDay); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		named, err := tx.GetPlace(userId, made.ID)
+		if err != nil || named.OSMName != "Elm  Library" && named.OSMName != "Elm Library" || strings.ContainsAny(named.AddressText, "\n\r") {
+			t.Fatalf("the provider's text is cleaned: %+v, %v", named, err)
+		}
+	})
+}
+
+// A place can be taken for naming by the one who just made it, once, and not
+// when it is named, claimed lately or gone.
+func TestOnePlaceCanBeClaimedToNameRightAway(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-claim-one")
+		made := locationPlace(t, tx, userId, "Exampleton, Exampleland", 10.5)
+		now := time.Now()
+		claimed, err := tx.ClaimPlaceToName(made.ID, now)
+		if err != nil || claimed == nil || claimed.ID != made.ID || claimed.NamingClaimedAt == nil {
+			t.Fatalf("the first claim: %+v, %v", claimed, err)
+		}
+		if again, err := tx.ClaimPlaceToName(made.ID, now.Add(time.Minute)); err != nil || again != nil {
+			t.Fatalf("a place claimed a minute ago is left alone: %+v, %v", again, err)
+		}
+		if later, err := tx.ClaimPlaceToName(made.ID, now.Add(time.Hour)); err != nil || later == nil {
+			t.Fatalf("a claim an hour old has run out: %+v, %v", later, err)
+		}
+		if err := tx.SetPlaceNamed(made.ID, nil, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		if named, err := tx.ClaimPlaceToName(made.ID, now.Add(24*time.Hour)); err != nil || named != nil {
+			t.Fatalf("a named place is not claimed: %+v, %v", named, err)
+		}
+		if gone, err := tx.ClaimPlaceToName("no-such-place", now); err != nil || gone != nil {
+			t.Fatalf("a place that is gone: %+v, %v", gone, err)
 		}
 	})
 }

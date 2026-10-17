@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/avatar"
@@ -16,7 +17,7 @@ import (
 )
 
 // Where a person is and where they have been: the positions their phone and
-// browser report, the places those are at, the stays at them, and the places
+// browser report, the places those are at, the visits at them, and the places
 // near them that OpenStreetMap knows. docs/subsystems/location.md says what is
 // recorded and docs/decisions/20261017-places-are-named-from-openstreetmap.md
 // where the names come from.
@@ -28,13 +29,13 @@ import (
 
 // LocationQuery reads where people are and have been.
 type LocationQuery interface {
-	// Where the caller is: the latest position they reported, and the stay in
-	// progress with its place. A stay whose departure the phone never sent is
+	// Where the caller is: the latest position they reported, and the visit in
+	// progress with its place. A visit whose departure the phone never sent is
 	// not reported as in progress once a later position is somewhere else.
 	// Needs location:use.
 	GetLocation(ctx context.Context, arguments GetLocationArguments) (*LocationView, error)
 
-	// Stays, newest first, paged. A stay is listed when any of it falls in
+	// Visits, newest first, paged. A visit is listed when any of it falls in
 	// the range. Needs location:use.
 	ListLocationVisits(ctx context.Context, arguments ListLocationVisitsArguments) (*PlaceVisitPageView, error)
 
@@ -43,13 +44,14 @@ type LocationQuery interface {
 	// location:use.
 	ListPlaces(ctx context.Context, arguments ListPlacesArguments) (*PlacePageView, error)
 
-	// What is at and around a point, nearest first, for a check-in: the named
-	// thing OpenStreetMap knows at the point, and the caller's own places
-	// there. Needs location:use.
+	// What is at and around a position, nearest first, for a check-in: the named
+	// place OpenStreetMap knows at the position, and the caller's own places
+	// there; only the caller's own while the place provider is switched off.
+	// Needs location:use.
 	ListNearbyPlaces(ctx context.Context, arguments ListNearbyPlacesArguments) ([]*FoundPlaceView, error)
 
-	// Places matching words near a point, from OpenStreetMap, nearest first.
-	// Near the point given, or the place given, or where the caller was last
+	// Places matching words near a position, from OpenStreetMap, nearest first.
+	// Near the position given, or the place given, or where the caller was last
 	// reported to be. Needs location:use.
 	SearchPlaces(ctx context.Context, arguments SearchPlacesArguments) (*FoundPlacePageView, error)
 
@@ -59,7 +61,7 @@ type LocationQuery interface {
 
 	// Every person whose location is shared with the caller, directly or
 	// through a circle, at the highest level any share gives: their latest
-	// position and the stay in progress. Needs location:use.
+	// position and the visit in progress. Needs location:use.
 	ListSharedLocations(ctx context.Context) ([]*LocationView, error)
 
 	// The shares the caller has made of their own location, and with whom.
@@ -69,7 +71,7 @@ type LocationQuery interface {
 
 // LocationMutation records and changes them.
 type LocationMutation interface {
-	// A phone's batch of up to 500 positions and 50 stays. Sending the same
+	// A phone's batch of up to 500 positions and 50 visits. Sending the same
 	// batch again adds nothing, which is how a phone can send until it knows
 	// the server has them. Answers without asking OpenStreetMap anything: a
 	// place made here is named afterwards. Needs location:use.
@@ -81,18 +83,20 @@ type LocationMutation interface {
 	// off. Needs location:use.
 	SavePlace(ctx context.Context, arguments SavePlaceArguments) (*PlaceView, error)
 
-	// Delete a place and every stay at it. Needs location:use.
+	// Delete a place and every visit at it. Needs location:use.
 	ForgetPlace(ctx context.Context, arguments ForgetPlaceArguments) (bool, error)
 
 	// Record that the caller is at a place now: one of their own, or a place
-	// found nearby, which becomes one of theirs. Ends the stay in progress
-	// and starts a stay that was recorded by hand. Needs location:use.
+	// found nearby, which becomes one of theirs. Ends the visit in progress
+	// and starts a visit that was recorded by hand. Needs location:use.
 	CheckIn(ctx context.Context, arguments CheckInArguments) (*PlaceVisitView, error)
 
-	// Delete positions and stays that began in a range, or all of them when
-	// no range is given, and the places that leaves with no stay and no name
-	// or label of the caller's own. This cannot be undone. Needs location:use.
-	ForgetLocationHistory(ctx context.Context, arguments ForgetLocationHistoryArguments) (*ForgetLocationHistoryView, error)
+	// Erases your positions and visits (in the range), and the places left
+	// with no visit that you did not name or label. Places you named or
+	// labeled stay. Anything your agent already learned from those days stays
+	// in its memory until you remove it. Without a range, all of them. This
+	// cannot be undone. Needs location:use.
+	EraseLocationHistory(ctx context.Context, arguments EraseLocationHistoryArguments) (*EraseLocationHistoryView, error)
 
 	// Share the caller's own location with one person or one circle at a
 	// level: current (where they are now, and the place) or history (that, and
@@ -109,8 +113,9 @@ type LocationMutation interface {
 // LocationSubscription follows the people the caller can see.
 type LocationSubscription interface {
 	// An event each time a person the caller may see the location of reports
-	// where they are, the caller included; read the location again to see
-	// where. Needs location:use.
+	// where they are, shares or stops sharing it, or erases it, the caller
+	// included; read the location again to see what. At most 20 are open for
+	// one account. Needs location:use.
 	LocationEvents(ctx context.Context) (<-chan *LocationEventView, error)
 }
 
@@ -123,13 +128,14 @@ type LocationView struct {
 	AvatarURL        *string `json:"avatarUrl"`
 	AvatarColorIndex int     `json:"avatarColorIndex"`
 
-	// LocationShareLevel is owner for the caller's own location.
-	LocationShareLevel string `json:"locationShareLevel"`
+	// ShareLevel is owner for the caller's own location, otherwise the highest
+	// level any share gives the caller: current or history.
+	ShareLevel string `json:"shareLevel"`
 
 	// LatestPoint is the newest position reported, null when there is none.
 	LatestPoint *LocationPointView `json:"latestPoint"`
 
-	// OpenVisit is the stay in progress, null when there is none.
+	// OpenVisit is the visit in progress, null when there is none.
 	OpenVisit *PlaceVisitView `json:"openVisit"`
 }
 
@@ -147,7 +153,7 @@ type LocationPointView struct {
 	LocationSource string `json:"locationSource"`
 }
 
-// PlaceView is a spot with a name and a radius, belonging to one person.
+// PlaceView is a place with a name and a radius, belonging to one person.
 type PlaceView struct {
 	ID     string `json:"id"`
 	UserID string `json:"userId"`
@@ -164,7 +170,7 @@ type PlaceView struct {
 	LongitudeDegrees float64 `json:"longitudeDegrees"`
 	RadiusMeters     float64 `json:"radiusMeters"`
 
-	// What OpenStreetMap knows about the spot. OSMType is empty and OSMID
+	// What OpenStreetMap knows about the place. OSMType is empty and OSMID
 	// null when it knows no object there.
 	OSMType     string `json:"osmType"`
 	OSMID       *int64 `json:"osmId"`
@@ -173,29 +179,29 @@ type PlaceView struct {
 	AddressText string `json:"addressText"`
 
 	// VisitCount and LastVisitAt are filled in where a place is listed or
-	// saved, and are zero and null where it is shown as part of a stay.
+	// saved, and are zero and null where it is shown as part of a visit.
 	VisitCount  int        `json:"visitCount"`
 	LastVisitAt *time.Time `json:"lastVisitAt"`
 
 	// NamingErrorMessage says why OpenStreetMap could not be asked about the
-	// spot the last time it was tried, empty when it has not failed.
+	// place the last time it was tried, empty when it has not failed.
 	NamingErrorMessage string `json:"namingErrorMessage"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// PlaceVisitView is one stay at a place.
+// PlaceVisitView is one visit at a place.
 type PlaceVisitView struct {
 	ID    string     `json:"id"`
 	Place *PlaceView `json:"place"`
 
-	// ArrivedAt is null for a stay whose arrival the phone did not see.
+	// ArrivedAt is null for a visit whose arrival the phone did not see.
 	// DepartedAt is null while the person is still there.
 	ArrivedAt  *time.Time `json:"arrivedAt"`
 	DepartedAt *time.Time `json:"departedAt"`
 
-	// DurationSeconds is how long the stay lasted, null until it has both an
+	// DurationSeconds is how long the visit lasted, null until it has both an
 	// arrival and a departure.
 	DurationSeconds *int `json:"durationSeconds"`
 
@@ -207,7 +213,7 @@ type PlaceVisitView struct {
 	VisitSource string `json:"visitSource"`
 }
 
-// PlaceVisitPageView is a page of stays.
+// PlaceVisitPageView is a page of visits.
 type PlaceVisitPageView struct {
 	PlaceVisits []*PlaceVisitView `json:"placeVisits"`
 
@@ -254,8 +260,8 @@ type ReportLocationView struct {
 	UpdatedVisitCount int `json:"updatedVisitCount"`
 }
 
-// ForgetLocationHistoryView says what was deleted.
-type ForgetLocationHistoryView struct {
+// EraseLocationHistoryView says what was erased.
+type EraseLocationHistoryView struct {
 	PointCount int `json:"pointCount"`
 	VisitCount int `json:"visitCount"`
 	PlaceCount int `json:"placeCount"`
@@ -267,14 +273,14 @@ type GetLocationArguments struct {
 }
 
 type ListLocationVisitsArguments struct {
-	// UserID is whose stays; empty is the caller's own.
+	// UserID is whose visits; empty is the caller's own.
 	UserID string `json:"userId" graphapi:"nullable"`
 
-	// From and Until keep the stays that overlap the range.
+	// From and Until keep the visits that overlap the range.
 	From  *time.Time `json:"from" graphapi:"nullable"`
 	Until *time.Time `json:"until" graphapi:"nullable"`
 
-	// PlaceID keeps the stays at one place, PlaceLabel the stays at places
+	// PlaceID keeps the visits at one place, PlaceLabel the visits at places
 	// with a label.
 	PlaceID    string `json:"placeId" graphapi:"nullable"`
 	PlaceLabel string `json:"placeLabel" graphapi:"nullable"`
@@ -307,7 +313,7 @@ type ListNearbyPlacesArguments struct {
 type SearchPlacesArguments struct {
 	Query string `json:"query"`
 
-	// Near a point, or near one of the caller's places; with neither, near
+	// Near a position, or near one of the caller's places; with neither, near
 	// where the caller was last reported to be.
 	LatitudeDegrees  *float64 `json:"latitudeDegrees" graphapi:"nullable"`
 	LongitudeDegrees *float64 `json:"longitudeDegrees" graphapi:"nullable"`
@@ -403,8 +409,8 @@ type CheckInArguments struct {
 	AddressText      string   `json:"addressText" graphapi:"nullable"`
 }
 
-type ForgetLocationHistoryArguments struct {
-	// From and Until bound what is deleted; leave both out to delete it all.
+type EraseLocationHistoryArguments struct {
+	// From and Until bound what is erased; leave both out to erase it all.
 	From  *time.Time `json:"from" graphapi:"nullable"`
 	Until *time.Time `json:"until" graphapi:"nullable"`
 }
@@ -419,7 +425,7 @@ const (
 	// a phone's clock is not exactly this one's, but a day ahead is a bug.
 	reportFutureMost = 24 * time.Hour
 
-	// clientVisitKeyLongest bounds the key a phone gives a stay.
+	// clientVisitKeyLongest bounds the key a phone gives a visit.
 	clientVisitKeyLongest = 128
 
 	// locationPathSpanMost and locationPathPointsMost bound a request for the
@@ -428,7 +434,7 @@ const (
 	locationPathSpanMost   = 48 * time.Hour
 	locationPathPointsMost = 5000
 
-	// The radius of a search for places near a point, in meters. A check-in
+	// The radius of a search for places near a position, in meters. A check-in
 	// list is what is within walking distance, and a search is what is within
 	// a drive.
 	nearbyRadiusDefaultMeters = 150
@@ -440,11 +446,15 @@ const (
 	searchLimitDefault = 20
 	searchLimitMost    = 50
 
+	// searchQueryMostRunes bounds the words of a search, which go to the
+	// place provider.
+	searchQueryMostRunes = 200
+
 	// nearbyOwnPlacesMost is how many of the person's own places a nearby
 	// listing shows.
 	nearbyOwnPlacesMost = 20
 
-	// placePageDefault and placePageMost bound a page of stays or places
+	// placePageDefault and placePageMost bound a page of visits or places
 	// when the caller names none or too many.
 	placePageDefault = 50
 	placePageMost    = 200
@@ -473,9 +483,9 @@ func (self *graph) requireLocationPerson(ctx context.Context) (*api.Principal, e
 type locationReach struct {
 	User *models.User
 
-	// LocationShareLevel is owner for the caller's own location, otherwise the
+	// ShareLevel is owner for the caller's own location, otherwise the
 	// highest level any share gives the caller.
-	LocationShareLevel models.LocationShareLevel
+	ShareLevel models.LocationShareLevel
 }
 
 // reachLocation is the person whose location a call asks about, if the caller
@@ -491,7 +501,7 @@ type locationReach struct {
 func (self *graph) reachLocation(ctx context.Context, principal *api.Principal, userId string, neededLevel models.LocationShareLevel) (*locationReach, error) {
 	userId = strings.TrimSpace(userId)
 	if userId == "" || userId == principal.User.ID {
-		return &locationReach{User: principal.User, LocationShareLevel: models.LocationShareLevelOwner}, nil
+		return &locationReach{User: principal.User, ShareLevel: models.LocationShareLevelOwner}, nil
 	}
 	tx := self.transaction(ctx)
 	level, err := tx.GetLocationShareLevel(principal.User.ID, userId)
@@ -508,7 +518,7 @@ func (self *graph) reachLocation(ctx context.Context, principal *api.Principal, 
 	if owner == nil || owner.Disabled() {
 		return nil, api.ErrNotFound
 	}
-	return &locationReach{User: owner, LocationShareLevel: level}, nil
+	return &locationReach{User: owner, ShareLevel: level}, nil
 }
 
 // locationFailure is an error from the database as the API reports it: a
@@ -526,12 +536,33 @@ func locationFailure(err error) error {
 	return translateError(err)
 }
 
-// placeProvider is the provider the server's settings name now, or the
-// refusal to say that there is none.
-func (self *graph) placeProvider() (place.Provider, error) {
+// optionalPlaceProvider is the provider the server's settings name now, nil
+// while the operator has switched it off, or the refusal to say that it is not
+// set up properly.
+// placeProviderFailure is a failed question to the place provider as the
+// person is told it: a busy provider is a refusal they can act on by asking
+// again in a moment, anything else says the provider could not be asked.
+func placeProviderFailure(err error) error {
+	if errors.Is(err, place.ErrProviderBusy) {
+		return fmt.Errorf("%w: the place provider is busy; ask again in a moment", api.ErrInvalidArguments)
+	}
+	return fmt.Errorf("the place provider could not be asked just now: %s", place.FailureSentence(err))
+}
+
+func (self *graph) optionalPlaceProvider() (place.Provider, error) {
 	provider, err := place.ProviderFor(self.config.Current())
 	if err != nil {
 		return nil, fmt.Errorf("%w: the place provider is not set up properly: %s", api.ErrInvalidArguments, err)
+	}
+	return provider, nil
+}
+
+// placeProvider is the provider the server's settings name now, or the
+// refusal to say that there is none.
+func (self *graph) placeProvider() (place.Provider, error) {
+	provider, err := self.optionalPlaceProvider()
+	if err != nil {
+		return nil, err
 	}
 	if provider == nil {
 		return nil, errPlaceProviderOff
@@ -565,9 +596,31 @@ func describePlace(found *models.Place) *PlaceView {
 	return view
 }
 
-func describePlaceVisit(visit *models.PlaceVisit) *PlaceVisitView {
+// describePlaceForViewer is a place as somebody it was shared with sees it: its
+// name, label, address, coordinates and category, which a map and a list of
+// visits need, and not when the owner first went there, how the owner's
+// naming went, the radius or the OpenStreetMap object, which are the owner's
+// own records.
+func describePlaceForViewer(found *models.Place) *PlaceView {
+	if found == nil {
+		return nil
+	}
+	return &PlaceView{
+		ID: found.ID, UserID: found.UserID, PlaceName: found.PlaceName, PlaceLabel: string(found.PlaceLabel),
+		LatitudeDegrees: found.LatitudeDegrees, LongitudeDegrees: found.LongitudeDegrees,
+		OSMCategory: found.OSMCategory, AddressText: found.AddressText,
+	}
+}
+
+// describePlaceVisit is a visit as the caller sees it: whole for the person's
+// own, with the reduced place for anybody a location is shared with.
+func describePlaceVisit(visit *models.PlaceVisit, isOwner bool) *PlaceVisitView {
+	described := describePlace(visit.Place)
+	if !isOwner {
+		described = describePlaceForViewer(visit.Place)
+	}
 	view := &PlaceVisitView{
-		ID: visit.ID, Place: describePlace(visit.Place), ArrivedAt: visit.ArrivedAt, DepartedAt: visit.DepartedAt,
+		ID: visit.ID, Place: described, ArrivedAt: visit.ArrivedAt, DepartedAt: visit.DepartedAt,
 		LatitudeDegrees: visit.LatitudeDegrees, LongitudeDegrees: visit.LongitudeDegrees, AccuracyMeters: visit.AccuracyMeters,
 		VisitSource: string(visit.VisitSource),
 	}
@@ -664,7 +717,7 @@ func attachVisitSummaries(tx db.Transaction, userId string, places []*models.Pla
 	return nil
 }
 
-// openVisitOf is the stay the person is believed to be in: the newest one with
+// openVisitOf is the visit the person is believed to be in: the newest one with
 // no departure, unless the positions reported since say they left. The one
 // place that decides, so that every surface agrees about whether somebody is
 // at a place.
@@ -696,7 +749,7 @@ func describeLocation(tx db.Transaction, reach *locationReach) (*LocationView, e
 	view := &LocationView{
 		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
 		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
-		LocationShareLevel: string(reach.LocationShareLevel),
+		ShareLevel: string(reach.ShareLevel),
 	}
 	latest, err := tx.GetLatestLocationPoint(reach.User.ID)
 	if err != nil {
@@ -710,7 +763,7 @@ func describeLocation(tx db.Transaction, reach *locationReach) (*LocationView, e
 		return nil, err
 	}
 	if visit != nil {
-		view.OpenVisit = describePlaceVisit(visit)
+		view.OpenVisit = describePlaceVisit(visit, reach.ShareLevel == models.LocationShareLevelOwner)
 	}
 	return view, nil
 }
@@ -752,7 +805,7 @@ func (self *graph) ListLocationVisits(ctx context.Context, arguments ListLocatio
 	}
 	page := &PlaceVisitPageView{PlaceVisits: make([]*PlaceVisitView, 0, len(visits)), NextOffset: nextOffsetOf(nextOffset)}
 	for _, visit := range visits {
-		page.PlaceVisits = append(page.PlaceVisits, describePlaceVisit(visit))
+		page.PlaceVisits = append(page.PlaceVisits, describePlaceVisit(visit, reach.ShareLevel == models.LocationShareLevelOwner))
 	}
 	return page, nil
 }
@@ -782,14 +835,28 @@ func (self *graph) ListPlaces(ctx context.Context, arguments ListPlacesArguments
 	}
 	page := &PlacePageView{Places: make([]*PlaceView, 0, len(places)), NextOffset: nextOffsetOf(nextOffset)}
 	for _, each := range places {
-		page.Places = append(page.Places, describePlace(each))
+		if reach.ShareLevel == models.LocationShareLevelOwner {
+			page.Places = append(page.Places, describePlace(each))
+		} else {
+			page.Places = append(page.Places, describePlaceForViewer(each))
+		}
 	}
 	return page, nil
 }
 
+// ListNearbyPlaces waits on the place provider, so it reads in two short
+// phases of its own (isNetworkWaitingQuery) with the call outside both, and a
+// slow provider holds no database connection while it takes its time.
 func (self *graph) ListNearbyPlaces(ctx context.Context, arguments ListNearbyPlacesArguments) ([]*FoundPlaceView, error) {
-	principal, err := self.requireLocationPerson(ctx)
-	if err != nil {
+	var userId string
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		principal, err := self.requireLocationPerson(phaseContext)
+		if err != nil {
+			return err
+		}
+		userId = principal.User.ID
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	if err := requireOnEarth(arguments.LatitudeDegrees, arguments.LongitudeDegrees); err != nil {
@@ -802,32 +869,43 @@ func (self *graph) ListNearbyPlaces(ctx context.Context, arguments ListNearbyPla
 	if !(radiusMeters > 0) || radiusMeters > nearbyRadiusMostMeters {
 		return nil, fmt.Errorf("%w: look within 1 to %d meters", api.ErrInvalidArguments, nearbyRadiusMostMeters)
 	}
-	provider, err := self.placeProvider()
+	provider, err := self.optionalPlaceProvider()
 	if err != nil {
 		return nil, err
 	}
-	// The provider names the one thing at the point (neither server can list
-	// what is around without words to match), and the caller's own places
-	// there are added to it, so that a check-in list always offers the places
-	// they have been to before.
-	found, err := provider.Search(ctx, "", arguments.LatitudeDegrees, arguments.LongitudeDegrees, radiusMeters, 1)
-	if err != nil {
-		return nil, fmt.Errorf("the place provider could not be asked just now: %w", err)
+	// The provider names the one place at the position (neither server can
+	// list what is around without words to match), and the caller's own
+	// places there are added to it, so that a check-in list always offers the
+	// places they have been to before. With the provider off, it is their own
+	// places alone.
+	var found []*place.Found
+	if provider != nil {
+		if found, err = provider.Search(ctx, "", arguments.LatitudeDegrees, arguments.LongitudeDegrees, radiusMeters, 1); err != nil {
+			return nil, placeProviderFailure(err)
+		}
 	}
-	tx := self.transaction(ctx)
-	near, err := tx.ListPlacesNear(principal.User.ID, arguments.LatitudeDegrees, arguments.LongitudeDegrees, radiusMeters, nearbyOwnPlacesMost)
-	if err != nil {
-		return nil, err
-	}
-	rows, err := self.mergeFoundWithOwn(tx, principal.User.ID, found, near)
-	if err != nil {
+	var rows []*FoundPlaceView
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		// Asked again after the wait, so that a permission taken away while
+		// it lasted releases nothing.
+		if _, err := self.requireLocationPerson(phaseContext); err != nil {
+			return err
+		}
+		tx := self.transaction(phaseContext)
+		near, err := tx.ListPlacesNear(userId, arguments.LatitudeDegrees, arguments.LongitudeDegrees, radiusMeters, nearbyOwnPlacesMost)
+		if err != nil {
+			return err
+		}
+		rows, err = self.mergeFoundWithOwn(tx, userId, found, near)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	return rows, nil
 }
 
 // mergeFoundWithOwn is what the provider found and the caller's own places
-// near the same point as one list, nearest first. A found place that is one
+// near the same position as one list, nearest first. A found place that is one
 // the caller already has is shown once, as theirs, with their name for it.
 func (self *graph) mergeFoundWithOwn(tx db.Transaction, userId string, found []*place.Found, near []*db.PlaceDistance) ([]*FoundPlaceView, error) {
 	references := make([]db.OSMReference, 0, len(found))
@@ -869,14 +947,14 @@ func sortFoundByDistance(rows []*FoundPlaceView) {
 	}
 }
 
+// SearchPlaces reads in phases for the reason ListNearbyPlaces does.
 func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArguments) (*FoundPlacePageView, error) {
-	principal, err := self.requireLocationPerson(ctx)
-	if err != nil {
-		return nil, err
-	}
 	query := strings.TrimSpace(arguments.Query)
 	if query == "" {
 		return nil, fmt.Errorf("%w: say what to search for", api.ErrInvalidArguments)
+	}
+	if utf8.RuneCountInString(query) > searchQueryMostRunes {
+		return nil, fmt.Errorf("%w: search for at most %d characters", api.ErrInvalidArguments, searchQueryMostRunes)
 	}
 	offset, limitCount, err := pageOf(arguments.Offset, arguments.LimitCount, searchLimitDefault, searchLimitMost)
 	if err != nil {
@@ -889,9 +967,17 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 	if !(radiusMeters > 0) || radiusMeters > searchRadiusMostMeters {
 		return nil, fmt.Errorf("%w: search within 1 to %d meters", api.ErrInvalidArguments, searchRadiusMostMeters)
 	}
-	tx := self.transaction(ctx)
-	latitudeDegrees, longitudeDegrees, err := self.searchCenter(tx, principal.User.ID, arguments)
-	if err != nil {
+	var userId string
+	var latitudeDegrees, longitudeDegrees float64
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		principal, err := self.requireLocationPerson(phaseContext)
+		if err != nil {
+			return err
+		}
+		userId = principal.User.ID
+		latitudeDegrees, longitudeDegrees, err = self.searchCenter(self.transaction(phaseContext), userId, arguments)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	provider, err := self.placeProvider()
@@ -901,7 +987,7 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 	// One more than the page, to know whether there is a next one.
 	found, err := provider.Search(ctx, query, latitudeDegrees, longitudeDegrees, radiusMeters, offset+limitCount+1)
 	if err != nil {
-		return nil, fmt.Errorf("the place provider could not be asked just now: %w", err)
+		return nil, placeProviderFailure(err)
 	}
 	nextOffset := 0
 	if len(found) > offset+limitCount {
@@ -916,8 +1002,15 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 	for _, each := range found {
 		references = append(references, db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID})
 	}
-	ownByObject, err := tx.FindPlaceIDsByOSM(principal.User.ID, references)
-	if err != nil {
+	var ownByObject map[db.OSMReference]string
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		if _, err := self.requireLocationPerson(phaseContext); err != nil {
+			return err
+		}
+		var err error
+		ownByObject, err = self.transaction(phaseContext).FindPlaceIDsByOSM(userId, references)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	page := &FoundPlacePageView{FoundPlaces: make([]*FoundPlaceView, 0, len(found)), NextOffset: nextOffsetOf(nextOffset)}
@@ -927,7 +1020,7 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 	return page, nil
 }
 
-// searchCenter is the point a search is around: the one given, one of the
+// searchCenter is the position a search is around: the one given, one of the
 // caller's places, or where the caller was last reported to be.
 func (self *graph) searchCenter(tx db.Transaction, userId string, arguments SearchPlacesArguments) (float64, float64, error) {
 	if (arguments.LatitudeDegrees == nil) != (arguments.LongitudeDegrees == nil) {
@@ -994,7 +1087,7 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 		return fmt.Errorf("%w: send at most %d positions at a time", api.ErrInvalidArguments, reportPointsMost)
 	}
 	if len(arguments.Visits) > reportVisitsMost {
-		return fmt.Errorf("%w: send at most %d stays at a time", api.ErrInvalidArguments, reportVisitsMost)
+		return fmt.Errorf("%w: send at most %d visits at a time", api.ErrInvalidArguments, reportVisitsMost)
 	}
 	latest := now.Add(reportFutureMost)
 	for index, point := range arguments.Points {
@@ -1013,22 +1106,22 @@ func validateReport(arguments ReportLocationArguments, now time.Time) error {
 		key := strings.TrimSpace(visit.ClientVisitKey)
 		switch {
 		case key == "" || len(key) > clientVisitKeyLongest:
-			return fmt.Errorf("%w: stay %d needs a clientVisitKey of 1 to %d characters", api.ErrInvalidArguments, index+1, clientVisitKeyLongest)
+			return fmt.Errorf("%w: visit %d needs a clientVisitKey of 1 to %d characters", api.ErrInvalidArguments, index+1, clientVisitKeyLongest)
 		case !place.IsOnEarth(visit.LatitudeDegrees, visit.LongitudeDegrees):
-			return fmt.Errorf("%w: stay %d is not on the earth", api.ErrInvalidArguments, index+1)
+			return fmt.Errorf("%w: visit %d is not on the earth", api.ErrInvalidArguments, index+1)
 		case !(visit.AccuracyMeters >= 0) || math.IsInf(visit.AccuracyMeters, 0):
-			return fmt.Errorf("%w: stay %d has an accuracy that is not zero or more", api.ErrInvalidArguments, index+1)
+			return fmt.Errorf("%w: visit %d has an accuracy that is not zero or more", api.ErrInvalidArguments, index+1)
 		case visit.ArrivedAt == nil && visit.DepartedAt == nil:
-			return fmt.Errorf("%w: stay %d has neither an arrival nor a departure", api.ErrInvalidArguments, index+1)
+			return fmt.Errorf("%w: visit %d has neither an arrival nor a departure", api.ErrInvalidArguments, index+1)
 		case visit.ArrivedAt != nil && visit.ArrivedAt.After(latest), visit.DepartedAt != nil && visit.DepartedAt.After(latest):
-			return fmt.Errorf("%w: stay %d is more than a day in the future", api.ErrInvalidArguments, index+1)
+			return fmt.Errorf("%w: visit %d is more than a day in the future", api.ErrInvalidArguments, index+1)
 		case visit.ArrivedAt != nil && visit.DepartedAt != nil && visit.DepartedAt.Before(*visit.ArrivedAt):
-			return fmt.Errorf("%w: stay %d departs before it arrives", api.ErrInvalidArguments, index+1)
+			return fmt.Errorf("%w: visit %d departs before it arrives", api.ErrInvalidArguments, index+1)
 		}
 		switch models.VisitSource(visit.VisitSource) {
 		case models.VisitSourceVisit, models.VisitSourceRegion:
 		default:
-			return fmt.Errorf("%w: stay %d has the source %q; a phone reports visit or region", api.ErrInvalidArguments, index+1, visit.VisitSource)
+			return fmt.Errorf("%w: visit %d has the source %q; a phone reports visit or region", api.ErrInvalidArguments, index+1, visit.VisitSource)
 		}
 	}
 	return nil
@@ -1055,6 +1148,13 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 	}
 	user := principal.User
 	tx := self.transaction(ctx)
+
+	// One report of a person at a time. A phone that sends a batch again while
+	// the first send is still being stored would otherwise find no visit for a
+	// key, and no place at a position, in both, and make one of each in both.
+	if err := tx.LockLocation(user.ID); err != nil {
+		return nil, err
+	}
 
 	// The install that reports must be one of the caller's own.
 	phoneId := strings.TrimSpace(arguments.AgentPhoneID)
@@ -1099,21 +1199,31 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 
 	view := &ReportLocationView{NewPointCount: newPointCount}
 	var notices []visitNotice
+	var madePlaces []*models.Place
+	isChanged := newPointCount > 0
 	for _, reported := range arguments.Visits {
-		isNew, notice, err := self.putReportedVisit(tx, user.ID, reported)
+		stored, err := self.putReportedVisit(tx, user.ID, reported)
 		if err != nil {
 			return nil, err
 		}
-		if isNew {
+		if stored.IsNew {
 			view.NewVisitCount++
 		} else {
 			view.UpdatedVisitCount++
 		}
-		if notice != nil {
-			notices = append(notices, *notice)
+		isChanged = isChanged || stored.IsNew || stored.IsChanged
+		if stored.Notice != nil {
+			notices = append(notices, *stored.Notice)
+		}
+		if stored.MadePlace != nil {
+			madePlaces = append(madePlaces, stored.MadePlace)
 		}
 	}
-	self.afterLocationChange(ctx, tx, user.ID, notices)
+	// A batch the server already had changes nothing, so the people watching
+	// the map are not told to read the same position again.
+	if isChanged {
+		self.afterLocationChange(ctx, tx, user.ID, notices, madePlaces)
+	}
 	return view, nil
 }
 
@@ -1124,18 +1234,19 @@ type visitNotice struct {
 	IsArrival bool
 }
 
-// afterLocationChange tells what a stored report changed, once it is
-// committed and not before: the people watching the map are told that this
-// person moved, and the phones of the people the location is shared with are
-// told of arrivals and departures. Neither can fail the report, which is
-// stored.
-func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, userId string, notices []visitNotice) {
+// afterLocationChange tells what a stored change did, once it is committed and
+// not before: the people watching the map are told that this person's location
+// changed, the phones of the people it is shared with are told of arrivals and
+// departures, and the places the change made are named. None of it can fail the
+// change, which is stored.
+func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, userId string, notices []visitNotice, madePlaces []*models.Place) {
 	notifier := self.phoneNotifier()
 	detached := context.WithoutCancel(ctx)
 	tx.AfterCommit(func() {
 		if err := self.database.NotifyLocationEvent(userId); err != nil {
 			log.Warningf("cannot tell the listeners that a location changed: %s", err)
 		}
+		self.namePlacesNow(detached, madePlaces)
 		if notifier == nil {
 			return
 		}
@@ -1145,75 +1256,108 @@ func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, u
 	})
 }
 
-// putReportedVisit stores one stay a phone reported, at a place chosen for it
-// without asking a provider anything: the place the stay is already at when
+// storedVisit is what storing one reported visit did.
+type storedVisit struct {
+	// IsNew is true for a visit the server had not heard of, and IsChanged for
+	// a known one that now has an arrival or a departure it did not have.
+	IsNew     bool
+	IsChanged bool
+
+	// Notice is the arrival or departure to tell the people the location is
+	// shared with, nil for none.
+	Notice *visitNotice
+
+	// MadePlace is the place the visit made because the person had none there,
+	// nil when it was at a place they had.
+	MadePlace *models.Place
+}
+
+// putReportedVisit stores one visit a phone reported, at a place chosen for it
+// without asking a provider anything: the place the visit is already at when
 // the key is known (a departure is reported at wherever the phone then is, and
 // leaves the place the arrival was at), the place a region event watched, the
-// person's place that holds the point, or a new one named after its city and
-// left for the naming job.
-func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported ReportedVisit) (bool, *visitNotice, error) {
+// person's place that holds the position, or a new one named after its city and
+// named from the provider once the report is stored.
+func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported ReportedVisit) (*storedVisit, error) {
 	key := strings.TrimSpace(reported.ClientVisitKey)
 	visit := &models.PlaceVisit{
 		ArrivedAt: reported.ArrivedAt, DepartedAt: reported.DepartedAt,
 		LatitudeDegrees: reported.LatitudeDegrees, LongitudeDegrees: reported.LongitudeDegrees, AccuracyMeters: reported.AccuracyMeters,
 		VisitSource: models.VisitSource(reported.VisitSource), ClientVisitKey: key,
 	}
+	stored := &storedVisit{}
 	known, err := tx.GetPlaceVisitByClientKey(userId, key)
 	if err != nil {
-		return false, nil, err
+		return nil, err
 	}
 	switch {
 	case known != nil:
 		visit.PlaceID = known.PlaceID
 	default:
-		matched, err := self.placeForReportedVisit(tx, userId, reported)
+		matched, isMade, err := self.placeForReportedVisit(tx, userId, reported)
 		if err != nil {
-			return false, nil, err
+			return nil, err
 		}
 		visit.PlaceID = matched.ID
+		if isMade {
+			stored.MadePlace = matched
+		}
 	}
 	isNew, err := tx.PutPlaceVisit(userId, visit)
 	if err != nil {
-		return false, nil, locationFailure(err)
+		return nil, locationFailure(err)
 	}
+	stored.IsNew = isNew
+	// known is nil when the key was not known at the lookup but is now: the
+	// visit was stored between the two. That is an update with nothing to say
+	// about a departure.
+	stored.IsChanged = !isNew && (known == nil || addsATime(known.ArrivedAt, visit.ArrivedAt) || addsATime(known.DepartedAt, visit.DepartedAt))
 	// An arrival is told when it is first heard of, and a departure when it
-	// is added to a stay that had none.
+	// is added to a visit that had none.
 	switch {
 	case isNew && visit.ArrivedAt != nil:
-		return isNew, &visitNotice{Visit: visit, IsArrival: true}, nil
-	case !isNew && known.DepartedAt == nil && visit.DepartedAt != nil:
-		return isNew, &visitNotice{Visit: visit, IsArrival: false}, nil
+		stored.Notice = &visitNotice{Visit: visit, IsArrival: true}
+	case !isNew && known != nil && known.DepartedAt == nil && visit.DepartedAt != nil:
+		stored.Notice = &visitNotice{Visit: visit, IsArrival: false}
 	}
-	return isNew, nil, nil
+	return stored, nil
 }
 
-// placeForReportedVisit is the place a stay not seen before is at.
-func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, reported ReportedVisit) (*models.Place, error) {
+// addsATime says whether a report gives a time that differs from the one
+// stored: none reported adds nothing, since a departure is reported without
+// the arrival it belongs to.
+func addsATime(storedAt, reportedAt *time.Time) bool {
+	return reportedAt != nil && (storedAt == nil || !storedAt.Equal(*reportedAt))
+}
+
+// placeForReportedVisit is the place a visit not seen before is at, and
+// whether it was made for the visit.
+func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, reported ReportedVisit) (*models.Place, bool, error) {
 	// A region event names the place it watched. One the caller no longer
 	// has, deleted since the phone last refreshed the places it watches, is
-	// matched by position like any other stay: refusing it would leave the
+	// matched by position like any other visit: refusing it would leave the
 	// phone sending the same batch for ever.
 	if placeId := strings.TrimSpace(reported.PlaceID); placeId != "" && models.VisitSource(reported.VisitSource) == models.VisitSourceRegion {
 		found, err := tx.GetPlace(userId, placeId)
 		if err == nil {
-			return found, nil
+			return found, false, nil
 		}
 		if !errors.Is(err, db.ErrNotFound) {
-			return nil, err
+			return nil, false, err
 		}
 	}
 	found, err := tx.FindPlaceAt(userId, reported.LatitudeDegrees, reported.LongitudeDegrees)
 	if err != nil || found != nil {
-		return found, err
+		return found, false, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
 		PlaceName: placeNameFor(reported.LatitudeDegrees, reported.LongitudeDegrees), LatitudeDegrees: reported.LatitudeDegrees,
 		LongitudeDegrees: reported.LongitudeDegrees,
 	})
 	if err != nil {
-		return nil, locationFailure(err)
+		return nil, false, locationFailure(err)
 	}
-	return made, nil
+	return made, true, nil
 }
 
 func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) (*PlaceView, error) {
@@ -1263,12 +1407,27 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 		if saved, err = tx.CreatePlace(userId, made); err != nil {
 			return nil, locationFailure(err)
 		}
+		if !saved.IsNamedByPerson {
+			detached := context.WithoutCancel(ctx)
+			tx.AfterCommit(func() { self.namePlacesNow(detached, []*models.Place{saved}) })
+		}
 	} else {
-		if saved, err = tx.SavePlace(userId, placeId, db.PlaceChanges{
+		changes := db.PlaceChanges{
 			PlaceName: arguments.PlaceName, PlaceLabel: placeLabel, LatitudeDegrees: arguments.LatitudeDegrees,
 			LongitudeDegrees: arguments.LongitudeDegrees, RadiusMeters: arguments.RadiusMeters,
-		}); err != nil {
+		}
+		// A place moved farther than its radius forgets what was learned about
+		// the old position and is called after its new city until it is named
+		// again, which is asked for once this is committed.
+		if arguments.LatitudeDegrees != nil && arguments.LongitudeDegrees != nil {
+			changes.MovedPlaceName = placeNameFor(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
+		}
+		if saved, err = tx.SavePlace(userId, placeId, changes); err != nil {
 			return nil, locationFailure(err)
+		}
+		if !saved.IsNamedByPerson && saved.NamedAt == nil {
+			detached := context.WithoutCancel(ctx)
+			tx.AfterCommit(func() { self.namePlacesNow(detached, []*models.Place{saved}) })
 		}
 	}
 	if err := attachVisitSummaries(tx, userId, []*models.Place{saved}); err != nil {
@@ -1297,6 +1456,11 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	userId := principal.User.ID
 	now := time.Now()
 
+	// One change of a person's location at a time, as in ReportLocation.
+	if err := tx.LockLocation(userId); err != nil {
+		return nil, err
+	}
+
 	var checkedIn *models.Place
 	if placeId := strings.TrimSpace(arguments.PlaceID); placeId != "" {
 		if checkedIn, err = tx.GetPlace(userId, placeId); err != nil {
@@ -1306,8 +1470,8 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 		return nil, err
 	}
 
-	// The stay in progress ends, at the moment the person left it if the
-	// positions since say so, otherwise now: a stay a phone never ended
+	// The visit in progress ends, at the moment the person left it if the
+	// positions since say so, otherwise now: a visit a phone never ended
 	// would otherwise be made days long by checking in somewhere else.
 	latest, err := tx.GetLatestLocationPoint(userId)
 	if err != nil {
@@ -1320,6 +1484,15 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	}
 	if open != nil && latest != nil && !place.IsStillThere(open, latest) {
 		endedAt = latest.MeasuredAt
+	} else if open != nil && open.PlaceID == checkedIn.ID {
+		// Already there: the visit in progress is the check-in, and ending it
+		// to start another would tell everyone it is shared with that the
+		// person left and then arrived.
+		open.Place = checkedIn
+		if err := attachVisitSummaries(tx, userId, []*models.Place{checkedIn}); err != nil {
+			return nil, err
+		}
+		return describePlaceVisit(open, true), nil
 	}
 	var notices []visitNotice
 	ended, err := tx.EndOpenPlaceVisit(userId, endedAt)
@@ -1339,11 +1512,12 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	}
 	visit.Place = checkedIn
 	notices = append(notices, visitNotice{Visit: visit, IsArrival: true})
-	self.afterLocationChange(ctx, tx, userId, notices)
+	// A place found nearby arrives named, so there is none to name.
+	self.afterLocationChange(ctx, tx, userId, notices, nil)
 	if err := attachVisitSummaries(tx, userId, []*models.Place{checkedIn}); err != nil {
 		return nil, err
 	}
-	return describePlaceVisit(visit), nil
+	return describePlaceVisit(visit, true), nil
 }
 
 // placeFromFound is the caller's place for a place found nearby: the one they
@@ -1391,7 +1565,7 @@ func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments Ch
 	return made, nil
 }
 
-func (self *graph) ForgetLocationHistory(ctx context.Context, arguments ForgetLocationHistoryArguments) (*ForgetLocationHistoryView, error) {
+func (self *graph) EraseLocationHistory(ctx context.Context, arguments EraseLocationHistoryArguments) (*EraseLocationHistoryView, error) {
 	principal, err := self.requireLocationPerson(ctx)
 	if err != nil {
 		return nil, err
@@ -1399,9 +1573,13 @@ func (self *graph) ForgetLocationHistory(ctx context.Context, arguments ForgetLo
 	if arguments.From != nil && arguments.Until != nil && !arguments.From.Before(*arguments.Until) {
 		return nil, fmt.Errorf("%w: the range must start before it ends", api.ErrInvalidArguments)
 	}
-	pointCount, visitCount, placeCount, err := self.transaction(ctx).ForgetLocationHistory(principal.User.ID, arguments.From, arguments.Until)
+	tx := self.transaction(ctx)
+	pointCount, visitCount, placeCount, err := tx.EraseLocationHistory(principal.User.ID, arguments.From, arguments.Until)
 	if err != nil {
 		return nil, locationFailure(err)
 	}
-	return &ForgetLocationHistoryView{PointCount: pointCount, VisitCount: visitCount, PlaceCount: placeCount}, nil
+	// The people following this person on a map are told, so that a position
+	// that was erased is not left on their screen.
+	self.afterLocationChange(ctx, tx, principal.User.ID, nil, nil)
+	return &EraseLocationHistoryView{PointCount: pointCount, VisitCount: visitCount, PlaceCount: placeCount}, nil
 }

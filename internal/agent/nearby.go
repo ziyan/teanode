@@ -231,12 +231,13 @@ func cleanHomeArea(text string) string {
 	return cutRunes(strings.Join(kept, ", "), 80)
 }
 
-// nearbyTownOf is the town of a place, to search for what is on near it. A
-// short address ("street, city, country" as Photon writes it, or "city,
-// country") has its city in it; a long one, as Nominatim writes, is not
-// taken apart, since which part is the town differs from country to country,
-// and the nearest city to the coordinates is used instead. Empty when there
-// is no city near.
+// nearbyTownOf is the town of a place, to search for what is on near it. An
+// address of three parts is "street, city, country" as Photon writes it, and
+// its middle part is the city. Any other address is not taken apart: Photon
+// leaves out the parts it does not have, so with two parts the first can be a
+// street as well as a city, and a long one, as Nominatim writes, differs from
+// country to country in which part is the town. The nearest city to the
+// coordinates is used instead. Empty when there is no city near.
 func nearbyTownOf(home *models.Place) string {
 	var parts []string
 	for _, part := range strings.Split(home.AddressText, ",") {
@@ -245,10 +246,7 @@ func nearbyTownOf(home *models.Place) string {
 		}
 	}
 	town := ""
-	switch len(parts) {
-	case 2:
-		town = cleanHomeArea(parts[0])
-	case 3:
+	if len(parts) == 3 {
 		town = cleanHomeArea(parts[1])
 	}
 	if town != "" {

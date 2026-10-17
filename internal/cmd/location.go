@@ -18,11 +18,15 @@ import (
 // reports a position, so there is no command for it.
 func NewLocationCommand() *cli.Command {
 	pagingFlags := []cli.Flag{
-		&cli.IntFlag{Name: "first", Usage: "how many to show", Value: 50},
+		&cli.IntFlag{Name: "first", Usage: "how many to show, at most 200", Value: 50},
+		&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
+	}
+	searchPagingFlags := []cli.Flag{
+		&cli.IntFlag{Name: "first", Usage: "how many to show, at most 50", Value: 20},
 		&cli.IntFlag{Name: "offset", Usage: "how many to skip, for the next page"},
 	}
 	personFlag := &cli.StringFlag{Name: "person", Usage: "the username of somebody who shares their location with you; yours by default"}
-	pointFlags := []cli.Flag{
+	positionFlags := []cli.Flag{
 		&cli.FloatFlag{Name: "latitude", Usage: "latitude in degrees; where you were last reported to be by default"},
 		&cli.FloatFlag{Name: "longitude", Usage: "longitude in degrees"},
 		&cli.FloatFlag{Name: "radius", Usage: "how far to look, in meters"},
@@ -30,15 +34,16 @@ func NewLocationCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "location",
 		Usage: "where you are and have been, and the places you go",
-		Description: "The TeaNode app on your iPhone reports where you go. Each stay becomes a visit to a\n" +
-			"place; place names come from OpenStreetMap, and you can rename a place and\n" +
-			"give it a label (" + placeLabelWords() + "):\n\n" +
+		Description: "The TeaNode app on your iPhone reports where you go. Each visit is to a place.\n" +
+			"Place names come from OpenStreetMap: your server sends the position of each new\n" +
+			"place to the place provider to look up its name. You can rename a place and give\n" +
+			"it a label (" + placeLabelWords() + "):\n\n" +
 			"  teanode location now\n" +
 			"  teanode location visits --from 2026-10-10 --until 2026-10-12\n" +
 			"  teanode location save <place-id> --name \"Grandma's\" --label family\n" +
 			"  teanode location search playground --radius 5000",
 		Commands: []*cli.Command{
-			{Name: "now", Usage: "where you are: the latest position, and the stay in progress", Flags: []cli.Flag{JSONFlag(), personFlag}, Action: runLocationNow},
+			{Name: "now", Usage: "where you are: the latest position, and the visit in progress", Flags: []cli.Flag{JSONFlag(), personFlag}, Action: runLocationNow},
 			{
 				Name:  "visits",
 				Usage: "where you have been, newest first",
@@ -46,8 +51,8 @@ func NewLocationCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "from", Usage: "the first moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
 					&cli.StringFlag{Name: "until", Usage: "the moment after the last, the same way"},
-					&cli.StringFlag{Name: "place", Usage: "only stays at this place, by the id 'teanode location places' gives"},
-					&cli.StringFlag{Name: "label", Usage: "only stays at places with this label: " + placeLabelWords()},
+					&cli.StringFlag{Name: "place", Usage: "only visits to this place, by the id 'teanode location places' gives"},
+					&cli.StringFlag{Name: "label", Usage: "only visits to places with this label: " + placeLabelWords()},
 					personFlag,
 				}, pagingFlags...),
 				Action: runLocationVisits,
@@ -69,23 +74,24 @@ func NewLocationCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "day", Usage: "the day, as YYYY-MM-DD; today by default"},
+					personFlag,
 				},
 				Action: runLocationPath,
 			},
 			{
 				Name:   "nearby",
-				Usage:  "what OpenStreetMap knows at a point, and your places there; for checking in",
-				Flags:  append([]cli.Flag{JSONFlag()}, pointFlags...),
+				Usage:  "what OpenStreetMap knows at a position, and your places there; for checking in",
+				Flags:  append([]cli.Flag{JSONFlag()}, positionFlags...),
 				Action: runLocationNearby,
 			},
 			{
 				Name:      "search",
-				Usage:     "places matching words near a point, from OpenStreetMap, nearest first",
+				Usage:     "places matching words near a position, from OpenStreetMap, nearest first",
 				ArgsUsage: "<words>",
 				Flags: append(append([]cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "near-place", Usage: "search around one of your places, by id"},
-				}, pointFlags...), pagingFlags...),
+				}, positionFlags...), searchPagingFlags...),
 				Action: runLocationSearch,
 			},
 			{
@@ -99,7 +105,7 @@ func NewLocationCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "your name for the place"},
 					&cli.StringFlag{Name: "label", Usage: "what the place is to you: " + placeLabelWords() + ", or none"},
-					&cli.FloatFlag{Name: "radius", Usage: "how far from its centre counts as being there, in meters"},
+					&cli.FloatFlag{Name: "radius", Usage: "how far from its center counts as being there, in meters"},
 					&cli.FloatFlag{Name: "latitude", Usage: "move the place, or put a new one, here"},
 					&cli.FloatFlag{Name: "longitude", Usage: "move the place, or put a new one, here"},
 				},
@@ -107,7 +113,7 @@ func NewLocationCommand() *cli.Command {
 			},
 			{
 				Name:      "forget",
-				Usage:     "delete a place and every stay at it",
+				Usage:     "forget a place and every visit to it",
 				ArgsUsage: "<place-id>",
 				Flags:     []cli.Flag{ForceFlag()},
 				Action:    runLocationForget,
@@ -115,8 +121,8 @@ func NewLocationCommand() *cli.Command {
 			{
 				Name:  "checkin",
 				Usage: "record that you are at a place now",
-				Description: "Give one of your places with --place, or a point with --latitude and --longitude,\n" +
-					"which checks you in at the nearest place OpenStreetMap knows there. The stay in\n" +
+				Description: "Give one of your places with --place, or a position with --latitude and --longitude,\n" +
+					"which checks you in at the nearest place OpenStreetMap knows there. The visit in\n" +
 					"progress ends.",
 				Flags: []cli.Flag{
 					JSONFlag(),
@@ -133,8 +139,9 @@ func NewLocationCommand() *cli.Command {
 				Usage:     "share where you are with a person or a circle at a level",
 				ArgsUsage: "<username|circle>",
 				Description: "Who can see what is your choice:\n\n" +
-					"  current  where you are now, and the place\n" +
-					"  history  that, and where you have been\n\n" +
+					"  current  Where I am now: they see where you are now and the place you are at.\n" +
+					"  history  Where I am and where I have been: they also see your visits and the\n" +
+					"           places they were at.\n\n" +
 					"Sharing again changes the level; 'teanode location shares' lists them and\n" +
 					"'teanode location unshare' takes one back.",
 				Flags: []cli.Flag{
@@ -146,13 +153,15 @@ func NewLocationCommand() *cli.Command {
 			{Name: "unshare", Usage: "stop sharing your location with someone", ArgsUsage: "<share-id>", Action: runLocationUnshare},
 			{
 				Name:  "erase",
-				Usage: "delete your positions and stays, and the places that leaves unused",
-				Description: "Without --from and --until, all of them. Places you named or labeled are kept.\n" +
-					"This cannot be undone.",
+				Usage: "erase your positions and visits, and the places that leaves unused",
+				Description: "Erases your positions and visits (in the range), and the places left with no visit\n" +
+					"that you did not name or label. Places you named or labeled stay. Without --from\n" +
+					"and --until, all of them. Anything your agent already learned from those days\n" +
+					"stays in its memory until you remove it. This cannot be undone.",
 				Flags: []cli.Flag{
 					JSONFlag(), ForceFlag(),
-					&cli.StringFlag{Name: "from", Usage: "delete what began at or after this moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
-					&cli.StringFlag{Name: "until", Usage: "delete what began before this moment, the same way"},
+					&cli.StringFlag{Name: "from", Usage: "erase what began at or after this moment, as YYYY-MM-DD or YYYY-MM-DDTHH:MM"},
+					&cli.StringFlag{Name: "until", Usage: "erase what began before this moment, the same way"},
 				},
 				Action: runLocationErase,
 			},
@@ -268,8 +277,10 @@ func noteNextPage(nextOffset *int, first int) {
 }
 
 // locationPerson is the account of the person named with --person: somebody
-// who shares their location with the caller. Empty without the flag.
-func locationPerson(ctx context.Context, command *cli.Command, connection *client.Client) (string, error) {
+// who shares their location with the caller. Empty without the flag. With
+// needsHistory, somebody who shares only where they are now is refused in
+// those words, since the server answers not found for what they did not share.
+func locationPerson(ctx context.Context, command *cli.Command, connection *client.Client, needsHistory bool) (string, error) {
 	username := strings.TrimSpace(command.String("person"))
 	if username == "" {
 		return "", nil
@@ -280,6 +291,9 @@ func locationPerson(ctx context.Context, command *cli.Command, connection *clien
 	}
 	for _, each := range people {
 		if strings.EqualFold(each.Username, username) {
+			if needsHistory && each.ShareLevel != string(models.LocationShareLevelHistory) {
+				return "", fmt.Errorf("%s shares only where they are now", each.Username)
+			}
 			return each.UserID, nil
 		}
 	}
@@ -291,7 +305,7 @@ func runLocationNow(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	userId, err := locationPerson(ctx, command, connection)
+	userId, err := locationPerson(ctx, command, connection, false)
 	if err != nil {
 		return err
 	}
@@ -318,7 +332,7 @@ func runLocationNow(ctx context.Context, command *cli.Command) error {
 		}
 		fields = append(fields, [2]string{"at", placeLine(visit.Place) + since}, [2]string{"place", visit.Place.ID})
 	} else {
-		fields = append(fields, [2]string{"at", "no stay in progress"})
+		fields = append(fields, [2]string{"at", "no visit in progress"})
 	}
 	return printFields(fields)
 }
@@ -343,7 +357,7 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	userId, err := locationPerson(ctx, command, connection)
+	userId, err := locationPerson(ctx, command, connection, true)
 	if err != nil {
 		return err
 	}
@@ -373,7 +387,7 @@ func runLocationVisits(ctx context.Context, command *cli.Command) error {
 		}
 		rows = append(rows, []string{timeCell(visit.ArrivedAt), left, duration, placeLine(visit.Place), visit.Place.ID})
 	}
-	if err := printTable([]string{"arrived", "left", "stayed", "place", "place id"}, rows); err != nil {
+	if err := printTable([]string{"arrived", "left", "duration", "place", "place id"}, rows); err != nil {
 		return err
 	}
 	noteNextPage(page.NextOffset, first)
@@ -389,7 +403,7 @@ func runLocationPlaces(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	userId, err := locationPerson(ctx, command, connection)
+	userId, err := locationPerson(ctx, command, connection, true)
 	if err != nil {
 		return err
 	}
@@ -437,7 +451,11 @@ func runLocationPath(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	points, err := client.ListLocationPoints(ctx, connection, from, until)
+	userId, err := locationPerson(ctx, command, connection, true)
+	if err != nil {
+		return err
+	}
+	points, err := client.ListLocationPoints(ctx, connection, userId, from, until)
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -466,7 +484,7 @@ func runLocationPath(ctx context.Context, command *cli.Command) error {
 	return printTable([]string{"time", "latitude", "longitude", "accuracy", "speed", "from"}, rows)
 }
 
-// whereFlags is the point a command is about: the one given, or where the
+// whereFlags is the position a command is about: the one given, or where the
 // caller was last reported to be.
 func whereFlags(ctx context.Context, command *cli.Command, connection *client.Client) (float64, float64, error) {
 	latitude, longitude, _, err := locationPointFlags(command)
@@ -543,7 +561,7 @@ func runLocationSearch(ctx context.Context, command *cli.Command) error {
 	}
 	nearPlace := strings.TrimSpace(command.String("near-place"))
 	if nearPlace != "" && latitude != nil {
-		return usage("search near a place or near a point, not both")
+		return usage("search near a place or near a position, not both")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -614,7 +632,7 @@ func runLocationForget(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 1 {
 		return usage("usage: teanode location forget <place-id>; 'teanode location places' lists them")
 	}
-	if err := confirm(command, "Forgetting this place deletes it and every stay at it."); err != nil {
+	if err := confirm(command, "Forgetting this place removes it and every visit to it."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
@@ -635,7 +653,7 @@ func runLocationCheckIn(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	if (placeId == "") == (latitude == nil) {
-		return usage("check in at one of your places with --place <id>, or at a point with --latitude and --longitude")
+		return usage("check in at one of your places with --place <id>, or at a position with --latitude and --longitude")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -650,7 +668,7 @@ func runLocationCheckIn(ctx context.Context, command *cli.Command) error {
 			return describeError(command, err)
 		}
 		if len(found) == 0 {
-			return fmt.Errorf("nothing is named at that point; make a place there with 'teanode location save --latitude %v --longitude %v --name <name>', then check in with --place", *latitude, *longitude)
+			return fmt.Errorf("nothing is named at that position; make a place there with 'teanode location save --latitude %v --longitude %v --name <name>', then check in with --place", *latitude, *longitude)
 		}
 		nearest := found[0]
 		if nearest.PlaceID != nil {
@@ -694,21 +712,23 @@ func runLocationErase(ctx context.Context, command *cli.Command) error {
 	case until != nil:
 		what = fmt.Sprintf("your positions and visits before %s", until.In(time.Local).Format("2006-01-02 15:04"))
 	}
-	if err := confirm(command, "This deletes "+what+", and cannot be undone."); err != nil {
+	if err := confirm(command, "This erases "+what+", and the places left with no visit that you did not name or label. "+
+		"Places you named or labeled stay. Anything your agent already learned from those days stays in its memory "+
+		"until you remove it. This cannot be undone."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	erased, err := client.ForgetLocationHistory(ctx, connection, from, until)
+	erased, err := client.EraseLocationHistory(ctx, connection, from, until)
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(erased)
 	}
-	fmt.Printf("deleted %s, %s and %s\n", countWords(erased.PointCount, "position"), countWords(erased.VisitCount, "visit"), countWords(erased.PlaceCount, "place"))
+	fmt.Printf("erased %s, %s and %s\n", countWords(erased.PointCount, "position"), countWords(erased.VisitCount, "visit"), countWords(erased.PlaceCount, "place"))
 	return nil
 }
 
@@ -746,7 +766,7 @@ func runLocationPeople(ctx context.Context, command *cli.Command) error {
 		if each.LatestPoint != nil {
 			seen = timeWords(time.Since(each.LatestPoint.MeasuredAt)) + " ago"
 		}
-		rows = append(rows, []string{each.Username, each.LocationShareLevel, where, since, seen})
+		rows = append(rows, []string{each.Username, each.ShareLevel, where, since, seen})
 	}
 	return printTable([]string{"person", "level", "at", "", "last seen"}, rows)
 }
