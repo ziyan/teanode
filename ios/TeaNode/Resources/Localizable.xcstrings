@@ -4095,7 +4095,7 @@
         }
       }
     },
-    "Add to Album": {
+    "Add to album": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4191,34 +4191,34 @@
         }
       }
     },
-    "Ask TeaNode": {
+    "Ask your agent": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode に聞く"
+            "value": "エージェントに聞く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "询问 TeaNode"
+            "value": "问你的助手"
           }
         }
       }
     },
-    "Back up this iPhone's photos in Settings, or add photos on the dashboard.": {
+    "Turn on photo backup to copy this iPhone's photos here, or add photos on the dashboard.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "設定でこの iPhone の写真をバックアップするか、ダッシュボードから写真を追加してください。"
+            "value": "この iPhone の写真をここにコピーするには、写真のバックアップをオンにするか、ダッシュボードから写真を追加してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在“设置”中备份这部 iPhone 的照片，或在控制台添加照片。"
+            "value": "开启照片备份，把这部 iPhone 上的照片复制到这里，或在控制台添加照片。"
           }
         }
       }
@@ -4271,7 +4271,7 @@
         }
       }
     },
-    "Change Name": {
+    "Change name": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4399,7 +4399,7 @@
         }
       }
     },
-    "Create Album": {
+    "Create album": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4447,7 +4447,7 @@
         }
       }
     },
-    "Delete Album": {
+    "Delete album": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4479,7 +4479,7 @@
         }
       }
     },
-    "Delete Forever": {
+    "Delete forever": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4511,7 +4511,7 @@
         }
       }
     },
-    "Delete this photo for good?": {
+    "Delete this photo forever?": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4575,7 +4575,7 @@
         }
       }
     },
-    "Describe Again": {
+    "Describe again": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4735,7 +4735,7 @@
         }
       }
     },
-    "Find Faces in My Photos": {
+    "Find faces in my photos": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -4943,7 +4943,7 @@
         }
       }
     },
-    "Merge With…": {
+    "Merge with…": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5023,7 +5023,7 @@
         }
       }
     },
-    "Name This Person": {
+    "Name this person": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5071,7 +5071,7 @@
         }
       }
     },
-    "New Contact “%@”": {
+    "New contact “%@”": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5103,7 +5103,7 @@
         }
       }
     },
-    "New Album…": {
+    "New album…": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5119,7 +5119,7 @@
         }
       }
     },
-    "New Album": {
+    "New album": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5263,7 +5263,7 @@
         }
       }
     },
-    "Not This Person": {
+    "Not this person": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5343,7 +5343,7 @@
         }
       }
     },
-    "Photos in the Trash are deleted for good after %lld days.": {
+    "Photos in the Trash are deleted forever after %lld days.": {
       "localizations": {
         "en": {
           "variations": {
@@ -5475,7 +5475,7 @@
         }
       }
     },
-    "Photos you move to the Trash stay here for a while before they are deleted for good.": {
+    "Photos you move to the Trash stay here for a while before they are deleted forever.": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5545,7 +5545,7 @@
         }
       }
     },
-    "Remove from Album": {
+    "Remove from album": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5577,7 +5577,7 @@
         }
       }
     },
-    "Remove Name": {
+    "Remove name": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5609,7 +5609,7 @@
         }
       }
     },
-    "Rename Album": {
+    "Rename album": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5737,7 +5737,7 @@
         }
       }
     },
-    "Show Hidden": {
+    "Show hidden": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5849,7 +5849,7 @@
         }
       }
     },
-    "Select Items": {
+    "Select items": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5865,18 +5865,18 @@
         }
       }
     },
-    "TeaNode could not make a picture of it.": {
+    "No picture could be made of it.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode で画像を作成できませんでした。"
+            "value": "この写真の画像を作成できませんでした。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode 无法生成它的图片。"
+            "value": "无法生成它的图片。"
           }
         }
       }
@@ -5897,18 +5897,18 @@
         }
       }
     },
-    "TeaNode looks at the picture and writes what it shows, so a search can find it.": {
+    "%@ looks at the picture and writes what it shows, so a search can find it.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode が写真を見て内容を書き出すので、検索で見つけられるようになります。"
+            "value": "%@ が写真を見て内容を書き出すので、検索で見つけられるようになります。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "TeaNode 会查看这张图片并写下其中的内容，这样搜索就能找到它。"
+            "value": "%@ 会查看这张图片并写下其中的内容，这样搜索就能找到它。"
           }
         }
       }
@@ -5993,7 +5993,7 @@
         }
       }
     },
-    "These photos will be deleted for good. This cannot be undone.": {
+    "These photos will be deleted forever. This cannot be undone.": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -6121,7 +6121,7 @@
         }
       }
     },
-    "Turn Off and Delete": {
+    "Turn off and delete": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -6169,7 +6169,7 @@
         }
       }
     },
-    "Use as Album Cover": {
+    "Use as album cover": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -8933,22 +8933,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "询问记忆"
-          }
-        }
-      }
-    },
-    "Ask your agent": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェントに聞く"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "问你的助手"
           }
         }
       }
@@ -13753,22 +13737,6 @@
         }
       }
     },
-    "Delete forever": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完全に削除"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "永久删除"
-          }
-        }
-      }
-    },
     "Delete receipt": {
       "localizations": {
         "ja": {
@@ -13850,6 +13818,22 @@
       }
     },
     "Deleted for good": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完全に削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已永久删除"
+          }
+        }
+      }
+    },
+    "Deleted forever": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -55356,34 +55340,34 @@
         }
       }
     },
-    "This password can only add photos to your library. Turning backup off revokes it.": {
+    "This password can only add photos to your library. Turning photo backup off revokes it.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このパスワードでは写真ライブラリへの追加だけができます。バックアップをオフにすると取り消されます。"
+            "value": "このパスワードでは写真ライブラリへの追加だけができます。写真のバックアップをオフにすると取り消されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "此密码只能向你的照片库添加照片。关闭备份会撤销它。"
+            "value": "此密码只能向你的照片库添加照片。关闭照片备份会撤销它。"
           }
         }
       }
     },
-    "Backup reads your whole library, so TeaNode needs Full Access. Open Settings, choose Photos, then Full Access.": {
+    "Photo backup reads your whole library, so TeaNode needs Full Access. Open Settings, choose Photos, then Full Access.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップはライブラリ全体を読み取るため、TeaNode には「フルアクセス」が必要です。「設定」を開き、「写真」から「フルアクセス」を選んでください。"
+            "value": "写真のバックアップはライブラリ全体を読み取るため、TeaNode には「フルアクセス」が必要です。「設定」を開き、「写真」から「フルアクセス」を選んでください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "备份需要读取你的整个照片库，因此 TeaNode 需要“完全访问”。请打开“设置”，选择“照片”，然后选择“完全访问”。"
+            "value": "照片备份需要读取你的整个照片库，因此 TeaNode 需要“完全访问”。请打开“设置”，选择“照片”，然后选择“完全访问”。"
           }
         }
       }
@@ -55542,18 +55526,18 @@
         }
       }
     },
-    "Backup tries again the next time it runs.": {
+    "Photo backup tries again when you open TeaNode, when the network is back, or while the phone charges.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次回のバックアップ時に再試行します。"
+            "value": "TeaNode を開いたとき、ネットワークが戻ったとき、または充電中に、写真のバックアップが再試行されます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "备份下次运行时会再次尝试。"
+            "value": "打开 TeaNode、网络恢复或手机充电时，照片备份会再次尝试。"
           }
         }
       }
@@ -55622,18 +55606,18 @@
         }
       }
     },
-    "Waiting for the next pass": {
+    "Waiting to continue": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次のバックアップを待っています"
+            "value": "再開を待っています"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "等待下一次备份"
+            "value": "等待继续"
           }
         }
       }
@@ -55670,18 +55654,18 @@
         }
       }
     },
-    "Waiting for Wi-Fi or iCloud": {
+    "Waiting for the network": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wi-Fi または iCloud を待っています"
+            "value": "ネットワークを待っています"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在等待 Wi-Fi 或 iCloud"
+            "value": "正在等待网络"
           }
         }
       }
@@ -55750,50 +55734,50 @@
         }
       }
     },
-    "Backup is off. Revoke its password under Devices, then Sync passwords.": {
+    "Photo backup is off. Revoke its password under Devices, then Sync passwords.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップはオフになりました。「デバイス」の「同期パスワード」でそのパスワードを取り消してください。"
+            "value": "写真のバックアップはオフになりました。「デバイス」の「同期パスワード」でそのパスワードを取り消してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "备份已关闭。请在“设备”的“同步密码”中撤销其密码。"
+            "value": "照片备份已关闭。请在“设备”的“同步密码”中撤销其密码。"
           }
         }
       }
     },
-    "Backup is off and its password is revoked.": {
+    "Photo backup is off and its password is revoked.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップをオフにし、そのパスワードを取り消しました。"
+            "value": "写真のバックアップをオフにし、そのパスワードを取り消しました。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "备份已关闭，其密码已撤销。"
+            "value": "照片备份已关闭，其密码已撤销。"
           }
         }
       }
     },
-    "Backup is off, but its password could not be revoked. Revoke it under Devices, then Sync passwords.": {
+    "Photo backup is off, but its password could not be revoked. Revoke it under Devices, then Sync passwords.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "バックアップはオフになりましたが、パスワードを取り消せませんでした。「デバイス」の「同期パスワード」で取り消してください。"
+            "value": "写真のバックアップはオフになりましたが、パスワードを取り消せませんでした。「デバイス」の「同期パスワード」で取り消してください。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "备份已关闭，但无法撤销其密码。请在“设备”的“同步密码”中撤销。"
+            "value": "照片备份已关闭，但无法撤销其密码。请在“设备”的“同步密码”中撤销。"
           }
         }
       }
@@ -55858,6 +55842,528 @@
           "stringUnit": {
             "state": "translated",
             "value": "密码名称"
+          }
+        }
+      }
+    },
+    "Search places, files, cameras, descriptions": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所、ファイル名、カメラ、説明で検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地点、文件名、相机和描述"
+          }
+        }
+      }
+    },
+    "Trying again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再試行しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重试"
+          }
+        }
+      }
+    },
+    "Turn on photo backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真のバックアップをオンにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开启照片备份"
+          }
+        }
+      }
+    },
+    "Share edited version": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集した版を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享编辑后的版本"
+          }
+        }
+      }
+    },
+    "Share Live Photo video": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Photos のビデオを共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享实况照片的视频"
+          }
+        }
+      }
+    },
+    "This photo could not be made ready.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真を準備できませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法准备好这张照片。"
+          }
+        }
+      }
+    },
+    "The details of this photo could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真の詳細を読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取这张照片的详细信息。"
+          }
+        }
+      }
+    },
+    "Delete these photos forever?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらの写真を完全に削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要永久删除这些照片吗？"
+          }
+        }
+      }
+    },
+    "The name could not be saved. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を保存できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存名称，请重试。"
+          }
+        }
+      }
+    },
+    "The people could not be merged. Try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人物を統合できませんでした。もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法合并这些人物，请重试。"
+          }
+        }
+      }
+    },
+    "The people could not be read": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人物を読み込めませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取人物"
+          }
+        }
+      }
+    },
+    "This setting could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この設定を読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取此设置。"
+          }
+        }
+      }
+    },
+    "Your library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのライブラリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的照片库"
+          }
+        }
+      }
+    },
+    "Space used": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用中の容量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已用空间"
+          }
+        }
+      }
+    },
+    "Largest file": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大ファイルサイズ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大文件"
+          }
+        }
+      }
+    },
+    "No limit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "制限なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无限制"
+          }
+        }
+      }
+    },
+    "The size of your library could not be read.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリのサイズを読み込めませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取照片库的大小。"
+          }
+        }
+      }
+    },
+    "A file over the largest size is not backed up, and nothing more is taken once the space is used.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大サイズを超えるファイルはバックアップされず、容量を使い切るとそれ以上は受け付けられません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过最大大小的文件不会被备份，空间用完后也不会再接收新内容。"
+          }
+        }
+      }
+    },
+    "Your account may not keep photos on this server. Ask whoever runs it to allow it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントはこのサーバーに写真を保存できません。サーバーの管理者に許可を依頼してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的账户不能在此服务器上保存照片。请联系服务器管理员允许。"
+          }
+        }
+      }
+    },
+    "The file could not be read. Try again in a moment.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルを読み込めませんでした。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取该文件，请稍后重试。"
+          }
+        }
+      }
+    },
+    "This photo has nothing to save yet. Try again in a moment.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真にはまだ保存できるものがありません。しばらくしてからもう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片暂时没有可保存的内容，请稍后重试。"
+          }
+        }
+      }
+    },
+    "There is no address book to put a new contact in.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい連絡先を追加できるアドレスブックがありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可以添加新联系人的通讯录。"
+          }
+        }
+      }
+    },
+    "The server took a file but did not say which photo it was.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーはファイルを受け取りましたが、どの写真かを返しませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器收到了文件，但没有说明它属于哪张照片。"
+          }
+        }
+      }
+    },
+    "The server would not take this file.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーはこのファイルを受け付けませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器不接受此文件。"
+          }
+        }
+      }
+    },
+    "The photo library gave an empty file.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真ライブラリが空のファイルを返しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片库给出的文件是空的。"
+          }
+        }
+      }
+    },
+    "This photo is no longer in your photo library.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真はもう写真ライブラリにありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这张照片已不在你的照片库中。"
+          }
+        }
+      }
+    },
+    "The file is in iCloud and this network costs data.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルは iCloud にあり、このネットワークではデータ通信料がかかります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该文件在 iCloud 中，而当前网络会产生流量费用。"
+          }
+        }
+      }
+    },
+    "Waiting for Wi-Fi": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fi を待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待 Wi-Fi"
+          }
+        }
+      }
+    },
+    "%lld files will be sent when the network is back.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file will be sent when the network is back."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files will be sent when the network is back."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ネットワークが戻ると %lld 個のファイルを送信します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "ネットワークが戻ると %lld 個のファイルを送信します。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "网络恢复后将发送 %lld 个文件。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "网络恢复后将发送 %lld 个文件。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Photo backup storage is unavailable. Check this app's shared-container entitlement.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真バックアップの保存領域を使用できません。このアプリの共有コンテナの権限を確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片备份的存储空间不可用。请检查此 App 的共享容器权限。"
           }
         }
       }

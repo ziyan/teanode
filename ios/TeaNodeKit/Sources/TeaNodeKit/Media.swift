@@ -110,7 +110,7 @@ extension Connection {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
             guard response.statusCode == 200 else {
-                throw TeaNodeError.refused("The file could not be read (\(response.statusCode)).")
+                throw PhotoError.fileCouldNotBeRead
             }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let safeName = fileName.isEmpty ? "photo" : fileName.replacingOccurrences(of: "/", with: "-")

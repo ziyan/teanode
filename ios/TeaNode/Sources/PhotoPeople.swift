@@ -25,8 +25,8 @@ extension PhotosModel {
             faceGroupsFailureText = nil
         } catch {
             guard !Task.isCancelled, !isQuiet else { return }
-            if faceGroups == nil { faceGroupsFailureText = error.localizedDescription }
-            problemText = error.localizedDescription
+            if faceGroups == nil { faceGroupsFailureText = describe(error) }
+            problemText = describe(error)
         }
     }
 
@@ -46,7 +46,7 @@ extension PhotosModel {
             doneText = String(localized: "Named “\(named.trimmedContactName)”")
             return named
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return nil
         }
     }
@@ -58,7 +58,7 @@ extension PhotosModel {
             let contact = try await connection.createNamedContact(PhotoNaming.trimmedName(contactName))
             return await name(group, contactId: contact.id)
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return nil
         }
     }
@@ -70,7 +70,7 @@ extension PhotosModel {
             doneText = String(localized: "Removed the name")
             return unnamed
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return nil
         }
     }
@@ -85,7 +85,7 @@ extension PhotosModel {
             doneText = String(localized: "Merged the two people")
             return merged
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return nil
         }
     }
@@ -98,7 +98,7 @@ extension PhotosModel {
             doneText = isHidden ? String(localized: "Hidden from People") : String(localized: "Shown in People again")
             return changed
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return nil
         }
     }
@@ -112,7 +112,7 @@ extension PhotosModel {
             doneText = String(localized: "Took the face out of this person")
             return true
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return false
         }
     }
@@ -130,7 +130,7 @@ extension PhotosModel {
             doneText = isEnabled ? String(localized: "Finding faces in your photos") : String(localized: "Stopped finding faces")
             return true
         } catch {
-            problemText = error.localizedDescription
+            problemText = describe(error)
             return false
         }
     }
@@ -255,7 +255,7 @@ struct PhotoPeopleView: View {
             } description: {
                 Text("Turn it on to see the people in your photos.")
             } actions: {
-                Button("Find Faces in My Photos") {
+                Button("Find faces in my photos") {
                     Task { _ = await model.setFaceRecognition(isEnabled: true) }
                 }
                 .buttonStyle(.borderedProminent)
@@ -327,13 +327,13 @@ struct PhotoPersonScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .task { await model.load(key) }
-            .task { group = try? await model.connection.photoFaceGroup(photoFaceGroupId) }
+            .task { await readGroup() }
             .task(id: model.hasWaitingPhotos(in: key)) {
                 if model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
             }
             .refreshable {
                 await model.reload(key)
-                group = try? await model.connection.photoFaceGroup(photoFaceGroupId)
+                await readGroup()
             }
             .fullScreenCover(item: $opened) { opened in
                 PhotoViewer(model: model, listKey: key, openedPhotoId: opened.id)
@@ -349,7 +349,7 @@ struct PhotoPersonScreen: View {
                     MergePersonSheet(model: model, group: current) { group = $0 }
                 }
             }
-            .alert("Name This Person", isPresented: $isExplainingContacts) {
+            .alert("Name this person", isPresented: $isExplainingContacts) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text("Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.")
@@ -358,12 +358,24 @@ struct PhotoPersonScreen: View {
     }
 
     private var selectionTitle: String {
-        selectedPhotoIds.isEmpty ? String(localized: "Select Items") : String(localized: "\(selectedPhotoIds.count) Selected")
+        selectedPhotoIds.isEmpty ? String(localized: "Select items") : String(localized: "\(selectedPhotoIds.count) Selected")
     }
 
     private func endSelection() {
         isSelecting = false
         selectedPhotoIds = []
+    }
+
+    /// Reads the person. The photos below have their own failure text; this is
+    /// the person's name and picture, and a failure leaves what was known and
+    /// tells by the toast.
+    private func readGroup() async {
+        do {
+            group = try await model.connection.photoFaceGroup(photoFaceGroupId)
+        } catch {
+            guard !Task.isCancelled else { return }
+            model.problemText = model.describe(error)
+        }
     }
 
     private func startNaming() {
@@ -387,13 +399,13 @@ struct PhotoPersonScreen: View {
             if let current {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button(current.isNamed ? LocalizedStringKey("Change Name") : LocalizedStringKey("Name This Person"), systemImage: "pencil") { startNaming() }
+                        Button(current.isNamed ? LocalizedStringKey("Change name") : LocalizedStringKey("Name this person"), systemImage: "pencil") { startNaming() }
                         if current.isNamed {
-                            Button("Remove Name", systemImage: "person.crop.circle.badge.minus") {
+                            Button("Remove name", systemImage: "person.crop.circle.badge.minus") {
                                 Task { if let changed = await model.removeName(of: current) { group = changed } }
                             }
                         }
-                        Button("Merge With…", systemImage: "person.2") { isMerging = true }
+                        Button("Merge with…", systemImage: "person.2") { isMerging = true }
                         Button(
                             current.isHidden ? LocalizedStringKey("Show in People") : LocalizedStringKey("Hide from People"),
                             systemImage: current.isHidden ? "eye" : "eye.slash"
@@ -455,7 +467,7 @@ struct PhotoPersonScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 if !current.isNamed {
-                    Button("Name This Person", systemImage: "person.crop.circle.badge.plus") { startNaming() }
+                    Button("Name this person", systemImage: "person.crop.circle.badge.plus") { startNaming() }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
                 }
@@ -479,17 +491,26 @@ struct NamePersonSheet: View {
     @State private var contacts: [ContactSummary] = []
     @State private var hasReadContacts = false
     @State private var isNaming = false
+    /// Why the name was not saved, or the contacts not read: shown in the
+    /// sheet, since the toast of the screen under it cannot be seen.
+    @State private var failureText: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
+                if let failureText {
+                    Section {
+                        Label(failureText, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                    }
+                }
                 Section {
                     if PhotoNaming.offersNewContact(typed: searchText, contacts: contacts) {
                         Button {
                             choose { await model.nameWithNewContact(group, contactName: searchText) }
                         } label: {
-                            Label("New Contact “\(PhotoNaming.trimmedName(searchText))”", systemImage: "person.badge.plus")
+                            Label("New contact “\(PhotoNaming.trimmedName(searchText))”", systemImage: "person.badge.plus")
                         }
                     }
                     ForEach(contacts) { contact in
@@ -523,7 +544,7 @@ struct NamePersonSheet: View {
                     Text("Choose the contact who is in these photos. The name comes from your address book.")
                 }
             }
-            .navigationTitle(group.isNamed ? "Change Name" : "Name This Person")
+            .navigationTitle(group.isNamed ? "Change name" : "Name this person")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search or type a new name")
             .toolbar {
@@ -539,9 +560,13 @@ struct NamePersonSheet: View {
                 // A pause in typing is waited for; the first read is at once.
                 if !searchText.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
                 guard !Task.isCancelled else { return }
-                if let found = try? await model.connection.photoNamingContacts(matching: searchText) {
-                    contacts = found
+                do {
+                    contacts = try await model.connection.photoNamingContacts(matching: searchText)
                     hasReadContacts = true
+                    failureText = nil
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    failureText = model.describe(error)
                 }
             }
         }
@@ -551,12 +576,17 @@ struct NamePersonSheet: View {
     private func choose(_ name: @escaping () async -> PhotoFaceGroup?) {
         guard !isNaming else { return }
         isNaming = true
+        failureText = nil
         Task {
             let named = await name()
             isNaming = false
             if let named {
                 onNamed(named)
                 dismiss()
+            } else {
+                // The model told the screen under this sheet; say it here.
+                failureText = model.problemText ?? String(localized: "The name could not be saved. Try again.")
+                model.problemText = nil
             }
         }
     }
@@ -575,6 +605,9 @@ struct MergePersonSheet: View {
     @State private var chosenId: String?
     @State private var isConfirming = false
     @State private var isMerging = false
+    /// Why the people could not be read, or the merge did not happen: shown in
+    /// the sheet, since the toast of the screen under it cannot be seen.
+    @State private var failureText: String?
     @Environment(\.dismiss) private var dismiss
 
     private var chosen: PhotoFaceGroup? { others?.first { $0.id == chosenId } }
@@ -582,7 +615,15 @@ struct MergePersonSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if let others {
+                if others == nil, let failureText {
+                    ContentUnavailableView {
+                        Label("The people could not be read", systemImage: "wifi.exclamationmark")
+                    } description: {
+                        Text(failureText)
+                    } actions: {
+                        Button("Try again") { Task { await loadOthers() } }
+                    }
+                } else if let others {
                     if others.isEmpty {
                         ContentUnavailableView {
                             Label("Nobody to merge with", systemImage: "person.2")
@@ -591,6 +632,12 @@ struct MergePersonSheet: View {
                         }
                     } else {
                         List {
+                            if let failureText {
+                                Section {
+                                    Label(failureText, systemImage: "exclamationmark.triangle")
+                                        .foregroundStyle(.red)
+                                }
+                            }
                             Section {
                                 ForEach(others) { other in
                                     Button {
@@ -625,7 +672,7 @@ struct MergePersonSheet: View {
                     ProgressView()
                 }
             }
-            .navigationTitle("Merge With…")
+            .navigationTitle("Merge with…")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -644,23 +691,36 @@ struct MergePersonSheet: View {
                         }
                 }
             }
-            .task {
-                let all = try? await model.connection.photoFaceGroups(isHiddenIncluded: true)
-                others = (all ?? []).filter { $0.id != group.id }
-            }
+            .task { await loadOthers() }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func loadOthers() async {
+        do {
+            let all = try await model.connection.photoFaceGroups(isHiddenIncluded: true)
+            others = all.filter { $0.id != group.id }
+            failureText = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            failureText = model.describe(error)
+        }
     }
 
     private func merge() {
         guard let chosen, !isMerging else { return }
         isMerging = true
+        failureText = nil
         Task {
             let merged = await model.merge(group, with: chosen)
             isMerging = false
             if let merged {
                 onMerged(merged)
                 dismiss()
+            } else {
+                // The model told the screen under this sheet; say it here.
+                failureText = model.problemText ?? String(localized: "The people could not be merged. Try again.")
+                model.problemText = nil
             }
         }
     }
@@ -678,12 +738,23 @@ struct PhotoFacesSettingsView: View {
     @State private var isConfirmingTurnOff = false
     @State private var doneText: String?
     @State private var problemText: String?
+    /// Why the switch could not be read; nil when it could.
+    @State private var libraryFailureText: String?
 
     var body: some View {
         Form {
+            if let libraryFailureText {
+                Section {
+                    Label("This setting could not be read.", systemImage: "exclamationmark.triangle")
+                    Text(libraryFailureText)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button("Try again", systemImage: "arrow.clockwise") { Task { await readLibrary() } }
+                }
+            }
             Section {
                 Toggle(
-                    "Find Faces in My Photos",
+                    "Find faces in my photos",
                     isOn: Binding(
                         get: { library?.isPhotoFaceRecognitionEnabled ?? false },
                         set: { isOn in
@@ -696,7 +767,7 @@ struct PhotoFacesSettingsView: View {
                 )
                 .disabled(library == nil || library?.isFaceRecognitionAvailable != true || isBusy)
                 .confirmationDialog("Stop finding faces?", isPresented: $isConfirmingTurnOff, titleVisibility: .visible) {
-                    Button("Turn Off and Delete", role: .destructive) { Task { await change(isEnabled: false) } }
+                    Button("Turn off and delete", role: .destructive) { Task { await change(isEnabled: false) } }
                 } message: {
                     Text("This deletes every face found in your photos and the names you gave to people. Your photos and your contacts stay. Turning it on again finds the faces again, but not the names.")
                 }
@@ -707,7 +778,7 @@ struct PhotoFacesSettingsView: View {
         .navigationTitle("People in Photos")
         .navigationBarTitleDisplayMode(.inline)
         .toast(done: $doneText, problem: $problemText)
-        .task { library = try? await connection.photoLibrary() }
+        .task { await readLibrary() }
     }
 
     private var footerText: String {
@@ -718,15 +789,25 @@ struct PhotoFacesSettingsView: View {
         return String(localized: "Finds the people in your photos and groups them, so you can browse by person. Turning this off deletes the faces found so far and the names given to them. Your photos are not changed.")
     }
 
+    private func readLibrary() async {
+        do {
+            library = try await connection.photoLibrary()
+            libraryFailureText = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            libraryFailureText = AppModel.shared.describe(error)
+        }
+    }
+
     private func change(isEnabled: Bool) async {
         isBusy = true
         defer { isBusy = false }
         do {
             try await connection.setPhotoFaceRecognition(isEnabled: isEnabled)
-            library = try? await connection.photoLibrary()
+            await readLibrary()
             doneText = isEnabled ? String(localized: "Finding faces in your photos") : String(localized: "Stopped finding faces")
         } catch {
-            problemText = error.localizedDescription
+            problemText = AppModel.shared.describe(error)
         }
     }
 }

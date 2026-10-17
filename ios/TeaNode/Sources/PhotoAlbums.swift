@@ -27,9 +27,9 @@ struct AlbumTitleRequest: Identifiable {
 
     var alertTitle: String {
         switch purpose {
-        case .new, .newWith: String(localized: "New Album")
-        case .suggestion: String(localized: "Create Album")
-        case .rename: String(localized: "Rename Album")
+        case .new, .newWith: String(localized: "New album")
+        case .suggestion: String(localized: "Create album")
+        case .rename: String(localized: "Rename album")
         }
     }
 
@@ -108,7 +108,7 @@ struct AddToAlbumMenu: View {
 
     var body: some View {
         Menu {
-            Button("New Album…", systemImage: "plus") {
+            Button("New album…", systemImage: "plus") {
                 model.requestAlbumTitle(.newWith(photos), scope: scope)
                 onAdded()
             }
@@ -124,7 +124,7 @@ struct AddToAlbumMenu: View {
                 }
             }
         } label: {
-            Label("Add to Album", systemImage: "rectangle.stack.badge.plus")
+            Label("Add to album", systemImage: "rectangle.stack.badge.plus")
         }
         .task { await model.loadAlbums() }
     }
@@ -151,11 +151,11 @@ struct PhotoSelectionToolbar: ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         if let albumId = listKey.albumId {
             ToolbarItem(placement: .bottomBar) {
-                Button("Remove from Album", systemImage: "rectangle.stack.badge.minus") {
+                Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
                     let chosen = selectedPhotos
                     Task {
-                        await model.remove(chosen, fromAlbum: albumId)
-                        onEnd()
+                        // The photos stay chosen if the server refused.
+                        if await model.remove(chosen, fromAlbum: albumId) { onEnd() }
                     }
                 }
                 .disabled(isEmpty)
@@ -189,8 +189,7 @@ struct PhotoSelectionToolbar: ToolbarContent {
                     Button("Move to Trash", role: .destructive) {
                         let chosen = selectedPhotos
                         Task {
-                            await model.moveToTrash(chosen)
-                            onEnd()
+                            if await model.moveToTrash(chosen) { onEnd() }
                         }
                     }
                 }
@@ -215,7 +214,7 @@ struct PhotoAlbumsView: View {
                         } description: {
                             Text("Choose photos in your library and add them to a new album, or make an empty one.")
                         } actions: {
-                            Button("New Album") { model.requestAlbumTitle(.new, scope: .library) }
+                            Button("New album") { model.requestAlbumTitle(.new, scope: .library) }
                                 .buttonStyle(.borderedProminent)
                         }
                         .containerRelativeFrame(.vertical)
@@ -378,7 +377,7 @@ struct PhotoSuggestionCard: View {
                         .lineLimit(2)
                 }
             }
-            Button("Create Album") {
+            Button("Create album") {
                 model.requestAlbumTitle(.suggestion(suggestion), scope: .library)
             }
             .buttonStyle(.bordered)
@@ -465,7 +464,7 @@ struct PhotoAlbumScreen: View {
     }
 
     private var selectionTitle: String {
-        selectedPhotoIds.isEmpty ? String(localized: "Select Items") : String(localized: "\(selectedPhotoIds.count) Selected")
+        selectedPhotoIds.isEmpty ? String(localized: "Select items") : String(localized: "\(selectedPhotoIds.count) Selected")
     }
 
     private func endSelection() {
@@ -490,15 +489,15 @@ struct PhotoAlbumScreen: View {
             if let album {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button("Rename Album", systemImage: "pencil") {
+                        Button("Rename album", systemImage: "pencil") {
                             model.requestAlbumTitle(.rename(album), scope: .album)
                         }
-                        Button("Delete Album", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                        Button("Delete album", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
                     .confirmationDialog("Delete this album?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                        Button("Delete Album", role: .destructive) {
+                        Button("Delete album", role: .destructive) {
                             Task {
                                 if await model.delete(album) { dismiss() }
                             }

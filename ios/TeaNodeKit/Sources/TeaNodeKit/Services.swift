@@ -56,6 +56,20 @@ extension Documents {
         """
 }
 
+/// PhotosAvailability decides whether the app offers Photos: the Photos
+/// section, the Photo backup and People in Photos rows, and the backup switch.
+public enum PhotosAvailability {
+    /// True when an operator turned Photos on for the server and the person
+    /// holds `photos:use`. A list of permissions that could not be read, or
+    /// that the server does not give, leaves it offered: the server refuses
+    /// what is not allowed, and a failed read must not hide the library.
+    public static func isOffered(isServiceEnabled: Bool, session: AccessSession?) -> Bool {
+        guard isServiceEnabled else { return false }
+        guard let session, session.permissions != nil else { return true }
+        return session.canUsePhotos
+    }
+}
+
 extension Connection {
     public func serviceCapabilities() async throws -> ServiceCapabilities {
         struct Answer: Decodable, Sendable { let GetServiceCapabilities: ServiceCapabilities }

@@ -5,7 +5,8 @@
 
     /// What the demo server answers for Photos, for `-TeaNodeTab photos` with
     /// `-TeaNodeScreen photos-library`, `photos-viewer`, `photos-viewer-described`, `photos-trash`,
-    /// `photos-empty`, `photos-select`, `photos-albums`, `photos-album`, `photos-people` or `photos-person`
+    /// `photos-empty`, `photos-select`, `photos-trash-select`, `photos-search`, `photos-viewer-failed`,
+    /// `photos-albums`, `photos-album`, `photos-people` or `photos-person`
     /// (and `photos-faces`, in Settings). The photos are invented, and their pictures are drawn
     /// here: a gradient and a few shapes in a color taken from the photo's id.
     extension DemoServer {
@@ -20,17 +21,22 @@
             var isTrashed = false
             var placeName = ""
             var isPortrait = false
+            /// The files the server holds for the photo, such as "edited".
+            var fileRoles = ["original"]
+            var failureMessage = ""
         }
 
         private static let demoPhotos: [DemoPhoto] = [
             DemoPhoto(id: "demo-01", kind: "picture", takenAt: "2026-10-15T18:42:00Z", offsetMinutes: -240, isFavorite: true, placeName: "Riverside Park", isPortrait: true),
-            DemoPhoto(id: "demo-02", kind: "picture", takenAt: "2026-10-15T18:40:00Z", offsetMinutes: -240, placeName: "Riverside Park"),
+            DemoPhoto(id: "demo-02", kind: "picture", takenAt: "2026-10-15T18:40:00Z", offsetMinutes: -240, placeName: "Riverside Park", fileRoles: ["original", "edited"]),
             DemoPhoto(id: "demo-03", kind: "video", takenAt: "2026-10-15T12:05:00Z", offsetMinutes: -240, durationMS: 23_000),
             DemoPhoto(id: "demo-04", kind: "picture", takenAt: "2026-10-15T09:30:00Z", offsetMinutes: -240, processingState: "waiting"),
             DemoPhoto(id: "demo-05", kind: "picture", takenAt: "2026-10-14T21:10:00Z", offsetMinutes: -240, isPortrait: true),
             DemoPhoto(id: "demo-06", kind: "picture", takenAt: "2026-10-14T15:00:00Z", offsetMinutes: -240, isFavorite: true),
             DemoPhoto(id: "demo-07", kind: "video", takenAt: "2026-10-14T14:00:00Z", offsetMinutes: -240, durationMS: 83_000),
-            DemoPhoto(id: "demo-08", kind: "picture", takenAt: "2026-10-14T10:00:00Z", offsetMinutes: -240, processingState: "failed"),
+            DemoPhoto(
+                id: "demo-08", kind: "picture", takenAt: "2026-10-14T10:00:00Z", offsetMinutes: -240, processingState: "failed",
+                failureMessage: "The picture could not be read, so no preview was made."),
             DemoPhoto(id: "demo-09", kind: "picture", takenAt: "2026-10-12T08:00:00Z", offsetMinutes: 540, isFavorite: true, placeName: "Harbor Market"),
             DemoPhoto(id: "demo-10", kind: "picture", takenAt: "2026-10-12T05:20:00Z", offsetMinutes: 540, placeName: "Harbor Market", isPortrait: true),
             DemoPhoto(id: "demo-11", kind: "picture", takenAt: "2026-10-12T03:45:00Z", offsetMinutes: 540),
@@ -125,7 +131,8 @@
             let largePreviewUrl = isReady ? previewPath + "large?v=1" : ""
             let videoPreviewUrl = isReady && isVideo ? previewPath + "video?v=1" : ""
             let trashedAt = photo.isTrashed ? #""2026-10-12T10:00:00Z""# : "null"
-            return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":null,"longitude":null,"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)"\#(extraFields)}"#
+            let fileRoles = photo.fileRoles.map { "\"" + $0 + "\"" }.joined(separator: ",")
+            return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":null,"longitude":null,"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)","photoFileRoles":[\#(fileRoles)],"processingErrorMessage":"\#(photo.failureMessage)"\#(extraFields)}"#
         }
 
         /// The answer to a request about photos: a GraphQL document, or a
@@ -141,7 +148,7 @@
             if body.contains("ReadPhotoLibrary") {
                 let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed }.count
                 let trashed = isEmpty ? 0 : demoPhotos.filter(\.isTrashed).count
-                json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"trashRetentionDays":30,"isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true}}}"#
+                json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"maximumFileBytes":2000000000,"maximumAccountBytes":50000000000,"trashRetentionDays":30,"isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true}}}"#
             } else if body.contains("ListPhotoAlbums") {
                 json = #"{"data":{"ListPhotoAlbums":["# + (isEmpty ? [] : demoAlbums).map(albumJSON).joined(separator: ",") + "]}}"
             } else if body.contains("SuggestPhotoAlbums") {
@@ -184,6 +191,8 @@
                 json = #"{"data":{"ReadPhotoFaceGroup":\#(personJSON(person))}}"#
             } else if body.contains("DescribePhoto") {
                 json = #"{"data":{"DescribePhoto":{"photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":true}}}"#
+            } else if body.contains("RetryPhotoProcessing") {
+                json = #"{"data":{"RetryPhotoProcessing":1}}"#
             } else if body.contains("ListPhotos") {
                 let isTrashed = variables["isTrashed"] as? Bool == true
                 let isFavorite = variables["isFavorite"] as? Bool == true
@@ -199,6 +208,10 @@
                 }
                 if let after = variables["takenAfter"] as? String, let before = variables["takenBefore"] as? String {
                     chosen = chosen.filter { $0.takenAt >= after && $0.takenAt < before }
+                }
+                // A search keeps the photos whose place or file name has the words.
+                if let words = variables["searchText"] as? String, !words.isEmpty {
+                    chosen = demoPhotos.filter { !$0.isTrashed && ($0.placeName.localizedCaseInsensitiveContains(words) || $0.id.localizedCaseInsensitiveContains(words)) }
                 }
                 // Everything fits in one page, so a page after it is empty.
                 if isEmpty || variables["beforePhotoId"] is String { chosen = [] }

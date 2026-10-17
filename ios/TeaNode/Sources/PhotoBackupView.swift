@@ -7,12 +7,17 @@ import UIKit
 struct PhotoBackupView: View {
     let connection: Connection
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppModel.self) private var app
     @State private var isConfirmingTurnOff = false
+    /// The library's size and limits, read when the screen opens.
+    @State private var library: PhotoLibrary?
+    @State private var libraryFailureText: String?
     private let engine = PhotoBackupEngine.shared
 
     var body: some View {
         PhotoBackupContent(
             status: engine.status, credentialName: engine.credentialName, accessProblem: engine.accessProblem, isWorking: engine.isWorking,
+            isPermitted: app.isPhotosOffered, library: library, libraryFailureText: libraryFailureText, readLibrary: { Task { await loadLibrary() } },
             isOn: Binding(
                 get: { engine.isEnabled },
                 set: { isOn in
@@ -36,6 +41,7 @@ struct PhotoBackupView: View {
         .sensoryFeedback(.success, trigger: engine.doneText) { _, text in text != nil }
         .sensoryFeedback(.warning, trigger: engine.problemText) { _, text in text != nil }
         .task { await engine.refresh() }
+        .task { await loadLibrary() }
         .onChange(of: scenePhase) { _, phase in
             // Back from the system's Settings, where the person may have given
             // access to the whole library.
@@ -44,13 +50,33 @@ struct PhotoBackupView: View {
     }
 }
 
-/// PhotoBackupContent is the Photo Backup screen for a status, with every
+extension PhotoBackupView {
+    /// Reads the size of the library and its limits; a failure is shown with a
+    /// way to try again, and what was read before stays.
+    fileprivate func loadLibrary() async {
+        do {
+            library = try await connection.photoLibrary()
+            libraryFailureText = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            libraryFailureText = app.describe(error)
+        }
+    }
+}
+
+/// PhotoBackupContent is the Photo backup screen for a status, with every
 /// choice and button handed in, so that each state can be previewed.
 struct PhotoBackupContent: View {
     let status: PhotoBackupStatus
     let credentialName: String?
     let accessProblem: PhotoBackupAccess?
     let isWorking: Bool
+    /// Whether the person may use Photos on this server (`photos:use`); the
+    /// switch is off limits to someone who may not, but can still turn it off.
+    let isPermitted: Bool
+    let library: PhotoLibrary?
+    let libraryFailureText: String?
+    let readLibrary: () -> Void
     @Binding var isOn: Bool
     @Binding var usesMobileData: Bool
     @Binding var includesHidden: Bool
@@ -63,14 +89,18 @@ struct PhotoBackupContent: View {
         Form {
             Section {
                 Toggle("Back up this iPhone", isOn: $isOn)
-                    .disabled(isWorking)
+                    .disabled(isWorking || (!isPermitted && !isOn))
                     .confirmationDialog("Turn off photo backup?", isPresented: $isConfirmingTurnOff, titleVisibility: .visible) {
                         Button("Turn off", role: .destructive, action: turnOff)
                     } message: {
                         Text("This iPhone stops backing up and its backup password is revoked. Photos already on TeaNode stay there.")
                     }
             } footer: {
-                Text("Photos and videos on this iPhone are copied to your TeaNode server. Deleting a photo on this iPhone does not delete it from TeaNode.")
+                if isPermitted || isOn {
+                    Text("Photos and videos on this iPhone are copied to your TeaNode server. Deleting a photo on this iPhone does not delete it from TeaNode.")
+                } else {
+                    Text("Your account may not keep photos on this server. Ask whoever runs it to allow it.")
+                }
             }
 
             if let accessProblem {
@@ -98,9 +128,13 @@ struct PhotoBackupContent: View {
                     } header: {
                         Text("Device password")
                     } footer: {
-                        Text("This password can only add photos to your library. Turning backup off revokes it.")
+                        Text("This password can only add photos to your library. Turning photo backup off revokes it.")
                     }
                 }
+            }
+
+            if library != nil || libraryFailureText != nil {
+                librarySection
             }
         }
         .navigationTitle("Photo backup")
@@ -109,6 +143,35 @@ struct PhotoBackupContent: View {
 
     // MARK: Sections
 
+    /// How much of the server's room the library takes, and the largest file
+    /// it takes, as the server says.
+    private var librarySection: some View {
+        Section {
+            if let library {
+                LabeledContent("Space used", value: spaceUsedText(of: library))
+                LabeledContent("Largest file", value: library.maximumFileBytes > 0 ? library.maximumFileBytes.formatted(.byteCount(style: .file)) : String(localized: "No limit"))
+            } else if let libraryFailureText {
+                Label("The size of your library could not be read.", systemImage: "exclamationmark.triangle")
+                Text(libraryFailureText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Button("Try again", systemImage: "arrow.clockwise", action: readLibrary)
+            }
+        } header: {
+            Text("Your library")
+        } footer: {
+            if library != nil {
+                Text("A file over the largest size is not backed up, and nothing more is taken once the space is used.")
+            }
+        }
+    }
+
+    private func spaceUsedText(of library: PhotoLibrary) -> String {
+        let used = library.usedBytes.formatted(.byteCount(style: .file))
+        guard library.maximumAccountBytes > 0 else { return used }
+        return String(localized: "\(used) of \(library.maximumAccountBytes.formatted(.byteCount(style: .file)))")
+    }
+
     private func accessSection(_ access: PhotoBackupAccess) -> some View {
         Section {
             Label(accessText(access), systemImage: "exclamationmark.triangle")
@@ -116,7 +179,7 @@ struct PhotoBackupContent: View {
                 if let address = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(address) }
             }
         } footer: {
-            Text("Backup reads your whole library, so TeaNode needs Full Access. Open Settings, choose Photos, then Full Access.")
+            Text("Photo backup reads your whole library, so TeaNode needs Full Access. Open Settings, choose Photos, then Full Access.")
         }
     }
 
@@ -141,6 +204,10 @@ struct PhotoBackupContent: View {
             .accessibilityElement(children: .combine)
             Label(stateText, systemImage: stateSymbol)
                 .foregroundStyle(.secondary)
+            if status.phase == .waitingForNetwork, status.leftForLaterFileCount > 0 {
+                Label("\(status.leftForLaterFileCount) files will be sent when the network is back.", systemImage: "clock.arrow.circlepath")
+                    .foregroundStyle(.secondary)
+            }
             if status.phase == .uploading, let filename = status.currentFilename {
                 LabeledContent("Sending") {
                     Text(filename).monospaced()
@@ -152,11 +219,11 @@ struct PhotoBackupContent: View {
             if status.refusedFileCount > 0 {
                 Label("\(status.refusedFileCount) files could not be backed up. Back up now tries them again.", systemImage: "exclamationmark.triangle")
             }
-            if status.phase != .needsSignIn, let message = status.lastErrorMessage {
+            if status.phase != .needsSignIn, let failure = status.lastFailure {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("The last problem", systemImage: "exclamationmark.triangle")
-                    Text(message).font(.footnote).foregroundStyle(.secondary)
-                    Text("Backup tries again the next time it runs.").font(.footnote).foregroundStyle(.secondary)
+                    Text(failure.localizedText).font(.footnote).foregroundStyle(.secondary)
+                    Text("Photo backup tries again when you open TeaNode, when the network is back, or while the phone charges.").font(.footnote).foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
             }
@@ -183,10 +250,10 @@ struct PhotoBackupContent: View {
         case .idle:
             isEverythingBackedUp
                 ? String(localized: "Everything is backed up")
-                : (status.libraryItemCount == 0 ? String(localized: "Ready to back up") : String(localized: "Waiting for the next pass"))
+                : (status.libraryItemCount == 0 ? String(localized: "Ready to back up") : String(localized: "Waiting to continue"))
         case .listing: String(localized: "Reading your photo library")
         case .uploading: String(localized: "Backing up")
-        case .waitingForNetwork: String(localized: "Waiting for Wi-Fi or iCloud")
+        case .waitingForNetwork: usesMobileData ? String(localized: "Waiting for the network") : String(localized: "Waiting for Wi-Fi")
         case .needsAccess: String(localized: "Needs access to all your photos")
         case .needsSignIn: String(localized: "Needs you to sign in again")
         }
@@ -207,12 +274,15 @@ struct PhotoBackupContent: View {
 // MARK: Previews
 
 private func previewContent(
-    _ status: PhotoBackupStatus, credentialName: String? = "Robin's iPhone photo backup", accessProblem: PhotoBackupAccess? = nil
+    _ status: PhotoBackupStatus, credentialName: String? = "Robin's iPhone photo backup", accessProblem: PhotoBackupAccess? = nil, isPermitted: Bool = true,
+    usesMobileData: Bool = false
 ) -> some View {
     NavigationStack {
         PhotoBackupContent(
-            status: status, credentialName: credentialName, accessProblem: accessProblem, isWorking: false,
-            isOn: .constant(status.isEnabled), usesMobileData: .constant(false), includesHidden: .constant(false),
+            status: status, credentialName: credentialName, accessProblem: accessProblem, isWorking: false, isPermitted: isPermitted,
+            library: PhotoLibrary(photoCount: 3_800, videoCount: 112, favoriteCount: 90, trashedCount: 4, usedBytes: 21_400_000_000, trashRetentionDays: 30, maximumFileBytes: 2_000_000_000, maximumAccountBytes: 50_000_000_000),
+            libraryFailureText: nil, readLibrary: {},
+            isOn: .constant(status.isEnabled), usesMobileData: .constant(usesMobileData), includesHidden: .constant(false),
             isConfirmingTurnOff: .constant(false), backUpNow: {}, signInAgain: {}, turnOff: {})
     }
 }
@@ -232,12 +302,15 @@ private let previewUploading = PhotoBackupStatus(
     previewContent(PhotoBackupStatus(phase: .off), credentialName: nil, accessProblem: .limited)
 }
 #Preview("Sign in again, dark") {
-    previewContent(PhotoBackupStatus(phase: .needsSignIn, backedUpItemCount: 1284, libraryItemCount: 3912, lastErrorMessage: "not signed in"))
+    previewContent(PhotoBackupStatus(phase: .needsSignIn, backedUpItemCount: 1284, libraryItemCount: 3912, lastFailure: .signInRefused))
         .preferredColorScheme(.dark)
 }
-#Preview("Problem, light") {
+#Preview("Waiting for the network, light") {
     previewContent(
         PhotoBackupStatus(
-            phase: .waitingForNetwork, backedUpItemCount: 1284, libraryItemCount: 3912, refusedFileCount: 2,
-            lastErrorMessage: "the library is full"))
+            phase: .waitingForNetwork, backedUpItemCount: 1284, libraryItemCount: 3912, refusedFileCount: 2, leftForLaterFileCount: 6,
+            lastFailure: .serverReason("photo storage is unavailable")))
+}
+#Preview("Not allowed, light") {
+    previewContent(PhotoBackupStatus(phase: .off), credentialName: nil, isPermitted: false)
 }

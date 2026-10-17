@@ -4,6 +4,18 @@ import Foundation
     import FoundationNetworking
 #endif
 
+/// PhotoError is why a photo could not be read or saved, without any words:
+/// the app writes each in the person's language, so the Kit has no English
+/// that can reach the screen.
+public enum PhotoError: Error, Equatable, Sendable {
+    /// The server did not serve the file. The status code is not shown.
+    case fileCouldNotBeRead
+    /// The photo has no file and no preview yet.
+    case nothingToSaveYet
+    /// The person has no address book to put a new contact in.
+    case noAddressBook
+}
+
 /// Photo is one item in the person's library: a picture, a video or a Live
 /// Photo. The keys are the server's. The three preview addresses are paths on
 /// the server, empty until that preview is made; they carry the time the photo
@@ -34,6 +46,45 @@ public struct Photo: Codable, Identifiable, Hashable, Sendable {
     public let smallPreviewUrl: String
     public let largePreviewUrl: String
     public let videoPreviewUrl: String
+    /// The roles of the files the server holds for the photo: "original", and
+    /// "edited" and "liveVideo" when it has them. Empty from a server that
+    /// does not say.
+    public let photoFileRoles: [String]
+    /// The server's plain reason the last try at making previews failed;
+    /// empty unless it did.
+    public let processingErrorMessage: String
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        photoKind = try container.decode(String.self, forKey: .photoKind)
+        takenAt = try container.decodeIfPresent(String.self, forKey: .takenAt)
+        takenAtOffsetMinutes = try container.decodeIfPresent(Int.self, forKey: .takenAtOffsetMinutes)
+        widthPixels = try container.decode(Int.self, forKey: .widthPixels)
+        heightPixels = try container.decode(Int.self, forKey: .heightPixels)
+        durationMS = try container.decode(Int.self, forKey: .durationMS)
+        latitude = try container.decodeIfPresent(Double.self, forKey: .latitude)
+        longitude = try container.decodeIfPresent(Double.self, forKey: .longitude)
+        placeName = try container.decode(String.self, forKey: .placeName)
+        cameraMake = try container.decode(String.self, forKey: .cameraMake)
+        cameraModel = try container.decode(String.self, forKey: .cameraModel)
+        originalFilename = try container.decode(String.self, forKey: .originalFilename)
+        isFavorite = try container.decode(Bool.self, forKey: .isFavorite)
+        isScreenshot = try container.decode(Bool.self, forKey: .isScreenshot)
+        photoProcessingState = try container.decode(String.self, forKey: .photoProcessingState)
+        trashedAt = try container.decodeIfPresent(String.self, forKey: .trashedAt)
+        smallPreviewUrl = try container.decode(String.self, forKey: .smallPreviewUrl)
+        largePreviewUrl = try container.decode(String.self, forKey: .largePreviewUrl)
+        videoPreviewUrl = try container.decode(String.self, forKey: .videoPreviewUrl)
+        photoFileRoles = try container.decodeIfPresent([String].self, forKey: .photoFileRoles) ?? []
+        processingErrorMessage = try container.decodeIfPresent(String.self, forKey: .processingErrorMessage) ?? ""
+    }
+
+    /// Whether the photo has an edited version beside its original.
+    public var hasEditedFile: Bool { photoFileRoles.contains("edited") }
+    /// Whether the photo is a Live Photo whose video the server holds.
+    public var hasLiveVideoFile: Bool { photoFileRoles.contains("liveVideo") }
 
     public var isVideo: Bool { photoKind == "video" }
     public var isLivePhoto: Bool { photoKind == "livePhoto" }
@@ -280,6 +331,9 @@ public struct PhotoDetail: Codable, Hashable, Sendable {
 
     /// The file Save to Photos and Share hand on: the original.
     public var originalFile: PhotoFile? { photoFiles.first { $0.photoFileRole == "original" } }
+
+    /// The file of one role, such as "edited" or "liveVideo".
+    public func file(withRole photoFileRole: String) -> PhotoFile? { photoFiles.first { $0.photoFileRole == photoFileRole } }
 }
 
 /// PhotoLibrary is what the library page shows beside the photos.
@@ -289,6 +343,10 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
     public let favoriteCount: Int
     public let trashedCount: Int
     public let usedBytes: Int
+    /// The largest file an upload may carry, and the most the library may
+    /// hold; zero for no limit.
+    public let maximumFileBytes: Int
+    public let maximumAccountBytes: Int
     public let trashRetentionDays: Int
     /// Whether this server and this person can have a photo described, and
     /// when not, why, in the server's words.
@@ -302,7 +360,7 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
 
     public init(
         photoCount: Int, videoCount: Int, favoriteCount: Int, trashedCount: Int, usedBytes: Int, trashRetentionDays: Int,
-        isDescriptionAvailable: Bool = false, descriptionUnavailableMessage: String = "", isFaceRecognitionAvailable: Bool = false,
+        maximumFileBytes: Int = 0, maximumAccountBytes: Int = 0, isDescriptionAvailable: Bool = false, descriptionUnavailableMessage: String = "", isFaceRecognitionAvailable: Bool = false,
         faceRecognitionUnavailableMessage: String = "", isPhotoFaceRecognitionEnabled: Bool = false
     ) {
         self.photoCount = photoCount
@@ -310,6 +368,8 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
         self.favoriteCount = favoriteCount
         self.trashedCount = trashedCount
         self.usedBytes = usedBytes
+        self.maximumFileBytes = maximumFileBytes
+        self.maximumAccountBytes = maximumAccountBytes
         self.trashRetentionDays = trashRetentionDays
         self.isDescriptionAvailable = isDescriptionAvailable
         self.descriptionUnavailableMessage = descriptionUnavailableMessage
@@ -325,6 +385,8 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
         favoriteCount = try container.decode(Int.self, forKey: .favoriteCount)
         trashedCount = try container.decode(Int.self, forKey: .trashedCount)
         usedBytes = try container.decode(Int.self, forKey: .usedBytes)
+        maximumFileBytes = try container.decodeIfPresent(Int.self, forKey: .maximumFileBytes) ?? 0
+        maximumAccountBytes = try container.decodeIfPresent(Int.self, forKey: .maximumAccountBytes) ?? 0
         trashRetentionDays = try container.decode(Int.self, forKey: .trashRetentionDays)
         // A server older than descriptions and faces says nothing of them,
         // which reads as neither being available.
@@ -475,10 +537,11 @@ extension Documents {
     static let photoFields = """
         id createdAt photoKind takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel
         originalFilename isFavorite isScreenshot photoProcessingState trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl
+        photoFileRoles processingErrorMessage
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { \(photoFields) }
+        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String) {
+          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText) { \(photoFields) }
         }
         """
     static let photoDescriptionFields = """
@@ -511,7 +574,7 @@ extension Documents {
     public static let readPhotoLibrary = """
         query {
           ReadPhotoLibrary {
-            photoCount videoCount favoriteCount trashedCount usedBytes trashRetentionDays
+            photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays
             isDescriptionAvailable descriptionUnavailableMessage
             isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled
           }
@@ -528,6 +591,9 @@ extension Documents {
         """
     public static let deletePhotos = """
         mutation ($photoIds: [String!]!) { DeletePhotos(photoIds: $photoIds) }
+        """
+    public static let retryPhotoProcessing = """
+        mutation ($photoIds: [String!]!) { RetryPhotoProcessing(photoIds: $photoIds) }
         """
     public static let emptyPhotoTrash = """
         mutation { EmptyPhotoTrash }
@@ -603,6 +669,16 @@ extension Connection {
         return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
     }
 
+    /// The photos that match the words, best match first. A search is not
+    /// paged: the server answers with at most `PhotoSearch.mostResultCount`.
+    public func photos(matching searchText: String) async throws -> [Photo] {
+        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
+        let variables: [String: JSONValue] = [
+            "pageSize": .number(Double(PhotoSearch.mostResultCount)), "searchText": .string(PhotoSearch.words(from: searchText) ?? ""),
+        ]
+        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
+    }
+
     /// One page of the photos of an album, newest first, paged like the
     /// library's lists.
     public func photos(inAlbum photoAlbumId: String, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
@@ -670,11 +746,37 @@ extension Connection {
         return try await execute(Documents.deletePhotos, variables: ["photoIds": .array(photoIds.map { .string($0) })], as: Answer.self).DeletePhotos
     }
 
+    /// Puts photos whose previews failed back in the queue to be made again;
+    /// says how many were moved. Those already waiting are left alone.
+    @discardableResult
+    public func retryPhotoProcessing(_ photoIds: [String]) async throws -> Int {
+        struct Answer: Decodable, Sendable { let RetryPhotoProcessing: Int }
+        var retriedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            retriedCount += try await execute(Documents.retryPhotoProcessing, variables: ["photoIds": .array(batch.map { .string($0) })], as: Answer.self)
+                .RetryPhotoProcessing
+        }
+        return retriedCount
+    }
+
     /// Deletes everything in the trash for good; says how many photos went.
     @discardableResult
     public func emptyPhotoTrash() async throws -> Int {
         struct Answer: Decodable, Sendable { let EmptyPhotoTrash: Int }
         return try await execute(Documents.emptyPhotoTrash, as: Answer.self).EmptyPhotoTrash
+    }
+}
+
+/// PhotoSearch is how the words a person types are asked of the server.
+public enum PhotoSearch {
+    /// The most photos a search answers with, best match first.
+    public static let mostResultCount = 500
+
+    /// The words without the spaces round them; nil when nothing is left to
+    /// search for.
+    public static func words(from typed: String) -> String? {
+        let words = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return words.isEmpty ? nil : words
     }
 }
 
@@ -758,6 +860,12 @@ public enum PhotoTimeline {
             return PhotoMoment(date: createdAt, timeZone: phoneTimeZone, isTimeZoneOfPhoto: false)
         }
         return nil
+    }
+
+    /// All the photos in one day with no date, in the order they came in: how
+    /// a list ranked by match is laid out, since days would break the order.
+    public static func rankedDay(_ photos: [Photo]) -> [PhotoDay] {
+        photos.isEmpty ? [] : [PhotoDay(id: "ranked", year: nil, month: nil, day: nil, photos: photos)]
     }
 
     /// The photos, which the server lists newest first, in days. A day keeps
@@ -876,12 +984,22 @@ extension Connection {
         let previewSize = photo.isVideo ? "video" : "large"
         let preview = detail?.photoPreviews.first { $0.photoPreviewSize == previewSize }
         guard preview != nil || (photo.isVideo ? photo.videoPath : photo.viewerPreviewPath) != nil else {
-            throw TeaNodeError.refused("This photo has nothing to save yet. Try again in a moment.")
+            throw PhotoError.nothingToSaveYet
         }
         let fileExtension = preview.flatMap { PhotoDownload.fileExtension(forContentType: $0.contentType) } ?? (photo.isVideo ? "mp4" : "jpg")
         let baseName = (photo.fileName as NSString).deletingPathExtension
         let fileURL = try await downloadSigned(photo.id, source: .preview(previewSize), fileName: "\(baseName).\(fileExtension)")
         return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: false)
+    }
+
+    /// One file of a photo, such as its edited version or a Live Photo's
+    /// video, with no other standing in for it: it throws when the photo has
+    /// no such file.
+    public func downloadPhotoFile(_ photo: Photo, role photoFileRole: String) async throws -> PhotoDownload {
+        let detail = try await photoDetail(photo.id)
+        guard let file = detail.file(withRole: photoFileRole) else { throw PhotoError.nothingToSaveYet }
+        let fileURL = try await downloadSigned(photo.id, source: .file(photoFileRole), fileName: file.originalFilename.isEmpty ? photo.fileName : file.originalFilename)
+        return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: photoFileRole == "original")
     }
 
     /// Mints an address and reads what it serves into a file named fileName,
@@ -1082,7 +1200,7 @@ extension Connection {
             let SaveContact: Saved
         }
         guard let book = try await addressBooks().first else {
-            throw TeaNodeError.refused("There is no address book to put a new contact in.")
+            throw PhotoError.noAddressBook
         }
         let saved = try await execute(
             Documents.createNamedContact, variables: ["addressBookId": .string(book.id), "name": .string(name)], as: Answer.self

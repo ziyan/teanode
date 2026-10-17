@@ -10,6 +10,28 @@ import Foundation
 // remembers what went up. PhotoBackupCoordinator.swift runs a pass over these;
 // the app target supplies PhotoKit and the background URLSession.
 
+/// PhotoBackupFailure is why a file did not go up, or why a pass could not
+/// go on, without any words of the app's own: the app target writes each one
+/// in the person's language. It is kept in the index, so it is Codable.
+public enum PhotoBackupFailure: Codable, Equatable, Sendable {
+    /// The server did not accept the device password.
+    case signInRefused
+    /// The server took the file and did not say which photo it was.
+    case serverDidNotSayWhichPhoto
+    /// The server will not take this file, with its reason when it gave one.
+    case fileRefused(serverReason: String?)
+    /// The server's own words for a problem that is not the file's.
+    case serverReason(String)
+    /// The photo library gave a file with nothing in it.
+    case fileIsEmpty
+    /// The photo is no longer in the photo library.
+    case fileIsNotInLibrary
+    /// The file is in iCloud and the network costs data.
+    case fileIsInICloudOnMobileData
+    /// The operating system's own words, already in the person's language.
+    case systemDescription(String)
+}
+
 /// PhotoBackupFileRole is which of a photo's files an upload carries, in the
 /// words the server's X-Photo-File-Role header uses.
 public enum PhotoBackupFileRole: String, Codable, CaseIterable, Sendable {
@@ -298,17 +320,17 @@ public struct PhotoBackupRoleRecord: Codable, Equatable, Sendable {
     public var assetModificationDate: Date?
     /// How often the server refused the file itself.
     public var refusalCount: Int
-    public var refusalMessage: String?
+    public var refusalFailure: PhotoBackupFailure?
 
     public init(
         isOnServer: Bool = false, serverPhotoId: String? = nil, assetModificationDate: Date? = nil, refusalCount: Int = 0,
-        refusalMessage: String? = nil
+        refusalFailure: PhotoBackupFailure? = nil
     ) {
         self.isOnServer = isOnServer
         self.serverPhotoId = serverPhotoId
         self.assetModificationDate = assetModificationDate
         self.refusalCount = refusalCount
-        self.refusalMessage = refusalMessage
+        self.refusalFailure = refusalFailure
     }
 }
 
@@ -336,7 +358,7 @@ public struct PhotoBackupSummary: Equatable, Sendable {
     public var libraryItemCount: Int
     /// Files the server refused often enough to be left alone.
     public var refusedFileCount: Int
-    public var lastErrorMessage: String?
+    public var lastFailure: PhotoBackupFailure?
     /// The server refused the sign-in: the device password is wrong or revoked.
     public var isSignInNeeded: Bool
     public var lastPassFinishedAt: Date?
@@ -356,27 +378,34 @@ public actor PhotoBackupIndex {
         /// The library's archived change token, which only the app reads.
         var changeToken: Data?
         var libraryItemCount = 0
-        var lastErrorMessage: String?
+        var lastFailure: PhotoBackupFailure?
         var isSignInNeeded = false
         var lastPassFinishedAt: Date?
     }
 
     public static let fileName = "index.json"
 
-    /// After this many changes the file is written; `flush` writes what is
-    /// left. Rewriting a library's worth of records for every upload would cost
-    /// more than the upload.
-    private static let changesPerWrite = 20
+    /// Changes are written at most this often while a pass runs, and `flush`
+    /// writes what is left when it ends. Rewriting a library's worth of
+    /// records for every upload would cost more than the upload. A crash
+    /// between two writes loses the changes made since the first of them and
+    /// nothing before it: a file sent again is harmless, the server stores
+    /// each once.
+    public static let secondsBetweenWrites: TimeInterval = 30
 
     private let fileURL: URL
     private let fileManager: FileManager
+    private let now: @Sendable () -> Date
     private var contents = Contents()
     private var unwrittenChangeCount = 0
+    private var lastWriteAt: Date
     /// Whether the file existed and could not be read when the index was opened.
     public private(set) var wasStartedOver = false
 
-    public init(directory: URL, fileManager: FileManager = .default) throws {
+    public init(directory: URL, fileManager: FileManager = .default, now: @escaping @Sendable () -> Date = { Date() }) throws {
         self.fileManager = fileManager
+        self.now = now
+        lastWriteAt = now()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         fileURL = directory.appendingPathComponent(Self.fileName)
         if fileManager.fileExists(atPath: fileURL.path) {
@@ -398,6 +427,15 @@ public actor PhotoBackupIndex {
 
     /// Makes the index the memory of one account's backup. Another account's
     /// memory is dropped: its names mean nothing on this server.
+    /// Forgets everything kept for an account that is signed out of, the file
+    /// included. Another account's memory is left as it is.
+    public func forget(accountKey: String) {
+        guard contents.accountKey == accountKey else { return }
+        contents = Contents()
+        unwrittenChangeCount = 0
+        try? fileManager.removeItem(at: fileURL)
+    }
+
     public func adopt(accountKey: String) {
         guard contents.accountKey != accountKey else { return }
         let hadAccount = contents.accountKey != nil
@@ -438,7 +476,7 @@ public actor PhotoBackupIndex {
         }
         return PhotoBackupSummary(
             backedUpItemCount: backedUp, libraryItemCount: contents.libraryItemCount, refusedFileCount: refused,
-            lastErrorMessage: contents.lastErrorMessage, isSignInNeeded: contents.isSignInNeeded,
+            lastFailure: contents.lastFailure, isSignInNeeded: contents.isSignInNeeded,
             lastPassFinishedAt: contents.lastPassFinishedAt)
     }
 
@@ -519,18 +557,20 @@ public actor PhotoBackupIndex {
         localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, serverPhotoId: String, assetModificationDate: Date?
     ) {
         var record = contents.records[localIdentifier] ?? PhotoBackupRecord(clientPhotoId: clientPhotoId)
+        // Only the edit is compared with a later modification date, so only
+        // its date is kept: the file holds a record for every photo.
         record.roles[role.rawValue] = PhotoBackupRoleRecord(
-            isOnServer: true, serverPhotoId: serverPhotoId, assetModificationDate: assetModificationDate)
+            isOnServer: true, serverPhotoId: serverPhotoId, assetModificationDate: role == .edited ? assetModificationDate : nil)
         contents.records[localIdentifier] = record
         didChange()
     }
 
     /// Notes that the server refused a file itself.
-    public func markRefused(localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, message: String) {
+    public func markRefused(localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, failure: PhotoBackupFailure) {
         var record = contents.records[localIdentifier] ?? PhotoBackupRecord(clientPhotoId: clientPhotoId)
         var state = record.roles[role.rawValue] ?? PhotoBackupRoleRecord()
         state.refusalCount += 1
-        state.refusalMessage = message
+        state.refusalFailure = failure
         record.roles[role.rawValue] = state
         contents.records[localIdentifier] = record
         didChange()
@@ -543,7 +583,7 @@ public actor PhotoBackupIndex {
             for (roleName, var state) in record.roles where state.refusalCount > 0 {
                 if state.isOnServer {
                     state.refusalCount = 0
-                    state.refusalMessage = nil
+                    state.refusalFailure = nil
                     record.roles[roleName] = state
                 } else {
                     record.roles[roleName] = nil
@@ -567,15 +607,17 @@ public actor PhotoBackupIndex {
 
     /// Records what went wrong, to be shown. A sign-in refusal is remembered
     /// apart: it stops the backup until the person signs in again.
-    public func setError(message: String?, isSignInNeeded: Bool = false) {
-        contents.lastErrorMessage = message
+    public func setError(failure: PhotoBackupFailure?, isSignInNeeded: Bool = false) {
+        contents.lastFailure = failure
         contents.isSignInNeeded = isSignInNeeded
-        didChange(force: true)
+        // A refused sign-in is written at once, as it stops the backup; any
+        // other problem is written with the next change.
+        didChange(force: isSignInNeeded)
     }
 
     public func clearError() {
-        guard contents.lastErrorMessage != nil || contents.isSignInNeeded else { return }
-        setError(message: nil)
+        guard contents.lastFailure != nil || contents.isSignInNeeded else { return }
+        setError(failure: nil)
     }
 
     /// Clears the last error, unless it is the server not accepting the device
@@ -598,18 +640,21 @@ public actor PhotoBackupIndex {
 
     private func didChange(force: Bool = false) {
         unwrittenChangeCount += 1
-        if force || unwrittenChangeCount >= Self.changesPerWrite { write() }
+        if force || now().timeIntervalSince(lastWriteAt) >= Self.secondsBetweenWrites { write() }
     }
 
     /// Replaces the file whole, so a crash leaves the old one or the new one.
+    /// The text is compact: no spaces, and slashes in identifiers unescaped.
     private func write() {
+        lastWriteAt = now()
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.withoutEscapingSlashes]
             try encoder.encode(contents).write(to: fileURL, options: .atomic)
             unwrittenChangeCount = 0
         } catch {
-            // Kept in memory, tried again with the next change: the worst
+            // Kept in memory, tried again with the next write: the worst
             // outcome is that some files are sent twice after a restart.
         }
     }

@@ -179,11 +179,11 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
 
     // MARK: Exporting
 
-    func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool) async throws -> PhotoBackupExportedFile {
+    func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool, includesHidden: Bool) async throws -> PhotoBackupExportedFile {
         let fileName = UUID().uuidString
         let fileURL = directory.appendingPathComponent(fileName)
         do {
-            try await Self.write(upload, to: fileURL, mayUseExpensiveNetwork: mayUseExpensiveNetwork)
+            try await Self.write(upload, to: fileURL, mayUseExpensiveNetwork: mayUseExpensiveNetwork, includesHidden: includesHidden)
         } catch let error as PhotoBackupLibraryError {
             try? FileManager.default.removeItem(at: fileURL)
             throw error
@@ -200,23 +200,23 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
             let sizeBytes = (attributes[.size] as? NSNumber)?.int64Value ?? 0
             guard sizeBytes > 0 else {
                 try? FileManager.default.removeItem(at: fileURL)
-                throw PhotoBackupLibraryError.failed("The photo library gave an empty file.")
+                throw PhotoBackupLibraryError.failed(.fileIsEmpty)
             }
             return PhotoBackupExportedFile(fileName: fileName, sizeBytes: sizeBytes)
         } catch let error as PhotoBackupLibraryError {
             throw error
         } catch {
             try? FileManager.default.removeItem(at: fileURL)
-            throw PhotoBackupLibraryError.unavailable(error.localizedDescription)
+            throw PhotoBackupLibraryError.unavailable(.systemDescription(error.localizedDescription))
         }
     }
 
     /// Writes the file. It is first asked for without the network; if the file
     /// is in iCloud only, and the network may be used, it is asked for again
     /// with it.
-    private static func write(_ upload: PhotoBackupUpload, to fileURL: URL, mayUseExpensiveNetwork: Bool) async throws {
-        guard let resource = resource(of: upload) else {
-            throw PhotoBackupLibraryError.failed("This photo is no longer in the library.")
+    private static func write(_ upload: PhotoBackupUpload, to fileURL: URL, mayUseExpensiveNetwork: Bool, includesHidden: Bool) async throws {
+        guard let resource = resource(of: upload, includesHidden: includesHidden) else {
+            throw PhotoBackupLibraryError.failed(.fileIsNotInLibrary)
         }
         let manager = PHAssetResourceManager.default()
         let options = PHAssetResourceRequestOptions()
@@ -228,16 +228,18 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
             guard isNetworkNeeded(error) else { throw error }
         }
         if !mayUseExpensiveNetwork, await DeviceNetwork().isExpensive() {
-            throw PhotoBackupLibraryError.unavailable("The file is in iCloud and this network costs data.")
+            throw PhotoBackupLibraryError.unavailable(.fileIsInICloudOnMobileData)
         }
         try? FileManager.default.removeItem(at: fileURL)
         options.isNetworkAccessAllowed = true
         try await manager.writeData(for: resource, toFile: fileURL, options: options)
     }
 
-    /// The resource an upload is of, read again from the library.
-    private static func resource(of upload: PhotoBackupUpload) -> PHAssetResource? {
-        let result = PHAsset.fetchAssets(withLocalIdentifiers: [upload.localIdentifier], options: fetchOptions(includesHidden: true))
+    /// The resource an upload is of, read again from the library. A hidden
+    /// photo is found only if the person allowed the Hidden album, the same
+    /// setting that listed it.
+    private static func resource(of upload: PhotoBackupUpload, includesHidden: Bool) -> PHAssetResource? {
+        let result = PHAsset.fetchAssets(withLocalIdentifiers: [upload.localIdentifier], options: fetchOptions(includesHidden: includesHidden))
         guard let asset = result.firstObject else { return nil }
         for resource in PHAssetResource.assetResources(for: asset) {
             switch (upload.role, resource.type) {
@@ -262,12 +264,12 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
         if let error = error as? PHPhotosError {
             switch error.code {
             case .identifierNotFound, .invalidResource, .missingResource:
-                return .failed(error.localizedDescription)
+                return .failed(.systemDescription(error.localizedDescription))
             default:
-                return .unavailable(error.localizedDescription)
+                return .unavailable(.systemDescription(error.localizedDescription))
             }
         }
-        return .unavailable(error.localizedDescription)
+        return .unavailable(.systemDescription(error.localizedDescription))
     }
 }
 

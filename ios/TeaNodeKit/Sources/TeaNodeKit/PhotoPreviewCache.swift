@@ -4,8 +4,9 @@ import Foundation
 /// again, or scrolled back to, does not fetch every picture again. An
 /// `NSCache` in memory sits in front of the files.
 ///
-/// A file is named by a hash of the account and the address it was read from.
-/// The address carries the time the photo last changed, so a preview made
+/// A file is named by a hash of the account followed by a hash of the account
+/// and the address it was read from, so the files of one account are found by
+/// the start of their names and can be removed when it signs out. The address carries the time the photo last changed, so a preview made
 /// again is a new address and the old file simply ages out. The files together
 /// stay under a limit, 500 MB by default: when a write takes them over it,
 /// the files least recently used (the oldest by modification date; a read
@@ -25,6 +26,9 @@ public actor PhotoPreviewCache {
     /// The size of the files, counted once from the directory and then kept up
     /// to date as files are written and removed.
     private var knownBytes: Int?
+    /// Counts the times files were removed, so that a preview fetched before a
+    /// removal is not written after it.
+    private var removalCount = 0
 
     /// - Parameters:
     ///   - directory: where to keep the files; the app's caches directory when nil. A test gives a temporary one.
@@ -54,9 +58,13 @@ public actor PhotoPreviewCache {
         let fetching = Task { try await connection.download(path) }
         inFlight[name] = fetching
         defer { inFlight[name] = nil }
+        let removalCountBefore = removalCount
         let fetched = try await fetching.value
-        memory.setObject(NSData(data: fetched), forKey: name as NSString, cost: fetched.count)
-        writeFile(fetched, named: name)
+        // An account removed while its preview was on the way keeps nothing.
+        if removalCount == removalCountBefore {
+            memory.setObject(NSData(data: fetched), forKey: name as NSString, cost: fetched.count)
+            writeFile(fetched, named: name)
+        }
         return fetched
     }
 
@@ -67,25 +75,44 @@ public actor PhotoPreviewCache {
         knownBytes = 0
     }
 
+    /// Forgets the files of one account, and what is held in memory, which is
+    /// not told apart by account. The other accounts' files stay.
+    public func removeAccount(accountKey: String) {
+        removalCount += 1
+        memory.removeAllObjects()
+        let prefix = Self.accountPrefix(accountKey: accountKey)
+        for file in filesInDirectory() where file.address.lastPathComponent.hasPrefix(prefix) {
+            try? FileManager.default.removeItem(at: file.address)
+        }
+        knownBytes = nil
+    }
+
     /// How much the files take together.
     public func sizeBytes() -> Int {
         currentBytes()
     }
 
-    /// The file name for an address: 32 hexadecimal digits, made of two FNV-1a
-    /// hashes of 64 bits that start from different values. The cache needs a
-    /// name that is the same on every launch (Swift's own hash is not) and that
-    /// two different addresses will not share by accident; it has no one to
-    /// defend against, so a cryptographic digest, which CryptoKit gives on the
-    /// phone only, is not needed.
+    /// The file name for an address: 32 hexadecimal digits, the account's
+    /// prefix and then an FNV-1a hash of 64 bits of the account and the
+    /// address. The cache needs a name that is the same on every launch
+    /// (Swift's own hash is not) and that two different addresses will not
+    /// share by accident; it has no one to defend against, so a cryptographic
+    /// digest, which CryptoKit gives on the phone only, is not needed.
     nonisolated static func fileName(accountKey: String, path: String) -> String {
-        var first: UInt64 = 0xcbf2_9ce4_8422_2325
-        var second: UInt64 = 0x84222325_cbf29ce4
-        for byte in "\(accountKey)\n\(path)".utf8 {
-            first = (first ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
-            second = (second ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+        accountPrefix(accountKey: accountKey) + String(format: "%016llx", hash("\(accountKey)\n\(path)"))
+    }
+
+    /// The start of the name of every file of one account: 16 hexadecimal digits.
+    nonisolated static func accountPrefix(accountKey: String) -> String {
+        String(format: "%016llx", hash(accountKey))
+    }
+
+    private nonisolated static func hash(_ text: String) -> UInt64 {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in text.utf8 {
+            hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
         }
-        return String(format: "%016llx%016llx", first, second)
+        return hash
     }
 
     private func readFile(named name: String) -> Data? {

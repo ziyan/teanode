@@ -26,6 +26,8 @@ public struct AccessSession: Codable, Hashable, Sendable {
     public var canManageGroups: Bool { holds("group:manage") }
     public var canManageRoles: Bool { holds("role:manage") }
     public var canReadAudit: Bool { holds("audit:read") }
+    /// Whether the person may keep a photo library and back a device up to it.
+    public var canUsePhotos: Bool { holds("photos:use") }
 }
 
 /// AccessUser is somebody with an account on the server, as the people page

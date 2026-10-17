@@ -324,6 +324,13 @@ jobs:
           shoot photos-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-album-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
+          # Search over the library, Select mode in the Trash, and Info over a photo that could not be made ready.
+          shoot photos-search-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
+          shoot photos-search-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
+          shoot photos-trash-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
+          shoot photos-viewer-failed-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
+          shoot photos-viewer-failed-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
+          shoot photos-viewer-failed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           # Descriptions and people: Info over the viewer with a description and the people in the photo, the
           # People section, one person, and the switch for finding faces.
           shoot photos-viewer-described-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-described
@@ -341,6 +348,10 @@ jobs:
           shoot photos-backup-on-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-on
           shoot photos-backup-on-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-on
           shoot photos-backup-on-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-on
+          # Files waiting for the network, with the library's size and limits at the bottom of the screen.
+          shoot photos-backup-waiting-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-waiting
+          shoot photos-backup-waiting-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-waiting
+          shoot photos-backup-waiting-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-waiting
           # Settings, and the screens it pushes, named by -TeaNodeScreen.
           shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
           shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings

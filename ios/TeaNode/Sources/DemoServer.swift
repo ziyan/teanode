@@ -285,8 +285,9 @@
         }
 
         /// The screen Settings opens for a screenshot: `-TeaNodeScreen people`.
-        /// `photos-backup-off` and `photos-backup-on` open Photo Backup off, and
-        /// part way through a library; the engine takes its invented counts from
+        /// `photos-backup-off` and `photos-backup-on` open Photo backup off, and
+        /// part way through a library, and `photos-backup-waiting` with files
+        /// waiting for the network; the engine takes its invented counts from
         /// this name (PhotoBackupEngine.applyDemo), so no server is asked.
         static var screen: String? {
             let arguments = ProcessInfo.processInfo.arguments
@@ -536,7 +537,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","photos:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

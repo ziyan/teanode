@@ -60,9 +60,9 @@ public enum PhotoBackupLibraryError: Error, Equatable, Sendable {
     case changeTokenExpired
     /// The file is not there to read right now (iCloud cannot be reached, the
     /// phone is locked); try again later.
-    case unavailable(String)
+    case unavailable(PhotoBackupFailure)
     /// The file cannot be read at all.
-    case failed(String)
+    case failed(PhotoBackupFailure)
 }
 
 /// PhotoBackupExportedFile is a file written for an upload.
@@ -91,8 +91,10 @@ public protocol PhotoBackupLibrary: Sendable {
     /// Writes the file of one upload into `directory` under a name of its own,
     /// downloading it from iCloud if need be. On a network that costs (mobile
     /// data, a personal hotspot) it downloads only if `mayUseExpensiveNetwork`,
-    /// and otherwise throws `PhotoBackupLibraryError.unavailable`.
-    func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool) async throws -> PhotoBackupExportedFile
+    /// and otherwise throws `PhotoBackupLibraryError.unavailable`. The file is
+    /// found again in the library as the person's setting for the Hidden album
+    /// says (`includesHidden`): a hidden photo is not exported unless allowed.
+    func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool, includesHidden: Bool) async throws -> PhotoBackupExportedFile
 }
 
 // MARK: The transfer
@@ -186,35 +188,46 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     /// The server does not accept the device password.
     case signInNeeded
     /// The server will not take this file, however often it is sent.
-    case refused(message: String)
+    case refused(failure: PhotoBackupFailure)
     /// It did not work this time; the file is sent again by a later pass.
-    case retryLater(message: String?, isConnectivityFailure: Bool)
+    case retryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool)
+
+    /// What the server says when the device password is right but was made
+    /// without access to photos: the person signs in again for a new one.
+    static let passwordWithoutPhotosReason = "does not grant photos"
 
     /// Reads a finished task. `errorDescription` is the transport's error, if
     /// any; `bodyText` the start of the answer's body, which is the server's
-    /// reason for a refusal.
+    /// reason for a refusal. Only a 401, and a 403 that says the device
+    /// password does not grant photos, mean signing in again: any other 403
+    /// (photos are not available on this server, the account has no photo
+    /// library, uploads need HTTPS) is the server's reason to show, and the
+    /// file is sent again later.
     public static func interpret(
         statusCode: Int?, photoIdHeader: String?, bodyText: String?, errorDescription: String?, isConnectivityFailure: Bool
     ) -> PhotoBackupOutcome {
         if let errorDescription {
-            return .retryLater(message: errorDescription, isConnectivityFailure: isConnectivityFailure)
+            return .retryLater(failure: .systemDescription(errorDescription), isConnectivityFailure: isConnectivityFailure)
         }
-        guard let statusCode else { return .retryLater(message: nil, isConnectivityFailure: true) }
-        let reason = bodyText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let statusCode else { return .retryLater(failure: nil, isConnectivityFailure: true) }
+        let reason = bodyText?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         switch statusCode {
         case 200, 201:
             if let photoIdHeader = photoIdHeader?.trimmingCharacters(in: .whitespacesAndNewlines), !photoIdHeader.isEmpty {
                 return .uploaded(serverPhotoId: photoIdHeader)
             }
-            return .retryLater(message: "The server did not say which photo this was.", isConnectivityFailure: false)
-        case 401, 403:
+            return .retryLater(failure: .serverDidNotSayWhichPhoto, isConnectivityFailure: false)
+        case 401:
             return .signInNeeded
+        case 403:
+            if reason?.lowercased().contains(passwordWithoutPhotosReason) == true { return .signInNeeded }
+            return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
         case 408, 425, 429, 500...599:
-            return .retryLater(message: reason?.isEmpty == false ? reason : nil, isConnectivityFailure: false)
+            return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
         case 400...499:
-            return .refused(message: reason?.isEmpty == false ? reason! : "The server refused this file (\(statusCode)).")
+            return .refused(failure: .fileRefused(serverReason: reason))
         default:
-            return .retryLater(message: nil, isConnectivityFailure: false)
+            return .retryLater(failure: nil, isConnectivityFailure: false)
         }
     }
 }
@@ -362,15 +375,18 @@ public struct PhotoBackupStatus: Equatable, Sendable {
     /// The file being exported or sent first.
     public var currentFilename: String?
     public var refusedFileCount: Int
-    public var lastErrorMessage: String?
+    /// Files the last pass could not send and left for later: they wait for
+    /// the network, for iCloud, or for the server to answer again.
+    public var leftForLaterFileCount: Int
+    public var lastFailure: PhotoBackupFailure?
     public var lastPassFinishedAt: Date?
 
     public var isEnabled: Bool { phase != .off }
 
     public init(
         phase: Phase = .off, backedUpItemCount: Int = 0, libraryItemCount: Int = 0, plannedFileCount: Int = 0, finishedFileCount: Int = 0,
-        queuedFileCount: Int = 0, currentFilename: String? = nil, refusedFileCount: Int = 0, lastErrorMessage: String? = nil,
-        lastPassFinishedAt: Date? = nil
+        queuedFileCount: Int = 0, currentFilename: String? = nil, refusedFileCount: Int = 0, leftForLaterFileCount: Int = 0,
+        lastFailure: PhotoBackupFailure? = nil, lastPassFinishedAt: Date? = nil
     ) {
         self.phase = phase
         self.backedUpItemCount = backedUpItemCount
@@ -380,7 +396,8 @@ public struct PhotoBackupStatus: Equatable, Sendable {
         self.queuedFileCount = queuedFileCount
         self.currentFilename = currentFilename
         self.refusedFileCount = refusedFileCount
-        self.lastErrorMessage = lastErrorMessage
+        self.leftForLaterFileCount = leftForLaterFileCount
+        self.lastFailure = lastFailure
         self.lastPassFinishedAt = lastPassFinishedAt
     }
 
@@ -401,6 +418,9 @@ public struct PhotoBackupPassResult: Equatable, Sendable {
     /// Files left for a later pass: they wait for Wi-Fi or iCloud, or could not
     /// be queued.
     public var deferredFileCount = 0
+    /// Every file the pass left for later: those above, and those the server
+    /// or the network failed on this time, which a later pass sends again.
+    public var leftForLaterFileCount = 0
     public var wasStopped = false
 
     public init() {}
@@ -431,7 +451,6 @@ public actor PhotoBackupCoordinator {
     }
 
     private static let findPhotosBatchSize = 500
-    private static let signInMessage = "The server did not accept this iPhone's photo backup password."
 
     private let index: PhotoBackupIndex
     private let library: any PhotoBackupLibrary
@@ -456,6 +475,7 @@ public actor PhotoBackupCoordinator {
     private var finishedFileCount = 0
     private var uploadedFileCount = 0
     private var refusedFileCount = 0
+    private var leftForLaterFileCount = 0
     private var currentFilename: String?
     private var statusHandler: (@Sendable (PhotoBackupStatus) -> Void)?
 
@@ -490,8 +510,8 @@ public actor PhotoBackupCoordinator {
         return PhotoBackupStatus(
             phase: shownPhase, backedUpItemCount: summary.backedUpItemCount, libraryItemCount: summary.libraryItemCount,
             plannedFileCount: plannedFileCount, finishedFileCount: finishedFileCount, queuedFileCount: outstanding.count,
-            currentFilename: currentFilename, refusedFileCount: summary.refusedFileCount, lastErrorMessage: summary.lastErrorMessage,
-            lastPassFinishedAt: summary.lastPassFinishedAt)
+            currentFilename: currentFilename, refusedFileCount: summary.refusedFileCount, leftForLaterFileCount: leftForLaterFileCount,
+            lastFailure: summary.lastFailure, lastPassFinishedAt: summary.lastPassFinishedAt)
     }
 
     /// Asks a running pass to stop: nothing more is exported. Files already
@@ -518,9 +538,11 @@ public actor PhotoBackupCoordinator {
         finishedFileCount = 0
         uploadedFileCount = 0
         refusedFileCount = 0
+        leftForLaterFileCount = 0
         result = await performPass()
         result.uploadedFileCount = uploadedFileCount
         result.refusedFileCount = refusedFileCount
+        result.leftForLaterFileCount = leftForLaterFileCount
         result.wasStopped = isStopRequested
         isRunning = false
         currentFilename = nil
@@ -547,9 +569,11 @@ public actor PhotoBackupCoordinator {
 
         // What the session still holds is the truth about what is in flight.
         outstanding.removeAll()
-        for job in await transfer.queuedJobs() {
+        let queuedJobs = await transfer.queuedJobs()
+        for job in queuedJobs {
             outstanding[job.key] = Outstanding(sizeBytes: job.sizeBytes, filename: job.filename)
         }
+        removeLeftoverFiles(keeping: Set(queuedJobs.map(\.fileName)))
 
         let items: [PhotoBackupItem]
         let totalCount: Int
@@ -560,7 +584,7 @@ public actor PhotoBackupCoordinator {
             totalCount = read.totalCount
             newToken = read.changeToken
         } catch {
-            await index.setError(message: Self.message(of: error))
+            await index.setError(failure: Self.failure(of: error))
             phase = .idle
             return result
         }
@@ -589,6 +613,7 @@ public actor PhotoBackupCoordinator {
             // a network that costs it waits, unless the person allowed it.
             if !upload.isLocallyAvailable, !settings.usesMobileData, await network.isExpensive() {
                 result.deferredFileCount += 1
+                leftForLaterFileCount += 1
                 position += 1
                 continue
             }
@@ -602,6 +627,7 @@ public actor PhotoBackupCoordinator {
                 await waitForCompletion()
             case .deferred:
                 result.deferredFileCount += 1
+                leftForLaterFileCount += 1
                 position += 1
             case .refused:
                 position += 1
@@ -617,10 +643,13 @@ public actor PhotoBackupCoordinator {
         if !isStopRequested {
             await index.finishPass(at: now())
         }
+        // A pass that leaves files for later ends waiting for the network, not
+        // idle: the files are still to send, and the screen must not say that
+        // everything is backed up.
         if await index.summary().isSignInNeeded {
             phase = .needsSignIn
         } else {
-            phase = result.deferredFileCount > 0 ? .waitingForNetwork : .idle
+            phase = leftForLaterFileCount > 0 ? .waitingForNetwork : .idle
         }
         return result
     }
@@ -694,14 +723,15 @@ public actor PhotoBackupCoordinator {
     private func queue(_ upload: PhotoBackupUpload) async -> QueueResult {
         let exported: PhotoBackupExportedFile
         do {
-            exported = try await library.export(upload, to: outgoingDirectory, mayUseExpensiveNetwork: settings.usesMobileData)
+            exported = try await library.export(
+                upload, to: outgoingDirectory, mayUseExpensiveNetwork: settings.usesMobileData, includesHidden: settings.includesHidden)
         } catch PhotoBackupLibraryError.unavailable {
             return .deferred
-        } catch PhotoBackupLibraryError.failed(let message) {
-            await index.markRefused(localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role, message: message)
+        } catch PhotoBackupLibraryError.failed(let failure) {
+            await index.markRefused(localIdentifier: upload.localIdentifier, clientPhotoId: upload.clientPhotoId, role: upload.role, failure: failure)
             refusedFileCount += 1
             finishedFileCount += 1
-            await index.setError(message: message)
+            await index.setError(failure: failure)
             return .refused
         } catch {
             return .deferred
@@ -725,7 +755,7 @@ public actor PhotoBackupCoordinator {
         } catch {
             outstanding[job.key] = nil
             removeTemporaryFile(named: exported.fileName)
-            await index.setError(message: Self.message(of: error))
+            await index.setError(failure: Self.failure(of: error))
             return .deferred
         }
         return .queued
@@ -744,17 +774,23 @@ public actor PhotoBackupCoordinator {
             uploadedFileCount += 1
             finishedFileCount += 1
         case .signInNeeded:
-            await index.setError(message: Self.signInMessage, isSignInNeeded: true)
+            await index.setError(failure: .signInRefused, isSignInNeeded: true)
             isStopRequested = true
             await transfer.cancelAll()
             outstanding.removeAll()
-        case .refused(let message):
-            await index.markRefused(localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, message: message)
+        case .refused(let failure):
+            await index.markRefused(localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, failure: failure)
             refusedFileCount += 1
             finishedFileCount += 1
-            await index.setError(message: message)
-        case .retryLater(let message, let isConnectivityFailure):
-            if let message, !isConnectivityFailure { await index.setError(message: message) }
+            await index.setError(failure: failure)
+        case .retryLater(let failure, let isConnectivityFailure):
+            if let failure, !isConnectivityFailure { await index.setError(failure: failure) }
+            // The file is still to send and nothing in this pass sends it
+            // again: it is counted, so that the pass ends waiting for the
+            // network, and one that finished with no pass running puts the
+            // screen there too.
+            leftForLaterFileCount += 1
+            if !isRunning { phase = .waitingForNetwork }
         }
         resumeWaiters()
         await publish()
@@ -786,18 +822,75 @@ public actor PhotoBackupCoordinator {
         statusHandler(await status())
     }
 
+    /// Deletes the files in the outgoing folder that no queued upload refers
+    /// to: left by a pass that was killed after exporting a file and before
+    /// the session took it, or by a task the session lost.
+    private func removeLeftoverFiles(keeping queuedFileNames: Set<String>) {
+        let names = (try? fileManager.contentsOfDirectory(atPath: outgoingDirectory.path)) ?? []
+        for name in names where !queuedFileNames.contains(name) {
+            removeTemporaryFile(named: name)
+        }
+    }
+
     private func removeTemporaryFile(named name: String) {
         let safeName = (name as NSString).lastPathComponent
         guard !safeName.isEmpty, safeName != ".", safeName != ".." else { return }
         try? fileManager.removeItem(at: outgoingDirectory.appendingPathComponent(safeName))
     }
 
-    private static func message(of error: Error) -> String {
+    private static func failure(of error: Error) -> PhotoBackupFailure {
         switch error {
-        case PhotoBackupLibraryError.unavailable(let message), PhotoBackupLibraryError.failed(let message): message
-        default: error.localizedDescription
+        case PhotoBackupLibraryError.unavailable(let failure), PhotoBackupLibraryError.failed(let failure): failure
+        default: .systemDescription(error.localizedDescription)
         }
     }
+}
+
+// MARK: When to start again
+
+/// PhotoBackupNetworkState is what the network watcher reports of the path the
+/// phone is on.
+public struct PhotoBackupNetworkState: Equatable, Sendable {
+    /// Whether the phone can reach the network at all.
+    public let isSatisfied: Bool
+    /// Whether the network costs data: mobile data or a personal hotspot.
+    public let isExpensive: Bool
+
+    public init(isSatisfied: Bool, isExpensive: Bool) {
+        self.isSatisfied = isSatisfied
+        self.isExpensive = isExpensive
+    }
+}
+
+/// PhotoBackupResumePolicy decides whether a change of network starts a pass
+/// again. Files left for later wait for the network; when it comes back, or a
+/// network that does not cost data replaces one that does, the pass starts at
+/// once, without waiting for the app to be opened.
+public enum PhotoBackupResumePolicy {
+    public static func shouldResume(
+        from previous: PhotoBackupNetworkState?, to current: PhotoBackupNetworkState, usesMobileData: Bool, leftForLaterFileCount: Int,
+        isPassRunning: Bool
+    ) -> Bool {
+        guard leftForLaterFileCount > 0, !isPassRunning, current.isSatisfied, usesMobileData || !current.isExpensive else { return false }
+        guard let previous else { return true }
+        if !previous.isSatisfied { return true }
+        // A network that costs data was in use and one that does not has come.
+        return previous.isExpensive && !current.isExpensive
+    }
+}
+
+/// PhotoBackupSchedule says when the system is asked to run the background
+/// processing task.
+public enum PhotoBackupSchedule {
+    /// When files were left for later the task is asked for soon, since they
+    /// are waiting; otherwise it is only a look for new photos, once an hour.
+    public static func earliestBeginDelaySeconds(leftForLaterFileCount: Int) -> TimeInterval {
+        leftForLaterFileCount > 0 ? 15 * 60 : 60 * 60
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: The server

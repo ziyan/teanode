@@ -22,7 +22,10 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     private let lock = NSLock()
     private var bodies: [Int: Data] = [:]
     private var finishHandler: FinishHandler?
-    private var handlerTasks: [Task<Void, Never>] = []
+    /// The tasks reporting finished uploads that have not finished, by an id of
+    /// their own; each removes itself when it is done, so a long run with the
+    /// app open does not collect one for every file ever sent.
+    private var handlerTasks: [UUID: Task<Void, Never>] = [:]
     private var backgroundCompletion: (() -> Void)?
 
     private lazy var session: URLSession = {
@@ -99,7 +102,17 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
             Self.removeTemporaryFile(of: job)
             return
         }
-        handlerTasks.append(Task { await finishHandler(job, outcome) })
+        // The lock is held until the task is in the table, and the task takes
+        // it to take itself out, so it cannot try to leave before it is there.
+        let handlerId = UUID()
+        handlerTasks[handlerId] = Task { [weak self] in
+            await finishHandler(job, outcome)
+            self?.forgetHandlerTask(handlerId)
+        }
+    }
+
+    private func forgetHandlerTask(_ handlerId: UUID) {
+        lock.withLock { _ = handlerTasks.removeValue(forKey: handlerId) }
     }
 
     /// The system has delivered every event it started the app for. Its
@@ -107,8 +120,8 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     /// takes the app's snapshot and suspends it at that call.
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         let (tasks, completion) = lock.withLock {
-            let tasks = handlerTasks
-            handlerTasks = []
+            let tasks = Array(handlerTasks.values)
+            handlerTasks = [:]
             let completion = backgroundCompletion
             backgroundCompletion = nil
             return (tasks, completion)

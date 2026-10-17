@@ -25,8 +25,10 @@ struct PhotoViewer: View {
         self.listKey = listKey
         _currentPhotoId = State(initialValue: openedPhotoId)
         #if DEBUG
-            // `-TeaNodeScreen photos-viewer-described` opens Info over the viewer.
-            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-described" { _isShowingInfo = State(initialValue: true) }
+            // `-TeaNodeScreen photos-viewer-described` and `photos-viewer-failed` open Info over the viewer.
+            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-failed" {
+                _isShowingInfo = State(initialValue: true)
+            }
         #endif
     }
 
@@ -42,7 +44,7 @@ struct PhotoViewer: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $isShowingInfo) {
-                    if let current { PhotoInfoView(photo: current, model: model, onAskTeaNode: askTeaNode) }
+                    if let current { PhotoInfoView(photo: current, model: model, onAskAgent: askAgent) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
@@ -94,14 +96,13 @@ struct PhotoViewer: View {
                 Menu {
                     AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
                     if let albumId = listKey.albumId, let album = model.albums?.first(where: { $0.id == albumId }) {
-                        Button("Use as Album Cover", systemImage: "rectangle.stack.badge.person.crop") {
+                        Button("Use as album cover", systemImage: "rectangle.stack.badge.person.crop") {
                             Task { await model.setCover(of: album, to: current) }
                         }
-                        Button("Remove from Album", systemImage: "rectangle.stack.badge.minus") {
+                        Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
                             let next = neighbor(of: current)
                             Task {
-                                await model.remove([current], fromAlbum: albumId)
-                                leave(movingTo: next)
+                                if await model.remove([current], fromAlbum: albumId) { leave(movingTo: next) }
                             }
                         }
                     }
@@ -116,8 +117,7 @@ struct PhotoViewer: View {
                     Button("Restore", systemImage: "arrow.uturn.backward") {
                         let next = neighbor(of: current)
                         Task {
-                            await model.restore(current)
-                            leave(movingTo: next)
+                            if await model.restore(current) { leave(movingTo: next) }
                         }
                     }
                 }
@@ -127,13 +127,12 @@ struct PhotoViewer: View {
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    Button("Delete Forever", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
-                        .confirmationDialog("Delete this photo for good?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
-                            Button("Delete Forever", role: .destructive) {
+                    Button("Delete forever", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                        .confirmationDialog("Delete this photo forever?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+                            Button("Delete forever", role: .destructive) {
                                 let next = neighbor(of: current)
                                 Task {
-                                    await model.deleteForever(current)
-                                    leave(movingTo: next)
+                                    if await model.deleteForever(current) { leave(movingTo: next) }
                                 }
                             }
                         } message: {
@@ -177,8 +176,7 @@ struct PhotoViewer: View {
                             Button("Move to Trash", role: .destructive) {
                                 let next = neighbor(of: current)
                                 Task {
-                                    await model.moveToTrash(current)
-                                    leave(movingTo: next)
+                                    if await model.moveToTrash(current) { leave(movingTo: next) }
                                 }
                             }
                         }
@@ -190,7 +188,7 @@ struct PhotoViewer: View {
     /// Opens the conversation with a question about the photo in its box, for
     /// the person to add to and send. There is no way for a message to point
     /// at a photo yet, so the question names it.
-    private func askTeaNode(about photo: Photo) {
+    private func askAgent(about photo: Photo) {
         app.draftedMessage = String(localized: "Look at photo \(photo.id) and tell me about it.")
         isShowingInfo = false
         dismiss()
@@ -244,7 +242,9 @@ struct PhotoPage: View {
                 ContentUnavailableView {
                     Label("Cannot show this photo", systemImage: "exclamationmark.circle")
                 } description: {
-                    Text("TeaNode could not make a picture of it.")
+                    Text(photo.processingErrorMessage.isEmpty ? String(localized: "No picture could be made of it.") : photo.processingErrorMessage)
+                } actions: {
+                    Button("Try again") { Task { await model.retryProcessing([photo]) } }
                 }
             } else {
                 ProgressView()
@@ -291,9 +291,18 @@ struct PhotoPage: View {
                         .background(.regularMaterial, in: .rect(cornerRadius: 12))
                         .padding()
                 } else if photo.isFailed {
-                    Label("Cannot play this video", systemImage: "exclamationmark.circle")
-                        .padding()
-                        .background(.regularMaterial, in: .rect(cornerRadius: 12))
+                    VStack(spacing: 12) {
+                        Label("Cannot play this video", systemImage: "exclamationmark.circle")
+                        if !photo.processingErrorMessage.isEmpty {
+                            Text(photo.processingErrorMessage)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Try again") { Task { await model.retryProcessing([photo]) } }
+                            .buttonStyle(.bordered)
+                    }
+                    .padding()
+                    .background(.regularMaterial, in: .rect(cornerRadius: 12))
                 } else {
                     ProgressView()
                 }
@@ -349,7 +358,7 @@ struct PhotoPage: View {
             videoProblemText = nil
             player = AVPlayer(url: address)
         } catch {
-            if !Task.isCancelled { videoProblemText = error.localizedDescription }
+            if !Task.isCancelled { videoProblemText = model.describe(error) }
         }
     }
 
@@ -363,7 +372,7 @@ struct PhotoPage: View {
             isPlayingLiveVideo = true
             livePlayer.play()
         } catch {
-            model.problemText = error.localizedDescription
+            model.problemText = model.describe(error)
         }
     }
 
@@ -375,18 +384,26 @@ struct PhotoPage: View {
 }
 
 /// PhotoInfoView is what is known of one photo: when and where it was taken,
-/// with what, how large it is and what it is called, the albums it is in, the
-/// people in it, and what a model wrote about the picture.
+/// with what, how large it is and what it is called, why it could not be made
+/// ready if that failed, the albums it is in and the people in it (each opens),
+/// and what a model wrote about the picture.
 struct PhotoInfoView: View {
     let photo: Photo
     let model: PhotosModel
-    let onAskTeaNode: (Photo) -> Void
+    let onAskAgent: (Photo) -> Void
     @State private var detail: PhotoDetail?
+    /// Why the photo's details could not be read; nil when they could, or have
+    /// not been asked for yet.
+    @State private var detailFailureText: String?
     @State private var isAskingToDescribe = false
     @State private var hasGivenUpWaiting = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
 
     private var connection: Connection { model.connection }
+    /// The photo as the details last read it, which is newer than the one the
+    /// viewer opened this with once it was asked to be made ready again.
+    private var shownPhoto: Photo { detail?.photo ?? photo }
     private var description: PhotoDescription { detail?.photoDescription ?? PhotoDescription() }
     private var isDescriptionAvailable: Bool { model.library?.isDescriptionAvailable == true }
     private var people: [PhotoFace] { (detail?.faces ?? []).filter(\.isGrouped) }
@@ -394,11 +411,17 @@ struct PhotoInfoView: View {
     var body: some View {
         NavigationStack {
             List {
-                LabeledContent("Date") {
-                    Text(PhotoTimeline.takenText(of: photo) ?? String(localized: "Unknown"))
+                if shownPhoto.isFailed {
+                    failureSection
                 }
-                if !photo.placeName.isEmpty {
-                    LabeledContent("Place") { Text(photo.placeName) }
+                if let detailFailureText {
+                    detailFailureSection(detailFailureText)
+                }
+                LabeledContent("Date") {
+                    Text(PhotoTimeline.takenText(of: shownPhoto) ?? String(localized: "Unknown"))
+                }
+                if !shownPhoto.placeName.isEmpty {
+                    LabeledContent("Place") { Text(shownPhoto.placeName) }
                 }
                 if !cameraText.isEmpty {
                     LabeledContent("Camera") { Text(cameraText) }
@@ -412,7 +435,11 @@ struct PhotoInfoView: View {
                 if let albums = detail?.albums, !albums.isEmpty {
                     Section("Albums") {
                         ForEach(albums) { album in
-                            Label(album.albumTitle, systemImage: "rectangle.stack")
+                            NavigationLink {
+                                PhotoAlbumScreen(model: model, albumId: album.id)
+                            } label: {
+                                Label(album.albumTitle, systemImage: "rectangle.stack")
+                            }
                         }
                     }
                 }
@@ -430,35 +457,84 @@ struct PhotoInfoView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            // The viewer's toasts are behind this sheet, so it shows its own.
+            .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
         }
         .presentationDetents([.medium, .large])
-        .task { detail = try? await connection.photoDetail(photo.id) }
+        .task { await loadDetail() }
         .task(id: description.isDescriptionRequested) { await followDescription() }
         .task { if model.library == nil { await model.loadLibrary() } }
     }
 
+    /// Reads the photo's details. A failure is kept to be shown with a way to
+    /// try again, and what was read before stays.
+    private func loadDetail() async {
+        do {
+            detail = try await connection.photoDetail(photo.id)
+            detailFailureText = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            detailFailureText = model.describe(error)
+        }
+    }
+
+    // MARK: When the details cannot be read, or the photo failed
+
+    private func detailFailureSection(_ failureText: String) -> some View {
+        Section {
+            Label("The details of this photo could not be read.", systemImage: "exclamationmark.triangle")
+            Text(failureText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button("Try again", systemImage: "arrow.clockwise") { Task { await loadDetail() } }
+        }
+    }
+
+    /// Why the picture could not be made, in the server's plain words, and a
+    /// way to ask for it to be made again.
+    private var failureSection: some View {
+        Section {
+            Label("This photo could not be made ready.", systemImage: "exclamationmark.circle")
+            if !shownPhoto.processingErrorMessage.isEmpty {
+                Text(shownPhoto.processingErrorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Try again", systemImage: "arrow.clockwise") {
+                Task {
+                    if await model.retryProcessing([shownPhoto]) { await loadDetail() }
+                }
+            }
+        }
+    }
+
     // MARK: People
 
-    /// The people in the photo, each with their face. A person who is not who
-    /// the server says is taken out of the group with a touch and hold.
+    /// The people in the photo, each with their face, opening that person. A
+    /// person who is not who the server says is taken out of the group with a
+    /// touch and hold.
     private var peopleSection: some View {
         Section {
             ForEach(people) { face in
-                HStack(spacing: 12) {
-                    FacePictureView(facePictureUrl: face.facePictureUrl, name: shownName(of: face), connection: connection)
-                        .frame(width: 40, height: 40)
-                    Text(shownName(of: face))
-                        .foregroundStyle(face.contactName.isEmpty ? .secondary : .primary)
+                NavigationLink {
+                    PhotoPersonScreen(model: model, photoFaceGroupId: face.photoFaceGroupId)
+                } label: {
+                    HStack(spacing: 12) {
+                        FacePictureView(facePictureUrl: face.facePictureUrl, name: shownName(of: face), connection: connection)
+                            .frame(width: 40, height: 40)
+                        Text(shownName(of: face))
+                            .foregroundStyle(face.contactName.isEmpty ? .secondary : .primary)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
                 .contextMenu {
                     Button(role: .destructive) {
                         Task {
-                            if await model.removeFace(face) { detail = try? await connection.photoDetail(photo.id) }
+                            if await model.removeFace(face) { await loadDetail() }
                         }
                     } label: {
                         if face.contactName.isEmpty {
-                            Label("Not This Person", systemImage: "person.crop.circle.badge.xmark")
+                            Label("Not this person", systemImage: "person.crop.circle.badge.xmark")
                         } else {
                             Label("Not \(face.contactName)", systemImage: "person.crop.circle.badge.xmark")
                         }
@@ -510,7 +586,7 @@ struct PhotoInfoView: View {
                 .accessibilityElement(children: .combine)
             } else if description.isDescribed {
                 if isDescriptionAvailable {
-                    Button("Describe Again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
+                    Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
                 }
             } else if isDescriptionAvailable {
                 Button("Describe", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
@@ -518,14 +594,19 @@ struct PhotoInfoView: View {
                 Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
                     .foregroundStyle(.secondary)
             }
-            Button("Ask TeaNode", systemImage: "bubble.left") { onAskTeaNode(photo) }
+            Button(askAgentText, systemImage: "bubble.left") { onAskAgent(photo) }
         } header: {
             Text("Description")
         } footer: {
             if !description.isDescribed, !description.isDescriptionRequested, isDescriptionAvailable {
-                Text("TeaNode looks at the picture and writes what it shows, so a search can find it.")
+                Text("\(app.agentTitle) looks at the picture and writes what it shows, so a search can find it.")
             }
         }
+    }
+
+    /// The assistant is named as the conversation names it.
+    private var askAgentText: String {
+        app.agentName.isEmpty ? String(localized: "Ask your agent") : String(localized: "Ask \(app.agentName)")
     }
 
     private var waitingText: String {
@@ -543,10 +624,10 @@ struct PhotoInfoView: View {
                 detail = PhotoDetail(
                     photo: held.photo, photoFiles: held.photoFiles, photoPreviews: held.photoPreviews, albums: held.albums, photoDescription: asked, faces: held.faces)
             } else {
-                detail = try? await connection.photoDetail(photo.id)
+                await loadDetail()
             }
         } catch {
-            model.problemText = error.localizedDescription
+            model.problemText = model.describe(error)
         }
     }
 
@@ -564,26 +645,26 @@ struct PhotoInfoView: View {
             try? await Task.sleep(for: .seconds(PhotoDescriptionPolling.intervalSeconds))
             waitedSeconds += PhotoDescriptionPolling.intervalSeconds
             guard !Task.isCancelled else { return }
-            if let fresh = try? await connection.photoDetail(photo.id) { detail = fresh }
+            await loadDetail()
         }
     }
 
     // MARK: Details
 
     private var cameraText: String {
-        [photo.cameraMake, photo.cameraModel].filter { !$0.isEmpty }.joined(separator: " ")
+        [shownPhoto.cameraMake, shownPhoto.cameraModel].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     private var fileName: String {
         if let name = detail?.originalFile?.originalFilename, !name.isEmpty { return name }
-        return photo.originalFilename
+        return shownPhoto.originalFilename
     }
 
     /// The pixels, and the bytes of the original once they are known.
     private var sizeText: String {
         var parts: [String] = []
-        if photo.widthPixels > 0, photo.heightPixels > 0 {
-            parts.append("\(photo.widthPixels) × \(photo.heightPixels)")
+        if shownPhoto.widthPixels > 0, shownPhoto.heightPixels > 0 {
+            parts.append("\(shownPhoto.widthPixels) × \(shownPhoto.heightPixels)")
         }
         if let bytes = detail?.originalFile?.fileSizeBytes {
             parts.append(bytes.formatted(.byteCount(style: .file)))
@@ -595,19 +676,44 @@ struct PhotoInfoView: View {
 // MARK: Sharing and saving
 
 /// PhotoShareLink shares the photo's file. The file is read from the server
-/// only when the person picks where to send it.
+/// only when the person picks where to send it. A photo that was edited, or
+/// is a Live Photo, has a menu instead, to share its original, its edited
+/// version or its video.
 struct PhotoShareLink: View {
     let photo: Photo
     let connection: Connection
 
     var body: some View {
-        if photo.isVideo {
-            ShareLink(item: PhotoShareMovie(connection: connection, photo: photo), preview: SharePreview(photo.fileName)) {
+        if photo.hasEditedFile || photo.hasLiveVideoFile {
+            Menu {
+                originalLink(label: "Share original")
+                if photo.hasEditedFile {
+                    ShareLink(item: PhotoShareFile(connection: connection, photo: photo, role: "edited"), preview: SharePreview(photo.fileName)) {
+                        Label("Share edited version", systemImage: "slider.horizontal.3")
+                    }
+                }
+                if photo.hasLiveVideoFile {
+                    ShareLink(item: PhotoShareFile(connection: connection, photo: photo, role: "liveVideo"), preview: SharePreview(photo.fileName)) {
+                        Label("Share Live Photo video", systemImage: "livephoto")
+                    }
+                }
+            } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
         } else {
+            originalLink(label: "Share")
+        }
+    }
+
+    @ViewBuilder
+    private func originalLink(label: LocalizedStringKey) -> some View {
+        if photo.isVideo {
+            ShareLink(item: PhotoShareMovie(connection: connection, photo: photo), preview: SharePreview(photo.fileName)) {
+                Label(label, systemImage: "square.and.arrow.up")
+            }
+        } else {
             ShareLink(item: PhotoShareImage(connection: connection, photo: photo), preview: SharePreview(photo.fileName)) {
-                Label("Share", systemImage: "square.and.arrow.up")
+                Label(label, systemImage: "square.and.arrow.up")
             }
         }
     }
@@ -630,14 +736,33 @@ struct PhotosShareLink: View {
 }
 
 /// PhotoShareFile is one photo's file, of whatever kind, handed to the share
-/// sheet.
+/// sheet: the original (and the preview when that cannot be read) or, when a
+/// role is given, "edited" or "liveVideo" and nothing else.
 struct PhotoShareFile: Transferable, Sendable {
     let connection: Connection
     let photo: Photo
+    let role: String?
+
+    init(connection: Connection, photo: Photo) {
+        self.connection = connection
+        self.photo = photo
+        role = nil
+    }
+
+    init(connection: Connection, photo: Photo, role: String) {
+        self.connection = connection
+        self.photo = photo
+        self.role = role
+    }
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .item) { item in
-            let download = try await item.connection.downloadPhotoFile(item.photo)
+            let download: PhotoDownload
+            if let role = item.role {
+                download = try await item.connection.downloadPhotoFile(item.photo, role: role)
+            } else {
+                download = try await item.connection.downloadPhotoFile(item.photo)
+            }
             return SentTransferredFile(download.fileURL)
         }
     }

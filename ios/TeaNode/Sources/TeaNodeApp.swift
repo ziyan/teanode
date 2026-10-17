@@ -388,7 +388,7 @@ struct SettingsForm: View {
                         }
                     }
                 }
-                if let connection = app.connection, app.services?.isPhotosEnabled == true {
+                if let connection = app.connection, app.isPhotosOffered {
                     Section {
                         NavigationLink {
                             PhotoBackupView(connection: connection)
@@ -535,7 +535,7 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
-                case "photos-backup-off", "photos-backup-on": PhotoBackupView(connection: connection)
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting": PhotoBackupView(connection: connection)
                 case "photos-faces": PhotoFacesSettingsView(connection: connection)
                 case "devices": DevicesView(connection: connection)
                 case "rules":

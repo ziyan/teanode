@@ -1,5 +1,6 @@
 import BackgroundTasks
 import Foundation
+import Network
 import Observation
 import TeaNodeKit
 import UIKit
@@ -9,9 +10,9 @@ import UIKit
 /// PhotoBackupCoordinator (TeaNodeKit), which reads the library, queues the
 /// files with the background URLSession (PhotoBackupSession) and records what
 /// went up. This class decides when a pass runs: when the app comes to the
-/// foreground, when the person taps Back up now (a continued processing task, so
-/// that it goes on with the app in the background), and overnight on power
-/// (a processing task).
+/// foreground, when the network comes back while files wait for it, when the
+/// person taps Back up now (a continued processing task, so that it goes on with
+/// the app in the background), and overnight on power (a processing task).
 @MainActor
 @Observable
 final class PhotoBackupEngine {
@@ -60,6 +61,10 @@ final class PhotoBackupEngine {
     /// Told of every status while a continued processing task runs, to report
     /// progress to the system.
     @ObservationIgnored private var progressSink: (@MainActor (PhotoBackupStatus) -> Void)?
+    /// Watches the network while the app runs, to start a pass again when it
+    /// comes back and files are waiting for it.
+    @ObservationIgnored private var networkMonitor: NWPathMonitor?
+    @ObservationIgnored private var lastNetworkState: PhotoBackupNetworkState?
 
     private init() {
         usesMobileData = preferences.usesMobileData
@@ -75,7 +80,7 @@ final class PhotoBackupEngine {
         guard let group = Bundle.main.object(forInfoDictionaryKey: "TeaNodeAppGroup") as? String,
             let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
         else {
-            throw TeaNodeError.refused("Backup storage is unavailable. Check this app's shared-container entitlement.")
+            throw TeaNodeError.refused(String(localized: "Photo backup storage is unavailable. Check this app's shared-container entitlement."))
         }
         return container.appendingPathComponent("PhotoBackup", isDirectory: true)
     }
@@ -136,10 +141,44 @@ final class PhotoBackupEngine {
         PhotoBackupSession.shared.attach { job, outcome in
             await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
         }
+        startWatchingNetwork()
         Task {
             await self.refresh()
             self.startPasses()
         }
+    }
+
+    // MARK: The network
+
+    /// Watches the network while the app runs. When it comes back, or Wi-Fi
+    /// replaces mobile data, and files were left for later, a pass starts at
+    /// once instead of waiting for the app to be opened again.
+    private func startWatchingNetwork() {
+        guard networkMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { path in
+            let state = PhotoBackupNetworkState(isSatisfied: path.status == .satisfied, isExpensive: path.isExpensive)
+            Task { @MainActor in PhotoBackupEngine.shared.networkChanged(to: state) }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.teanode.app.photo-backup.path"))
+        networkMonitor = monitor
+    }
+
+    private func stopWatchingNetwork() {
+        networkMonitor?.cancel()
+        networkMonitor = nil
+        lastNetworkState = nil
+    }
+
+    private func networkChanged(to state: PhotoBackupNetworkState) {
+        let previous = lastNetworkState
+        lastNetworkState = state
+        guard isEnabled,
+            PhotoBackupResumePolicy.shouldResume(
+                from: previous, to: state, usesMobileData: usesMobileData, leftForLaterFileCount: status.leftForLaterFileCount,
+                isPassRunning: passTask != nil)
+        else { return }
+        startPasses()
     }
 
     // MARK: Status
@@ -177,7 +216,7 @@ final class PhotoBackupEngine {
         apply(
             PhotoBackupStatus(
                 phase: phase, backedUpItemCount: summary.backedUpItemCount, libraryItemCount: summary.libraryItemCount,
-                refusedFileCount: summary.refusedFileCount, lastErrorMessage: summary.lastErrorMessage,
+                refusedFileCount: summary.refusedFileCount, lastFailure: summary.lastFailure,
                 lastPassFinishedAt: summary.lastPassFinishedAt))
     }
 
@@ -196,7 +235,7 @@ final class PhotoBackupEngine {
     /// Turns backup on: asks for the whole library, makes a device password for
     /// photos only, keeps it in the keychain, and starts the first pass.
     func turnOn(connection: Connection) async {
-        guard !isWorking else { return }
+        guard !isWorking, AppModel.shared.isPhotosOffered else { return }
         isWorking = true
         defer { isWorking = false }
         problemText = nil
@@ -208,7 +247,7 @@ final class PhotoBackupEngine {
         accessProblem = nil
         do {
             let credential = try await connection.createPhotoBackupCredential(named: Self.passwordName())
-            try credentials.save(credential, accountKey: connection.accountKey)
+            try await saveOrRevoke(credential, accountKey: connection.accountKey, connection: connection)
             preferences.enabledAccountKey = connection.accountKey
             enabledAccountKey = connection.accountKey
             credentialName = credential.credentialName
@@ -218,9 +257,22 @@ final class PhotoBackupEngine {
             PhotoBackupSession.shared.attach { job, outcome in
                 await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
             }
+            startWatchingNetwork()
             startPasses()
         } catch {
             problemText = AppModel.shared.describe(error)
+        }
+    }
+
+    /// Keeps a device password the server just made in the keychain. When the
+    /// keychain refuses it, the server's copy is revoked before the error is
+    /// raised, so that no password nobody holds is left to work on the server.
+    private func saveOrRevoke(_ credential: PhotoBackupCredential, accountKey: String, connection: Connection) async throws {
+        do {
+            try credentials.save(credential, accountKey: accountKey)
+        } catch {
+            try? await connection.revokeSyncCredential(credential.credentialId)
+            throw error
         }
     }
 
@@ -233,7 +285,14 @@ final class PhotoBackupEngine {
         defer { isWorking = false }
         problemText = nil
         guard let accountKey = enabledAccountKey else { return }
+        await turnOffNow(accountKey: accountKey, connection: connection)
+    }
+
+    /// The part of turning off that waits for nothing: the pass that is
+    /// working is cancelled first, then backup is turned off.
+    private func turnOffNow(accountKey: String, connection: Connection?) async {
         await stopEverything()
+        stopWatchingNetwork()
         preferences.enabledAccountKey = nil
         enabledAccountKey = nil
         credentialName = nil
@@ -245,21 +304,31 @@ final class PhotoBackupEngine {
         try? credentials.delete(accountKey: accountKey)
         let revoking = connection?.accountKey == accountKey ? connection : Self.makeConnection(accountKey: accountKey)
         guard let revoking else {
-            problemText = String(localized: "Backup is off. Revoke its password under Devices, then Sync passwords.")
+            problemText = String(localized: "Photo backup is off. Revoke its password under Devices, then Sync passwords.")
             return
         }
         do {
             try await revoking.revokeSyncCredential(credential.credentialId)
-            doneText = String(localized: "Backup is off and its password is revoked.")
+            doneText = String(localized: "Photo backup is off and its password is revoked.")
         } catch {
-            problemText = String(localized: "Backup is off, but its password could not be revoked. Revoke it under Devices, then Sync passwords.")
+            problemText = String(localized: "Photo backup is off, but its password could not be revoked. Revoke it under Devices, then Sync passwords.")
         }
     }
 
-    /// The account backup is on for is being signed out of: backup goes with it.
+    /// An account is being signed out of or removed. If backup is on for it,
+    /// the pass that is working is cancelled and backup turned off, even while
+    /// a switch is being turned (nothing waits for that to finish). What is
+    /// kept for the account goes with it: the index of what went up, and the
+    /// previews on disk and in memory.
     func accountRemoved(accountKey: String, connection: Connection?) async {
-        guard enabledAccountKey == accountKey else { return }
-        await turnOff(connection: connection)
+        if enabledAccountKey == accountKey || preferences.enabledAccountKey == accountKey {
+            isWorking = true
+            defer { isWorking = false }
+            problemText = nil
+            await turnOffNow(accountKey: accountKey, connection: connection)
+        }
+        if let index = try? makeIndex() { await index.forget(accountKey: accountKey) }
+        await PhotoImages.forget(accountKey: accountKey)
     }
 
     /// The server did not accept the device password. A new one is made, the
@@ -272,7 +341,7 @@ final class PhotoBackupEngine {
         do {
             let old = try? credentials.load(accountKey: accountKey)
             let credential = try await connection.createPhotoBackupCredential(named: Self.passwordName())
-            try credentials.save(credential, accountKey: accountKey)
+            try await saveOrRevoke(credential, accountKey: accountKey, connection: connection)
             if let old { try? await connection.revokeSyncCredential(old.credentialId) }
             credentialName = credential.credentialName
             coordinator = nil
@@ -296,12 +365,26 @@ final class PhotoBackupEngine {
     }
 
     private func stopEverything() async {
+        let working = passTask
+        working?.cancel()
         await coordinator?.stop()
+        // The pass ends soon after it is asked to stop; one stuck on a long
+        // download from iCloud is not waited for.
+        if let working { await Self.wait(for: working, upTo: .seconds(5)) }
         await PhotoBackupSession.shared.cancelAll()
         passTask = nil
         coordinator = nil
         coordinatorAccountKey = nil
         if let outgoing = try? Self.outgoingDirectory() { try? FileManager.default.removeItem(at: outgoing) }
+    }
+
+    private static func wait(for task: Task<Void, Never>, upTo limit: Duration) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await task.value }
+            group.addTask { try? await Task.sleep(for: limit) }
+            await group.next()
+            group.cancelAll()
+        }
     }
 
     // MARK: Passes
@@ -337,7 +420,7 @@ final class PhotoBackupEngine {
             repeat {
                 guard let self else { return }
                 result = await coordinator.runPass(settings: self.currentSettings)
-            } while result.uploadedFileCount > 0 && !result.wasStopped && !result.wasAlreadyRunning
+            } while result.uploadedFileCount > 0 && !result.wasStopped && !result.wasAlreadyRunning && !Task.isCancelled
             await self?.passesEnded()
         }
         passTask = task
@@ -409,7 +492,8 @@ final class PhotoBackupEngine {
         let request = BGProcessingTaskRequest(identifier: Self.processingIdentifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = true
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60 * 60)
+        // Soon when files wait for the network, otherwise only a look for new photos.
+        request.earliestBeginDate = Date(timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: status.leftForLaterFileCount))
         try? BGTaskScheduler.shared.submit(request)
     }
 
@@ -455,10 +539,17 @@ final class PhotoBackupEngine {
     #if DEBUG
         /// The two Photo Backup screens CI photographs, with invented counts.
         private func applyDemo() {
-            let isOn = DemoServer.screen == "photos-backup-on"
+            let isWaiting = DemoServer.screen == "photos-backup-waiting"
+            let isOn = DemoServer.screen == "photos-backup-on" || isWaiting
             enabledAccountKey = isOn ? "demo.example.com|robin" : nil
             credentialName = isOn ? "Robin's iPhone photo backup" : nil
             accessProblem = nil
+            if isWaiting {
+                status = PhotoBackupStatus(
+                    phase: .waitingForNetwork, backedUpItemCount: 3_890, libraryItemCount: 3_912, leftForLaterFileCount: 22,
+                    lastFailure: .serverReason("photo storage is unavailable"), lastPassFinishedAt: Date(timeIntervalSinceNow: -600))
+                return
+            }
             status =
                 isOn
                 ? PhotoBackupStatus(
