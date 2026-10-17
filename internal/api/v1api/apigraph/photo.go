@@ -71,6 +71,9 @@ type ListPhotosArguments struct {
 	NearLatitude           *float64 `json:"nearLatitude"`
 	NearLongitude          *float64 `json:"nearLongitude"`
 	NearDistanceKilometers *float64 `json:"nearDistanceKilometers"`
+
+	// AlbumID keeps the photos of one album.
+	AlbumID string `json:"albumId" graphapi:"nullable"`
 }
 
 // PhotoArguments names one photo.
@@ -106,6 +109,9 @@ type PhotoView struct {
 	Photo         *models.Photo          `json:"photo"`
 	PhotoFiles    []*models.PhotoFile    `json:"photoFiles"`
 	PhotoPreviews []*models.PhotoPreview `json:"photoPreviews"`
+
+	// Albums are the albums the photo is in, by title.
+	Albums []*models.PhotoAlbumReference `json:"albums"`
 }
 
 // PhotoLibraryView is what a library page shows beside the photos: how much
@@ -196,6 +202,7 @@ func photoFilter(arguments ListPhotosArguments) *db.PhotoFilter {
 		BeforePhotoID: arguments.BeforePhotoID, Offset: arguments.Offset, PageSize: arguments.PageSize, IsFavorite: arguments.IsFavorite, IsTrashed: arguments.IsTrashed != nil && *arguments.IsTrashed,
 		TakenAfter: arguments.TakenAfter, TakenBefore: arguments.TakenBefore, SearchText: arguments.SearchText,
 		NearLatitude: arguments.NearLatitude, NearLongitude: arguments.NearLongitude, NearDistanceKilometers: arguments.NearDistanceKilometers,
+		AlbumID: arguments.AlbumID,
 	}
 	if filter.PageSize == 0 {
 		filter.PageSize = photoPageSize
@@ -261,7 +268,11 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	if err := self.withPreviewAddresses(ctx, principal.User.ID, []*models.Photo{found}); err != nil {
 		return nil, translateError(err)
 	}
-	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews}, nil
+	albums, err := transaction.ListPhotoAlbumsOfPhoto(principal.User.ID, found.ID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums}, nil
 }
 
 func (self *graph) ReadPhotoLibrary(ctx context.Context) (*PhotoLibraryView, error) {

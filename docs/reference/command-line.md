@@ -144,7 +144,7 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
-| `photo` | your library of photos and videos: `list`, `show`, `upload`, `download`, `favorite`, `trash`, `restore`, `delete`, `empty-trash`, `library`; see below |
+| `photo` | your library of photos and videos: `list`, `show`, `upload`, `download`, `favorite`, `trash`, `restore`, `delete`, `empty-trash`, `library`, and `album` for named sets of photos; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `api` | everything else, straight from the schema |
 
@@ -465,14 +465,22 @@ prints data takes `--json`.
 
 | Command | What it does |
 | --- | --- |
-| `teanode photo list [--favorites] [--trash] [--search WORDS] [--after DATE] [--before DATE] [--kind picture\|video\|livePhoto] [--limit N] [--continue-after ID]` | the library, newest first: id, when it was taken (in the camera's zone, where the file says), kind, place, size, length, state and file name. `--search` keeps photos where every word is in the place, the file name or the camera; a date is `2025-07-12` (that day in your zone) or an RFC 3339 time. A full page says on standard error how many photos match, and the id to continue after |
-| `teanode photo show ID` | everything known about a photo: its date, place, camera, size, files and how its previews are going |
+| `teanode photo list [--favorites] [--trash] [--search WORDS] [--after DATE] [--before DATE] [--kind picture\|video\|livePhoto] [--album ID] [--limit N] [--continue-after ID]` | the library, newest first: id, when it was taken (in the camera's zone, where the file says), kind, place, size, length, state and file name. `--search` keeps photos where every word is in the place, the file name or the camera; a date is `2025-07-12` (that day in your zone) or an RFC 3339 time. A full page says on standard error how many photos match, and the id to continue after |
+| `teanode photo show ID` | everything known about a photo: its date, place, camera, size, files, the albums it is in and how its previews are going |
 | `teanode photo upload FILE-OR-FOLDER...` | add pictures and videos. A folder is walked, leaving out names that start with a dot and files that are not pictures or videos; a file named on the command line is always sent. Each file is hashed (SHA-256, which is the name the library knows the photo by), the library is asked which of the first 200 it already has, and only the rest are sent. One line a file says `uploaded`, `already there` or `failed`, then a summary such as `12 uploaded, 3 already there, 1 failed`; the command fails if any file did |
 | `teanode photo download ID [--file original\|edited\|liveVideo] [--output PATH] [--force]` | save one of a photo's files, under its own name here by default, or at the path given, or in the folder given. It never replaces a file that is there unless `--force` says so, and a file that arrives short is not kept |
 | `teanode photo favorite ID [--off]` | make a photo a favorite, or take it back |
 | `teanode photo trash ID...` / `restore ID...` | move photos to the trash and back; the trash is emptied after the days `library` shows |
 | `teanode photo delete ID...` / `empty-trash` | delete forever the photos in the trash, or all of them; both ask first, or take `--force`. The photos leave the trash at once and their files are deleted by the server within minutes |
 | `teanode photo library` | how many photos and videos there are, how much room they take, the largest file and the account's limit |
+| `teanode photo album list` | your albums, the most recently changed first: id, title, how many photos are in each and the days they span. A photo in the trash is not counted until it is restored |
+| `teanode photo album show ID [--limit N] [--continue-after ID]` | an album and its photos, newest first, in the same columns as `photo list`; a full page says on standard error how to continue |
+| `teanode photo album create TITLE [PHOTO-ID...]` | make an album, empty or with photos in it (at most 500 at once). A title is from 1 to 255 characters once trimmed |
+| `teanode photo album rename ID TITLE` | give an album another title |
+| `teanode photo album delete ID` | delete an album. Its photos stay in your library. It asks first, or takes `--force` |
+| `teanode photo album add ID PHOTO-ID...` / `remove ID PHOTO-ID...` | put photos in an album, or take them out; they stay in your library either way. `add` leaves alone photos already in the album and says how many it added; a photo that is not yours is not found, and then nothing is added |
+| `teanode photo album cover ID PHOTO-ID` | choose which photo of the album stands for it. Until you do, and while that photo is in the trash, the album is shown by its newest photo |
+| `teanode photo album suggest [--after DATE] [--before DATE]` | trips and events among the photos that are in no album, newest first: a run of at least 12 photos with no gap of more than 6 hours between them. Each shows its days, the places it covers (the one with most photos first), a proposed title in English and how many photos it has. Nothing is created: make the album with `album create`, giving it the photos `photo list --after --before` finds between the exact times `--json` gives |
 
 Uploads speak the server's resumable upload endpoint, in parts of 8 MiB: a
 photo that fits in one part is one request, and a larger one starts the

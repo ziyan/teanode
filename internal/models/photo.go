@@ -2,7 +2,9 @@ package models
 
 import (
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // PhotoKind says what a photo is made of.
@@ -243,4 +245,89 @@ type PhotoPreview struct {
 // PhotoPreviewFileID is the name of a preview in the blob store.
 func PhotoPreviewFileID(photoId string, photoPreviewSize PhotoPreviewSize) string {
 	return fmt.Sprintf("photo-preview-%s-%s", photoId, photoPreviewSize)
+}
+
+// MaximumPhotoAlbumTitleLength is the most characters an album's title holds.
+const MaximumPhotoAlbumTitleLength = 255
+
+// NormalizePhotoAlbumTitle trims a title and refuses one that is empty or too
+// long, saying what the limit is.
+func NormalizePhotoAlbumTitle(albumTitle string) (string, error) {
+	albumTitle = strings.TrimSpace(albumTitle)
+	if length := utf8.RuneCountInString(albumTitle); length < 1 || length > MaximumPhotoAlbumTitleLength {
+		return "", ValidationErrors{{Path: "albumTitle", Message: fmt.Sprintf("must be from 1 to %d characters", MaximumPhotoAlbumTitleLength)}}
+	}
+	return albumTitle, nil
+}
+
+// PhotoAlbum is a named set of a person's photos. It holds references: a photo
+// can be in several albums, and deleting the album leaves the photos.
+type PhotoAlbum struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"userId"`
+	AlbumTitle string    `json:"albumTitle"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+
+	// CoverPhotoID is the photo the person chose to stand for the album, if
+	// they did. Until they do, and while the photo they chose is in the trash
+	// or has no small preview yet, the album shows its newest photo.
+	CoverPhotoID *string `json:"coverPhotoId" graphapi:"nullable"`
+
+	// The rest is worked out when the album is read, from the photos that are
+	// not in the trash: a photo in the trash stays in its albums but is not
+	// counted or shown until it is restored.
+	PhotoCount int `json:"photoCount" gorm:"-"`
+
+	// FirstTakenAt and LastTakenAt bound the date the album's photos are
+	// placed at (when taken, or when they arrived if that is not known). Null
+	// for an album with no photos.
+	FirstTakenAt *time.Time `json:"firstTakenAt" graphapi:"nullable" gorm:"-"`
+	LastTakenAt  *time.Time `json:"lastTakenAt" graphapi:"nullable" gorm:"-"`
+
+	// CoverPreviewURL is where the album's cover picture is fetched from:
+	// empty when no photo of the album has a small preview yet.
+	CoverPreviewURL string `json:"coverPreviewUrl" gorm:"-"`
+
+	// CoverPreviewPhotoID and CoverPreviewPhotoUpdatedAt name the photo the
+	// cover is made from and when it last changed, so that the API can address
+	// its preview the way it addresses any other.
+	CoverPreviewPhotoID        string     `json:"-" gorm:"-"`
+	CoverPreviewPhotoUpdatedAt *time.Time `json:"-" gorm:"-"`
+}
+
+// PhotoAlbumItem puts a photo in an album.
+type PhotoAlbumItem struct {
+	PhotoAlbumID  string    `json:"photoAlbumId"`
+	PhotoID       string    `json:"photoId"`
+	AddedByUserID string    `json:"addedByUserId"`
+	AddedAt       time.Time `json:"addedAt"`
+}
+
+// PhotoAlbumReference is the album a photo is in, as the photo says it: enough
+// to name it and to open it.
+type PhotoAlbumReference struct {
+	ID         string `json:"id"`
+	AlbumTitle string `json:"albumTitle"`
+}
+
+// PhotoAlbumSuggestion is a run of photos that belong together and are in no
+// album: a trip or an event. Nothing is created from it until somebody asks.
+type PhotoAlbumSuggestion struct {
+	// TakenAfter and TakenBefore bound the run the way a listing's filters do:
+	// the first photo is taken on or after the first and the last before the
+	// second.
+	TakenAfter  time.Time `json:"takenAfter"`
+	TakenBefore time.Time `json:"takenBefore"`
+
+	// PlaceNames are the places in the run, the one with most photos first.
+	PlaceNames []string `json:"placeNames"`
+
+	// AlbumTitle is a proposal, in English, for the person to change.
+	AlbumTitle string `json:"albumTitle"`
+
+	PhotoCount int `json:"photoCount"`
+
+	// SamplePhotoIDs are a few photos spread across the run, to show it by.
+	SamplePhotoIDs []string `json:"samplePhotoIds"`
 }

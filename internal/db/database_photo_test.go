@@ -123,6 +123,9 @@ func TestPhotoListingFilters(test *testing.T) {
 	ownerId := dbtest.CreateUser(test, database, "photo-filter-owner")
 	june := time.Date(2024, 6, 10, 9, 0, 0, 0, time.UTC)
 	august := time.Date(2024, 8, 10, 9, 0, 0, 0, time.UTC)
+	// An hour after, so the order of the two August photos is the dates' and
+	// not that of identifiers made in the same millisecond.
+	augustLater := august.Add(time.Hour)
 	nearLatitude, nearLongitude := 10.0, 20.0
 	farLatitude, farLongitude := 40.0, 20.0
 	var nearId, farId, videoId string
@@ -135,7 +138,7 @@ func TestPhotoListingFilters(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
-		video, _, err := transaction.CreatePhoto(&models.Photo{UserID: ownerId, ClientPhotoID: "video", PhotoKind: models.PhotoKindVideo, PhotoSource: models.PhotoSourceIPhone, TakenAt: &august})
+		video, _, err := transaction.CreatePhoto(&models.Photo{UserID: ownerId, ClientPhotoID: "video", PhotoKind: models.PhotoKindVideo, PhotoSource: models.PhotoSourceIPhone, TakenAt: &augustLater})
 		if err != nil {
 			test.Fatal(err)
 		}
@@ -627,19 +630,27 @@ func TestPhotoPreviewsBelongToTheOwner(test *testing.T) {
 func TestPhotoMigrationReverses(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
-	var migration migrations.Migration
+	var migration, albumMigration migrations.Migration
 	for _, candidate := range migrations.Migrations() {
-		if candidate.ID == "0220_photo" {
+		switch candidate.ID {
+		case "0220_photo":
 			migration = candidate
+		case "0221_photo_album":
+			albumMigration = candidate
 		}
 	}
-	if migration.ID == "" {
-		test.Fatal("the photo migration is missing")
+	if migration.ID == "" || albumMigration.ID == "" {
+		test.Fatal("the photo migrations are missing")
 	}
 	// The built-in roles exist once a server has started; a made-up one stands
 	// beside them to show the grant is theirs alone.
 	for _, name := range []string{"Administrator", "Operator", "Member", "Guest"} {
 		dbtest.Exec(test, database, fmt.Sprintf(`INSERT INTO role (id, created_at, modified_at, name) VALUES ('role-%s', now(), now(), '%s')`, strings.ToLower(name), name))
+	}
+	// The albums refer to the photos, so they go first and come back last.
+	dbtest.Exec(test, database, albumMigration.ReverseSQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_album%'"); tables != "0" {
+		test.Fatalf("%s album tables survive the reverse", tables)
 	}
 	dbtest.Exec(test, database, migration.ReverseSQL)
 	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo%'"); tables != "0" {
@@ -654,6 +665,10 @@ func TestPhotoMigrationReverses(test *testing.T) {
 	dbtest.Exec(test, database, migration.SQL)
 	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo%'"); tables != "6" {
 		test.Fatalf("%s photo tables after running it again", tables)
+	}
+	dbtest.Exec(test, database, albumMigration.SQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_album%'"); tables != "2" {
+		test.Fatalf("%s album tables after running it again", tables)
 	}
 	if granted := dbtest.QueryString(test, database, `SELECT string_agg(role_id, ',' ORDER BY role_id) FROM role_permission WHERE permission_key = 'photos:use'`); granted != "role-administrator,role-member,role-operator" {
 		test.Fatalf("photos:use is granted to %q", granted)

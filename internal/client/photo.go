@@ -28,6 +28,9 @@ type PhotoView struct {
 	Photo         *models.Photo          `json:"photo"`
 	PhotoFiles    []*models.PhotoFile    `json:"photoFiles"`
 	PhotoPreviews []*models.PhotoPreview `json:"photoPreviews"`
+
+	// Albums are the albums the photo is in.
+	Albums []*models.PhotoAlbumReference `json:"albums"`
 }
 
 // PhotoLibrary is how much a library holds, how much it may, and where files
@@ -76,6 +79,9 @@ type PhotoFilter struct {
 	NearLatitude           *float64
 	NearLongitude          *float64
 	NearDistanceKilometers *float64
+
+	// AlbumID keeps the photos of one album.
+	AlbumID string
 }
 
 // variables are the filter's arguments, leaving out what is not asked.
@@ -120,14 +126,17 @@ func (self *PhotoFilter) variables() map[string]any {
 	if self.NearDistanceKilometers != nil {
 		variables["nearDistanceKilometers"] = *self.NearDistanceKilometers
 	}
+	if self.AlbumID != "" {
+		variables["albumId"] = self.AlbumID
+	}
 	return variables
 }
 
 const (
 	photoSelection = `{ id createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl }`
 
-	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float`
-	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers`
+	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String`
+	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId`
 )
 
 const (
@@ -140,6 +149,7 @@ const (
     photo ` + photoSelection + `
     photoFiles { photoId photoFileRole blobSha256 contentType fileSizeBytes originalFilename createdAt fileUrl }
     photoPreviews { photoId photoPreviewSize contentType previewSizeBytes widthPixels heightPixels createdAt previewUrl }
+    albums { id albumTitle }
   }
 }`
 

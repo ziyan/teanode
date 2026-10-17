@@ -63,6 +63,7 @@ type Query interface {
 	RecordingSpeakerQuery
 	RecordingQuery
 	PhotoQuery
+	PhotoAlbumQuery
 	RecordingPlaybackQuery
 	RecordingTranscriptQuery
 	AgentVoiceQuery
@@ -117,6 +118,7 @@ type Mutation interface {
 	RecordingSpeakerMutation
 	RecordingMutation
 	PhotoMutation
+	PhotoAlbumMutation
 	RecordingPlaybackMutation
 	RecordingTranscriptMutation
 	RecordingAttachmentMutation

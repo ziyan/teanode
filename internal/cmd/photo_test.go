@@ -60,6 +60,19 @@ func TestPhotoParity(test *testing.T) {
 		// The command line sends a file itself, with upload; the agent saves
 		// a file of a conversation, a message or the computer.
 		"SavePhotoFromAttachment": {client.DocumentSavePhotoFromAttachment, nil, []string{"save"}},
+
+		// Albums. The command line's are subcommands of album.
+		"ListPhotoAlbums":       {client.DocumentListPhotoAlbums, []string{"album list"}, []string{"album-list"}},
+		"ReadPhotoAlbum":        {client.DocumentReadPhotoAlbum, []string{"album show"}, []string{"album-read"}},
+		"CreatePhotoAlbum":      {client.DocumentCreatePhotoAlbum, []string{"album create"}, []string{"album-create"}},
+		"RenamePhotoAlbum":      {client.DocumentRenamePhotoAlbum, []string{"album rename"}, []string{"album-rename"}},
+		"DeletePhotoAlbum":      {client.DocumentDeletePhotoAlbum, []string{"album delete"}, []string{"album-delete"}},
+		"AddPhotosToAlbum":      {client.DocumentAddPhotosToAlbum, []string{"album add"}, []string{"album-add"}},
+		"RemovePhotosFromAlbum": {client.DocumentRemovePhotosFromAlbum, []string{"album remove"}, []string{"album-remove"}},
+		"SuggestPhotoAlbums":    {client.DocumentSuggestPhotoAlbums, []string{"album suggest"}, []string{"album-suggest"}},
+		// Choosing a cover is a person looking at an album; the agent
+		// organizes what is in it and leaves how it is shown.
+		"SetPhotoAlbumCover": {client.DocumentSetPhotoAlbumCover, []string{"album cover"}, nil},
 	}
 
 	// What the command line does without a GraphQL operation: the upload
@@ -69,7 +82,10 @@ func TestPhotoParity(test *testing.T) {
 	toolOnly := map[string]bool{}
 
 	operations := map[string]bool{}
-	for _, interfaceType := range []reflect.Type{reflect.TypeFor[apigraph.PhotoQuery](), reflect.TypeFor[apigraph.PhotoMutation]()} {
+	for _, interfaceType := range []reflect.Type{
+		reflect.TypeFor[apigraph.PhotoQuery](), reflect.TypeFor[apigraph.PhotoMutation](),
+		reflect.TypeFor[apigraph.PhotoAlbumQuery](), reflect.TypeFor[apigraph.PhotoAlbumMutation](),
+	} {
 		for index := 0; index < interfaceType.NumMethod(); index++ {
 			operations[interfaceType.Method(index).Name] = true
 		}
@@ -77,7 +93,12 @@ func TestPhotoParity(test *testing.T) {
 
 	subcommands := map[string]bool{}
 	for _, subcommand := range NewPhotoCommand().Commands {
-		subcommands[subcommand.Name] = true
+		if len(subcommand.Commands) == 0 {
+			subcommands[subcommand.Name] = true
+		}
+		for _, nested := range subcommand.Commands {
+			subcommands[subcommand.Name+" "+nested.Name] = true
+		}
 	}
 	toolOperations := map[string]bool{}
 	photoTool := tools.Build().Get("photo")
@@ -206,6 +227,9 @@ func digestHex(content []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
+// fixtureAlbum is an album the fixture server answers with.
+const fixtureAlbum = `{"id":"album-1","userId":"u","albumTitle":"Picnic","photoCount":3,"firstTakenAt":"2031-07-12T09:00:00Z","lastTakenAt":"2031-07-12T09:00:00Z","coverPreviewUrl":"/x"}`
+
 // photoServer is the least of a server the photo commands talk to: the GraphQL
 // endpoint, the upload endpoint and the file route.
 type photoServer struct {
@@ -261,6 +285,24 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"ReadPhoto":` + view + `}}`))
 			case strings.Contains(asked.Query, "TrashPhotos("):
 				_, _ = response.Write([]byte(`{"data":{"TrashPhotos":2}}`))
+			case strings.Contains(asked.Query, "ListPhotoAlbums"):
+				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbums":[` + fixtureAlbum + `,{"id":"album-2","userId":"u","albumTitle":"Empty one","photoCount":0,"coverPreviewUrl":""}]}}`))
+			case strings.Contains(asked.Query, "ReadPhotoAlbum("):
+				_, _ = response.Write([]byte(`{"data":{"ReadPhotoAlbum":` + fixtureAlbum + `}}`))
+			case strings.Contains(asked.Query, "CreatePhotoAlbum("):
+				_, _ = response.Write([]byte(`{"data":{"CreatePhotoAlbum":{"id":"album-new","userId":"u","albumTitle":"` + asked.Variables["albumTitle"].(string) + `","photoCount":3}}}`))
+			case strings.Contains(asked.Query, "RenamePhotoAlbum("):
+				_, _ = response.Write([]byte(`{"data":{"RenamePhotoAlbum":{"id":"album-1","userId":"u","albumTitle":"` + asked.Variables["albumTitle"].(string) + `","photoCount":3}}}`))
+			case strings.Contains(asked.Query, "DeletePhotoAlbum("):
+				_, _ = response.Write([]byte(`{"data":{"DeletePhotoAlbum":true}}`))
+			case strings.Contains(asked.Query, "AddPhotosToAlbum("):
+				_, _ = response.Write([]byte(`{"data":{"AddPhotosToAlbum":1}}`))
+			case strings.Contains(asked.Query, "RemovePhotosFromAlbum("):
+				_, _ = response.Write([]byte(`{"data":{"RemovePhotosFromAlbum":2}}`))
+			case strings.Contains(asked.Query, "SetPhotoAlbumCover("):
+				_, _ = response.Write([]byte(`{"data":{"SetPhotoAlbumCover":` + fixtureAlbum + `}}`))
+			case strings.Contains(asked.Query, "SuggestPhotoAlbums("):
+				_, _ = response.Write([]byte(`{"data":{"SuggestPhotoAlbums":[{"takenAfter":"2031-07-12T09:00:00Z","takenBefore":"2031-07-14T16:00:01Z","placeNames":["Exampleton, Exampleland","Sampleburg, Exampleland"],"albumTitle":"Exampleton and Sampleburg, Exampleland","photoCount":40,"samplePhotoIds":["photo-1"]}]}}`))
 			case strings.Contains(asked.Query, "ListPhotos("):
 				_, _ = response.Write([]byte(`{"data":{"ListPhotos":[{"id":"photo-1","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":60,"placeName":"Example City","widthPixels":40,"heightPixels":30,"originalFilename":"IMG_1.JPG","photoProcessingState":"ready"}]}}`))
 			default:

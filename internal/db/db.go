@@ -174,6 +174,7 @@ type Transaction interface {
 	RecordingOperation
 	RecordingMetadataOperation
 	PhotoOperation
+	PhotoAlbumOperation
 	PhotoUploadOperation
 	RecordingRetryOperation
 	ReplyOperation

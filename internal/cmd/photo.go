@@ -47,6 +47,7 @@ func NewPhotoCommand() *cli.Command {
 					&cli.StringFlag{Name: "after", Usage: "only photos taken on or after this date (2025-07-12 or an RFC 3339 time)"},
 					&cli.StringFlag{Name: "before", Usage: "only photos taken before this date"},
 					&cli.StringFlag{Name: "kind", Usage: "only pictures, videos or Live Photos: picture, video or livePhoto"},
+					&cli.StringFlag{Name: "album", Usage: "only the photos of this album (its id is in teanode photo album list)"},
 					&cli.IntFlag{Name: "limit", Value: defaultPhotoListSize, Usage: "photos to list, 1 to 500"},
 					&cli.StringFlag{Name: "continue-after", Usage: "continue after this photo, the last one of the previous page"},
 				},
@@ -72,6 +73,7 @@ func NewPhotoCommand() *cli.Command {
 			{Name: "delete", Usage: "delete photos in the trash forever", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoDelete},
 			{Name: "empty-trash", Usage: "delete everything in the trash forever", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoEmptyTrash},
 			{Name: "library", Usage: "how many photos and videos there are, how much room they take and how much there is", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
+			newPhotoAlbumCommand(),
 		},
 	}
 }
@@ -94,7 +96,7 @@ func parsePhotoDate(flag, text string) (*time.Time, error) {
 func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
 	filter := &client.PhotoFilter{
 		PageSize: int(command.Int("limit")), BeforePhotoID: command.String("continue-after"),
-		IsTrashed: command.Bool("trash"), SearchText: strings.TrimSpace(command.String("search")), PhotoKind: models.PhotoKind(command.String("kind")),
+		IsTrashed: command.Bool("trash"), AlbumID: command.String("album"), SearchText: strings.TrimSpace(command.String("search")), PhotoKind: models.PhotoKind(command.String("kind")),
 	}
 	if filter.PageSize < 1 || filter.PageSize > 500 {
 		return nil, usage("--limit must be from 1 to 500")
@@ -194,11 +196,7 @@ func runPhotoList(ctx context.Context, command *cli.Command) error {
 		_, _ = fmt.Fprintln(command.Writer, "no photos here")
 		return nil
 	}
-	rows := make([][]string, 0, len(photos))
-	for _, photo := range photos {
-		rows = append(rows, []string{photo.ID, photoTakenText(photo), string(photo.PhotoKind), photo.PlaceName, photoSizeText(photo), photoDurationText(photo), photoStateText(photo), photo.OriginalFilename})
-	}
-	if err := printTable([]string{"id", "taken", "kind", "place", "size", "length", "state", "file"}, rows); err != nil {
+	if err := printPhotoTable(photos); err != nil {
 		return err
 	}
 	// The page is not the whole library, and says so, once the whole is
@@ -211,6 +209,15 @@ func runPhotoList(ctx context.Context, command *cli.Command) error {
 		}
 	}
 	return nil
+}
+
+// printPhotoTable writes a page of photos, one a row.
+func printPhotoTable(photos []*models.Photo) error {
+	rows := make([][]string, 0, len(photos))
+	for _, photo := range photos {
+		rows = append(rows, []string{photo.ID, photoTakenText(photo), string(photo.PhotoKind), photo.PlaceName, photoSizeText(photo), photoDurationText(photo), photoStateText(photo), photo.OriginalFilename})
+	}
+	return printTable([]string{"id", "taken", "kind", "place", "size", "length", "state", "file"}, rows)
 }
 
 func runPhotoShow(ctx context.Context, command *cli.Command) error {
@@ -247,6 +254,9 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 	}
 	for _, file := range view.PhotoFiles {
 		fields = append(fields, [2]string{"file " + string(file.PhotoFileRole), fmt.Sprintf("%s, %s", photoBytesText(file.FileSizeBytes), file.ContentType)})
+	}
+	for _, album := range view.Albums {
+		fields = append(fields, [2]string{"album", fmt.Sprintf("%s (%s)", album.AlbumTitle, album.ID)})
 	}
 	return printFields(fields)
 }

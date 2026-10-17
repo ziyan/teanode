@@ -161,6 +161,10 @@ type PhotoFilter struct {
 	NearLatitude           *float64
 	NearLongitude          *float64
 	NearDistanceKilometers *float64
+
+	// AlbumID keeps the photos of one album. An album that is not the
+	// person's is not found.
+	AlbumID string
 }
 
 // PhotoUpdate is what a person may correct about a photo. Fields left nil
@@ -330,6 +334,16 @@ func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*go
 		return nil, ErrInvalidArguments
 	}
 	query := self.tx.Model(&photoModel{}).Where("photo.user_id = ?", userId)
+	if filter.AlbumID != "" {
+		var albumCount int64
+		if err := self.tx.Model(&photoAlbumModel{}).Where("id = ? AND user_id = ?", filter.AlbumID, userId).Count(&albumCount).Error; err != nil {
+			return nil, err
+		}
+		if albumCount == 0 {
+			return nil, ErrNotFound
+		}
+		query = query.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
+	}
 	if filter.IsTrashed {
 		query = query.Where("photo.trashed_at > ?", photoMarkedForDeletion)
 	} else {
