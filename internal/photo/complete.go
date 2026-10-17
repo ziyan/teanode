@@ -477,6 +477,17 @@ func (self *Store) photoForFile(transaction db.Transaction, userId string, heade
 			return nil, false, err
 		}
 		if !isAlias {
+			// The name is the photo's own, or it was an alias that another upload
+			// under it split off while this one waited on the alias row: found[0]
+			// is then the photo it used to point at, and the name now belongs to
+			// the photo that upload made. Read again, after that commit.
+			again, err := transaction.FindPhotosByClientIDs(userId, []string{headers.ClientPhotoID})
+			if err != nil {
+				return nil, false, err
+			}
+			if len(again) > 0 {
+				return again[0], true, nil
+			}
 			return found[0], true, nil
 		}
 		made, _, err := transaction.CreatePhoto(newPhoto(userId, headers))

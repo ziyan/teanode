@@ -17,7 +17,7 @@ import Foundation
 /// it for this phone (`push.Content` in internal/push/payload.go).
 public struct NotificationContent: Codable, Equatable, Sendable {
     /// alert, herdr_question, goal_needs_you, speak_first, message,
-    /// approval, question, answer, circle, chat, skill_share_call or test.
+    /// approval, question, answer, circle, chat, skill_share_call, photo or test.
     public let notificationKind: String
     public let conversationId: String?
     public let runId: String?

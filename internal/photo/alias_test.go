@@ -163,3 +163,31 @@ func TestADuplicateOfAnOriginalIsNotRefusedForRoomItWouldNotUse(test *testing.T)
 	other := smallJpeg(test, 20)
 	fixture.expect(fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("asset-f", "X-Photo-Declared-SHA256", digestOf(other)), other), http.StatusRequestEntityTooLarge)
 }
+
+// A duplicate of an original costs no room once it is complete, but until then
+// its parts are bytes in the store: many unfinished duplicates are held to the
+// same bound as any unfinished uploads, and refused with a time to try again.
+func TestUnfinishedDuplicatesOfAnOriginalAreBoundedLikeAnyUnfinishedUpload(test *testing.T) {
+	fixture := newFixture(test)
+	original := smallJpeg(test, 98)
+	fixture.expect(fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("asset-a"), original), http.StatusCreated)
+	fixture.configuration.Photos.MaxAccountBytes = config.ByteSize(2 * len(original))
+	half := original[:len(original)/2]
+	refusedAt := 0
+	for index := 1; index <= 8; index++ {
+		answer := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("copy-"+itoa(index), "X-Photo-Declared-SHA256", digestOf(original), "Upload-Complete", "?0"), half)
+		if answer.status == http.StatusServiceUnavailable {
+			if answer.header.Get("Retry-After") == "" {
+				test.Fatalf("the refusal gave no time to try again")
+			}
+			refusedAt = index
+			break
+		}
+		fixture.expect(answer, http.StatusCreated)
+	}
+	// Four halves are twice the original, the limit; the fifth goes over it and
+	// the sixth is the first refused.
+	if refusedAt != 6 {
+		test.Fatalf("unfinished duplicates were refused at upload %d, want 6", refusedAt)
+	}
+}

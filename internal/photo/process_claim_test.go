@@ -371,3 +371,86 @@ func TestWorkWhoseRenewalAnswerWasLostStillRecordsItsOutcome(test *testing.T) {
 		test.Fatal("the photo has no previews")
 	}
 }
+
+// outageDatabase loses the answer to the first renewal of a processing claim,
+// as lostAnswerDatabase does, and then fails every call for a while, as a
+// database that went away does: the worker can neither renew nor read the
+// claim to find out what became of the renewal.
+type outageDatabase struct {
+	db.Database
+	mutex       sync.Mutex
+	outageUntil time.Time
+	hasStarted  bool
+	failedCount int
+}
+
+func (self *outageDatabase) TransactionContext(ctx context.Context, run func(db.Transaction) error) error {
+	self.mutex.Lock()
+	if time.Now().Before(self.outageUntil) {
+		self.failedCount++
+		self.mutex.Unlock()
+		return errors.New("the database is unreachable")
+	}
+	self.mutex.Unlock()
+	isRenewal := false
+	err := self.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		return run(&renewalWatcher{Transaction: transaction, isRenewal: &isRenewal})
+	})
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if err == nil && isRenewal && !self.hasStarted {
+		self.hasStarted = true
+		self.outageUntil = time.Now().Add(200 * time.Millisecond)
+		return errors.New("the connection dropped after the commit")
+	}
+	return err
+}
+
+func (self *outageDatabase) isOver() bool {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.hasStarted && time.Now().After(self.outageUntil) && self.failedCount > 0
+}
+
+// A renewal whose answer was lost, followed by an outage long enough that the
+// claim cannot be read either, is settled when the database is back: no other
+// renewal is sent over it meanwhile, so the photo's claim is still one the
+// worker knows, and the finished work is recorded.
+func TestWorkWhoseRenewalCannotBeSettledDuringAnOutageStillRecordsItsOutcome(test *testing.T) {
+	fixture := newFixture(test)
+	unreliable := &outageDatabase{Database: fixture.database}
+	store := photo.New(unreliable, fixture.files, func() *config.Configuration { return fixture.configuration })
+	store.SetWorkDirectory(fixture.workDirectory)
+	store.SetClaimPollInterval(10 * time.Millisecond)
+	store.SetClaimRenewalInterval(20 * time.Millisecond)
+	release := make(chan struct{})
+	reader := newGateFaceReader()
+	reader.hold = func(callNumber int) <-chan struct{} {
+		if callNumber == 1 {
+			return release
+		}
+		return nil
+	}
+	store.SetFaceReader(reader, nil)
+
+	fixture.uploadPicture("outage", 24)
+	finished := make(chan error, 1)
+	go func() { finished <- store.Process(test.Context(), 1) }()
+	waitForReading(test, reader)
+	deadline := time.Now().Add(10 * time.Second)
+	for !unreliable.isOver() {
+		if time.Now().After(deadline) {
+			test.Fatal("the outage did not happen")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// A few renewals after the database is back.
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+	waitForPass(test, finished)
+
+	found := fixture.photoByClientId("outage")
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.ProcessingClaimedAt != nil {
+		test.Fatalf("the finished work was thrown away: %+v", found)
+	}
+}
