@@ -54,14 +54,25 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 	var documents []*models.AgentDocument
 	var facts []*models.AgentFact
 	var own []*models.AgentDocument
+	var visits []*models.PlaceVisit
 	openings := map[string]string{}
 	pages := map[string]string{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
 		if documents, err = tx.ListAgentDocumentsBetween(agent.ID, nil, from, until, digestDocuments); err != nil {
 			return err
 		}
+		// The days of the location journal are summed up under their own
+		// heading from the visits, not listed one by one among their notes.
+		documents = slices.DeleteFunc(documents, func(document *models.AgentDocument) bool {
+			return strings.HasPrefix(document.ExternalID, locationDayExternalIdPrefix)
+		})
 		if facts, err = tx.ListAgentFactsBetween(agent.ID, from, until, 500); err != nil {
 			return err
+		}
+		if owner != nil {
+			if visits, err = listVisitsBetween(tx, owner.ID, from, until); err != nil {
+				return err
+			}
 		}
 		// A thread's title is its channel and its day, which says
 		// nothing about what was said. Its first words do.
@@ -167,6 +178,11 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 			builder.WriteString("- " + entry + "\n")
 		}
 		builder.WriteString("\n")
+	}
+
+	// Where they went, as arithmetic over the month's visits.
+	if places := placesTheyWent(visits, from, until, time.Now(), Location(owner)); places != "" {
+		builder.WriteString("## places they went\n\n" + places + "\n")
 	}
 
 	// Mail worth mentioning, and everything else the graph already knows

@@ -23,6 +23,10 @@ type sentOperation struct {
 type circleOperations struct {
 	grants []models.Grant
 	sent   []sentOperation
+
+	// answers is what a document is answered with instead of the empty
+	// answer, by a word the document contains.
+	answers map[string]string
 }
 
 func (self *circleOperations) Permissions() *models.EffectivePermissions {
@@ -31,6 +35,11 @@ func (self *circleOperations) Permissions() *models.EffectivePermissions {
 
 func (self *circleOperations) Execute(_ context.Context, document string, variables map[string]any, response any) error {
 	self.sent = append(self.sent, sentOperation{document: document, variables: variables})
+	for word, answer := range self.answers {
+		if strings.Contains(document, word) {
+			return json.Unmarshal([]byte(answer), response)
+		}
+	}
 	return json.Unmarshal([]byte(`{}`), response)
 }
 
@@ -129,6 +138,50 @@ func TestAddIsGrantingAndSaysSoOnItsCard(t *testing.T) {
 	for _, wanted := range []string{`"personx"`, "no invitation", "admin"} {
 		if !strings.Contains(said, wanted) {
 			t.Errorf("the card %q does not say %q", said, wanted)
+		}
+	}
+}
+
+// Joining a family circle, the answer says the person can share their
+// calendar and where they are with it, and with which tool, for what they may
+// use. A circle of colleagues is only the calendar, friends nothing, and
+// declining is only declined.
+func TestAnsweringAnInvitationSaysWhatCanBeSharedWithTheCircle(t *testing.T) {
+	familyGrants := append([]models.Grant{{Permission: models.PermissionCalendarUse}, {Permission: models.PermissionLocationUse}}, aMember...)
+	for _, test := range []struct {
+		name     string
+		grants   []models.Grant
+		kind     string
+		accepted string
+		contains []string
+		omits    []string
+	}{
+		{"family with both", familyGrants, "family", "true",
+			[]string{"joined the circle", "their calendar, with the calendar tool's share action", "where they are, with the location tool's share action", "circle-one", "share only if they say yes"}, nil},
+		{"family without location", append([]models.Grant{{Permission: models.PermissionCalendarUse}}, aMember...), "family", "true",
+			[]string{"their calendar"}, []string{"location tool"}},
+		{"family with neither", aMember, "family", "true", []string{"joined the circle"}, []string{"share"}},
+		{"colleagues", familyGrants, "colleagues", "true",
+			[]string{"their calendar"}, []string{"location tool"}},
+		{"friends", familyGrants, "friends", "true", []string{"joined the circle"}, []string{"share"}},
+		{"declined", familyGrants, "family", "false", []string{"declined the invitation"}, []string{"share", "joined"}},
+	} {
+		operations := &circleOperations{grants: test.grants, answers: map[string]string{
+			"AnswerCircleInvitation": `{"AnswerCircleInvitation": {"id": "circle-one", "name": "Example", "circleKind": "` + test.kind + `"}}`,
+		}}
+		result, err := callAs(t, operations, `{"action":"answer","invitation_id":"invitation-one","is_accepted":`+test.accepted+`}`)
+		if err != nil {
+			t.Fatalf("%s: %s", test.name, err)
+		}
+		for _, wanted := range test.contains {
+			if !strings.Contains(result.Content, wanted) {
+				t.Errorf("%s: the answer %q does not say %q", test.name, result.Content, wanted)
+			}
+		}
+		for _, unwanted := range test.omits {
+			if strings.Contains(result.Content, unwanted) {
+				t.Errorf("%s: the answer %q says %q", test.name, result.Content, unwanted)
+			}
 		}
 	}
 }

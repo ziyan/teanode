@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         // The photo backup's two background tasks have to be registered before
         // the app has finished launching.
         PhotoBackupEngine.registerBackgroundTasks()
+        // The one Core Location manager, made now, whether the app was opened
+        // or iOS relaunched it for a visit, a significant change or a place
+        // being entered: events go only to a manager that exists then.
+        LocationRecorder.shared.launch()
         return true
     }
 

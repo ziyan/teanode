@@ -3400,7 +3400,7 @@ body,
      head-icons (a page's rename and delete): each is a square, two or three
      fit beside a title. A row of words keeps the rule above, since beside
      the title it would squeeze it. */
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3408,23 +3408,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) h3 {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > :is(button, .head-icons, .menu-button) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -3446,16 +3446,16 @@ body,
 
   /* A row whose only action is one icon keeps it beside the title: on a line
      of its own it sat alone under an empty band, the row twice its height. */
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) {
+  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) {
     flex-wrap: nowrap;
     align-items: flex-start;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-body {
+  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) > .settings-row-body {
     min-width: 0;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
+  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) > .settings-row-actions {
     width: auto;
   }
 
@@ -18641,3 +18641,207 @@ label.checkbox.is-plain > span > .muted {
   }
 }
 
+/* --- the Location page ------------------------------------------------------
+   A map with the people under it, then tabs of rows. The rows are buttons that
+   choose a person, a place or a visit, and keep one height whether chosen or
+   not: the border is there from the start, transparent, and only its color
+   changes. */
+.location-map-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.location-map {
+  position: relative;
+  height: 360px;
+  background: var(--rail);
+}
+
+/* MapLibre's own stylesheet makes this element position: relative, loaded
+   after this one, so its size is given outright rather than by its edges. */
+.location-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* MapLibre's styles are light. In dark mode the map is dimmed rather than
+   drawn from a second style; the markers are elements above the canvas, so
+   the pictures and icons on them keep their colors. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .location-map .maplibregl-canvas {
+    filter: brightness(0.8) contrast(1.1);
+  }
+}
+
+:root[data-theme='dark'] .location-map .maplibregl-canvas {
+  filter: brightness(0.8) contrast(1.1);
+}
+
+.location-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-raised);
+  cursor: pointer;
+}
+
+.location-marker-person {
+  width: 40px;
+  height: 40px;
+}
+
+.location-marker-place {
+  width: 28px;
+  height: 28px;
+}
+
+/* A marker is drawn small and pressed at 44px: the pseudo-element is part of
+   the button, so a press on it counts, and a finger finds a place marker that
+   is 28px across. The map positions the button itself (absolute), which is
+   what the pseudo-element is placed against. */
+.location-marker::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.location-marker-person::after {
+  inset: -2px;
+}
+
+.location-marker.is-selected {
+  border-color: var(--leaf);
+}
+
+.location-place-visits {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+}
+
+.location-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--text);
+}
+
+.location-people .location-row {
+  margin-bottom: 0;
+}
+
+.location-row.is-selected {
+  border-color: var(--leaf);
+  background: color-mix(in srgb, var(--leaf) 10%, var(--surface));
+}
+
+.location-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+}
+
+.location-row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.location-row-body > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The line under a person's name says where they are and since when. It wraps
+   to a second line rather than losing the time to an ellipsis. */
+.location-people .location-row-body > .muted {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.location-row-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: var(--text-label);
+}
+
+.location-day-picker {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.location-day-head {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+/* The name of a day that chooses it. A heading first, so it is drawn as one
+   and not as a button. */
+.location-day-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+}
+
+.location-day-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.location-credit {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+}
+
+.location-find {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.location-find input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.location-nearby {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .location-map {
+    height: 300px;
+  }
+}

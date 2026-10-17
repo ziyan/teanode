@@ -8,6 +8,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewCircleCommand builds "teanode circle", the named sets of people on this
@@ -325,7 +326,25 @@ func runCircleAccept(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(circle)
 	}
 	fmt.Printf("joined %s: %s\n", circleDescription(circle), circle.ID)
+	if hint := circleSharingHint(circle.CircleKind); hint != "" {
+		fmt.Println(hint)
+	}
 	return nil
+}
+
+// circleSharingHint says what can be shared with a circle just joined, and
+// the commands that do it: a family shares the calendar and where they are,
+// colleagues the calendar. The CLI does not know what the account may use, so
+// it says "if your account may", where the dashboard and the app leave out
+// what is not allowed. Empty for any other circle.
+func circleSharingHint(circleKind string) string {
+	switch models.CircleKind(circleKind) {
+	case models.CircleKindFamily:
+		return "you can share your calendar and where you are with it, if your account may use them: teanode calendar share, teanode location share"
+	case models.CircleKindColleagues:
+		return "you can share your calendar with it, if your account may use it: teanode calendar share"
+	}
+	return ""
 }
 
 func runCircleDecline(ctx context.Context, command *cli.Command) error {

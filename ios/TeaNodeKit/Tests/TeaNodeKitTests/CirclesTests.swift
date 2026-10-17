@@ -194,12 +194,12 @@ final class CirclesTests: XCTestCase {
 
     func testJoiningAFamilyOrColleaguesOffersToShareTheCalendarButJoiningFriendsDoesNot() {
         for circleKind in ["family", "colleagues", "neighbors"] {
-            let offer = CircleCalendarOffer(accepting: invitation(circleKind: circleKind), calendarId: "calendar-1")
+            let offer = CircleCalendarOffer(accepting: invitation(circleKind: circleKind), calendarId: "calendar-1", canShareLocation: true)
             XCTAssertEqual(offer?.circleId, "circle-1", circleKind)
             XCTAssertEqual(offer?.circleName, "Fixture Home", circleKind)
             XCTAssertEqual(offer?.calendarId, "calendar-1", circleKind)
         }
-        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "friends"), calendarId: "calendar-1"))
+        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "friends"), calendarId: "calendar-1", canShareLocation: true))
         // Edit is chosen on the calendar screen, not offered in passing.
         XCTAssertEqual(CircleCalendarOffer.levels, [.busy, .titles, .details])
     }
@@ -210,5 +210,27 @@ final class CirclesTests: XCTestCase {
         let own = AgentCalendar(id: "own", name: "Calendar", calendarKind: "events", shareLevel: "owner")
         XCTAssertEqual(CircleCalendarOffer.ownCalendar(among: [reminders, theirs, own])?.id, "own")
         XCTAssertNil(CircleCalendarOffer.ownCalendar(among: [reminders, theirs]))
+    }
+
+    func testJoiningAFamilyAlsoOffersLocationButColleaguesDoNot() {
+        XCTAssertEqual(CircleCalendarOffer(accepting: invitation(circleKind: "family"), calendarId: "calendar-1", canShareLocation: true)?.isLocationOffered, true)
+        XCTAssertEqual(CircleCalendarOffer(accepting: invitation(circleKind: "colleagues"), calendarId: "calendar-1", canShareLocation: true)?.isLocationOffered, false)
+        XCTAssertEqual(CircleCalendarOffer.locationLevels, [.history, .current])
+    }
+
+    func testLocationIsOfferedOnlyToAPersonWhoMayUseIt() {
+        let family = invitation(circleKind: "family")
+        let withCalendar = CircleCalendarOffer(accepting: family, calendarId: "calendar-1", canShareLocation: false)
+        XCTAssertEqual(withCalendar?.isLocationOffered, false)
+        XCTAssertEqual(withCalendar?.isCalendarOffered, true)
+        XCTAssertNil(CircleCalendarOffer(accepting: family, calendarId: nil, canShareLocation: false))
+    }
+
+    func testAFamilyIsOfferedLocationEvenWithoutACalendarButColleaguesAreOfferedNothing() {
+        let family = CircleCalendarOffer(accepting: invitation(circleKind: "family"), calendarId: nil, canShareLocation: true)
+        XCTAssertEqual(family?.isCalendarOffered, false)
+        XCTAssertEqual(family?.isLocationOffered, true)
+        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "colleagues"), calendarId: nil, canShareLocation: true))
+        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "friends"), calendarId: nil, canShareLocation: true))
     }
 }

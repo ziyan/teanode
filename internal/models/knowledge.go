@@ -54,17 +54,23 @@ const (
 	// member's switch on that chat (SetChatAgentReading); Specification.ChatID
 	// names the chat.
 	SourceChat AgentKnowledgeKind = "chat"
+
+	// SourceLocation is where a person went, one document for each finished
+	// day, written by the server from their recorded visits. It is made
+	// once for each agent by EnsureLocationSource and is never read from
+	// anywhere, so it has no schedule and no specification.
+	SourceLocation AgentKnowledgeKind = "location"
 )
 
 // AgentKnowledgeKinds is every kind.
-var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance, SourceRecording, SourceChat}
+var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance, SourceRecording, SourceChat, SourceLocation}
 
 // IsMadeByLinking says a source of this kind is made only by the
 // operations that link it, never by the generic source creation: a finance
 // source needs a credential the provider hands over at the end of a link,
 // and a row without one would be a source that can never sync.
 func (self AgentKnowledgeKind) IsMadeByLinking() bool {
-	return self == SourceFinance || self == SourceRecording || self == SourceChat
+	return self == SourceFinance || self == SourceRecording || self == SourceChat || self == SourceLocation
 }
 
 // IsDocumentKind says a source of this kind files documents into the
@@ -356,6 +362,8 @@ func (self *AgentKnowledgeSource) Describe() string {
 		return "their own sent mail"
 	case SourceChat:
 		return "a chat with other people, from when it was switched on"
+	case SourceLocation:
+		return "where they went, one day at a time"
 	case SourceFinance:
 		settings, _ := self.FinanceSourceSettings()
 		if settings.InstitutionName != "" {

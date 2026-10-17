@@ -107,6 +107,13 @@ type Database interface {
 	NotifyChatEvent(payload string) error
 	ListenChatEvents(ctx context.Context) (<-chan string, error)
 
+	// NotifyLocationEvent and ListenLocationEvents are the same for a
+	// person's location having been reported: the payload is a LocationEvent
+	// holding the person's id and never a coordinate, and the ids of people who
+	// were reading it and now cannot, when a share ended.
+	NotifyLocationEvent(userId string, endedForUserIds ...string) error
+	ListenLocationEvents(ctx context.Context) (<-chan string, error)
+
 	// NotifyAgentCommand and ListenAgentCommands are the same for a word
 	// to a turn — stop, an answer, a decision on a card — from an instance
 	// that is not running it.
@@ -180,6 +187,10 @@ type Transaction interface {
 	GroupOperation
 	CircleOperation
 	CalendarShareOperation
+	LocationOperation
+	LocationLockOperation
+	LocationKnowledgeOperation
+	LocationShareOperation
 	PageShareOperation
 	SkillShareOperation
 	ChatOperation

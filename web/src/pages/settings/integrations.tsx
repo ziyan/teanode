@@ -9,6 +9,7 @@ import { AGENT_SELECTION, Agent, AgentForm } from './agentSettings'
 import type { AgentPart } from './agentParts'
 import {
   GeoIPForm,
+  PlacesForm,
   IdentityForm,
   ListenForm,
   PasskeyForm,
@@ -41,6 +42,7 @@ const SETTINGS = `
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
       photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
+      places { providerKind providerUrl mapStyleUrl }
       ${AGENT_SELECTION}
     }
   }`
@@ -64,6 +66,7 @@ export const UPDATE = `
     $storage: StorageParametersInput
     $geoip: GeoIPParametersInput
     $photos: PhotosParametersInput
+    $places: PlacesParametersInput
     $agent: AgentParametersInput
   ) {
     UpdateSettings(
@@ -84,6 +87,7 @@ export const UPDATE = `
       storage: $storage
       geoip: $geoip
       photos: $photos
+      places: $places
       agent: $agent
     ) {
       s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
@@ -102,6 +106,7 @@ export const UPDATE = `
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
       photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
+      places { providerKind providerUrl mapStyleUrl }
       ${AGENT_SELECTION}
     }
   }`
@@ -193,6 +198,7 @@ export type PhotosSettings = {
   trashRetention: string
   isFaceRecognitionEnabled: boolean
 }
+export type Places = { providerKind: string; providerUrl: string; mapStyleUrl: string }
 
 // Spam scoring has two engines and the built-in one has parts, so it is not
 // a Service — that shape is a host and a port and nothing else.
@@ -230,6 +236,7 @@ type Settings = {
   storage: StorageSettings
   geoip: GeoIP
   photos: PhotosSettings
+  places: Places
 }
 
 // The six forms, in four groups.
@@ -314,6 +321,7 @@ export function IntegrationsSection({ section, part }: { section: Section; part?
           <PhotosForm settings={settings.photos} onSaved={reload} />
           <ObjectStoreForm settings={settings.s3} onSaved={reload} />
           <GeoIPForm settings={settings.geoip} onSaved={reload} />
+          <PlacesForm settings={settings.places} onSaved={reload} />
         </>
       )}
       {section === 'certificates' && (

@@ -37,6 +37,7 @@ const settingsSelection = `{
 	storage { directory spoolRetention }
 	geoip { enabled databaseFile }
 	photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
+	places { providerKind providerUrl mapStyleUrl }
 	agent {
 		enabled instructions currency effort allowPrivateAddresses skipCertificateCheck
 		providers { name kind baseUrl hasApiKey hasBillingApiKey enabled allow deny pricingInput pricingOutput pricingCacheRead pricingCacheWrite pricingAudioInput modelPricing { model input output cacheRead cacheWrite audioInput } }
@@ -105,14 +106,14 @@ func UpdateSettings(ctx context.Context, connection *Client, sections map[string
 		$smtp: SMTPParametersInput, $resolver: ResolverParametersInput,
 		$session: SessionParametersInput, $passkey: PasskeyParametersInput,
 		$listen: ListenParametersInput, $sso: SSOParametersInput, $identity: IdentityParametersInput,
-		$storage: StorageParametersInput, $geoip: GeoIPParametersInput, $photos: PhotosParametersInput,
+		$storage: StorageParametersInput, $geoip: GeoIPParametersInput, $photos: PhotosParametersInput, $places: PlacesParametersInput,
 		$upgrade: UpgradeParametersInput, $agent: AgentParametersInput
 	) {
 		UpdateSettings(
 			s3: $s3, route53: $route53, antivirus: $antivirus, antispam: $antispam,
 			relay: $relay, submission: $submission, imap: $imap, proxy: $proxy, certificates: $certificates,
 			smtp: $smtp, resolver: $resolver, session: $session, passkey: $passkey,
-			listen: $listen, sso: $sso, identity: $identity, storage: $storage, geoip: $geoip, photos: $photos,
+			listen: $listen, sso: $sso, identity: $identity, storage: $storage, geoip: $geoip, photos: $photos, places: $places,
 			upgrade: $upgrade, agent: $agent
 		) ` + settingsSelection + `
 	}`

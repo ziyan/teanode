@@ -40,12 +40,13 @@ struct TeaNodeApp: App {
                 appearance.apply()
                 PhotoBackupEngine.shared.sceneBecameActive()
             }
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active {
                     appearance.apply()
                     // Photos taken since are backed up when the app comes back.
                     PhotoBackupEngine.shared.sceneBecameActive()
                 }
+                LocationRecorder.shared.sceneDidChange(isActive: phase == .active, isBackground: phase == .background)
             }
         }
     }
@@ -773,6 +774,7 @@ struct SettingsForm: View {
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "circles": CirclesView(connection: connection)
                 case "circle-detail": CircleDetailDemoScreen(connection: connection)
+                case "circle-join-offer": CircleJoinOfferDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection)
@@ -872,6 +874,7 @@ struct NotificationKindToggle: View {
         case "chat": String(localized: "Messages from people in your chats")
         case "skill_share_call": String(localized: "Skill calls waiting for your approval")
         case "photo": String(localized: "Photos added to albums shared with you")
+        case "location": String(localized: "People who share their location arriving at and leaving places")
         default: notificationKind
         }
     }
