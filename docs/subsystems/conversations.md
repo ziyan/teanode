@@ -308,7 +308,11 @@ has that conversation on screen.
 addresses that agent: the composer's `@` chooses it, or replying to one of its
 messages, and the client sends the agent's id as `addressedAgentIds` (the
 command line's `--ask-agent` addresses the sender's own, without knowing its
-id: `shouldAddressOwnAgent`). An agent's name in ordinary prose addresses
+id: `shouldAddressOwnAgent`, and `--address` names others by agent id or by
+their owner's username). The server adds the agent of a message that is
+replied to by itself (`repliedAgentOf` in `chat.go`), so a client that only
+sends the reply reference, as `--reply-to` does, addresses the same agent the
+dashboard and the app name. An agent's name in ordinary prose addresses
 nothing. `chat.DecideAgentTurns` (`internal/chat/agents.go`, a function of the
 author, the ids and each member's agent, with no database) is the whole rule:
 
@@ -429,7 +433,9 @@ On the command line `teanode agent conversation list --kind chat` lists them,
 how far each has read and what their agent does there, and `teanode agent ask
 --conversation ID` and `teanode agent chat --conversation ID` write in one;
 `--ask-agent` on `ask` asks your own agent there and follows the turn like an
-ordinary ask, and a line of `agent chat` that starts with `@agent` does the same.
+ordinary ask, `--address ID-or-username` (repeatable) asks another member's
+agent that its owner let the chat ask, and a line of `agent chat` that starts
+with `@agent` asks your own.
 `direct`, `group`, `add`, `remove`, `leave`, `mute`, `read`, `edit` and
 `delete-message` do the rest, and `remember ID on|off` and
 `others-may-ask ID on|off` are the two switches. `agent chat` finds what the others say by looking every couple of
@@ -442,12 +448,17 @@ assistant messages, newest first, archived ones included. It does not reach run
 transcripts, and it does not read tool results.
 
 The `conversation` tool gives the agent the same three things: `search` over
-main and named conversations, `list` over every kind including run transcripts
-and the person's chats, and `read` for one conversation from its end, with a
+main and named conversations by what was said, and over the person's chats by
+their title and the names of the people in them (as the dashboard's search
+does; what was said in a chat is not searched), `list` over every kind
+including run transcripts and the person's chats, and `read` for one conversation from its end, with a
 note saying how many earlier messages there are, each with its id and
 reactions; in a chat each message says who wrote it, and the answer is marked as
 other people's words. Its fourth action, `react`, is the agent's reaction
-(above), and its fifth, `send`, says something in a chat under the agent's name
+(above), on a message of a chat too, with the message id `read` gives
+(`ReactInChatAsAgent`, which holds it to the rules of saying something there; the
+server's own quick reaction is only in the drawer, so in a chat the agent's is
+the only one), and its fifth, `send`, says something in a chat under the agent's name
 for the person (risk `outward`, so a card unless the person allowed it).
 
 Two rules hold in `read`. Another agent's conversation reads exactly like one

@@ -32,6 +32,7 @@ The design reasons are in five decision records, all dated 2026-10-16 under `doc
 - [x] (2026-10-17) Milestone 7: shared memory.
 - [x] (2026-10-17) Milestone 8: shared payment skills.
 - [x] (2026-10-17) Two security passes, a correctness pass, a words and conventions pass and a review of what the model is shown; the findings are fixed in this branch and their reasons are in the Decision Log and the Revision notes.
+- [x] (2026-10-17) A parity pass: a circle named by a name two circles have, or that is also a username, is refused with the ids and sizes of the circles on every surface; an invitation reaches the phones of a person whose agent is off or whose server has no worker; the cards for lending a skill and sharing a page say exactly what is granted (and the memory tool has `preview`); replying to an agent's message addresses it on the server, and the command line has `--address` and `--state`; the notification kinds are named on every surface; shared pages are searched (`SearchSharedAgentPages`); Find a time and the offer to share a calendar on joining are on the dashboard and the iPhone; the conversation tool searches chats and reacts in them (`ReactInChatAsAgent`).
 - [ ] Link skill declarations (`amountField`, `currencyField`, `amountActions`) in the skills registry, and the security review section for this feature (see Outcomes & Retrospective).
 
 ## Surprises & Discoveries

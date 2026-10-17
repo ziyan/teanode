@@ -306,7 +306,11 @@ that names one is dropped. Its risk is `money` for a tool that may cost
 something, so the other person's own card, with what will be paid on it, comes
 first, and a turn with nobody present spends only if that person allowed money
 calls when they are not there. A tool that works on a scoped identifier has
-risk `write`. The tools are read again for every turn, so taking a share back,
+risk `write`. The card the person answers before the agent shares a skill is
+built from the arguments and says what is granted: who, which tools (or "some
+of its tools" when none are named), the limit for one payment and for a month
+with their currency, and that anything above waits, or that every call waits.
+The tools are read again for every turn, so taking a share back,
 leaving the circle, switching the owner's agent off or removing the skill
 takes them from the next turn; and every call is checked again when it is made.
 

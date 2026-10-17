@@ -84,7 +84,22 @@ An invitation reaches the invited person in three places: the Circles page,
 where it waits for an answer; a note in the main conversation of their agent,
 when it is on (`circle_invited`, written in the same transaction as the
 invitation); and a notification on their phones of kind `circle`, which a phone
-can choose not to take like any other kind.
+can choose not to take like any other kind. The phones hang from the person's
+agent row whether or not the agent is on, and the notification goes through the
+phone notifier chats use, which needs no worker, so a person whose agent is off,
+or a server with no model, is told all the same; only the note needs the agent
+on. Pressing the notification on the iPhone opens the Circles screen, and it has
+an Open button and no reply field.
+
+**Names are not unique.** Two circles can be called the same, and a circle can
+have the name of somebody's username. Wherever a person or an agent names a
+circle by its name (`teanode calendar share` and `agent memory share`, the
+`with` of the calendar and memory tools, the `circle` of the calendar tool's
+`add`), a name that more than one circle has, or that is also a username, is
+refused with the ids and member counts of the circles it could be (the same
+words on every surface, `models.ResolveShareTarget`); an id is never ambiguous.
+The cards the agent asks the person to approve for sharing with a circle say how
+many people it is: "everyone in Family (4 people)".
 
 An operator with `user:manage` can put an account in a circle without an
 invitation (`AddCircleMember`), for an account made for somebody who will not
