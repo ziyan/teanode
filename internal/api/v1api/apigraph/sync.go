@@ -30,6 +30,9 @@ type CreateSyncCredentialArguments struct {
 	HasCalendarAccess  bool   `json:"hasCalendarAccess"`
 	HasRemindersAccess bool   `json:"hasRemindersAccess"`
 	HasContactsAccess  bool   `json:"hasContactsAccess"`
+	// HasPhotosAccess lets the device upload to the photo library. Optional,
+	// so that the clients written before photos existed keep working.
+	HasPhotosAccess *bool `json:"hasPhotosAccess" graphapi:"nullable"`
 }
 type RevokeSyncCredentialArguments struct {
 	CredentialID string `json:"credentialId"`
@@ -69,7 +72,8 @@ func (self *graph) CreateSyncCredential(ctx context.Context, arguments CreateSyn
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(arguments.CredentialName) == "" || len(arguments.CredentialName) > 128 || (!arguments.HasCalendarAccess && !arguments.HasRemindersAccess && !arguments.HasContactsAccess) {
+	hasPhotosAccess := arguments.HasPhotosAccess != nil && *arguments.HasPhotosAccess
+	if strings.TrimSpace(arguments.CredentialName) == "" || len(arguments.CredentialName) > 128 || (!arguments.HasCalendarAccess && !arguments.HasRemindersAccess && !arguments.HasContactsAccess && !hasPhotosAccess) {
 		return nil, fmt.Errorf("%w: give the device a name and select at least one collection", api.ErrInvalidArguments)
 	}
 	principal, err := self.requireSignedIn(ctx)
@@ -83,7 +87,7 @@ func (self *graph) CreateSyncCredential(ctx context.Context, arguments CreateSyn
 		isRequested bool
 		service     models.Service
 		permission  models.Permission
-	}{{arguments.HasCalendarAccess, models.ServiceCalendar, models.PermissionCalendarUse}, {arguments.HasRemindersAccess, models.ServiceReminders, models.PermissionCalendarUse}, {arguments.HasContactsAccess, models.ServiceContacts, models.PermissionContactsUse}} {
+	}{{arguments.HasCalendarAccess, models.ServiceCalendar, models.PermissionCalendarUse}, {arguments.HasRemindersAccess, models.ServiceReminders, models.PermissionCalendarUse}, {arguments.HasContactsAccess, models.ServiceContacts, models.PermissionContactsUse}, {hasPhotosAccess, models.ServicePhotos, models.PermissionPhotosUse}} {
 		if !scope.isRequested {
 			continue
 		}
@@ -100,7 +104,7 @@ func (self *graph) CreateSyncCredential(ctx context.Context, arguments CreateSyn
 	if err != nil {
 		return nil, err
 	}
-	credential, err := self.transaction(ctx).CreateSyncCredential(&models.SyncCredential{UserID: user.ID, CredentialName: strings.TrimSpace(arguments.CredentialName), Selector: selector, PasswordHash: string(hash), HasCalendarAccess: arguments.HasCalendarAccess, HasRemindersAccess: arguments.HasRemindersAccess, HasContactsAccess: arguments.HasContactsAccess})
+	credential, err := self.transaction(ctx).CreateSyncCredential(&models.SyncCredential{UserID: user.ID, CredentialName: strings.TrimSpace(arguments.CredentialName), Selector: selector, PasswordHash: string(hash), HasCalendarAccess: arguments.HasCalendarAccess, HasRemindersAccess: arguments.HasRemindersAccess, HasContactsAccess: arguments.HasContactsAccess, HasPhotosAccess: hasPhotosAccess})
 	if err != nil {
 		return nil, translateError(err)
 	}

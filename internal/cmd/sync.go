@@ -8,8 +8,8 @@ import (
 
 // NewSyncCommand manages account-owned collection passwords without a mailbox.
 func NewSyncCommand() *cli.Command {
-	credentialFields := "id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess createdAt lastUsedAt"
-	scopeFlags := []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "name", Required: true, Usage: "the device name"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}, &cli.BoolFlag{Name: "profile", Usage: "create an HTTPS setup profile instead of displaying a password"}}
+	credentialFields := "id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess hasPhotosAccess createdAt lastUsedAt"
+	scopeFlags := []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "name", Required: true, Usage: "the device name"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}, &cli.BoolFlag{Name: "photos"}, &cli.BoolFlag{Name: "profile", Usage: "create an HTTPS setup profile instead of displaying a password"}}
 	return &cli.Command{Name: "sync", Usage: "set up selected device services or revoke collection sync", Commands: append(syncProfileCommands(), []*cli.Command{
 		{Name: "list", Flags: []cli.Flag{JSONFlag()}, Action: func(ctx context.Context, command *cli.Command) error {
 			connection, err := openClient(command)
@@ -33,9 +33,9 @@ func NewSyncCommand() *cli.Command {
 				operationName = "CreateSyncSetupProfile"
 				selectedFields = "downloadLink expiresAt credential { " + credentialFields + " }"
 			}
-			document := "mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!) { " + operationName + "(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess) { " + selectedFields + " } }"
+			document := "mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!, $hasPhotosAccess: Boolean!) { " + operationName + "(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess, hasPhotosAccess: $hasPhotosAccess) { " + selectedFields + " } }"
 			var response map[string]any
-			if err := connection.Execute(ctx, document, map[string]any{"credentialName": command.String("name"), "hasCalendarAccess": command.Bool("calendar"), "hasRemindersAccess": command.Bool("reminders"), "hasContactsAccess": command.Bool("contacts")}, &response); err != nil {
+			if err := connection.Execute(ctx, document, map[string]any{"credentialName": command.String("name"), "hasCalendarAccess": command.Bool("calendar"), "hasRemindersAccess": command.Bool("reminders"), "hasContactsAccess": command.Bool("contacts"), "hasPhotosAccess": command.Bool("photos")}, &response); err != nil {
 				return describeError(command, err)
 			}
 			return PrintJSON(response[operationName])

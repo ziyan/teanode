@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -162,4 +163,45 @@ func Exec(test testing.TB, database db.Database, statement string) {
 	if err := database.(interface{ RawExec(string) error }).RawExec(statement); err != nil {
 		test.Fatalf("statement failed: %s", err)
 	}
+}
+
+// photoClaimedAt is when the photo was last claimed by a worker, claiming it
+// first by a statement when nobody has, as the claim a worker makes would.
+func photoClaimedAt(test testing.TB, database db.Database, photoId string) time.Time {
+	test.Helper()
+	read := func() string {
+		return QueryString(test, database, `SELECT COALESCE(to_char(processing_claimed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'), '') FROM photo WHERE id = '`+photoId+`'`)
+	}
+	if read() == "" {
+		Exec(test, database, `UPDATE photo SET processing_claimed_at = date_trunc('microseconds', now()) WHERE id = '`+photoId+`'`)
+	}
+	claimedAt, err := time.Parse(time.RFC3339Nano, read())
+	if err != nil {
+		test.Fatalf("the claim of photo %s could not be read: %s", photoId, err)
+	}
+	return claimedAt
+}
+
+// MarkPhotoReady records that a photo is ready, as the worker that claimed it
+// does; a photo nobody claimed is claimed first.
+func MarkPhotoReady(test *testing.T, database db.Database, photoId string) {
+	test.Helper()
+	claimedAt := photoClaimedAt(test, database, photoId)
+	RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if isCurrent, err := transaction.MarkPhotoReady(photoId, claimedAt); err != nil || !isCurrent {
+			test.Fatalf("photo %s was not marked ready: %v %v", photoId, isCurrent, err)
+		}
+	})
+}
+
+// MarkPhotoProcessingFailed records that processing a photo failed, as the
+// worker that claimed it does; a photo nobody claimed is claimed first.
+func MarkPhotoProcessingFailed(test *testing.T, database db.Database, photoId, errorMessage string, isFileAtFault bool, maximumAttemptCount int) {
+	test.Helper()
+	claimedAt := photoClaimedAt(test, database, photoId)
+	RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if isCurrent, err := transaction.MarkPhotoProcessingFailed(photoId, claimedAt, errorMessage, isFileAtFault, maximumAttemptCount); err != nil || !isCurrent {
+			test.Fatalf("photo %s was not marked failed: %v %v", photoId, isCurrent, err)
+		}
+	})
 }

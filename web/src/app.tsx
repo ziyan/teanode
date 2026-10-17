@@ -103,6 +103,18 @@ const RecordingsPage = lazyPage(async () => ({
 const CodingPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "coding" */ './pages/coding')).CodingPage,
 }))
+const PhotosLayout = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "photos" */ './pages/photos/layout')).PhotosLayout,
+}))
+const PhotosPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "photos" */ './pages/photos/library')).PhotosPage,
+}))
+const PhotoAlbumsPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "photos" */ './pages/photos/albums')).PhotoAlbumsPage,
+}))
+const PhotoPeoplePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "photos" */ './pages/photos/people')).PhotoPeoplePage,
+}))
 const KnowledgePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
 }))
@@ -546,6 +558,18 @@ export function App() {
                       splat route would read it as one. */}
                       <Route path="/knowledge/explore" element={<KnowledgeExplorePage />} />
                       <Route path="/knowledge/*" element={<KnowledgePage />} />
+                      {/* Every page of Photos is inside one layout, which holds what
+                      outlives a page: the upload tray and what it says. */}
+                      <Route element={<PhotosLayout />}>
+                        <Route path="/photos" element={<PhotosPage />} />
+                        <Route path="/photos/albums" element={<PhotoAlbumsPage />} />
+                        <Route path="/photos/albums/:photoAlbumId" element={<PhotosPage />} />
+                        <Route path="/photos/albums/:photoAlbumId/:photoId" element={<PhotosPage />} />
+                        <Route path="/photos/people" element={<PhotoPeoplePage />} />
+                        <Route path="/photos/people/:photoFaceGroupId" element={<PhotosPage />} />
+                        <Route path="/photos/people/:photoFaceGroupId/:photoId" element={<PhotosPage />} />
+                        <Route path="/photos/:photoId" element={<PhotosPage />} />
+                      </Route>
                       <Route path="/recordings" element={<RecordingsPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
                       <Route path="/coding" element={<CodingPage />} />

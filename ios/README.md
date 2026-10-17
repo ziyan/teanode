@@ -42,6 +42,7 @@ These are done once, by hand, at developer.apple.com and appstoreconnect.apple.c
   - `com.teanode.app.notification` with App Groups;
   - `com.teanode.app.widgets` with App Groups and Push Notifications.
 - [ ] Register the App Group `group.com.teanode.app` and attach it to all four.
+- Photo backup needs nothing more on these App IDs: reading the library is the `NSPhotoLibraryUsageDescription` key, and the background tasks are `BGTaskSchedulerPermittedIdentifiers` and the `processing` background mode, all in `project.yml`. (The Photos background upload extension, if a device test shows it can be built, is a fifth App ID with the App Group and the keychain group; see `docs/planning/photos-execplan.md`.)
 - [ ] Under Keys, create an Apple Push Notifications service (APNs) key. Its `.p8` file can be downloaded once: keep it with the account's other secrets, never in a conversation or this repository. It belongs to the push relay, not to any TeaNode server.
 - [ ] In App Store Connect, under Users and Access, Integrations, create an App Store Connect API key with the App Manager role, for uploads from CI. Same care with its `.p8`.
 - [ ] In App Store Connect, create the app: name TeaNode, bundle ID `com.teanode.app`.

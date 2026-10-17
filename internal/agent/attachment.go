@@ -194,6 +194,12 @@ func referenceLines(references []models.AgentReference) string {
 			parts = append(parts, fmt.Sprintf("recording %s (%q): described below when it was pointed at in this turn, else read it with the recording tool (read with recording_id); read its words with the same tool (transcript) when the answer needs them",
 				reference.RecordingID, reference.RecordingTitle))
 		}
+		if reference.PhotoID != "" {
+			// A photo, not a message: the turn it was pointed at carries
+			// what is known about it, and the picture is seen with the tool.
+			parts = append(parts, fmt.Sprintf("photo %s (%q): described below when it was pointed at in this turn; look at the picture with the photo tool (look with photo_ids) and read its details with the same tool (read with photo_id) when the answer needs them",
+				reference.PhotoID, reference.PhotoTitle))
+		}
 		if reference.QuotedText != "" {
 			// A message of this conversation the person is answering: what
 			// they write is about it, and "this" or "that" means it.
@@ -236,6 +242,9 @@ func userTurn(ctx context.Context, store storage.Storage, text string, attachmen
 		}
 		if reference.RecordingContext != "" {
 			blocks = append(blocks, reference.RecordingContext)
+		}
+		if reference.PhotoContext != "" {
+			blocks = append(blocks, reference.PhotoContext)
 		}
 	}
 	blocks = append(blocks, text)

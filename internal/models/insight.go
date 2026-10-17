@@ -538,6 +538,15 @@ type AgentReference struct {
 	RecordingID    string `json:"recordingId,omitempty" graphapi:"nullable"`
 	RecordingTitle string `json:"recordingTitle,omitempty" graphapi:"nullable"`
 
+	// PhotoID points at one of the person's photos instead: the person
+	// pressed Ask on it in the library. PhotoTitle is what the chip shows,
+	// the place and the date where it was taken, or its file name; the
+	// server fills it in from the stored row whatever the dashboard sent,
+	// and drops the reference when the photo is not the person's or has
+	// been deleted.
+	PhotoID    string `json:"photoId,omitempty" graphapi:"nullable"`
+	PhotoTitle string `json:"photoTitle,omitempty" graphapi:"nullable"`
+
 	// AgentMessageID points at a message earlier in the same conversation
 	// instead: the person swiped it, or picked Reply on it, to say what
 	// they are answering. QuotedRole is whose it was, "user" or
@@ -561,6 +570,12 @@ type AgentReference struct {
 	// and never stored, so an earlier turn names it by its id alone and the
 	// recording tool reads it again.
 	RecordingContext string `json:"-"`
+
+	// PhotoContext is the same for a photo: what the model is told about it
+	// in the turn it was pointed at, read when the turn is kept and never
+	// stored, so an earlier turn names it by its id alone and the photo tool
+	// reads it again.
+	PhotoContext string `json:"-"`
 }
 
 // AgentToolCall is a tool the model asked for, as recorded.

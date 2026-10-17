@@ -38,10 +38,16 @@ targets:
     # Notifications, and a keychain group the notification extension
     # shares, so it can read the key notifications are encrypted with.
     # A call goes on with the screen locked: audio, and CallKit's voip.
+    # The photo backup catches up overnight on power (a processing task), and
+    # goes on when the person taps Back up now (a continued processing task);
+    # the system only starts a task whose identifier is listed here.
     info:
       path: TeaNode/Info.plist
       properties:
-        UIBackgroundModes: [audio, voip]
+        UIBackgroundModes: [audio, voip, processing]
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(TEANODE_BUNDLE_IDENTIFIER).photo-backup
+          - $(TEANODE_BUNDLE_IDENTIFIER).photo-backup-now
         NSSupportsLiveActivities: true
         TeaNodeAppGroup: $(TEANODE_APP_GROUP)
     entitlements:
@@ -78,6 +84,8 @@ targets:
         INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
         INFOPLIST_KEY_NSFaceIDUsageDescription: "TeaNode asks for Face ID before you approve a payment somebody made with a skill you share."
         INFOPLIST_KEY_NSContactsUsageDescription: "TeaNode reads your iPhone's contacts only when you choose to import them into your address book."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "TeaNode saves the photos you choose to your library."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "TeaNode backs up your photos and videos to your server when you turn on backup."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Your agent asks where you are when something you asked depends on it, such as the weather or how long a trip takes."
         # The app encrypts nothing beyond the https the system provides, which

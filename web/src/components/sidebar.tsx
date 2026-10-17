@@ -6,6 +6,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Key, useTranslation } from '../i18n/i18n'
 import {
   CalendarIcon,
+  PictureIcon,
   ChevronRightIcon,
   CodeIcon,
   ComposeIcon,
@@ -232,7 +233,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders', '/circles'].some(
+    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/circles'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||
@@ -489,6 +490,14 @@ export function Sidebar({
                   <span className="sidebar-label">{t('nav.calendar')}</span>
                 </NavLink>
               )}
+              {session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use') && (
+                <NavLink to="/photos" title={collapsed ? t('nav.photos') : undefined}>
+                  <span className="sidebar-icon">
+                    <PictureIcon />
+                  </span>
+                  <span className="sidebar-label">{t('nav.photos')}</span>
+                </NavLink>
+              )}
               {/* What the agent knows and what the person's money did, under
                   the calendar: pages read often, not settings. The mailbox's
                   own settings are with the rest of the person's, in the
@@ -549,6 +558,12 @@ export function Sidebar({
                 <NavLink to="/coding">
                   <CodeIcon />
                   <span className="sidebar-label">{t('nav.coding')}</span>
+                </NavLink>
+              )}
+              {session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use') && (
+                <NavLink to="/photos">
+                  <PictureIcon />
+                  <span className="sidebar-label">{t('nav.photos')}</span>
                 </NavLink>
               )}
               {finance.isShown && (

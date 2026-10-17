@@ -33,7 +33,8 @@ const (
 // is told about it is written beside it. The API refuses another agent's
 // finance transaction before a turn starts; this is the same check for
 // any caller that did not. A recording is read the same way with the
-// agent's owner (see resolveRecordingReference). A message replied to is read the same way, from
+// agent's owner (see resolveRecordingReference), and so is a photo (see
+// resolvePhotoReference). A message replied to is read the same way, from
 // the conversation the turn is in (see resolveReply).
 func resolveReferences(tx db.Transaction, agentId, userId, conversationId string, references []models.AgentReference) ([]models.AgentReference, error) {
 	if len(references) == 0 {
@@ -44,6 +45,7 @@ func resolveReferences(tx db.Transaction, agentId, userId, conversationId string
 	// context on every round of the run.
 	seenFinanceTransactionIds := map[string]bool{}
 	seenRecordingIds := map[string]bool{}
+	seenPhotoIds := map[string]bool{}
 	isReplyKept := false
 	for _, reference := range references {
 		if isReplyReference(reference) {
@@ -72,6 +74,20 @@ func resolveReferences(tx db.Transaction, agentId, userId, conversationId string
 			}
 			if recording != nil {
 				resolved = append(resolved, *recording)
+			}
+			continue
+		}
+		if reference.PhotoID != "" {
+			if seenPhotoIds[reference.PhotoID] {
+				continue
+			}
+			seenPhotoIds[reference.PhotoID] = true
+			photo, err := resolvePhotoReference(tx, agentId, userId, reference)
+			if err != nil {
+				return nil, err
+			}
+			if photo != nil {
+				resolved = append(resolved, *photo)
 			}
 			continue
 		}

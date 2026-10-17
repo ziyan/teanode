@@ -31,6 +31,7 @@ const (
 	PermissionAgentUse        Permission = "agent:use"     // have an agent, grant it one's mailboxes, talk to it
 	PermissionContactsUse     Permission = "contacts:use"  // keep an address book, and sync it to a device
 	PermissionCalendarUse     Permission = "calendar:use"  // keep a calendar, and sync it to a device
+	PermissionPhotosUse       Permission = "photos:use"    // keep a photo library, and back up a device to it
 	PermissionCircleUse       Permission = "circle:use"    // make circles of people on this server, and join them
 	PermissionAgentAudit      Permission = "agent:audit"   // every person's agent state and usage, limits, switch-off; never content
 	PermissionAgentAct        Permission = "agent:act"     // every person's agent conversations and runs, and a word with their agent as them; content, for the operator of a private server
@@ -77,6 +78,7 @@ var permissionKinds = []struct {
 	{PermissionAgentUse, PermissionKindServer, ""},
 	{PermissionContactsUse, PermissionKindServer, ""},
 	{PermissionCalendarUse, PermissionKindServer, ""},
+	{PermissionPhotosUse, PermissionKindServer, ""},
 	{PermissionCircleUse, PermissionKindServer, ""},
 	{PermissionAgentAudit, PermissionKindServer, ""},
 	{PermissionAgentAct, PermissionKindServer, ""},

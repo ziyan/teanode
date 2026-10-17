@@ -2,8 +2,8 @@ package client
 
 import "context"
 
-const DocumentServiceCapabilities = `query { GetServiceCapabilities { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }`
-const DocumentUpdateServices = `mutation ($isMailRoutingEnabled: Boolean, $isMailboxEnabled: Boolean, $isCalendarEnabled: Boolean, $isRemindersEnabled: Boolean, $isContactsEnabled: Boolean) { UpdateServices(isMailRoutingEnabled: $isMailRoutingEnabled, isMailboxEnabled: $isMailboxEnabled, isCalendarEnabled: $isCalendarEnabled, isRemindersEnabled: $isRemindersEnabled, isContactsEnabled: $isContactsEnabled) { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }`
+const DocumentServiceCapabilities = `query { GetServiceCapabilities { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }`
+const DocumentUpdateServices = `mutation ($isMailRoutingEnabled: Boolean, $isMailboxEnabled: Boolean, $isCalendarEnabled: Boolean, $isRemindersEnabled: Boolean, $isContactsEnabled: Boolean, $isPhotosEnabled: Boolean) { UpdateServices(isMailRoutingEnabled: $isMailRoutingEnabled, isMailboxEnabled: $isMailboxEnabled, isCalendarEnabled: $isCalendarEnabled, isRemindersEnabled: $isRemindersEnabled, isContactsEnabled: $isContactsEnabled, isPhotosEnabled: $isPhotosEnabled) { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }`
 
 // ServiceCapabilities describes hosted features running on the server.
 type ServiceCapabilities struct {
@@ -12,6 +12,7 @@ type ServiceCapabilities struct {
 	IsCalendarEnabled        bool `json:"isCalendarEnabled"`
 	IsRemindersEnabled       bool `json:"isRemindersEnabled"`
 	IsContactsEnabled        bool `json:"isContactsEnabled"`
+	IsPhotosEnabled          bool `json:"isPhotosEnabled"`
 	IsAssistantEnabled       bool `json:"isAssistantEnabled"`
 	HasPendingServiceRestart bool `json:"hasPendingServiceRestart"`
 	HasCompletedSetup        bool `json:"hasCompletedSetup"`

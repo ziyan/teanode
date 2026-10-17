@@ -158,6 +158,7 @@ export interface ServiceCapabilities {
   isCalendarEnabled: boolean
   isRemindersEnabled: boolean
   isContactsEnabled: boolean
+  isPhotosEnabled: boolean
   isAssistantEnabled: boolean
   hasPendingServiceRestart: boolean
   hasCompletedSetup: boolean
@@ -214,7 +215,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
+  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)
@@ -1082,6 +1083,11 @@ export interface AgentReference {
   // server fills the title in again from the stored row.
   recordingId?: string
   recordingTitle?: string
+  // One of the person's photos, with the title its chip shows: the place and
+  // the date, or the file name. The server fills the title in again from the
+  // stored row.
+  photoId?: string
+  photoTitle?: string
   // A message of the conversation the turn answers: its id when the
   // drawer has one, whose it was, and what it said. The server reads the
   // words again from the stored message.

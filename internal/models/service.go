@@ -11,6 +11,7 @@ const (
 	ServiceCalendar    Service = "calendar"
 	ServiceReminders   Service = "reminders"
 	ServiceContacts    Service = "contacts"
+	ServicePhotos      Service = "photos"
 )
 
 // ServiceUnavailableError reports a disabled or not-yet-running service.

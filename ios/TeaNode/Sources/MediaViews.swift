@@ -148,6 +148,10 @@ struct PictureLightbox: View {
 struct ZoomablePicture: UIViewRepresentable {
     let picture: UIImage
     @Binding var isZoomed: Bool
+    /// Whether this picture is the one on screen. A picture that stops being it
+    /// (the person paged to another) goes back to its whole size, so that it is
+    /// not still zoomed when it is paged back to.
+    var isCurrent = true
 
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
@@ -178,7 +182,16 @@ struct ZoomablePicture: UIViewRepresentable {
         return scrollView
     }
 
-    func updateUIView(_ scrollView: UIScrollView, context: Context) {}
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // The coordinator was made with the binding of the first update. A page
+        // built while it was not the current one was given a binding that does
+        // nothing, and would keep it: a zoomed photo then pages instead of
+        // panning. Every update hands it the binding as it is now.
+        context.coordinator.isZoomed = $isZoomed
+        if !isCurrent, scrollView.zoomScale > 1 {
+            scrollView.setZoomScale(1, animated: false)
+        }
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(isZoomed: $isZoomed)
@@ -268,6 +281,18 @@ struct FileCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
     @State private var shareAddress: URL?
+    @State private var openedPhotoId: OpenedPhoto?
+    /// The photo made of this file once the person kept it in their library.
+    @State private var savedPhotoId: String?
+    @State private var isSavingToLibrary = false
+    @State private var savingProblemText: String?
+
+    /// The photo this file is: the one the photo tool showed, or the copy the
+    /// person just kept.
+    private var photoId: String? { file.photoId ?? savedPhotoId }
+
+    /// Whether the file is a picture or video that can be kept as a photo.
+    private var canBeKept: Bool { photoId == nil && (file.isImage || file.isVideo) && !file.isArtifact && app.isPhotosOffered }
 
     var body: some View {
         AgentBubble {
@@ -281,11 +306,19 @@ struct FileCard: View {
                     .font(.subheadline)
                     .lineLimit(1)
                     Spacer(minLength: 8)
-                    Button("Open") {
-                        Task { await app.preview(file.path, name: file.name) }
+                    if let photoId {
+                        // A photo the agent showed opens in the app's photo
+                        // viewer, where it can be favorited, saved or shared.
+                        Button("Open in Photos") { openedPhotoId = OpenedPhoto(id: photoId) }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                    } else {
+                        Button("Open") {
+                            Task { await app.preview(file.path, name: file.name) }
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                     }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
                 }
                 if file.isImage {
                     RemotePicture(path: file.path, name: file.name)
@@ -298,11 +331,37 @@ struct FileCard: View {
                         ProgressView()
                     }
                 }
+                if canBeKept {
+                    // Keeps the picture or video as a photo in TeaNode's library.
+                    Button {
+                        Task { await keepInLibrary() }
+                    } label: {
+                        if isSavingToLibrary {
+                            ProgressView()
+                        } else {
+                            Label("Save to my library", systemImage: "photo.badge.plus")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .disabled(isSavingToLibrary)
+                }
                 if !file.caption.isEmpty {
                     Text(file.caption)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+        .sensoryFeedback(.success, trigger: savedPhotoId)
+        .alert("Cannot save to my library", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { text in
+            Text(text)
+        }
+        .fullScreenCover(item: $openedPhotoId) { opened in
+            if let connection = app.connection {
+                AgentPhotoViewer(photoId: opened.id, connection: connection)
             }
         }
         .task(id: file.attachmentId) {
@@ -311,6 +370,70 @@ struct FileCard: View {
             if file.isVideo || file.isAudio, let connection = app.connection {
                 shareAddress = try? await connection.shareAddress(attachmentId: file.attachmentId)
             }
+        }
+    }
+}
+
+extension FileCard {
+    /// Keeps the file as a photo of the person's own library.
+    fileprivate func keepInLibrary() async {
+        guard let connection = app.connection else { return }
+        isSavingToLibrary = true
+        defer { isSavingToLibrary = false }
+        do {
+            savedPhotoId = try await connection.savePhotoFromAttachment(file.attachmentId).id
+        } catch {
+            savingProblemText = app.describe(error)
+        }
+    }
+}
+
+/// AgentPhotoViewer opens one photo the agent showed in a conversation in the
+/// app's photo viewer. The photo is not in any list the Photos screens have
+/// read, so it has a model of its own holding just that photo.
+struct AgentPhotoViewer: View {
+    let photoId: String
+    @State private var model: PhotosModel
+    @State private var readiness = Readiness.reading
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Readiness { case reading, ready, failed(String) }
+
+    init(photoId: String, connection: Connection) {
+        self.photoId = photoId
+        _model = State(initialValue: PhotosModel(connection: connection))
+    }
+
+    var body: some View {
+        switch readiness {
+        case .ready:
+            PhotoViewer(model: model, listKey: .library, openedPhotoId: photoId)
+        case .reading:
+            ProgressView()
+                .task { await read() }
+        case .failed(let problemText):
+            NavigationStack {
+                ContentUnavailableView {
+                    Label("Cannot show this photo", systemImage: "exclamationmark.circle")
+                } description: {
+                    Text(problemText)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", systemImage: "xmark") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private func read() async {
+        do {
+            let detail = try await model.connection.photoDetail(photoId)
+            model.hold([detail.photo], as: .library)
+            readiness = .ready
+        } catch {
+            readiness = .failed(error.localizedDescription)
         }
     }
 }
@@ -395,7 +518,7 @@ struct ToolFiles: View {
     let line: TranscriptLine
 
     var body: some View {
-        ForEach(AgentFile.of(toolResult: line.text), id: \.attachmentId) { file in
+        ForEach(AgentFile.of(toolResult: line.text, tool: line.detail), id: \.attachmentId) { file in
             if file.isArtifact {
                 ArtifactCard(file: file)
             } else {

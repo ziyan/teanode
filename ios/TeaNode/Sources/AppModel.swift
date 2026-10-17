@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var connection: Connection?
 
     private(set) var services: ServiceCapabilities?
+    /// What the person may do on this server, as the access pages read it;
+    /// nil until read, or when it could not be.
+    private(set) var accessSession: AccessSession?
     /// Whether the server could not be asked which services it runs, and
     /// none are known yet: the app says so rather than calling them off.
     private(set) var hasServicesFailedToLoad = false
@@ -402,6 +405,7 @@ final class AppModel {
         if isChanged {
             services = nil
             hasCodingComputers = false
+            accessSession = nil
             forgetAccountFacts()
             openedRecordingLink = nil
             openedRecordingAccountKey = nil
@@ -717,6 +721,9 @@ final class AppModel {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey)
         }
         if let account { await RecordingUploads.shared.cancel(accountKey: account.accountKey) }
+        // Backup goes with the sign-in, and its password is revoked while the
+        // sign-in can still do it.
+        if let account { await PhotoBackupEngine.shared.accountRemoved(accountKey: account.accountKey, connection: connection) }
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
@@ -763,6 +770,7 @@ final class AppModel {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: other.accountKey)
         }
         await RecordingUploads.shared.cancel(accountKey: other.accountKey)
+        await PhotoBackupEngine.shared.accountRemoved(accountKey: other.accountKey, connection: otherConnections[other.accountKey])
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
@@ -778,6 +786,8 @@ final class AppModel {
         if let error = error as? TeaNodeError, error == .signedOut, let connection {
             Task { await signOut(ifEnded: connection, signedOutText: error.localizedDescription) }
         }
+        // The Kit names what went wrong with a photo; the words are the app's.
+        if let error = error as? PhotoError { return error.localizedText }
         if let error = error as? LocalizedError, let description = error.errorDescription {
             return description
         }
@@ -846,9 +856,13 @@ extension AppModel {
     func refreshServices() async {
         guard let connection else { return }
         async let refreshedServices = try? connection.serviceCapabilities()
+        // Read beside the services, so that Photos is shown or hidden once,
+        // not shown and then hidden.
+        async let refreshedSession = try? connection.accessSession()
         let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
         let verifiedAccount = await connection.account
         let availableServices = await refreshedServices
+        let readSession = await refreshedSession
         // A refresh cancelled as the screens are drawn again, right after
         // signing in, failed to load nothing: counted as a failure, it
         // flashed "Cannot reach your server" before another refresh landed.
@@ -859,6 +873,16 @@ extension AppModel {
         }
         if let availableServices { self.services = availableServices }
         hasServicesFailedToLoad = availableServices == nil && services == nil
+        // What the person may use decides whether Photos is offered. A read
+        // that fails keeps what was known, and nothing known offers it.
+        if let readSession { accessSession = readSession }
+    }
+
+    /// Whether Photos is offered: an operator turned it on for the server and
+    /// the person holds `photos:use`. It gates the Photos section, the rows
+    /// for Photo backup and People in Photos, and the backup switch.
+    var isPhotosOffered: Bool {
+        PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
 
     func noteCodingComputers() { hasCodingComputers = true }
@@ -880,6 +904,9 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
+        // Hidden until an operator turns Photos on for the server, and from
+        // someone who may not use it.
+        case .photos: return isPhotosOffered
         case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
         // The agent's screen also holds the person's chats, which need no
         // agent.

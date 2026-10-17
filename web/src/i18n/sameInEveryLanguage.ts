@@ -10,6 +10,9 @@ export const SAME_IN_EVERY_LANGUAGE: ReadonlySet<Key> = new Set<Key>([
   // The product's name, and the dash that stands for nothing.
   'app.name',
   'common.none',
+  // Apple's name for a picture with a few seconds of video, which the
+  // Japanese iPhone itself writes in English.
+  'photos.kindLivePhoto',
   // The name of a US tax form, printed this way on the form itself and
   // on every return that asks for it.
   'finance.taxW2',

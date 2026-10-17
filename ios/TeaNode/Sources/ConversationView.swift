@@ -257,6 +257,10 @@ struct ConversationView: View {
                     ReferenceStrip(systemImage: "brain", title: reference.name ?? path, detail: path, onCancel: drop)
                 } else if reference.recordingId != nil {
                     ReferenceStrip(systemImage: "waveform", title: reference.label, detail: "", onCancel: drop)
+                } else if reference.photoId != nil {
+                    ReferenceStrip(
+                        systemImage: "photo", title: reference.label.isEmpty ? String(localized: "Photo") : reference.label, detail: "",
+                        onCancel: drop)
                 } else if reference.financeTransactionId != nil {
                     ReferenceStrip(
                         systemImage: "creditcard", title: reference.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reference.description ?? "",
@@ -1199,7 +1203,7 @@ struct PersonBubble: View {
                     }
             }
             ForEach(line.references, id: \.self) { reference in
-                Label(reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
+                Label(reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

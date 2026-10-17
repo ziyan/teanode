@@ -162,6 +162,31 @@ how a reaction on a message of a conversation is kept (a row per reactor
 per message, gone with its message), why it wakes no turn, how the model
 reads one, and why the agent's own is an action of the conversation tool.
 
+`20261016-photos-are-rows-and-their-bytes-are-blobs.md` says why everything
+known about a photo is a row and its bytes are blobs named by their SHA-256,
+why an edit is a second file beside the original, and why photos are a
+hosted service that works without the agent.
+
+`20261016-uploads-follow-the-resumable-upload-draft.md` says why photo files
+go up through the IETF resumable upload draft rather than recordings' own
+parts, and why a phone's background uploads sign in with a device password.
+
+`20261016-the-iphone-backs-up-and-teanode-keeps.md` says why an iPhone backs
+up rather than mirrors, and why TeaNode's photos reach the phone through the
+app's own library rather than its Photos library.
+
+`20261016-a-photo-is-described-when-somebody-looks-at-it.md` says why the
+model describes a photo only when somebody works with it, and why the
+description is kept and searched.
+
+`20261016-faces-are-found-on-the-server-and-named-from-contacts.md` says why
+faces are found by a separate C++ program in the image, and why a face group
+is nobody until it is linked to a contact.
+
+`20261016-an-album-is-shared-at-a-level.md` says how an album is shared with
+a circle or a person at `view` or `contribute`, why a circle can own albums,
+and what a reader does not see.
+
 `20261016-people-on-one-server-meet-in-circles.md` says how accounts on one
 server come to know each other: a circle of a kind (family, friends,
 colleagues), joined by invitation, with admins and members and no other

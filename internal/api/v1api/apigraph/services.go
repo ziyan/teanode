@@ -25,6 +25,7 @@ type ServiceCapabilities struct {
 	IsCalendarEnabled        bool `json:"isCalendarEnabled"`
 	IsRemindersEnabled       bool `json:"isRemindersEnabled"`
 	IsContactsEnabled        bool `json:"isContactsEnabled"`
+	IsPhotosEnabled          bool `json:"isPhotosEnabled"`
 	IsAssistantEnabled       bool `json:"isAssistantEnabled"`
 	HasPendingServiceRestart bool `json:"hasPendingServiceRestart"`
 	HasCompletedSetup        bool `json:"hasCompletedSetup"`
@@ -40,6 +41,7 @@ type UpdateServicesArguments struct {
 	IsCalendarEnabled    *bool   `json:"isCalendarEnabled" graphapi:"nullable"`
 	IsRemindersEnabled   *bool   `json:"isRemindersEnabled" graphapi:"nullable"`
 	IsContactsEnabled    *bool   `json:"isContactsEnabled" graphapi:"nullable"`
+	IsPhotosEnabled      *bool   `json:"isPhotosEnabled" graphapi:"nullable"`
 	HasCompletedSetup    *bool   `json:"hasCompletedSetup" graphapi:"nullable"`
 }
 
@@ -71,7 +73,7 @@ func (self *graph) serviceCapabilities() *ServiceCapabilities {
 	selected := self.config.Current().Services
 	pending := false
 	if self.settings != nil && self.settings.RunningServices != nil {
-		for _, service := range []models.Service{models.ServiceMailRouting, models.ServiceMailboxes, models.ServiceCalendar, models.ServiceReminders, models.ServiceContacts} {
+		for _, service := range []models.Service{models.ServiceMailRouting, models.ServiceMailboxes, models.ServiceCalendar, models.ServiceReminders, models.ServiceContacts, models.ServicePhotos} {
 			pending = pending || selected.IsEnabled(service) != self.settings.RunningServices.IsEnabled(service)
 		}
 	}
@@ -80,8 +82,8 @@ func (self *graph) serviceCapabilities() *ServiceCapabilities {
 		HasModelProvider:     len(agentSettings.Providers) > 0 && agentSettings.Models.Default != "",
 		IsMailRoutingEnabled: self.isServiceEnabled(models.ServiceMailRouting), IsMailboxEnabled: self.isServiceEnabled(models.ServiceMailboxes),
 		IsCalendarEnabled: self.isServiceEnabled(models.ServiceCalendar), IsRemindersEnabled: self.isServiceEnabled(models.ServiceReminders),
-		IsContactsEnabled: self.isServiceEnabled(models.ServiceContacts), IsAssistantEnabled: self.config.Current().Agent.Enabled && self.settings != nil && self.agentWorker() != nil,
-		HasPendingServiceRestart: pending, HasCompletedSetup: selected.HasCompletedSetup || (selected.MailRouting.IsEnabled == nil && selected.Mailboxes.IsEnabled == nil && selected.Calendar.IsEnabled == nil && selected.Reminders.IsEnabled == nil && selected.Contacts.IsEnabled == nil),
+		IsContactsEnabled: self.isServiceEnabled(models.ServiceContacts), IsPhotosEnabled: self.isServiceEnabled(models.ServicePhotos), IsAssistantEnabled: self.config.Current().Agent.Enabled && self.settings != nil && self.agentWorker() != nil,
+		HasPendingServiceRestart: pending, HasCompletedSetup: selected.HasCompletedSetup || (selected.MailRouting.IsEnabled == nil && selected.Mailboxes.IsEnabled == nil && selected.Calendar.IsEnabled == nil && selected.Reminders.IsEnabled == nil && selected.Contacts.IsEnabled == nil && selected.Photos.IsEnabled == nil),
 	}
 }
 
@@ -96,7 +98,7 @@ func (self *graph) UpdateServices(ctx context.Context, arguments UpdateServicesA
 		}{
 			{&configuration.Services.MailRouting.IsEnabled, arguments.IsMailRoutingEnabled}, {&configuration.Services.Mailboxes.IsEnabled, arguments.IsMailboxEnabled},
 			{&configuration.Services.Calendar.IsEnabled, arguments.IsCalendarEnabled}, {&configuration.Services.Reminders.IsEnabled, arguments.IsRemindersEnabled},
-			{&configuration.Services.Contacts.IsEnabled, arguments.IsContactsEnabled},
+			{&configuration.Services.Contacts.IsEnabled, arguments.IsContactsEnabled}, {&configuration.Services.Photos.IsEnabled, arguments.IsPhotosEnabled},
 		} {
 			if change.selected != nil {
 				*change.target = new(*change.selected)
@@ -126,6 +128,7 @@ func serviceOperations() map[string]models.Service {
 		{models.ServiceMailRouting, []reflect.Type{reflect.TypeOf((*DomainQuery)(nil)).Elem(), reflect.TypeOf((*DomainMutation)(nil)).Elem(), reflect.TypeOf((*AliasQuery)(nil)).Elem(), reflect.TypeOf((*AliasMutation)(nil)).Elem(), reflect.TypeOf((*CredentialQuery)(nil)).Elem(), reflect.TypeOf((*CredentialMutation)(nil)).Elem(), reflect.TypeOf((*SendQuery)(nil)).Elem(), reflect.TypeOf((*SendMutation)(nil)).Elem(), reflect.TypeOf((*MailQuery)(nil)).Elem(), reflect.TypeOf((*MailMutation)(nil)).Elem(), reflect.TypeOf((*ContentQuery)(nil)).Elem(), reflect.TypeOf((*DeliveryQuery)(nil)).Elem(), reflect.TypeOf((*DeliveryMutation)(nil)).Elem(), reflect.TypeOf((*ReportQuery)(nil)).Elem(), reflect.TypeOf((*ReportMutation)(nil)).Elem(), reflect.TypeOf((*LayoutQuery)(nil)).Elem(), reflect.TypeOf((*LayoutMutation)(nil)).Elem(), reflect.TypeOf((*TemplateQuery)(nil)).Elem(), reflect.TypeOf((*TemplateMutation)(nil)).Elem(), reflect.TypeOf((*SpamQuery)(nil)).Elem(), reflect.TypeOf((*SpamMutation)(nil)).Elem()}},
 		{models.ServiceMailboxes, []reflect.Type{reflect.TypeOf((*MailboxQuery)(nil)).Elem(), reflect.TypeOf((*MailboxMutation)(nil)).Elem(), reflect.TypeOf((*MailboxComposeQuery)(nil)).Elem(), reflect.TypeOf((*MailboxComposeMutation)(nil)).Elem(), reflect.TypeOf((*MailboxRulesQuery)(nil)).Elem(), reflect.TypeOf((*MailboxAppPasswordQuery)(nil)).Elem(), reflect.TypeOf((*MailboxAppPasswordMutation)(nil)).Elem(), reflect.TypeOf((*MailboxSetupProfileMutation)(nil)).Elem(), reflect.TypeOf((*MailProgramQuery)(nil)).Elem(), reflect.TypeOf((*MailboxDirectoryQuery)(nil)).Elem(), reflect.TypeOf((*NoteQuery)(nil)).Elem(), reflect.TypeOf((*NoteMutation)(nil)).Elem(), reflect.TypeOf((*CalendarInvitationQuery)(nil)).Elem(), reflect.TypeOf((*CalendarInvitationMutation)(nil)).Elem()}},
 		{models.ServiceContacts, []reflect.Type{reflect.TypeOf((*AddressBookQuery)(nil)).Elem(), reflect.TypeOf((*AddressBookMutation)(nil)).Elem()}},
+		{models.ServicePhotos, []reflect.Type{reflect.TypeOf((*PhotoQuery)(nil)).Elem(), reflect.TypeOf((*PhotoMutation)(nil)).Elem()}},
 		{models.ServiceCalendar, []reflect.Type{reflect.TypeOf((*CalendarQuery)(nil)).Elem(), reflect.TypeOf((*CalendarMutation)(nil)).Elem()}},
 		{models.ServiceReminders, []reflect.Type{reflect.TypeOf((*ReminderQuery)(nil)).Elem(), reflect.TypeOf((*ReminderMutation)(nil)).Elem()}},
 	} {
@@ -180,7 +183,7 @@ func (self *graph) GetServiceSetup(ctx context.Context) (*ServiceSetup, error) {
 	}
 	configuration := self.config.Current()
 	selected := configuration.Services
-	choices := &ServiceCapabilities{IsMailRoutingEnabled: selected.IsEnabled(models.ServiceMailRouting), IsMailboxEnabled: selected.IsEnabled(models.ServiceMailboxes), IsCalendarEnabled: selected.IsEnabled(models.ServiceCalendar), IsRemindersEnabled: selected.IsEnabled(models.ServiceReminders), IsContactsEnabled: selected.IsEnabled(models.ServiceContacts), IsAssistantEnabled: configuration.Agent.Enabled, HasCompletedSetup: selected.HasCompletedSetup}
+	choices := &ServiceCapabilities{IsMailRoutingEnabled: selected.IsEnabled(models.ServiceMailRouting), IsMailboxEnabled: selected.IsEnabled(models.ServiceMailboxes), IsCalendarEnabled: selected.IsEnabled(models.ServiceCalendar), IsRemindersEnabled: selected.IsEnabled(models.ServiceReminders), IsContactsEnabled: selected.IsEnabled(models.ServiceContacts), IsPhotosEnabled: selected.IsEnabled(models.ServicePhotos), IsAssistantEnabled: configuration.Agent.Enabled, HasCompletedSetup: selected.HasCompletedSetup}
 	setup := &ServiceSetup{MailServerName: configuration.Server.Name, SelectedServices: choices, RunningServices: self.serviceCapabilities(), HasModelProvider: len(configuration.Agent.Providers) > 0 && configuration.Agent.Models.Default != ""}
 	if choices.IsMailRoutingEnabled {
 		domains, err := self.transaction(ctx).ListDomains()
