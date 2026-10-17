@@ -512,6 +512,8 @@ struct CodingSessionView: View {
                 .padding(.horizontal)
             }
             .scrollIndicators(.hidden)
+            // Dragging the tabs sideways scrolls them, never opens the menu.
+            .keepsSidePanelClosed()
             .onAppear { reader.scrollTo(selectedId) }
             .onChange(of: selectedId) {
                 withAnimation { reader.scrollTo(selectedId) }
@@ -613,6 +615,9 @@ struct CodingSessionView: View {
             }
             .padding()
         }
+        // The screen is wider than the phone and is panned both ways; a
+        // drag to the right moves it, never opens the side menu.
+        .keepsSidePanelClosed()
         .overlay {
             if !isRead {
                 ProgressView()
