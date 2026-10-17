@@ -164,7 +164,7 @@ func TestListGroupsSessionsByWorkspaceAndMarksTheTabOnScreen(t *testing.T) {
 	}
 	website, docs := strings.Index(text, "website on laptop"), strings.Index(text, "docs on laptop")
 	ui, api := strings.Index(text, "ui (on screen)"), strings.Index(text, "api ")
-	if !(website < ui && ui < api && api < docs) {
+	if website >= ui || ui >= api || api >= docs {
 		t.Errorf("workspaces and tabs are not in number order: %s", text)
 	}
 	if strings.Count(text, "on screen") != 1 {
