@@ -509,3 +509,25 @@ func TestAnUploadBelongsToItsOwner(test *testing.T) {
 		test.Fatalf("somebody else read the upload: %v", err)
 	}
 }
+
+func TestADateEndingInZIsAnInstantWithNoOffsetAndOneWithAnOffsetKeepsIt(test *testing.T) {
+	fixture := newFixture(test)
+	for _, check := range []struct {
+		name, value string
+		offset      *int
+	}{
+		{"instant-only", "2024-05-17T07:30:00Z", nil},
+		{"utc-offset", "2024-05-17T07:30:00+00:00", new(int)},
+		{"east", "2024-05-17T16:30:00+09:00", func() *int { offset := 540; return &offset }()},
+	} {
+		got := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders(check.name, "X-Photo-Taken-At", check.value), smallJpeg(test, uint8(41+len(check.name))))
+		fixture.expect(got, http.StatusCreated)
+		found := fixture.photoByClientId(check.name)
+		if found == nil || found.TakenAt == nil || !found.TakenAt.Equal(time.Date(2024, 5, 17, 7, 30, 0, 0, time.UTC)) {
+			test.Fatalf("%s: the instant is %+v", check.name, found)
+		}
+		if (check.offset == nil) != (found.TakenAtOffsetMinutes == nil) || (check.offset != nil && *check.offset != *found.TakenAtOffsetMinutes) {
+			test.Fatalf("%s: the offset is %v, want %v", check.name, found.TakenAtOffsetMinutes, check.offset)
+		}
+	}
+}

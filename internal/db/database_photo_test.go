@@ -776,3 +776,50 @@ func TestReadyPhotosWithoutASmallPreviewAreQueuedAgain(test *testing.T) {
 		}
 	})
 }
+
+func TestPhotoMetadataCompletesAnInstantOnlyDateWithTheFilesOffset(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-instant-owner")
+	instant := time.Date(2024, 5, 6, 5, 8, 9, 0, time.UTC)
+	fileOffsetMinutes := 120
+	// A photo the uploader dated with an instant and no offset takes the
+	// offset of a file whose own date is the same moment.
+	agreeing := newTestPhoto(test, database, ownerId, "agreeing", &instant)
+	// The file's date is a different moment, as when the person changed the
+	// date after the file was written: the file's offset is not theirs.
+	moved := newTestPhoto(test, database, ownerId, "moved", &instant)
+	// A date the file does not give leaves the photo with no offset.
+	silent := newTestPhoto(test, database, ownerId, "silent", &instant)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		fileAgreeing := instant.Add(30 * time.Second)
+		fileMoved := instant.Add(3 * time.Hour)
+		for _, change := range []struct {
+			photo    *models.Photo
+			metadata db.PhotoMetadata
+		}{
+			{agreeing, db.PhotoMetadata{TakenAt: &fileAgreeing, TakenAtOffsetMinutes: &fileOffsetMinutes}},
+			{moved, db.PhotoMetadata{TakenAt: &fileMoved, TakenAtOffsetMinutes: &fileOffsetMinutes}},
+			{silent, db.PhotoMetadata{PlaceName: "Somewhere"}},
+		} {
+			if err := transaction.UpdatePhotoMetadata(change.photo.ID, &change.metadata); err != nil {
+				test.Fatal(err)
+			}
+		}
+		for _, check := range []struct {
+			photo    *models.Photo
+			isOffset bool
+		}{{agreeing, true}, {moved, false}, {silent, false}} {
+			found, err := transaction.GetPhoto(ownerId, check.photo.ID)
+			if err != nil {
+				test.Fatal(err)
+			}
+			if found.TakenAt == nil || !found.TakenAt.Equal(instant) {
+				test.Fatalf("%s: the uploader's instant was replaced: %v", check.photo.ClientPhotoID, found.TakenAt)
+			}
+			if check.isOffset != (found.TakenAtOffsetMinutes != nil) || (check.isOffset && *found.TakenAtOffsetMinutes != 120) {
+				test.Fatalf("%s: offset %v, want it set to 120: %v", check.photo.ClientPhotoID, found.TakenAtOffsetMinutes, check.isOffset)
+			}
+		}
+	})
+}

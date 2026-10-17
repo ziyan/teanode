@@ -59,6 +59,14 @@ const (
 	PathPhotoPreview = Prefix + "/photos/{photoId}/previews/{photoPreviewSize}"
 	PathPhotoFile    = Prefix + "/photos/{photoId}/files/{photoFileRole}"
 
+	// PathPhotoPlaybackPreview and PathPhotoPlaybackFile serve the same bytes
+	// to a player that cannot send the person's sign-in: the address
+	// carries a signature made by PhotoPlaybackAddress, names one preview or file of
+	// one photo, and expires. They are let through the middleware (see
+	// PublicPrefixes) and the handler checks the signature.
+	PathPhotoPlaybackPreview = Prefix + "/photos/playback/{photoId}/previews/{photoPreviewSize}"
+	PathPhotoPlaybackFile    = Prefix + "/photos/playback/{photoId}/files/{photoFileRole}"
+
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
@@ -242,6 +250,17 @@ func PhotoFilePath(photoId, photoFileRole string) string {
 	return Prefix + "/photos/" + url.PathEscape(photoId) + "/files/" + url.PathEscape(photoFileRole)
 }
 
+// PhotoPlaybackPreviewPath is PathPhotoPlaybackPreview with its parameters filled
+// in.
+func PhotoPlaybackPreviewPath(photoId, photoPreviewSize string) string {
+	return Prefix + "/photos/playback/" + url.PathEscape(photoId) + "/previews/" + url.PathEscape(photoPreviewSize)
+}
+
+// PhotoPlaybackFilePath is PathPhotoPlaybackFile with its parameters filled in.
+func PhotoPlaybackFilePath(photoId, photoFileRole string) string {
+	return Prefix + "/photos/playback/" + url.PathEscape(photoId) + "/files/" + url.PathEscape(photoFileRole)
+}
+
 // MailAttachmentPath is PathMailAttachment with its parameters filled in.
 func MailAttachmentPath(mailId string, index int) string {
 	return fmt.Sprintf("%s/mail/%s/attachment/%d", Prefix, mailId, index)
@@ -332,5 +351,9 @@ func PublicPrefixes() []string {
 	//
 	// An upload in progress is one of the photo upload paths, for the same
 	// reason as the collection above.
-	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/", Prefix + "/mailbox/profile/", PathPhotoUploads + "/"}
+	//
+	// A photo's signed playback address is here because a player fetches it
+	// itself and cannot send a header; the signature in the address is what
+	// the handler checks, and it names one file and expires.
+	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/", Prefix + "/mailbox/profile/", PathPhotoUploads + "/", Prefix + "/photos/playback/"}
 }

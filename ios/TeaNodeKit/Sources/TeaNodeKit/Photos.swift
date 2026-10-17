@@ -291,7 +291,9 @@ extension Documents {
     public static let emptyPhotoTrash = """
         mutation { EmptyPhotoTrash }
         """
-    static let photoAlbumFields = "id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl"
+    static let photoAlbumFields = """
+        id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl
+        """
     public static let listPhotoAlbums = """
         query { ListPhotoAlbums { \(photoAlbumFields) } }
         """

@@ -47,9 +47,12 @@ func TestPhotoParity(test *testing.T) {
 		"CountPhotos":      {client.DocumentCountPhotos, []string{"list"}, []string{"list"}},
 		"ReadPhoto":        {client.DocumentReadPhoto, []string{"show", "download"}, []string{"read", "look", "show"}},
 		"ReadPhotoLibrary": {client.DocumentReadPhotoLibrary, []string{"library"}, []string{"library"}},
-		"UpdatePhoto":      {client.DocumentUpdatePhoto, []string{"favorite"}, []string{"favorite"}},
-		"TrashPhotos":      {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
-		"RestorePhotos":    {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
+		// For a player that cannot send the person's sign-in; neither the
+		// command line nor the agent plays anything.
+		"PhotoPlaybackAddress": {client.DocumentPhotoPlaybackAddress, nil, nil},
+		"UpdatePhoto":          {client.DocumentUpdatePhoto, []string{"favorite"}, []string{"favorite"}},
+		"TrashPhotos":          {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
+		"RestorePhotos":        {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
 		// What an uploader asks to decide what to skip; the agent keeps no
 		// files of its own to upload.
 		"FindPhotos": {client.DocumentFindPhotos, []string{"upload"}, nil},
@@ -303,6 +306,8 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"SetPhotoAlbumCover":` + fixtureAlbum + `}}`))
 			case strings.Contains(asked.Query, "SuggestPhotoAlbums("):
 				_, _ = response.Write([]byte(`{"data":{"SuggestPhotoAlbums":[{"takenAfter":"2031-07-12T09:00:00Z","takenBefore":"2031-07-14T16:00:01Z","placeNames":["Exampleton, Exampleland","Sampleburg, Exampleland"],"albumTitle":"Exampleton and Sampleburg, Exampleland","photoCount":40,"samplePhotoIds":["photo-1"]}]}}`))
+			case strings.Contains(asked.Query, "ReadPhotoLibrary"):
+				_, _ = response.Write([]byte(`{"data":{"ReadPhotoLibrary":{"photoCount":5,"videoCount":2,"favoriteCount":1,"trashedCount":3,"usedBytes":1572864,"maximumFileBytes":8589934592,"maximumAccountBytes":0,"trashRetentionDays":30}}}`))
 			case strings.Contains(asked.Query, "ListPhotos("):
 				_, _ = response.Write([]byte(`{"data":{"ListPhotos":[{"id":"photo-1","photoKind":"picture","takenAt":"2025-03-04T10:30:00Z","takenAtOffsetMinutes":60,"placeName":"Example City","widthPixels":40,"heightPixels":30,"originalFilename":"IMG_1.JPG","photoProcessingState":"ready"}]}}`))
 			default:
@@ -575,5 +580,28 @@ func TestTrashNamesThePhotosAndDeleteAsksFirst(test *testing.T) {
 	}
 	if len(server.documents) != before {
 		test.Fatal("something was sent without confirmation")
+	}
+}
+
+func TestTheLibraryCommandUsesTheDashboardsWords(test *testing.T) {
+	server := newPhotoServer(test)
+	_, output, err := server.run(test, "library")
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, want := range []string{"space used", "1.5 MB · No limit", "largest file", "8 GB", "in the trash"} {
+		if !strings.Contains(output, want) {
+			test.Errorf("the library output lacks %q:\n%s", want, output)
+		}
+	}
+	for _, unwanted := range []string{"room", "MiB", "GiB"} {
+		if strings.Contains(output, unwanted) {
+			test.Errorf("the library output says %q, which the dashboard does not:\n%s", unwanted, output)
+		}
+	}
+	// A photo's date carries its offset in the details, and is the clock where it was taken.
+	_, list, err := server.run(test, "list")
+	if err != nil || !strings.Contains(list, "2025-03-04 11:30") || !strings.Contains(list, "date") {
+		test.Fatalf("%v\n%s", err, list)
 	}
 }

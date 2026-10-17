@@ -1,7 +1,6 @@
 package db
 
 import (
-	"errors"
 	"slices"
 	"time"
 
@@ -159,11 +158,12 @@ func (self *transaction) lockPhotoAlbum(userId, photoAlbumId string) (*photoAlbu
 		return nil, ErrNotFound
 	}
 	var row photoAlbumModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", photoAlbumId, userId).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", photoAlbumId, userId), &row)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	return &row, nil
 }

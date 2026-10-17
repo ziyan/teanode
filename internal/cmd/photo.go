@@ -72,7 +72,7 @@ func NewPhotoCommand() *cli.Command {
 			{Name: "restore", Usage: "take photos out of the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
 			{Name: "delete", Usage: "delete photos in the trash forever", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoDelete},
 			{Name: "empty-trash", Usage: "delete everything in the trash forever", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoEmptyTrash},
-			{Name: "library", Usage: "how many photos and videos there are, how much room they take and how much there is", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
+			{Name: "library", Usage: "how many photos and videos there are, the space used and the largest file", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
 			newPhotoAlbumCommand(),
 		},
 	}
@@ -118,8 +118,9 @@ func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
 	return filter, nil
 }
 
-// photoTakenText is when a photo was taken, in the zone the camera was in
-// when it says one, and where the file does not say, when it arrived.
+// photoTakenText is when a photo was taken, on the clock where it was taken
+// when its offset is known, and on this computer's clock when it is not: the
+// same rule as the dashboard's Photos page.
 func photoTakenText(photo *models.Photo) string {
 	if photo.TakenAt == nil {
 		return ""
@@ -127,8 +128,18 @@ func photoTakenText(photo *models.Photo) string {
 	if photo.TakenAtOffsetMinutes != nil {
 		return photo.TakenAt.In(time.FixedZone("", *photo.TakenAtOffsetMinutes*60)).Format("2006-01-02 15:04")
 	}
-	// No offset is a wall clock reading, kept as if it were UTC.
-	return photo.TakenAt.UTC().Format("2006-01-02 15:04")
+	return photo.TakenAt.In(time.Local).Format("2006-01-02 15:04")
+}
+
+// photoDateText is photoTakenText for the details of one photo, with the
+// offset said when it is known so that the reader sees it is not their own
+// clock.
+func photoDateText(photo *models.Photo) string {
+	text := photoTakenText(photo)
+	if text == "" || photo.TakenAtOffsetMinutes == nil {
+		return text
+	}
+	return text + " (" + client.PhotoOffsetText(*photo.TakenAtOffsetMinutes) + ")"
 }
 
 func photoDurationText(photo *models.Photo) string {
@@ -137,22 +148,6 @@ func photoDurationText(photo *models.Photo) string {
 	}
 	duration := (time.Duration(photo.DurationMS) * time.Millisecond).Round(time.Second)
 	return fmt.Sprintf("%d:%02d", int(duration.Minutes()), int(duration.Seconds())%60)
-}
-
-// photoBytesText is a size in the unit that reads best, rounded: unlike the
-// configuration's own, which names the largest unit that divides a size
-// evenly, and so writes a library's size in bytes.
-func photoBytesText(sizeBytes int64) string {
-	units := []string{"bytes", "KiB", "MiB", "GiB", "TiB"}
-	value, unit := float64(sizeBytes), 0
-	for value >= 1024 && unit < len(units)-1 {
-		value /= 1024
-		unit++
-	}
-	if unit == 0 {
-		return fmt.Sprintf("%d bytes", sizeBytes)
-	}
-	return fmt.Sprintf("%.1f %s", value, units[unit])
 }
 
 func photoSizeText(photo *models.Photo) string {
@@ -217,7 +212,7 @@ func printPhotoTable(photos []*models.Photo) error {
 	for _, photo := range photos {
 		rows = append(rows, []string{photo.ID, photoTakenText(photo), string(photo.PhotoKind), photo.PlaceName, photoSizeText(photo), photoDurationText(photo), photoStateText(photo), photo.OriginalFilename})
 	}
-	return printTable([]string{"id", "taken", "kind", "place", "size", "length", "state", "file"}, rows)
+	return printTable([]string{"id", "date", "kind", "place", "size", "length", "state", "file"}, rows)
 }
 
 func runPhotoShow(ctx context.Context, command *cli.Command) error {
@@ -238,7 +233,7 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 	}
 	photo := view.Photo
 	fields := [][2]string{
-		{"id", photo.ID}, {"kind", string(photo.PhotoKind)}, {"taken", photoTakenText(photo)}, {"place", photo.PlaceName},
+		{"id", photo.ID}, {"kind", string(photo.PhotoKind)}, {"date", photoDateText(photo)}, {"place", photo.PlaceName},
 		{"size", photoSizeText(photo)}, {"length", photoDurationText(photo)}, {"camera", strings.TrimSpace(photo.CameraMake + " " + photo.CameraModel)},
 		{"file name", photo.OriginalFilename}, {"favorite", yesNo(photo.IsFavorite)}, {"from", string(photo.PhotoSource)},
 		{"added", photo.CreatedAt.Local().Format("2006-01-02 15:04")}, {"processing", string(photo.PhotoProcessingState)},
@@ -253,7 +248,7 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 		fields = append(fields, [2]string{"in the trash since", photo.TrashedAt.Local().Format("2006-01-02 15:04")})
 	}
 	for _, file := range view.PhotoFiles {
-		fields = append(fields, [2]string{"file " + string(file.PhotoFileRole), fmt.Sprintf("%s, %s", photoBytesText(file.FileSizeBytes), file.ContentType)})
+		fields = append(fields, [2]string{"file " + string(file.PhotoFileRole), fmt.Sprintf("%s, %s", client.PhotoByteSizeText(file.FileSizeBytes), file.ContentType)})
 	}
 	for _, album := range view.Albums {
 		fields = append(fields, [2]string{"album", fmt.Sprintf("%s (%s)", album.AlbumTitle, album.ID)})
@@ -611,7 +606,7 @@ func runPhotoDownload(ctx context.Context, command *cli.Command) error {
 	if err := savePhotoFile(ctx, connection, file, path, command.Bool("force")); err != nil {
 		return describeError(command, err)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "saved %s (%s)\n", forTerminal(path), photoBytesText(file.FileSizeBytes))
+	_, _ = fmt.Fprintf(command.Writer, "saved %s (%s)\n", forTerminal(path), client.PhotoByteSizeText(file.FileSizeBytes))
 	return nil
 }
 
@@ -762,15 +757,11 @@ func runPhotoLibrary(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(library)
 	}
-	accountLimit := "none"
-	if library.MaximumAccountBytes > 0 {
-		accountLimit = photoBytesText(library.MaximumAccountBytes)
-	}
 	return printFields([][2]string{
 		{"photos", fmt.Sprint(library.PhotoCount)}, {"videos", fmt.Sprint(library.VideoCount)},
 		{"favorites", fmt.Sprint(library.FavoriteCount)}, {"in the trash", fmt.Sprint(library.TrashedCount)},
-		{"room used", photoBytesText(library.UsedBytes)}, {"room allowed", accountLimit},
-		{"largest file", photoBytesText(library.MaximumFileBytes)},
+		{"space used", library.SpaceUsedText()},
+		{"largest file", client.PhotoByteSizeText(library.MaximumFileBytes)},
 		{"trash kept for", fmt.Sprintf("%d days", library.TrashRetentionDays)},
 	})
 }

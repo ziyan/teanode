@@ -16,6 +16,15 @@ import (
 
 // The headers an uploader describes the file with, beyond the ones the
 // protocol defines.
+//
+// X-Photo-Taken-At is an RFC 3339 date. With an offset (+09:00, or +00:00
+// for an uploader that knows the photo was taken in UTC) it says the instant
+// and the wall clock where the photo was taken, and both win over what the
+// file's metadata says. Ending in Z it says only the instant: the offset is
+// then unknown, and is taken from the file's EXIF OffsetTimeOriginal (or a
+// video's creation date) when the photo is processed and finds one that
+// agrees with the instant; without one the photo has no offset and is shown
+// in the viewer's own zone.
 const (
 	headerClientId       = "X-Photo-Client-ID"
 	headerFileRole       = "X-Photo-File-Role"
@@ -113,13 +122,20 @@ func parseUploadHeaders(request *http.Request) (*models.PhotoUploadHeaders, *hea
 	if value := request.Header.Get(headerTakenAt); value != "" {
 		takenAt, err := time.Parse(time.RFC3339, value)
 		if err != nil {
-			return nil, &headerError{headerTakenAt, "must be an RFC 3339 date with its offset, such as 2024-05-17T09:30:00+02:00"}
+			return nil, &headerError{headerTakenAt, "must be an RFC 3339 date, such as 2024-05-17T09:30:00+02:00, or 2024-05-17T07:30:00Z when the offset is not known"}
 		}
-		_, offsetSeconds := takenAt.Zone()
-		offsetMinutes := offsetSeconds / 60
 		utc := takenAt.UTC()
 		headers.TakenAt = &utc
-		headers.TakenAtOffsetMinutes = &offsetMinutes
+		// A date written with Z says the instant and nothing about where the
+		// photo was taken: a phone knows when, and not in which zone. The
+		// offset is left empty, for the file's EXIF OffsetTimeOriginal to
+		// fill in when it is read. An uploader that means UTC itself, with
+		// the offset known to be zero, writes +00:00.
+		if !strings.HasSuffix(value, "Z") {
+			_, offsetSeconds := takenAt.Zone()
+			offsetMinutes := offsetSeconds / 60
+			headers.TakenAtOffsetMinutes = &offsetMinutes
+		}
 	}
 	latitude, err := parseCoordinate(request, headerLatitude, 90)
 	if err != nil {

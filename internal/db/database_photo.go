@@ -104,6 +104,9 @@ type PhotoOperation interface {
 	// headers and the person's corrections were put there first, and the
 	// answer to that is decided here, in the one statement that writes, so
 	// that a correction made while the file was being read is not undone.
+	// The one thing the file adds to a date the photo already has is its
+	// offset, when the photo has none and the file's date is the same
+	// moment.
 	UpdatePhotoMetadata(photoId string, metadata *PhotoMetadata) error
 
 	// ClaimPhotosForProcessing takes up to limit photos that wait for their
@@ -299,8 +302,12 @@ func (self *transaction) CreatePhoto(photo *models.Photo) (*models.Photo, bool, 
 		return photoFromModel(&row), true, nil
 	}
 	var existing photoModel
-	if err := self.tx.Where("user_id = ? AND client_photo_id = ?", photo.UserID, photo.ClientPhotoID).Take(&existing).Error; err != nil {
+	isFound, err := findOneRow(self.tx.Where("user_id = ? AND client_photo_id = ?", photo.UserID, photo.ClientPhotoID), &existing)
+	if err != nil {
 		return nil, false, err
+	}
+	if !isFound {
+		return nil, false, gorm.ErrRecordNotFound
 	}
 	return photoFromModel(&existing), false, nil
 }
@@ -310,13 +317,32 @@ func (self *transaction) GetPhoto(userId, photoId string) (*models.Photo, error)
 		return nil, ErrNotFound
 	}
 	var row photoModel
-	if err := self.tx.Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion), &row)
+	if err != nil {
 		return nil, err
 	}
+	if !isFound {
+		return nil, ErrNotFound
+	}
 	return photoFromModel(&row), nil
+}
+
+// photoTakenAtAgreementSeconds is how far apart the instant an uploader sent
+// and the instant a file's own date and offset make may be for the file's
+// offset to be taken as the photo's. Both are written to the second; the
+// margin covers a writer that rounds the other way.
+const photoTakenAtAgreementSeconds = 60
+
+// findOneRow reads the first row the query matches into row and says
+// whether there was one. It is how the photo queries ask "is there one?":
+// First and Take log "record not found" when the answer is no, and the
+// periodic jobs ask on every idle pass.
+func findOneRow(query *gorm.DB, row any) (bool, error) {
+	result := query.Limit(1).Find(row)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // maximumPhotoOffset bounds how far into the library a page is reached by
@@ -406,11 +432,12 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 			PlacedAt time.Time
 			ID       string
 		}
-		if err := self.tx.Model(&photoModel{}).Select(photoTimelineExpression+" AS placed_at, photo.id").Where("photo.id = ? AND photo.user_id = ?", filter.BeforePhotoID, userId).Take(&cursor).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, ErrNotFound
-			}
+		isFound, err := findOneRow(self.tx.Model(&photoModel{}).Select(photoTimelineExpression+" AS placed_at, photo.id").Where("photo.id = ? AND photo.user_id = ?", filter.BeforePhotoID, userId), &cursor)
+		if err != nil {
 			return nil, err
+		}
+		if !isFound {
+			return nil, ErrNotFound
 		}
 		query = query.Where("("+photoTimelineExpression+", photo.id) < (?, ?)", cursor.PlacedAt, cursor.ID)
 	}
@@ -595,20 +622,20 @@ func (self *transaction) SetPhotoFile(userId, photoId string, file *models.Photo
 	// The account's row is locked so that two files arriving together are
 	// each counted against the other.
 	var owner userModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userId).Take(&owner).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userId), &owner)
+	if err != nil {
 		return false, err
+	}
+	if !isFound {
+		return false, ErrNotFound
 	}
 	photo, err := self.GetPhoto(userId, photoId)
 	if err != nil {
 		return false, err
 	}
 	var previous photoFileModel
-	err = self.tx.Where("photo_id = ? AND photo_file_role = ?", photoId, file.PhotoFileRole).Take(&previous).Error
-	hasPrevious := err == nil
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	hasPrevious, err := findOneRow(self.tx.Where("photo_id = ? AND photo_file_role = ?", photoId, file.PhotoFileRole), &previous)
+	if err != nil {
 		return false, err
 	}
 	if hasPrevious && previous.BlobSHA256 == file.BlobSHA256 {
@@ -658,11 +685,12 @@ func (self *transaction) GetPhotoFile(userId, photoId string, photoFileRole mode
 		return nil, err
 	}
 	var row photoFileModel
-	if err := self.tx.Where("photo_id = ? AND photo_file_role = ?", photoId, photoFileRole).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Where("photo_id = ? AND photo_file_role = ?", photoId, photoFileRole), &row)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	return photoFileFromModel(&row), nil
 }
@@ -694,11 +722,12 @@ func validPhotoSha256(digest string) bool {
 
 func (self *transaction) GetPhotoBlob(blobSha256 string) (*models.PhotoBlob, error) {
 	var row photoBlobModel
-	if err := self.tx.Where("blob_sha256 = ?", blobSha256).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Where("blob_sha256 = ?", blobSha256), &row)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	return photoBlobFromModel(&row), nil
 }
@@ -728,14 +757,14 @@ func (self *transaction) InsertPhotoBlobIfAbsent(blob *models.PhotoBlob) (bool, 
 
 func (self *transaction) MarkUnreferencedPhotoBlobDeleting(createdBefore time.Time) (*models.PhotoBlob, error) {
 	var row photoBlobModel
-	err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("created_at < ? AND NOT EXISTS (SELECT 1 FROM photo_file WHERE photo_file.blob_sha256 = photo_blob.blob_sha256)", createdBefore).
-		Order("created_at").Limit(1).Take(&row).Error
+		Order("created_at"), &row)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	if row.DeletingAt == nil {
 		markedAt := photoNow()
@@ -749,11 +778,12 @@ func (self *transaction) MarkUnreferencedPhotoBlobDeleting(createdBefore time.Ti
 
 func (self *transaction) LockPhotoBlobForDeletion(blobSha256 string) (*models.PhotoBlob, error) {
 	var row photoBlobModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("blob_sha256 = ?", blobSha256).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("blob_sha256 = ?", blobSha256), &row)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	// Counted after the lock is held and in a statement of its own: a file
 	// being recorded takes a share of this row first, so one that was not
@@ -784,11 +814,12 @@ func (self *transaction) UpsertPhotoPreview(userId string, preview *models.Photo
 	// a photo after marking it, cannot miss one written in between and leave
 	// its bytes with no row to name them.
 	var owned photoModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, preview.PhotoID, userId, photoMarkedForDeletion).Take(&owned).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, preview.PhotoID, userId, photoMarkedForDeletion), &owned)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	row := photoPreviewModel(*preview)
 	row.CreatedAt = photoNow()
@@ -806,11 +837,12 @@ func (self *transaction) GetPhotoPreview(userId, photoId string, photoPreviewSiz
 		return nil, err
 	}
 	var row photoPreviewModel
-	if err := self.tx.Where("photo_id = ? AND photo_preview_size = ?", photoId, photoPreviewSize).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Where("photo_id = ? AND photo_preview_size = ?", photoId, photoPreviewSize), &row)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	return photoPreviewFromModel(&row), nil
 }
@@ -882,11 +914,12 @@ func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string,
 		return ErrInvalidArguments
 	}
 	var row photoModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", photoId).Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", photoId), &row)
+	if err != nil {
 		return err
+	}
+	if !isFound {
+		return ErrNotFound
 	}
 	attemptCount := row.ProcessingAttemptCount + 1
 	photoProcessingState := models.PhotoProcessingWaiting
@@ -914,9 +947,20 @@ func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMeta
 	// A column is only replaced where the photo has nothing. The size and the
 	// length describe the file itself, so they are replaced whenever the file
 	// said, and the kind is whatever the caller settled on.
+	offsetExpression := gorm.Expr("CASE WHEN taken_at IS NULL THEN ? ELSE taken_at_offset_minutes END", metadata.TakenAtOffsetMinutes)
+	if metadata.TakenAt != nil && metadata.TakenAtOffsetMinutes != nil {
+		// A photo whose date came from the uploader as an instant alone (a
+		// date ending in Z) has no offset, and the file's own offset
+		// completes it, provided the file's date is the same moment. A
+		// photo whose date the person has corrected since, or that has a
+		// date the file does not share, keeps having no offset.
+		offsetExpression = gorm.Expr(
+			"CASE WHEN taken_at IS NULL THEN ? WHEN taken_at_offset_minutes IS NULL AND ABS(EXTRACT(EPOCH FROM (taken_at - ?::timestamptz))) <= ? THEN ? ELSE taken_at_offset_minutes END",
+			*metadata.TakenAtOffsetMinutes, utcTime(metadata.TakenAt), photoTakenAtAgreementSeconds, *metadata.TakenAtOffsetMinutes)
+	}
 	changes := map[string]any{
 		"updated_at":              photoNow(),
-		"taken_at_offset_minutes": gorm.Expr("CASE WHEN taken_at IS NULL THEN ? ELSE taken_at_offset_minutes END", metadata.TakenAtOffsetMinutes),
+		"taken_at_offset_minutes": offsetExpression,
 		"taken_at":                gorm.Expr("COALESCE(taken_at, ?)", utcTime(metadata.TakenAt)),
 		"latitude":                gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude),
 		"longitude":               gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude),

@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/storage"
 )
 
@@ -28,10 +30,46 @@ type photoBytes struct {
 	isRangeServed bool
 }
 
-// photoPreviewView serves a smaller copy of a photo to its owner. The address
-// carries the time the photo last changed, so a preview that is made again
-// has a new address and this one can be cached for good. Only a video
-// preview is read in ranges, which is what a player does.
+// photoPreviewBytes is the preview of a photo of the owner's, ready to send.
+// The address of a preview carries the time the photo last changed, so a
+// preview that is made again has a new address and this one can be cached for
+// good. Only a video preview is read in ranges, which is what a player does.
+func (self *graph) photoPreviewBytes(ctx context.Context, ownerId, photoId string, photoPreviewSize models.PhotoPreviewSize) (*photoBytes, error) {
+	var preview *models.PhotoPreview
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		preview, err = transaction.GetPhotoPreview(ownerId, photoId, photoPreviewSize)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return &photoBytes{
+		fileId: models.PhotoPreviewFileID(preview.PhotoID, preview.PhotoPreviewSize), sizeBytes: preview.PreviewSizeBytes, contentType: preview.ContentType,
+		etag:         fmt.Sprintf(`"%d-%d"`, preview.CreatedAt.UnixMicro(), preview.PreviewSizeBytes),
+		disposition:  "inline",
+		cacheControl: "private, max-age=31536000, immutable", isRangeServed: preview.PhotoPreviewSize == models.PhotoPreviewVideo,
+	}, nil
+}
+
+// photoFileBytes is one file of a photo of the owner's, ready to send:
+// disposition is "attachment" to save it and "inline" to play it.
+func (self *graph) photoFileBytes(ctx context.Context, ownerId, photoId string, photoFileRole models.PhotoFileRole, disposition string) (*photoBytes, error) {
+	var file *models.PhotoFile
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		file, err = transaction.GetPhotoFile(ownerId, photoId, photoFileRole)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return &photoBytes{
+		fileId: models.PhotoBlobFileID(file.BlobSHA256), sizeBytes: file.FileSizeBytes, contentType: file.ContentType,
+		etag:          `"` + file.BlobSHA256 + `"`,
+		disposition:   mime.FormatMediaType(disposition, map[string]string{"filename": downloadName(file)}),
+		cacheControl:  "private, no-cache",
+		isRangeServed: true,
+	}, nil
+}
+
+// photoPreviewView serves a smaller copy of a photo to its owner.
 func (self *graph) photoPreviewView(response http.ResponseWriter, request *http.Request) {
 	user, ctx, isAuthorized := self.photoPerson(response, request, false)
 	if !isAuthorized {
@@ -42,20 +80,12 @@ func (self *graph) photoPreviewView(response http.ResponseWriter, request *http.
 		http.Error(response, "no such preview", http.StatusNotFound)
 		return
 	}
-	var preview *models.PhotoPreview
-	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-		preview, err = transaction.GetPhotoPreview(user.ID, mux.Vars(request)["photoId"], photoPreviewSize)
-		return err
-	}); err != nil {
+	content, err := self.photoPreviewBytes(ctx, user.ID, mux.Vars(request)["photoId"], photoPreviewSize)
+	if err != nil {
 		photoHttpError(response, err)
 		return
 	}
-	self.servePhotoBytes(response, request, ctx, &photoBytes{
-		fileId: models.PhotoPreviewFileID(preview.PhotoID, preview.PhotoPreviewSize), sizeBytes: preview.PreviewSizeBytes, contentType: preview.ContentType,
-		etag:         fmt.Sprintf(`"%d-%d"`, preview.CreatedAt.UnixMicro(), preview.PreviewSizeBytes),
-		disposition:  "inline",
-		cacheControl: "private, max-age=31536000, immutable", isRangeServed: preview.PhotoPreviewSize == models.PhotoPreviewVideo,
-	})
+	self.servePhotoBytes(response, request, ctx, content)
 }
 
 // photoFileView serves one file of a photo to its owner, to save.
@@ -69,21 +99,94 @@ func (self *graph) photoFileView(response http.ResponseWriter, request *http.Req
 		http.Error(response, "no such file", http.StatusNotFound)
 		return
 	}
-	var file *models.PhotoFile
-	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-		file, err = transaction.GetPhotoFile(user.ID, mux.Vars(request)["photoId"], photoFileRole)
-		return err
-	}); err != nil {
+	content, err := self.photoFileBytes(ctx, user.ID, mux.Vars(request)["photoId"], photoFileRole, "attachment")
+	if err != nil {
 		photoHttpError(response, err)
 		return
 	}
-	self.servePhotoBytes(response, request, ctx, &photoBytes{
-		fileId: models.PhotoBlobFileID(file.BlobSHA256), sizeBytes: file.FileSizeBytes, contentType: file.ContentType,
-		etag:          `"` + file.BlobSHA256 + `"`,
-		disposition:   mime.FormatMediaType("attachment", map[string]string{"filename": downloadName(file)}),
-		cacheControl:  "private, no-cache",
-		isRangeServed: true,
-	})
+	self.servePhotoBytes(response, request, ctx, content)
+}
+
+// playbackPhotoOwner settles who a signed playback address is for, before any
+// byte is read. The address itself is the credential: it names the owner,
+// the photo, and one preview or file, and expires, and anything that does not
+// check out is the same answer, so that an address cannot be used to learn
+// which photos exist. The owner must still be able to keep a photo library,
+// as when the address was made.
+func (self *graph) playbackPhotoOwner(response http.ResponseWriter, request *http.Request, playbackKind, name string) (*models.User, context.Context, bool) {
+	refuse := func() (*models.User, context.Context, bool) {
+		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
+		return nil, nil, false
+	}
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		http.Error(response, "method not allowed", http.StatusMethodNotAllowed)
+		return nil, nil, false
+	}
+	query := request.URL.Query()
+	ownerId, signature := query.Get("owner"), query.Get("signature")
+	if self.config == nil || ownerId == "" || signature == "" || !self.isServiceEnabled(models.ServicePhotos) ||
+		!photo.VerifyPlayback(self.config.Current().Secret(), signature, ownerId, mux.Vars(request)["photoId"], playbackKind, name, time.Now()) {
+		return refuse()
+	}
+	var owner *models.User
+	var permissions *models.EffectivePermissions
+	if err := self.database.TransactionContext(request.Context(), func(transaction db.Transaction) (err error) {
+		if owner, err = transaction.GetUser(ownerId); err != nil || owner == nil {
+			return err
+		}
+		permissions, err = transaction.EffectivePermissions(ownerId)
+		return err
+	}); err != nil {
+		log.Errorf("a photo owner could not be read: %s", err)
+		http.Error(response, "the photo could not be read", http.StatusInternalServerError)
+		return nil, nil, false
+	}
+	if owner == nil || owner.Disabled() || !permissions.Has(models.PermissionPhotosUse) {
+		return refuse()
+	}
+	return owner, request.Context(), true
+}
+
+// photoPlaybackPreviewView serves a preview to whoever holds its signed
+// address, for a player that cannot send a header.
+func (self *graph) photoPlaybackPreviewView(response http.ResponseWriter, request *http.Request) {
+	photoPreviewSize := models.PhotoPreviewSize(mux.Vars(request)["photoPreviewSize"])
+	if !photoPreviewSize.IsValid() {
+		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
+		return
+	}
+	owner, ctx, isAuthorized := self.playbackPhotoOwner(response, request, photo.PlaybackKindPreview, string(photoPreviewSize))
+	if !isAuthorized {
+		return
+	}
+	content, err := self.photoPreviewBytes(ctx, owner.ID, mux.Vars(request)["photoId"], photoPreviewSize)
+	if err != nil {
+		photoHttpError(response, err)
+		return
+	}
+	// The address is good for hours, not a year.
+	content.cacheControl = "private, max-age=3600"
+	self.servePhotoBytes(response, request, ctx, content)
+}
+
+// photoPlaybackFileView serves a file to whoever holds its signed address.
+func (self *graph) photoPlaybackFileView(response http.ResponseWriter, request *http.Request) {
+	photoFileRole := models.PhotoFileRole(mux.Vars(request)["photoFileRole"])
+	if !photoFileRole.IsValid() {
+		http.Error(response, "the link is not good, or no longer", http.StatusNotFound)
+		return
+	}
+	owner, ctx, isAuthorized := self.playbackPhotoOwner(response, request, photo.PlaybackKindFile, string(photoFileRole))
+	if !isAuthorized {
+		return
+	}
+	content, err := self.photoFileBytes(ctx, owner.ID, mux.Vars(request)["photoId"], photoFileRole, "inline")
+	if err != nil {
+		photoHttpError(response, err)
+		return
+	}
+	content.cacheControl = "private, max-age=3600"
+	self.servePhotoBytes(response, request, ctx, content)
 }
 
 // downloadName is the name a downloaded file is saved under: the name it was

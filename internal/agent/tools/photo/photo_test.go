@@ -149,7 +149,7 @@ func TestListAnswersCompactRowsInThePersonsZoneAndSaysHowToPage(test *testing.T)
 	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
 		test.Fatal(err)
 	}
-	if len(answer.Photos) != 3 || answer.Photos[0].TakenAt != "2025-03-04 10:30" || answer.Photos[0].PlaceName != "Example City, Exampleland" || answer.Photos[0].HasDescription == nil || *answer.Photos[0].HasDescription {
+	if len(answer.Photos) != 3 || answer.Photos[0].TakenAt != "2025-03-04 11:30 (UTC+01:00)" || answer.Photos[0].PlaceName != "Example City, Exampleland" || answer.Photos[0].HasDescription == nil || *answer.Photos[0].HasDescription {
 		test.Fatalf("%+v", answer.Photos)
 	}
 	if answer.Photos[1].DurationSeconds != 12 || answer.Photos[1].PhotoKind != "video" || answer.Photos[2].PreviewState != "not made yet" {
@@ -195,7 +195,7 @@ func TestLookReturnsTheLargePreviewsAsPicturesAndSaysWhyOthersAreNot(test *testi
 		test.Fatal("what is in a picture is evidence, not an instruction")
 	}
 	lines := strings.Split(result.Content, "\n")
-	if len(lines) != 4 || !strings.Contains(lines[0], "photo-one, picture, taken 2025-03-04 10:30, at Example City, Exampleland") ||
+	if len(lines) != 4 || !strings.Contains(lines[0], "photo-one, picture, taken 2025-03-04 11:30 (UTC+01:00), at Example City, Exampleland") ||
 		!strings.Contains(lines[1], "a video of 12 seconds; the first frame is shown") || !strings.Contains(lines[2], "not made yet") || !strings.HasPrefix(lines[3], "photo-else: ") {
 		test.Fatalf("lines:\n%s", result.Content)
 	}
@@ -280,10 +280,10 @@ func TestFavoriteTrashRestoreAndSaveUseTheSharedOperations(test *testing.T) {
 	if asked := operations.asked("UpdatePhoto"); asked[1]["isFavorite"] != true {
 		test.Fatalf("a favorite with no word on it is not one: %v", asked[1])
 	}
-	if result, err := current.call(map[string]any{"operation": "trash", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "2 of 2 photos moved to the trash") {
+	if result, err := current.call(map[string]any{"operation": "trash", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "2 of 2 photos moved to the Trash") {
 		test.Fatalf("%v %v", result, err)
 	}
-	if result, err := current.call(map[string]any{"operation": "restore", "photo_ids": []string{"a"}}); err != nil || !strings.Contains(result.Content, "1 of 1 photos taken out of the trash") {
+	if result, err := current.call(map[string]any{"operation": "restore", "photo_ids": []string{"a"}}); err != nil || !strings.Contains(result.Content, "1 of 1 photos taken out of the Trash") {
 		test.Fatalf("%v %v", result, err)
 	}
 	if _, err := current.call(map[string]any{"operation": "trash"}); err == nil {
@@ -359,10 +359,39 @@ func TestLibraryAnswersCountsAndLimits(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{`"photo_count":5`, `"video_count":2`, `"trash_kept_days":30`, "does not know what is in a picture"} {
+	for _, want := range []string{`"photo_count":5`, `"video_count":2`, `"trash_kept_days":30`, "does not know what is in a picture", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
 		if !strings.Contains(result.Content, want) {
 			test.Errorf("the library answer lacks %s: %s", want, result.Content)
 		}
 	}
 	var _ client.Executor = current.operations
+}
+
+func TestAPhotosDateIsTheClockWhereItWasTakenWithItsOffset(test *testing.T) {
+	newYork, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		test.Skip("no time zone database")
+	}
+	// 08:00 on April 4 where the offset is +09:00 is the evening of April 3
+	// for a person in New York, and the photo must still be April 4.
+	offset := 9 * 60
+	taken := time.Date(2025, 4, 3, 23, 0, 0, 0, time.UTC)
+	for _, check := range []struct {
+		name  string
+		photo *models.Photo
+		want  string
+	}{
+		{"offset known", &models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: &offset}, "2025-04-04 08:00 (UTC+09:00)"},
+		{"offset west of UTC", &models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: new(-210)}, "2025-04-03 19:30 (UTC-03:30)"},
+		{"offset zero", &models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: new(0)}, "2025-04-03 23:00 (UTC+00:00)"},
+		{"offset unknown", &models.Photo{TakenAt: &taken}, "2025-04-03 19:00"},
+		{"no date", &models.Photo{}, ""},
+	} {
+		if got := takenAtText(check.photo, newYork); got != check.want {
+			test.Errorf("%s: %q, want %q", check.name, got, check.want)
+		}
+	}
+	if got := describePhoto(&models.Photo{ID: "photo-x", PhotoKind: models.PhotoKindPicture, TakenAt: &taken, TakenAtOffsetMinutes: &offset}, newYork); !strings.Contains(got, "taken 2025-04-04 08:00 (UTC+09:00)") {
+		test.Errorf("the line that goes with a shown photo says %q", got)
+	}
 }

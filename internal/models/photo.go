@@ -152,6 +152,12 @@ type Photo struct {
 	SmallPreviewURL string `json:"smallPreviewUrl" gorm:"-"`
 	LargePreviewURL string `json:"largePreviewUrl" gorm:"-"`
 	VideoPreviewURL string `json:"videoPreviewUrl" gorm:"-"`
+
+	// PhotoFileRoles are the roles of the files the server holds for the
+	// photo, so that an uploader after a reinstall can send only the edited
+	// version or the Live Photo's video that is missing. Worked out when the
+	// photo is read.
+	PhotoFileRoles []PhotoFileRole `json:"photoFileRoles" gorm:"-"`
 }
 
 // PhotoBlob is the bytes of a file in the blob store, named by their SHA-256.

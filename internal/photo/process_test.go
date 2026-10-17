@@ -273,6 +273,43 @@ func TestWhatTheUploaderSaidWinsOverWhatTheFileSays(test *testing.T) {
 	}
 }
 
+// The picture exifJpeg makes says 2024-05-06 07:08:09 at +02:00, which is
+// 05:08:09 UTC.
+func TestADateEndingInZTakesItsOffsetFromTheFile(test *testing.T) {
+	fixture := newFixture(test)
+	instant := time.Date(2024, 5, 6, 5, 8, 9, 0, time.UTC)
+
+	// A phone knows the instant and not the zone.
+	phone := fixture.uploadAndProcess("phone", jpegHeaders("phone", "X-Photo-Taken-At", "2024-05-06T05:08:09Z"), exifJpeg(test, 80, 40, 1))
+	if phone.TakenAt == nil || !phone.TakenAt.Equal(instant) || phone.TakenAtOffsetMinutes == nil || *phone.TakenAtOffsetMinutes != 120 {
+		test.Fatalf("the instant %v with offset %v, want the header's instant and the file's +120", phone.TakenAt, phone.TakenAtOffsetMinutes)
+	}
+
+	// The same date written with an offset of zero is an uploader that knows
+	// the photo was taken in UTC, and the file does not overrule it.
+	utc := fixture.uploadAndProcess("utc", jpegHeaders("utc", "X-Photo-Taken-At", "2024-05-06T05:08:09+00:00"), exifJpeg(test, 80, 41, 1))
+	if utc.TakenAt == nil || !utc.TakenAt.Equal(instant) || utc.TakenAtOffsetMinutes == nil || *utc.TakenAtOffsetMinutes != 0 {
+		test.Fatalf("the instant %v with offset %v, want an offset of 0", utc.TakenAt, utc.TakenAtOffsetMinutes)
+	}
+
+	// An instant that is not the file's own moment keeps no offset: the date
+	// was changed after the file was written.
+	changed := fixture.uploadAndProcess("changed", jpegHeaders("changed", "X-Photo-Taken-At", "2024-05-07T05:08:09Z"), exifJpeg(test, 80, 42, 1))
+	if changed.TakenAt == nil || !changed.TakenAt.Equal(instant.Add(24*time.Hour)) || changed.TakenAtOffsetMinutes != nil {
+		test.Fatalf("the instant %v with offset %v, want the header's instant and no offset", changed.TakenAt, changed.TakenAtOffsetMinutes)
+	}
+
+	// A file that says no offset leaves the photo with none.
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, quadrants(30, 20)); err != nil {
+		test.Fatal(err)
+	}
+	plain := fixture.uploadAndProcess("plain-z", map[string]string{"Content-Type": "image/png", "X-Photo-Client-ID": "plain-z", "X-Photo-Taken-At": "2024-05-06T05:08:09Z"}, encoded.Bytes())
+	if plain.TakenAt == nil || !plain.TakenAt.Equal(instant) || plain.TakenAtOffsetMinutes != nil {
+		test.Fatalf("the instant %v with offset %v, want no offset", plain.TakenAt, plain.TakenAtOffsetMinutes)
+	}
+}
+
 func TestAPngWithoutMetadataGetsASizeAndPreviewsAndNoDate(test *testing.T) {
 	fixture := newFixture(test)
 	var encoded bytes.Buffer

@@ -70,7 +70,7 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	}
 	details := albumRow(album, tools.Location(current.Owner()))
 	details["created_at"] = album.CreatedAt.In(tools.Location(current.Owner())).Format("2006-01-02 15:04")
-	details["note"] = "list with album_id gives the album's photos; photos in the trash are not counted until they are restored"
+	details["note"] = "list with album_id gives the album's photos; photos in the Trash are not counted until they are restored"
 	result, err := tools.JSONResult(details)
 	if err != nil {
 		return nil, err

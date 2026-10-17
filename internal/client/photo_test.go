@@ -86,3 +86,23 @@ func TestAReadOnlyClientDoesNotUpload(test *testing.T) {
 		test.Fatal("an empty upload was accepted")
 	}
 }
+
+func TestPhotoSizesAndOffsetsAreWrittenAsTheDashboardWritesThem(test *testing.T) {
+	for sizeBytes, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1 KB", 1536: "1.5 KB", 1572864: "1.5 MB", 8 << 30: "8 GB", 2000: "2 KB"} {
+		if got := PhotoByteSizeText(sizeBytes); got != want {
+			test.Errorf("%d bytes is %q, want %q", sizeBytes, got, want)
+		}
+	}
+	for offsetMinutes, want := range map[int]string{540: "UTC+09:00", -210: "UTC-03:30", 0: "UTC+00:00"} {
+		if got := PhotoOffsetText(offsetMinutes); got != want {
+			test.Errorf("%d minutes is %q, want %q", offsetMinutes, got, want)
+		}
+	}
+	limited := &PhotoLibrary{UsedBytes: 1536, MaximumAccountBytes: 5 << 30}
+	if got := limited.SpaceUsedText(); got != "1.5 KB of 5 GB" {
+		test.Errorf("%q", got)
+	}
+	if got := (&PhotoLibrary{UsedBytes: 1536}).SpaceUsedText(); got != "1.5 KB · No limit" {
+		test.Errorf("%q", got)
+	}
+}

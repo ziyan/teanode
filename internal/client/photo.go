@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptrace"
 	"net/textproto"
@@ -50,6 +51,41 @@ type PhotoLibrary struct {
 	FaceRecognitionUnavailableMessage string `json:"faceRecognitionUnavailableMessage"`
 	IsDescriptionAvailable            bool   `json:"isDescriptionAvailable"`
 	DescriptionUnavailableMessage     string `json:"descriptionUnavailableMessage"`
+}
+
+// PhotoByteSizeText writes a size the way the dashboard's Photos page does:
+// 1.5 KB, 12.4 MB, 8 GB, with no decimal on a whole number.
+func PhotoByteSizeText(sizeBytes int64) string {
+	units := []string{"B", "KB", "MB", "GB", "TB"}
+	value, unit := float64(max(sizeBytes, 0)), 0
+	for value >= 1024 && unit < len(units)-1 {
+		value /= 1024
+		unit++
+	}
+	if unit == 0 {
+		return fmt.Sprintf("%d B", int64(math.Round(value)))
+	}
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", value), ".0") + " " + units[unit]
+}
+
+// PhotoOffsetText writes an offset in minutes east of UTC the way the
+// dashboard's Photos page does: UTC+09:00, UTC-03:30, UTC+00:00.
+func PhotoOffsetText(offsetMinutes int) string {
+	sign := "+"
+	if offsetMinutes < 0 {
+		sign = "-"
+		offsetMinutes = -offsetMinutes
+	}
+	return fmt.Sprintf("UTC%s%02d:%02d", sign, offsetMinutes/60, offsetMinutes%60)
+}
+
+// SpaceUsedText is the library's space used in the dashboard's words: "1.2 GB
+// of 5 GB", or "1.2 GB · No limit" when the person has no limit.
+func (self *PhotoLibrary) SpaceUsedText() string {
+	if self.MaximumAccountBytes > 0 {
+		return PhotoByteSizeText(self.UsedBytes) + " of " + PhotoByteSizeText(self.MaximumAccountBytes)
+	}
+	return PhotoByteSizeText(self.UsedBytes) + " · No limit"
 }
 
 // PhotoFilter narrows a listing of the library. Every field is optional.
@@ -133,7 +169,7 @@ func (self *PhotoFilter) variables() map[string]any {
 }
 
 const (
-	photoSelection = `{ id createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl }`
+	photoSelection = `{ id createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
 
 	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String`
 	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId`
@@ -156,6 +192,8 @@ const (
 	DocumentReadPhotoLibrary = `query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isFaceRecognitionAvailable faceRecognitionUnavailableMessage isDescriptionAvailable descriptionUnavailableMessage } }`
 
 	DocumentFindPhotos = `query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) ` + photoSelection + ` }`
+
+	DocumentPhotoPlaybackAddress = `query ($photoId: String!, $photoPreviewSize: String, $photoFileRole: String) { PhotoPlaybackAddress(photoId: $photoId, photoPreviewSize: $photoPreviewSize, photoFileRole: $photoFileRole) }`
 
 	DocumentUpdatePhoto = `mutation ($photoId: String!, $isFavorite: Boolean, $takenAt: DateTime) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite, takenAt: $takenAt) ` + photoSelection + ` }`
 
@@ -219,6 +257,26 @@ func ReadPhotoLibrary(ctx context.Context, executor Executor) (*PhotoLibrary, er
 		return nil, err
 	}
 	return result.ReadPhotoLibrary, nil
+}
+
+// PhotoPlaybackAddress is an address, relative to the server, for one preview
+// (photoPreviewSize) or one file (photoFileRole) of a photo that a player can
+// fetch with ranges and without signing in, good for a few hours.
+func PhotoPlaybackAddress(ctx context.Context, executor Executor, photoId string, photoPreviewSize models.PhotoPreviewSize, photoFileRole models.PhotoFileRole) (string, error) {
+	variables := map[string]any{"photoId": photoId}
+	if photoPreviewSize != "" {
+		variables["photoPreviewSize"] = string(photoPreviewSize)
+	}
+	if photoFileRole != "" {
+		variables["photoFileRole"] = string(photoFileRole)
+	}
+	var result struct {
+		PhotoPlaybackAddress string `json:"PhotoPlaybackAddress"`
+	}
+	if err := executor.Execute(ctx, DocumentPhotoPlaybackAddress, variables, &result); err != nil {
+		return "", err
+	}
+	return result.PhotoPlaybackAddress, nil
 }
 
 // FindPhotos is the photos the library already has under the uploader's own

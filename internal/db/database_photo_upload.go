@@ -1,11 +1,9 @@
 package db
 
 import (
-	"errors"
 	"time"
 
 	"github.com/ziyan/teanode/internal/models"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -65,11 +63,12 @@ func (self *transaction) CreatePhotoUpload(upload *models.PhotoUpload) (*models.
 		return nil, ErrInvalidArguments
 	}
 	var owner userModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", upload.UserID).Take(&owner).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", upload.UserID), &owner)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	var openCount int64
 	if err := self.tx.Model(&photoUploadModel{}).Where("user_id = ? AND photo_upload_state = ?", upload.UserID, models.PhotoUploadReceiving).Count(&openCount).Error; err != nil {
@@ -95,11 +94,12 @@ func (self *transaction) photoUploadOwned(userId, photoUploadId string, isLocked
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	var row photoUploadModel
-	if err := query.Take(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
+	isFound, err := findOneRow(query, &row)
+	if err != nil {
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	return &row, nil
 }
@@ -207,14 +207,14 @@ func (self *transaction) FailPhotoUpload(userId, photoUploadId string) (*models.
 
 func (self *transaction) LockPhotoUploadForCleanup(idleBefore time.Time) (*models.PhotoUpload, error) {
 	var row photoUploadModel
-	err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("photo_upload_state = ? OR updated_at < ?", models.PhotoUploadFailed, idleBefore).
-		Order("updated_at").Limit(1).Take(&row).Error
+		Order("updated_at"), &row)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrNotFound
-		}
 		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
 	}
 	return photoUploadFromModel(&row), nil
 }

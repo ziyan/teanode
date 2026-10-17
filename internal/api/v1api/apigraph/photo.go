@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -21,6 +22,12 @@ type PhotoQuery interface {
 	ReadPhoto(context.Context, PhotoArguments) (*PhotoView, error)
 	ReadPhotoLibrary(context.Context) (*PhotoLibraryView, error)
 	FindPhotos(context.Context, FindPhotosArguments) ([]*models.Photo, error)
+
+	// An address for one preview or one file of a photo that a player can
+	// fetch by itself, with ranges, because it carries a signature instead
+	// of the person's sign-in. Good for a few hours; the caller must own the
+	// photo for now.
+	PhotoPlaybackAddress(context.Context, PhotoPlaybackAddressArguments) (string, error)
 }
 
 // PhotoMutation changes the person's photo library. Files go up over the
@@ -103,6 +110,14 @@ type SavePhotoFromAttachmentArguments struct {
 	AgentAttachmentID string `json:"agentAttachmentId"`
 }
 
+// PhotoPlaybackAddressArguments name one preview or one file of a photo: exactly one of
+// PhotoPreviewSize (such as video) and PhotoFileRole (such as original).
+type PhotoPlaybackAddressArguments struct {
+	PhotoID          string                   `json:"photoId"`
+	PhotoPreviewSize *models.PhotoPreviewSize `json:"photoPreviewSize"`
+	PhotoFileRole    *models.PhotoFileRole    `json:"photoFileRole"`
+}
+
 // PhotoView is one photo with the files it is made of and the previews that
 // have been made of it.
 type PhotoView struct {
@@ -160,13 +175,22 @@ func (self *graph) requirePhotosPerson(ctx context.Context) (*api.Principal, err
 	return principal, nil
 }
 
-// withPreviewAddresses fills in where each photo's previews are fetched
-// from. An address carries the time the photo last changed, so that a
-// preview made again is a new address and the old one can be cached for good.
-func (self *graph) withPreviewAddresses(ctx context.Context, userId string, photos []*models.Photo) error {
+// withFilesAndPreviews fills in where each photo's previews are fetched
+// from, and which files the server holds for it. An address carries the time
+// the photo last changed, so that a preview made again is a new address and
+// the old one can be cached for good.
+func (self *graph) withFilesAndPreviews(ctx context.Context, userId string, photos []*models.Photo) error {
 	photoIds := make([]string, 0, len(photos))
 	for _, found := range photos {
 		photoIds = append(photoIds, found.ID)
+	}
+	files, err := self.transaction(ctx).ListPhotoFiles(userId, photoIds)
+	if err != nil {
+		return err
+	}
+	fileRoles := map[string][]models.PhotoFileRole{}
+	for _, file := range files {
+		fileRoles[file.PhotoID] = append(fileRoles[file.PhotoID], file.PhotoFileRole)
 	}
 	previews, err := self.transaction(ctx).ListPhotoPreviews(userId, photoIds)
 	if err != nil {
@@ -180,6 +204,10 @@ func (self *graph) withPreviewAddresses(ctx context.Context, userId string, phot
 		madeSizes[preview.PhotoID][preview.PhotoPreviewSize] = true
 	}
 	for _, found := range photos {
+		found.PhotoFileRoles = fileRoles[found.ID]
+		if found.PhotoFileRoles == nil {
+			found.PhotoFileRoles = []models.PhotoFileRole{}
+		}
 		address := func(photoPreviewSize models.PhotoPreviewSize) string {
 			if !madeSizes[found.ID][photoPreviewSize] {
 				return ""
@@ -222,7 +250,7 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withPreviewAddresses(ctx, principal.User.ID, photos); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos); err != nil {
 		return nil, translateError(err)
 	}
 	return photos, nil
@@ -265,7 +293,7 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 	for _, preview := range previews {
 		preview.PreviewURL = photoPreviewAddress(found, preview.PhotoPreviewSize)
 	}
-	if err := self.withPreviewAddresses(ctx, principal.User.ID, []*models.Photo{found}); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}); err != nil {
 		return nil, translateError(err)
 	}
 	albums, err := transaction.ListPhotoAlbumsOfPhoto(principal.User.ID, found.ID)
@@ -312,10 +340,49 @@ func (self *graph) FindPhotos(ctx context.Context, arguments FindPhotosArguments
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withPreviewAddresses(ctx, principal.User.ID, photos); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos); err != nil {
 		return nil, translateError(err)
 	}
 	return photos, nil
+}
+
+func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlaybackAddressArguments) (string, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return "", err
+	}
+	if (arguments.PhotoPreviewSize == nil) == (arguments.PhotoFileRole == nil) {
+		return "", fmt.Errorf("%w: name a photoPreviewSize or a photoFileRole, not both and not neither", api.ErrInvalidArguments)
+	}
+	secret := []byte(nil)
+	if self.config != nil {
+		secret = self.config.Current().Secret()
+	}
+	if len(secret) == 0 {
+		return "", errors.New("the server has no secret to sign an address with")
+	}
+	transaction := self.transaction(ctx)
+	var path, playbackKind, name string
+	until := time.Now().Add(photo.PlaybackFor)
+	if arguments.PhotoPreviewSize != nil {
+		if !arguments.PhotoPreviewSize.IsValid() {
+			return "", fmt.Errorf("%w: photoPreviewSize is small, large or video", api.ErrInvalidArguments)
+		}
+		if _, err := transaction.GetPhotoPreview(principal.User.ID, arguments.PhotoID, *arguments.PhotoPreviewSize); err != nil {
+			return "", translateError(err)
+		}
+		path, playbackKind, name = api.PhotoPlaybackPreviewPath(arguments.PhotoID, string(*arguments.PhotoPreviewSize)), photo.PlaybackKindPreview, string(*arguments.PhotoPreviewSize)
+	} else {
+		if !arguments.PhotoFileRole.IsValid() {
+			return "", fmt.Errorf("%w: photoFileRole is original, edited or liveVideo", api.ErrInvalidArguments)
+		}
+		if _, err := transaction.GetPhotoFile(principal.User.ID, arguments.PhotoID, *arguments.PhotoFileRole); err != nil {
+			return "", translateError(err)
+		}
+		path, playbackKind, name = api.PhotoPlaybackFilePath(arguments.PhotoID, string(*arguments.PhotoFileRole)), photo.PlaybackKindFile, string(*arguments.PhotoFileRole)
+	}
+	signature := photo.SignPlayback(secret, principal.User.ID, arguments.PhotoID, playbackKind, name, until)
+	return path + "?owner=" + url.QueryEscape(principal.User.ID) + "&signature=" + url.QueryEscape(signature), nil
 }
 
 func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArguments) (*models.Photo, error) {
@@ -330,7 +397,7 @@ func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArgumen
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withPreviewAddresses(ctx, principal.User.ID, []*models.Photo{updated}); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{updated}); err != nil {
 		return nil, translateError(err)
 	}
 	return updated, nil

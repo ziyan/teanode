@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -51,6 +54,8 @@ func newPhotoWorld(test *testing.T) *photoWorld {
 	// Photos are off until an operator turns them on, so the world turns them on.
 	configuration := config.Example()
 	configuration.Services.Photos.IsEnabled = new(true)
+	// Signed addresses need the server's secret, which setup generates.
+	configuration.Server.Secret = "photo-test-signing-secret"
 	self := &photoWorld{test: test, database: database, files: files, config: config.NewMemoryStore(configuration)}
 	self.graph = &graph{database: database, storage: files, config: self.config}
 	router := mux.NewRouter()
@@ -561,4 +566,142 @@ func errorsAs[T error](err error, target *T) bool {
 		err = unwrapped.Unwrap()
 	}
 	return false
+}
+
+func TestFindPhotosSaysWhichFilesTheServerHolds(test *testing.T) {
+	world := newPhotoWorld(test)
+	ownerId := world.person("roles-owner", models.PermissionPhotosUse)
+	live := world.storePhoto(ownerId, "live", "live.heic", []byte("live original"), nil)
+	world.storePhoto(ownerId, "plain", "plain.jpg", []byte("plain original"), nil)
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		for _, role := range []models.PhotoFileRole{models.PhotoFileRoleLiveVideo, models.PhotoFileRoleEdited} {
+			sum := sha256.Sum256([]byte(role))
+			digest := hex.EncodeToString(sum[:])
+			if _, err := transaction.InsertPhotoBlobIfAbsent(&models.PhotoBlob{BlobSHA256: digest, BlobSizeBytes: 10}); err != nil {
+				test.Fatal(err)
+			}
+			if _, err := transaction.SetPhotoFile(ownerId, live.ID, &models.PhotoFile{PhotoFileRole: role, BlobSHA256: digest, ContentType: "video/quicktime", FileSizeBytes: 10}, 0); err != nil {
+				test.Fatal(err)
+			}
+		}
+	})
+	world.ask(ownerId, []models.Permission{models.PermissionPhotosUse}, func(ctx context.Context) {
+		found, err := world.graph.FindPhotos(ctx, FindPhotosArguments{ClientPhotoIDs: []string{"live", "plain"}})
+		if err != nil || len(found) != 2 {
+			test.Fatalf("found %v %v", found, err)
+		}
+		rolesOf := map[string][]models.PhotoFileRole{}
+		for _, photo := range found {
+			rolesOf[photo.ClientPhotoID] = photo.PhotoFileRoles
+		}
+		if got := rolesOf["live"]; len(got) != 3 || got[0] != models.PhotoFileRoleEdited || got[1] != models.PhotoFileRoleLiveVideo || got[2] != models.PhotoFileRoleOriginal {
+			test.Fatalf("the Live Photo holds %v, want edited, liveVideo and original", got)
+		}
+		if got := rolesOf["plain"]; len(got) != 1 || got[0] != models.PhotoFileRoleOriginal {
+			test.Fatalf("the plain photo holds %v, want only the original", got)
+		}
+	})
+}
+
+func TestASignedPlaybackAddressServesRangesWithoutASession(test *testing.T) {
+	world := newPhotoWorld(test)
+	ownerId := world.person("playback-owner", models.PermissionPhotosUse)
+	otherId := world.person("playback-other", models.PermissionPhotosUse)
+	video := []byte("0123456789abcdefghij")
+	original := []byte("the original video")
+	stored := world.storePhoto(ownerId, "playback", "clip.mov", original, map[models.PhotoPreviewSize][]byte{models.PhotoPreviewVideo: video, models.PhotoPreviewSmall: []byte("small")})
+	foreign := world.storePhoto(otherId, "foreign-playback", "other.mov", []byte("somebody else's"), nil)
+	allowed := []models.Permission{models.PermissionPhotosUse}
+
+	var previewAddress, fileAddress string
+	world.ask(ownerId, allowed, func(ctx context.Context) {
+		var err error
+		size, role := models.PhotoPreviewVideo, models.PhotoFileRoleOriginal
+		if previewAddress, err = world.graph.PhotoPlaybackAddress(ctx, PhotoPlaybackAddressArguments{PhotoID: stored.ID, PhotoPreviewSize: &size}); err != nil {
+			test.Fatal(err)
+		}
+		if fileAddress, err = world.graph.PhotoPlaybackAddress(ctx, PhotoPlaybackAddressArguments{PhotoID: stored.ID, PhotoFileRole: &role}); err != nil {
+			test.Fatal(err)
+		}
+		// Exactly one of the two, a photo that is the caller's, and a thing that exists.
+		if _, err := world.graph.PhotoPlaybackAddress(ctx, PhotoPlaybackAddressArguments{PhotoID: stored.ID}); err == nil {
+			test.Fatal("an address for neither a preview nor a file was made")
+		}
+		if _, err := world.graph.PhotoPlaybackAddress(ctx, PhotoPlaybackAddressArguments{PhotoID: stored.ID, PhotoPreviewSize: &size, PhotoFileRole: &role}); err == nil {
+			test.Fatal("an address for both a preview and a file was made")
+		}
+		if _, err := world.graph.PhotoPlaybackAddress(ctx, PhotoPlaybackAddressArguments{PhotoID: foreign.ID, PhotoFileRole: &role}); err == nil {
+			test.Fatal("an address for somebody else's photo was made")
+		}
+		large := models.PhotoPreviewLarge
+		if _, err := world.graph.PhotoPlaybackAddress(ctx, PhotoPlaybackAddressArguments{PhotoID: stored.ID, PhotoPreviewSize: &large}); err == nil {
+			test.Fatal("an address for a preview that was not made was made")
+		}
+	})
+	if !strings.HasPrefix(previewAddress, api.PhotoPlaybackPreviewPath(stored.ID, "video")+"?") || !strings.HasPrefix(fileAddress, api.PhotoPlaybackFilePath(stored.ID, "original")+"?") {
+		test.Fatalf("the addresses are %q and %q", previewAddress, fileAddress)
+	}
+
+	// No session at all: a player cannot send one. A range is honored.
+	ranged := world.do(http.MethodGet, previewAddress, func(request *http.Request) { request.Header.Set("Range", "bytes=5-9") }, nil)
+	if body := readBody(test, ranged); ranged.StatusCode != http.StatusPartialContent || body != "56789" || ranged.Header.Get("Content-Range") != "bytes 5-9/20" ||
+		ranged.Header.Get("Accept-Ranges") != "bytes" || ranged.Header.Get("Content-Type") != "video/mp4" {
+		test.Fatalf("a range of the video: %d %q %v", ranged.StatusCode, body, ranged.Header)
+	}
+	whole := world.do(http.MethodGet, previewAddress, nil, nil)
+	if body := readBody(test, whole); whole.StatusCode != http.StatusOK || body != string(video) {
+		test.Fatalf("the whole video: %d %q", whole.StatusCode, body)
+	}
+	file := world.do(http.MethodGet, fileAddress, func(request *http.Request) { request.Header.Set("Range", "bytes=4-") }, nil)
+	if body := readBody(test, file); file.StatusCode != http.StatusPartialContent || body != string(original[4:]) || !strings.HasPrefix(file.Header.Get("Content-Disposition"), "inline") {
+		test.Fatalf("the rest of the file: %d %q %v", file.StatusCode, body, file.Header)
+	}
+
+	// Nothing else opens: not another file with the same signature, not
+	// another photo, not another owner, not a changed or missing signature.
+	query, err := url.ParseQuery(previewAddress[strings.Index(previewAddress, "?")+1:])
+	if err != nil {
+		test.Fatal(err)
+	}
+	owner, signature := query.Get("owner"), query.Get("signature")
+	changedDigit := "0"
+	if strings.HasSuffix(previewAddress, "0") {
+		changedDigit = "1"
+	}
+	secret := []byte("photo-test-signing-secret")
+	expired := photo.SignPlayback(secret, ownerId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(-time.Minute))
+	otherOwner := photo.SignPlayback(secret, otherId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(time.Hour))
+	wrongSecret := photo.SignPlayback([]byte("another secret"), ownerId, stored.ID, photo.PlaybackKindPreview, "video", time.Now().Add(time.Hour))
+	for name, path := range map[string]string{
+		"the preview's signature on the small preview":   api.PhotoPlaybackPreviewPath(stored.ID, "small") + "?owner=" + owner + "&signature=" + signature,
+		"the preview's signature on a file of that kind": api.PhotoPlaybackFilePath(stored.ID, "original") + "?owner=" + owner + "&signature=" + signature,
+		"another photo":                   api.PhotoPlaybackPreviewPath(foreign.ID, "video") + "?owner=" + owner + "&signature=" + signature,
+		"a changed signature":             previewAddress[:len(previewAddress)-1] + changedDigit,
+		"no signature":                    api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner,
+		"no owner":                        api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?signature=" + signature,
+		"an expired signature":            api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=" + expired,
+		"another owner's":                 api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + otherId + "&signature=" + otherOwner,
+		"the signature of another server": api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=" + wrongSecret,
+		"a malformed signature":           api.PhotoPlaybackPreviewPath(stored.ID, "video") + "?owner=" + owner + "&signature=not-a-signature",
+	} {
+		if status := world.status(http.MethodGet, path, nil, nil); status != http.StatusNotFound {
+			test.Errorf("%s was served with %d", name, status)
+		}
+	}
+	// The address is for reading.
+	if status := world.status(http.MethodDelete, previewAddress, nil, nil); status == http.StatusOK || status == http.StatusNoContent {
+		test.Errorf("a DELETE of a shared address answered %d", status)
+	}
+	// A photo that is deleted ends it, though its address has not expired.
+	world.ask(ownerId, allowed, func(ctx context.Context) {
+		if _, err := world.graph.TrashPhotos(ctx, PhotoIDsArguments{PhotoIDs: []string{stored.ID}}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := world.graph.DeletePhotos(ctx, PhotoIDsArguments{PhotoIDs: []string{stored.ID}}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	if status := world.status(http.MethodGet, previewAddress, nil, nil); status != http.StatusNotFound {
+		test.Errorf("the address of a deleted photo answered %d", status)
+	}
 }
