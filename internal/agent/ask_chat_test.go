@@ -298,14 +298,20 @@ func TestAnOwnerTurnAnswersInTheChatAndKeepsItsToolsToItself(t *testing.T) {
 
 	// The next turn reads the answer as its own, with its call, whole.
 	second := fixture.said(t, fixture.ann, "and the other one?")
-	if _, err := fixture.worker.Ask(&agent.AskSettings{
+	again, err := fixture.worker.Ask(&agent.AskSettings{
 		Agent: fixture.bertie, Owner: fixture.ann, Operations: mailOperations(), Conversation: fixture.annThread,
 		Message: "and the other one?", Surface: "chat",
 		Chat: &agent.ChatTurn{ChatID: fixture.chat.ID, MessageID: second.ID, AskerUserID: fixture.ann.ID, AskerName: "Ann Example"},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Ask: %s", err)
 	}
-	waitForRequests(t, fixture.requests, 3)
+	// Read once the turn is over: the model's requests are written by the
+	// fake model's handler, and the turn's end is what orders them.
+	collect(again)
+	if len(*fixture.requests) < 3 {
+		t.Fatalf("the model was asked %d times, want 3", len(*fixture.requests))
+	}
 	history := (*fixture.requests)[len(*fixture.requests)-1]["messages"].([]any)
 	roles := []string{}
 	for _, each := range history {
@@ -314,19 +320,6 @@ func TestAnOwnerTurnAnswersInTheChatAndKeepsItsToolsToItself(t *testing.T) {
 	if !strings.Contains(strings.Join(roles, " "), "assistant tool assistant user") {
 		t.Errorf("the second turn should read the call, its result and the answer, then the question: %v", roles)
 	}
-}
-
-func waitForRequests(t *testing.T, requests *[]map[string]any, count int) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(*requests) >= count {
-			time.Sleep(50 * time.Millisecond)
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("the model was asked %d times, want %d", len(*requests), count)
 }
 
 // A member turn is the owner's agent answering somebody else: the tools it is
