@@ -45,6 +45,11 @@ type Fields struct {
 	// Status is CONFIRMED, TENTATIVE or CANCELLED.
 	Status *string
 
+	// IsPrivate marks the event as one its owner wants nobody else to read:
+	// true writes CLASS:PRIVATE, and false takes the CLASS away, which also
+	// clears a CONFIDENTIAL that a phone wrote. Nil leaves it as it is.
+	IsPrivate *bool
+
 	// Attendees are the people asked. Setting them makes the event
 	// something to invite people to; a pointer to an empty list takes
 	// everybody off it, which is not the same as calling the meeting off.
@@ -104,6 +109,14 @@ func Build(previous []byte, fields *Fields) (*Parsed, error) {
 			return nil, fmt.Errorf("calendar: an event is confirmed, tentative or cancelled, not %q", status)
 		}
 		setText(event, ical.PropStatus, &status)
+	}
+
+	if fields.IsPrivate != nil {
+		if *fields.IsPrivate {
+			event.Props.SetText(ical.PropClass, "PRIVATE")
+		} else {
+			event.Props.Del(ical.PropClass)
+		}
 	}
 
 	// Before the times are written, because how long the event goes on

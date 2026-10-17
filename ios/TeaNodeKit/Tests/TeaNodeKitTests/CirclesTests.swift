@@ -120,6 +120,37 @@ final class CirclesTests: XCTestCase {
             ["circleId": .string("circle-1"), "username": .string("person-d"), "memberRole": .string("admin")])
     }
 
+    func testMakesAnAccountAndPutsItInTheCircleWithNoInvitation() async throws {
+        let (connection, fake) = connection(
+            answering: #"{"data":{"CreateUser":{"id":"user-9","username":"person-d","hasPassword":true,"groupIds":[],"createdAt":"2030-01-01T00:00:00Z"},"AddCircleMember":{"id":"circle-1"}}}"#)
+        var draft = CircleAccountDraft()
+        XCTAssertFalse(draft.canSubmit)
+        draft.username = "  person-d "
+        XCTAssertFalse(draft.canSubmit, "a username alone cannot sign in")
+        draft.password = "fixture-password"
+        draft.name = " Person D "
+        XCTAssertTrue(draft.canSubmit)
+
+        _ = try await connection.createAccessUser(draft.accountDraft)
+        try await connection.addCircleMember("circle-1", username: draft.trimmedUsername, memberRole: draft.memberRole)
+        draft.isAdmin = true
+        try await connection.addCircleMember("circle-1", username: draft.trimmedUsername, memberRole: draft.memberRole)
+
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            [
+                "username": .string("person-d"), "password": .string("fixture-password"), "name": .string("Person D"),
+                "email": .string(""),
+            ])
+        XCTAssertEqual(
+            try sentVariables(fake.sent[1]),
+            ["circleId": .string("circle-1"), "username": .string("person-d"), "memberRole": .string("member")])
+        XCTAssertEqual(
+            try sentVariables(fake.sent[2]),
+            ["circleId": .string("circle-1"), "username": .string("person-d"), "memberRole": .string("admin")])
+        XCTAssertFalse(fake.sent.contains { String(decoding: $0.httpBody ?? Data(), as: UTF8.self).contains("InviteToCircle") })
+    }
+
     func testAnswersAndWithdrawsInvitations() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"AnswerCircleInvitation":true,"WithdrawCircleInvitation":true}}"#)
         try await connection.answerCircleInvitation("invitation-2", isAccepted: true)

@@ -95,6 +95,15 @@ var surfaces = map[string]surface{
 		canLocate:           true,
 		hasReactions:        true,
 	},
+	// A chat with other people, in the drawer or the app. The answer is a
+	// message in it, read by everybody there, so it is short and plain: no
+	// buttons of suggested replies, no page of the dashboard to move to, and
+	// no location asked of a browser, whose screen it is.
+	"chat": {
+		situationLine: "You are answering in a chat that other people are in too, in the TeaNode dashboard or app.",
+		overlay:       "<surface>\nA chat message: short, the way people write to each other. Markdown renders; no tables, no headings. " + picturesLine + "\n</surface>",
+		hasReactions:  true,
+	},
 	"cli": {
 		situationLine: talkingThrough("cli"),
 		overlay:       terminalOverlay,

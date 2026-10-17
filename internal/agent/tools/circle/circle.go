@@ -112,7 +112,51 @@ func init() {
 						map[string]any{"circleId": strings.TrimSpace(arguments.CircleID), "username": strings.TrimSpace(arguments.Username), "memberRole": memberRole}); err != nil {
 						return nil, err
 					}
-					return tools.TextResult("invited %s; they join when they accept", strings.TrimSpace(arguments.Username)), nil
+					return tools.TextResult("invitation sent to %s, if that account exists; they join when they accept", strings.TrimSpace(arguments.Username)), nil
+				},
+			},
+			{
+				// Granting like an invitation, and more so: nothing is waiting
+				// for the account's owner to accept, so the account is simply in
+				// the circle, seen by the others from then on. Offered only to
+				// somebody who manages accounts.
+				Name: "circle_add", Family: tools.FamilyAccount, Risk: tools.RiskGranting,
+				Permissions: []models.Permission{models.PermissionUserManage},
+				Description: "Put an account that exists in a circle at once, without an invitation, for somebody who will not set it " +
+					"up themselves. The circle need not be one the person is in. To make the account first, use user_add.",
+				Parameters: tools.Object(map[string]any{
+					"circle_id":   tools.StringProperty("the circle, from list"),
+					"username":    tools.StringProperty("the exact username of the account to put in"),
+					"member_role": tools.EnumProperty("what they join as; member unless the person said admin", "member", "admin"),
+				}, "circle_id", "username"),
+				Preview: tools.PreviewOf(func(call struct {
+					Username   string `json:"username"`
+					MemberRole string `json:"member_role"`
+				}) string {
+					said := "Put " + tools.Named(call.Username, "an account") + " in one of the circles, with no invitation to accept"
+					if call.MemberRole == "admin" {
+						said += ", as an admin who can manage who is in it"
+					}
+					return said
+				}),
+				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+					arguments, err := tools.DecodeArguments[struct {
+						CircleID   string `json:"circle_id"`
+						Username   string `json:"username"`
+						MemberRole string `json:"member_role"`
+					}](call)
+					if err != nil {
+						return nil, err
+					}
+					memberRole := strings.TrimSpace(arguments.MemberRole)
+					if memberRole == "" {
+						memberRole = string(models.MemberRoleMember)
+					}
+					if _, err := operator.Execute(ctx, `mutation ($circleId: String!, $username: String!, $memberRole: String!) { AddCircleMember(circleId: $circleId, username: $username, memberRole: $memberRole) { id } }`,
+						map[string]any{"circleId": strings.TrimSpace(arguments.CircleID), "username": strings.TrimSpace(arguments.Username), "memberRole": memberRole}); err != nil {
+						return nil, err
+					}
+					return tools.TextResult("put %s in the circle as %s", strings.TrimSpace(arguments.Username), memberRole), nil
 				},
 			},
 			{
@@ -209,7 +253,8 @@ func init() {
 			},
 		},
 			// One circle tool. Seeing the circles, who is in them and who
-			// shares one with the person are reads; inviting and answering an
+			// shares one with the person are reads; inviting, adding an
+			// account (for somebody who manages accounts) and answering an
 			// invitation give somebody a way in; leaving cannot be undone by
 			// the person alone; making a circle changes nothing for anybody
 			// else.
@@ -223,6 +268,7 @@ func init() {
 					{Action: "show", Tool: "circle_show"},
 					{Action: "people", Tool: "circle_people"},
 					{Action: "invite", Tool: "circle_invite"},
+					{Action: "add", Tool: "circle_add"},
 					{Action: "answer", Tool: "circle_answer"},
 					{Action: "leave", Tool: "circle_leave"},
 					{Action: "create", Tool: "circle_create"},

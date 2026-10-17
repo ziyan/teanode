@@ -11,6 +11,7 @@ package apigraph
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -71,6 +72,11 @@ type graph struct {
 	// caller reads on with result_more; see agent_mcp.go. Nil in a test that
 	// built the graph by hand, where each request holds its own.
 	mcpResults *mcpserve.ResultStore
+
+	// chatLimits are what one person may do in chats a minute on this
+	// instance; made the first time they are wanted (chat.go).
+	chatLimitsOnce  sync.Once
+	chatLimitsValue *chatRateLimits
 }
 
 // New builds the GraphQL component, generating the schema by reflection over

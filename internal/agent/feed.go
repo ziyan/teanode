@@ -227,6 +227,20 @@ func fitForRelay(event Event) Event {
 		}
 		*field = cutBytes(*field, excess)
 	}
+	// A chat message is cut last, and the event says so, because a message
+	// shown cut as if it were whole would be read as what its author said.
+	// What cannot be cut to fit is left out and the client reads the
+	// conversation again.
+	if event.Message != nil && over() > 0 {
+		// The flag is counted in what has to fit.
+		event.IsMessageCut = true
+		cut := *event.Message
+		cut.Content = cutBytes(cut.Content, over())
+		event.Message = &cut
+		if over() > 0 {
+			event.Message = nil
+		}
+	}
 	return event
 }
 

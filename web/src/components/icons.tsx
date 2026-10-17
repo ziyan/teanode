@@ -56,6 +56,16 @@ export function PencilIcon(props: IconProps) {
   )
 }
 
+// A closed padlock: something only its owner may read.
+export function LockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </Icon>
+  )
+}
+
 // Drafts are what is still being written: the pencil.
 export function DraftsIcon(props: IconProps) {
   return <PencilIcon {...props} />

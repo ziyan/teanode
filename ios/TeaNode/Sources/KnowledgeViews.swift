@@ -5,6 +5,8 @@ import TeaNodeKit
 enum KnowledgePlace: Hashable {
     case folder(String)
     case page(String)
+    /// A page another person shared, read only (KnowledgeSharingViews.swift).
+    case sharedPage(ownerUserId: String, path: String)
 }
 
 /// KnowledgeScreen is the dashboard's Knowledge page: the pages the agent
@@ -53,6 +55,8 @@ struct KnowledgeDestination: ViewModifier {
                 KnowledgeFolder(connection: connection, folderPath: folderPath)
             case .page(let pagePath):
                 KnowledgePageView(connection: connection, pagePath: pagePath, path: $path)
+            case .sharedPage(let ownerUserId, let pagePath):
+                SharedKnowledgePageView(connection: connection, ownerUserId: ownerUserId, pagePath: pagePath)
             }
         }
     }
@@ -74,6 +78,7 @@ struct KnowledgeFolder: View {
     @State private var found: KnowledgeSearch?
     @State private var foundNodes: [KnowledgeNode] = []
     @State private var foundFacts: [KnowledgeSearch.FoundFact] = []
+    @State private var sharedGroups: [SharedKnowledgeOwnerGroup] = []
 
     var body: some View {
         List {
@@ -93,6 +98,11 @@ struct KnowledgeFolder: View {
                         }
                     }
                 }
+                // What other people shared, at the top level only: a place of
+                // its own beside the folders, not a folder among them.
+                if folderPath.isEmpty {
+                    SharedKnowledgeSection(groups: sharedGroups)
+                }
             }
         }
         // Laid out as the mail list is: no chevrons, no lines, rows close together.
@@ -110,7 +120,11 @@ struct KnowledgeFolder: View {
             await search(isMore: false)
         }
         .task { await load(isMore: false) }
-        .refreshable { await load(isMore: false) }
+        .task { await loadShared() }
+        .refreshable {
+            await load(isMore: false)
+            await loadShared()
+        }
         .toast(done: .constant(nil), problem: $toastProblemText)
         .overlay {
             if let problemText {
@@ -182,6 +196,13 @@ struct KnowledgeFolder: View {
         } catch {
             report(error)
         }
+    }
+
+    /// What other people shared, at the top level. Not being able to read it
+    /// leaves the person's own pages as they are.
+    private func loadShared() async {
+        guard folderPath.isEmpty else { return }
+        sharedGroups = SharedKnowledgeOwnerGroup.grouped((try? await connection.sharedKnowledgeRoots()) ?? [])
     }
 
     /// A failure is the whole screen only while nothing is shown. With rows
@@ -344,6 +365,7 @@ struct KnowledgePageView: View {
     @State private var choosing: PageChoice?
     @State private var isLinking = false
     @State private var isLinkingContact = false
+    @State private var isSharing = false
     @State private var isConfirmingForget = false
     @State private var mergingInto: String?
     @State private var forgettingFact: KnowledgeFact?
@@ -426,6 +448,9 @@ struct KnowledgePageView: View {
         }
         .sheet(isPresented: $isLinking) {
             LinkEditor(model: model)
+        }
+        .sheet(isPresented: $isSharing) {
+            KnowledgeShareSheet(connection: model.connection, pagePath: model.pagePath)
         }
         .sheet(isPresented: $isLinkingContact) {
             ContactPickerSheet(connection: model.connection, currentContactId: model.page?.node?.contactId ?? "") { chosen in
@@ -710,6 +735,7 @@ struct KnowledgePageView: View {
                             choosing = PageChoice(kind: .merge, title: String(localized: "Merge it into"), initial: "")
                         }
                     }
+                    Button("Share…", systemImage: "person.badge.plus") { isSharing = true }
                     Button("Ask \(app.agentTitle)", systemImage: "bubble.left.and.text.bubble.right") {
                         app.askingAbout = AgentReference(path: node.path, name: node.shownName)
                     }

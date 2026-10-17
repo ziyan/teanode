@@ -18,6 +18,9 @@ final class CircleDirectory {
     private(set) var circles: [PeopleCircle] = []
     private(set) var invitations: [CircleInvitation] = []
     private(set) var currentUserId: String?
+    /// Whether they may manage accounts, which lets them make one for
+    /// somebody and put it in a circle at once.
+    private(set) var canManageUsers = false
     /// Whether the list of circles has been read once.
     private(set) var isLoaded = false
     private(set) var isLoading = false
@@ -40,14 +43,21 @@ final class CircleDirectory {
         let connection = self.connection
         async let sessionRead = try? connection.accessSession()
         async let invitationsRead = try? connection.circleInvitations()
+        var didReadCircles = false
         do {
             circles = try await connection.circles()
-            isLoaded = true
+            didReadCircles = true
         } catch {
             problemText = error.localizedDescription
         }
         if let readInvitations = await invitationsRead { invitations = readInvitations }
-        if let session = await sessionRead { currentUserId = session.userId }
+        if let session = await sessionRead {
+            currentUserId = session.userId
+            canManageUsers = session.canManageUsers
+        }
+        // Last, so that the empty state is not drawn in the words for
+        // somebody who cannot manage accounts and then changed.
+        if didReadCircles { isLoaded = true }
     }
 
     /// Runs a change, says it was done or why it was refused, and reads
@@ -107,7 +117,11 @@ struct CirclesView: View {
             } else if directory.isLoaded && directory.circles.isEmpty && directory.invitations.isEmpty {
                 ContentUnavailableView(
                     "No circles yet", systemImage: "person.2",
-                    description: Text("Make a circle, then invite the people who should be in it."))
+                    description: directory.canManageUsers
+                        // An operator can bring in people who have no account
+                        // yet; anybody else can only invite accounts.
+                        ? Text("Make a circle and add the people who use this server, with or without accounts yet.")
+                        : Text("Make a circle, then invite the people who should be in it."))
             }
         }
         .toolbar {
@@ -202,6 +216,7 @@ struct CircleDetailView: View {
     @State private var isRenaming = false
     @State private var isConfirmingDelete = false
     @State private var isConfirmingLeave = false
+    @State private var isMakingAccount = false
     @State private var removing: CircleMember?
 
     private var circle: PeopleCircle? { directory.circle(circleId) }
@@ -217,6 +232,9 @@ struct CircleDetailView: View {
                 membersSection(circle)
                 if circle.isAdmin {
                     inviteSection(circle)
+                    if directory.canManageUsers {
+                        accountSection
+                    }
                     if !circle.pendingInvitations.isEmpty {
                         pendingSection(circle)
                     }
@@ -232,6 +250,11 @@ struct CircleDetailView: View {
         .sheet(isPresented: $isRenaming) {
             if let circle {
                 CircleForm(directory: directory, editedCircle: circle)
+            }
+        }
+        .sheet(isPresented: $isMakingAccount) {
+            if let circle {
+                CircleAccountForm(directory: directory, circle: circle)
             }
         }
         .toast(done: Bindable(directory).doneText, problem: Bindable(directory).problemText)
@@ -315,6 +338,17 @@ struct CircleDetailView: View {
         }
     }
 
+    /// The other way in, for somebody who manages accounts: the person has no
+    /// account yet, so one is made and they are in the circle at once, with
+    /// nothing for them to accept.
+    private var accountSection: some View {
+        Section {
+            Button("Make an account for someone", systemImage: "person.badge.plus") { isMakingAccount = true }
+        } footer: {
+            Text("They sign in with that username and password, and can change the password themselves in their settings.")
+        }
+    }
+
     private func pendingSection(_ circle: PeopleCircle) -> some View {
         Section {
             ForEach(circle.pendingInvitations) { invitation in
@@ -369,7 +403,7 @@ struct CircleDetailView: View {
                         }
                     }
                 } message: {
-                    Text("You will no longer be in \(circle.name). An admin can invite you again.")
+                    Text("You will no longer be in \(circle.name), and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.")
                 }
         }
     }
@@ -436,7 +470,84 @@ private struct AdminTag: View {
     }
 }
 
-// MARK: - The form
+// MARK: - The forms
+
+/// CircleAccountForm makes an account for somebody and puts it in the circle
+/// at once. The two are separate operations on the server (CreateUser, then
+/// AddCircleMember), so an account that was made but could not be put in is
+/// remembered, and trying again adds it instead of failing on a username that
+/// is taken now.
+private struct CircleAccountForm: View {
+    let directory: CircleDirectory
+    let circle: PeopleCircle
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = CircleAccountDraft()
+    @State private var madeUsername: String?
+    @State private var isBusy = false
+    @State private var problemText: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Username", text: $draft.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Name", text: $draft.name)
+                        .textContentType(.name)
+                    SecureField("Password", text: $draft.password)
+                        .textContentType(.newPassword)
+                    Toggle("Make them an admin", isOn: $draft.isAdmin)
+                } footer: {
+                    Text("They sign in with that username and password, and can change the password themselves in their settings.")
+                }
+            }
+            .navigationTitle("Make an account for someone")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        Task { await save() }
+                    }
+                    .disabled(!draft.canSubmit || isBusy)
+                }
+            }
+            .disabled(isBusy)
+            .toast(done: .constant(nil), problem: $problemText)
+        }
+    }
+
+    private func save() async {
+        isBusy = true
+        defer { isBusy = false }
+        let username = draft.trimmedUsername
+        do {
+            if madeUsername != username {
+                _ = try await directory.connection.createAccessUser(draft.accountDraft)
+                madeUsername = username
+            }
+        } catch {
+            problemText = error.localizedDescription
+            return
+        }
+        do {
+            try await directory.connection.addCircleMember(circle.id, username: username, memberRole: draft.memberRole)
+        } catch {
+            // The account is there now; say so, so that it is not made a
+            // second time.
+            problemText = String(
+                localized: "The account \(username) was made, but it could not be put in the circle (\(error.localizedDescription)). Try again to add it.")
+            return
+        }
+        let name = draft.accountDraft.name
+        directory.doneText = String(localized: "\(name.isEmpty ? username : name) has an account and is in the circle")
+        await directory.load()
+        dismiss()
+    }
+}
 
 /// CircleForm is a new circle's name and kind, or an existing one's name. The
 /// kind is chosen once, when the circle is made.

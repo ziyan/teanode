@@ -23,7 +23,26 @@ type Calendar struct {
 
 	// AgentGranted says the person has given their agent this one.
 	AgentGranted bool `json:"agentGranted"`
+
+	// ShareLevel is what the caller may do with it: owner for their own,
+	// busy, titles, details or edit for one shared with them, edit for a
+	// circle's.
+	ShareLevel string `json:"shareLevel"`
+
+	// Whose it is; empty for a circle's calendar, which belongs to the
+	// circle.
+	OwnerUserID   *string `json:"ownerUserId"`
+	OwnerUsername string  `json:"ownerUsername"`
+	OwnerName     string  `json:"ownerName"`
+
+	CircleID         *string `json:"circleId"`
+	CircleName       string  `json:"circleName"`
+	IsCircleCalendar bool    `json:"isCircleCalendar"`
+	ColorIndex       int     `json:"colorIndex"`
 }
+
+// IsOwn says the calendar is the caller's own.
+func (self *Calendar) IsOwn() bool { return self.ShareLevel == "" || self.ShareLevel == "owner" }
 
 // CalendarEvent is one entry. In a listing it is one time something happens,
 // so an event that repeats weekly appears once for each week in the window;
@@ -50,6 +69,13 @@ type CalendarEvent struct {
 	Status   string `json:"status,omitempty"`
 	Timezone string `json:"timezone,omitempty"`
 
+	// IsBusyOnly says this is all the caller is told of it: the owner is busy.
+	IsBusyOnly bool `json:"isBusyOnly"`
+
+	// IsPrivate says the owner marked it private, so everybody the calendar
+	// is shared with sees only that the owner is busy.
+	IsPrivate bool `json:"isPrivate"`
+
 	Organizer string              `json:"organizer,omitempty"`
 	Attendees []*CalendarAttendee `json:"attendees,omitempty"`
 
@@ -65,18 +91,19 @@ type CalendarAttendee struct {
 }
 
 const (
-	DocumentListCalendars = `query { ListCalendars { id name description colour timezone weekStart events calendarKind agentGranted } }`
+	DocumentListCalendars = `query { ListCalendars { id name description colour timezone weekStart events calendarKind agentGranted
+    shareLevel ownerUserId ownerUsername ownerName circleId circleName isCircleCalendar colorIndex } }`
 
 	DocumentListCalendarEvents = `query ($calendarId: String!, $from: String!, $until: String!) {
   ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
-    id calendarId uid summary location startsAt endsAt allDay recurring occurrence status
+    id calendarId uid summary location startsAt endsAt allDay recurring occurrence status isBusyOnly isPrivate
   }
 }`
 
 	DocumentGetCalendarEvent = `query ($calendarId: String!, $id: String!) {
   GetCalendarEvent(calendarId: $calendarId, id: $id) {
     id calendarId uid etag summary location description startsAt endsAt allDay
-    recurring recurrence status timezone organizer file
+    recurring recurrence status timezone isPrivate organizer file
     attendees { address name participation role }
   }
 }`
@@ -84,23 +111,49 @@ const (
 	DocumentSaveCalendarEvent = `mutation ($calendarId: String!, $id: String, $file: String,
     $summary: String, $location: String, $description: String,
     $startsAt: String, $endsAt: String, $allDay: Boolean,
-    $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
+    $timezone: String, $recurrence: String, $status: String, $isPrivate: Boolean, $attendees: [String!]) {
   SaveCalendarEvent(calendarId: $calendarId, id: $id, file: $file,
     summary: $summary, location: $location, description: $description,
     startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-    timezone: $timezone, recurrence: $recurrence, status: $status,
-    attendees: $attendees) { id uid summary startsAt endsAt allDay }
+    timezone: $timezone, recurrence: $recurrence, status: $status, isPrivate: $isPrivate,
+    attendees: $attendees) { id uid summary startsAt endsAt allDay isPrivate }
 }`
 
 	DocumentSaveCalendarEventWithRequest = `mutation ($requestId: String!, $calendarId: String!, $id: String, $file: String,
     $summary: String, $location: String, $description: String,
     $startsAt: String, $endsAt: String, $allDay: Boolean,
-    $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
+    $timezone: String, $recurrence: String, $status: String, $isPrivate: Boolean, $attendees: [String!]) {
   SaveCalendarEvent(requestId: $requestId, calendarId: $calendarId, id: $id, file: $file,
     summary: $summary, location: $location, description: $description,
     startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-    timezone: $timezone, recurrence: $recurrence, status: $status,
-    attendees: $attendees) { id uid summary startsAt endsAt allDay }
+    timezone: $timezone, recurrence: $recurrence, status: $status, isPrivate: $isPrivate,
+    attendees: $attendees) { id uid summary startsAt endsAt allDay isPrivate }
+}`
+
+	DocumentListCalendarShares = `query ($calendarId: String!) {
+  ListCalendarShares(calendarId: $calendarId) {
+    id calendarId granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName shareLevel createdAt
+  }
+}`
+
+	DocumentShareCalendar = `mutation ($calendarId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!) {
+  ShareCalendar(calendarId: $calendarId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) {
+    id calendarId granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName shareLevel createdAt
+  }
+}`
+
+	DocumentUnshareCalendar = `mutation ($shareId: String!) { UnshareCalendar(shareId: $shareId) }`
+
+	DocumentCreateCircleCalendar = `mutation ($circleId: String!, $name: String) {
+  CreateCircleCalendar(circleId: $circleId, name: $name) {
+    id name shareLevel circleId circleName isCircleCalendar calendarKind
+  }
+}`
+
+	DocumentListCalendarFreeBusy = `query ($userIds: [String!]!, $from: String!, $until: String!) {
+  ListCalendarFreeBusy(userIds: $userIds, from: $from, until: $until) {
+    userId username name isShared shareLevel periods { startsAt endsAt }
+  }
 }`
 
 	DocumentGetCalendarRequest = `query ($requestId: String!) {
@@ -177,6 +230,7 @@ type SaveCalendarEventFields struct {
 	Timezone    string
 	Recurrence  *string
 	Status      *string
+	IsPrivate   *bool
 	Attendees   *[]string
 }
 
@@ -186,7 +240,7 @@ func SaveCalendarEvent(ctx context.Context, connection *Client, fields *SaveCale
 		"calendarId": fields.CalendarID,
 		"id":         nil, "file": nil, "summary": nil, "location": nil, "description": nil,
 		"startsAt": nil, "endsAt": nil, "allDay": nil, "timezone": nil,
-		"recurrence": nil, "status": nil, "attendees": nil,
+		"recurrence": nil, "status": nil, "isPrivate": nil, "attendees": nil,
 	}
 	if fields.ID != "" {
 		arguments["id"] = fields.ID
@@ -208,6 +262,9 @@ func SaveCalendarEvent(ctx context.Context, connection *Client, fields *SaveCale
 	}
 	if fields.AllDay != nil {
 		arguments["allDay"] = *fields.AllDay
+	}
+	if fields.IsPrivate != nil {
+		arguments["isPrivate"] = *fields.IsPrivate
 	}
 	if fields.Attendees != nil {
 		arguments["attendees"] = *fields.Attendees
@@ -292,4 +349,107 @@ func CancelCalendarRequest(ctx context.Context, connection *Client, requestId st
 		return nil, err
 	}
 	return response.CancelCalendarRequest, nil
+}
+
+// CalendarShare gives one person or one circle a level of access to one
+// calendar.
+type CalendarShare struct {
+	ID         string `json:"id"`
+	CalendarID string `json:"calendarId"`
+
+	GranteeUserID     *string `json:"granteeUserId"`
+	GranteeUsername   string  `json:"granteeUsername"`
+	GranteeName       string  `json:"granteeName"`
+	GranteeCircleID   *string `json:"granteeCircleId"`
+	GranteeCircleName string  `json:"granteeCircleName"`
+
+	ShareLevel string    `json:"shareLevel"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// ListCalendarShares are who the caller's calendar is shared with.
+func ListCalendarShares(ctx context.Context, connection *Client, calendarId string) ([]*CalendarShare, error) {
+	var result struct {
+		ListCalendarShares []*CalendarShare `json:"ListCalendarShares"`
+	}
+	if err := connection.Execute(ctx, DocumentListCalendarShares, map[string]any{"calendarId": calendarId}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListCalendarShares, nil
+}
+
+// ShareCalendar shares the caller's calendar with a person or a circle, given
+// by identifier (one of the two), or changes the level of a share already made.
+func ShareCalendar(ctx context.Context, connection *Client, calendarId, granteeUserId, granteeCircleId, shareLevel string) (*CalendarShare, error) {
+	arguments := map[string]any{
+		"calendarId": calendarId, "shareLevel": shareLevel, "granteeUserId": nil, "granteeCircleId": nil,
+	}
+	if granteeUserId != "" {
+		arguments["granteeUserId"] = granteeUserId
+	}
+	if granteeCircleId != "" {
+		arguments["granteeCircleId"] = granteeCircleId
+	}
+	var result struct {
+		ShareCalendar *CalendarShare `json:"ShareCalendar"`
+	}
+	if err := connection.Execute(ctx, DocumentShareCalendar, arguments, &result); err != nil {
+		return nil, err
+	}
+	return result.ShareCalendar, nil
+}
+
+// UnshareCalendar takes a share back.
+func UnshareCalendar(ctx context.Context, connection *Client, shareId string) error {
+	var result struct {
+		UnshareCalendar bool `json:"UnshareCalendar"`
+	}
+	return connection.Execute(ctx, DocumentUnshareCalendar, map[string]any{"shareId": shareId}, &result)
+}
+
+// CreateCircleCalendar makes the calendar a circle keeps for itself.
+func CreateCircleCalendar(ctx context.Context, connection *Client, circleId, name string) (*Calendar, error) {
+	arguments := map[string]any{"circleId": circleId, "name": nil}
+	if name != "" {
+		arguments["name"] = name
+	}
+	var result struct {
+		CreateCircleCalendar *Calendar `json:"CreateCircleCalendar"`
+	}
+	if err := connection.Execute(ctx, DocumentCreateCircleCalendar, arguments, &result); err != nil {
+		return nil, err
+	}
+	return result.CreateCircleCalendar, nil
+}
+
+// CalendarBusyPeriod is a stretch of time somebody is busy, as RFC 3339
+// moments.
+type CalendarBusyPeriod struct {
+	StartsAt string `json:"startsAt"`
+	EndsAt   string `json:"endsAt"`
+}
+
+// CalendarFreeBusy is when one person is busy, for a caller they share their
+// calendar with. IsShared is false for somebody who has shared nothing with
+// the caller.
+type CalendarFreeBusy struct {
+	UserID     string                `json:"userId"`
+	Username   string                `json:"username"`
+	Name       string                `json:"name"`
+	IsShared   bool                  `json:"isShared"`
+	ShareLevel string                `json:"shareLevel"`
+	Periods    []*CalendarBusyPeriod `json:"periods"`
+}
+
+// ListCalendarFreeBusy asks when each of these people is busy between two
+// moments written as RFC 3339.
+func ListCalendarFreeBusy(ctx context.Context, connection *Client, userIds []string, from, until string) ([]*CalendarFreeBusy, error) {
+	var result struct {
+		ListCalendarFreeBusy []*CalendarFreeBusy `json:"ListCalendarFreeBusy"`
+	}
+	if err := connection.Execute(ctx, DocumentListCalendarFreeBusy,
+		map[string]any{"userIds": userIds, "from": from, "until": until}, &result); err != nil {
+		return nil, err
+	}
+	return result.ListCalendarFreeBusy, nil
 }

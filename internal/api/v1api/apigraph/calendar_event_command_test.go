@@ -180,3 +180,30 @@ func TestCalendarUseDoesNotAuthorizeInvitationMail(test *testing.T) {
 		test.Fatal("mail permission failure accepted mail or retained the meeting")
 	}
 }
+
+// An event is marked private on save and the mark comes back on the event the
+// owner reads; a save that does not mention it leaves it, and false takes it away.
+func TestCalendarEventPrivateMarkRoundTrips(test *testing.T) {
+	database, resolver, principal, arguments, _ := calendarEventFixture(test)
+	arguments.Attendees = nil
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), principal), transaction)
+		arguments.IsPrivate = new(true)
+		saved, err := resolver.SaveCalendarEvent(ctx, arguments)
+		if err != nil || saved == nil || !saved.IsPrivate {
+			test.Fatalf("marked private: %+v, %v", saved, err)
+		}
+		read, err := resolver.GetCalendarEvent(ctx, CalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID})
+		if err != nil || !read.IsPrivate {
+			test.Fatalf("the owner reads the mark: %+v, %v", read, err)
+		}
+		renamed, err := resolver.SaveCalendarEvent(ctx, SaveCalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID, Summary: new("Renamed")})
+		if err != nil || !renamed.IsPrivate {
+			test.Fatalf("a save that does not mention it keeps it: %+v, %v", renamed, err)
+		}
+		cleared, err := resolver.SaveCalendarEvent(ctx, SaveCalendarEventArguments{CalendarID: arguments.CalendarID, ID: saved.ID, IsPrivate: new(false)})
+		if err != nil || cleared.IsPrivate {
+			test.Fatalf("false takes it away: %+v, %v", cleared, err)
+		}
+	})
+}

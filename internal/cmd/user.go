@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewUserCommand builds "teanode user", for the accounts that administer this
@@ -42,7 +44,15 @@ func NewUserCommand() *cli.Command {
 						Name:  "stdin",
 						Usage: "read the password from standard input instead of prompting",
 					},
+					&cli.StringSliceFlag{
+						Name:  "circle",
+						Usage: "put the new account in this circle, by the identifier 'teanode circle list' prints; repeat for several",
+					},
 				},
+				Description: "With --circle the account is also put in each circle at once, as a member and\n" +
+					"with no invitation to accept: 'teanode circle add' for an account that was just\n" +
+					"made. The person can sign in with the username and the password, and change the\n" +
+					"password themselves.",
 				Action: runUserCreate,
 			},
 			{
@@ -162,6 +172,22 @@ func runUserCreate(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	fmt.Printf("added %s\n", username)
+
+	// The account exists now whatever happens next, so a circle that cannot
+	// take it is reported with the command that finishes the job, and the
+	// others are still tried.
+	var refused []string
+	for _, circleId := range command.StringSlice("circle") {
+		circle, err := client.AddCircleMember(ctx, connection, circleId, username, string(models.MemberRoleMember))
+		if err != nil {
+			refused = append(refused, fmt.Sprintf("circle %s: %s (try: teanode circle add %s %s)", circleId, err, circleId, username))
+			continue
+		}
+		fmt.Printf("put %s in %s\n", username, circleDescription(circle))
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("%s was added, but not to every circle:\n  %s", username, strings.Join(refused, "\n  "))
+	}
 	return nil
 }
 

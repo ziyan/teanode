@@ -14,6 +14,7 @@ struct CalendarScreen: View {
     @State private var reminders: RemindersModel
     @State private var isAddingReminder = false
     @State private var isSearching = false
+    @State private var isShowingCalendars = false
     /// The days opened from the month, pushed as Apple's Calendar pushes them.
     @State private var path: [CalendarDay] = []
     @State private var monthPosition: ScrollPosition
@@ -40,11 +41,11 @@ struct CalendarScreen: View {
                     if model.viewMode == .reminders {
                         await reminders.load()
                     } else {
-                        await model.reload()
+                        await model.reloadCalendars()
                     }
                 }
                 .navigationDestination(for: CalendarDay.self) { day in
-                    CalendarDayScreen(model: model, day: day) { opened = $0 } onCreate: { start in
+                    CalendarDayScreen(model: model, day: day) { open($0) } onCreate: { start in
                         draft = EventDraft(startingAt: start)
                     }
                 }
@@ -79,7 +80,18 @@ struct CalendarScreen: View {
         .sheet(isPresented: $isSearching) {
             CalendarSearch(model: model)
         }
+        .sheet(isPresented: $isShowingCalendars) {
+            CalendarListSheet(model: model)
+        }
         .toast(done: $model.doneText, problem: $model.problemText)
+    }
+
+    /// Opens an event to read or change. A busy block is not opened: all the
+    /// person is told of it is that its owner is busy, so there is nothing
+    /// in it.
+    private func open(_ event: CalendarEvent) {
+        guard !event.isBusy else { return }
+        opened = event
     }
 
     @ViewBuilder
@@ -93,11 +105,11 @@ struct CalendarScreen: View {
             List {
                 PendingChangeSection(model: model)
                 ForEach(model.days, id: \.self) { day in
-                    DaySection(model: model, day: day, isEmptyShown: true) { opened = $0 }
+                    DaySection(model: model, day: day, isEmptyShown: true) { open($0) }
                 }
             }
         case .day:
-            DayTimeline(model: model, day: model.focus) { opened = $0 } onCreate: { start in
+            DayTimeline(model: model, day: model.focus) { open($0) } onCreate: { start in
                 draft = EventDraft(startingAt: start)
             }
         case .agenda:
@@ -105,7 +117,7 @@ struct CalendarScreen: View {
             List {
                 PendingChangeSection(model: model)
                 ForEach(days, id: \.self) { day in
-                    DaySection(model: model, day: day, isEmptyShown: false) { opened = $0 }
+                    DaySection(model: model, day: day, isEmptyShown: false) { open($0) }
                 }
             }
             .overlay {
@@ -124,6 +136,11 @@ struct CalendarScreen: View {
         // Search and add at the top right, as Apple's Calendar has them.
         ToolbarItemGroup(placement: .topBarTrailing) {
             if model.viewMode != .reminders {
+                Button {
+                    isShowingCalendars = true
+                } label: {
+                    Label("Calendars", systemImage: "calendar.badge.checkmark")
+                }
                 Button {
                     isSearching = true
                 } label: {
@@ -267,10 +284,29 @@ extension CalendarModel {
     /// keeps one, or else a color of the palette, always the same one for
     /// the same calendar.
     func color(of event: CalendarEvent) -> Color {
-        if event.calendarId == calendar?.id, let parts = CalendarColorComponents(hexText: calendar?.colour) {
+        // The times somebody is busy are grey, whose calendar they are in.
+        if event.isBusy { return Color(.systemGray) }
+        if let parts = CalendarColorComponents(hexText: calendar(withId: event.calendarId)?.colour) {
             return Color(red: parts.red, green: parts.green, blue: parts.blue)
         }
         return Self.palette[CalendarPalette.index(calendarId: event.calendarId, paletteCount: Self.palette.count)]
+    }
+
+    /// The color a calendar is painted in the list of calendars.
+    func color(of calendar: AgentCalendar) -> Color {
+        if let parts = CalendarColorComponents(hexText: calendar.colour) {
+            return Color(red: parts.red, green: parts.green, blue: parts.blue)
+        }
+        return Self.palette[CalendarPalette.index(calendarId: calendar.id, paletteCount: Self.palette.count)]
+    }
+}
+
+extension CalendarEvent {
+    /// What to call it on screen: its title, or "Busy" for time its owner is
+    /// busy and nothing else was shared.
+    var shownTitle: String {
+        if isBusy { return String(localized: "Busy") }
+        return summary.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "(no title)")
     }
 }
 
@@ -562,18 +598,19 @@ struct EventChip: View {
     let title: String
     let color: Color
     let isCancelled: Bool
+    /// Whether to draw the lock of the person's own private events.
+    let isPrivate: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    init(title: String, color: Color, isCancelled: Bool) {
+    init(title: String, color: Color, isCancelled: Bool, isPrivate: Bool = false) {
         self.title = title
         self.color = color
         self.isCancelled = isCancelled
+        self.isPrivate = isPrivate
     }
 
     init(event: CalendarEvent, color: Color) {
-        self.init(
-            title: event.summary.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "(no title)"),
-            color: color, isCancelled: event.isCancelled)
+        self.init(title: event.shownTitle, color: color, isCancelled: event.isCancelled, isPrivate: event.isMarkedPrivate)
     }
 
     var body: some View {
@@ -584,6 +621,12 @@ struct EventChip: View {
                 Image(systemName: "calendar")
                     .imageScale(.small)
                     .foregroundStyle(color)
+            }
+            if isPrivate {
+                Image(systemName: "lock.fill")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Private")
             }
             Text(title)
                 .lineLimit(1)
@@ -748,7 +791,7 @@ struct CalendarSearch: View {
         guard events == nil else { return }
         let dates = model.dates
         let today = dates.startOfDay(for: Date())
-        guard let calendar = model.calendar,
+        guard model.calendar != nil,
             let from = dates.date(byAdding: .year, value: -1, to: today),
             let until = dates.date(byAdding: .year, value: 1, to: today)
         else {
@@ -756,7 +799,13 @@ struct CalendarSearch: View {
             return
         }
         do {
-            events = try await model.connection.calendarEvents(calendarId: calendar.id, from: from, until: until)
+            // Every calendar shown, and none of the busy blocks: there is
+            // nothing in them to find.
+            var found: [CalendarEvent] = []
+            for calendar in model.shownCalendars {
+                found += try await model.connection.calendarEvents(calendarId: calendar.id, from: from, until: until)
+            }
+            events = found.filter { !$0.isBusy }
         } catch {
             problemText = error.localizedDescription
         }
@@ -883,9 +932,17 @@ struct EventRow: View {
                 .fill(event.isCancelled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(color))
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.summary.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "(no title)"))
-                    .font(.body)
-                    .strikethrough(event.isCancelled)
+                HStack(spacing: 4) {
+                    if event.isMarkedPrivate {
+                        Image(systemName: "lock.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Private")
+                    }
+                    Text(event.shownTitle)
+                        .font(.body)
+                        .strikethrough(event.isCancelled)
+                }
                 HStack(spacing: 4) {
                     Text(EventWords.when(event))
                     if event.recurring {
@@ -978,8 +1035,15 @@ struct DayTimeline: View {
                                     onOpen(item.event)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text(item.event.summary ?? "")
-                                            .font(.footnote.weight(.semibold))
+                                        HStack(spacing: 3) {
+                                            if item.event.isMarkedPrivate {
+                                                Image(systemName: "lock.fill")
+                                                    .imageScale(.small)
+                                                    .accessibilityLabel("Private")
+                                            }
+                                            Text(item.event.isBusy ? item.event.shownTitle : (item.event.summary ?? ""))
+                                        }
+                                        .font(.footnote.weight(.semibold))
                                         Text(EventWords.when(item.event))
                                             .font(.caption2)
                                     }
@@ -1105,12 +1169,16 @@ struct EventOpener: View {
     let model: CalendarModel
     let event: CalendarEvent
     @State private var draft: EventDraft?
+    /// An event in a calendar shared below edit, which is read and not changed.
+    @State private var reading: CalendarEventDetail?
     @State private var problemText: String?
 
     var body: some View {
         Group {
             if let draft {
                 EventEditor(model: model, draft: draft)
+            } else if let reading {
+                EventReader(model: model, calendar: model.calendar(withId: event.calendarId), detail: reading)
             } else if let problemText {
                 ContentUnavailableView("That event could not be read", systemImage: "calendar.badge.exclamationmark", description: Text(problemText))
             } else {
@@ -1118,9 +1186,13 @@ struct EventOpener: View {
             }
         }
         .task {
-            guard let calendar = model.calendar else { return }
             do {
-                draft = EventDraft(try await model.connection.calendarEvent(calendarId: calendar.id, id: event.id))
+                let detail = try await model.connection.calendarEvent(calendarId: event.calendarId, id: event.id)
+                if let calendar = model.calendar(withId: event.calendarId), !calendar.canWrite {
+                    reading = detail
+                } else {
+                    draft = EventDraft(detail, calendarId: event.calendarId)
+                }
             } catch {
                 problemText = error.localizedDescription
             }
@@ -1138,9 +1210,27 @@ struct EventEditor: View {
     @State private var isConfirmingDelete = false
     @State private var memory = InMemoryModel()
 
+    /// The calendar the event is in or goes in: the person's own unless they
+    /// chose another.
+    private var target: AgentCalendar? {
+        draft.calendarId.flatMap { model.calendar(withId: $0) } ?? model.calendar
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                // Which calendar a new event goes in, when there is a choice:
+                // their own, a circle's, or one shared with them at edit. An
+                // event already kept stays where it is.
+                if draft.eventId == nil, model.writableCalendars.count > 1 {
+                    Section {
+                        Picker("Calendar", selection: $draft.calendarId) {
+                            ForEach(model.writableCalendars) { calendar in
+                                Text(model.displayName(of: calendar)).tag(Optional(calendar.id))
+                            }
+                        }
+                    }
+                }
                 Section {
                     TextField("Title", text: $draft.summary)
                     TextField("Location", text: $draft.location)
@@ -1160,15 +1250,29 @@ struct EventEditor: View {
                         }
                     }
                 }
-                Section {
-                    TextField("One address per line", text: $draft.invited, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                        .autocorrectionDisabled()
-                } header: {
-                    Text("Invited")
-                } footer: {
-                    Text("Invitations go out by mail when the event is saved.")
+                // Guests only in the person's own calendar: the invitations go
+                // out from, and the answers come back to, the owner.
+                if target?.isOwn ?? true {
+                    Section {
+                        TextField("One address per line", text: $draft.invited, axis: .vertical)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
+                            .autocorrectionDisabled()
+                    } header: {
+                        Text("Invited")
+                    } footer: {
+                        Text("Invitations go out by mail when the event is saved.")
+                    }
+                }
+                // Only in the person's own calendar: in a circle's, or one shared
+                // with them at edit, every reader is an editor and sees the
+                // event whatever it says.
+                if target?.isOwn ?? true {
+                    Section {
+                        Toggle("Private", isOn: $draft.isPrivate)
+                    } footer: {
+                        Text("Others you share your calendar with see only that you are busy.")
+                    }
                 }
                 Section("Notes") {
                     TextField("Notes", text: $draft.notes, axis: .vertical)
@@ -1205,15 +1309,20 @@ struct EventEditor: View {
                     Button("Save") {
                         save()
                     }
-                    .disabled(isSaving || draft.summary.trimmingCharacters(in: .whitespaces).isEmpty || model.calendar == nil)
+                    .disabled(isSaving || draft.summary.trimmingCharacters(in: .whitespaces).isEmpty || target == nil)
                 }
             }
             .interactiveDismissDisabled(isSaving)
+            .task {
+                // A new event goes in the person's own calendar unless they
+                // choose another, so the choice starts there.
+                if draft.calendarId == nil { draft.calendarId = model.calendar?.id }
+            }
         }
     }
 
     private func save() {
-        guard let calendar = model.calendar else { return }
+        guard let calendar = target else { return }
         isSaving = true
         Task {
             if await model.make(draft.change(calendar: calendar)) {
@@ -1224,7 +1333,7 @@ struct EventEditor: View {
     }
 
     private func delete() {
-        guard let calendar = model.calendar, let eventId = draft.eventId else { return }
+        guard let calendar = target, let eventId = draft.eventId else { return }
         isSaving = true
         Task {
             let change = CalendarChange(

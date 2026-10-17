@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from '../i18n/i18n'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import {
+  AddPersonIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   GraphIcon,
@@ -31,6 +32,7 @@ import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { KnowledgeGraph } from './knowledgeExplore'
+import { PageShares, SharePageDialog, SharedKnowledge, SharedWithYou, useRefreshKey } from './knowledgeShared'
 import { LinkedRecords } from './knowledgeRecords'
 import { RECORD_LINK_FIELDS, RecordKindIcon, useRecordKindLabel, type RecordLink } from '../memoryLinks'
 // The set of things to tick, the one the access pages tick roles and
@@ -471,7 +473,15 @@ function nameOf(node: Node, me: string): string {
 // The lookup box at the top is the primary way in. A graph of thousands
 // of pages is not browsed; it is looked up, and the list is for when you
 // do not know the name yet.
+// KnowledgePage is the person's own pages, or, with ?owner= on the address,
+// a page another person shared with them (knowledgeShared.tsx), which is read
+// only and has nothing of the person's own beside it.
 export function KnowledgePage() {
+  const owner = useSearchParams()[0].get('owner')
+  return owner ? <SharedKnowledge owner={owner} /> : <OwnKnowledge />
+}
+
+function OwnKnowledge() {
   const { t, plural, language } = useTranslation()
   const toast = useToast()
   const desktop = useIsDesktop()
@@ -809,7 +819,12 @@ export function KnowledgePage() {
   const column = (
     <div className="knowledge-list">
       {trail ?? lookup}
-      <div className="knowledge-list-rows">{list}</div>
+      <div className="knowledge-list-rows">
+        {list}
+        {/* What other people shared, at the top level only: it is a place
+            of its own beside the folders, not a folder among them. */}
+        {!search && !shownFolder ? <SharedWithYou /> : null}
+      </div>
       {/* Under the rows rather than among them, which is where the mailbox
           puts the same strip and what keeps it in view while the folder is
           walked down. It cannot be drawn where it is counted: the panels
@@ -1906,6 +1921,10 @@ function PageView({
   const [linked, setLinked] = useState(0)
   const [busy, setBusy] = useState(false)
   const [linking, setLinking] = useState(false)
+  // The share dialog, and the number that has the shares read again once it
+  // has changed them.
+  const [sharing, setSharing] = useState(false)
+  const [sharesKey, changeShares] = useRefreshKey()
   const [problem, setProblem] = useState('')
 
   async function run(document: string, variables: Record<string, unknown>, said: string) {
@@ -2030,6 +2049,18 @@ function PageView({
                 </button>
               </Tooltip>
             ) : null}
+            {/* Read only to whoever it is shared with, and shown to them
+                only as far as the dialog's preview says. */}
+            <Tooltip label={t('knowledge.share.action')}>
+              <button
+                type="button"
+                className="icon-action"
+                aria-label={`${node.path}: ${t('knowledge.share.action')}`}
+                onClick={() => setSharing(true)}
+              >
+                <AddPersonIcon size={16} />
+              </button>
+            </Tooltip>
             <Tooltip label={node.pinned ? t('knowledge.unpin') : t('knowledge.pin')}>
               <button
                 type="button"
@@ -2100,6 +2131,17 @@ function PageView({
           <SettingsEmpty>{t('knowledge.noSummary')}</SettingsEmpty>
         )}
       </SettingsSection>
+
+      {/* Who can read this page, when anybody can. */}
+      <PageShares path={node.path} refreshKey={sharesKey} />
+      {sharing ? (
+        <SharePageDialog
+          path={node.path}
+          name={nameOf(node, me)}
+          onClose={() => setSharing(false)}
+          onChanged={changeShares}
+        />
+      ) : null}
 
       {/* Under the opening, which says what the page is: the overview says
           how it works, from the pages under and beside it as well as its

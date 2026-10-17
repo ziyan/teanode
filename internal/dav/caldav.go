@@ -57,9 +57,17 @@ func (self *calendarBackend) CalendarHomeSetPath(ctx context.Context) (string, e
 // because a phone asked to synchronize an empty home set has nothing to point
 // at and some clients then stop asking, and a Reminders app shown no list
 // that takes reminders has nowhere to put one.
+//
+// And the ones that are theirs to read without being theirs: the calendar of
+// each circle they are in, and each calendar another person shared with them
+// at titles or above. A phone shows them beside their own, each under the name
+// it is listed with here ("Ada's calendar", the circle calendar's own name),
+// and is told which of them it may not change. One shared only at busy is not
+// a calendar here: it holds no events to show, and is for the free-busy
+// question a phone asks of it instead.
 func (self *calendarBackend) ListCalendars(ctx context.Context) ([]caldav.Calendar, error) {
 	signedIn := self.who(ctx)
-	var calendars []*models.Calendar
+	var reachable []*models.ReachableCalendar
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		for _, kind := range []models.CalendarKind{models.CalendarEvents, models.CalendarReminders} {
 			if !self.component.allows(signedIn, calendarService(kind)) {
@@ -69,26 +77,59 @@ func (self *calendarBackend) ListCalendars(ctx context.Context) ([]caldav.Calend
 				return unexpectedCalendar(err)
 			}
 		}
-		found, err := tx.ListCalendars(signedIn.userID)
-		calendars = found
+		found, err := tx.ListReachableCalendars(signedIn.userID)
+		reachable = found
 		return unexpectedCalendar(err)
 	}); err != nil {
 		return nil, err
 	}
-	listed := make([]caldav.Calendar, 0, len(calendars))
-	for _, found := range calendars {
-		if !self.component.allows(signedIn, calendarService(found.CalendarKind)) {
+	listed := make([]caldav.Calendar, 0, len(reachable))
+	for _, each := range reachable {
+		if !self.component.allows(signedIn, calendarService(each.Calendar.CalendarKind)) || !each.ShareLevel.CanRead() {
 			continue
 		}
-		listed = append(listed, self.describe(signedIn, found))
+		listed = append(listed, self.describe(signedIn, &reachedCalendar{
+			Calendar: each.Calendar, shareLevel: each.ShareLevel, name: nameOf(each),
+		}))
 	}
 	return listed, nil
 }
 
-func (self *calendarBackend) describe(signedIn *session, found *models.Calendar) caldav.Calendar {
+// reachedCalendar is a calendar and what the signed-in person may do with it:
+// their own, a circle's they are in, or another person's shared with them. It
+// is what every method here works with, so that "may this person read or write
+// this calendar" is asked once, of the database's CalendarAccess, and answered
+// the same for every method.
+type reachedCalendar struct {
+	*models.Calendar
+
+	// shareLevel is ShareLevelOwner for their own.
+	shareLevel models.ShareLevel
+
+	// name is what a phone is told to call it.
+	name string
+}
+
+func (self *reachedCalendar) isOwner() bool { return self.shareLevel == models.ShareLevelOwner }
+
+// nameOf is what a phone calls a calendar that reaches the person: its own
+// name for their own and for a circle's, and whose it is for another person's,
+// since every person's is called "Calendar".
+func nameOf(each *models.ReachableCalendar) string {
+	if each.ShareLevel == models.ShareLevelOwner || each.Calendar.CircleID != "" || each.Owner == nil {
+		return each.Calendar.Name
+	}
+	return each.Owner.DisplayName() + "'s calendar"
+}
+
+func (self *calendarBackend) describe(signedIn *session, found *reachedCalendar) caldav.Calendar {
+	name := found.name
+	if name == "" {
+		name = found.Name
+	}
 	return caldav.Calendar{
 		Path:        calendarPath(signedIn.userID, found.ID),
-		Name:        found.Name,
+		Name:        name,
 		Description: found.Description,
 		// So that a client knows not to try to send something enormous,
 		// rather than finding out when it is refused.
@@ -97,7 +138,7 @@ func (self *calendarBackend) describe(signedIn *session, found *models.Calendar)
 		// reminders list. A client told a collection also keeps the other
 		// kind would put one there and find it did not come back, which is
 		// worse than being told at the start.
-		SupportedComponentSet: []string{componentOf(found)},
+		SupportedComponentSet: []string{componentOf(found.Calendar)},
 	}
 }
 
@@ -170,7 +211,7 @@ func storedAs(found *models.Calendar, objectId string, written []byte) (*models.
 
 func (self *calendarBackend) GetCalendar(ctx context.Context, address string) (*caldav.Calendar, error) {
 	signedIn := self.who(ctx)
-	found, err := self.calendarAt(ctx, signedIn, address)
+	found, err := self.calendarAt(ctx, signedIn, address, models.ShareLevelTitles)
 	if err != nil {
 		return nil, davError(err)
 	}
@@ -195,7 +236,7 @@ func (self *calendarBackend) GetCalendarObject(ctx context.Context, address stri
 	}
 	var object *models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		object, err = tx.GetCalendarObject(found.ID, objectId)
+		object, err = tx.ReadCalendarObject(found.ID, objectId, found.shareLevel)
 		return unexpectedCalendar(err)
 	}); err != nil {
 		return nil, err
@@ -212,13 +253,13 @@ func (self *calendarBackend) GetCalendarObject(ctx context.Context, address stri
 // and anything it holds that has stopped being listed has been deleted.
 func (self *calendarBackend) ListCalendarObjects(ctx context.Context, address string, request *caldav.CalendarCompRequest) ([]caldav.CalendarObject, error) {
 	signedIn := self.who(ctx)
-	found, err := self.calendarAt(ctx, signedIn, address)
+	found, err := self.calendarAt(ctx, signedIn, address, models.ShareLevelTitles)
 	if err != nil {
 		return nil, davError(err)
 	}
 	var objects []*models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		objects, err = tx.ListCalendarObjects(found.ID)
+		objects, err = tx.ReadCalendarObjects(found.ID, found.shareLevel)
 		return unexpectedCalendar(err)
 	}); err != nil {
 		return nil, err
@@ -251,6 +292,12 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 	if err != nil {
 		return nil, davError(err)
 	}
+	// Refused before the file is read at all. The same refusal is made
+	// earlier, before the protocol library sees the request, and is made again
+	// here because this is the door that writes.
+	if err := mayWrite(found); err != nil {
+		return nil, davError(err)
+	}
 	// Encoded and read back, rather than taken from the decoded form. What
 	// is stored has to be what a fetch returns, and what is stored is the
 	// folded, canonical text -- so it is written once here and everything
@@ -259,7 +306,7 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 	if err != nil {
 		return nil, webdav.NewHTTPError(http.StatusBadRequest, err)
 	}
-	kept, occurrences, err := storedAs(found, objectId, written)
+	kept, occurrences, err := storedAs(found.Calendar, objectId, written)
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +325,11 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 		existing, err := tx.LockCalendarObject(found.ID, objectId)
 		if err != nil {
 			return unexpectedCalendar(err)
+		}
+		// An event with guests is its owner's: the invitations go out from,
+		// and the answers come back to, their address.
+		if !found.isOwner() && (hasGuests(kept.Data) || (existing != nil && hasGuests(existing.Data))) {
+			return davError(refuse(http.StatusForbidden, "%s", guestsRefusal(found)))
 		}
 		// The conditional headers, which are how two devices editing the
 		// same event at once are stopped from silently overwriting one
@@ -355,6 +407,9 @@ func (self *calendarBackend) DeleteCalendarObject(ctx context.Context, address s
 	if err != nil {
 		return davError(err)
 	}
+	if err := mayWrite(found); err != nil {
+		return davError(err)
+	}
 	wanted := webdav.ConditionalMatch(ifMatchFrom(ctx))
 	return self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// Held, so that "remove it only if it is still the version I
@@ -366,6 +421,9 @@ func (self *calendarBackend) DeleteCalendarObject(ctx context.Context, address s
 		}
 		if existing == nil {
 			return davError(refuse(http.StatusNotFound, "no such event"))
+		}
+		if !found.isOwner() && hasGuests(existing.Data) {
+			return davError(refuse(http.StatusForbidden, "%s", guestsRefusal(found)))
 		}
 		// "Remove it only if it is still the version I read." A device
 		// holding a stale copy would otherwise delete an edit made
@@ -380,6 +438,32 @@ func (self *calendarBackend) DeleteCalendarObject(ctx context.Context, address s
 		}
 		return unexpectedCalendar(tx.DeleteCalendarObject(found.ID, objectId))
 	})
+}
+
+// mayWrite refuses a change to a calendar the person may only read, in words
+// a phone shows. 403 is what the protocol says for an operation the person is
+// not permitted to do.
+func mayWrite(found *reachedCalendar) error {
+	if found.shareLevel.CanWrite() {
+		return nil
+	}
+	return refuse(http.StatusForbidden,
+		"this calendar is shared with you at the level %q, and you can only change it when it is shared at edit", found.shareLevel)
+}
+
+// hasGuests reports whether an event names people it asks.
+func hasGuests(data string) bool {
+	parsed, err := calendar.Parse([]byte(data))
+	return err == nil && len(parsed.Attendees) > 0
+}
+
+// guestsRefusal says why an event with guests is not changed from a calendar
+// that is not the person's own.
+func guestsRefusal(found *reachedCalendar) string {
+	if found.CircleID != "" {
+		return "an event in a circle's calendar cannot have guests, because there is nobody to send the invitations or to answer them"
+	}
+	return "this event has guests, and changing it would send them mail in the owner's name; only the owner of the calendar can do that"
 }
 
 // object is one stored event as the protocol describes it.
@@ -403,30 +487,61 @@ func (self *calendarBackend) object(signedIn *session, object *models.CalendarOb
 	}, nil
 }
 
-// calendarAt is the calendar a URL names, refused unless it is this person's.
-func (self *calendarBackend) calendarAt(ctx context.Context, signedIn *session, address string) (*models.Calendar, error) {
+// calendarAt is the calendar a URL names, refused unless the person reaches it
+// at the level asked for or better. Titles for everything that shows events;
+// busy only for the free-busy question, which a calendar shared at busy
+// answers.
+//
+// Not found, never forbidden, for a calendar they do not reach at all: whether
+// it exists and whose it is is not theirs to learn. Reaching it is the
+// database's CalendarAccess, and nothing here compares a calendar's UserID
+// with the person, which a circle's calendar does not have.
+func (self *calendarBackend) calendarAt(ctx context.Context, signedIn *session, address string, atLeast models.ShareLevel) (*reachedCalendar, error) {
 	segments := segmentsOf(address)
 	if len(segments) < 3 {
 		return nil, refuse(http.StatusNotFound, "no such calendar")
 	}
-	var found *models.Calendar
-	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		found, err = tx.GetCalendar(segments[2])
-		return unexpectedCalendar(err)
+	var reached *reachedCalendar
+	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) error {
+		found, err := tx.GetCalendar(segments[2])
+		if err != nil {
+			return unexpectedCalendar(err)
+		}
+		if found == nil {
+			return nil
+		}
+		shareLevel, _, err := tx.CalendarAccess(signedIn.userID, found)
+		if err != nil {
+			return unexpectedCalendar(err)
+		}
+		if !shareLevel.AtLeast(atLeast) {
+			return nil
+		}
+		reached = &reachedCalendar{Calendar: found, shareLevel: shareLevel, name: found.Name}
+		if shareLevel != models.ShareLevelOwner && found.UserID != "" {
+			owner, err := tx.GetUser(found.UserID)
+			if err != nil {
+				return unexpectedCalendar(err)
+			}
+			if owner != nil {
+				reached.name = owner.DisplayName() + "'s calendar"
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
-	if found == nil || found.UserID != signedIn.userID || !self.component.allows(signedIn, calendarService(found.CalendarKind)) {
+	if reached == nil || !self.component.allows(signedIn, calendarService(reached.CalendarKind)) {
 		return nil, refuse(http.StatusNotFound, "no such calendar")
 	}
-	return found, nil
+	return reached, nil
 }
 
 // objectAt is the calendar and the event identifier a URL names. The file
 // name is the client's to choose and clients do not agree on what it should
 // be, so whatever it is becomes the identifier, with the .ics taken off.
-func (self *calendarBackend) objectAt(ctx context.Context, signedIn *session, address string) (*models.Calendar, string, error) {
-	found, err := self.calendarAt(ctx, signedIn, address)
+func (self *calendarBackend) objectAt(ctx context.Context, signedIn *session, address string) (*reachedCalendar, string, error) {
+	found, err := self.calendarAt(ctx, signedIn, address, models.ShareLevelTitles)
 	if err != nil {
 		return nil, "", err
 	}
@@ -456,7 +571,7 @@ func (self *calendarBackend) storedEvent(ctx context.Context, address string) (*
 	}
 	var object *models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		object, err = tx.GetCalendarObject(found.ID, objectId)
+		object, err = tx.ReadCalendarObject(found.ID, objectId, found.shareLevel)
 		return unexpectedCalendar(err)
 	}); err != nil {
 		return nil, err
@@ -471,13 +586,13 @@ func (self *calendarBackend) storedEvent(ctx context.Context, address string) (*
 // a report without going back through the protocol library's encoder.
 func (self *calendarBackend) storedEvents(ctx context.Context, address string) ([]*models.CalendarObject, error) {
 	signedIn := self.who(ctx)
-	found, err := self.calendarAt(ctx, signedIn, address)
+	found, err := self.calendarAt(ctx, signedIn, address, models.ShareLevelTitles)
 	if err != nil {
 		return nil, err
 	}
 	var objects []*models.CalendarObject
 	if err := self.component.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		objects, err = tx.ListCalendarObjects(found.ID)
+		objects, err = tx.ReadCalendarObjects(found.ID, found.shareLevel)
 		return unexpectedCalendar(err)
 	}); err != nil {
 		return nil, err

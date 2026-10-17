@@ -299,6 +299,21 @@ pass over a checkout or a chat archive is hours of reading and the
 embeddings that went with it, and there is no way to get them back except
 to pay for them again.
 
+## A chat with other people as a source
+
+A member of a chat (`conversations.md`, Chats) can let their agent remember it:
+`SetChatAgentReading`, the switch in the chat's members panel, or `teanode
+agent conversation remember ID on`. That makes the chat a source of kind `chat`
+(`specification.chatId`), which only that switch makes. It reads from the time
+the switch was turned on, so neither what was said before nor what is said while
+it is off is read: the source's cursor (`chatReadThrough`) starts at the newest
+message there is. A pass files what was said since as one document for each
+day's run of messages, of kind `chat`, marked private, and the dream reads it
+like any other chat. Turning the switch off, or leaving the chat, switches the
+source off at once; what was learned stays and the Knowledge page still shows the
+chat as the evidence of those facts. Every member can see which agents remember
+the chat they are in.
+
 ## Sources that are scripts
 
 Most of what a person knows is not in a shape this program has a reader
@@ -1033,6 +1048,96 @@ It is on the page in the dashboard, in `teanode agent memory history
 <path>`, in the API, and in the agent's own memory tool as `history`, so
 the agent can account for a line the person does not recognize instead of
 guessing at where it came from.
+
+## Sharing
+
+A person can share a page, and everything under it, with one person in a
+circle they share or with a whole circle they are in
+(`docs/subsystems/circles.md`). `docs/decisions/20261016-shared-knowledge-is-read-where-it-lives.md`
+says why it is read where it lives rather than copied; this is how.
+
+**The share** is a row in `agent_page_share`: the owner's agent, the path
+that is the root of the shared subtree, a person or a circle, and whether
+the quotes are shared. A share of `people/a` reaches the page at
+`people/a` and every page under `people/a/`, and never `people/ab`: the
+boundary is a slash. The same path shared with the same person twice is one
+share, and sharing again changes the quotes. The owner has to have a page
+at the path, and has to share a circle with the person, or be in the
+circle. A reader is reached by a share to them while the two still share a
+circle, or by a share to a circle while both are in it. Leaving a circle, or
+being taken out of one, ends in the same transaction the direct shares
+between two people who no longer share any circle, and the shares the
+person made to a circle they are no longer in. A share to a circle that
+somebody else left needs no deleting: it stops reaching them by the join.
+Taking a share back, or any of this, removes the page from the reader on
+their next read, because there is nothing to remove.
+
+**What a reader sees** is made in one place, `internal/agent/shared_memory.go`,
+and it is the only code that reads another agent's graph. The memory tool,
+the GraphQL operations, the command line, the dashboard, the iPhone app and
+the prompt all go through it, so what is left out is left out once:
+
+* A fact's quote, unless the owner shared the quotes. Where it was read is
+  said in the owner's terms and no more: "from Ada's mail", "from Ada's
+  mail and conversation", never which mail or which document.
+* A link, unless the page at its other end is shared with the reader too, so
+  a link never names a page the reader was not given. The owner's other pages
+  are not named anywhere.
+* The dream's reflections and lessons. They cite the owner's other pages and
+  say what nobody said.
+* Everything about a page that is not what it says: its importance, its
+  contact card, its history, the identifiers of its rows.
+
+The name, the opening, the overview and the facts are shown as they are
+written, with the fact numbers the owner sees, so the same fact is
+`people/a-grandparent#3` to both of them. A page that is not shared, a page
+beside one that is, and a page the owner does not have are all answered the
+same way: not found.
+
+**Reading it.** In the memory tool, `get`, `index` and `search` take `owner`,
+the sharer's username. `search` without it also searches what is shared, after
+the person's own results, each hit marked with its owner; the search is by
+words, because the vectors are the owner's. A write that names an owner other
+than the person is refused before it is looked at, and so is every other
+action that is not a read of shared pages. `shared` lists everything shared
+with the person, `share`, `shares` and `unshare` are the person's own, and
+`share` is a granting call, so the person is asked first. The prompt carries
+a "Shared with you" section after the person's own index, in the part that
+changes only when a share does: the shared roots with their openings and
+whose they are, at most twenty, then "N more; memory index owner:<username>
+lists them", so nothing is cut without saying so. It is left out of a run
+nobody is at, of a chat of several people (whose members were not each given
+the same pages), and of the dream, which never reads shared pages.
+
+A fact of a shared page is cited with its owner, `people/a-grandparent#3
+(shared by Ada)`, and linked as `[name](memory:people/a-grandparent#3@ada)`,
+which opens `/knowledge/people/a-grandparent?owner=ada` on the dashboard and
+the same page in the app. On the Knowledge page the shared pages are listed
+under "Shared with you" in the sidebar, grouped by owner, and each opens read
+only with its owner shown; the person's own pages show who each is shared
+with, and a Share action that shows exactly what the other side will see
+before anything is shared. `teanode agent memory share|shares|unshare|shared`
+and `memory get --owner` are the same on the command line
+(`docs/reference/command-line.md`).
+
+**Never copied.** The result of a shared read starts with a marker line
+(`tools.SharedPageMarker`), and the conversation stores it. The run that
+files what a conversation taught (`remember_shared.go`) refuses a fact whose
+quote, or its own words where it has no quote, occurs in text from a shared
+page (a marked tool result, or the sentence of an answer that ends in a
+citation of a shared fact) and does not occur in anything the person said.
+The refusal happens before the fact takes up the run's allowance or opens a
+page, is logged with "this came from a page another person shared; cite it
+instead of writing it down", and is counted on the run's title as "N not
+written down because they came from a page another person shared", the way
+a quote that was not found is counted. What the person said in the same
+conversation is filed as always. The dream's reading goes through the same
+filing and is shown no shared text, because the dream cannot read a shared
+page at all.
+
+What the reader's agent learns about the same subject is learned in its own
+graph, under its own page, and the two pages can disagree. They are two
+people's knowledge.
 
 ## Vectors
 

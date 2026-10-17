@@ -317,6 +317,11 @@ func (self *transaction) DeleteUser(userId string) error {
 		if err := releaseCircles(tx, userId); err != nil {
 			return err
 		}
+		// Out of every chat under the name they had, before the foreign keys
+		// forget whose they were.
+		if err := leaveEveryChat(tx, userId, before.DisplayName(), time.Now()); err != nil {
+			return err
+		}
 		return tx.Where("\"id\" = ?", userId).Delete(&userModel{}).Error
 	})
 }

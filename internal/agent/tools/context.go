@@ -117,6 +117,23 @@ func TellReaction(run Run, conversationId, messageId, reactionEmoji string, reac
 	}
 }
 
+// ChatHolding is a run held to what everybody in one chat may see: a turn the
+// owner of an agent allowed somebody else in a chat to start. It names the one
+// conversation the conversation tool may read, which it reads as the people of
+// the chat said it, without what the owner's own agent did there.
+type ChatHolding interface {
+	HeldToChatConversation() string
+}
+
+// HeldToChat is the id of the only conversation the run may read, or empty
+// when the run is not held to a chat.
+func HeldToChat(run Run) string {
+	if holding, ok := run.(ChatHolding); ok {
+		return holding.HeldToChatConversation()
+	}
+	return ""
+}
+
 // WithRun puts the run into the context for the tools called in it.
 func WithRun(ctx context.Context, run Run) context.Context {
 	return context.WithValue(ctx, runKey{}, run)

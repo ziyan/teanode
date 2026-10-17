@@ -9,7 +9,7 @@ import Foundation
 /// named one.
 public struct AgentConversation: Codable, Identifiable, Hashable, Sendable {
     public let id: String
-    /// "main", "named", "run" or "goal".
+    /// "main", "named", "run", "goal" or "chat".
     public let kind: String
     /// For a run, what kind of job it was, such as "mcp".
     public var jobKind: String? = nil
@@ -22,6 +22,9 @@ public struct AgentConversation: Codable, Identifiable, Hashable, Sendable {
     public var goal: String? = nil
     public var goalState: String? = nil
     public var goalNote: String? = nil
+    /// For a chat, the people in it and how it stands for the person; nil on
+    /// every other conversation.
+    public var chat: ChatSummary? = nil
 
     public init(id: String, kind: String, title: String?, summary: String?, lastAt: String?) {
         self.id = id
@@ -32,6 +35,7 @@ public struct AgentConversation: Codable, Identifiable, Hashable, Sendable {
     }
 
     public var isMain: Bool { kind == "main" }
+    public var isChat: Bool { kind == "chat" }
     public var isArchived: Bool { !(archivedAt ?? "").isEmpty }
 }
 
@@ -183,6 +187,30 @@ public struct AgentMessage: Codable, Identifiable, Hashable, Sendable {
     public var references: [AgentReference]? = nil
     /// The person's and the agent's reactions to it.
     public var reactions: [AgentMessageReaction]? = nil
+    /// Who wrote it, "person" or "agent". In a chat, whoever it was; in a
+    /// conversation with an agent, the owner and their agent.
+    public var authorKind: String? = nil
+    public var authorUserId: String? = nil
+    public var authorName: String? = nil
+    /// For an agent's message in a chat, the name of its owner. Most agents
+    /// keep the name "Agent", so whose it is tells two of them apart.
+    public var authorOwnerName: String? = nil
+    public var authorAvatarUrl: String? = nil
+    public var authorAvatarColorIndex: Int? = nil
+    public var authorAgentId: String? = nil
+    /// Written by the person reading it, or by their agent.
+    public var isMine: Bool? = nil
+    /// When its author last changed what it says, and whether they took it
+    /// back; its content is then empty.
+    public var editedAt: String? = nil
+    public var isDeleted: Bool? = nil
+    /// For an agent's message in a chat, the run of the turn that wrote it,
+    /// so that the words drawn while it was being written are replaced by it.
+    public var agentRunId: String? = nil
+    /// In a chat, a row of what the person's own agent did to answer (a
+    /// call, its result, a note), which only they read, and not something
+    /// said there.
+    public var isAgentWork: Bool? = nil
 
     public init(
         id: String, createdAt: String, role: String, content: String, name: String? = nil, toolCallId: String? = nil,
@@ -217,22 +245,31 @@ public struct AgentInteraction: Codable, Hashable, Sendable {
 /// streams it.
 /// AgentMessageReaction is an emoji the person or the agent put on a
 /// message, one each at most.
-public struct AgentMessageReaction: Codable, Hashable, Sendable {
+public struct AgentMessageReaction: Codable, Hashable, Sendable, Identifiable {
     public let emoji: String
     /// "person" or "agent".
     public let reactorKind: String
     public let reactedAt: String?
+    /// Which person, in a chat, where more than one can react.
+    public var reactorUserId: String? = nil
+    public var reactorName: String? = nil
 
-    public init(emoji: String, reactorKind: String, reactedAt: String? = nil) {
+    /// One reaction for each reactor, so several people's tell apart.
+    public var id: String { "\(reactorKind):\(reactorUserId ?? "")" }
+
+    public init(emoji: String, reactorKind: String, reactedAt: String? = nil, reactorUserId: String? = nil, reactorName: String? = nil) {
         self.emoji = emoji
         self.reactorKind = reactorKind
         self.reactedAt = reactedAt
+        self.reactorUserId = reactorUserId
+        self.reactorName = reactorName
     }
 }
 
 public struct AgentEvent: Codable, Hashable, Sendable {
     /// asked, text, message, tool_call, tool_result, confirmation, question,
-    /// note, titled, navigate, locate, done or error.
+    /// note, titled, navigate, locate, done or error; and in a chat said,
+    /// edited, unsaid, reacted, read, typing or members.
     public let kind: String
     public let runId: String
     public let sequence: Int
@@ -252,16 +289,43 @@ public struct AgentEvent: Codable, Hashable, Sendable {
     public var messageId: String? = nil
     public var emoji: String? = nil
     public var reactorKind: String? = nil
+    /// For a chat's "reacted": which person.
+    public var reactorUserId: String? = nil
+    public var reactorName: String? = nil
+    /// For a chat's "read": whose mark moved, to `messageId`; and for
+    /// "typing": who is writing and what to call them.
+    public var userId: String? = nil
+    public var name: String? = nil
+    /// For a chat's "typing" of an agent ("is thinking"), and for the "text"
+    /// of an answer being written there: the agent, named by `name`.
+    public var authorAgentId: String? = nil
+    /// With `authorAgentId`, the name of that agent's owner.
+    public var authorOwnerName: String? = nil
+    /// For a chat's "said" and "edited": the message as the person reads it.
+    public var message: AgentMessage? = nil
+    /// The message was too long to travel whole: the conversation is read
+    /// again.
+    public var isMessageCut: Bool? = nil
 
     public init(
         kind: String, runId: String, sequence: Int, at: String? = nil, text: String? = nil, tool: String? = nil,
         callId: String? = nil, arguments: String? = nil, risk: String? = nil, note: String? = nil, noteKind: String? = nil,
         noteDetail: String? = nil, error: String? = nil, drawerId: String? = nil, messageId: String? = nil, emoji: String? = nil,
-        reactorKind: String? = nil
+        reactorKind: String? = nil, reactorUserId: String? = nil, reactorName: String? = nil, userId: String? = nil,
+        name: String? = nil, message: AgentMessage? = nil, isMessageCut: Bool? = nil, authorAgentId: String? = nil,
+        authorOwnerName: String? = nil
     ) {
+        self.authorAgentId = authorAgentId
+        self.authorOwnerName = authorOwnerName
         self.messageId = messageId
         self.emoji = emoji
         self.reactorKind = reactorKind
+        self.reactorUserId = reactorUserId
+        self.reactorName = reactorName
+        self.userId = userId
+        self.name = name
+        self.message = message
+        self.isMessageCut = isMessageCut
         self.kind = kind
         self.runId = runId
         self.sequence = sequence
@@ -287,7 +351,7 @@ public struct AgentPhone: Codable, Hashable, Sendable {
     public let canBeNotified: Bool
 
     /// Every kind, in the order a person chooses among them.
-    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle"]
+    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "payment"]
 }
 
 /// ServerTime reads the server's times.

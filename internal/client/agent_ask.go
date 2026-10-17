@@ -34,6 +34,10 @@ type AgentConversation struct {
 	GoalNote   string     `json:"goalNote"`
 	GoalNextAt *time.Time `json:"goalNextAt"`
 	GoalSetAt  *time.Time `json:"goalSetAt"`
+
+	// Chat is, on a chat, the people in it, how much you have not read and
+	// whether you silenced it; null on every other conversation.
+	Chat *AgentChat `json:"chat"`
 }
 
 // AgentRunSummary is one run as a list shows it, with what it cost.
@@ -67,16 +71,35 @@ type AgentMessage struct {
 	Usage       *AgentUsageNote   `json:"usage"`
 	Attachments []AgentAttachment `json:"attachments"`
 	References  []AgentReference  `json:"references"`
-	// Reactions are the emoji you and the agent put on the message.
+	// Reactions are the emoji you and the agent put on the message; in a
+	// chat, the emoji of each person who reacted.
 	Reactions []AgentMessageReaction `json:"reactions"`
+
+	// Who wrote it: a person or an agent, by name. IsMine says you or your
+	// agent did. A message taken back has IsDeleted and no words.
+	AuthorKind    string `json:"authorKind"`
+	AuthorUserID  string `json:"authorUserId"`
+	AuthorName    string `json:"authorName"`
+	AuthorAgentID string `json:"authorAgentId"`
+	// AuthorOwnerName is, on an agent's message, whose agent it is.
+	AuthorOwnerName string `json:"authorOwnerName"`
+	IsMine          bool   `json:"isMine"`
+
+	// IsAgentWork says that, in a chat, the row is what your agent did to
+	// answer, and not something said there.
+	IsAgentWork bool       `json:"isAgentWork"`
+	EditedAt    *time.Time `json:"editedAt"`
+	IsDeleted   bool       `json:"isDeleted"`
 }
 
 // AgentMessageReaction is an emoji on a message, and who put it there:
-// person or agent.
+// person or agent, and in a chat which person.
 type AgentMessageReaction struct {
-	Emoji       string    `json:"emoji"`
-	ReactorKind string    `json:"reactorKind"`
-	ReactedAt   time.Time `json:"reactedAt"`
+	Emoji         string    `json:"emoji"`
+	ReactorKind   string    `json:"reactorKind"`
+	ReactedAt     time.Time `json:"reactedAt"`
+	ReactorUserID string    `json:"reactorUserId"`
+	ReactorName   string    `json:"reactorName"`
 }
 
 // AgentUsageNote is what one model call cost.
@@ -126,6 +149,12 @@ type AskAgentRequest struct {
 	// Effort is how hard the model thinks: low, medium or high; empty
 	// leaves it to the agent.
 	Effort string
+
+	// In a chat, which agents the message is for: those by id, and your own
+	// without knowing its id. A message that addresses none goes to the people
+	// alone.
+	AddressedAgentIDs     []string
+	ShouldAddressOwnAgent bool
 }
 
 // AgentToolCall is a tool the model asked for.
@@ -191,14 +220,14 @@ type AgentTool struct {
 	Core        bool   `json:"core"`
 }
 
-const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough goal goalState goalNote goalNextAt goalSetAt }`
+const conversationFields = `{ id kind title summary jobKind subjectId surface lastAt archivedAt compactedThrough goal goalState goalNote goalNextAt goalSetAt chat ` + chatFields + ` }`
 
 const todoFields = `{ id conversationId text createdAt doneAt }`
 
 // The documents.
 const (
-	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String) {
-		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort) { runId conversationId }
+	DocumentAskAgent = `mutation ($conversationId: String, $message: String!, $surface: String, $readOnly: Boolean, $attachmentIds: [String!], $references: [AgentReferenceInput!], $effort: String, $addressedAgentIds: [String!], $shouldAddressOwnAgent: Boolean) {
+		AskAgent(conversationId: $conversationId, message: $message, surface: $surface, readOnly: $readOnly, attachmentIds: $attachmentIds, references: $references, effort: $effort, addressedAgentIds: $addressedAgentIds, shouldAddressOwnAgent: $shouldAddressOwnAgent) { runId conversationId }
 	}`
 	DocumentReadAgentRun = `query ($runId: String!, $after: Int, $wait: Int) {
 		ReadAgentRun(runId: $runId, after: $after, wait: $wait) { runId done events { kind runId sequence text tool callId arguments risk note error at } }
@@ -207,14 +236,14 @@ const (
 		ResolveAgentConfirmation(runId: $runId, callId: $callId, approve: $approve)
 	}`
 	DocumentStopAgentRun            = `mutation ($runId: String!) { StopAgentRun(runId: $runId) }`
-	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String) { ListAgentConversations(archived: $archived, query: $query) ` + conversationFields + ` }`
+	DocumentListAgentConversations  = `query ($archived: Boolean, $query: String, $kind: String) { ListAgentConversations(archived: $archived, query: $query, kind: $kind) ` + conversationFields + ` }`
 	DocumentDeleteAgentConversation = `mutation ($conversationId: String!) { DeleteAgentConversation(conversationId: $conversationId) }`
 	DocumentListAgentRuns           = `query ($first: Int, $offset: Int, $jobId: String, $kinds: [String!], $query: String) { ListAgentRuns(first: $first, offset: $offset, jobId: $jobId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
 	DocumentListAllAgentRuns        = `query ($first: Int, $offset: Int, $agentId: String, $kinds: [String!], $query: String) { ListAllAgentRuns(first: $first, offset: $offset, agentId: $agentId, kinds: $kinds, query: $query) { total runs ` + runFields + ` } }`
 	DocumentReadAgentConversation   = `query ($conversationId: String, $first: Int, $offset: Int) {
 		ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
 			conversation ` + conversationFields + `
-			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt } }
+			messages { id createdAt role content name toolCallId toolCalls { id name arguments } usage { model kind promptTokens completionTokens } attachments { id name contentType size } references { itemId threadId subject from recordingId recordingTitle agentMessageId quotedRole quotedText } reactions { emoji reactorKind reactedAt reactorUserId reactorName } authorKind authorUserId authorName authorOwnerName authorAgentId isMine isAgentWork editedAt isDeleted }
 			total
 			todos ` + todoFields + `
 		}
@@ -264,6 +293,12 @@ func AskAgentWith(ctx context.Context, connection *Client, request *AskAgentRequ
 	}
 	if request.Effort != "" {
 		variables["effort"] = request.Effort
+	}
+	if len(request.AddressedAgentIDs) > 0 {
+		variables["addressedAgentIds"] = request.AddressedAgentIDs
+	}
+	if request.ShouldAddressOwnAgent {
+		variables["shouldAddressOwnAgent"] = true
 	}
 	if err := connection.executeAllowed(ctx, DocumentAskAgent, variables, &result); err != nil {
 		return nil, err
@@ -348,12 +383,21 @@ func ListAgentConversations(ctx context.Context, connection *Client, archived bo
 // SearchAgentConversations lists conversations, or finds them by words in
 // the title or in what was said.
 func SearchAgentConversations(ctx context.Context, connection *Client, archived bool, query string) ([]*AgentConversation, error) {
+	return ListAgentConversationsOfKind(ctx, connection, archived, query, "")
+}
+
+// ListAgentConversationsOfKind is SearchAgentConversations narrowed to one
+// kind of conversation: main, named or chat; empty is all of them.
+func ListAgentConversationsOfKind(ctx context.Context, connection *Client, archived bool, query, conversationKind string) ([]*AgentConversation, error) {
 	var result struct {
 		ListAgentConversations []*AgentConversation `json:"ListAgentConversations"`
 	}
 	variables := map[string]any{"archived": archived}
 	if query != "" {
 		variables["query"] = query
+	}
+	if conversationKind != "" {
+		variables["kind"] = conversationKind
 	}
 	if err := connection.Execute(ctx, DocumentListAgentConversations, variables, &result); err != nil {
 		return nil, err

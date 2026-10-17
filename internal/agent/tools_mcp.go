@@ -20,7 +20,6 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/mcp"
 	"github.com/ziyan/teanode/internal/models"
-	"github.com/ziyan/teanode/internal/util/secretbox"
 	"github.com/ziyan/teanode/internal/version"
 )
 
@@ -75,35 +74,12 @@ func connectionPrefix(serverName, agentId string) string {
 
 // SealSecret seals a credential with the server secret, for storing.
 func (self *Agent) SealSecret(value string) (string, error) {
-	box, err := self.connectionBox()
-	if err != nil {
-		return "", err
-	}
-	return box.Seal([]byte(value))
+	return SealConnectionSecret(self.settings.Configuration(), value)
 }
 
 // OpenSecret opens what SealSecret sealed.
 func (self *Agent) OpenSecret(value string) (string, error) {
-	if value == "" {
-		return "", nil
-	}
-	box, err := self.connectionBox()
-	if err != nil {
-		return "", err
-	}
-	opened, err := box.Open(value)
-	if err != nil {
-		return "", err
-	}
-	return string(opened), nil
-}
-
-func (self *Agent) connectionBox() (*secretbox.Box, error) {
-	secret := self.settings.Configuration().Secret()
-	if len(secret) == 0 {
-		return nil, fmt.Errorf("agent: the server has no secret to seal credentials with")
-	}
-	return secretbox.New(secret, connectionSecretLabel)
+	return OpenConnectionSecret(self.settings.Configuration(), value)
 }
 
 // Server is a declared server by name, or nil.

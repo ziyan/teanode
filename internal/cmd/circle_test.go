@@ -11,7 +11,9 @@ import (
 
 // Circles are on the API, the command line and the agent's circle tool under
 // the same names: nothing exists on one that the others lack, except that the
-// agent's tool leaves out what is an admin's or an operator's to do by hand.
+// agent's tool leaves out what is an admin's to do by hand. Putting an
+// account in a circle without an invitation is the operator's, and the tool
+// offers it only to somebody who manages accounts.
 // The dashboard and the iPhone app call the same operations.
 func TestCircleParity(test *testing.T) {
 	test.Parallel()
@@ -42,7 +44,7 @@ func TestCircleParity(test *testing.T) {
 		"SetCircleMemberRole":      {[]string{"role"}, ""},
 		"RemoveCircleMember":       {[]string{"remove"}, ""},
 		"LeaveCircle":              {[]string{"leave"}, "leave"},
-		"AddCircleMember":          {[]string{"add"}, ""},
+		"AddCircleMember":          {[]string{"add"}, "add"},
 	}
 
 	commands := map[string]bool{}

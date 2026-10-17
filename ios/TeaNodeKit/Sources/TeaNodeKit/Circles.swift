@@ -162,6 +162,37 @@ public struct CircleInvitationDraft: Hashable, Sendable {
     var memberRole: CircleMemberRole { isAdmin ? .admin : .member }
 }
 
+/// CircleAccountDraft is an account an operator makes for somebody while
+/// putting them in a circle, as the form holds it: the account is made with
+/// CreateUser and put in the circle with AddCircleMember, so there is no
+/// invitation for the person to accept.
+public struct CircleAccountDraft: Hashable, Sendable {
+    public var username = ""
+    public var name = ""
+    public var password = ""
+    public var isAdmin = false
+
+    public init() {}
+
+    public var trimmedUsername: String { username.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Whether the form can be sent: a username and a password to sign in
+    /// with, since nobody has set this account up.
+    public var canSubmit: Bool { !trimmedUsername.isEmpty && !password.isEmpty }
+
+    public var memberRole: CircleMemberRole { isAdmin ? .admin : .member }
+
+    /// The account as the people page makes one, so that both send the same
+    /// CreateUser variables.
+    public var accountDraft: AccessUserDraft {
+        var draft = AccessUserDraft()
+        draft.username = trimmedUsername
+        draft.password = password
+        draft.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return draft
+    }
+}
+
 extension Documents {
     /// What every read of an invitation answers with.
     static let circleInvitationFields = """
@@ -198,6 +229,11 @@ extension Documents {
     public static let inviteToCircle = """
         mutation ($circleId: String!, $username: String!, $memberRole: String!) {
           InviteToCircle(circleId: $circleId, username: $username, memberRole: $memberRole)
+        }
+        """
+    public static let addCircleMember = """
+        mutation ($circleId: String!, $username: String!, $memberRole: String!) {
+          AddCircleMember(circleId: $circleId, username: $username, memberRole: $memberRole) { id }
         }
         """
     public static let answerCircleInvitation = """
@@ -276,6 +312,18 @@ extension Connection {
             variables: [
                 "circleId": .string(circleId), "username": .string(draft.trimmedUsername), "memberRole": .string(draft.memberRole.rawValue),
             ], as: Answer.self)
+    }
+
+    /// Puts an account in a circle at once, with no invitation to accept.
+    /// Needs the permission to manage users; the circle need not be one the
+    /// person is in. Asking again for an account already in it changes
+    /// nothing.
+    public func addCircleMember(_ circleId: String, username: String, memberRole: CircleMemberRole) async throws {
+        struct Answer: Decodable, Sendable { let AddCircleMember: JSONValue? }
+        _ = try await execute(
+            Documents.addCircleMember,
+            variables: ["circleId": .string(circleId), "username": .string(username), "memberRole": .string(memberRole.rawValue)],
+            as: Answer.self)
     }
 
     /// Joins the circle an invitation is to, or turns it down.

@@ -71,6 +71,10 @@ The design reasons are in five decision records, all dated 2026-10-16 under `doc
   Rationale: the maintainer pointed out that a spouse, an adult member, needs to pay with the household's Link too. One mechanism covers both the spouse (limits, rarely asked) and a child (asked every time), and approving runs exactly the asked call instead of a fresh turn of the owner's agent. See `20261016-a-payment-skill-is-shared-call-by-call.md`.
   Date/Author: 2026-10-16, maintainer.
 
+- Decision: how a shared call is built (Milestone 8). `RunShared` is a method of the agent (`internal/agent/skill_share.go`), not a function in `internal/skills`, because it needs the owner's computers, secrets and reach; `internal/skills/share.go` holds only what the skill says about a call (the amount, the identifier rule, the limits). The call is carried out by calling the very runner the owner's own agent uses for that tool, with a run made for the owner's agent, so nothing about "on the owner's computer, as the owner" is rebuilt. A call is written as `ran` before it is carried out and changed to `failed` if it errors, so the month's total counts a call in flight and two at once cannot both pass the limit. The command judge of the owner's own agent is asked once per call: reading, changing and spending go ahead inside a share, which is the owner's word on spending; speaking for the owner, giving access, destroying something, or a judgement that could not be had make the call wait. The identifier rule is a declared `scopedIdField` with a fallback on a parameter named `spend_request_id`, and an amount declaration always wins over the fallback. A share has at most twenty calls waiting; two columns, `wake_claimed_at` and `woken_at`, make telling the grantee's conversation happen once.
+  Rationale: found while building it; each is the smallest way to meet "exactly as for the owner", "the server behaves safely without the registry's Link skill being updated" and "approving twice runs once". See `docs/subsystems/skills.md` ("Sharing a skill").
+  Date/Author: 2026-10-17, implementation.
+
 - Decision: memory is shared as a live read-only view of a subtree of pages, never copied.
   Rationale: a copy is stale the next day and survives being taken back. See `20261016-shared-knowledge-is-read-where-it-lives.md`.
   Date/Author: 2026-10-16, design.
@@ -82,6 +86,10 @@ The design reasons are in five decision records, all dated 2026-10-16 under `doc
 - Decision: no face for the agent. A person's avatar is an uploaded picture with an initial as the fallback; an agent is shown by its name, and in a chat as "<name> is thinking" while a turn runs, the way a person is shown typing.
   Rationale: a drawn, animated face was built and the maintainer found the drawings not good enough, and asked for people's pictures only. The decision record for it was withdrawn before it was merged.
   Date/Author: 2026-10-16, maintainer.
+
+- Decision: an agent's chat message says whose agent it is. Most agents keep the name "Agent", so two answers in one group were indistinguishable. `chat_message.author_owner_name` keeps the owner's name as the chat knew them, `AgentMessage` and the `typing` and `text` events carry it as `authorOwnerName`, and every surface words an agent as "<agent name> · <owner>'s agent", or "<owner>'s agent" while it has the default name.
+  Rationale: one rule everywhere (drawer, app, command line, phone notification title, the "is thinking" line, and the model's own view of the chat) so a person never has to guess whose agent spoke.
+  Date/Author: 2026-10-17, maintainer.
 
 - Decision: no circle agent. A circle has no agent of its own and no graph its members write together.
   Rationale: the maintainer agreed to drop it for now; it would need `agent.user_id` to become optional, which every agent code path assumes.

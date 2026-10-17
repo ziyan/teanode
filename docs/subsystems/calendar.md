@@ -186,6 +186,13 @@ is there because that hung.
 An all-day event is a date with no zone at all, so that a birthday does not
 move a day for somebody reading it from further west.
 
+A person marks an event private with `Fields.IsPrivate`, which writes
+`CLASS:PRIVATE` (true) or removes the `CLASS` line (false, which also clears a
+`CONFIDENTIAL` a phone wrote). Leaving it out leaves the line alone. The
+dashboard, the iPhone app, `calendar add --private` and the agent's `is_private`
+argument all send `isPrivate` to `SaveCalendarEvent`, and an event the owner
+reads carries `isPrivate`; what everybody else sees is decided in `Redact`.
+
 ## What CalDAV does and does not do
 
 The layout is forced: the library decides what kind of resource a URL names by
@@ -378,8 +385,9 @@ cancelling it.
 The dashboard, the command line and the agent reach the same API, and the rule
 is that none of them can do something the others cannot. `teanode calendar
 list|show|add|edit|remove|free|calendars|set` is the whole of it from a
-terminal; for the agent it is one tool, `calendar`, whose action is `agenda`,
-`free`, `add`, `edit` or `remove` — the same abilities, under one name,
+terminal (and `share|shares|unshare|circle`, under Sharing below); for the
+agent it is one tool, `calendar`, whose action is `agenda`, `free`, `add`,
+`edit` or `remove`: the same abilities, under one name,
 because a catalog with a name per verb is a catalog a model reads less
 carefully.
 
@@ -405,6 +413,112 @@ Free-busy is one piece of code for all three (`calendar.FreeBusy` and
 `calendar.Free`, beside each other on purpose). "When is this person busy" and
 "when could they meet" are one question from two ends, and the terminal, the
 agent and a colleague's phone must not be able to disagree about the answer.
+
+## Sharing
+
+Why it is shaped this way is in
+`docs/decisions/20261016-a-calendar-is-shared-at-a-level.md`. This is how it
+works.
+
+**A calendar is shared at a level**, with one person or with a whole circle
+(`calendar_share`, migration `0195_calendar_share.sql`). Sharing with a person
+needs the two to share a circle; sharing with a circle needs the sharer to be in
+it. Both are checked when the share is made, `FOR SHARE` on the circle
+membership rows, so a person leaving at the same moment takes turns with the
+share rather than racing it. Only a person's own calendar of events is shared:
+the reminders list never is, and a circle's calendar already belongs to
+everybody in the circle.
+
+| level | the reader is given |
+| --- | --- |
+| `busy` | when the owner is busy, from `calendar.FreeBusy`, and nothing else |
+| `titles` | the time, title and place of each event |
+| `details` | the whole event, less its alarms (they belong to the owner's phone) |
+| `edit` | the whole event, and may add, change and remove events |
+
+**One place says what a person may do with a calendar:** `CalendarAccess` on the
+transaction (`internal/db/database_calendar_share.go`). It answers the level
+and whether the caller is the owner: the owner is `owner`, a member of the
+circle a circle calendar belongs to is `edit`, and for another person's calendar
+it is the highest of the direct share and the shares to circles the reader is
+in. The lookup joins `circle_member` for the reader and for the calendar's
+owner, so a share to a circle stops reaching a reader when the owner leaves that
+circle, and a direct share stops when the two no longer share one, whether or
+not any row has been deleted yet. Nothing compares a calendar's `UserID` with
+the caller: a circle's calendar has none (`user_id` is NULL and `circle_id` set,
+exactly one of them). The dashboard's API (`reachCalendar`), CalDAV
+(`calendarAt`), the commands that write (`writableCalendar`) and the agent
+(through the API) all ask it.
+
+**Redaction happens in one place too.** `calendar.Redact` takes an event and a
+level and returns what that reader may see; `ReadCalendarObject` and
+`ReadCalendarObjects` on the transaction are the only functions that call it,
+and every door that reads an event for somebody who is not its owner reads it
+through them. The file is rewritten, not just the columns: a phone is given an
+iCalendar file that has the repeat, the moved occurrences and the time zone, and
+nothing else the level does not allow. The ETag is taken over what is given, so
+the version a listing names is the version a fetch returns. An event its owner
+marked private (`CLASS:PRIVATE` or `CONFIDENTIAL`, in any of the events of the
+file) is busy to everybody else at every level, and so is a file this server
+cannot read. Such an event carries `X-TEANODE-BUSY:TRUE`, which is how the
+dashboard tells "Busy" the label from an event somebody called Busy. The rule
+that decides it, `calendar.IsPrivateClass`, sits beside the four judgements of
+what makes somebody busy and changes nothing about whether the owner is busy:
+their own free-busy is the same with or without it.
+
+**Free-busy for a shared calendar is the owner's free-busy.**
+`commands.BusyOccurrences` is the one function that decides which occurrences
+make somebody busy; the owner's own CalDAV free-busy, a shared calendar's, the
+dashboard's grey blocks (`ListCalendarEvents` at `busy`), and the free times of
+several people (`ListCalendarFreeBusy`) all call it, with the owner's addresses,
+so that none of them can disagree. `calendar.FreeByDay` turns busy times into the
+stretches everybody is free, and both `teanode calendar free --with` and the
+agent's `free_together` use it. Somebody who shared nothing is answered as not
+shared, the same as an identifier that is nobody's, and a free time is never
+offered with somebody left out.
+
+**Writing.** Below `edit` a change is refused in words (the caller can see the
+calendar, so they are told why). An event with guests is the owner's to change,
+and a circle's calendar has no owner: an editor adding, changing or removing an
+event that has guests, or giving one guests, is refused. The invitation would go
+out from the wrong address, and the answers would come back to somebody who did
+not ask. An invitation that arrives by mail only ever lands in the person's own
+calendar of events: `EnsureCalendar` looks only at calendars with their
+`user_id`, so it can never pick a circle's or a shared one.
+
+**CalDAV.** The home set lists the person's calendars, each circle calendar
+under its own name, and each calendar shared at `titles` or above as "<owner's
+name>'s calendar", all at `/dav/{userId}/calendars/{calendarId}/`. A calendar
+shared at `busy` is not listed: it has no events to show, and answers the
+free-busy REPORT a phone asks of it. The library writes `current-user-privilege-set`
+as read and write for every calendar, so a PROPFIND is taken in a buffer and the
+write privilege is removed from the calendars the person may only read
+(`internal/dav/privileges.go`), which makes a phone grey out the editing. That is
+a courtesy: a PUT, DELETE or any other change to a calendar below `edit` is
+refused with 403 before the library reads a byte of it, and again where the
+event is kept.
+
+**Leaving a circle.** `EndCalendarSharesOutsideCircles(userId)` deletes the
+direct shares between that person and anyone they no longer share a circle with,
+in both directions, and their shares to circles they are no longer in. It is
+called in the transaction that takes a person out of a circle, after the member
+row is gone, so the shares do not come back if the two meet in another circle
+later. A circle's calendar goes with the circle (`ON DELETE CASCADE`).
+
+**The surfaces.** Dashboard: the calendar page lists every calendar with a color,
+the owner's face, and a check to show or hide it (remembered in the browser
+only); busy blocks are grey and cannot be opened; events in a calendar shared
+below `edit` open to be read; the Share button opens the panel for the person's
+own calendar; the circle page offers "Make a family calendar" (any kind may have
+one; it says "shared calendar" for friends and colleagues). The app has the same
+list, sharing screen and read-only events. The command line: `teanode calendar
+share|shares|unshare|circle`, `list --whose`, `free --with`. The agent's
+`calendar` tool: `agenda` takes `whose`, and `free_together`, `shares`, `share`
+(a grant, asked about first) and `unshare` are actions of it; adding to a circle's
+calendar is the person's own change, and to another person's calendar shared at
+`edit` it is outward. What the agent reads of other people's calendars it reads
+as the person, at the level each was shared at, and only when the person has
+given it their own calendar.
 
 ## The reminders list beside it
 

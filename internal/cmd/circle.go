@@ -281,7 +281,7 @@ func runCircleInvite(ctx context.Context, command *cli.Command) error {
 		return describeNotFound(command, err, "circle "+arguments[0])
 	}
 	// The same words whoever the username is, as the server's answer is.
-	fmt.Printf("invited %s; they join when they accept\n", forTerminal(arguments[1]))
+	fmt.Printf("invitation sent to %s, if that account exists; they join when they accept\n", forTerminal(arguments[1]))
 	return nil
 }
 

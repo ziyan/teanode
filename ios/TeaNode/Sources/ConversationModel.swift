@@ -17,6 +17,12 @@ final class ConversationModel {
     private(set) var conversation: AgentConversation?
     private(set) var title: String
     private(set) var transcript = Transcript(messages: [])
+    /// Who shared the pages shared with the person, by display name, so that
+    /// a shared citation in an answer's words ("people/a#3 (shared by Ada)")
+    /// is linked to its owner's page. Read once, when an answer first cites
+    /// one.
+    private(set) var sharedOwnerUsernames: [String: String] = [:]
+    private var didAskSharedOwners = false
     private(set) var isLoaded = false
     private(set) var loadProblemText: String?
 
@@ -37,7 +43,10 @@ final class ConversationModel {
     private(set) var ideas: [AgentIdea] = []
 
     var draft = "" {
-        didSet { saveDraft() }
+        didSet {
+            saveDraft()
+            if draft != oldValue { tellTyping() }
+        }
     }
     var pendingFiles: [PendingFile] = []
     /// The message being replied to, shown above the composer.
@@ -49,6 +58,10 @@ final class ConversationModel {
     var selectingText: String?
     /// The whole of a message too long for its bubble, open to read.
     var readingText: String?
+    /// A message of a chat opened to change what it says, and one asked
+    /// about taking back.
+    var editingLine: TranscriptLine?
+    var deletingLine: TranscriptLine?
 
     /// The message replied to, of the references: one at most.
     var replyingTo: AgentReference? {
@@ -87,6 +100,18 @@ final class ConversationModel {
     /// Counts the cards settled from this app as soon as they were answered, which shrink the list under the scroll.
     private(set) var cardSettledCount = 0
 
+    /// For a chat: which of its members the person is, who is writing in it
+    /// now, and the newest message told to the server as read.
+    private(set) var ownUserId: String?
+    private(set) var typing = ChatTyping()
+    private var typingToldAt = Date.distantPast
+    private var typingPruning: Task<Void, Never>?
+    private var readThroughMessageId = ""
+
+    /// Whether this is a chat: a conversation with people in it.
+    var isChat: Bool { conversation?.isChat == true }
+    var chat: ChatSummary? { conversation?.chat }
+
     /// The call with the agent, while there is one, and whether the server
     /// offers calls and at what rate it takes speech.
     var call: VoiceCall?
@@ -104,7 +129,8 @@ final class ConversationModel {
     init(conversation: AgentConversation?, app: AppModel, connection: Connection) {
         self.conversationId = conversation?.id
         self.conversation = conversation
-        self.title = conversation.map { ConversationModel.title(of: $0, agentTitle: app.agentTitle) } ?? app.agentTitle
+        self.ownUserId = app.ownUserId
+        self.title = conversation.map { ConversationModel.title(of: $0, agentTitle: app.agentTitle, ownUserId: app.ownUserId) } ?? app.agentTitle
         self.app = app
         self.connection = connection
         // Named once: the main conversation learns its id when it loads,
@@ -114,9 +140,14 @@ final class ConversationModel {
         self.draft = UserDefaults.standard.string(forKey: draftKey) ?? ""
     }
 
-    static func title(of conversation: AgentConversation, agentTitle: String) -> String {
+    static func title(of conversation: AgentConversation, agentTitle: String, ownUserId: String? = nil) -> String {
         if conversation.isMain {
             return agentTitle
+        }
+        if conversation.isChat {
+            let fallback = conversation.title.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Chat")
+            return conversation.chat?.name(ownUserId: ownUserId, deletedAccountNote: String(localized: "(deleted account)"), fallback: fallback)
+                ?? fallback
         }
         if let title = conversation.title, !title.isEmpty {
             return title
@@ -167,10 +198,13 @@ final class ConversationModel {
     /// runs again; one that ended while the feed was down is not.
     func load() async throws {
         let page = try await connection.conversation(conversationId, first: max(100, messages.count))
+        if page.conversation?.isChat == true, ownUserId == nil {
+            ownUserId = try? await connection.userId()
+        }
         if let conversation = page.conversation {
             conversationId = conversation.id
             self.conversation = conversation
-            title = Self.title(of: conversation, agentTitle: app.agentTitle)
+            title = Self.title(of: conversation, agentTitle: app.agentTitle, ownUserId: ownUserId)
         }
         messages = page.messages
         interactions = page.interactions
@@ -178,9 +212,16 @@ final class ConversationModel {
         todos = page.todos
         actingAs = page.actingAs
         runningRunIds = []
-        transcript = Transcript(messages: messages, interactions: interactions)
+        transcript = Transcript(messages: messages, interactions: interactions, isChat: isChat)
         isLoaded = true
         loadProblemText = nil
+        loadSharedOwnersIfCited()
+        // A chat is people: no ideas to start it with, and no call to the
+        // agent.
+        if isChat {
+            await markRead()
+            return
+        }
         if messages.isEmpty {
             await loadIdeas()
         }
@@ -220,6 +261,19 @@ final class ConversationModel {
     }
 
     /// Reads the page of messages before those shown.
+    private func loadSharedOwnersIfCited() {
+        guard !didAskSharedOwners,
+            messages.contains(where: { $0.role == "assistant" && SharedCitations.hasCitation(in: $0.content) })
+        else { return }
+        didAskSharedOwners = true
+        Task {
+            // The words still read without it; they are only not a link.
+            if let roots = try? await connection.sharedKnowledgeRoots() {
+                sharedOwnerUsernames = SharedCitations.usernames(of: roots)
+            }
+        }
+    }
+
     func loadEarlier() async {
         guard earlierCount > 0, !isLoadingEarlier else { return }
         isLoadingEarlier = true
@@ -230,7 +284,7 @@ final class ConversationModel {
             let earlierMessages = page.messages.filter { !known.contains($0.id) }
             messages = earlierMessages + messages
             total = page.total
-            transcript.prepend(messages: messages, earlierCount: earlierMessages.count)
+            transcript.prepend(messages: messages, earlierCount: earlierMessages.count, isChat: isChat)
         } catch {
             sendProblemText = app.describe(error)
         }
@@ -270,6 +324,43 @@ final class ConversationModel {
                     todos = page.todos
                 }
             }
+        case "said", "edited":
+            // A message too long to travel whole is read again with the chat.
+            if event.message == nil || event.isMessageCut == true {
+                Task { try? await load() }
+            } else if event.kind == "said" {
+                // Whoever said it has finished: a person is no longer typing,
+                // and an agent that answered is no longer thinking.
+                if event.message?.authorKind == "agent" {
+                    if let agentId = event.message?.authorAgentId, !agentId.isEmpty { typing.clear(agentId: agentId) }
+                } else if let author = event.message?.authorUserId, !author.isEmpty {
+                    typing.clear(userId: author)
+                }
+                Task { await markRead() }
+            }
+        case "members":
+            // Somebody changed what their agent does here: who can be asked
+            // and who remembers the chat.
+            Task { try? await load() }
+        case "read":
+            if let userId = event.userId, let messageId = event.messageId, let chat = conversation?.chat {
+                conversation?.chat = chat.withRead(userId: userId, messageId: messageId)
+            }
+        case "typing":
+            // An agent working on an answer is told by its agent and is
+            // thinking; a person is told by theirs and is typing.
+            if let agentId = event.authorAgentId, !agentId.isEmpty {
+                typing.note(agentId: agentId, name: event.name ?? "", ownerName: event.authorOwnerName ?? "")
+            } else if let userId = event.userId, userId != ownUserId {
+                typing.note(userId: userId, name: event.name ?? "")
+            } else {
+                break
+            }
+            typingPruning?.cancel()
+            typingPruning = Task {
+                try? await Task.sleep(for: .seconds(ChatTyping.shownSeconds + 0.5))
+                if !Task.isCancelled { typing.prune() }
+            }
         case "titled":
             if let text = event.text, !text.isEmpty { title = text }
         case "locate":
@@ -284,7 +375,15 @@ final class ConversationModel {
     }
 
     var canSend: Bool {
-        !isSending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingFiles.isEmpty)
+        canWrite && !isSending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingFiles.isEmpty)
+    }
+
+    /// Whether the person can still write here: always, but in a chat they
+    /// have left, or a direct chat with somebody they no longer share a
+    /// circle with, which they can read and not write to.
+    var canWrite: Bool {
+        guard isChat, let chat else { return true }
+        return !chat.isRemoved && !(chat.chatKind == ChatKind.direct.rawValue && chat.otherMembers(ownUserId: ownUserId).contains(where: \.isRemoved))
     }
 
     /// The question that typing answers: the newest unanswered one, while
@@ -307,14 +406,14 @@ final class ConversationModel {
     /// refuses it.
     func react(to line: TranscriptLine, with emoji: String) async {
         guard let messageId = line.messageId else { return }
-        let previous = line.reaction(of: "person") ?? ""
+        let previous = line.reaction(of: "person", userId: ownUserId) ?? ""
         let chosen = previous == emoji ? "" : emoji
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        transcript.react(messageId: messageId, emoji: chosen, reactorKind: "person")
+        transcript.react(messageId: messageId, emoji: chosen, reactorKind: "person", reactorUserId: ownUserId)
         do {
             try await connection.react(to: messageId, emoji: chosen)
         } catch {
-            transcript.react(messageId: messageId, emoji: previous, reactorKind: "person")
+            transcript.react(messageId: messageId, emoji: previous, reactorKind: "person", reactorUserId: ownUserId)
             sendProblemText = app.describe(error)
         }
     }
@@ -351,8 +450,14 @@ final class ConversationModel {
         }
         let reply = replyingTo
         let referring = references
+        // In a chat, which agents the message is for: those chosen from the @
+        // whose names are still in it, and the agent of a message it replies
+        // to.
+        let addressed = addressedAgentIds(for: text)
+        let choosing = chosenAgents
         draft = ""
         references = []
+        chosenAgents = []
         var sentLineId: String?
         do {
             var attachments: [AgentAttachment] = []
@@ -364,11 +469,16 @@ final class ConversationModel {
             // Files added while these were sent stay for the next message.
             pendingFiles.removeAll { sendingIds.contains($0.id) }
             let message = text.isEmpty ? "(files)" : text
-            sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply)
+            sentLineId = transcript.addSent(message, attachments: attachments, replyingTo: reply, author: ownAuthor)
             let asked = try await connection.ask(
                 message, in: conversationId, attachmentIds: attachments.map(\.id), references: referring,
-                drawerId: app.drawerId)
-            if !runningRunIds.contains(asked.runId) {
+                drawerId: app.drawerId, addressedAgentIds: addressed)
+            // A message in a chat comes back as the chat's own, and if it does
+            // not, the chat is read again so that nothing sent looks unsent for
+            // long. It has a turn to follow only when it asked the person's own
+            // agent.
+            if isChat, let sentLineId { confirmSoon(sentLineId) }
+            if !asked.runId.isEmpty, !runningRunIds.contains(asked.runId) {
                 runningRunIds.append(asked.runId)
             }
             sentCount += 1
@@ -378,7 +488,10 @@ final class ConversationModel {
             ideas = []
         } catch {
             if let sentLineId { transcript.withdrawSent(lineId: sentLineId) }
-            if draft.isEmpty { draft = text }
+            if draft.isEmpty {
+                draft = text
+                chosenAgents = choosing
+            }
             pendingFiles = sending + pendingFiles.filter { !sendingIds.contains($0.id) }
             references = referring
             sendProblemText = app.describe(error)
@@ -418,9 +531,175 @@ final class ConversationModel {
     /// Replies to a line: its words are quoted with what is sent next.
     func reply(to line: TranscriptLine) {
         guard let messageId = line.messageId else { return }
-        replyingTo = AgentReference(
-            agentMessageId: messageId, quotedRole: line.kind == .person ? "user" : "assistant",
-            quotedText: String(line.text.prefix(1000)))
+        // In a chat the person's own words are the user's, and everybody
+        // else's are what an answer is in a conversation with an agent.
+        let isOwn = line.author.map(\.isOwnWords) ?? (line.kind == .person)
+        replyingTo = AgentReference(agentMessageId: messageId, quotedRole: isOwn ? "user" : "assistant", quotedText: String(line.text.prefix(1000)))
+    }
+
+    // MARK: Chats
+
+    /// The agents chosen from the @ for the message being written.
+    private(set) var chosenAgents: [AddressableAgent] = []
+
+    /// The agents an @ offers in this chat: the person's own, and those of
+    /// members who let the others ask.
+    var addressableAgents: [AddressableAgent] {
+        guard isChat, let chat, !chat.isRemoved else { return [] }
+        return chat.addressableAgents(ownUserId: ownUserId, deletedAccountNote: String(localized: "(deleted account)"))
+    }
+
+    /// The agents the @ at the end of the words offers, those the letters
+    /// typed so far match; none when no @ is being typed.
+    var mentionSuggestions: [AddressableAgent] {
+        guard isChat, let query = ChatMention.query(in: draft) else { return [] }
+        return ChatMention.matching(addressableAgents, query: query)
+    }
+
+    /// Puts the chosen agent's name where the @ is, and keeps the choice for
+    /// the message.
+    func choose(mention agent: AddressableAgent) {
+        draft = ChatMention.choosing(agent, in: draft)
+        if !chosenAgents.contains(where: { $0.agentId == agent.agentId }) { chosenAgents.append(agent) }
+    }
+
+    /// The agents a message is for: those chosen whose names are still in the
+    /// words, and the agent of a message it replies to.
+    private func addressedAgentIds(for text: String) -> [String] {
+        guard isChat else { return [] }
+        var repliedToAgentId: String?
+        if let replied = replyingTo?.agentMessageId,
+            let author = transcript.lines.first(where: { $0.messageId == replied })?.author, author.isAgent
+        {
+            repliedToAgentId = author.authorAgentId
+        }
+        return ChatMention.addressed(in: text, chosen: chosenAgents, repliedToAgentId: repliedToAgentId)
+    }
+
+    /// Makes the person's agent remember this chat from now on, or stop.
+    func setAgentReading(_ isReading: Bool) async {
+        guard let conversationId else { return }
+        await changeChat { try await connection.setChatAgentReading(conversationId, isReading: isReading) }
+    }
+
+    /// Lets the others in this chat address the person's agent, or stops them.
+    func setAgentAskableByOthers(_ isAskable: Bool) async {
+        guard let conversationId else { return }
+        await changeChat { try await connection.setChatAgentAskableByOthers(conversationId, isAskable: isAskable) }
+    }
+
+    /// The person as the author of a message they have just sent in a chat,
+    /// until the chat says it was said; nil outside a chat.
+    private var ownAuthor: ChatAuthor? {
+        isChat ? ChatAuthor(authorKind: "person", authorUserId: ownUserId ?? "", authorName: "", isMine: true) : nil
+    }
+
+    /// Reads the chat again if a message just sent has not come back as the
+    /// chat's own within a few seconds.
+    private func confirmSoon(_ lineId: String) {
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if transcript.lines.contains(where: { $0.id == lineId }) { try? await load() }
+        }
+    }
+
+    /// Tells the server the person has read the chat through its newest
+    /// message, which moves the mark the others see and clears the count in
+    /// the list. Only while the screen is following the chat, which is only
+    /// while the app is in front.
+    func markRead() async {
+        guard isChat, let conversationId, let newest = transcript.newestChatMessageId, newest > readThroughMessageId else { return }
+        let previous = readThroughMessageId
+        readThroughMessageId = newest
+        do {
+            try await connection.markChatRead(conversationId, through: newest)
+            conversation?.chat?.unreadCount = 0
+            await app.refreshChats()
+        } catch {
+            readThroughMessageId = previous
+        }
+    }
+
+    /// Lets the others know words are being written, at most every few
+    /// seconds however fast the keys.
+    private func tellTyping() {
+        guard isChat, let conversationId, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let now = Date()
+        guard now.timeIntervalSince(typingToldAt) >= ChatTyping.sentEverySeconds else { return }
+        typingToldAt = now
+        Task { try? await connection.setChatTyping(conversationId) }
+    }
+
+    /// Whether the person may take a message back: their own, or any in a
+    /// group they are an admin of.
+    func canDelete(_ line: TranscriptLine) -> Bool {
+        guard line.author != nil, line.messageId != nil, !line.isDeleted, !line.isBeingSent else { return false }
+        return line.author?.isOwnWords == true || (chat?.isGroup == true && chat?.isAdmin(ownUserId: ownUserId) == true)
+    }
+
+    /// Whether the person may change what a message says: their own words.
+    func canEdit(_ line: TranscriptLine) -> Bool {
+        line.author?.isOwnWords == true && line.messageId != nil && !line.isDeleted && !line.isBeingSent
+    }
+
+    func edit(_ line: TranscriptLine, to text: String) async {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let messageId = line.messageId, !words.isEmpty, words != line.text else { return }
+        await changeChat { try await connection.editChatMessage(messageId, message: words) }
+    }
+
+    func delete(_ line: TranscriptLine) async {
+        guard let messageId = line.messageId else { return }
+        await changeChat { try await connection.deleteChatMessage(messageId) }
+    }
+
+    func rename(to title: String) async {
+        guard let conversationId else { return }
+        await changeChat { try await connection.renameChat(conversationId, title: title) }
+    }
+
+    /// Silences the chat's notifications until a time, or with none stops
+    /// silencing them.
+    func mute(until: Date?) async {
+        guard let conversationId else { return }
+        await changeChat { try await connection.muteChat(conversationId, until: until) }
+    }
+
+    /// Puts people in the group; a refusal is thrown for the sheet that
+    /// asked to say.
+    func addMembers(_ userIds: [String]) async throws {
+        guard let conversationId, !userIds.isEmpty else { return }
+        try await connection.addChatMembers(conversationId, userIds: userIds)
+        try? await load()
+    }
+
+    func removeMember(_ member: ChatMember) async {
+        guard let conversationId else { return }
+        await changeChat { try await connection.removeChatMember(conversationId, userId: member.userId) }
+    }
+
+    /// Leaves the group; false when the server refused.
+    func leave() async -> Bool {
+        guard let conversationId else { return false }
+        do {
+            try await connection.leaveChat(conversationId)
+            await app.refreshChats()
+            return true
+        } catch {
+            sendProblemText = app.describe(error)
+            return false
+        }
+    }
+
+    /// Makes a change to the chat and reads it again, so what the server
+    /// now has is what shows; a refusal is told as any send problem is.
+    private func changeChat(_ change: () async throws -> Void) async {
+        do {
+            try await change()
+        } catch {
+            sendProblemText = app.describe(error)
+        }
+        try? await load()
     }
 
     func approve(_ line: TranscriptLine, isApproved: Bool) async {

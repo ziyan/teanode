@@ -179,7 +179,7 @@ func TestASignedOutPhoneIsNotSentTo(t *testing.T) {
 // moment before, while another tab still shown keeps the person present; and
 // a dashboard left untouched on a desk does not keep the phone quiet.
 func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
-	worker := &Agent{}
+	worker := &Agent{presence: NewPresence()}
 	now := time.Now()
 	worker.ReportPresence("u", "phone", true, 0, now)
 	if !worker.isWatching("u", time.Time{}, now) {
@@ -236,7 +236,7 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 // moment ago counts as their latest input: a report from before they typed
 // that already says they were idle does not send the answer to the phone.
 func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
-	worker := &Agent{}
+	worker := &Agent{presence: NewPresence()}
 	now := time.Now()
 	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
 	asked := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
@@ -272,7 +272,7 @@ func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
 // Each tab names itself afresh when it loads, so a person reloading over and
 // over keeps at most presenceReportersAtMost reporters, losing the oldest.
 func TestPresenceKeepsABoundedNumberOfReporters(t *testing.T) {
-	worker := &Agent{}
+	worker := &Agent{presence: NewPresence()}
 	now := time.Now()
 	for index := range presenceReportersAtMost + 10 {
 		worker.ReportPresence("u", fmt.Sprintf("tab-%d", index), index == 0, 0, now.Add(time.Duration(index)*time.Millisecond))
@@ -311,8 +311,8 @@ func TestAPhoneBodyLeavesOutWhatIsHidden(t *testing.T) {
 		"a picture":                 {"Here it is: ![the driveway](https://example.org/a.jpg)", "Here it is: the driveway"},
 		"bold and code":             {"**Paid** `INV-1`", "Paid INV-1"},
 	} {
-		if got := phoneBody(testCase.text); got != testCase.want {
-			t.Errorf("%s: phoneBody(%q) = %q, want %q", name, testCase.text, got, testCase.want)
+		if got := PhoneBody(testCase.text); got != testCase.want {
+			t.Errorf("%s: PhoneBody(%q) = %q, want %q", name, testCase.text, got, testCase.want)
 		}
 	}
 }

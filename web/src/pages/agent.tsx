@@ -44,6 +44,7 @@ import { useMailboxes } from '../mailboxes'
 import { Select } from '../components/select'
 import { SpeechVoiceChoice } from '../components/speechVoice'
 import { PolicyTool, ToolPolicyAccordion } from '../components/toolPolicy'
+import { SkillSharesCard } from './agentSkillSharing'
 import {
   LIST_SOURCE_SECRETS,
   LIST_SOURCE_TYPES,
@@ -485,6 +486,7 @@ export function AgentPage() {
           <ServersCard />
           <HarnessCard />
           <SkillSecretsCard />
+          <SkillSharesCard />
           <ReachCard />
           <BackgroundCommandsCard />
           <HerdrSessionsCard />

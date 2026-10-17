@@ -293,6 +293,10 @@ func (self *transaction) CreateCircle(circle *models.Circle, creatorUserId strin
 	}).Error; err != nil {
 		return nil, err
 	}
+	// Every circle has a chat of its own, with the members the circle has.
+	if _, err := self.ensureCircleChat(model.ID); err != nil {
+		return nil, err
+	}
 	return self.GetCircle(model.ID)
 }
 
@@ -349,6 +353,11 @@ func (self *transaction) RenameCircle(circleId, name string) (*models.Circle, er
 		Updates(map[string]any{"name": strings.TrimSpace(circle.Name), "modified_at": time.Now()}).Error; err != nil {
 		return nil, err
 	}
+	// The circle chat is called what the circle is.
+	if err := self.tx.Model(&chatModel{}).Where(`"circle_id" = ?`, circleId).
+		Updates(map[string]any{"title": strings.TrimSpace(circle.Name), "modified_at": time.Now()}).Error; err != nil {
+		return nil, err
+	}
 	return self.GetCircle(circleId)
 }
 
@@ -357,7 +366,35 @@ func (self *transaction) DeleteCircle(circleId string) error {
 	if err := lockRow(self.tx, &locked, circleId); err != nil {
 		return err
 	}
-	return self.tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error
+	var memberIds []string
+	if err := self.tx.Model(&circleMemberModel{}).Where("\"circle_id\" = ?", circleId).Pluck("user_id", &memberIds).Error; err != nil {
+		return err
+	}
+	if err := self.tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error; err != nil {
+		return err
+	}
+	return endSharesOutsideCircles(self.tx, memberIds...)
+}
+
+// endSharesOutsideCircles ends, for each of these people, every direct
+// share between them and somebody they no longer share any circle with,
+// in the transaction that changed the circles. Shares with a circle need
+// nothing: they reach a person only through circle_member. Every kind of
+// share that can name a person is ended here, so leaving a circle has one
+// meaning whatever was shared.
+func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
+	for _, userId := range userIds {
+		if err := endCalendarSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
+		if err := endPageSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
+		if err := endSkillSharesOutsideCircles(tx, userId); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // lockedCircleMembers takes the circle's row for update and returns its
@@ -420,6 +457,9 @@ func (self *transaction) AddCircleMember(circleId, userId string, memberRole mod
 		if err := self.touchCircle(circleId); err != nil {
 			return nil, err
 		}
+		if err := self.joinCircleChat(circleId, userId, memberRole); err != nil {
+			return nil, err
+		}
 	}
 	// Whoever put them in, an invitation still waiting for their answer has
 	// been answered.
@@ -459,6 +499,9 @@ func (self *transaction) SetCircleMemberRole(circleId, userId string, memberRole
 		if err := self.touchCircle(circleId); err != nil {
 			return nil, err
 		}
+		if err := syncCircleChatRoles(self.tx, circleId); err != nil {
+			return nil, err
+		}
 	}
 	return self.GetCircle(circleId)
 }
@@ -479,7 +522,10 @@ func (self *transaction) RemoveCircleMember(circleId, userId string) (*models.Ci
 	}
 	if len(rows) == 1 {
 		// Nobody is left to belong to it.
-		return nil, self.tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error
+		if err := self.tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error; err != nil {
+			return nil, err
+		}
+		return nil, endSharesOutsideCircles(self.tx, userId)
 	}
 	if found.MemberRole == string(models.MemberRoleAdmin) && countCircleAdmins(rows) == 1 {
 		return nil, ErrCircleNeedsAdmin
@@ -488,6 +534,14 @@ func (self *transaction) RemoveCircleMember(circleId, userId string) (*models.Ci
 		return nil, err
 	}
 	if err := self.touchCircle(circleId); err != nil {
+		return nil, err
+	}
+	// In the same transaction, the chats that were theirs because of the
+	// circle stop being.
+	if err := leaveCircleChats(self.tx, circleId, userId, time.Now()); err != nil {
+		return nil, err
+	}
+	if err := endSharesOutsideCircles(self.tx, userId); err != nil {
 		return nil, err
 	}
 	return self.GetCircle(circleId)
@@ -525,6 +579,9 @@ func releaseCircles(tx *gorm.DB, userId string) error {
 			}
 		}
 		if err := tx.Where("\"circle_id\" = ? AND \"user_id\" = ?", circleId, userId).Delete(&circleMemberModel{}).Error; err != nil {
+			return err
+		}
+		if err := leaveCircleChats(tx, circleId, userId, time.Now()); err != nil {
 			return err
 		}
 		if isOnlyAdmin {
@@ -727,6 +784,9 @@ func (self *transaction) AnswerCircleInvitation(invitationId string, invitationA
 		return nil, err
 	}
 	if err := self.touchCircle(invitation.CircleID); err != nil {
+		return nil, err
+	}
+	if err := self.joinCircleChat(invitation.CircleID, invitation.InvitedUserID, models.MemberRole(invitation.MemberRole)); err != nil {
 		return nil, err
 	}
 	return self.GetCircle(invitation.CircleID)

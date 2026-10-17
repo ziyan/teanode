@@ -66,7 +66,14 @@ can choose not to take like any other kind.
 
 An operator with `user:manage` can put an account in a circle without an
 invitation (`AddCircleMember`), for an account made for somebody who will not
-set it up themselves.
+set it up themselves. That is the operator path, and it is offered where the
+operator already is: on a circle's page, **Make an account for someone** makes
+the account (`CreateUser`) and then puts it in; the Users tab has **Add to a
+circle** on each account; `teanode user create --circle <circle-id>` does both
+from the command line; and the agent's `circle` tool has an `add` action for
+somebody who manages accounts. None of them is a new operation. The account is
+made first, so one that could not be put in is kept, and trying again adds it
+rather than meeting "taken".
 
 ## Who sees whom
 
@@ -81,17 +88,31 @@ circle, so asking for something only an admin may do is answered in words.
 Only an admin sees who is still being waited for.
 
 Leaving a circle, or being removed from it, ends what the person could see
-through it: today that is the other members' pictures and the list of people.
+through it: the other members' pictures and the list of people, and the chats
+that were theirs because of it. In the same transaction that changes the
+circle, the person leaves the circle's chat and every group chat in which they
+now share a circle with none of the others; a direct chat stays readable by
+both and takes no new message until they share a circle again.
+
+## The circle chat
+
+Every circle has one chat (`chat.circle_id`, migration 0194), made with the
+circle, called what the circle is called, and whose members and roles follow
+the circle's; it is changed only through the circle. A circle that predates
+chats gets its chat the first time one of its members lists their chats. The
+circle's going takes its chat and what was said in it. How a chat is stored
+and read is in `conversations.md`.
 
 ## Where the code is
 
 | What | Where |
 | --- | --- |
 | Tables and queries | `internal/db/migrations/0193_circle.sql`, `internal/db/database_circle.go` |
+| The circle chat | `internal/db/database_chat.go` (`ensureCircleChat`, `leaveCircleChats`), called from the circle queries |
 | Types, kinds, roles | `internal/models/circle.go` |
 | The permission `circle:use` | `internal/models/permission.go`; held by the Administrator, Operator and Member roles |
 | The operations | `internal/api/v1api/apigraph/circle.go`; the helpers `requireCirclePerson`, `requireCircleMember` and `requireCircleAdmin` are in `authorize.go` |
 | The invitation note and phone notification | `internal/agent/circle_invitation.go` |
-| Command line | `internal/cmd/circle.go`, `internal/client/circle.go` |
+| Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |
 | Dashboard and phone | `web/src/pages/circles.tsx`, `ios/TeaNode/Sources/CirclesView.swift` |

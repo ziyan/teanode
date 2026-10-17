@@ -96,5 +96,13 @@ func (self *transaction) PutAgentSkill(skill *models.AgentSkill) (*models.AgentS
 }
 
 func (self *transaction) DeleteAgentSkill(name string) error {
-	return self.tx.Where("\"name\" = ?", strings.ToLower(strings.TrimSpace(name))).Delete(&agentSkillModel{}).Error
+	name = strings.ToLower(strings.TrimSpace(name))
+	// A skill taken off the server takes the shares of its tools with it, and
+	// their calls: a share is of an installed skill, and a skill installed
+	// again later, perhaps meaning something else by the same tool names, is
+	// not what anybody agreed to share.
+	if err := self.tx.Exec(`DELETE FROM "skill_share" WHERE "skill_name" = ?`, name).Error; err != nil {
+		return err
+	}
+	return self.tx.Where("\"name\" = ?", name).Delete(&agentSkillModel{}).Error
 }

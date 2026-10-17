@@ -21,6 +21,29 @@ import (
 // somebody arranging a meeting will believe it and pick another time for
 // nothing.
 
+// IsPrivateClass reports whether an event's CLASS marks it as one its owner
+// wants nobody else to read: PRIVATE, or CONFIDENTIAL, which calendar programs
+// use for the same intent.
+//
+// Beside the four judgements of what makes somebody busy, because it is the
+// fifth thing the owner says about an event that decides what others are told,
+// and it is decided the same way for every door: a private event is busy to
+// everybody else whatever the level it was shared at. It changes nothing about
+// the owner's own free-busy, which is why it is not a reason to be left out
+// of MakesBusy.
+func IsPrivateClass(class string) bool {
+	switch strings.ToUpper(strings.TrimSpace(class)) {
+	case "PRIVATE", "CONFIDENTIAL":
+		return true
+	}
+	return false
+}
+
+// IsPrivate reports whether the owner marked an event private.
+func IsPrivate(parsed *Parsed) bool {
+	return parsed != nil && IsPrivateClass(parsed.Class)
+}
+
 // Period is a stretch of time somebody is busy.
 type Period struct {
 	StartsAt time.Time

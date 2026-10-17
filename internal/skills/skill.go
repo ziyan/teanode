@@ -137,6 +137,35 @@ type Tool struct {
 	Steps       []*Step            `yaml:"steps"`
 	ActionField string             `yaml:"actionField"`
 	Actions     map[string][]*Step `yaml:"actions"`
+
+	// AmountField names the integer parameter that holds what the call pays,
+	// in the currency's minor unit (cents). It is what lets a person share
+	// the tool with limits: the server reads the amount out of the arguments
+	// before anything runs and holds it to them. A shared tool that declares
+	// none always waits for its owner's approval, because the server cannot
+	// tell what it would cost.
+	AmountField string `yaml:"amountField"`
+
+	// CurrencyField names the string parameter that holds the currency code
+	// the amount is in. A limit is in one currency, so a call that does not
+	// say which currency its amount is in cannot be held to it.
+	CurrencyField string `yaml:"currencyField"`
+
+	// AmountActions are the values of ActionField that carry an amount, for
+	// a tool that routes: a payment tool whose "card" action names a price
+	// and whose "url" action pays whatever an address asks. An action not
+	// listed has no amount the server can read. Empty means every action of
+	// a routing tool carries it.
+	AmountActions []string `yaml:"amountActions"`
+
+	// ScopedIDField names the string parameter that holds the identifier of
+	// something an earlier call of the same share made, such as a spend
+	// request. A shared call of such a tool is allowed only for an identifier
+	// that appeared in the output of an earlier call of that share, and never
+	// without one, so a listing of the owner's other requests is never shared.
+	// A tool that declares none but has a parameter called spend_request_id is
+	// held the same way, for a skill written before this existed.
+	ScopedIDField string `yaml:"scopedIdField"`
 }
 
 // Request is an http tool read as the one step it is, so that a tool and
@@ -402,6 +431,9 @@ func (self *Skill) validateTool(tool *Tool, secrets map[string]bool) error {
 		return fmt.Errorf("skills: the parameters of %s cannot be sent to a model: %w", where, err)
 	}
 	available := parameterNames(tool.Parameters)
+	if err := self.validateSharing(where, tool); err != nil {
+		return err
+	}
 	switch tool.Type {
 	case KindShell:
 		if len(tool.Command) == 0 {
@@ -436,6 +468,54 @@ func (self *Skill) validateTool(tool *Tool, secrets map[string]bool) error {
 		return self.checkSteps(where, tool.Steps, available, secrets)
 	}
 	return fmt.Errorf("skills: %s is a %q tool, which is not shell, http or workflow", where, tool.Type)
+}
+
+// validateSharing refuses a tool whose declarations for sharing it name
+// something that is not there, or the wrong sort of thing: the server reads
+// an amount out of the arguments before money moves, and an amount it reads
+// from the wrong place is worse than none.
+func (self *Skill) validateSharing(where string, tool *Tool) error {
+	if tool.AmountField == "" {
+		switch {
+		case tool.CurrencyField != "":
+			return fmt.Errorf("skills: %s names a currencyField without an amountField", where)
+		case len(tool.AmountActions) > 0:
+			return fmt.Errorf("skills: %s names amountActions without an amountField", where)
+		}
+	} else {
+		if parameterType(tool.Parameters, tool.AmountField) != "integer" {
+			return fmt.Errorf("skills: the amountField %q of %s is not one of its integer parameters", tool.AmountField, where)
+		}
+		if tool.CurrencyField != "" && parameterType(tool.Parameters, tool.CurrencyField) != "string" {
+			return fmt.Errorf("skills: the currencyField %q of %s is not one of its string parameters", tool.CurrencyField, where)
+		}
+		if len(tool.AmountActions) > 0 {
+			if tool.ActionField == "" {
+				return fmt.Errorf("skills: %s names amountActions but does not route on an actionField", where)
+			}
+			for _, action := range tool.AmountActions {
+				if _, declared := tool.Actions[action]; !declared {
+					return fmt.Errorf("skills: the amountActions of %s name %q, which is not one of its actions", where, action)
+				}
+			}
+		}
+		if tool.ScopedIDField != "" {
+			return fmt.Errorf("skills: %s names both an amountField and a scopedIdField; a call is held to the one or to the other", where)
+		}
+	}
+	if tool.ScopedIDField != "" && parameterType(tool.Parameters, tool.ScopedIDField) != "string" {
+		return fmt.Errorf("skills: the scopedIdField %q of %s is not one of its string parameters", tool.ScopedIDField, where)
+	}
+	return nil
+}
+
+// parameterType is the JSON Schema type a tool declares for one parameter,
+// or empty when it declares none.
+func parameterType(parameters map[string]any, name string) string {
+	properties, _ := parameters["properties"].(map[string]any)
+	shape, _ := properties[name].(map[string]any)
+	kind, _ := shape["type"].(string)
+	return kind
 }
 
 func (self *Skill) checkSteps(where string, steps []*Step, available map[string]bool, secrets map[string]bool) error {

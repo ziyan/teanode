@@ -12,7 +12,8 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// EventRequest names the owned calendar and optionally an existing event.
+// EventRequest names the calendar to change, which is the person's own or one
+// they may edit, and optionally an existing event.
 type EventRequest struct {
 	CalendarID string
 	ID         string
@@ -35,12 +36,9 @@ func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal
 	}
 	var saved *models.CalendarObject
 	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		owned, err := transaction.LockCalendar(strings.TrimSpace(request.CalendarID))
+		owned, isOwner, err := writableCalendar(transaction, principal, request.CalendarID)
 		if err != nil {
 			return err
-		}
-		if owned == nil || owned.UserID != principal.User.ID {
-			return db.ErrNotFound
 		}
 		if owned.CalendarKind == models.CalendarReminders {
 			return fmt.Errorf("%w: that is the reminders list, which keeps reminders, not events", db.ErrInvalidArguments)
@@ -64,6 +62,12 @@ func (self *Commands) SaveEvent(ctx context.Context, principal *access.Principal
 		}
 		if parsed == nil {
 			return db.ErrInvalidArguments
+		}
+		if err := refuseParsedGuests(owned, isOwner, parsed); err != nil {
+			return err
+		}
+		if err := refuseGuests(owned, isOwner, existing); err != nil {
+			return err
 		}
 		object := &models.CalendarObject{CalendarID: owned.ID, UID: parsed.UID, ETag: calendar.ETag(parsed.Data), Data: string(parsed.Data), Summary: parsed.Summary, Location: parsed.Location, StartsAt: parsed.StartsAt, EndsAt: parsed.EndsAt, AllDay: parsed.AllDay, Recurring: parsed.Recurring, Status: parsed.Status}
 		twin, err := transaction.GetCalendarObjectByUID(owned.ID, object.UID)
@@ -129,12 +133,9 @@ func (self *Commands) DeleteEvent(ctx context.Context, principal *access.Princip
 		return db.ErrNotFound
 	}
 	return self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		owned, err := transaction.LockCalendar(strings.TrimSpace(request.CalendarID))
+		owned, isOwner, err := writableCalendar(transaction, principal, request.CalendarID)
 		if err != nil {
 			return err
-		}
-		if owned == nil || owned.UserID != principal.User.ID {
-			return db.ErrNotFound
 		}
 		if owned.CalendarKind == models.CalendarReminders {
 			return fmt.Errorf("%w: that is the reminders list, which keeps reminders, not events", db.ErrInvalidArguments)
@@ -145,6 +146,9 @@ func (self *Commands) DeleteEvent(ctx context.Context, principal *access.Princip
 		}
 		if object == nil {
 			return db.ErrNotFound
+		}
+		if err := refuseGuests(owned, isOwner, object); err != nil {
+			return err
 		}
 		if notify != nil {
 			if err := notify(ctx, transaction, nil, object); err != nil {

@@ -42,7 +42,7 @@ func (self *Agent) NotifyCircleInvitation(agentId, invitedByName, circleName str
 	self.notifyPhones(agentId, models.NotificationCircle, &push.Content{
 		NotificationKind: models.NotificationCircle,
 		Title:            "Invitation",
-		Body:             phoneBody(invitedByName + " invited you to " + circleName),
+		Body:             PhoneBody(invitedByName + " invited you to " + circleName),
 		ThreadID:         "circle-invitations",
 	})
 }

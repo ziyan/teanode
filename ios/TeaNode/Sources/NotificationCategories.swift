@@ -10,6 +10,8 @@ import UserNotifications
 enum NotificationCategories {
     static let approval = "approval"
     static let message = "message"
+    static let chat = "chat"
+    static let payment = "payment"
     static let questionPrefix = "question-"
 
     /// The categories known before any notification arrives. A question's
@@ -27,6 +29,10 @@ enum NotificationCategories {
                 ],
                 intentIdentifiers: []),
             UNNotificationCategory(identifier: message, actions: [replyAction, openAction], intentIdentifiers: []),
+            UNNotificationCategory(identifier: chat, actions: [chatReplyAction, openAction], intentIdentifiers: []),
+            // Only to open the app: an answer that runs somebody's payment is
+            // given on the card, not from a lock screen.
+            UNNotificationCategory(identifier: payment, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -34,6 +40,14 @@ enum NotificationCategories {
         UNTextInputNotificationAction(
             identifier: "reply", title: String(localized: "Reply"), options: [.authenticationRequired],
             textInputButtonTitle: String(localized: "Send"), textInputPlaceholder: String(localized: "Ask your agent…"))
+    }
+
+    /// Replying to a person in a chat: a message to them, not a question
+    /// for the agent.
+    static var chatReplyAction: UNNotificationAction {
+        UNTextInputNotificationAction(
+            identifier: "reply", title: String(localized: "Reply"), options: [.authenticationRequired],
+            textInputButtonTitle: String(localized: "Send"), textInputPlaceholder: String(localized: "Message…"))
     }
 
     static var openAction: UNNotificationAction {
@@ -48,6 +62,10 @@ enum NotificationCategories {
             return nil
         case "approval":
             return fixed.first { $0.identifier == approval }
+        case "chat":
+            return fixed.first { $0.identifier == chat }
+        case "payment":
+            return fixed.first { $0.identifier == payment }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in

@@ -261,6 +261,137 @@ read is a write, and a command's calls are judged as above. Every answer is
 marked untrusted — it is data fetched from outside, never words addressed to
 the agent.
 
+## Sharing a skill
+
+A person can share named tools of an installed skill with one person in a
+circle they share. The other person's agent is then offered those tools, and
+each call runs on the owner's own computer, as the owner. The reasons are in
+`docs/decisions/20261016-a-payment-skill-is-shared-call-by-call.md`; this is
+how it works. The code is `internal/skills/share.go` (what a call is worth),
+`internal/agent/skill_share.go` (the call, the approval, the other person's
+catalog), `internal/db/database_skill_share.go` (the two tables) and
+`internal/api/v1api/apigraph/agent_skill_share.go`.
+
+**What a skill declares.** A tool says where its amount is so that a limit can
+be checked on a number the server read before anything ran:
+
+- `amountField` names the integer parameter that holds the amount in the
+  currency's minor unit (cents). `currencyField` names the string parameter
+  that holds the currency code. For a tool that routes on `actionField`,
+  `amountActions` lists the actions that carry the amount: a payment tool's
+  `card` action names a price, and its `url` action pays whatever an address
+  asks, which only the merchant knows.
+- `scopedIdField` names the string parameter that holds the identifier of
+  something an earlier call of the same share made, such as a payment
+  request. A tool without it that takes a parameter called
+  `spend_request_id` is held the same way, because the payment skill was
+  written before the declaration existed and the server has to behave safely
+  without it being updated. A tool that declares an amount is never held that
+  way: a payment tool that also takes a spend request to report on an earlier
+  payment is priced, and its report action, which has no amount, waits.
+
+All of them are checked when the skill is read: an `amountField` must be one
+of the tool's integer parameters, a `currencyField` and a `scopedIdField` one
+of its string parameters, an `amountActions` entry one of its actions, and a
+tool cannot name both an amount and a scoped identifier.
+
+**What the other person is offered.** One tool for each shared tool, named
+`shared_<tool>_<owner's username made safe>` (lower case letters and digits
+joined by underscores, kept short, and numbered if two owners come to the same
+name). Its description says whose it is, that it runs on their computer, and
+what the limits are. It has the skill's own parameters and one more,
+`request_reason`, which the agent fills with a sentence for the owner. It has no
+`computer` parameter: which computer is the owner's to choose, and an argument
+that names one is dropped. Its risk is `money` for a tool that may cost
+something, so the other person's own card, with what will be paid on it, comes
+first, and a turn with nobody present spends only if that person allowed money
+calls when they are not there. A tool that works on a scoped identifier has
+risk `write`. The tools are read again for every turn, so taking a share back,
+leaving the circle, switching the owner's agent off or removing the skill
+takes them from the next turn; and every call is checked again when it is made.
+
+**What happens to a call.** `Agent.RunShared`, in this order:
+
+1. The share must still exist, the two must still share a circle, the tool
+   must be one shared, the skill must be installed and switched on, and the
+   owner's agent must be on. Otherwise the call answers that it is not
+   available, and nothing is recorded.
+2. The server works out what the call pays from the arguments and holds it to
+   the share, with the share's row locked so that two calls at once take turns.
+   A call waits for the owner when the share asks every time; when the tool
+   declares no amount, or the action is not one of `amountActions`, or the
+   amount is missing, not a whole number above zero, or not in the share's
+   currency (all of which are cases the server cannot price); when it is above
+   the limit for one payment; or when it would take the calendar month (UTC)
+   past the monthly limit. The month's total is the calls that ran, in the
+   share's currency, counted from when they ran, and nothing else.
+3. A tool with a scoped identifier is never priced. Its call is turned back
+   unless it names an identifier that appears, as a whole word, in the output
+   of an earlier call of the same share that ran (and has at least six
+   characters), so `retrieve` and `cancel` work on a request the share made and
+   the listings of the owner's other requests are never shared. A command prints
+   one piece of text, so the identifier is looked for inside it; a word that is
+   followed by a colon is the name of a field and does not count.
+4. A call that runs a command is judged, once, by the same fast model that
+   judges the owner's own commands, with the owner's name and the owner's agent's
+   name. Reading, changing and spending go ahead, because the share is the
+   owner's word on spending. Speaking for the owner, giving somebody access,
+   something that cannot be undone, and a judgement that could not be had make
+   the call wait.
+5. A call that goes ahead is written down as `ran` and then carried out, by
+   calling the very runner the owner's own agent uses for that tool, with a run
+   made for the owner's agent. That is the whole of "on the owner's computer as
+   the owner": her secrets, her reach for the skill, her attached computer and
+   the skill's own rules. It is written before it is carried out so that a call
+   still in flight counts toward the month, and changed to `failed` if it
+   errors. With the owner's computer not connected the call answers that and
+   leaves no row at all.
+6. A call that waits is stored with its arguments exactly as asked, the
+   amount the server read, and the reason the other person's agent gave, for a
+   day. A share has at most twenty waiting at once; the next is turned back
+   until some are answered, so an agent that asks again and again cannot bury
+   the one she meant to answer.
+
+**The approval.** The owner gets a card in her main conversation (a note of
+the kind `payment_waiting`) with who asked, the tool, what it was given, the
+amount, and the reason their agent gave, shown as that person's words and never
+as an instruction; and a notification of the kind `payment` on her phones,
+whether or not she is looking at a screen, which only opens the app. She
+answers with `AnswerSkillShareCall`, from the card, the agent page or
+`teanode agent skill approve`. Approving runs exactly the stored call with the
+stored arguments, skipping the limits and the judge, since the approval is her
+word on this call, and it needs her computer connected first: with it away the
+approval is refused and the call keeps waiting. The answer is a conditional
+update from `waiting_for_approval`, so two answers at once, from the phone and
+the drawer, change the row once and run the call once. A call nobody answers in
+a day expires, in the worker's sweep.
+
+An approval is a person's act. The API refuses `AnswerSkillShareCall` to the
+agent's own operations, which carry the agent as the actor, and to an operator
+signed in as the owner. The `skill` tool has actions to share, unshare, list
+shares and list calls, and none that answers a call; the parity test fails if
+one is added.
+
+**Telling the other person.** The conversation the call came from is woken with
+how it came out (approved and ran, approved and failed, declined, expired), the
+owner's note and what it answered fenced as data, through the same waker finished
+background work uses and under the same bounds. The row says when it was told,
+and the telling is claimed first, so the instance that decided the call and the
+sweep never both wake it. Their phone is told too, unless they are looking at a
+screen.
+
+**Leaving a circle** deletes the skill shares between two people who no longer
+share any circle, in the same transaction, beside the calendar and page shares.
+Taking a skill off the server deletes the shares of its tools.
+
+| | |
+| --- | --- |
+| how long a call waits for the owner | a day |
+| calls of one share waiting at once | 20 |
+| the month the monthly limit counts over | the calendar month, UTC |
+| shortest identifier a scoped call may name | 6 characters |
+| how often the sweep looks for expired and untold calls | once a minute |
+
 ## Constants
 
 | | |
@@ -287,6 +418,16 @@ the agent.
     teanode agent skill secret set news NEWSAPI_KEY
                                           your own value, read without echo
     teanode agent skill secret clear news NEWSAPI_KEY
+
+    teanode agent skill share payments ben --tools pay --payment-limit 100.00 \
+        --monthly-limit 400.00 --currency usd
+                                          let ben use pay on your computer
+    teanode agent skill share payments ben --tools pay --ask-every-time
+    teanode agent skill shares            what you shared, and what is shared with you
+    teanode agent skill calls <share-id> [--waiting]
+    teanode agent skill approve <call-id> [--note ...]
+    teanode agent skill decline <call-id> [--note ...]
+    teanode agent skill unshare <share-id>
 
 ## Caveats
 

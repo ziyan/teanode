@@ -16,7 +16,8 @@ type AgentSpeakFirstMutation interface {
 	// sent by every open tab and the phone app each minute and whenever it
 	// is shown or hidden, each naming itself. The agent starts a
 	// conversation on its own only with somebody who is there to read it,
-	// and tells their phone what nobody is there to see. Needs agent:use.
+	// and tells their phone what nobody is there to see, and so does a chat.
+	// Needs agent:use, or circle:use for the chats alone.
 	ReportAgentPresence(ctx context.Context, arguments ReportAgentPresenceArguments) (bool, error)
 
 	// Have the agent start a conversation now, for a reason: onboarding,
@@ -44,12 +45,20 @@ type SpeakFirstNowArguments struct {
 }
 
 func (self *graph) ReportAgentPresence(ctx context.Context, arguments ReportAgentPresenceArguments) (bool, error) {
-	principal, _, err := self.requireAgentPerson(ctx)
+	principal, _, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	worker := self.agentWorker()
-	if worker == nil {
+	// The chat hub and the agent share what is reported; a server with no
+	// agent has only the hub, and a chat is notified to a phone only while
+	// nobody is looking at it.
+	var presence api.ChatService
+	if hub := self.chatHub(); hub != nil {
+		presence = hub
+	} else if worker := self.agentWorker(); worker != nil {
+		presence = worker
+	}
+	if presence == nil {
 		return false, nil
 	}
 	reporterId := ""
@@ -59,7 +68,7 @@ func (self *graph) ReportAgentPresence(ctx context.Context, arguments ReportAgen
 			return false, fmt.Errorf("%w: a reporter id is at most 64 characters", api.ErrInvalidArguments)
 		}
 	}
-	worker.ReportPresence(principal.User.ID, reporterId, arguments.IsVisible, arguments.IdleSeconds, time.Now())
+	presence.ReportPresence(principal.User.ID, reporterId, arguments.IsVisible, arguments.IdleSeconds, time.Now())
 	return true, nil
 }
 

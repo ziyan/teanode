@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   AGENT_ASK_EVENT,
   AGENT_NEW_EVENT,
@@ -29,7 +29,7 @@ import { budgetNearness, formatClock, formatCount, formatMoney, formatTime } fro
 import { useResolvedTheme } from './theme'
 import { Tooltip } from './tooltip'
 import { Markdown } from './markdown'
-import { useShowPage } from './dashboardPath'
+import { hasSharedCitation, linkSharedCitations, useShowPage } from './dashboardPath'
 import { IdeaSuggestions } from './ideaRow'
 import { RelativeTime } from './relativeTime'
 import { VoiceSession } from '../voice/voiceSession'
@@ -47,12 +47,16 @@ import {
   GlobeIcon,
   InboxIcon,
   ListIcon,
+  LogoutIcon,
   MicrophoneIcon,
   MicrophoneOffIcon,
   PhoneHangUpIcon,
   PhoneIcon,
   PaperclipIcon,
   PencilIcon,
+  PeopleIcon,
+  BellOffIcon,
+  MoreIcon,
   StarIcon,
   PlusIcon,
   SparkIcon,
@@ -65,6 +69,7 @@ import {
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
 import { HerdrQuestionAnswer, HerdrQuestionCard, codingAgentName, paneNameOf, type HerdrSession } from './herdrSessions'
+import { PaymentWaitingNote } from './skillShare'
 import { Budget, BudgetBar } from './budgetBar'
 import { CodeBlock } from './codeBlock'
 import { ConfirmDialog } from './dialog'
@@ -81,13 +86,100 @@ import {
 } from './agentReactions'
 import { AGENT_TURNED_EVENT, announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
+import { useSession } from '../session'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
+import {
+  CHAT_FIELDS,
+  ChatFaces,
+  ChatLineFrame,
+  ChatMembersDialog,
+  ChatPeopleDialog,
+  DELETE_CHAT_MESSAGE,
+  EDIT_CHAT_MESSAGE,
+  LEAVE_CHAT,
+  MARK_CHAT_READ,
+  MUTED_FOR_A_WHILE,
+  MUTED_FOR_GOOD,
+  MUTE_CHAT,
+  MentionList,
+  READ_CHAT_MEMBERS,
+  RENAME_CHAT,
+  RenameChatDialog,
+  SET_CHAT_TYPING,
+  TYPING_SENT_EVERY,
+  TYPING_SHOWN_FOR,
+  TypingLine,
+  UnreadCount,
+  addressableAgentsOf,
+  addressedIn,
+  agentSpeakerName,
+  agentsMatching,
+  chatLineOf,
+  chatTitleOf,
+  isChatMessage,
+  isOwnWords,
+  linesWithEdit,
+  linesWithSaid,
+  linesWithStreamedText,
+  linesWithUnsaid,
+  mentionAt,
+  readersByMessage,
+  startsRun,
+  totalUnread,
+  withMemberRead,
+  withMention,
+  type AddressableAgent,
+  type ChatLine,
+  type ChatMember,
+  type ChatStoredMessage,
+  type ChatSummary,
+  type Mention,
+} from './agentChat'
 
 // DEVICES_EVERY is how often the drawer asks what is attached while it is
 // open. Attaching and detaching happen outside this page, so there is
 // nothing to be told by; often enough to feel immediate, rarely enough to
 // be three small reads a minute.
 const DEVICES_EVERY = 10_000
+
+// UNREAD_EVERY is how often the drawer asks which chats have something new
+// in them. A chat's own events reach the drawer only while it is the one on
+// screen; the rest is learned by asking, often enough for the number on the
+// button to be the news and rarely enough to be a small read a quarter of a
+// minute.
+const UNREAD_EVERY = 15_000
+
+// isAgentOffRefusal is whether an error says only that the agent is off. A
+// person whose agent is off is still among people, and the drawer is for
+// them: it never tells them so in a toast.
+export function isAgentOffRefusal(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return message.trim() === 'agent: unavailable'
+}
+
+// The events only a chat has.
+const CHAT_EVENTS = new Set(['said', 'edited', 'unsaid', 'read', 'typing', 'members'])
+
+// CHAT_CONFIRMED_WITHIN is how long a message just sent in a chat is given
+// to come back as the chat's own before the chat is read again.
+const CHAT_CONFIRMED_WITHIN = 3_000
+
+// hasChats is whether there is anything for a drawer to open on without an
+// agent: a chat already, or a person to start one with.
+async function hasChats(): Promise<boolean> {
+  try {
+    const listed = await graphql<{ ListAgentConversations: { kind: string }[] }>(CHAT_UNREAD)
+    if (listed.ListAgentConversations.some((conversation) => conversation.kind === 'chat')) return true
+  } catch {
+    // Nothing to read is nothing to open on; the people may still be there.
+  }
+  try {
+    const people = await graphql<{ ListCirclePeople: { userId: string }[] }>('query { ListCirclePeople { userId } }')
+    return (people.ListCirclePeople ?? []).length > 0
+  } catch {
+    return false
+  }
+}
 
 // The drawer: the person talking to their agent from any page, in the one
 // continuous conversation or a named one, with what they have open told to
@@ -106,7 +198,9 @@ type GoalState = 'working' | 'waiting' | 'met' | 'dropped'
 
 export interface Conversation {
   id: string
-  kind: 'main' | 'named' | 'run' | 'goal'
+  kind: 'main' | 'named' | 'run' | 'goal' | 'chat'
+  // Who is in it, for a chat; null on every other conversation.
+  chat?: ChatSummary | null
   // For a run, what made it: a dream, a triage, a call over MCP.
   jobKind?: string
   title: string
@@ -193,6 +287,10 @@ const HERDR_ANSWERED_NOTE = 'herdr_answered'
 // which is models.NoteHerdrAsked: the session and the question whole, so
 // the question is drawn as its card from the transcript alone.
 const HERDR_ASKED_NOTE = 'herdr_asked'
+
+// A call of a skill the person shared that waits for their approval, drawn as a
+// card by PaymentWaitingNote from the call the note names.
+const PAYMENT_WAITING_NOTE = 'payment_waiting'
 
 // The marker a turn begins with when a herdr coding session the agent
 // watched has finished, which is models.HerdrSessionMarker on the server.
@@ -391,7 +489,7 @@ interface Usage {
   cost?: number
 }
 
-interface StoredMessage {
+interface StoredMessage extends ChatStoredMessage {
   id: string
   createdAt?: string
   role: string
@@ -421,6 +519,15 @@ interface RunEvent {
     | 'reacted'
     | 'done'
     | 'error'
+    // A chat's own: a message said, edited or deleted, a member's read mark
+    // moved, and a member typing.
+    | 'said'
+    | 'edited'
+    | 'unsaid'
+    | 'read'
+    | 'typing'
+    // A member changed what their agent does in the chat.
+    | 'members'
   runId: string
   sequence: number
   at?: string
@@ -440,6 +547,20 @@ interface RunEvent {
   messageId?: string
   emoji?: string
   reactorKind?: string
+  // In a chat: who reacted, who read or is typing, and the message said or
+  // edited, whole.
+  reactorUserId?: string | null
+  reactorName?: string | null
+  userId?: string
+  name?: string
+  // On a typing event of an agent, which agent is thinking; on a text event
+  // in a chat, the agent whose answer is being written. Its owner's name is
+  // what tells it from another person's agent of the same name.
+  authorAgentId?: string
+  authorOwnerName?: string
+  message?: StoredMessage | null
+  // The message was too long to travel whole, and the chat is read again.
+  isMessageCut?: boolean
 }
 
 // A line of the transcript as the drawer draws it.
@@ -510,6 +631,8 @@ type Line =
   // background command ended. Its words are framing for the model and were
   // never the person's, so only the hour is drawn.
   | { kind: 'checkin'; key: string; at?: string; text: string; origin: CheckInOrigin }
+  // A message in a chat: a person's or an agent's, with who said it.
+  | ChatLine
 
 const AGENT = `
   query {
@@ -532,7 +655,15 @@ export const CONVERSATIONS = `
   query ($archived: Boolean, $query: String) {
     ListAgentConversations(archived: $archived, query: $query) {
       id kind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt
+      chat ${CHAT_FIELDS}
     }
+  }`
+
+// What the drawer's button counts while it is shut: only the chats, and of
+// those only what is unread.
+const CHAT_UNREAD = `
+  query {
+    ListAgentConversations(archived: false) { id kind chat { unreadCount isMuted } }
   }`
 
 // What waits for the person in each conversation: the questions and
@@ -553,14 +684,15 @@ const CONVERSATION_TODOS = `
 const CONVERSATION = `
   query ($conversationId: String, $first: Int, $offset: Int) {
     ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
-      conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt }
+      conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote goalNextAt goalSetAt chat ${CHAT_FIELDS} }
       actingAs
       messages {
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
         attachments { id name contentType size }
         references { itemId threadId subject from path name recordingId recordingTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
-        reactions { emoji reactorKind reactedAt }
+        reactions { emoji reactorKind reactedAt reactorUserId reactorName }
+        authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
       }
       total
       todos { id text doneAt }
@@ -582,14 +714,28 @@ const CITED = `
     }
   }`
 
+// Who shared the pages shared with the person, which is how a citation of one
+// ("people/a-grandparent#3 (shared by Ada)", a display name) is linked to its
+// owner's username.
+const SHARED_OWNERS = `query { ListSharedAgentPages { ownerUsername ownerName } }`
+
 const ASK = `
-  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String) {
-    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId) { runId conversationId }
+  mutation ($conversationId: String, $message: String!, $viewing: ViewingInput, $surface: String, $interruptedAnswer: InterruptedAnswerInput, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $addressedAgentIds: [String!]) {
+    AskAgent(conversationId: $conversationId, message: $message, viewing: $viewing, surface: $surface, interruptedAnswer: $interruptedAnswer, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, addressedAgentIds: $addressedAgentIds) { runId conversationId }
   }`
 
 const FEED = `
   subscription ($conversationId: String!) {
-    AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind }
+    AgentConversationEvents(conversationId: $conversationId) {
+      kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
+      message {
+        id createdAt role content
+        attachments { id name contentType size }
+        references { agentMessageId quotedRole quotedText }
+        reactions { emoji reactorKind reactedAt reactorUserId reactorName }
+        authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
+      }
+    }
   }`
 
 const ANSWER = `
@@ -1040,11 +1186,15 @@ function isImage(contentType: string): boolean {
 // or an address, so that the fragment on the end of a link and the
 // "issue#3" in a sentence are not read as citations. Anything that gets
 // through and means nothing resolves to nothing, which costs one lookup.
-const CITATION = /(?:^|[^\w#/-])([a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*#\d{1,6})(?![\w-])/g
+//
+// Not one followed by " (shared by ": that is a fact of a page somebody else
+// shared, and asking for it among the person's own pages could show the file
+// of a page of theirs at the same path.
+const CITATION = /(?:^|[^\w#/-])([a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*#\d{1,6})(?![\w-])(?! \(shared by )/g
 
 // citationsIn is the references one answer makes, in the order it makes
 // them and without repeats.
-function citationsIn(text: string): string[] {
+export function citationsIn(text: string): string[] {
   const found: string[] = []
   for (const match of text.matchAll(CITATION)) {
     if (!found.includes(match[1])) found.push(match[1])
@@ -1169,6 +1319,12 @@ const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
   goal_met: { plain: 'agentDrawer.note.goalMet', withDetail: 'agentDrawer.note.goalMet' },
   goal_stalled: { plain: 'agentDrawer.note.goalStalled', withDetail: 'agentDrawer.note.goalStalled' },
   circle_invited: { plain: 'agentDrawer.note.circleInvited' },
+  chat_agent_owner_only: {
+    plain: 'agentDrawer.note.chatAgentOwnerOnly',
+    withDetail: 'agentDrawer.note.chatAgentOwnerOnlyNamed',
+  },
+  chat_agent_off: { plain: 'agentDrawer.note.chatAgentOff', withDetail: 'agentDrawer.note.chatAgentOffNamed' },
+  chat_agent_absent: { plain: 'agentDrawer.note.chatAgentAbsent' },
 }
 
 // LEGACY_NOTES is the English each kind was written in before notes had
@@ -1255,7 +1411,7 @@ function isDeclined(result: string | undefined): boolean {
   }
 }
 
-function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => string): Line[] {
+function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => string, isChat = false): Line[] {
   const lines: Line[] = []
   const results = new Map<string, string>()
   for (const message of messages) {
@@ -1280,6 +1436,13 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
     running.lastAnswer = -1
   }
   for (const message of messages) {
+    // What was said in a chat is drawn as what a person said there, whoever
+    // it was; the rows of the member's own agent's work in it are drawn as
+    // anywhere else.
+    if (isChat && isChatMessage(message)) {
+      lines.push(chatLineOf(message))
+      continue
+    }
     switch (message.role) {
       case 'user':
         closeTurn()
@@ -1355,6 +1518,10 @@ function linesOf(messages: StoredMessage[], t: (key: Key, values?: Values) => st
         // the question's line, which then starts collapsed. Not timed, so
         // it opens no day of its own.
         if (message.name === HERDR_ANSWERED_NOTE || message.name === HERDR_ASKED_NOTE) {
+          lines.push({ kind: 'note', key: message.id, text: '', noteKind: message.name, detail: message.content })
+          break
+        }
+        if (message.name === PAYMENT_WAITING_NOTE) {
           lines.push({ kind: 'note', key: message.id, text: '', noteKind: message.name, detail: message.content })
           break
         }
@@ -1758,7 +1925,7 @@ function BudgetRing({
 // and its edges what it is resized by.
 
 // HeadMenuName is which of them is open.
-type HeadMenuName = 'computers' | 'tab' | 'usage' | 'background'
+type HeadMenuName = 'computers' | 'tab' | 'usage' | 'background' | 'chat'
 
 // HeadMenu is the frame: a small title, and what is under it.
 function HeadMenu({
@@ -1914,6 +2081,80 @@ function UsageMenu({ budget, zone, onClose }: { budget: Budget | null; zone: str
           {t('agentDrawer.showWorkingNotes')}
         </label>
       </div>
+    </HeadMenu>
+  )
+}
+
+// ChatMenu is what can be done about the chat on screen: who is in it, its
+// name if it is a group, its sound, and leaving it. A circle's chat follows
+// the circle, so it is neither renamed nor left from here.
+function ChatMenu({
+  chat,
+  onMembers,
+  onRename,
+  onMute,
+  onLeave,
+  onClose,
+}: {
+  chat: ChatSummary
+  onMembers: () => void
+  onRename: () => void
+  onMute: (mutedUntil: string | null) => void
+  onLeave: () => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const isForGood = chat.mutedUntil !== null && chat.mutedUntil >= '2999'
+  return (
+    <HeadMenu title={t('chat.menu')} className="chat-menu" onClose={onClose}>
+      <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={onMembers}>
+        <PeopleIcon size={14} />
+        <span className="head-menu-row-name">{t('chat.members')}</span>
+      </button>
+      {chat.chatKind === 'group' && !chat.isCircleChat ? (
+        <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={onRename}>
+          <PencilIcon size={14} />
+          <span className="head-menu-row-name">{t('chat.rename')}</span>
+        </button>
+      ) : null}
+      {chat.isMuted ? (
+        <button type="button" className="head-menu-row head-menu-action" role="menuitem" onClick={() => onMute(null)}>
+          <BellOffIcon size={14} />
+          <span className="head-menu-row-name">{t('chat.unmute')}</span>
+          {chat.mutedUntil && !isForGood ? (
+            <span className="head-menu-row-detail muted">
+              {t('chat.mutedUntil', { time: formatTime(chat.mutedUntil) })}
+            </span>
+          ) : null}
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="head-menu-row head-menu-action"
+            role="menuitem"
+            onClick={() => onMute(new Date(Date.now() + MUTED_FOR_A_WHILE).toISOString())}
+          >
+            <BellOffIcon size={14} />
+            <span className="head-menu-row-name">{t('chat.muteForAWhile')}</span>
+          </button>
+          <button
+            type="button"
+            className="head-menu-row head-menu-action"
+            role="menuitem"
+            onClick={() => onMute(MUTED_FOR_GOOD)}
+          >
+            <BellOffIcon size={14} />
+            <span className="head-menu-row-name">{t('chat.muteForGood')}</span>
+          </button>
+        </>
+      )}
+      {chat.chatKind === 'group' && !chat.isCircleChat ? (
+        <button type="button" className="head-menu-row head-menu-action danger" role="menuitem" onClick={onLeave}>
+          <LogoutIcon size={14} />
+          <span className="head-menu-row-name">{t('chat.leave')}</span>
+        </button>
+      ) : null}
     </HeadMenu>
   )
 }
@@ -2363,12 +2604,42 @@ function cardsOf(interactions: OpenInteraction[]): Line[] {
 // extension into another site: always open, filling its frame, and its
 // close mark telling the framing page to hide it.
 export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {}) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const location = useLocation()
+  const navigate = useNavigate()
+  const session = useSession()
+  const ownUserId = session.userId ?? ''
+  const ownName = session.name || session.username
   // Framed by the extension, the panel is the frame and is moved with it.
   const chatBox = usePlacement(!standalone)
   const [available, setAvailable] = useState(false)
+  // Whether there are chats to open without an agent, and so a drawer to
+  // open them in. A person whose agent is off is still among people.
+  const [canChat, setCanChat] = useState(false)
+  const isReachable = available || canChat
+  // How many messages wait in the chats that are not muted: the number on
+  // the button.
+  const [unreadChatCount, setUnreadChatCount] = useState(0)
+  // Who is typing in the chat on screen, by person, until when.
+  // An agent that is thinking is told apart from a person typing.
+  const [typing, setTyping] = useState<
+    Record<string, { name: string; ownerName?: string; until: number; isAgent?: boolean }>
+  >({})
+  // The dialog open over the drawer for a chat, if any.
+  const [chatDialog, setChatDialog] = useState<'direct' | 'group' | 'add' | 'members' | 'rename' | 'leave' | null>(null)
+  // The message being rewritten in place, and the one asked about deleting.
+  const [editing, setEditing] = useState<{ messageId: string; text: string } | null>(null)
+  const [deletingMessage, setDeletingMessage] = useState<ChatLine | null>(null)
+  const lastTypingTold = useRef(0)
+  // The @ being typed in the box, which of the agents it offers is lit, and
+  // the agents chosen from it for the message being written.
+  const [mention, setMention] = useState<Mention | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const [chosenAgents, setChosenAgents] = useState<AddressableAgent[]>([])
+  // The newest message told to the server as read, by conversation, so that
+  // a chat open is told once for each message and not on every render.
+  const readThrough = useRef<Record<string, string>>({})
   const [agentName, setAgentName] = useState('')
   // What the box says before anybody types: the agent's own name where it
   // has one, because "your agent" is what a stranger calls it. Until the
@@ -2403,6 +2674,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // citation that resolves to nothing.
   const [citedFiles, setCitedFiles] = useState<Record<string, CitedFile[]>>({})
   const citationsAsked = useRef<Set<string>>(new Set())
+  // Display name (lower case) to username, for the owners of shared pages; a
+  // name two people share is not in it, because the link could open either.
+  const [sharedOwners, setSharedOwners] = useState<Record<string, string>>({})
+  const sharedOwnersAsked = useRef(false)
   // The messages behind the lines, oldest first, and how many the
   // conversation holds: a drawer opens on the newest hundred, and the
   // difference is what "earlier messages" fetches.
@@ -2457,6 +2732,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // already on the page.
   const sending = useRef(0)
   const transcript = useRef<HTMLDivElement>(null)
+  // The lines as of the latest render, for a timer that outlives it.
+  const latestLines = useRef<Line[]>([])
+  latestLines.current = lines
   // The transcript as state as well as a ref, so what watches it is set
   // up when the element appears rather than when the drawer is opened.
   // A drawer remembered open has no element on its first render — the
@@ -2499,9 +2777,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           setAvailable(usable)
           announceAgentAvailable(usable, view.agent?.name?.trim() ?? '')
           setAgentName(view.agent?.name ?? '')
+          if (!usable) void hasChats().then((has) => !cancelled && setCanChat(has))
         })
         .catch(() => {
-          if (!cancelled) setAvailable(false)
+          if (cancelled) return
+          setAvailable(false)
+          void hasChats().then((has) => !cancelled && setCanChat(has))
         })
     }
     check()
@@ -2550,9 +2831,37 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }, [lines])
 
+  // Who the shared pages cited in the answers belong to, asked once, the first
+  // time an answer cites one.
+  useEffect(() => {
+    if (sharedOwnersAsked.current) return
+    if (!lines.some((line) => line.kind === 'assistant' && !line.streaming && hasSharedCitation(line.text))) return
+    sharedOwnersAsked.current = true
+    graphql<{ ListSharedAgentPages: { ownerUsername: string; ownerName: string }[] }>(SHARED_OWNERS)
+      .then((response) => {
+        const found: Record<string, string> = {}
+        const shared = new Set<string>()
+        for (const root of response.ListSharedAgentPages ?? []) {
+          const name = root.ownerName.trim().toLowerCase()
+          if (!name || shared.has(name)) continue
+          if (found[name] !== undefined && found[name] !== root.ownerUsername) {
+            delete found[name]
+            shared.add(name)
+            continue
+          }
+          found[name] = root.ownerUsername
+        }
+        setSharedOwners(found)
+      })
+      .catch(() => {
+        // The words still read; they are only not a link.
+      })
+  }, [lines])
+
   const loadConversations = useCallback(async () => {
     const response = await graphql<{ ListAgentConversations: Conversation[] }>(CONVERSATIONS, { archived: false })
     setConversations(response.ListAgentConversations)
+    setUnreadChatCount(totalUnread(response.ListAgentConversations))
     graphql<{ ReadAgentWaiting: { interactions: { conversationId: string }[] } }>(WAITING)
       .then((waiting) => {
         const counted: Record<string, number> = {}
@@ -2581,10 +2890,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     (snapshot: Awaited<ReturnType<typeof readConversationSnapshot>>) => {
       setLoaded(snapshot.conversation)
       setActingAs(snapshot.actingAs ?? null)
+      setTyping({})
+      setEditing(null)
       remember(CONVERSATION_KEY, snapshot.conversation.id)
       messages.current = snapshot.messages
       setTotal(snapshot.total ?? snapshot.messages.length)
-      setLines([...linesOf(snapshot.messages, t), ...cardsOf(snapshot.interactions)])
+      setLines([
+        ...linesOf(snapshot.messages, t, snapshot.conversation.kind === 'chat'),
+        ...cardsOf(snapshot.interactions),
+      ])
       setShowingGoalNote(true)
       // This read is how a step the agent finished during its turn
       // reaches the list.
@@ -2632,7 +2946,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   )
   const { commands: runningCommands, reload: reloadBackground } = useBackgroundCommands(
     backgroundConversationId,
-    open && available && backgroundConversationId !== '',
+    open && available && backgroundConversationId !== '' && loaded?.kind !== 'chat',
   )
   // Which of the head's dropdowns is open, if any. One at a time, and none
   // while the list of conversations is.
@@ -2654,17 +2968,108 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   )
 
   useEffect(() => {
-    if (!open || !available) return
+    if (!open || !isReachable) return
+    if (!available) {
+      void openChatsOnly().catch((caught) => {
+        if (!isAgentOffRefusal(caught)) toast.failed(caught instanceof Error ? caught.message : String(caught))
+      })
+      return
+    }
     void loadConversations().catch((caught) => toast.failed(caught instanceof Error ? caught.message : String(caught)))
     void readConversation(conversationRef.current, true).catch((caught) =>
       toast.failed(caught instanceof Error ? caught.message : String(caught)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, available])
+  }, [open, available, isReachable])
+
+  // Which chats have something new in them, asked while the drawer is shut
+  // for the number on its button and while it is open for the counts in its
+  // list. Not while the tab is hidden: nobody is looking at a number.
+  useEffect(() => {
+    if (!isReachable) return
+    let stopped = false
+    const read = () => {
+      if (stopped || document.hidden) return
+      if (open) {
+        void loadConversations().catch(() => undefined)
+        return
+      }
+      graphql<{ ListAgentConversations: { chat?: { unreadCount: number; isMuted: boolean } | null }[] }>(CHAT_UNREAD)
+        .then((response) => {
+          if (!stopped) setUnreadChatCount(totalUnread(response.ListAgentConversations))
+        })
+        .catch(() => undefined)
+    }
+    // The first look is a moment after the page loads, not with it: the
+    // conversations are read by the open drawer already, and a button that
+    // cannot have a number yet is not worth a request of its own.
+    const first = window.setTimeout(read, open ? UNREAD_EVERY : 0)
+    const every = window.setInterval(read, UNREAD_EVERY)
+    window.addEventListener('focus', read)
+    document.addEventListener('visibilitychange', read)
+    return () => {
+      stopped = true
+      window.clearTimeout(first)
+      window.clearInterval(every)
+      window.removeEventListener('focus', read)
+      document.removeEventListener('visibilitychange', read)
+    }
+  }, [isReachable, open, loadConversations])
+
+  // A chat on screen is read once the drawer is in front of the person and
+  // its newest message has arrived: told to the server, which moves the
+  // read mark the others see and clears the count in the list.
+  const newestChatMessageId = useMemo(() => {
+    for (let at = lines.length - 1; at >= 0; at--) {
+      const line = lines[at]
+      if (line.kind === 'chat' && line.messageId && !line.isPending) return line.messageId
+    }
+    return ''
+  }, [lines])
+  useEffect(() => {
+    if (!open || loaded?.kind !== 'chat' || loaded.id !== conversationId || !newestChatMessageId) return
+    const markRead = () => {
+      if (document.visibilityState !== 'visible') return
+      if ((readThrough.current[conversationId] ?? '') >= newestChatMessageId) return
+      readThrough.current[conversationId] = newestChatMessageId
+      graphql(MARK_CHAT_READ, { conversationId, throughMessageId: newestChatMessageId })
+        .then(() => loadConversations())
+        .catch(() => {
+          delete readThrough.current[conversationId]
+        })
+    }
+    markRead()
+    document.addEventListener('visibilitychange', markRead)
+    window.addEventListener('focus', markRead)
+    return () => {
+      document.removeEventListener('visibilitychange', markRead)
+      window.removeEventListener('focus', markRead)
+    }
+  }, [open, loaded?.kind, loaded?.id, conversationId, newestChatMessageId, loadConversations])
+
+  // A line saying someone is typing goes by itself a few seconds after the
+  // last word of it.
+  useEffect(() => {
+    if (Object.keys(typing).length === 0) return
+    const timer = window.setInterval(() => {
+      setTyping((previous) => {
+        const now = Date.now()
+        const remaining = Object.fromEntries(Object.entries(previous).filter(([, person]) => person.until > now))
+        return Object.keys(remaining).length === Object.keys(previous).length ? previous : remaining
+      })
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [typing])
 
   useEffect(() => {
     if (!open) adoptConversation(conversationId)
   }, [open, conversationId, adoptConversation])
+
+  // An agent chosen for a message is not carried to another conversation.
+  useEffect(() => {
+    setChosenAgents([])
+    setMention(null)
+  }, [conversationId])
 
   // The conversation's events while the drawer is open — every turn,
   // wherever it was started: here, a phone, a terminal, a chat app. The
@@ -2675,7 +3080,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // Only a conversation read already: the one remembered from before may
     // not be there, and following it would fail before the reading had
     // fallen back to the main one.
-    if (!open || !available || !conversationId || loaded?.id !== conversationId) return
+    if (!open || !isReachable || !conversationId || loaded?.id !== conversationId) return
+    // With the agent off the only conversations are the person's chats; the
+    // agent's own are not followed, and are not on screen to follow.
+    if (!available && loaded?.kind !== 'chat') return
     const followed = conversationId
     let stopped = false
     const stop = subscribe<{ AgentConversationEvents: RunEvent }>(
@@ -2691,6 +3099,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           return
         }
         const event = data.AgentConversationEvents
+        // The words of an agent's answer in a chat come with the agent they
+        // are the answer of; the run's own words, in any other conversation,
+        // do not.
+        if (CHAT_EVENTS.has(event.kind) || (event.kind === 'text' && event.authorAgentId)) {
+          applyChatEvent(event)
+          return
+        }
         // In voice mode the answers are spoken as they are written.
         voiceSession.current?.follow(event)
         if (event.kind === 'asked') {
@@ -2710,7 +3125,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         }
       },
       (error) => {
-        if (error && !stopped) toast.failed(error.message)
+        if (!error || stopped) return
+        toast.failed(error.message)
       },
       {
         beforeStart: async (reconnecting) => {
@@ -2735,7 +3151,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       stop()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, available, conversationId, loaded?.id])
+  }, [open, isReachable, available, conversationId, loaded?.id])
 
   // The list is read again each time it is opened: a conversation started
   // from a terminal since is there too.
@@ -2794,7 +3210,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // Escape toggles the drawer from anywhere on the page — unless a dialog
   // or a list is open, which Escape closes first.
   useEffect(() => {
-    if (!available || standalone) return
+    if (!isReachable || standalone) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list')) return
@@ -2805,7 +3221,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [available, open])
+  }, [isReachable, open])
 
   // Another page asking for a conversation to be opened here: a run's
   // transcript from the agent page, or an idea or a goal started, whose
@@ -2815,7 +3231,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     const listener = (event: Event) => {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
-      if (!available || !detail) return
+      if (!isReachable || !detail) return
       detail.handled = true
       // Asked to open with no conversation named: open on the one it shows.
       if (!detail.conversationId) {
@@ -2837,7 +3253,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     window.addEventListener(AGENT_OPEN_EVENT, listener)
     return () => window.removeEventListener(AGENT_OPEN_EVENT, listener)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [available])
+  }, [isReachable])
 
   // Another page asking for a new conversation: the agent's page of
   // conversations, whose button does what the picker's new chat does.
@@ -2855,10 +3271,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available])
 
-  // Whether this tab is in front of the person, told to the agent so that
-  // it starts a conversation on its own only with somebody who is there.
-  // Not from the extension's frame: the page behind it reports already.
-  useAgentPresence(available && !standalone)
+  // Whether this tab is in front of the person, told to the server so that
+  // the agent starts a conversation on its own only with somebody who is
+  // there, and a chat is sent to their phone only when they are not looking
+  // at it. Not from the extension's frame: the page behind it reports
+  // already. With the agent off a person who chats is still reported.
+  useAgentPresence(isReachable && !standalone)
 
   // A turn the agent starts on its own in the main conversation -- its
   // introduction, a memory check, an idea, an alert -- opens the drawer on
@@ -3188,19 +3606,131 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // applyReaction puts one reactor's emoji on a message, or takes it off
   // when the emoji is empty: in the messages kept for paging back, and on
   // the line drawn from it.
-  const applyReaction = (messageId: string, reactorKind: string, emoji: string, reactedAt?: string) => {
+  const applyReaction = (
+    messageId: string,
+    reactorKind: string,
+    emoji: string,
+    reactedAt?: string,
+    reactor?: { userId?: string | null; name?: string | null },
+  ) => {
     messages.current = messages.current.map((message) =>
       message.id === messageId
-        ? { ...message, reactions: withReaction(message.reactions ?? undefined, reactorKind, emoji, reactedAt) }
+        ? {
+            ...message,
+            reactions: withReaction(message.reactions ?? undefined, reactorKind, emoji, reactedAt, reactor),
+          }
         : message,
     )
     setLines((previous) =>
       previous.map((line) =>
-        (line.kind === 'user' || line.kind === 'assistant') && line.messageId === messageId
-          ? { ...line, reactions: withReaction(line.reactions, reactorKind, emoji, reactedAt) }
+        (line.kind === 'user' || line.kind === 'assistant' || line.kind === 'chat') && line.messageId === messageId
+          ? { ...line, reactions: withReaction(line.reactions, reactorKind, emoji, reactedAt, reactor) }
           : line,
       ),
     )
+  }
+  // patchStored changes a message kept for paging back, so that reading
+  // earlier messages does not bring back what was edited or deleted.
+  const patchStored = (messageId: string, patch: Partial<StoredMessage>) => {
+    messages.current = messages.current.map((message) =>
+      message.id === messageId ? { ...message, ...patch } : message,
+    )
+  }
+  // applyChatEvent is what a chat's own events do: a message said, edited
+  // or deleted, a member's read mark moved, a member typing. An event that
+  // cannot be drawn as it came -- a message it did not carry -- is made up
+  // for by reading the chat again.
+  const applyChatEvent = (event: RunEvent) => {
+    const message = event.message
+    switch (event.kind) {
+      case 'said':
+        if (!message || event.isMessageCut) {
+          void readConversation(conversationRef.current).catch(() => undefined)
+          return
+        }
+        if (!messages.current.some((stored) => stored.id === message.id)) {
+          messages.current = [...messages.current, message]
+          setTotal((previous) => previous + 1)
+        }
+        setLines((previous) => linesWithSaid(previous, message))
+        // Whoever said it has finished writing: a person's typing line goes,
+        // and so does an agent's "is thinking" once it has answered.
+        const finished = message.authorKind === 'agent' ? message.authorAgentId : message.authorUserId
+        if (finished) {
+          setTyping((previous) => {
+            if (!(finished in previous)) return previous
+            const remaining = { ...previous }
+            delete remaining[finished]
+            return remaining
+          })
+        }
+        // The list follows: this chat is now the newest, and the count of
+        // another that was said in is only known by asking.
+        void loadConversations().catch(() => undefined)
+        return
+      case 'edited':
+        if (!message || event.isMessageCut) {
+          void readConversation(conversationRef.current).catch(() => undefined)
+          return
+        }
+        patchStored(message.id, { content: message.content, editedAt: message.editedAt })
+        setLines((previous) => linesWithEdit(previous, message.id, message.content, message.editedAt ?? null))
+        return
+      case 'unsaid':
+        if (!event.messageId) return
+        patchStored(event.messageId, { content: '', isDeleted: true })
+        setLines((previous) => linesWithUnsaid(previous, event.messageId as string))
+        return
+      case 'read': {
+        const readerId = event.userId
+        const readMessageId = event.messageId
+        if (!readerId || !readMessageId) return
+        setLoaded((previous) =>
+          previous?.chat ? { ...previous, chat: withMemberRead(previous.chat, readerId, readMessageId) } : previous,
+        )
+        return
+      }
+      case 'typing': {
+        // An agent working on an answer is told by its agent and thought of
+        // as thinking; a person by theirs, and typing.
+        const typist = event.authorAgentId || event.userId
+        if (!typist || (!event.authorAgentId && typist === ownUserId)) return
+        setTyping((previous) => ({
+          ...previous,
+          [typist]: {
+            name: event.name ?? '',
+            ownerName: event.authorOwnerName ?? '',
+            until: Date.now() + TYPING_SHOWN_FOR,
+            isAgent: Boolean(event.authorAgentId),
+          },
+        }))
+        return
+      }
+      case 'text':
+        // The words of an agent's answer as they are written, told to
+        // every member: drawn as a message that the stored one replaces.
+        if (!event.authorAgentId) return
+        setLines((previous) => linesWithStreamedText(previous, event))
+        return
+      case 'members': {
+        // Somebody changed what their agent does here: who can be asked
+        // and who remembers the chat.
+        const memberOf = conversationRef.current
+        void graphql<{ ReadAgentConversation: { conversation: { id: string; chat: ChatSummary | null } } }>(
+          READ_CHAT_MEMBERS,
+          { conversationId: memberOf },
+        )
+          .then((response) => {
+            const read = response.ReadAgentConversation.conversation
+            if (memberOf !== conversationRef.current || !read.chat) return
+            setLoaded((previous) => (previous?.id === read.id ? { ...previous, chat: read.chat } : previous))
+          })
+          .catch(() => undefined)
+        return
+      }
+      default:
+        return
+    }
   }
   const applyEvent = (event: RunEvent) => {
     // What an event does beyond the transcript happens here, once: the
@@ -3225,7 +3755,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // its id, one still arriving, has it when the transcript is read.
     if (event.kind === 'reacted') {
       if (event.messageId && event.reactorKind) {
-        applyReaction(event.messageId, event.reactorKind, event.emoji ?? '', event.at)
+        applyReaction(event.messageId, event.reactorKind, event.emoji ?? '', event.at, {
+          userId: event.reactorUserId,
+          name: event.reactorName,
+        })
       }
       return
     }
@@ -3277,6 +3810,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           }
           return next
         case 'message':
+          // In a chat the answer is the chat's message, which arrives as its
+          // own event and replaces the words drawn as they were written.
+          if (loaded?.kind === 'chat') return next
           if (last && last.kind === 'assistant' && last.streaming) {
             next[next.length - 1] = { ...last, text: event.text ?? last.text, streaming: false }
           } else if (event.text?.trim()) {
@@ -3374,6 +3910,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             })
             return withoutQueued
           }
+          if (event.noteKind === PAYMENT_WAITING_NOTE) {
+            withoutQueued.push({
+              kind: 'note',
+              key: `payment-waiting-${event.noteDetail}`,
+              text: '',
+              noteKind: PAYMENT_WAITING_NOTE,
+              detail: event.noteDetail,
+            })
+            return withoutQueued
+          }
           withoutQueued.push({
             kind: 'note',
             key: `${event.runId}-${event.sequence}`,
@@ -3398,6 +3944,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // events draw again.
   const asked = (event: RunEvent) => {
     setRuns((previous) => (previous.includes(event.runId) ? previous : [...previous, event.runId]))
+    // In a chat what was said is a message of the chat already, drawn from
+    // its own event; the turn it started is only to be followed.
+    if (event.note === 'chat') return
     if (sending.current > 0 && (event.note === surface() || event.note === 'voice')) return
     // A turn of the agent's own, arriving live: the line, not the bubble,
     // and nothing here to have said it twice.
@@ -3492,11 +4041,29 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       }
     }
     const sendingConversationId = conversationRef.current
+    // In a chat, which agents the message is for: those chosen from the @
+    // whose names are still in it, and the agent of a message it replies to.
+    const repliedTo = pointed.find(isReplyReference)
+    const repliedToLine = repliedTo
+      ? (latestLines.current.find((line) => line.kind === 'chat' && line.messageId === repliedTo.agentMessageId) as
+          | ChatLine
+          | undefined)
+      : undefined
+    const addressedAgentIds =
+      loaded?.kind === 'chat' && !isSuggested
+        ? addressedIn(
+            message,
+            chosenAgents,
+            repliedToLine?.authorKind === 'agent' ? repliedToLine.authorAgentId : undefined,
+          )
+        : []
     if (!isSuggested) {
       setDraft('')
       remember(draftKey(conversationId), '')
       setPending([])
       setReferences([])
+      setChosenAgents([])
+      setMention(null)
     }
     // Saying something is meaning to see it: wherever the transcript was
     // being read, it goes back to its end for the turn that follows.
@@ -3506,21 +4073,45 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     // person is concerned; the bar asking for it has served.
     setShowingGoalNote(false)
     const key = `user-${Date.now()}`
+    const pendingAttachments = files.map((file, index) => ({
+      id: `pending-${index}`,
+      name: file.name,
+      contentType: file.type,
+      size: file.size,
+    }))
+    // In a chat the line is the person's own message as everybody will
+    // see it, until the chat says it was said.
+    const isInChat = loaded?.kind === 'chat'
     setLines((previous) => [
       ...previous,
-      {
-        kind: 'user',
-        key,
-        text: message,
-        at: new Date().toISOString(),
-        references: pointed.length > 0 ? pointed : undefined,
-        attachments: files.map((file, index) => ({
-          id: `pending-${index}`,
-          name: file.name,
-          contentType: file.type,
-          size: file.size,
-        })),
-      },
+      isInChat
+        ? {
+            kind: 'chat',
+            key,
+            text: message,
+            at: new Date().toISOString(),
+            authorKind: 'person',
+            authorUserId: ownUserId,
+            authorName: ownName,
+            authorOwnerName: '',
+            authorAvatarUrl: session.avatarUrl ?? null,
+            authorAvatarColorIndex: session.avatarColorIndex ?? null,
+            authorAgentId: '',
+            isMine: true,
+            editedAt: null,
+            isDeleted: false,
+            isPending: true,
+            references: pointed.length > 0 ? pointed : undefined,
+            attachments: pendingAttachments,
+          }
+        : {
+            kind: 'user',
+            key,
+            text: message,
+            at: new Date().toISOString(),
+            references: pointed.length > 0 ? pointed : undefined,
+            attachments: pendingAttachments,
+          },
     ])
     try {
       let attachmentIds: string[] = []
@@ -3538,7 +4129,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         }
         setLines((previous) =>
           previous.map((line) =>
-            line.key === key && line.kind === 'user' ? { ...line, attachments: uploaded } : line,
+            line.key === key && (line.kind === 'user' || line.kind === 'chat')
+              ? { ...line, attachments: uploaded }
+              : line,
           ),
         )
       }
@@ -3556,6 +4149,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           references: pointed.length > 0 ? pointed : undefined,
           drawerId: drawerId.current,
+          addressedAgentIds: addressedAgentIds.length > 0 ? addressedAgentIds : undefined,
         })
       } finally {
         sending.current -= 1
@@ -3567,6 +4161,20 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         adoptConversation(conversation)
         remember(CONVERSATION_KEY, conversation)
       }
+      // A message in a chat comes back as an event. Should it not, the chat
+      // is read again so that nothing sent looks unsent for long. It has a
+      // run to follow only when it asked the person's own agent.
+      if (isInChat) {
+        window.setTimeout(() => {
+          if (
+            conversationRef.current === sendingConversationId &&
+            latestLines.current.some((line) => line.key === key)
+          ) {
+            void readConversation(sendingConversationId).catch(() => undefined)
+          }
+        }, CHAT_CONFIRMED_WITHIN)
+      }
+      if (!response.AskAgent.runId) return
       follow(response.AskAgent.runId)
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
@@ -3788,6 +4396,120 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     }
   }
 
+  // showOffer empties the drawer of any conversation, for an agent that is
+  // off: where the main conversation would be, the offer to turn it on.
+  const showOffer = () => {
+    setShowingList(false)
+    adoptConversation('')
+    setLoaded(null)
+    setLines([])
+    messages.current = []
+    setTotal(0)
+    remember(CONVERSATION_KEY, '')
+  }
+
+  // With the agent off the drawer opens on the chat the person had open,
+  // else the newest, and with no chat on the offer to turn the agent on.
+  const openChatsOnly = async () => {
+    const listed = await loadConversations()
+    const chats = listed.filter((conversation) => conversation.kind === 'chat')
+    const wanted =
+      chats.find((chat) => chat.id === conversationRef.current) ??
+      [...chats].sort((first, second) => (second.lastAt ?? '').localeCompare(first.lastAt ?? ''))[0]
+    if (!wanted) {
+      showOffer()
+      return
+    }
+    await readConversation(wanted.id, true)
+  }
+
+  // A chat just opened or made is shown, with the box ready.
+  const openedChat = async (id: string) => {
+    setChatDialog(null)
+    try {
+      await loadConversations()
+      await switchTo(id)
+      setTimeout(() => input.current?.focus(), 50)
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+
+  // Of the chat on screen: its name, its sound, whether the person is in
+  // it, and what is said in it. Each says what happened and leaves the list
+  // and the head as the server now has them.
+  const renameChat = async (title: string) => {
+    await graphql(RENAME_CHAT, { conversationId, title })
+    setChatDialog(null)
+    setLoaded((previous) => (previous?.chat ? { ...previous, title, chat: { ...previous.chat, title } } : previous))
+    await loadConversations()
+  }
+  const muteChat = async (mutedUntil: string | null) => {
+    setHeadMenu(null)
+    try {
+      await graphql(MUTE_CHAT, { conversationId, mutedUntil })
+      toast.done(mutedUntil ? t('chat.mutedDone') : t('chat.unmutedDone'))
+      setLoaded((previous) =>
+        previous?.chat
+          ? { ...previous, chat: { ...previous.chat, isMuted: Boolean(mutedUntil), mutedUntil } }
+          : previous,
+      )
+      await loadConversations()
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+  const leaveChat = async () => {
+    try {
+      await graphql(LEAVE_CHAT, { conversationId })
+      setChatDialog(null)
+      toast.done(t('chat.left'))
+      const remaining = (await loadConversations()).filter((conversation) => conversation.id !== conversationId)
+      const next = available ? remaining.find((conversation) => conversation.kind === 'main') : remaining[0]
+      if (next) await switchTo(next.id)
+      else showOffer()
+    } catch (caught) {
+      setChatDialog(null)
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+  const saveEdit = async () => {
+    if (!editing) return
+    const { messageId, text } = editing
+    const words = text.trim()
+    setEditing(null)
+    if (!words) return
+    try {
+      await graphql(EDIT_CHAT_MESSAGE, { messageId, message: words })
+      const editedAt = new Date().toISOString()
+      patchStored(messageId, { content: words, editedAt })
+      setLines((previous) => linesWithEdit(previous, messageId, words, editedAt))
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+  const deleteMessage = async (line: ChatLine) => {
+    setDeletingMessage(null)
+    const messageId = line.messageId
+    if (!messageId) return
+    try {
+      await graphql(DELETE_CHAT_MESSAGE, { messageId })
+      patchStored(messageId, { content: '', isDeleted: true })
+      setLines((previous) => linesWithUnsaid(previous, messageId))
+    } catch (caught) {
+      toast.failed(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+  // tellTyping lets the others know words are being written, at most every
+  // few seconds however fast the keys.
+  const tellTyping = (words: string) => {
+    if (loaded?.kind !== 'chat' || !words.trim()) return
+    const now = Date.now()
+    if (now - lastTypingTold.current < TYPING_SENT_EVERY) return
+    lastTypingTold.current = now
+    void graphql(SET_CHAT_TYPING, { conversationId }).catch(() => undefined)
+  }
+
   // Putting a conversation away takes it out of the picker and leaves
   // everything in it; the server refuses to archive the main one, which is
   // why the action is not offered there.
@@ -3820,6 +4542,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         conversation.id === conversationId ? 'active' : '',
         conversation.kind === 'main' ? 'main' : '',
         conversation.archivedAt ? 'archived' : '',
+        conversation.kind === 'chat' && (conversation.chat?.unreadCount ?? 0) > 0 ? 'unread' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -3854,10 +4577,33 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             role="menuitem"
             onClick={() => void switchTo(conversation.id)}
           >
-            <span className="agent-drawer-list-name">
+            <span className={['agent-drawer-list-name', conversation.chat ? 'chat' : ''].filter(Boolean).join(' ')}>
               {conversation.kind === 'main' ? (
                 <>
                   <StarIcon size={12} /> {t('agentDrawer.main')}
+                </>
+              ) : conversation.chat ? (
+                <>
+                  <ChatFaces
+                    chat={conversation.chat}
+                    ownUserId={ownUserId}
+                    deleted={t('chat.deletedAccount')}
+                    size={20}
+                  />
+                  <span className="chat-title">
+                    {chatTitleOf(
+                      conversation.chat,
+                      ownUserId,
+                      t('chat.deletedAccount'),
+                      conversation.title || t('agentDrawer.untitled'),
+                    )}
+                  </span>
+                  {conversation.chat.isMuted ? (
+                    <span className="chat-muted" title={t('chat.muted')}>
+                      <BellOffIcon size={12} />
+                    </span>
+                  ) : null}
+                  <UnreadCount count={conversation.chat.unreadCount} />
                 </>
               ) : (
                 conversation.title || t('agentDrawer.untitled')
@@ -3877,7 +4623,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           </button>
         </Tooltip>
       )}
-      {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
+      {conversation.kind !== 'main' && conversation.kind !== 'chat' && renaming?.id !== conversation.id && (
         <span className="agent-drawer-list-actions">
           <Tooltip label={t('agentDrawer.makeMain')}>
             <button
@@ -4004,7 +4750,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       sticking.current = false
       // The cards still waiting are kept: they are not in the messages.
       setLines((previous) => [
-        ...linesOf(messages.current, t),
+        ...linesOf(messages.current, t, loaded?.kind === 'chat'),
         ...previous.filter(
           (line) => (line.kind === 'question' && !line.answered) || (line.kind === 'confirmation' && !line.resolved),
         ),
@@ -4043,14 +4789,19 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const shownText = (line: Line) =>
     line.kind === 'assistant'
       ? suggestedRepliesOf(withoutPartialMarker(line.text)).displayText.trim()
-      : line.kind === 'user'
+      : line.kind === 'user' || line.kind === 'chat'
         ? line.text.trim()
         : ''
   const replyTo = (line: Line) => {
-    if (line.kind !== 'user' && line.kind !== 'assistant') return
+    if (line.kind !== 'user' && line.kind !== 'assistant' && line.kind !== 'chat') return
+    // An answer still being written has no message to reply to yet.
+    if (line.kind === 'chat' && !line.messageId) return
     const quotedText = shownText(line).slice(0, REPLY_QUOTE_CHARACTERS)
     if (!quotedText) return
-    const reply: AgentReference = { agentMessageId: line.messageId, quotedRole: line.kind, quotedText }
+    // In a chat a person's own words are the user's, and everybody else's
+    // are what an answer is in a conversation with an agent.
+    const quotedRole = line.kind === 'chat' ? (isOwnWords(line) ? 'user' : 'assistant') : line.kind
+    const reply: AgentReference = { agentMessageId: line.messageId, quotedRole, quotedText }
     setReferences((previous) => [...previous.filter((reference) => !isReplyReference(reference)), reply])
     setTimeout(() => input.current?.focus(), 50)
   }
@@ -4077,7 +4828,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     setPickingReactionFor(null)
     try {
       await graphql<{ ReactToAgentMessage: boolean }>(REACT, { messageId, emoji })
-      applyReaction(messageId, 'person', emoji, new Date().toISOString())
+      applyReaction(messageId, 'person', emoji, new Date().toISOString(), { userId: ownUserId, name: ownName })
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
     }
@@ -4089,10 +4840,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     if (!messageId) return null
     return (
       <>
-        <ReactionBadges reactions={line.reactions} onRemove={() => void reactTo(messageId, '')} />
+        <ReactionBadges reactions={line.reactions} ownUserId={ownUserId} onRemove={() => void reactTo(messageId, '')} />
         {pickingReactionFor === messageId && (
           <ReactionPicker
-            current={personReaction(line.reactions)}
+            current={personReaction(line.reactions, ownUserId)}
             onPick={(emoji) => void reactTo(messageId, emoji)}
             onClose={closeReactionPicker}
           />
@@ -4102,10 +4853,122 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   }
   const replying = references.find(isReplyReference)
   const chipped = references.filter((reference) => !isReplyReference(reference))
+  // Who has read as far as which message, to be drawn under it.
+  const chatMembers = loaded?.chat?.members
+  const readersOf = useMemo(
+    () => (chatMembers ? readersByMessage(lines, chatMembers, ownUserId) : new Map<string, ChatMember[]>()),
+    [lines, chatMembers, ownUserId],
+  )
+  // A group's admins may delete what anybody wrote in it.
+  const isChatAdmin = Boolean(
+    loaded?.chat?.chatKind === 'group' &&
+    loaded.chat.members.some((member) => member.userId === ownUserId && member.memberRole === 'admin'),
+  )
 
   // drawLine is one line of the transcript as the drawer draws it.
-  const drawLine = (line: Line) => {
+  const drawLine = (line: Line, previous?: Line) => {
     switch (line.kind) {
+      case 'chat': {
+        const isRunStart = startsRun(line, previous)
+        const readers = line.messageId ? (readersOf.get(line.messageId) ?? []) : []
+        // A deleted message is a mark that it was, not a gap.
+        if (line.isDeleted) {
+          return (
+            <ChatLineFrame key={line.key} line={line} startsRun={isRunStart} readers={readers}>
+              <div className="agent-line chat-deleted muted">{t('chat.deleted')}</div>
+            </ChatLineFrame>
+          )
+        }
+        const isEditing = Boolean(line.messageId) && editing?.messageId === line.messageId
+        const repliedTo = line.references?.find(isReplyReference)
+        const canEdit = isOwnWords(line) && Boolean(line.messageId)
+        const canDelete = Boolean(line.messageId) && (canEdit || isChatAdmin)
+        return (
+          <ChatLineFrame key={line.key} line={line} startsRun={isRunStart} readers={readers}>
+            <Tooltip label={line.at ? formatTime(line.at) : ''}>
+              <SwipeableLine
+                className={[
+                  isOwnWords(line) ? 'agent-line user' : 'agent-line assistant chat-person',
+                  line.isPending ? 'pending' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                replyLabel={t('agentDrawer.reply')}
+                copyLabel={t('common.copy')}
+                onReply={() => replyTo(line)}
+                onCopy={() => copyLine(line)}
+                onCopyFailed={sayCopyFailed}
+                reactLabel={t('agentDrawer.react')}
+                onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
+                extraActions={
+                  <>
+                    {canEdit ? (
+                      <button
+                        type="button"
+                        className="icon-action"
+                        title={t('common.edit')}
+                        aria-label={t('common.edit')}
+                        onClick={() => setEditing({ messageId: line.messageId as string, text: line.text })}
+                      >
+                        <PencilIcon size={14} />
+                      </button>
+                    ) : null}
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        className="icon-action danger"
+                        title={t('common.delete')}
+                        aria-label={t('common.delete')}
+                        onClick={() => setDeletingMessage(line)}
+                      >
+                        <TrashIcon size={14} />
+                      </button>
+                    ) : null}
+                  </>
+                }
+              >
+                {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
+                {isEditing && editing ? (
+                  <div className="agent-chat-edit">
+                    <textarea
+                      autoFocus
+                      rows={2}
+                      value={editing.text}
+                      aria-label={t('common.edit')}
+                      onChange={(event) => setEditing({ messageId: editing.messageId, text: event.target.value })}
+                      onKeyDown={(event) => {
+                        if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          setEditing(null)
+                        } else if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault()
+                          void saveEdit()
+                        }
+                      }}
+                    />
+                    <div className="row">
+                      <button type="button" className="primary" onClick={() => void saveEdit()}>
+                        {t('common.save')}
+                      </button>
+                      <button type="button" onClick={() => setEditing(null)}>
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                ) : line.authorKind === 'agent' ? (
+                  <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
+                ) : (
+                  line.text
+                )}
+                {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+                {line.editedAt && !isEditing ? <span className="agent-chat-edited">{t('chat.edited')}</span> : null}
+                {reactionsOn(line)}
+              </SwipeableLine>
+            </Tooltip>
+          </ChatLineFrame>
+        )
+      }
       // When a message was said is a tooltip over the bubble, never a
       // line inside it: a line that appears on hover changes the bubble's
       // size under the pointer, and the conversation should read as a
@@ -4146,7 +5009,14 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
             >
               <Markdown
-                text={line.streaming ? withoutPartialMarker(line.text) : suggestedRepliesOf(line.text).displayText}
+                text={
+                  line.streaming
+                    ? withoutPartialMarker(line.text)
+                    : linkSharedCitations(
+                        suggestedRepliesOf(line.text).displayText,
+                        (ownerName) => sharedOwners[ownerName.toLowerCase()],
+                      )
+                }
                 onLeaving={leaving}
                 pictureSource={pictureSource}
               />
@@ -4246,6 +5116,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         return <CheckInLine key={line.key} at={line.at} text={line.text} origin={line.origin} />
       case 'note':
         if (line.noteKind === HERDR_ANSWERED_NOTE || line.noteKind === HERDR_ASKED_NOTE) return null
+        if (line.noteKind === PAYMENT_WAITING_NOTE)
+          return <PaymentWaitingNote key={line.key} detail={line.detail ?? ''} />
         if (!showWorkingNotes && line.noteKind && WORKING_NOTES.has(line.noteKind)) return null
         if (line.detail) {
           return (
@@ -4309,15 +5181,60 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   useEffect(() => {
     setHeadMenu(null)
   }, [conversationId])
-  if (!available) {
+  if (!isReachable) {
     return null
   }
   const current = conversations.find((conversation) => conversation.id === conversationId) ?? loaded
+  // The chat on screen, as the conversation as loaded has it: the list is
+  // read less often than a chat's events arrive.
+  const chat = loaded?.id === conversationId && loaded.kind === 'chat' ? (loaded.chat ?? null) : null
+  const isInChat = chat !== null
+  const deletedNote = t('chat.deletedAccount')
+  // The agents an @ offers here, those the typed letters match, and the
+  // box's @ made into a choice of one of them.
+  const addressable = chat && !chat.isRemoved ? addressableAgentsOf(chat, ownUserId, deletedNote) : []
+  const mentionAgents = mention ? agentsMatching(addressable, mention.query) : []
+  const watchMention = (words: string, caret: number | null) => {
+    const typed = isInChat && addressable.length > 0 ? mentionAt(words, caret ?? words.length) : null
+    setMention(typed)
+    setMentionIndex(0)
+  }
+  const chooseMention = (agent: AddressableAgent) => {
+    if (!mention) return
+    const caret = input.current?.selectionStart ?? draft.length
+    const next = withMention(draft, mention, caret, agent)
+    setDraft(next.text)
+    remember(draftKey(conversationId), next.text)
+    setChosenAgents((previous) =>
+      previous.some((chosen) => chosen.agentId === agent.agentId) ? previous : [...previous, agent],
+    )
+    setMention(null)
+    window.setTimeout(() => {
+      input.current?.focus()
+      input.current?.setSelectionRange(next.caret, next.caret)
+    }, 0)
+  }
   const title = current
     ? current.kind === 'main'
       ? t('agentDrawer.main')
-      : current.title || t('agentDrawer.untitled')
+      : (chat ?? current.chat)
+        ? chatTitleOf(
+            (chat ?? current.chat) as ChatSummary,
+            ownUserId,
+            deletedNote,
+            current.title || t('agentDrawer.untitled'),
+          )
+        : current.title || t('agentDrawer.untitled')
     : t('agentDrawer.main')
+  // The agent is off and nothing is open: where the main conversation would
+  // be, the offer to turn it on.
+  const isOfferShown = !available && !loaded
+  const typingNow = Object.values(typing).filter((typist) => typist.until > Date.now() && typist.name)
+  const typingNames = typingNow.filter((typist) => !typist.isAgent).map((typist) => typist.name)
+  // An agent is named with its owner, as above its messages.
+  const thinkingNames = typingNow
+    .filter((typist) => typist.isAgent)
+    .map((typist) => agentSpeakerName(typist.name, typist.ownerName ?? '', t))
   // A run's transcript can be talked into: the person reading what the
   // agent did on its own asks about it right there, with the run as the
   // history. A line above the box says what they are looking at.
@@ -4327,6 +5244,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   // nothing left to track and was taking the room above the box.
   const showTodos = todos.length > 0 && (running || todos.some((todo) => !todo.doneAt))
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
+  // Where an agent can be asked, the box says how.
+  const chatPlaceholder = addressable.length > 0 ? t('chat.placeholderWithAgents', { title }) : t('chat.placeholder', { title })
   // What the agent said it needs, while it is still waiting for it and
   // the person has not yet written back.
   const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''
@@ -4334,9 +5253,29 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   return (
     <>
       {!open && !standalone && (
-        <Tooltip label={t('agentDrawer.open')}>
-          <button type="button" className="agent-drawer-toggle" aria-label={t('agentDrawer.open')} onClick={toggle}>
-            <SparkIcon size={20} />
+        <Tooltip label={available ? t('agentDrawer.open') : t('chat.open')}>
+          <button
+            type="button"
+            className="agent-drawer-toggle"
+            aria-label={
+              unreadChatCount > 0
+                ? `${available ? t('agentDrawer.open') : t('chat.open')}: ${plural(
+                    unreadChatCount,
+                    { one: 'chat.unreadOne', other: 'chat.unread' },
+                    { count: unreadChatCount },
+                  )}`
+                : available
+                  ? t('agentDrawer.open')
+                  : t('chat.open')
+            }
+            onClick={toggle}
+          >
+            {available ? <SparkIcon size={20} /> : <PeopleIcon size={20} />}
+            {unreadChatCount > 0 ? (
+              <span className="agent-drawer-badge" aria-hidden="true">
+                {unreadChatCount > 99 ? '99+' : unreadChatCount}
+              </span>
+            ) : null}
           </button>
         </Tooltip>
       )}
@@ -4393,7 +5332,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 setShowingList((previous) => !previous)
               }}
             >
-              <SparkIcon size={14} />
+              {chat ? (
+                <ChatFaces chat={chat} ownUserId={ownUserId} deleted={deletedNote} size={20} />
+              ) : (
+                <SparkIcon size={14} />
+              )}
               <span className="agent-drawer-title">{title}</span>
               <ChevronDownIcon size={14} className="chevron" />
             </button>
@@ -4401,6 +5344,12 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 way to its page. Goals are started by asking the agent or on
                 the Goals tab, never set on a chat. */}
             {current && current.kind === 'goal' && current.goal ? <GoalChip conversation={current} /> : null}
+            {/* A chat's menu: who is in it, its name, its sound, leaving. */}
+            {chat && (
+              <HeadMark label={t('chat.menu')} isOpen={headMenu === 'chat'} onToggle={() => toggleHeadMenu('chat')}>
+                <MoreIcon size={14} />
+              </HeadMark>
+            )}
             {/* What of the person's own is attached, as a mark with the
                 details on hover and a line each under it on a press: the
                 transcript is for the conversation. */}
@@ -4439,12 +5388,16 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 onToggle={() => toggleHeadMenu('background')}
               />
             )}
-            <BudgetRing
-              budget={budget}
-              zone={agentZone}
-              isOpen={headMenu === 'usage'}
-              onToggle={() => toggleHeadMenu('usage')}
-            />
+            {/* The ring is the agent's budget: it means nothing in a
+                conversation of people, or with the agent off. */}
+            {available && !isInChat && (
+              <BudgetRing
+                budget={budget}
+                zone={agentZone}
+                isOpen={headMenu === 'usage'}
+                onToggle={() => toggleHeadMenu('usage')}
+              />
+            )}
             {/* Framed by the extension, the panel around this has a bar
                 of its own with the close on it; two of them, one under
                 the other, is one too many. */}
@@ -4467,9 +5420,30 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               onClose={() => setHeadMenu(null)}
             />
           )}
+          {headMenu === 'chat' && chat && (
+            <ChatMenu
+              chat={chat}
+              onMembers={() => {
+                setHeadMenu(null)
+                setChatDialog('members')
+              }}
+              onRename={() => {
+                setHeadMenu(null)
+                setChatDialog('rename')
+              }}
+              onMute={(mutedUntil) => void muteChat(mutedUntil)}
+              onLeave={() => {
+                setHeadMenu(null)
+                setChatDialog('leave')
+              }}
+              onClose={() => setHeadMenu(null)}
+            />
+          )}
           {headMenu === 'computers' && <ComputersMenu computers={computers} onClose={() => setHeadMenu(null)} />}
           {headMenu === 'tab' && tab?.attached && <TabMenu tab={tab} onClose={() => setHeadMenu(null)} />}
-          {headMenu === 'usage' && <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />}
+          {headMenu === 'usage' && available && !isInChat && (
+            <UsageMenu budget={budget} zone={agentZone} onClose={() => setHeadMenu(null)} />
+          )}
           {showingList && (
             <>
               {/* Anywhere outside the list closes it. */}
@@ -4496,19 +5470,57 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 {(found ?? conversations)
                   .filter((conversation) => conversation.kind === 'main')
                   .map((conversation) => conversationRow(conversation))}
+                {/* With the agent off the main conversation is the offer to
+                    turn it on, kept in its place at the top. */}
+                {!available && found === null && (
+                  <div className={['agent-drawer-list-row', 'main', isOfferShown ? 'active' : ''].join(' ')}>
+                    <button type="button" className="agent-drawer-list-title" role="menuitem" onClick={showOffer}>
+                      <span className="agent-drawer-list-name">
+                        <StarIcon size={12} /> {t('agentDrawer.main')}
+                      </span>
+                      <span className="agent-drawer-list-summary muted">{t('chat.agentOff')}</span>
+                    </button>
+                  </div>
+                )}
                 {found === null && (
                   <>
+                    {available && (
+                      <button
+                        type="button"
+                        className="agent-drawer-list-row new stacked"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowingList(false)
+                          void startNew()
+                        }}
+                      >
+                        <PlusIcon size={14} />
+                        <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="agent-drawer-list-row new stacked"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowingList(false)
+                        setChatDialog('direct')
+                      }}
+                    >
+                      <PeopleIcon size={14} />
+                      <span className="agent-drawer-list-title">{t('chat.messageSomeone')}</span>
+                    </button>
                     <button
                       type="button"
                       className="agent-drawer-list-row new"
                       role="menuitem"
                       onClick={() => {
                         setShowingList(false)
-                        void startNew()
+                        setChatDialog('group')
                       }}
                     >
-                      <PlusIcon size={14} />
-                      <span className="agent-drawer-list-title">{t('agentDrawer.new')}</span>
+                      <PeopleIcon size={14} />
+                      <span className="agent-drawer-list-title">{t('chat.newGroup')}</span>
                     </button>
                   </>
                 )}
@@ -4569,7 +5581,25 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
               }
             }}
           >
-            {lines.length === 0 && (
+            {isOfferShown && (
+              <div className="agent-drawer-offer">
+                <p className="muted agent-drawer-empty">{t('agentConversations.unavailable')}</p>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => {
+                    leaving()
+                    navigate('/settings/agent')
+                  }}
+                >
+                  {t('agentConversations.turnOnAction')}
+                </button>
+              </div>
+            )}
+            {!isOfferShown && isInChat && lines.length === 0 && (
+              <p className="muted agent-drawer-empty">{t('chat.empty')}</p>
+            )}
+            {!isOfferShown && !isInChat && lines.length === 0 && (
               <>
                 <p className="muted agent-drawer-empty">{t('agentDrawer.empty')}</p>
                 {draft.trim() === '' ? (
@@ -4616,7 +5646,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     {dayLabel(at, t('agentDrawer.today'), t('agentDrawer.yesterday'))}
                   </div>
                 ) : null
-              let drawn = drawLine(line)
+              let drawn = drawLine(line, lines[index - 1])
               // A coding session's question, as the agent said it, takes
               // its options under it while it still waits. Which question
               // is named by the line it was written under, which is kept
@@ -4675,6 +5705,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 ))}
               </div>
             ) : null}
+            {isInChat ? <TypingLine names={typingNames} agentNames={thinkingNames} /> : null}
             {running &&
               !(
                 lines[lines.length - 1]?.kind === 'assistant' &&
@@ -4729,7 +5760,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   title={
                     replying.quotedRole === 'user'
                       ? t('agentDrawer.replyingToYourself')
-                      : t('agentDrawer.replyingTo', { name: agentName.trim() || t('agent.title') })
+                      : t('agentDrawer.replyingTo', {
+                          name: isInChat
+                            ? (
+                                lines.find(
+                                  (line) => line.kind === 'chat' && line.messageId === replying.agentMessageId,
+                                ) as ChatLine | undefined
+                              )?.authorName || t('chat.someone')
+                            : agentName.trim() || t('agent.title'),
+                        })
                   }
                   onRemove={() =>
                     setReferences((previous) => previous.filter((reference) => !isReplyReference(reference)))
@@ -4786,7 +5825,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           ) : null}
           {/* Voice mode: the box gives way to what is being heard, until the
               person ends it; the conversation above stays where it is. */}
-          {voiceState !== 'off' ? (
+          {isOfferShown ? null : voiceState !== 'off' ? (
             <div className="agent-drawer-voice-mode" role="group" aria-label={t('agentDrawer.voiceMode')}>
               {/* While an answer is read aloud the meter cuts it short at a
                   tap: what a voice cannot do where the phone hears itself. */}
@@ -4884,13 +5923,27 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   <PaperclipIcon size={16} />
                 </button>
               </Tooltip>
+              {mention && mentionAgents.length > 0 && (
+                <MentionList
+                  agents={mentionAgents}
+                  activeIndex={Math.min(mentionIndex, mentionAgents.length - 1)}
+                  onChoose={chooseMention}
+                  onHover={setMentionIndex}
+                />
+              )}
               <textarea
                 ref={input}
                 rows={1}
                 value={draft}
-                placeholder={uploading ? t('agentDrawer.uploading') : askPlaceholder}
-                aria-label={askPlaceholder}
-                onChange={(event) => setDraft(event.target.value)}
+                placeholder={uploading ? t('agentDrawer.uploading') : isInChat ? chatPlaceholder : askPlaceholder}
+                aria-label={isInChat ? chatPlaceholder : askPlaceholder}
+                onChange={(event) => {
+                  setDraft(event.target.value)
+                  tellTyping(event.target.value)
+                  watchMention(event.target.value, event.target.selectionStart)
+                }}
+                onClick={(event) => watchMention(event.currentTarget.value, event.currentTarget.selectionStart)}
+                onBlur={() => setMention(null)}
                 onPaste={(event) => {
                   const files = Array.from(event.clipboardData.files ?? [])
                   if (files.length > 0) {
@@ -4902,6 +5955,26 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   // Enter while an input method is composing picks a
                   // character, not a message to send.
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                  // While an @ is offering agents, the arrows pick one, Enter
+                  // and Tab choose it and Escape puts the offer away.
+                  if (mention && mentionAgents.length > 0) {
+                    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                      event.preventDefault()
+                      const step = event.key === 'ArrowDown' ? 1 : -1
+                      setMentionIndex((mentionIndex + step + mentionAgents.length) % mentionAgents.length)
+                      return
+                    }
+                    if (event.key === 'Enter' || event.key === 'Tab') {
+                      event.preventDefault()
+                      chooseMention(mentionAgents[Math.min(mentionIndex, mentionAgents.length - 1)])
+                      return
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setMention(null)
+                      return
+                    }
+                  }
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
                     void send()
@@ -4920,7 +5993,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                   </button>
                 </Tooltip>
               )}
-              {voiceSampleRate > 0 && (
+              {voiceSampleRate > 0 && !isInChat && (
                 <Tooltip label={voiceState === 'off' ? t('agentDrawer.voiceStart') : t('agentDrawer.voiceStop')}>
                   <button
                     type="button"
@@ -4959,6 +6032,59 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           destructive
           onClose={() => setDeleting(null)}
           onConfirm={() => void remove(deleting)}
+        />
+      ) : null}
+      {chatDialog === 'direct' || chatDialog === 'group' ? (
+        <ChatPeopleDialog
+          purpose={chatDialog}
+          onClose={() => setChatDialog(null)}
+          onDone={(opened) => void (opened ? openedChat(opened) : setChatDialog(null))}
+        />
+      ) : null}
+      {chatDialog === 'add' && chat ? (
+        <ChatPeopleDialog
+          purpose="add"
+          conversationId={conversationId}
+          leftOut={chat.members.filter((member) => !member.isRemoved).map((member) => member.userId)}
+          onClose={() => setChatDialog(null)}
+          onDone={() => {
+            setChatDialog(null)
+            void readConversation(conversationId).catch(() => undefined)
+          }}
+        />
+      ) : null}
+      {chatDialog === 'members' && chat ? (
+        <ChatMembersDialog
+          chat={chat}
+          conversationId={conversationId}
+          ownUserId={ownUserId}
+          title={title}
+          onClose={() => setChatDialog(null)}
+          onAdd={() => setChatDialog('add')}
+          onChanged={() => void readConversation(conversationId).catch(() => undefined)}
+        />
+      ) : null}
+      {chatDialog === 'rename' && chat ? (
+        <RenameChatDialog title={title} onClose={() => setChatDialog(null)} onRename={renameChat} />
+      ) : null}
+      {chatDialog === 'leave' && chat ? (
+        <ConfirmDialog
+          title={t('chat.leaveTitle', { title })}
+          body={t('chat.leaveBody')}
+          confirmLabel={t('chat.leave')}
+          destructive
+          onClose={() => setChatDialog(null)}
+          onConfirm={() => void leaveChat()}
+        />
+      ) : null}
+      {deletingMessage ? (
+        <ConfirmDialog
+          title={t('chat.deleteTitle')}
+          body={t('chat.deleteBody')}
+          confirmLabel={t('common.delete')}
+          destructive
+          onClose={() => setDeletingMessage(null)}
+          onConfirm={() => void deleteMessage(deletingMessage)}
         />
       ) : null}
     </>

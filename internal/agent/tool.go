@@ -25,6 +25,7 @@ const (
 	RiskDestructive = tools.RiskDestructive
 	RiskOutward     = tools.RiskOutward
 	RiskGranting    = tools.RiskGranting
+	RiskMoney       = tools.RiskMoney
 
 	FamilyMailbox  = tools.FamilyMailbox
 	FamilyDomains  = tools.FamilyDomains

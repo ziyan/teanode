@@ -82,6 +82,11 @@ type Database interface {
 	NotifyAgentEvent(payload string) error
 	ListenAgentEvents(ctx context.Context) (<-chan string, error)
 
+	// NotifyChatEvent and ListenChatEvents are the same for what happens in a
+	// chat, which exists whether or not the server runs an agent.
+	NotifyChatEvent(payload string) error
+	ListenChatEvents(ctx context.Context) (<-chan string, error)
+
 	// NotifyAgentCommand and ListenAgentCommands are the same for a word
 	// to a turn — stop, an answer, a decision on a card — from an instance
 	// that is not running it.
@@ -154,6 +159,11 @@ type Transaction interface {
 	RoleOperation
 	GroupOperation
 	CircleOperation
+	CalendarShareOperation
+	PageShareOperation
+	SkillShareOperation
+	ChatOperation
+	ChatAgentOperation
 	AuditOperation
 	SyncOperation
 	MailboxOperation

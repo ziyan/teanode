@@ -9,6 +9,7 @@ import (
 	"github.com/ziyan/teanode/internal/channel"
 	"github.com/ziyan/teanode/internal/channel/discord"
 	"github.com/ziyan/teanode/internal/channel/telegram"
+	"github.com/ziyan/teanode/internal/chat"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/llm"
@@ -38,6 +39,20 @@ func openAgent(configuration *config.Configuration) (*llm.Registry, error) {
 	return registry, nil
 }
 
+// openChatHub starts what carries a chat to its members. Always, unlike the
+// agent: two people in a circle can write to each other on a server with no
+// language model, and need the same live feed, read marks and phone
+// notifications.
+func (self *server) openChatHub() {
+	self.chatHub = chat.New(&chat.Settings{
+		Database:      self.database,
+		Configuration: self.store.Current,
+		Instance:      self.instance,
+	})
+	self.chatHub.Start()
+	self.onClose(self.chatHub.Stop)
+}
+
 // openAgentWorker builds the worker when the agent is on and tells the
 // exchange about it. With the agent off nothing is built.
 func (self *server) openAgentWorker(configuration *config.Configuration) error {
@@ -63,6 +78,11 @@ func (self *server) openAgentWorker(configuration *config.Configuration) error {
 		},
 		UpdateConfiguration: self.store.Update,
 		Instance:            self.instance,
+		// What the agent shares with the chat hub: who is looking at the
+		// dashboard or the app, and the phones' sender.
+		Presence:   self.chatHub.Presence(),
+		Phones:     self.chatHub.Phones(),
+		ChatEvents: self.chatHub,
 	})
 	if self.exchange != nil {
 		self.exchange.SetAgentHook(self.agentWorker)
