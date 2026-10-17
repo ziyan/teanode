@@ -17,6 +17,7 @@ type Services struct {
 	Calendar          HostedService `yaml:"calendar" json:"calendar"`
 	Reminders         HostedService `yaml:"reminders" json:"reminders"`
 	Contacts          HostedService `yaml:"contacts" json:"contacts"`
+	Photos            HostedService `yaml:"photos" json:"photos"`
 	HasCompletedSetup bool          `yaml:"hasCompletedSetup,omitempty" json:"hasCompletedSetup"`
 }
 
@@ -33,6 +34,11 @@ func (self Services) IsEnabled(service models.Service) bool {
 		return self.Reminders.Enabled()
 	case models.ServiceContacts:
 		return self.Contacts.Enabled()
+	case models.ServicePhotos:
+		// Photos came after the switches, so no configuration written before
+		// them expects a library: an omitted switch is off, and an operator
+		// turns it on in setup or on the services page.
+		return self.Photos.IsEnabled != nil && *self.Photos.IsEnabled
 	default:
 		return false
 	}
@@ -41,7 +47,7 @@ func (self Services) IsEnabled(service models.Service) bool {
 // AssistantServices explicitly disables hosted services for a new assistant installation.
 func AssistantServices() Services {
 	return Services{MailRouting: HostedService{IsEnabled: new(false)}, Mailboxes: HostedService{IsEnabled: new(false)},
-		Calendar: HostedService{IsEnabled: new(false)}, Reminders: HostedService{IsEnabled: new(false)}, Contacts: HostedService{IsEnabled: new(false)}}
+		Calendar: HostedService{IsEnabled: new(false)}, Reminders: HostedService{IsEnabled: new(false)}, Contacts: HostedService{IsEnabled: new(false)}, Photos: HostedService{IsEnabled: new(false)}}
 }
 
 // Within limits selected services to those constructed by this process.
@@ -51,6 +57,7 @@ func (self Services) Within(running Services) Services {
 	self.Calendar.IsEnabled = new(self.IsEnabled(models.ServiceCalendar) && running.IsEnabled(models.ServiceCalendar))
 	self.Reminders.IsEnabled = new(self.IsEnabled(models.ServiceReminders) && running.IsEnabled(models.ServiceReminders))
 	self.Contacts.IsEnabled = new(self.IsEnabled(models.ServiceContacts) && running.IsEnabled(models.ServiceContacts))
+	self.Photos.IsEnabled = new(self.IsEnabled(models.ServicePhotos) && running.IsEnabled(models.ServicePhotos))
 	return self
 }
 

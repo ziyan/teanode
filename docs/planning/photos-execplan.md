@@ -19,7 +19,8 @@ To see it working: switch Photos on in the server's services, drop a few picture
 - [x] (2026-10-16 22:30 EDT) Research: what exists, the iPhone's background upload API, the resumable upload draft, faces without a hosted service. Written into Context and Orientation and the Decision Log.
 - [x] (2026-10-16 22:40 EDT) Decision records 20261016-photos-are-rows-and-their-bytes-are-blobs, -uploads-follow-the-resumable-upload-draft, -the-iphone-backs-up-and-teanode-keeps, -a-photo-is-described-when-somebody-looks-at-it, -faces-are-found-on-the-server-and-named-from-contacts, -an-album-is-shared-at-a-level.
 - [x] (2026-10-16 23:20 EDT) Milestone 0: prototypes. The face reader works (0.2 s a picture, 42 MB of libraries and 39 MB of models when it reads raw pixels); ffmpeg cannot assemble tiled HEIC, libheif's `heif-dec` can; a 104 passes the middleware chain. See Surprises & Discoveries.
-- [ ] Milestone 1: the library on the server (tables, upload endpoint, processing, previews, serving, cleanup, operations).
+- [x] (2026-10-16 23:40 EDT) Milestone 1, part one: service switch (off until chosen), `photos:use`, the `photos` settings, migration 0220, models and queries, the resumable upload endpoint with device password sign-in, S3 multipart, serving, cleanup, operations including `offset` and `CountPhotos`.
+- [ ] Milestone 1, part two: processing (metadata, places, previews).
 - [ ] Milestone 2: the library on every surface (dashboard, command line, agent tool, iPhone app), with the service switch and setup.
 - [ ] Milestone 3: albums.
 - [ ] Milestone 4: descriptions and search.
@@ -80,6 +81,12 @@ To see it working: switch Photos on in the server's services, drop a few picture
   Date/Author: 2026-10-16, Claude.
 - Decision: the face reader reads a binary PPM (raw RGB pixels with a short text header), not an encoded picture.
   Rationale: it keeps OpenCV's image decoders and their 166 MB of libraries out of the image; Go already decodes the JPEG preview.
+  Date/Author: 2026-10-16, Claude.
+- Decision: the dashboard's timeline pages (200 photos a page, `Pager`, the page in the address); the iPhone's grid loads more as the person scrolls.
+  Rationale: `docs/coding/frontend-design.md` says a list longer than a page pages rather than loading more, so a reload and Back keep the place; a phone list that loads as it scrolls is the platform's own behavior, and the app's other long lists do it.
+  Date/Author: 2026-10-16, Claude.
+- Decision: an omitted `services.photos` switch means off, unlike the services that came before the switches.
+  Rationale: the other services' omitted switches mean on so an upgrade keeps what a server already did; no server had a photo library before, so turning one on by upgrading would hand every member a library and its disk use nobody chose. Setup and the services page turn it on.
   Date/Author: 2026-10-16, Claude.
 - Decision: faces are on by default for every person, who can switch them off; switching off deletes their faces and groups.
   Rationale: the maintainer wants faces; a person who does not can remove them entirely.
@@ -257,7 +264,7 @@ At the end of this milestone a person can switch Photos on during setup, upload 
 
 **Dashboard.** A Photos item in the sidebar (shown when `isPhotosEnabled` and the person has `photos:use`, placed with Calendar and Contacts; icon from the existing icon set), and `web/src/pages/photos/` with:
 
-- `library.tsx`: the timeline, newest first, grouped under day headings ("Saturday, 12 July 2025", in the person's locale and time zone), a grid of square small previews filling the width (about 120 to 180 pixels a cell), loading pages as the person scrolls (render only rows near the viewport; the library may hold tens of thousands). Videos show their length on the cell, Live Photos a small mark, favorites a heart. Tabs or a segmented control: Library, Favorites, Albums, People, Trash (Albums and People appear in their milestones). A search field.
+- `library.tsx`: the timeline, newest first, grouped under day headings ("Saturday, July 12, 2025", in the person's locale and time zone), a grid of square small previews filling the width (about 120 to 180 pixels a cell), 200 photos a page with `Pager` in the foot and the page in the address. Videos show their length on the cell, Live Photos a small mark, favorites a heart. Tabs or a segmented control: Library, Favorites, Albums, People, Trash (Albums and People appear in their milestones). A search field.
 - `viewer.tsx`: an overlay over the grid with the large preview (the original when zoomed), left and right to move, Escape to close, video and Live Photo playback, and an information side panel: date and time, place, camera, size, file name, albums, people, description (Milestone 4); buttons for favorite, download original, add to album, trash.
 - Uploading: a button and dropping files onto the page. Each file is hashed in the browser (SHA-256 with `crypto.subtle`, in pieces so a large video does not need to fit in memory), then sent through the upload endpoint in 8 MiB `PATCH`es after a `POST` with `Upload-Complete: ?0`, so a cut connection resumes. A tray shows each file's progress and failures as toasts (the dashboard reports errors and success with toasts, never inline text in a card).
 - Selection: click a cell's checkbox, or press and drag, to select; a bar offers favorite, add to album, download, trash. Trash view offers restore, delete forever and empty trash, with a confirmation.

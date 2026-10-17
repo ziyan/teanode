@@ -38,6 +38,7 @@ import (
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/recording"
 	"github.com/ziyan/teanode/internal/scheduling"
 	"github.com/ziyan/teanode/internal/spamfilter"
@@ -771,6 +772,30 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 			cleanup.Stop()
 			cleanupGroup.Wait()
 		})
+
+		// The photo library's upkeep runs only where the library is offered.
+		// Which services run is fixed at start, so this is decided once.
+		if configuration.Services.IsEnabled(models.ServicePhotos) {
+			photos := photo.New(self.database, files, self.store.Current)
+			var photoGroup sync.WaitGroup
+			// Deleting what the library no longer needs: parts of uploads
+			// that went nowhere, photos past the trash, unreferenced files.
+			photoCleanup := periodic.New(context.Background(), &photoGroup, func(ctx context.Context) error {
+				return photos.Cleanup(ctx, 100)
+			}, &periodic.Settings{Interval: time.Minute, Name: "photo:cleanup"})
+			// Previews and metadata for photos that arrived. Four at a time
+			// every fifteen seconds; instances share the waiting photos.
+			photoProcess := periodic.New(context.Background(), &photoGroup, func(ctx context.Context) error {
+				return photos.Process(ctx, 4)
+			}, &periodic.Settings{Interval: 15 * time.Second, Name: "photo:process"})
+			photoCleanup.Start()
+			photoProcess.Start()
+			self.onClose(func() {
+				photoCleanup.Stop()
+				photoProcess.Stop()
+				photoGroup.Wait()
+			})
+		}
 	}
 	return nil
 }
@@ -1113,7 +1138,7 @@ const authLimiterAddresses = 8192
 // worth an hour of somebody's afternoon.
 func startupOnly(configuration *config.Configuration) map[string]any {
 	return map[string]any{
-		"services": []bool{configuration.Services.IsEnabled(models.ServiceMailRouting), configuration.Services.IsEnabled(models.ServiceMailboxes), configuration.Services.IsEnabled(models.ServiceCalendar), configuration.Services.IsEnabled(models.ServiceReminders), configuration.Services.IsEnabled(models.ServiceContacts)},
+		"services": []bool{configuration.Services.IsEnabled(models.ServiceMailRouting), configuration.Services.IsEnabled(models.ServiceMailboxes), configuration.Services.IsEnabled(models.ServiceCalendar), configuration.Services.IsEnabled(models.ServiceReminders), configuration.Services.IsEnabled(models.ServiceContacts), configuration.Services.IsEnabled(models.ServicePhotos)},
 		"listen":   configuration.Listen,
 		// The model registry and the agent worker are built once from
 		// these; a provider, a key or a model changed on the settings page

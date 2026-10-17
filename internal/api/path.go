@@ -45,6 +45,20 @@ const (
 	// for words as they are spoken.
 	PathRecordingLive = Prefix + "/recordings/{recordingId}/live"
 
+	// PathPhotoUploads takes a photo or a video for the library over the
+	// resumable upload protocol, and PathPhotoUpload is one upload in
+	// progress. Their bytes go up in parts a client can resume. A phone's
+	// background upload signs in with a device password rather than a
+	// session, so these are let through the middleware (see
+	// PublicPrefixes) and the handler checks who is calling.
+	PathPhotoUploads = Prefix + "/photos/uploads"
+	PathPhotoUpload  = Prefix + "/photos/uploads/{photoUploadId}"
+
+	// PathPhotoPreview serves a smaller copy of a photo for showing it, and
+	// PathPhotoFile one of the files the photo is made of, to download.
+	PathPhotoPreview = Prefix + "/photos/{photoId}/previews/{photoPreviewSize}"
+	PathPhotoFile    = Prefix + "/photos/{photoId}/files/{photoFileRole}"
+
 	PathAgentAttachments = Prefix + "/agent/attachments"
 	PathAgentAttachment  = Prefix + "/agent/attachments/{attachmentId}"
 
@@ -213,6 +227,21 @@ func AgentDocumentFilePath(documentId string) string {
 	return Prefix + "/agent/documents/" + url.PathEscape(documentId) + "/file"
 }
 
+// PhotoUploadPath is PathPhotoUpload with its parameter filled in.
+func PhotoUploadPath(photoUploadId string) string {
+	return PathPhotoUploads + "/" + url.PathEscape(photoUploadId)
+}
+
+// PhotoPreviewPath is PathPhotoPreview with its parameters filled in.
+func PhotoPreviewPath(photoId, photoPreviewSize string) string {
+	return Prefix + "/photos/" + url.PathEscape(photoId) + "/previews/" + url.PathEscape(photoPreviewSize)
+}
+
+// PhotoFilePath is PathPhotoFile with its parameters filled in.
+func PhotoFilePath(photoId, photoFileRole string) string {
+	return Prefix + "/photos/" + url.PathEscape(photoId) + "/files/" + url.PathEscape(photoFileRole)
+}
+
 // MailAttachmentPath is PathMailAttachment with its parameters filled in.
 func MailAttachmentPath(mailId string, index int) string {
 	return fmt.Sprintf("%s/mail/%s/attachment/%d", Prefix, mailId, index)
@@ -250,6 +279,10 @@ const ()
 func PublicPaths() []string {
 	return []string{
 		PathGraphQL, PathAgentTab, PathAgentComputer, PathAgentVoice,
+		// A phone uploads photos with a device password in an HTTP Basic
+		// header, which the authenticator does not know; the handler checks
+		// it, and refuses a caller who has neither that nor a session.
+		PathPhotoUploads,
 		// A program reads these precisely because it has no credential
 		// yet; refusing them would refuse the answer to the refusal.
 		PathOAuthProtectedResource, PathOAuthProtectedResourceMCP, PathOAuthAuthorizationServer,
@@ -296,5 +329,8 @@ func PublicPrefixes() []string {
 	// A setup profile is downloaded by Safari or Settings on the device
 	// that installs it, which has no session: its address is the
 	// credential, and it works once.
-	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/", Prefix + "/mailbox/profile/"}
+	//
+	// An upload in progress is one of the photo upload paths, for the same
+	// reason as the collection above.
+	return []string{Prefix + "/send/", Prefix + "/sso/", PathAgentAttachments + "/", Prefix + "/mailbox/profile/", PathPhotoUploads + "/"}
 }

@@ -11,6 +11,7 @@ package apigraph
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -23,6 +24,7 @@ import (
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/mcpserve"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/ceremony"
@@ -71,6 +73,11 @@ type graph struct {
 	// caller reads on with result_more; see agent_mcp.go. Nil in a test that
 	// built the graph by hand, where each request holds its own.
 	mcpResults *mcpserve.ResultStore
+
+	// photoStoreValue is the photo library's store, made by photoStore the
+	// first time a photo is touched; nil when the blob store cannot stream.
+	photoStoreOnce  sync.Once
+	photoStoreValue *photo.Store
 }
 
 // New builds the GraphQL component, generating the schema by reflection over
@@ -130,6 +137,12 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathRecordingMedia).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.recordingMediaView)
 	router.Path(api.PathRecordingPlayback).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.recordingPlaybackView)
 	router.Path(api.PathRecordingLive).Methods(http.MethodGet).HandlerFunc(self.recordingLiveView)
+	// Photos and videos for the library go up over the resumable upload
+	// protocol, and come back as previews and files for their owner.
+	router.Path(api.PathPhotoUploads).Methods(http.MethodOptions, http.MethodPost).HandlerFunc(self.photoUploadCollectionView)
+	router.Path(api.PathPhotoUpload).Methods(http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete).HandlerFunc(self.photoUploadView)
+	router.Path(api.PathPhotoPreview).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPreviewView)
+	router.Path(api.PathPhotoFile).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoFileView)
 	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)
 	router.Path(api.PathAgentAttachment).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.agentAttachmentView)
 	// And the file behind a document a knowledge source indexed, so that

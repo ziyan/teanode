@@ -64,6 +64,9 @@ var authorizing = map[string]bool{
 	// named within a calendar and the calendar is checked first.
 	"requireCalendarPerson": true,
 	"requireOwnCalendar":    true,
+	// The photo service is on, requirePermission(photos:use), and the
+	// caller's account. Every photo is read through the owner's id.
+	"requirePhotosPerson": true,
 	// requireItems(mail:read), plus the invitation the message carried --
 	// which is nothing at all unless the caller may read that mailbox.
 	"invitationFor": true,

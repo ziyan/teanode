@@ -13,6 +13,7 @@ type SyncCredential struct {
 	HasCalendarAccess  bool       `json:"hasCalendarAccess"`
 	HasRemindersAccess bool       `json:"hasRemindersAccess"`
 	HasContactsAccess  bool       `json:"hasContactsAccess"`
+	HasPhotosAccess    bool       `json:"hasPhotosAccess"`
 	LastUsedAt         *time.Time `json:"lastUsedAt,omitempty"`
 }
 
@@ -25,6 +26,8 @@ func (self *SyncCredential) Allows(service Service) bool {
 		return self.HasRemindersAccess
 	case ServiceContacts:
 		return self.HasContactsAccess
+	case ServicePhotos:
+		return self.HasPhotosAccess
 	default:
 		return false
 	}

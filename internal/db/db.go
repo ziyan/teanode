@@ -173,6 +173,8 @@ type Transaction interface {
 	RecordingPreviewOperation
 	RecordingOperation
 	RecordingMetadataOperation
+	PhotoOperation
+	PhotoUploadOperation
 	RecordingRetryOperation
 	ReplyOperation
 	EmbeddingOperation
