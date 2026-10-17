@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/urfave/cli/v3"
@@ -14,6 +16,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	toolcomputer "github.com/ziyan/teanode/internal/agent/tools/computer"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
+	"github.com/ziyan/teanode/internal/client"
 )
 
 // Everything that can be done with herdr sessions is on every surface: the
@@ -143,5 +146,50 @@ func TestARelativeDirectoryIsOpenedWhereTheCommandRuns(t *testing.T) {
 		if directory := herdrDirectoryOf(typed); directory != want {
 			t.Errorf("%q: %q, want %q", typed, directory, want)
 		}
+	}
+}
+
+func TestListGroupsSessionsByWorkspaceAndMarksTheTabOnScreen(t *testing.T) {
+	t.Parallel()
+	var output bytes.Buffer
+	command := &cli.Command{Writer: &output}
+	printHerdrSessions(command, []*client.AgentHerdrSession{
+		{Computer: "laptop", PaneID: "w2:p1", PaneName: "docs site", WorkspaceID: "w2", WorkspaceLabel: "docs", WorkspaceNumber: 2, TabID: "w2:t1", TabLabel: "writing", TabNumber: 1, HerdrSessionState: "idle", CodingAgentKind: "codex"},
+		{Computer: "laptop", PaneID: "w1:p2", PaneName: "website api", WorkspaceID: "w1", WorkspaceLabel: "website", WorkspaceNumber: 1, TabID: "w1:t2", TabLabel: "api", TabNumber: 2, HerdrSessionState: "working", CodingAgentKind: "claude"},
+		{Computer: "laptop", PaneID: "w1:p1", PaneName: "website ui", WorkspaceID: "w1", WorkspaceLabel: "website", WorkspaceNumber: 1, TabID: "w1:t1", TabLabel: "ui", TabNumber: 1, IsTabFocused: true, HerdrSessionState: "idle", CodingAgentKind: "claude"},
+	})
+	text := output.String()
+	if strings.Count(text, "website on laptop") != 1 || strings.Count(text, "docs on laptop") != 1 {
+		t.Errorf("one line for each workspace: %s", text)
+	}
+	website, docs := strings.Index(text, "website on laptop"), strings.Index(text, "docs on laptop")
+	ui, api := strings.Index(text, "ui (on screen)"), strings.Index(text, "api ")
+	if !(website < ui && ui < api && api < docs) {
+		t.Errorf("workspaces and tabs are not in number order: %s", text)
+	}
+	if strings.Count(text, "on screen") != 1 {
+		t.Errorf("only the focused tab is marked: %s", text)
+	}
+}
+
+func TestOpenBesideAPaneTakesBothArgumentsAsOptional(t *testing.T) {
+	t.Parallel()
+	var open *cli.Command
+	for _, subcommand := range NewComputerCommand().Commands {
+		if subcommand.Name == "herdr" {
+			for _, each := range subcommand.Commands {
+				if each.Name == "open" {
+					open = each
+				}
+			}
+		}
+	}
+	// Without a pane the coding agent and the directory are both needed.
+	err := open.Run(context.Background(), []string{"open", "claude"})
+	if err == nil || !strings.Contains(err.Error(), "which coding agent, and where?") {
+		t.Errorf("open without a pane or a directory: %v", err)
+	}
+	if !slices.ContainsFunc(open.Flags, func(flag cli.Flag) bool { return slices.Contains(flag.Names(), "pane") }) {
+		t.Error("open has no --pane")
 	}
 }

@@ -48,6 +48,7 @@ var HerdrActions = []HerdrAction{
 	{ToolAction: "answer", Operation: "AnswerAgentHerdrQuestion", Command: "answer"},
 	{ToolAction: "watch", Operation: "WatchAgentHerdrSession", Command: "watch"},
 	{ToolAction: "open", Operation: "OpenAgentHerdrSession", Command: "open"},
+	{ToolAction: "focus", Operation: "FocusAgentHerdrSession", Command: "focus"},
 	{ToolAction: "close", Operation: "CloseAgentHerdrSession", Command: "close"},
 	{ToolAction: "setup", Operation: "SetUpAgentHerdrHooks", Command: "setup"},
 }
@@ -75,11 +76,11 @@ func init() {
 				// asks, or an answer to a question that changed, is refused
 				// whoever calls.
 				Annotations: tools.LocalReadOnly(),
-				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, and files (attachment ids of this conversation: a picture, a document) are written on that computer and named after the text so the session opens them; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
+				Description: "The person's own Claude Code and Codex sessions, in herdr's panes on their attached computers: work in them beside the person. list is the sessions on every computer (or the one named), those asking first, then those working, a page at a time with totalCount and nextOffset, each with the state it is in (idle, working, asking, unknown) and the question it waits on; read is a session's last turns from its history; screen is what its pane shows now, or its last lines; send types text into the pane and presses enter, in front of the person, and files (attachment ids of this conversation: a picture, a document) are written on that computer and named after the text so the session opens them; a session at work reads it as a message in its turn, and one that asks a question refuses it until the question is answered; wait waits for it to stop working; answer answers the question it waits on with the options the person chose, by number and label, or with free_text, and only while question_fingerprint is still the question on screen; watch has you woken in this conversation when it next finishes its turn; open starts a new Claude Code or Codex session in a directory, in a herdr pane of its own (a new tab of the workspace named after the directory, or a new workspace), or, given pane, beside that pane (a new tab in that pane's workspace, in its directory with its coding agent unless directory and coding_agent say otherwise); focus brings the session's tab forward in herdr on that computer, so whoever sits there sees it, only when the person asks; and close ends one and its pane, refused while it works; setup puts TeaNode's reporting hooks into Claude Code on that computer (is_removal takes them out). A pane is named by computer and pane together; call it by its paneName when you talk to the person, since its id means nothing to them.",
 				Parameters: tools.Object(map[string]any{
 					"action":                  tools.EnumProperty("what to do", herdrToolActions()...),
 					"computer":                tools.StringProperty("which computer, by name; list covers every one, and the others need it when more than one runs herdr"),
-					"pane":                    tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it"),
+					"pane":                    tools.StringProperty("the pane, by its paneName as list gives it (workspace, tab and agent) or its paneId; every action but list and setup needs it; open takes it to open beside that pane"),
 					"limit":                   tools.IntegerProperty("list: how many sessions a page gives, 20 by default, 50 at most"),
 					"offset":                  tools.IntegerProperty("list: how many to skip, for the next page (the nextOffset the page before gave)"),
 					"turn_count":              tools.IntegerProperty("read: how many of the last turns, 10 by default, 100 at most"),
@@ -143,7 +144,12 @@ func init() {
 					case "watch":
 						return "Be told when the coding session in " + where + " finishes"
 					case "open":
+						if strings.TrimSpace(call.Pane) != "" {
+							return "Open a new coding session beside " + where
+						}
 						return fmt.Sprintf("Start %s in %s on %s", call.CodingAgent, call.Directory, call.Computer)
+					case "focus":
+						return "Show " + where
 					case "close":
 						return "Close the coding session in " + where
 					case "setup":
@@ -297,7 +303,13 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		asked.Directory, asked.CodingAgentKind, asked.AgentName = arguments.Directory, arguments.CodingAgent, arguments.AgentName
 		asked.ShouldSkipPermissions = arguments.ShouldSkipPermissions
 		wait = 90 * time.Second
-		note = "opened " + arguments.CodingAgent + " in " + arguments.Directory
+		if asked.PaneID != "" {
+			note = "opened a new session beside " + asked.PaneID
+		} else {
+			note = "opened " + arguments.CodingAgent + " in " + arguments.Directory
+		}
+	case "focus":
+		note = "showed " + asked.PaneID + " on the computer"
 	case "close":
 		note = "closed " + asked.PaneID
 	case "setup":
@@ -328,6 +340,9 @@ type herdrListedSession struct {
 	Computer          string                        `json:"computer"`
 	PaneID            string                        `json:"paneId"`
 	PaneName          string                        `json:"paneName"`
+	WorkspaceLabel    string                        `json:"workspaceLabel,omitempty"`
+	TabLabel          string                        `json:"tabLabel,omitempty"`
+	IsTabFocused      bool                          `json:"isTabFocused,omitempty"`
 	CodingAgentKind   string                        `json:"codingAgentKind"`
 	HerdrSessionState string                        `json:"herdrSessionState"`
 	PaneTitle         string                        `json:"paneTitle,omitempty"`
@@ -382,6 +397,7 @@ func listHerdr(ctx context.Context, run tools.Run, name string, limit, offset in
 		for _, session := range listed {
 			sessions = append(sessions, herdrListedSession{
 				Computer: one.Name(), PaneID: session.PaneID, PaneName: session.PaneName,
+				WorkspaceLabel: session.WorkspaceLabel, TabLabel: session.TabLabel, IsTabFocused: session.IsTabFocused,
 				CodingAgentKind: session.CodingAgentKind, HerdrSessionState: session.HerdrSessionState,
 				PaneTitle: session.PaneTitle, WorkingDirectory: session.WorkingDirectory,
 				IsWatched: session.IsWatched, Question: session.Question,

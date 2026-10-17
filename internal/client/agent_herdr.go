@@ -13,6 +13,13 @@ type AgentHerdrSession struct {
 	Computer          string              `json:"computer"`
 	PaneID            string              `json:"paneId"`
 	PaneName          string              `json:"paneName"`
+	WorkspaceID       string              `json:"workspaceId"`
+	WorkspaceLabel    string              `json:"workspaceLabel"`
+	WorkspaceNumber   int                 `json:"workspaceNumber"`
+	TabID             string              `json:"tabId"`
+	TabLabel          string              `json:"tabLabel"`
+	TabNumber         int                 `json:"tabNumber"`
+	IsTabFocused      bool                `json:"isTabFocused"`
 	CodingAgentKind   string              `json:"codingAgentKind"`
 	CodingSessionID   string              `json:"codingSessionId"`
 	HerdrSessionState string              `json:"herdrSessionState"`
@@ -94,7 +101,7 @@ type AgentHerdrSetup struct {
 
 // HerdrSessionFields are a session's fields, with its question, for every
 // document that answers with one; the dashboard asks for the same.
-const HerdrSessionFields = `computer paneId paneName codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
+const HerdrSessionFields = `computer paneId paneName workspaceId workspaceLabel workspaceNumber tabId tabLabel tabNumber isTabFocused codingAgentKind codingSessionId herdrSessionState herdrAgentStatus paneTitle workingDirectory transcriptPath isWatched
 	question { questionFingerprint herdrQuestionKind questionText isMultipleChoice isFromTranscript options { optionNumber optionLabel optionDescription herdrOptionKind } }`
 
 // The documents the command line sends, exported so a test can check them
@@ -129,8 +136,11 @@ const (
 	DocumentWatchAgentHerdrSession = `mutation ($computer: String, $paneId: String!, $conversationId: String) {
 		WatchAgentHerdrSession(computer: $computer, paneId: $paneId, conversationId: $conversationId) { ` + HerdrSessionFields + ` }
 	}`
-	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String!, $codingAgentKind: String!, $agentName: String, $shouldSkipPermissions: Boolean) {
-		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions) { ` + HerdrSessionFields + ` }
+	DocumentOpenAgentHerdrSession = `mutation ($computer: String, $directory: String, $codingAgentKind: String, $agentName: String, $shouldSkipPermissions: Boolean, $paneId: String) {
+		OpenAgentHerdrSession(computer: $computer, directory: $directory, codingAgentKind: $codingAgentKind, agentName: $agentName, shouldSkipPermissions: $shouldSkipPermissions, paneId: $paneId) { ` + HerdrSessionFields + ` }
+	}`
+	DocumentFocusAgentHerdrSession = `mutation ($computer: String, $paneId: String!) {
+		FocusAgentHerdrSession(computer: $computer, paneId: $paneId) { ` + HerdrSessionFields + ` }
 	}`
 	DocumentCloseAgentHerdrSession = `mutation ($computer: String, $paneId: String!) {
 		CloseAgentHerdrSession(computer: $computer, paneId: $paneId) { ` + HerdrSessionFields + ` }
@@ -265,12 +275,23 @@ func WatchAgentHerdrSession(ctx context.Context, connection *Client, computer, p
 
 // OpenAgentHerdrSession starts a coding agent, "claude" or "codex", in a new
 // herdr pane in a directory; agentName may be empty. shouldSkipPermissions
-// starts it without asking before it acts.
-func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string, shouldSkipPermissions bool) (*AgentHerdrSession, error) {
+// starts it without asking before it acts. Given paneId, it opens beside
+// that pane, and directory and codingAgentKind may be empty: they default
+// to that pane's.
+func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, directory, codingAgentKind, agentName string, shouldSkipPermissions bool, paneId string) (*AgentHerdrSession, error) {
 	var result struct {
 		OpenAgentHerdrSession *AgentHerdrSession `json:"OpenAgentHerdrSession"`
 	}
-	variables := herdrVariables(computer, map[string]any{"directory": directory, "codingAgentKind": codingAgentKind, "shouldSkipPermissions": shouldSkipPermissions})
+	variables := herdrVariables(computer, map[string]any{"shouldSkipPermissions": shouldSkipPermissions})
+	if directory != "" {
+		variables["directory"] = directory
+	}
+	if codingAgentKind != "" {
+		variables["codingAgentKind"] = codingAgentKind
+	}
+	if paneId != "" {
+		variables["paneId"] = paneId
+	}
 	if agentName != "" {
 		variables["agentName"] = agentName
 	}
@@ -278,6 +299,18 @@ func OpenAgentHerdrSession(ctx context.Context, connection *Client, computer, di
 		return nil, err
 	}
 	return result.OpenAgentHerdrSession, nil
+}
+
+// FocusAgentHerdrSession brings a session's tab forward in herdr on its
+// computer.
+func FocusAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string) (*AgentHerdrSession, error) {
+	var result struct {
+		FocusAgentHerdrSession *AgentHerdrSession `json:"FocusAgentHerdrSession"`
+	}
+	if err := connection.Execute(ctx, DocumentFocusAgentHerdrSession, herdrVariables(computer, map[string]any{"paneId": paneId}), &result); err != nil {
+		return nil, err
+	}
+	return result.FocusAgentHerdrSession, nil
 }
 
 // CloseAgentHerdrSession ends a session's coding agent and closes its pane.

@@ -113,7 +113,18 @@ type HerdrSession struct {
 	// agent's name, or which agent it is, when a tab holds more than one.
 	// The id says nothing to a person; this is what is shown, and either
 	// names a pane to every action.
-	PaneName          string `json:"paneName"`
+	PaneName string `json:"paneName"`
+	// The workspace and tab the pane is in, as herdr numbers and labels
+	// them; empty when herdr's lists could not be read.
+	WorkspaceID     string `json:"workspaceId"`
+	WorkspaceLabel  string `json:"workspaceLabel"`
+	WorkspaceNumber int    `json:"workspaceNumber"`
+	TabID           string `json:"tabId"`
+	TabLabel        string `json:"tabLabel"`
+	TabNumber       int    `json:"tabNumber"`
+	// IsTabFocused says herdr shows this session's tab on the computer's
+	// screen now: its tab is the active one of the focused workspace.
+	IsTabFocused      bool   `json:"isTabFocused"`
 	CodingAgentKind   string `json:"codingAgentKind"`
 	CodingSessionID   string `json:"codingSessionId"`
 	HerdrSessionState string `json:"herdrSessionState"`
@@ -469,11 +480,15 @@ func (self *Herdr) refresh(ctx context.Context) ([]*HerdrSession, error) {
 		return nil, err
 	}
 	reports := readHookReports(self.home)
-	names := self.paneNames(ctx, agents)
+	names, placements := self.paneNames(ctx, agents)
 	observed := make([]*HerdrSession, 0, len(agents))
 	for _, agent := range agents {
 		session := self.observe(ctx, agent, reports)
 		session.PaneName = names[agent.PaneID]
+		if placement := placements[agent.PaneID]; placement != nil {
+			session.WorkspaceID, session.WorkspaceLabel, session.WorkspaceNumber = placement.WorkspaceID, placement.WorkspaceLabel, placement.WorkspaceNumber
+			session.TabID, session.TabLabel, session.TabNumber, session.IsTabFocused = placement.TabID, placement.TabLabel, placement.TabNumber, placement.IsTabFocused
+		}
 		observed = append(observed, session)
 	}
 	sort.Slice(observed, func(left, right int) bool {
@@ -738,17 +753,31 @@ var herdrStartEvery = 500 * time.Millisecond
 
 var herdrAgentNames = map[string]string{CodingAgentKindClaude: "Claude Code", CodingAgentKindCodex: "Codex"}
 
+// herdrPlacement is where a pane is in herdr: its workspace and tab, with
+// the labels and numbers herdr gives them.
+type herdrPlacement struct {
+	WorkspaceID     string
+	WorkspaceLabel  string
+	WorkspaceNumber int
+	TabID           string
+	TabLabel        string
+	TabNumber       int
+	IsTabFocused    bool
+}
+
 // paneNames names each pane with a coding agent in it as the person finds
-// it in herdr. Without herdr's labels, a pane is named by its id.
-func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[string]string {
+// it in herdr, and says where each is. Without herdr's labels, a pane is
+// named by its id and has no placement.
+func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) (map[string]string, map[string]*herdrPlacement) {
 	workspaces, workspaceErr := self.client.listWorkspaces(ctx)
 	tabs, tabErr := self.client.listTabs(ctx)
 	names := map[string]string{}
+	placements := map[string]*herdrPlacement{}
 	if workspaceErr != nil || tabErr != nil {
 		for _, agent := range agents {
 			names[agent.PaneID] = agent.PaneID
 		}
-		return names
+		return names, placements
 	}
 	workspaceOf := map[string]*herdrWorkspace{}
 	for _, workspace := range workspaces {
@@ -782,6 +811,18 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 	}
 	for _, agent := range sorted {
 		workspace := workspaceOf[agent.WorkspaceID]
+		if workspace != nil {
+			placement := &herdrPlacement{
+				WorkspaceID: workspace.WorkspaceID, WorkspaceLabel: strings.TrimSpace(workspace.Label), WorkspaceNumber: workspace.Number,
+			}
+			if tab := tabOf[agent.TabID]; tab != nil {
+				placement.TabID, placement.TabLabel, placement.TabNumber = tab.TabID, strings.TrimSpace(tab.Label), tab.Number
+				// Herdr marks only the active tab of the focused workspace;
+				// an older herdr says it through the workspace instead.
+				placement.IsTabFocused = tab.IsFocused || (workspace.IsFocused && workspace.ActiveTabID == tab.TabID)
+			}
+			placements[agent.PaneID] = placement
+		}
 		if workspace == nil || strings.TrimSpace(workspace.Label) == "" {
 			names[agent.PaneID] = agent.PaneID
 			continue
@@ -820,7 +861,7 @@ func (self *Herdr) paneNames(ctx context.Context, agents []*herdrAgent) map[stri
 		}
 		names[agent.PaneID] = strings.Join(parts, " › ")
 	}
-	return names
+	return names, placements
 }
 
 // named is how a session is called in what is said about it.
@@ -861,6 +902,8 @@ func RunHerdr(ctx context.Context, herdr *Herdr, action string, arguments *Herdr
 		return herdr.open(ctx, arguments)
 	case "herdr_close":
 		return herdr.close(ctx, arguments)
+	case "herdr_focus":
+		return herdr.focus(ctx, arguments)
 	case "herdr_setup":
 		return setUpHooks(herdr.home, arguments.IsRemoval)
 	}
@@ -1112,12 +1155,33 @@ func herdrAgentNameOf(label string) string {
 // is one, a new workspace otherwise, so it is found where the person would
 // look. A coding agent that stops at a question as it starts (whether to
 // trust the folder) is open, and asking it.
+//
+// Given a pane, it opens beside that pane instead: a new tab in the pane's
+// workspace, in its directory and with its coding agent unless the
+// arguments say otherwise.
 func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrSession, error) {
 	kind := strings.ToLower(strings.TrimSpace(arguments.CodingAgentKind))
-	if kind != CodingAgentKindClaude && kind != CodingAgentKindCodex {
-		return nil, fmt.Errorf("open which coding agent? %q is not claude or codex", arguments.CodingAgentKind)
-	}
 	directory := strings.TrimSpace(arguments.Directory)
+	besideWorkspaceId := ""
+	if strings.TrimSpace(arguments.PaneID) != "" {
+		beside, err := self.session(ctx, arguments.PaneID)
+		if err != nil {
+			return nil, fmt.Errorf("open beside which pane? %w", err)
+		}
+		besideWorkspaceId = beside.WorkspaceID
+		if besideWorkspaceId == "" {
+			return nil, fmt.Errorf("cannot tell which workspace %s is in; herdr's lists could not be read", beside.named())
+		}
+		if directory == "" {
+			directory = beside.WorkingDirectory
+		}
+		if kind == "" {
+			kind = beside.CodingAgentKind
+		}
+	}
+	if kind != CodingAgentKindClaude && kind != CodingAgentKindCodex {
+		return nil, fmt.Errorf("open which coding agent? %q is not claude or codex", kind)
+	}
 	if directory == "" {
 		return nil, errors.New("open it in which directory?")
 	}
@@ -1129,8 +1193,11 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 	if err != nil {
 		return nil, err
 	}
-	workspaceId := ""
+	workspaceId := besideWorkspaceId
 	for _, workspace := range workspaces {
+		if workspaceId != "" {
+			break
+		}
 		if strings.EqualFold(strings.TrimSpace(workspace.Label), filepath.Base(directory)) {
 			workspaceId = workspace.WorkspaceID
 			break
@@ -1231,6 +1298,19 @@ func (self *Herdr) open(ctx context.Context, arguments *HerdrArguments) (*HerdrS
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// focus brings a session's tab forward in herdr, so whoever sits at the
+// computer sees it, and says the session as it is then.
+func (self *Herdr) focus(ctx context.Context, arguments *HerdrArguments) (*HerdrSession, error) {
+	session, err := self.session(ctx, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	if err := self.client.focusAgent(ctx, session.PaneID); err != nil {
+		return nil, fmt.Errorf("cannot show %s: %w", session.named(), err)
+	}
+	return self.session(ctx, session.PaneID)
 }
 
 // close ends a session's coding agent and its pane. Not while it works:

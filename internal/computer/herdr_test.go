@@ -98,7 +98,11 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 			self.afterKeys(target, keys)
 		}
 	case "workspace.create", "tab.create":
-		self.created = append(self.created, request.Method+" "+fmt.Sprint(request.Params["cwd"])+" "+fmt.Sprint(request.Params["label"]))
+		entry := request.Method + " " + fmt.Sprint(request.Params["cwd"]) + " " + fmt.Sprint(request.Params["label"])
+		if workspaceId, ok := request.Params["workspace_id"].(string); ok {
+			entry += " in " + workspaceId
+		}
+		self.created = append(self.created, entry)
 		result = map[string]any{"root_pane": map[string]any{"pane_id": "w9:p1"}}
 	case "agent.start":
 		if len(self.startRefusals) > 0 {
@@ -113,6 +117,23 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 		self.created = append(self.created, "start "+fmt.Sprint(request.Params["kind"])+" "+fmt.Sprint(request.Params["name"]))
 		self.agents = append(self.agents, map[string]any{"pane_id": "w9:p1", "agent": request.Params["kind"], "agent_status": "idle", "name": request.Params["name"]})
 		self.screens["w9:p1"] = ""
+	case "agent.focus":
+		self.created = append(self.created, "focus "+target)
+		// Herdr shows the agent's tab, in its workspace.
+		for _, agent := range self.agents {
+			if agent["pane_id"] != target {
+				continue
+			}
+			for _, workspace := range self.workspaces {
+				workspace["focused"] = workspace["workspace_id"] == agent["workspace_id"]
+				if workspace["focused"] == true {
+					workspace["active_tab_id"] = agent["tab_id"]
+				}
+			}
+			for _, tab := range self.tabs {
+				tab["focused"] = tab["tab_id"] == agent["tab_id"]
+			}
+		}
 	case "pane.close":
 		self.created = append(self.created, "close "+fmt.Sprint(request.Params["pane_id"]))
 		self.agents = slices.DeleteFunc(self.agents, func(each map[string]any) bool { return each["pane_id"] == request.Params["pane_id"] })
@@ -864,6 +885,112 @@ func TestAPaneIsNamedAsThePersonFindsItInHerdr(t *testing.T) {
 	}
 }
 
+func TestAPaneSaysWhereItIsInHerdr(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w2:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	fake.setAgent("w2:p2", CodingAgentKindCodex, "idle", "", readHerdrFixture(t, "claude-idle"))
+	fake.mutex.Lock()
+	fake.agents[0]["workspace_id"], fake.agents[0]["tab_id"] = "w2", "w2:t1"
+	fake.agents[1]["workspace_id"], fake.agents[1]["tab_id"] = "w2", "w2:t2"
+	fake.workspaces = []map[string]any{
+		{"workspace_id": "w2", "label": "website", "number": 2, "tab_count": 2, "focused": true, "active_tab_id": "w2:t1"},
+	}
+	fake.tabs = []map[string]any{
+		{"tab_id": "w2:t1", "workspace_id": "w2", "label": "docs", "number": 1, "focused": true},
+		{"tab_id": "w2:t2", "workspace_id": "w2", "label": "api", "number": 2, "focused": false},
+	}
+	fake.mutex.Unlock()
+	placed := map[string]*HerdrSession{}
+	for _, session := range listForTest(t, NewHerdr(home)) {
+		placed[session.PaneID] = session
+	}
+	first, second := placed["w2:p1"], placed["w2:p2"]
+	if first.WorkspaceID != "w2" || first.WorkspaceLabel != "website" || first.WorkspaceNumber != 2 ||
+		first.TabID != "w2:t1" || first.TabLabel != "docs" || first.TabNumber != 1 || !first.IsTabFocused {
+		t.Errorf("the tab on screen: %+v", first)
+	}
+	if second.TabID != "w2:t2" || second.TabLabel != "api" || second.TabNumber != 2 || second.IsTabFocused {
+		t.Errorf("the tab behind it: %+v", second)
+	}
+	// An older herdr marks the active tab through its workspace only.
+	fake.mutex.Lock()
+	delete(fake.tabs[0], "focused")
+	fake.mutex.Unlock()
+	for _, session := range listForTest(t, NewHerdr(home)) {
+		if session.PaneID == "w2:p1" && !session.IsTabFocused {
+			t.Errorf("the workspace's active tab is not marked: %+v", session)
+		}
+	}
+}
+
+func TestFocusBringsASessionsTabForward(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w2:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	fake.setAgent("w2:p2", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	fake.mutex.Lock()
+	fake.agents[0]["workspace_id"], fake.agents[0]["tab_id"] = "w2", "w2:t1"
+	fake.agents[1]["workspace_id"], fake.agents[1]["tab_id"] = "w2", "w2:t2"
+	fake.workspaces = []map[string]any{{"workspace_id": "w2", "label": "website", "tab_count": 2, "focused": true, "active_tab_id": "w2:t1"}}
+	fake.tabs = []map[string]any{
+		{"tab_id": "w2:t1", "workspace_id": "w2", "label": "docs", "number": 1, "focused": true},
+		{"tab_id": "w2:t2", "workspace_id": "w2", "label": "api", "number": 2, "focused": false},
+	}
+	fake.mutex.Unlock()
+	herdr := NewHerdr(home)
+	if _, err := RunHerdr(context.Background(), herdr, "herdr_focus", &HerdrArguments{}); err == nil {
+		t.Error("focus without a pane")
+	}
+	focused, err := RunHerdr(context.Background(), herdr, "herdr_focus", &HerdrArguments{PaneID: "w2:p2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session := focused.(*HerdrSession); session.PaneID != "w2:p2" || !session.IsTabFocused {
+		t.Errorf("%+v", session)
+	}
+	fake.mutex.Lock()
+	created := slices.Clone(fake.created)
+	fake.mutex.Unlock()
+	if !slices.Equal(created, []string{"focus w2:p2"}) {
+		t.Errorf("did %q", created)
+	}
+}
+
+func TestOpenBesideAPaneUsesItsWorkspaceDirectoryAndAgent(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	directory := filepath.Join(home, "src", "website")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fake.setAgent("w2:p1", CodingAgentKindCodex, "idle", "", readHerdrFixture(t, "claude-idle"))
+	fake.mutex.Lock()
+	fake.agents[0]["workspace_id"], fake.agents[0]["tab_id"], fake.agents[0]["cwd"] = "w2", "w2:t1", directory
+	fake.workspaces = []map[string]any{{"workspace_id": "w2", "label": "unrelated", "tab_count": 1}}
+	fake.tabs = []map[string]any{{"tab_id": "w2:t1", "workspace_id": "w2", "label": "1"}}
+	fake.mutex.Unlock()
+	herdr := NewHerdr(home)
+	ctx := context.Background()
+	if _, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{PaneID: "w7:p9"}); err == nil || !strings.Contains(err.Error(), "open beside which pane? no coding agent") {
+		t.Errorf("an unknown pane: %v", err)
+	}
+	opened, err := RunHerdr(ctx, herdr, "herdr_open", &HerdrArguments{PaneID: "w2:p1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session := opened.(*HerdrSession); session.PaneID != "w9:p1" || session.CodingAgentKind != CodingAgentKindCodex {
+		t.Errorf("%+v", session)
+	}
+	fake.mutex.Lock()
+	created := slices.Clone(fake.created)
+	fake.mutex.Unlock()
+	want := []string{"tab.create " + directory + " codex in w2", "start codex codex"}
+	if !slices.Equal(created, want) {
+		t.Errorf("did %q, want %q", created, want)
+	}
+}
+
 func TestASessionIsOpenedInItsDirectoryAndClosedWhenIdle(t *testing.T) {
 	home := t.TempDir()
 	fake := startFakeHerdr(t, home)
@@ -943,7 +1070,7 @@ func TestAPaneIsStartedOnceItsShellIsUpAndClosedWhenItNeverIs(t *testing.T) {
 	fake.mutex.Lock()
 	created = slices.Clone(fake.created)
 	fake.mutex.Unlock()
-	want = []string{"tab.create " + directory + " claude-code-2", "start claude claude-code-2"}
+	want = []string{"tab.create " + directory + " claude-code-2 in w9", "start claude claude-code-2"}
 	if !slices.Equal(created, want) {
 		t.Errorf("did %q, want %q", created, want)
 	}

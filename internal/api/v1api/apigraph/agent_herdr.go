@@ -58,9 +58,16 @@ type AgentHerdrMutation interface {
 
 	// Start a coding agent, claude or codex, in a new herdr pane in a
 	// directory on a computer: a new tab of the workspace named after the
-	// directory, or a new workspace. One that stops at a question as it
-	// starts is open and asking it. Needs agent:use.
+	// directory, or a new workspace. Given paneId, it opens beside that
+	// pane instead: a new tab in its workspace, in its directory and with
+	// its coding agent unless directory and codingAgentKind say otherwise.
+	// One that stops at a question as it starts is open and asking it.
+	// Needs agent:use.
 	OpenAgentHerdrSession(ctx context.Context, arguments OpenAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
+
+	// Bring a session's tab forward in herdr on its computer, so whoever
+	// sits there sees it. Needs agent:use.
+	FocusAgentHerdrSession(ctx context.Context, arguments FocusAgentHerdrSessionArguments) (*AgentHerdrSessionView, error)
 
 	// End a session's coding agent and close its pane. Refused while it
 	// works. Needs agent:use.
@@ -133,14 +140,24 @@ type WatchAgentHerdrSessionArguments struct {
 // OpenAgentHerdrSessionArguments say where, and which coding agent.
 type OpenAgentHerdrSessionArguments struct {
 	Computer        string `json:"computer" graphapi:"nullable"`
-	Directory       string `json:"directory"`
-	CodingAgentKind string `json:"codingAgentKind"`
+	Directory       string `json:"directory" graphapi:"nullable"`
+	CodingAgentKind string `json:"codingAgentKind" graphapi:"nullable"`
 	// AgentName is what the session is called in herdr; the directory's
 	// name when left out.
 	AgentName string `json:"agentName" graphapi:"nullable"`
 	// ShouldSkipPermissions starts it without asking before it acts:
 	// Claude Code with --dangerously-skip-permissions, Codex with --yolo.
 	ShouldSkipPermissions bool `json:"shouldSkipPermissions" graphapi:"nullable"`
+	// PaneID opens beside that pane: a new tab in its workspace, with its
+	// directory and coding agent where directory and codingAgentKind are
+	// left out.
+	PaneID string `json:"paneId" graphapi:"nullable"`
+}
+
+// FocusAgentHerdrSessionArguments name a session.
+type FocusAgentHerdrSessionArguments struct {
+	Computer string `json:"computer" graphapi:"nullable"`
+	PaneID   string `json:"paneId"`
 }
 
 // CloseAgentHerdrSessionArguments name a session.
@@ -172,7 +189,17 @@ type AgentHerdrSessionView struct {
 	PaneID   string `json:"paneId"`
 	// PaneName is the pane as the person finds it in herdr: workspace, tab
 	// and agent; every argument that takes paneId takes it too.
-	PaneName        string `json:"paneName"`
+	PaneName string `json:"paneName"`
+	// The workspace and tab the pane is in, as herdr numbers and labels
+	// them; empty when herdr's lists could not be read. IsTabFocused says
+	// herdr shows that tab on the computer's screen now.
+	WorkspaceID     string `json:"workspaceId"`
+	WorkspaceLabel  string `json:"workspaceLabel"`
+	WorkspaceNumber int    `json:"workspaceNumber"`
+	TabID           string `json:"tabId"`
+	TabLabel        string `json:"tabLabel"`
+	TabNumber       int    `json:"tabNumber"`
+	IsTabFocused    bool   `json:"isTabFocused"`
 	CodingAgentKind string `json:"codingAgentKind"`
 	CodingSessionID string `json:"codingSessionId"`
 	// HerdrSessionState is idle, working, asking or unknown, as the
@@ -396,11 +423,27 @@ func (self *graph) OpenAgentHerdrSession(ctx context.Context, arguments OpenAgen
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	session, err := worker.OpenHerdrSession(ctx, found.ID, arguments.Computer, arguments.Directory, arguments.CodingAgentKind, arguments.AgentName, arguments.ShouldSkipPermissions)
+	session, err := worker.OpenHerdrSession(ctx, found.ID, arguments.Computer, arguments.Directory, arguments.CodingAgentKind, arguments.AgentName, arguments.ShouldSkipPermissions, arguments.PaneID)
 	if err != nil {
 		return nil, err
 	}
 	return herdrSessionView(session.ComputerName, session.HerdrSession), nil
+}
+
+func (self *graph) FocusAgentHerdrSession(ctx context.Context, arguments FocusAgentHerdrSessionArguments) (*AgentHerdrSessionView, error) {
+	_, found, err := self.requireAgentPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	worker := self.agentWorker()
+	if worker == nil {
+		return nil, agent.ErrUnavailable
+	}
+	focused, err := worker.FocusHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID)
+	if err != nil {
+		return nil, err
+	}
+	return herdrSessionView(focused.ComputerName, focused.HerdrSession), nil
 }
 
 func (self *graph) CloseAgentHerdrSession(ctx context.Context, arguments CloseAgentHerdrSessionArguments) (*AgentHerdrSessionView, error) {
@@ -447,7 +490,10 @@ func herdrSessionView(computerName string, session *computer.HerdrSession) *Agen
 		return nil
 	}
 	view := &AgentHerdrSessionView{
-		Computer: computerName, PaneID: session.PaneID, PaneName: session.PaneName, CodingAgentKind: session.CodingAgentKind, CodingSessionID: session.CodingSessionID,
+		Computer: computerName, PaneID: session.PaneID, PaneName: session.PaneName,
+		WorkspaceID: session.WorkspaceID, WorkspaceLabel: session.WorkspaceLabel, WorkspaceNumber: session.WorkspaceNumber,
+		TabID: session.TabID, TabLabel: session.TabLabel, TabNumber: session.TabNumber, IsTabFocused: session.IsTabFocused,
+		CodingAgentKind: session.CodingAgentKind, CodingSessionID: session.CodingSessionID,
 		HerdrSessionState: session.HerdrSessionState, HerdrAgentStatus: session.HerdrAgentStatus, PaneTitle: session.PaneTitle,
 		WorkingDirectory: session.WorkingDirectory, TranscriptPath: session.TranscriptPath, IsWatched: session.IsWatched,
 	}

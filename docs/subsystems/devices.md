@@ -228,6 +228,16 @@ workspace's label, the tab's when the workspace has several, and the agent's
 name, or which agent it is, when a tab holds more than one. Every action takes
 that name or the pane's id.
 
+Each session also says where it is: `workspaceId`, `workspaceLabel`,
+`workspaceNumber`, `tabId`, `tabLabel`, `tabNumber` and `isTabFocused`, read
+from herdr's workspace and tab lists in the same refresh that names the panes
+(empty when those lists cannot be read). `isTabFocused` is true for the one
+tab herdr shows on the computer's screen. `focus` brings a session's tab
+forward there (herdr's `agent.focus`), and nothing else moves it: reading from
+the dashboard or the phone never changes what someone at the keyboard sees.
+`open` given a pane opens beside it: a new tab in that pane's workspace, in
+its directory and with its coding agent unless the call names others.
+
 The program speaks to herdr's socket (`~/.config/herdr/herdr.sock`) and looks
 at every pane every three seconds. It decides each session's state itself, in
 this order: a question recognized on the screen (or one Codex asked in its
