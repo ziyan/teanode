@@ -162,6 +162,11 @@ type SkillShareCallView struct {
 	AmountMinor  *int64 `json:"amountMinor"`
 	CurrencyCode string `json:"currencyCode"`
 
+	// The argument the skill declares the amount is read from, so that a card
+	// can leave out that one and show every other as it was sent; empty when
+	// the tool declares none, or the skill is no longer installed
+	AmountArgumentName string `json:"amountArgumentName"`
+
 	// ran, failed, refused, waiting_for_approval, declined or expired (the
 	// owner did not answer in a day, or the share ended while it waited)
 	CallState string `json:"callState"`
@@ -277,6 +282,36 @@ func describeSkillShareCall(call *models.SkillShareCall, share *models.SkillShar
 	return view
 }
 
+// nameAmountArguments says on each call which of its arguments the skill
+// declares the amount is read from, by the skill as it is installed now. A
+// call of a skill that has been taken off, or whose tool is gone, names none.
+func (self *graph) nameAmountArguments(ctx context.Context, views []*SkillShareCallView) error {
+	tx := self.transaction(ctx)
+	installed := map[string]*skills.Skill{}
+	for _, view := range views {
+		skill, isKnown := installed[view.SkillName]
+		if !isKnown {
+			row, err := tx.GetAgentSkill(view.SkillName)
+			if err != nil {
+				return err
+			}
+			if row != nil {
+				if parsed, err := skills.Parse([]byte(row.Content)); err == nil {
+					skill = parsed
+				}
+			}
+			installed[view.SkillName] = skill
+		}
+		if skill == nil {
+			continue
+		}
+		if tool := skill.Tool(view.ToolName); tool != nil {
+			view.AmountArgumentName = tool.AmountField
+		}
+	}
+	return nil
+}
+
 // skillShareOfParty is the share, when the user is its owner or the person it
 // is shared with; anyone else, and a share that does not exist, is not found.
 func (self *graph) skillShareOfParty(ctx context.Context, user *models.User, shareId string) (*models.SkillShare, error) {
@@ -348,6 +383,9 @@ func (self *graph) ListSkillShareCalls(ctx context.Context, arguments ListSkillS
 		for _, call := range calls {
 			views = append(views, describeSkillShareCall(call, nil))
 		}
+		if err := self.nameAmountArguments(ctx, views); err != nil {
+			return nil, err
+		}
 		return views, nil
 	}
 	if strings.TrimSpace(arguments.ShareID) == "" {
@@ -364,6 +402,9 @@ func (self *graph) ListSkillShareCalls(ctx context.Context, arguments ListSkillS
 	views := make([]*SkillShareCallView, 0, len(calls))
 	for _, call := range calls {
 		views = append(views, describeSkillShareCall(call, share))
+	}
+	if err := self.nameAmountArguments(ctx, views); err != nil {
+		return nil, err
 	}
 	return views, nil
 }
@@ -526,7 +567,11 @@ func (self *graph) AnswerSkillShareCall(ctx context.Context, arguments AnswerSki
 		return nil, api.ErrNotFound
 	}
 	log.Noticef("%s %s a call of a skill they shared", principal.User.Username, map[bool]string{true: "approved", false: "declined"}[arguments.IsApproved])
-	return describeSkillShareCall(answered, share), nil
+	view := describeSkillShareCall(answered, share)
+	if err := self.nameAmountArguments(ctx, []*SkillShareCallView{view}); err != nil {
+		return nil, err
+	}
+	return view, nil
 }
 
 // answerSkillShareCall gives the worker the owner's word and says what came of

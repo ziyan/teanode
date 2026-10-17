@@ -141,7 +141,7 @@ func NewCalendarCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what to call it"},
 					&cli.StringFlag{Name: "description", Usage: "what it is for"},
-					&cli.StringFlag{Name: "colour", Usage: "what a client paints it, as #rrggbb"},
+					&cli.StringFlag{Name: "color", Aliases: []string{"colour"}, Usage: "what a client paints it, as #rrggbb"},
 					&cli.StringFlag{Name: "timezone", Usage: "the zone a new event is written in, as an IANA name"},
 					&cli.StringFlag{Name: "week-start", Usage: "the day a week is drawn from, sunday or monday"},
 				},
@@ -684,8 +684,8 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("description") {
 		description = command.String("description")
 	}
-	if command.IsSet("colour") {
-		colour = command.String("colour")
+	if command.IsSet("color") {
+		colour = command.String("color")
 	}
 	if command.IsSet("timezone") {
 		timezone = command.String("timezone")

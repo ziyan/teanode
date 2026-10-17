@@ -693,7 +693,13 @@ func NoteText(kind AgentNoteKind, detail string) string {
 		return english
 	case kind == NoteChatAgentOwnerOnly && ParseChatAgentNote(detail) != nil:
 		owned := ParseChatAgentNote(detail)
-		return "Only " + owned.OwnerName + " can ask " + owned.OwnerName + "'s agent in this chat."
+		// An agent with a name of its own is named, as the dashboard and the
+		// phone do; the default name would read as a person.
+		agentName := strings.TrimSpace(owned.AgentName)
+		if agentName == "" || agentName == AgentDefaultName {
+			return "Only " + owned.OwnerName + " can ask " + owned.OwnerName + "'s agent in this chat."
+		}
+		return "Only " + owned.OwnerName + " can ask " + agentName + ", " + owned.OwnerName + "'s agent, in this chat."
 	case kind == NoteChatAgentOwnerOnly && detail != "":
 		return "Only " + detail + "'s owner can ask it in this chat."
 	case kind == NoteChatAgentOff && detail != "":

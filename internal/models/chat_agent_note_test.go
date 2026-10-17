@@ -14,6 +14,9 @@ func TestTheChatAgentNoteNamesWhoseAgentItIs(t *testing.T) {
 	if got := NoteText(NoteChatAgentOwnerOnly, detail); got != "Only Fixture Owner can ask Fixture Owner's agent in this chat." {
 		t.Errorf("the note in English: %q", got)
 	}
+	if got := NoteText(NoteChatAgentOwnerOnly, ChatAgentDetail("Fixture Agent", "Fixture Owner")); got != "Only Fixture Owner can ask Fixture Agent, Fixture Owner's agent, in this chat." {
+		t.Errorf("the note for an agent with a name of its own: %q", got)
+	}
 	if ParseChatAgentNote("Agent") != nil || ParseChatAgentNote(`{"agentName":"Agent"}`) != nil {
 		t.Error("a detail that names no owner was read as one that does")
 	}

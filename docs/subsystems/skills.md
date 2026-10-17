@@ -456,12 +456,15 @@ screen.
 
 **Saving a skill again.** Installing a newer version of a skill checks the
 shares of it against the rule that applied when they were made
-(`Skill.CheckShareable`, in `holdSharesToSkill`): a tool that now declares an
+(`Skill.CheckShareStillHolds`, in `holdSharesToSkill`): a tool that now declares an
 amount, shared with no limit and without asking every time, or one the skill no
 longer declares, would otherwise let the other person spend without bound. Each
 share that no longer qualifies is set to ask every time, in the same
 transaction, and its owner is told in their main conversation which shares and
-why (`Agent.TellSkillSharesNowAsk`). Nothing else about the share changes.
+why (`Agent.TellSkillSharesNowAsk`). Nothing else about the share changes. Rules
+added later for a share a person makes or changes (`Skill.CheckShareable`, such
+as a limit for one payment above the monthly limit) are not applied here, since
+the skill change is not what broke them.
 
 **Leaving a circle** deletes the skill shares between two people who no longer
 share any circle, in the same transaction, beside the calendar and page shares,

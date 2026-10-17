@@ -145,6 +145,10 @@ func TestSharingASkillGoesThroughTheAPI(t *testing.T) {
 		!strings.Contains(result.Content, "you cannot") {
 		t.Errorf("the calls: %v %v", result, err)
 	}
+	// The row says the state as the model asked for it.
+	if !strings.Contains(result.Content, `"call_state":"waiting"`) || strings.Contains(result.Content, "waiting_for_approval") {
+		t.Errorf("the state is not told as it is asked for: %v", result.Content)
+	}
 	if operations.sent["ListSkillShareCalls"]["callState"] != "waiting_for_approval" {
 		t.Errorf("what was sent: %v", operations.sent["ListSkillShareCalls"])
 	}

@@ -308,7 +308,7 @@ func skillShareCallsAction(ctx context.Context, run tools.Run, arguments *skillR
 	rows := make([]map[string]any, 0, len(listed.ListSkillShareCalls))
 	waiting := 0
 	for _, call := range listed.ListSkillShareCalls {
-		row := map[string]any{"call_id": call.ID, "skill": call.SkillName, "tool": call.ToolName, "call_state": call.CallState, "asked_at": call.CreatedAt, "arguments": call.ToolArguments}
+		row := map[string]any{"call_id": call.ID, "skill": call.SkillName, "tool": call.ToolName, "call_state": models.SkillShareCallState(call.CallState).AskedWord(), "asked_at": call.CreatedAt, "arguments": call.ToolArguments}
 		if call.AmountMinor != nil {
 			row["amount"] = models.FormatMinor(*call.AmountMinor, call.CurrencyCode)
 		}

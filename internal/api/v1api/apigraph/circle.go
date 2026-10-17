@@ -475,10 +475,10 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	}
 	// It is the caller's own, so they may be told why it cannot be answered.
 	if invitation.AnsweredAt != nil {
-		return nil, fmt.Errorf("%w: That invitation was already answered", api.ErrInvalidArguments)
+		return nil, fmt.Errorf("%w: that invitation was already answered", api.ErrInvalidArguments)
 	}
 	if !invitation.IsOpen(time.Now()) {
-		return nil, fmt.Errorf("%w: That invitation has expired", api.ErrInvalidArguments)
+		return nil, fmt.Errorf("%w: that invitation has expired", api.ErrInvalidArguments)
 	}
 	invitationAnswer := models.InvitationAnswerDeclined
 	if arguments.IsAccepted {

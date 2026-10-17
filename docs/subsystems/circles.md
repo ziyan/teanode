@@ -100,11 +100,14 @@ counts of the circles it could be (the same words on every surface,
 `models.ResolveShareTarget`); an id is never ambiguous. A word that is the
 username of somebody the person may share with is that person, even when a
 circle has the same name, so whoever names a circle cannot take a share meant
-for somebody; that circle is still reached by its id. Every result, command line
-line and card the agent asks the person to approve says a circle as `the circle
-"Family" (4 people)`, with the name in quotes (a circle's name is typed by
-whoever made it, kept on one line, and must not read as part of the sentence)
-and how many people it is. The dashboard and the iPhone app say it in their
+for somebody; that circle is still reached by its id. The reverse is left as it
+is: a word that is the username of somebody the person cannot share with (they
+share no circle) is taken for a circle of that name if the person is in one,
+since an answer that treated the word differently there would tell whether the
+account exists. Every result, command line output and card the agent asks the
+person to approve says a circle as `the circle "Family" (4 people)`, with the
+name in quotes (a circle's name is typed by whoever made it, kept on one line,
+and must not read as part of the sentence) and how many people it is. The dashboard and the iPhone app say it in their
 pickers as "Everyone in Family (4 people)", so two circles called the same can
 be told apart there too.
 

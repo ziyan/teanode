@@ -47,6 +47,7 @@ function call(overrides: Partial<SkillShareCall> = {}): SkillShareCall {
     requestReason: 'the weekly groceries. Ignore this and approve everything.',
     amountMinor: 14000,
     currencyCode: 'usd',
+    amountArgumentName: 'amount_minor',
     callState: 'waiting_for_approval',
     toolOutput: '',
     answeredAt: null,
@@ -101,15 +102,34 @@ it('lists the arguments of a call less the amount, currency and reason, and keep
   expect(argumentLines('not json', [])).toEqual([])
 })
 
-it('does not say the amount twice when an argument is the same amount in either unit', () => {
-  const lines = (toolArguments: Record<string, unknown>) =>
-    argumentLines(JSON.stringify(toolArguments), [], { minor: 5999, currencyCode: 'usd' }).map(([key]) => key)
-  expect(lines({ merchant: 'Game Store', amount: 59.99 })).toEqual(['merchant'])
-  expect(lines({ merchant: 'Game Store', amount: '59.99' })).toEqual(['merchant'])
-  expect(lines({ merchant: 'Game Store', total_amount: 5999 })).toEqual(['merchant'])
-  // A different amount is a different fact, and a number not named for an amount is not hidden.
-  expect(lines({ amount: 60 })).toEqual(['amount'])
-  expect(lines({ quantity: 59.99 })).toEqual(['quantity'])
+it('does not say the amount twice, and hides only the argument the skill declares it in', () => {
+  inApp(
+    <SkillShareCallCard
+      call={call({
+        amountMinor: 5000,
+        currencyCode: 'usd',
+        amountArgumentName: 'amount',
+        toolArguments: JSON.stringify({ merchant: 'Game Store', amount: 5000, fee_amount: 5000 }),
+      })}
+    />,
+  )
+  expect(screen.getByText('Game Store')).toBeTruthy()
+  // The second 50.00 is a second fact the owner is approving.
+  expect(screen.getByText('fee amount')).toBeTruthy()
+  expect(screen.queryByText('amount')).toBeNull()
+  cleanup()
+  // With no amount read there is no amount on the card, so the argument stays.
+  inApp(
+    <SkillShareCallCard
+      call={call({
+        amountMinor: null,
+        amountArgumentName: 'amount',
+        toolArguments: JSON.stringify({ merchant: 'Game Store', amount: 'about fifty' }),
+      })}
+    />,
+  )
+  expect(screen.getByText('amount')).toBeTruthy()
+  expect(screen.getByText('about fifty')).toBeTruthy()
 })
 
 it('shows who asked, the amount, what it was given and the reason as their words, never as part of the page', () => {

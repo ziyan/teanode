@@ -114,4 +114,10 @@ func TestCallStatesAreAskedForByTheWordsPeopleUse(t *testing.T) {
 	if _, err := SkillShareCallStatesAsked([]string{"ran", "nearly"}); err == nil {
 		t.Error("a word that is no state was accepted")
 	}
+	// What is printed is what can be asked for.
+	for _, callState := range SkillShareCallStates {
+		if again, err := SkillShareCallStatesAsked([]string{callState.AskedWord()}); err != nil || len(again) != 1 || again[0] != callState {
+			t.Errorf("%s is told as %q, which is read as %v %v", callState, callState.AskedWord(), again, err)
+		}
+	}
 }

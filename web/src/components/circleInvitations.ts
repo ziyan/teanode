@@ -1,9 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { useSession, hasPermission } from '../session'
-import { useQuery } from './useQuery'
 
 // The Circles page answered an invitation, so the number on the account
 // menu's Circles row has changed. The menu does not wait for its next read.
@@ -11,6 +10,75 @@ export const CIRCLES_CHANGED_EVENT = 'teanode:circles-changed'
 
 export function announceCirclesChanged() {
   window.dispatchEvent(new Event(CIRCLES_CHANGED_EVENT))
+}
+
+// How often the number is read again, as a list refreshes itself.
+const INVITATION_COUNT_EVERY = 10_000
+
+// The number is read once for the whole page, whoever shows it: the account
+// button, its menu and the phone's menu button all draw it, and each asking
+// the server for itself was three questions every ten seconds, with answers
+// that could disagree for a moment. The reading starts with the first one
+// that shows it and stops with the last.
+let openInvitationCountNow = 0
+let readersOfInvitationCount = 0
+let invitationCountTimer: number | undefined
+let invitationCountReadNumber = 0
+const invitationCountListeners = new Set<() => void>()
+
+async function readOpenInvitationCount() {
+  const thisReadNumber = ++invitationCountReadNumber
+  try {
+    const answer = await graphql<{ ListCircleInvitations: { id: string }[] }>('query { ListCircleInvitations { id } }')
+    // A newer read has the last word; a failed one keeps what is on screen.
+    if (thisReadNumber !== invitationCountReadNumber || answer.ListCircleInvitations.length === openInvitationCountNow) {
+      return
+    }
+    openInvitationCountNow = answer.ListCircleInvitations.length
+    invitationCountListeners.forEach((listener) => listener())
+  } catch {
+    // The next read tries again.
+  }
+}
+
+function readOpenInvitationCountUnlessHidden() {
+  if (!document.hidden) {
+    void readOpenInvitationCount()
+  }
+}
+
+function startReadingInvitationCount() {
+  readersOfInvitationCount++
+  if (readersOfInvitationCount > 1) {
+    return stopReadingInvitationCount
+  }
+  void readOpenInvitationCount()
+  invitationCountTimer = window.setInterval(readOpenInvitationCountUnlessHidden, INVITATION_COUNT_EVERY)
+  window.addEventListener(CIRCLES_CHANGED_EVENT, readOpenInvitationCountUnlessHidden)
+  return stopReadingInvitationCount
+}
+
+function stopReadingInvitationCount() {
+  readersOfInvitationCount--
+  if (readersOfInvitationCount > 0) {
+    return
+  }
+  window.clearInterval(invitationCountTimer)
+  window.removeEventListener(CIRCLES_CHANGED_EVENT, readOpenInvitationCountUnlessHidden)
+  // Whoever shows it next starts from a new reading, not this person's number.
+  invitationCountReadNumber++
+  openInvitationCountNow = 0
+}
+
+function subscribeToInvitationCount(listener: () => void) {
+  invitationCountListeners.add(listener)
+  return () => {
+    invitationCountListeners.delete(listener)
+  }
+}
+
+function currentInvitationCount() {
+  return openInvitationCountNow
 }
 
 // useOpenCircleInvitationCount is how many invitations to join a circle are
@@ -23,21 +91,9 @@ export function announceCirclesChanged() {
 export function useOpenCircleInvitationCount(): number {
   const session = useSession()
   const canUseCircles = Boolean(session.userId) && hasPermission(session.permissions, 'circle:use')
-  const { data, reload } = useQuery(async () => {
-    if (!canUseCircles) {
-      return 0
-    }
-    const answer = await graphql<{ ListCircleInvitations: { id: string }[] }>('query { ListCircleInvitations { id } }')
-    return answer.ListCircleInvitations.length
-  }, [canUseCircles])
-
-  useEffect(() => {
-    const onChanged = () => void reload(true)
-    window.addEventListener(CIRCLES_CHANGED_EVENT, onChanged)
-    return () => window.removeEventListener(CIRCLES_CHANGED_EVENT, onChanged)
-  }, [reload])
-
-  return data ?? 0
+  const shared = useSyncExternalStore(subscribeToInvitationCount, currentInvitationCount)
+  useEffect(() => (canUseCircles ? startReadingInvitationCount() : undefined), [canUseCircles])
+  return canUseCircles ? shared : 0
 }
 
 // useLabelWithInvitationCount adds the number of invitations waiting to the

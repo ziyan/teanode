@@ -23,7 +23,10 @@ chat to its members), `internal/agent/chat.go`.
   see Chats below. A member can archive it, with the agent on or off, and it
   leaves only their own list: `UpdateAgentConversation` sets `archived_at` on
   their row, the listing follows it as for a named conversation, and a new
-  message does not bring it back.
+  message does not bring it back. An archived chat is as quiet as a muted one:
+  no phone notification for it (`NotifyChatMessage` skips a member whose
+  conversation is archived), and it stays out of the unread count, which is
+  read from the live list.
 
 A person can make a named conversation the main one, which demotes the old main
 to named; the command line does it with `teanode agent conversation main`.

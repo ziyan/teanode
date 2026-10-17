@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -77,10 +78,7 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 	// Two circles can be called the same, and then the name alone is refused
 	// by calendar_add and the others: the row says the id as well.
 	isCircleNameShared := map[string]bool{}
-	for _, each := range chosen {
-		if !each.IsCircleCalendar {
-			continue
-		}
+	if slices.ContainsFunc(chosen, func(each *calendarEntry) bool { return each.IsCircleCalendar }) {
 		circles, err := tools.ShareableCircles(ctx, run.Operations())
 		if err != nil {
 			return nil, err
@@ -93,7 +91,6 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 			}
 			seen[name] = true
 		}
-		break
 	}
 
 	type entry struct {

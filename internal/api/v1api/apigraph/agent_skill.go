@@ -334,7 +334,7 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 
 // holdSharesToSkill checks the shares of a skill that was just saved against
 // the version saved, by the rule that applied when they were made
-// (Skill.CheckShareable), and makes every share that no longer meets it ask
+// (Skill.CheckShareStillHolds), and makes every share that no longer meets it ask
 // the owner before every call. An update may give a tool an amount that it did
 // not declare when it was shared, or take a tool away; a share with no limit
 // and no asking would otherwise let the new version spend without bound. It
@@ -349,7 +349,7 @@ func holdSharesToSkill(tx db.Transaction, saved *skills.Skill) ([]*models.SkillS
 		if share.IsApprovalRequired {
 			continue
 		}
-		if err := saved.CheckShareable(share.ToolNames, skills.ShareLimits{
+		if err := saved.CheckShareStillHolds(share.ToolNames, skills.ShareLimits{
 			PaymentLimitMinor: share.PaymentLimitMinor, MonthlyLimitMinor: share.MonthlyLimitMinor,
 			CurrencyCode: share.CurrencyCode, IsApprovalRequired: share.IsApprovalRequired,
 		}); err == nil {

@@ -2354,7 +2354,7 @@ struct Composer: View {
         if model.isChat {
             // Where an agent can be asked, the box says how.
             if !model.addressableAgents.isEmpty { return String(localized: "Message, or @ to ask an agent") }
-            return String(localized: "Message \(model.title)…")
+            return String(localized: "Message…")
         }
         if model.freshQuestion != nil { return String(localized: "Your answer") }
         return app.agentName.isEmpty ? String(localized: "Ask your agent…") : String(localized: "Ask \(app.agentName)…")

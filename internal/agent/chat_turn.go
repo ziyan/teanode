@@ -600,7 +600,7 @@ func (self *AskRun) announceChatAnswer(posted *postedChatMessage) {
 		copied.ConversationID = member.ConversationID
 		copied.IsMine = member.UserID == settings.Owner.ID
 		events = append(events, Event{Kind: EventSaid, ConversationID: member.ConversationID, MessageID: shown.ID, Message: &copied})
-		recipients = append(recipients, ChatRecipient{UserID: member.UserID, AgentID: member.AgentID, ConversationID: member.ConversationID, MutedUntil: member.MutedUntil})
+		recipients = append(recipients, ChatRecipient{UserID: member.UserID, AgentID: member.AgentID, ConversationID: member.ConversationID, MutedUntil: member.MutedUntil, IsArchived: member.IsConversationArchived})
 	}
 	if self.agent.settings.ChatEvents == nil {
 		return
