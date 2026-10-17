@@ -145,8 +145,6 @@ struct CodingScreen: View {
     @State private var model: CodingModel
     @State private var path = NavigationPath()
     @State private var isOpening = false
-    /// The workspaces the person folded away; the rest stay open.
-    @State private var foldedWorkspaceIds: Set<String> = []
     @State private var doneText: String?
     @State private var problemText: String?
 
@@ -159,29 +157,26 @@ struct CodingScreen: View {
         NavigationStack(path: $path) {
             List {
                 if let list = model.list {
-                    // A section for each computer, and in it each workspace,
-                    // folded open, holding its tabs.
+                    // A section for each computer, and in it each workspace's
+                    // name above its tabs, laid out as the knowledge list is:
+                    // no chevrons, no lines, rows close together.
                     ForEach(model.computers) { computer in
                         Section {
                             ForEach(computer.workspaces) { workspace in
-                                DisclosureGroup(isExpanded: isExpanded(workspace)) {
-                                    ForEach(workspace.sessions) { session in
-                                        NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
-                                            CodingSessionRow(session: session)
-                                        }
+                                CodingWorkspaceHeader(workspace: workspace)
+                                    .listRowInsets(ListRowSpacing.insets)
+                                    .listRowSeparator(.hidden)
+                                ForEach(workspace.sessions) { session in
+                                    NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
+                                        CodingSessionRow(session: session)
                                     }
-                                } label: {
-                                    Label {
-                                        Text(verbatim: workspace.title)
-                                    } icon: {
-                                        Image(systemName: "folder")
-                                    }
-                                    .badge(workspace.sessions.count)
+                                    .knowledgeListRow()
                                 }
                             }
                         } header: {
                             CodingComputerHeader(computer: computer)
                         }
+                        .listSectionSeparator(.hidden)
                     }
                     if !list.failedComputerNames.isEmpty {
                         let names = list.failedComputerNames.joined(separator: ", ")
@@ -192,6 +187,8 @@ struct CodingScreen: View {
                     }
                 }
             }
+            .listStyle(.plain)
+            .listSectionSpacing(.compact)
             .navigationTitle("Coding")
             .withoutSwipeBack()
             .navigationDestination(for: CodingTarget.self) { target in
@@ -252,18 +249,8 @@ struct CodingScreen: View {
     }
 }
 
-extension CodingScreen {
-    fileprivate func isExpanded(_ workspace: CodingWorkspace) -> Binding<Bool> {
-        Binding(
-            get: { !foldedWorkspaceIds.contains(workspace.id) },
-            set: { isOpen in
-                if isOpen { foldedWorkspaceIds.remove(workspace.id) } else { foldedWorkspaceIds.insert(workspace.id) }
-            })
-    }
-}
-
-/// CodingComputerHeader heads a computer's section: its name, and how many
-/// of its sessions ask and work. Each workspace's badge counts its tabs.
+/// CodingComputerHeader heads a computer's section, as the lists head
+/// their periods: its name, and how many of its sessions ask and work.
 struct CodingComputerHeader: View {
     let computer: CodingComputer
 
@@ -276,8 +263,11 @@ struct CodingComputerHeader: View {
             }
             Spacer(minLength: 8)
             Text(countsText)
-                .textCase(nil)
         }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.secondary)
+        .textCase(nil)
+        .accessibilityElement(children: .combine)
     }
 
     private var countsText: String {
@@ -288,25 +278,45 @@ struct CodingComputerHeader: View {
     }
 }
 
-/// CodingSessionRow is one coding session in the list: its tab, the agent,
-/// and what it is doing when that is working or asking.
+/// CodingWorkspaceHeader names a workspace above its tabs, as the shared
+/// knowledge list names each owner above their pages.
+struct CodingWorkspaceHeader: View {
+    let workspace: CodingWorkspace
+
+    var body: some View {
+        Label {
+            Text(verbatim: workspace.title)
+        } icon: {
+            Image(systemName: "folder")
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.top, 6)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// CodingSessionRow is one coding session in the list: its title, its tab
+/// and agent, and what it is doing when that is working or asking.
 struct CodingSessionRow: View {
     let session: HerdrSession
 
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: session.rowTitle)
+                    .font(.headline)
+                    .lineLimit(1)
                 if !session.rowDetail.isEmpty {
                     Text(verbatim: session.rowDetail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
             CodingStateLabel(session: session)
         }
-        .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
     }
 }
