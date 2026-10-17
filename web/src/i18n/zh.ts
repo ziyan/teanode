@@ -1204,6 +1204,7 @@ export const zh: Catalog = {
   'agentDrawer.today': '今天',
   'agentDrawer.yesterday': '昨天',
   'agentDrawer.openArtifact': '打开',
+  'agentDrawer.openPhoto': '在照片中打开',
   'agentDrawer.citedFrom': '这句话读自此处，来自 {where}',
   'agentDrawer.citedFile': '这句话读自此处',
   'agentDrawer.citedOpen': '查看原图',

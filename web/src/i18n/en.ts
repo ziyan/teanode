@@ -1253,6 +1253,7 @@ export const en = {
   'agentDrawer.today': 'Today',
   'agentDrawer.yesterday': 'Yesterday',
   'agentDrawer.openArtifact': 'Open',
+  'agentDrawer.openPhoto': 'Open in Photos',
   'agentDrawer.citedFrom': 'what this was read from, from {where}',
   'agentDrawer.citedFile': 'what this was read from',
   'agentDrawer.citedOpen': 'Open the picture full size',

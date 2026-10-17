@@ -4527,6 +4527,22 @@
         }
       }
     },
+    "Live": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实况"
+          }
+        }
+      }
+    },
     "Live Photo": {
       "localizations": {
         "ja": {
@@ -4699,6 +4715,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "还没有照片"
+          }
+        }
+      }
+    },
+    "Open in Photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真で開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在照片中打开"
           }
         }
       }
@@ -4899,6 +4931,22 @@
         }
       }
     },
+    "Play Live Photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Photosを再生"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "播放实况照片"
+          }
+        }
+      }
+    },
     "Remove from Album": {
       "localizations": {
         "ja": {
@@ -5039,6 +5087,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在保存到“照片”"
+          }
+        }
+      }
+    },
+    "Stop Live Photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Photosを停止"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止播放实况照片"
           }
         }
       }

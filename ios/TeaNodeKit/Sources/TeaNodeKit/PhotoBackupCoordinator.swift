@@ -812,7 +812,7 @@ extension Documents {
         }
         """
     public static let findPhotos = """
-        query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId photoKind } }
+        query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId photoKind photoFileRoles } }
         """
 }
 

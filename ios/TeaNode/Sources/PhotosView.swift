@@ -119,6 +119,12 @@ final class PhotosModel {
         self.connection = connection
     }
 
+    /// Makes a list of just these photos, for a viewer opened on photos the
+    /// lists were not read for, such as one the agent showed in a conversation.
+    func hold(_ photos: [Photo], as key: PhotoListKey) {
+        listings[key] = PhotoListing(photos: photos, hasMore: false)
+    }
+
     func listing(_ key: PhotoListKey) -> PhotoListing? { listings[key] }
     func photos(in key: PhotoListKey) -> [Photo] { listings[key]?.photos ?? [] }
     func failureText(_ key: PhotoListKey) -> String? { failureTexts[key] }
@@ -283,9 +289,8 @@ final class PhotosModel {
         defer { savingPhotoIds.remove(photo.id) }
         do {
             let download = try await connection.downloadPhotoFile(photo)
-            let fileURL = try PhotoTemporaryFile.write(download)
-            defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
-            try await PhotoLibrarySaver.save(fileURL: fileURL, isVideo: photo.isVideo)
+            defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
+            try await PhotoLibrarySaver.save(fileURL: download.fileURL, isVideo: photo.isVideo)
             doneText = download.isOriginal ? String(localized: "Saved to Photos") : String(localized: "Saved a smaller copy to Photos")
         } catch {
             problemText = error.localizedDescription

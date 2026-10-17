@@ -301,6 +301,9 @@ interface SharedFile {
   size: number
   url: string
   caption?: string
+  // The photo this is a preview of, where the photo tool showed it. The
+  // card links to that photo in Photos.
+  photo_id?: string
 }
 
 // sharedFilesOf reads the files a tool line handed the person.
@@ -310,19 +313,33 @@ interface SharedFile {
 // fetched pictures or a clip answers with a list of them under files. Both
 // end up drawn the same way, because from the reader's side they are the
 // same thing -- something the agent put in the conversation for them.
-function sharedFilesOf(line: { tool: string; result?: string }): SharedFile[] {
+export function sharedFilesOf(line: { tool: string; result?: string }): SharedFile[] {
   if (!line.result) return []
   try {
     const parsed = JSON.parse(unfenced(line.result)) as Partial<SharedFile> & { files?: Partial<SharedFile>[] }
-    if (drawable(parsed)) return [parsed]
+    if (drawable(parsed)) return [photoLinked(line.tool, parsed)]
     // A file a skill fetched but could not keep has no address to draw it
     // from, and is left out rather than drawn as a broken one.
-    if (Array.isArray(parsed.files)) return parsed.files.filter(drawable)
+    if (Array.isArray(parsed.files)) return parsed.files.filter(drawable).map((file) => photoLinked(line.tool, file))
   } catch {
     // An error, most likely.
   }
   return []
 }
+
+// photoLinked keeps the photo_id of a file only where the photo tool
+// handed it over and it is shaped like an id of ours. Any other tool's
+// answer is somebody else's text, and the card turns the id into a link
+// inside this app, so it is not taken from there.
+function photoLinked(tool: string, file: SharedFile): SharedFile {
+  const { photo_id: photoId, ...rest } = file
+  if (tool === 'photo' && typeof photoId === 'string' && PHOTO_ID_PATTERN.test(photoId)) {
+    return { ...rest, photo_id: photoId }
+  }
+  return rest
+}
+
+const PHOTO_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
 // drawable says whether this is a file of the conversation, addressed the
 // way this server addresses one.
@@ -1577,8 +1594,16 @@ function FileCard({ file }: { file: SharedFile }) {
   // Nothing is drawn until there is an address to draw it from.
   const href = signed ?? undefined
   const type = file.content_type.toLowerCase()
+  const photoAddress = file.photo_id ? `/photos/${file.photo_id}` : null
+  const picture = signed ? <img src={signed} alt={file.name} className="agent-file-media" /> : null
   const media = !signed ? null : isImage(type) ? (
-    <img src={signed} alt={file.name} className="agent-file-media" />
+    photoAddress ? (
+      <Link to={photoAddress} aria-label={t('agentDrawer.openPhoto')}>
+        {picture}
+      </Link>
+    ) : (
+      picture
+    )
   ) : type.startsWith('video/') ? (
     <video src={signed} controls preload="metadata" className="agent-file-media" />
   ) : type.startsWith('audio/') ? (
@@ -1588,7 +1613,13 @@ function FileCard({ file }: { file: SharedFile }) {
     <div className="agent-artifact agent-file">
       <div className="agent-artifact-head">
         <PaperclipIcon size={11} />
-        <span className="agent-artifact-title">{file.name}</span>
+        {photoAddress ? (
+          <Link className="agent-artifact-title" to={photoAddress}>
+            {file.name}
+          </Link>
+        ) : (
+          <span className="agent-artifact-title">{file.name}</span>
+        )}
         <span className="muted">{formatBytes(file.size)}</span>
         <Tooltip label={t('agentDrawer.openArtifact')}>
           <a

@@ -1251,6 +1251,7 @@ export const ja: Catalog = {
   'agentDrawer.today': '今日',
   'agentDrawer.yesterday': '昨日',
   'agentDrawer.openArtifact': '開く',
+  'agentDrawer.openPhoto': '写真で開く',
   'agentDrawer.citedFrom': 'これを読み取った元（{where}）',
   'agentDrawer.citedFile': 'これを読み取った元',
   'agentDrawer.citedOpen': '画像を原寸で開く',

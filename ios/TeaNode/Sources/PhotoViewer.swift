@@ -210,13 +210,15 @@ struct PhotoPage: View {
     @Binding var isZoomed: Bool
     @State private var picture: UIImage?
     @State private var player: AVPlayer?
-    @State private var videoFileURL: URL?
     @State private var videoProblemText: String?
+    @State private var isPlayingLiveVideo = false
 
     var body: some View {
         ZStack {
             if photo.isVideo {
                 videoBody
+            } else if isPlayingLiveVideo, let player {
+                VideoPlayer(player: player)
             } else if let picture {
                 // A new picture, the large one in place of the small, is a new
                 // zooming view: the old one keeps showing what it was made with.
@@ -239,6 +241,14 @@ struct PhotoPage: View {
         }
         .task(id: isCurrent) {
             await loadVideo()
+        }
+        .overlay(alignment: .topLeading) {
+            if photo.isLivePhoto, isCurrent, !isZoomed {
+                liveButton
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)) { notification in
+            if isPlayingLiveVideo, (notification.object as? AVPlayerItem) === player?.currentItem { stopLiveVideo() }
         }
         .accessibilityElement(children: .contain)
     }
@@ -290,29 +300,63 @@ struct PhotoPage: View {
         }
     }
 
+    /// Floats over the picture of a Live Photo: plays the video it came with.
+    private var liveButton: some View {
+        Button {
+            if isPlayingLiveVideo { stopLiveVideo() } else { Task { await playLiveVideo() } }
+        } label: {
+            Label(
+                isPlayingLiveVideo ? LocalizedStringKey("Stop") : LocalizedStringKey("Live"),
+                systemImage: isPlayingLiveVideo ? "livephoto.slash" : "livephoto"
+            )
+            .font(.subheadline.bold())
+        }
+        .buttonStyle(.glass)
+        .controlSize(.regular)
+        .accessibilityLabel(isPlayingLiveVideo ? LocalizedStringKey("Stop Live Photo") : LocalizedStringKey("Play Live Photo"))
+        .padding()
+    }
+
     /// Plays the video while its page is the one on screen, and lets go of it
-    /// when the person pages away. The video is read once into a file of the
-    /// app's own, since a player cannot send the app's sign-in.
+    /// when the person pages away. A player reads from a fresh address that
+    /// opens without the app's sign-in and serves byte ranges, so the video
+    /// starts at once and only what is watched is read.
     private func loadVideo() async {
-        guard photo.isVideo else { return }
         guard isCurrent else {
             player?.pause()
             player = nil
-            if let videoFileURL { try? FileManager.default.removeItem(at: videoFileURL.deletingLastPathComponent()) }
-            videoFileURL = nil
+            isPlayingLiveVideo = false
             return
         }
-        guard let path = photo.videoPath else { return }
+        guard photo.isVideo, photo.videoPath != nil else { return }
         do {
-            let data = try await model.connection.download(path)
+            let address = try await model.connection.photoPlaybackAddress(photo.id, source: .preview("video"))
             guard !Task.isCancelled else { return }
-            let fileURL = try PhotoTemporaryFile.write(data: data, fileName: "video.mp4")
-            videoFileURL = fileURL
             videoProblemText = nil
-            player = AVPlayer(url: fileURL)
+            player = AVPlayer(url: address)
         } catch {
             if !Task.isCancelled { videoProblemText = error.localizedDescription }
         }
+    }
+
+    /// Plays the video of a Live Photo in place of its picture.
+    private func playLiveVideo() async {
+        do {
+            let address = try await model.connection.photoPlaybackAddress(photo.id, source: .file("liveVideo"))
+            guard isCurrent else { return }
+            let livePlayer = AVPlayer(url: address)
+            player = livePlayer
+            isPlayingLiveVideo = true
+            livePlayer.play()
+        } catch {
+            model.problemText = error.localizedDescription
+        }
+    }
+
+    private func stopLiveVideo() {
+        player?.pause()
+        player = nil
+        isPlayingLiveVideo = false
     }
 }
 
@@ -430,7 +474,7 @@ struct PhotoShareFile: Transferable, Sendable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .item) { item in
             let download = try await item.connection.downloadPhotoFile(item.photo)
-            return SentTransferredFile(try PhotoTemporaryFile.write(download))
+            return SentTransferredFile(download.fileURL)
         }
     }
 }
@@ -443,7 +487,7 @@ struct PhotoShareImage: Transferable, Sendable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .image) { item in
             let download = try await item.connection.downloadPhotoFile(item.photo)
-            return SentTransferredFile(try PhotoTemporaryFile.write(download))
+            return SentTransferredFile(download.fileURL)
         }
     }
 }
@@ -456,25 +500,8 @@ struct PhotoShareMovie: Transferable, Sendable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .movie) { item in
             let download = try await item.connection.downloadPhotoFile(item.photo)
-            return SentTransferredFile(try PhotoTemporaryFile.write(download))
+            return SentTransferredFile(download.fileURL)
         }
-    }
-}
-
-/// PhotoTemporaryFile writes what was read from the server to a file of the
-/// app's own, in a folder of its own so that the file can keep its name.
-enum PhotoTemporaryFile {
-    static func write(_ download: PhotoDownload) throws -> URL {
-        try write(data: download.data, fileName: download.fileName)
-    }
-
-    static func write(data: Data, fileName: String) throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let safeName = fileName.isEmpty ? "photo" : fileName.replacingOccurrences(of: "/", with: "-")
-        let fileURL = folder.appendingPathComponent(safeName)
-        try data.write(to: fileURL, options: .atomic)
-        return fileURL
     }
 }
 

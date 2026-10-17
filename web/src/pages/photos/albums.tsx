@@ -16,6 +16,7 @@ import {
   type PhotoAlbum,
   type PhotoAlbumSuggestion,
 } from '../../photos/api'
+import { titleNamesPlaces } from '../../photos/albumSuggestion'
 import { formatDateRange, personTimeZone } from '../../photos/days'
 import { useSession } from '../../session'
 import { AlbumTitleDialog, PhotoSections, type PhotoSection } from './albumControls'
@@ -109,7 +110,9 @@ function AccountAlbumsPage() {
                       .filter(Boolean)
                       .join(' · ')}
                   </span>
-                  {entry.placeNames.length > 0 && <span className="muted">{entry.placeNames.join(', ')}</span>}
+                  {entry.placeNames.length > 0 && !titleNamesPlaces(entry.albumTitle, entry.placeNames) && (
+                    <span className="muted">{entry.placeNames.join(', ')}</span>
+                  )}
                 </div>
                 <button type="button" onClick={() => setSuggestion(entry)}>
                   {t('photos.createAlbum')}

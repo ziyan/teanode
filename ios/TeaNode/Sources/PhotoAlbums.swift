@@ -371,7 +371,7 @@ struct PhotoSuggestionCard: View {
                 Text(detailText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if !suggestion.placeNames.isEmpty {
+                if !suggestion.placeNames.isEmpty, !suggestion.isTitleMadeOfPlaces {
                     Text(suggestion.placeNames.joined(separator: ", "))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

@@ -108,11 +108,24 @@ public struct PhotoBackupServerPhoto: Codable, Equatable, Sendable {
     public let id: String
     public let clientPhotoId: String
     public let photoKind: String
+    /// The roles of the files the server holds for the photo, by
+    /// PhotoBackupFileRole's raw value. The original, always, for a server that
+    /// does not say.
+    public let photoFileRoles: [String]
 
-    public init(id: String, clientPhotoId: String, photoKind: String = "picture") {
+    public init(id: String, clientPhotoId: String, photoKind: String = "picture", photoFileRoles: [String] = ["original"]) {
         self.id = id
         self.clientPhotoId = clientPhotoId
         self.photoKind = photoKind
+        self.photoFileRoles = photoFileRoles
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        clientPhotoId = try container.decode(String.self, forKey: .clientPhotoId)
+        photoKind = try container.decode(String.self, forKey: .photoKind)
+        photoFileRoles = try container.decodeIfPresent([String].self, forKey: .photoFileRoles) ?? ["original"]
     }
 }
 
@@ -453,8 +466,9 @@ public actor PhotoBackupIndex {
     // MARK: Writing
 
     /// Notes that the server already has these photos, found by FindPhotos:
-    /// their originals are done. Their other files are not known, so those
-    /// still go up (a file the server has is stored once, whatever is sent).
+    /// every file it says it holds is done, so that a reinstall does not send
+    /// an edit or a Live Photo's video again. A file it does not hold still goes
+    /// up.
     public func markServerHas(_ serverPhotos: [PhotoBackupServerPhoto], for items: [PhotoBackupItem]) {
         let byClientPhotoId = Dictionary(serverPhotos.map { ($0.clientPhotoId, $0) }, uniquingKeysWith: { first, _ in first })
         for item in items where contents.records[item.localIdentifier] == nil {
@@ -462,6 +476,9 @@ public actor PhotoBackupIndex {
             guard let found = byClientPhotoId[clientPhotoId] else { continue }
             var record = PhotoBackupRecord(clientPhotoId: clientPhotoId)
             record.roles[PhotoBackupFileRole.original.rawValue] = PhotoBackupRoleRecord(isOnServer: true, serverPhotoId: found.id)
+            for photoFileRole in found.photoFileRoles where PhotoBackupFileRole(rawValue: photoFileRole) != nil {
+                record.roles[photoFileRole] = PhotoBackupRoleRecord(isOnServer: true, serverPhotoId: found.id)
+            }
             contents.records[item.localIdentifier] = record
         }
         didChange()

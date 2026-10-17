@@ -62,6 +62,23 @@ final class PhotoAlbumTests: XCTestCase {
         XCTAssertEqual(suggestion.id, "2026-03-10T08:00:00Z/2026-03-12T20:30:01Z")
     }
 
+    func testPlacesAreSaidOnceByASuggestionWhoseTitleIsMadeOfThem() {
+        func suggestion(title: String, places: [String]) -> PhotoAlbumSuggestion {
+            PhotoAlbumSuggestion(takenAfter: "a", takenBefore: "b", placeNames: places, albumTitle: title, photoCount: 5, samplePhotoIds: [])
+        }
+        XCTAssertTrue(suggestion(title: "Fixtureville, Exampleland", places: ["Fixtureville, Exampleland"]).isTitleMadeOfPlaces)
+        XCTAssertTrue(
+            suggestion(title: "Alpha and Beta, Exampleland", places: ["Alpha, Exampleland", "Beta, Exampleland"]).isTitleMadeOfPlaces)
+        XCTAssertTrue(
+            suggestion(title: "Alpha, Firstland and Beta, Secondland", places: ["Alpha, Firstland", "Beta, Secondland"]).isTitleMadeOfPlaces)
+        // A title that stops at "and more" leaves a place unsaid, and a title of dates names none.
+        XCTAssertFalse(
+            suggestion(title: "Alpha, Beta and more, Exampleland", places: ["Alpha, Exampleland", "Beta, Exampleland", "Gamma, Exampleland"])
+                .isTitleMadeOfPlaces)
+        XCTAssertFalse(suggestion(title: "July 12 to 14, 2030", places: ["Fixtureville, Exampleland"]).isTitleMadeOfPlaces)
+        XCTAssertFalse(suggestion(title: "July 12, 2030", places: []).isTitleMadeOfPlaces)
+    }
+
     func testADetailNamesTheAlbumsAndOlderServersSayNothingOfThem() throws {
         let photo =
             #"{"id":"p1","createdAt":"2026-03-01T00:00:00Z","photoKind":"picture","takenAt":null,"takenAtOffsetMinutes":null,"widthPixels":1,"heightPixels":1,"durationMS":0,"latitude":null,"longitude":null,"placeName":"","cameraMake":"","cameraModel":"","originalFilename":"","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":null,"smallPreviewUrl":"","largePreviewUrl":"","videoPreviewUrl":""}"#

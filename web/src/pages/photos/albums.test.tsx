@@ -105,6 +105,25 @@ it('makes an album from a suggestion with the title the person confirms and ever
   expect(created?.[1]).toEqual({ albumTitle: 'Trip', photoIds: ['photo-1', 'photo-2'] })
 })
 
+it('says the places of a suggestion once: in its title, or under the dates when the title is dates', async () => {
+  serve([
+    suggestion,
+    {
+      ...suggestion,
+      takenAfter: '2030-09-01T08:00:00Z',
+      takenBefore: '2030-09-03T20:00:00Z',
+      placeNames: ['Exampleton'],
+      albumTitle: 'September 1 to 3, 2030',
+    },
+  ])
+  showPage()
+  const panel = (await screen.findByText('Suggested')).closest('section') as HTMLElement
+  // The place that is the title is not said again under the dates.
+  expect(within(panel).getAllByText('Fixtureville')).toHaveLength(1)
+  // A title of dates keeps the line that names where.
+  expect(within(panel).getByText('Exampleton')).toBeTruthy()
+})
+
 it('does not make an album when the title is blank', async () => {
   serve()
   showPage()

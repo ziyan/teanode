@@ -260,6 +260,7 @@ struct FileCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
     @State private var shareAddress: URL?
+    @State private var openedPhotoId: OpenedPhoto?
 
     var body: some View {
         AgentBubble {
@@ -273,11 +274,19 @@ struct FileCard: View {
                     .font(.subheadline)
                     .lineLimit(1)
                     Spacer(minLength: 8)
-                    Button("Open") {
-                        Task { await app.preview(file.path, name: file.name) }
+                    if let photoId = file.photoId {
+                        // A photo the agent showed opens in the app's photo
+                        // viewer, where it can be favorited, saved or shared.
+                        Button("Open in Photos") { openedPhotoId = OpenedPhoto(id: photoId) }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                    } else {
+                        Button("Open") {
+                            Task { await app.preview(file.path, name: file.name) }
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
                     }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
                 }
                 if file.isImage {
                     RemotePicture(path: file.path, name: file.name)
@@ -297,12 +306,67 @@ struct FileCard: View {
                 }
             }
         }
+        .fullScreenCover(item: $openedPhotoId) { opened in
+            if let connection = app.connection {
+                AgentPhotoViewer(photoId: opened.id, connection: connection)
+            }
+        }
         .task(id: file.attachmentId) {
             // A player cannot send the app's sign-in, so it is given an
             // address that opens without one, for a few hours.
             if file.isVideo || file.isAudio, let connection = app.connection {
                 shareAddress = try? await connection.shareAddress(attachmentId: file.attachmentId)
             }
+        }
+    }
+}
+
+/// AgentPhotoViewer opens one photo the agent showed in a conversation in the
+/// app's photo viewer. The photo is not in any list the Photos screens have
+/// read, so it has a model of its own holding just that photo.
+struct AgentPhotoViewer: View {
+    let photoId: String
+    @State private var model: PhotosModel
+    @State private var readiness = Readiness.reading
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Readiness { case reading, ready, failed(String) }
+
+    init(photoId: String, connection: Connection) {
+        self.photoId = photoId
+        _model = State(initialValue: PhotosModel(connection: connection))
+    }
+
+    var body: some View {
+        switch readiness {
+        case .ready:
+            PhotoViewer(model: model, listKey: .library, openedPhotoId: photoId)
+        case .reading:
+            ProgressView()
+                .task { await read() }
+        case .failed(let problemText):
+            NavigationStack {
+                ContentUnavailableView {
+                    Label("Cannot show this photo", systemImage: "exclamationmark.circle")
+                } description: {
+                    Text(problemText)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close", systemImage: "xmark") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private func read() async {
+        do {
+            let detail = try await model.connection.photoDetail(photoId)
+            model.hold([detail.photo], as: .library)
+            readiness = .ready
+        } catch {
+            readiness = .failed(error.localizedDescription)
         }
     }
 }
@@ -387,7 +451,7 @@ struct ToolFiles: View {
     let line: TranscriptLine
 
     var body: some View {
-        ForEach(AgentFile.of(toolResult: line.text), id: \.attachmentId) { file in
+        ForEach(AgentFile.of(toolResult: line.text, tool: line.detail), id: \.attachmentId) { file in
             if file.isArtifact {
                 ArtifactCard(file: file)
             } else {

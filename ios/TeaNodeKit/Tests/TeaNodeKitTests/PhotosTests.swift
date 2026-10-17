@@ -175,32 +175,69 @@ final class PhotoDownloadTests: XCTestCase {
             + #","photoFiles":[{"photoFileRole":"original","contentType":"image/heic","fileSizeBytes":9,"originalFilename":"IMG_0001.HEIC","fileUrl":"/api/v1/photos/p1/files/original"}],"photoPreviews":[{"photoPreviewSize":"large","contentType":"image/jpeg","previewSizeBytes":5,"previewUrl":"/api/v1/photos/p1/previews/large?v=1"}]}}}"#
     }
 
-    private func connection(isOriginalReadable: Bool) throws -> Connection {
+    private func connection(isOriginalReadable: Bool) throws -> (Connection, FakeServer) {
         let detail = detailAnswer()
         let fake = FakeServer { request in
             let path = request.url?.path ?? ""
-            if path.hasSuffix("/graphql") { return (200, detail) }
+            if path.hasSuffix("/graphql") {
+                let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+                if body.contains("PhotoPlaybackAddress") {
+                    if body.contains(#""photoFileRole":"original""#) {
+                        return (200, #"{"data":{"PhotoPlaybackAddress":"/api/v1/photos/playback/p1/files/original?owner=o1&signature=s1"}}"#)
+                    }
+                    return (200, #"{"data":{"PhotoPlaybackAddress":"/api/v1/photos/playback/p1/previews/large?owner=o1&signature=s2"}}"#)
+                }
+                return (200, detail)
+            }
             if path.hasSuffix("/files/original") { return isOriginalReadable ? (200, "original") : (404, "gone") }
             return (200, "preview")
         }
         let account = Account(server: try ServerAddress(parsing: "assistant.example.com"), clientId: "test-client", accessToken: "tnt_test", refreshToken: "", expiresAt: Date().addingTimeInterval(3600), username: "test-owner")
-        return Connection(account: account, transport: fake)
+        return (Connection(account: account, transport: fake), fake)
     }
 
-    func testTheOriginalFileIsWhatIsSaved() async throws {
-        let photo = try JSONDecoder().decode(PhotoDetail.self, from: Data(#"{"photo":"#.utf8) + Data(photoJSON.utf8) + Data(#","photoFiles":[],"photoPreviews":[]}"#.utf8)).photo
-        let download = try await connection(isOriginalReadable: true).downloadPhotoFile(photo)
+    private func decodedPhoto() throws -> Photo {
+        try JSONDecoder().decode(PhotoDetail.self, from: Data(#"{"photo":"#.utf8) + Data(photoJSON.utf8) + Data(#","photoFiles":[],"photoPreviews":[]}"#.utf8)).photo
+    }
+
+    func testTheOriginalFileIsWhatIsSavedAndGoesStraightToAFile() async throws {
+        let (connection, fake) = try connection(isOriginalReadable: true)
+        let download = try await connection.downloadPhotoFile(decodedPhoto())
+        defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
         XCTAssertTrue(download.isOriginal)
-        XCTAssertEqual(String(decoding: download.data, as: UTF8.self), "original")
+        XCTAssertEqual(try String(contentsOf: download.fileURL, encoding: .utf8), "original")
         XCTAssertEqual(download.fileName, "IMG_0001.HEIC")
+        XCTAssertEqual(download.fileURL.lastPathComponent, "IMG_0001.HEIC")
+        // It was read from the signed address, which needs no sign-in, not through the token.
+        let fileRequest = try XCTUnwrap(fake.sent.first { $0.url?.path.hasSuffix("/files/original") == true })
+        XCTAssertEqual(fileRequest.url?.absoluteString, "https://assistant.example.com/api/v1/photos/playback/p1/files/original?owner=o1&signature=s1")
+        XCTAssertNil(fileRequest.value(forHTTPHeaderField: "Authorization"))
     }
 
     func testTheLargePreviewStandsInWhenTheOriginalCannotBeRead() async throws {
-        let photo = try JSONDecoder().decode(PhotoDetail.self, from: Data(#"{"photo":"#.utf8) + Data(photoJSON.utf8) + Data(#","photoFiles":[],"photoPreviews":[]}"#.utf8)).photo
-        let download = try await connection(isOriginalReadable: false).downloadPhotoFile(photo)
+        let (connection, _) = try connection(isOriginalReadable: false)
+        let download = try await connection.downloadPhotoFile(decodedPhoto())
+        defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
         XCTAssertFalse(download.isOriginal)
-        XCTAssertEqual(String(decoding: download.data, as: UTF8.self), "preview")
+        XCTAssertEqual(try String(contentsOf: download.fileURL, encoding: .utf8), "preview")
         XCTAssertEqual(download.fileName, "IMG_0001.jpg")
+    }
+
+    /// The variables of the last document sent, which is where an argument left out is seen to be left out.
+    private func sentVariables(of fake: FakeServer) throws -> [String: String] {
+        let body = try XCTUnwrap(fake.sent.last?.httpBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        return try XCTUnwrap(object["variables"] as? [String: String])
+    }
+
+    func testAPlaybackAddressIsAFullAddressAskedForOneSource() async throws {
+        let (connection, fake) = try connection(isOriginalReadable: true)
+        let address = try await connection.photoPlaybackAddress("p1", source: .preview("large"))
+        XCTAssertEqual(address.absoluteString, "https://assistant.example.com/api/v1/photos/playback/p1/previews/large?owner=o1&signature=s2")
+        XCTAssertEqual(try sentVariables(of: fake), ["photoId": "p1", "photoPreviewSize": "large"])
+        _ = try await connection.photoPlaybackAddress("p1", source: .file("original"))
+        XCTAssertEqual(try sentVariables(of: fake), ["photoId": "p1", "photoFileRole": "original"])
+        XCTAssertTrue(Documents.photoPlaybackAddress.contains("PhotoPlaybackAddress(photoId: $photoId, photoPreviewSize: $photoPreviewSize, photoFileRole: $photoFileRole)"))
     }
 
     func testFileExtensionsFollowTheContentType() {

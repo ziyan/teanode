@@ -257,7 +257,7 @@ final class PhotoBackupIndexTests: XCTestCase {
         XCTAssertLessThan(known.count, 26)
     }
 
-    func testPhotosTheServerHasAreMarkedDoneForTheirOriginalOnly() async throws {
+    func testPhotosTheServerHasAreMarkedDoneForTheirOriginalWhenItSaysNothingMore() async throws {
         let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
         let items = [makeItem("a", cloudIdentifier: "cloud-a", roles: [.original, .liveVideo]), makeItem("b"), makeItem("c")]
         let asked = await index.clientPhotoIdsToAsk(about: items)
@@ -269,6 +269,26 @@ final class PhotoBackupIndexTests: XCTestCase {
         XCTAssertEqual(record?.serverPhotoId, "p1")
         let askedAgain = await index.clientPhotoIdsToAsk(about: items)
         XCTAssertEqual(askedAgain, ["local:b", "local:c"])
+    }
+
+    func testEveryRoleTheServerHoldsIsMarkedDoneSoAReinstallSendsNoEditOrLiveVideoAgain() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        let items = [
+            makeItem("a", cloudIdentifier: "cloud-a", roles: [.original, .edited, .liveVideo]),
+            makeItem("b", cloudIdentifier: "cloud-b", roles: [.original, .edited, .liveVideo]),
+        ]
+        await index.markServerHas(
+            [
+                PhotoBackupServerPhoto(id: "p1", clientPhotoId: "cloud-a", photoKind: "livePhoto", photoFileRoles: ["original", "edited", "liveVideo", "somethingNew"]),
+                PhotoBackupServerPhoto(id: "p2", clientPhotoId: "cloud-b", photoKind: "livePhoto", photoFileRoles: ["original", "liveVideo"]),
+            ], for: items)
+        let plan = await index.plan(items: items)
+        // Only the edit the server does not hold goes up, and a role this app
+        // does not know is ignored.
+        XCTAssertEqual(plan.map(\.key), ["b|edited"])
+        let record = await index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.roles.keys.sorted(), ["edited", "liveVideo", "original"])
+        XCTAssertTrue(record?.roles.values.allSatisfy { $0.isOnServer && $0.serverPhotoId == "p1" } == true)
     }
 
     func testRefusalsCountAndAreClearedByBackUpNow() async throws {
@@ -416,6 +436,11 @@ final class PhotoBackupServerTests: XCTestCase {
         let found = try JSONDecoder().decode(
             [PhotoBackupServerPhoto].self, from: Data(#"[{"id":"p1","clientPhotoId":"cloud-a","photoKind":"livePhoto"}]"#.utf8))
         XCTAssertEqual(found, [PhotoBackupServerPhoto(id: "p1", clientPhotoId: "cloud-a", photoKind: "livePhoto")])
+        XCTAssertTrue(Documents.findPhotos.contains("photoFileRoles"))
+        let withRoles = try JSONDecoder().decode(
+            [PhotoBackupServerPhoto].self,
+            from: Data(#"[{"id":"p1","clientPhotoId":"cloud-a","photoKind":"livePhoto","photoFileRoles":["original","liveVideo"]}]"#.utf8))
+        XCTAssertEqual(withRoles.first?.photoFileRoles, ["original", "liveVideo"])
     }
 }
 

@@ -207,6 +207,22 @@ public struct PhotoAlbumSuggestion: Codable, Identifiable, Hashable, Sendable {
     public func dateRangeText(timeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
         PhotoAlbumText.dateRange(from: takenAfter, to: takenBefore, timeZone: timeZone, locale: locale)
     }
+
+    /// Whether the proposed title is made of the places, so that a line
+    /// listing them under the dates would say them twice. A place is a "City,
+    /// Country" name and a title may say the country once for several cities,
+    /// so a place is in the title when its city and its country each appear in
+    /// it. A title of dates, or one that stops at "and more", leaves a place
+    /// unsaid, and the line stays.
+    public var isTitleMadeOfPlaces: Bool {
+        !placeNames.isEmpty
+            && placeNames.allSatisfy { placeName in
+                placeName.components(separatedBy: ", ")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                    .allSatisfy { albumTitle.contains($0) }
+            }
+    }
 }
 
 /// PhotoAlbumText writes what an album screen says in muted text.
@@ -271,6 +287,11 @@ extension Documents {
             photoPreviews { photoPreviewSize contentType previewSizeBytes previewUrl }
             albums { id albumTitle }
           }
+        }
+        """
+    public static let photoPlaybackAddress = """
+        query ($photoId: String!, $photoPreviewSize: String, $photoFileRole: String) {
+          PhotoPlaybackAddress(photoId: $photoId, photoPreviewSize: $photoPreviewSize, photoFileRole: $photoFileRole)
         }
         """
     public static let readPhotoLibrary = """
@@ -515,12 +536,13 @@ public enum PhotoTimeline {
     }
 }
 
-/// PhotoDownload is a photo's file read from the server, to be shared or saved
-/// to the phone's Photos.
+/// PhotoDownload is a photo's file read from the server into a file of the
+/// app's own, to be shared or saved to the phone's Photos. The caller removes
+/// the folder the file is in when it is done with it.
 public struct PhotoDownload: Sendable {
-    public let data: Data
-    /// The name to give the file, with an extension the phone's Photos knows
-    /// the kind of file by.
+    public let fileURL: URL
+    /// The name the file has, with an extension the phone's Photos knows the
+    /// kind of file by.
     public let fileName: String
     /// Whether this is the file the photo was made from. False when that file
     /// could not be read and a preview stands in for it.
@@ -546,24 +568,58 @@ extension PhotoDownload {
     }
 }
 
+/// PhotoPlaybackSource is what an address for a player or a download task is
+/// asked for: one smaller copy of a photo, or one of the files it is made of.
+public enum PhotoPlaybackSource: Sendable, Equatable {
+    /// A photoPreviewSize: "small", "large" or "video".
+    case preview(String)
+    /// A photoFileRole: "original", "edited" or "liveVideo".
+    case file(String)
+}
+
 extension Connection {
+    /// An address for one preview or file of a photo that opens without
+    /// signing in and serves byte ranges, for six hours: for a player, which
+    /// cannot send the token and must not read a whole video before it plays,
+    /// and for a download task. Each playback asks for a fresh one.
+    public func photoPlaybackAddress(_ photoId: String, source: PhotoPlaybackSource) async throws -> URL {
+        struct Answer: Decodable, Sendable { let PhotoPlaybackAddress: String }
+        var variables: [String: JSONValue] = ["photoId": .string(photoId)]
+        switch source {
+        case .preview(let photoPreviewSize): variables["photoPreviewSize"] = .string(photoPreviewSize)
+        case .file(let photoFileRole): variables["photoFileRole"] = .string(photoFileRole)
+        }
+        let path = try await execute(Documents.photoPlaybackAddress, variables: variables, as: Answer.self).PhotoPlaybackAddress
+        return try absoluteAddress(of: path)
+    }
+
     /// The original file of a photo, or, when that cannot be read, the large
-    /// preview (the video preview, for a video) in its place.
+    /// preview (the video preview, for a video) in its place. The bytes go
+    /// straight to a file with a download task and are never held in memory,
+    /// since an original can be hundreds of megabytes.
     public func downloadPhotoFile(_ photo: Photo) async throws -> PhotoDownload {
         let detail = try? await photoDetail(photo.id)
-        if let file = detail?.originalFile, let data = try? await download(file.fileUrl) {
-            let name = file.originalFilename.isEmpty ? photo.fileName : file.originalFilename
-            return PhotoDownload(data: data, fileName: name, isOriginal: true)
+        if let file = detail?.originalFile,
+            let fileURL = try? await downloadSigned(photo.id, source: .file(file.photoFileRole), fileName: file.originalFilename.isEmpty ? photo.fileName : file.originalFilename)
+        {
+            return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: true)
         }
         let previewSize = photo.isVideo ? "video" : "large"
         let preview = detail?.photoPreviews.first { $0.photoPreviewSize == previewSize }
-        guard let path = preview?.previewUrl ?? (photo.isVideo ? photo.videoPath : photo.viewerPreviewPath) else {
+        guard preview != nil || (photo.isVideo ? photo.videoPath : photo.viewerPreviewPath) != nil else {
             throw TeaNodeError.refused("This photo has nothing to save yet. Try again in a moment.")
         }
-        let data = try await download(path)
         let fileExtension = preview.flatMap { PhotoDownload.fileExtension(forContentType: $0.contentType) } ?? (photo.isVideo ? "mp4" : "jpg")
         let baseName = (photo.fileName as NSString).deletingPathExtension
-        return PhotoDownload(data: data, fileName: "\(baseName).\(fileExtension)", isOriginal: false)
+        let fileURL = try await downloadSigned(photo.id, source: .preview(previewSize), fileName: "\(baseName).\(fileExtension)")
+        return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: false)
+    }
+
+    /// Mints an address and reads what it serves into a file named fileName,
+    /// in a folder of its own so that the file can keep its name.
+    private func downloadSigned(_ photoId: String, source: PhotoPlaybackSource, fileName: String) async throws -> URL {
+        let address = try await photoPlaybackAddress(photoId, source: source)
+        return try await downloadFile(from: address, fileName: fileName)
     }
 }
 
