@@ -16,7 +16,8 @@ costs as much as the library is large, for pictures nobody will ask about.
 A photo is described only when somebody works with it: the agent looks at
 it, or the person asks for a description in the viewer. The description,
 the words the model read in the picture, and the model that wrote them are
-kept on the photo, embedded like other text, and searched from then on.
+kept on the photo, embedded like other text, and searched from then on. The
+agent's scan model, the cheap one it uses for work nobody waits on, writes it.
 
 Before a photo is described it is still found by everything the server
 reads without a model: when and where it was taken, the place's name, the

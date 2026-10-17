@@ -32,8 +32,11 @@ them to the phone's Photos library, one or a selection at a time.
 
 The app needs full photo library access to back up, and asks for it only
 when the person turns backup on. A photo saved from TeaNode to the phone is
-recognized by its content when the phone backs it up again, so it is not
-stored twice.
+backed up again like any other photo of the phone. When the file the phone
+sends has the same bytes as the original TeaNode already holds, the upload
+joins that photo under the phone's name, so the photo is in the timeline once
+and counted against the quota once; a file the phone has changed, such as a
+re-encoded copy, is a photo of its own.
 
 Keeping an album on the phone automatically, and mirroring the phone's own
 albums, are left out of this design.

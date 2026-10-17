@@ -1,4 +1,4 @@
-# Faces are found on the server, and named from the address book
+# Faces are found on the server, and named from contacts
 
 - Status: proposed
 - Date: 2026-10-16
@@ -21,8 +21,9 @@ The address book is already the only list of people
 A small C++ program, `teanode-faces`, built against OpenCV with its YuNet
 face detector and SFace face recognizer, reads one picture as raw pixels
 and prints the faces it found and a vector for each. Reading raw pixels keeps
-OpenCV's image decoders, and the libraries they bring, out of the image. It sits in the image beside ffmpeg,
-and the server runs it the way it runs ffmpeg. The Go code stays pure Go.
+OpenCV's image decoders, and the libraries they bring, out of the image. It
+sits in the image beside ffmpeg, and the server runs it the way it runs
+ffmpeg. The Go code stays pure Go.
 When the program is not installed, faces are reported as unavailable and
 everything else works.
 
@@ -38,8 +39,8 @@ has.
 ## Consequences
 
 The image grows by about 80 MB: 42 MB of OpenCV libraries and 39 MB of
-models. The detector and
-recognizer are MIT and Apache 2.0 licensed respectively.
+models. The detector and recognizer are MIT and Apache 2.0 licensed
+respectively.
 
 Faces in a photo shared with somebody else are the owner's: a reader sees
 the names the owner gave, and never has the reader's own faces found in it.

@@ -282,7 +282,8 @@ of its own.
   a Photos page in the rail. Upload from the dashboard or with
   `teanode photo upload <folder>`, or turn on **Photo backup** in the iPhone
   app's settings to send the phone's whole library in the background. The
-  iPhone app only signs in over https, so a server reached at
+  iPhone app only signs in over https (plain http is accepted only for
+  loopback, which a phone cannot reach), so a server reached at
   `http://localhost` or a local address needs a TLS address first (see
   "Photos and the iPhone app" in `reference/deployment.md`). Deleting a photo
   on the phone leaves it here. A library is large: put the storage

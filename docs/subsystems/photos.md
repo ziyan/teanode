@@ -72,10 +72,16 @@ Every client uploads through one endpoint, `/api/v1/photos/uploads`, which
 speaks the IETF resumable upload draft, because the iPhone's background
 uploads do: `OPTIONS` says the largest file allowed, `POST` creates an upload
 and answers an interim `104` with its address before reading the body,
-`HEAD` says how many bytes are stored, `PATCH` appends from there. What the
+`HEAD` says how many bytes are stored, `PATCH` appends from there. `OPTIONS`
+writes the limit as `max-size=<bytes>` for a client that names revision 5 or
+later of the draft in `Upload-Draft-Interop-Version`, and as the bare number
+for one that names an earlier revision or none. What the
 file is (the uploader's own name for the photo, which file of it, when it was
 taken) travels in `X-Photo-*` headers, since a background upload's body is
-nothing but the file.
+nothing but the file. Only `X-Photo-Client-ID` is required. When the request
+names its content type, a type the library does not keep is refused with a 415
+before a byte is read; a request that names none, or `application/octet-stream`,
+is judged by its file name and its bytes once they have all arrived.
 
 The body is stored in parts of at most 8 MiB as it arrives, each with a
 receipt row once it is whole, so the offset a client is told is always bytes
@@ -192,14 +198,16 @@ and narrows by date or place first.
 A photo can be attached to a turn as a reference, as a recording or a finance
 transaction is: `AgentReference.photoId`, with `photoTitle` for the chip. The
 server reads the photo with the asking agent's owner when it keeps the turn,
-so a photo that is not theirs, or is deleted, is refused by `AskAgent` (not
+so a photo the person may not read (one that is not theirs and is in no album
+that reaches them), or one that is deleted, is refused by `AskAgent` (not
 found) and dropped by any other caller; a photo in the Trash is kept and said
 to be there. The chip is rewritten from the stored row, whatever the client
 sent: the place and the day it was taken on the clock where it was taken,
 separated by a middle dot, or the file name, or "Photo". The model is told the
 photo's id, kind, time, whether it is in the Trash, and the place and file name
-fenced as data, and that it can `look` at it with the photo tool. Nothing from
-the description is copied in. The same photo twice is told once.
+fenced as data, and that it can `look` at it with the photo tool. A photo of
+somebody else's album is told without its place unless the share includes
+places. Nothing from the description is copied in. The same photo twice is told once.
 
 ## Faces
 
@@ -212,8 +220,7 @@ enough, under a per-person lock; otherwise it starts a group. A group is
 nobody until the person names it by choosing a contact, or making one; the
 agent never names a face by guessing. A group nobody has named is listed as a
 person once it has at least three faces
-(`MinimumUnnamedPhotoFaceGroupFaceCount`), which is three photos, since a
-group never takes two faces from one photo; a pair is more often a chance
+(`MinimumUnnamedPhotoFaceGroupFaceCount`); a pair is more often a chance
 likeness. A named group is always listed. The agent's photo tool can take a name off a
 group (`person-unname`), hide a group or list it again (`person-hide`, with
 `is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
@@ -252,7 +259,8 @@ What a reader who is not the photo's owner is given:
 - no latitude, longitude or place name, no favorite mark and no uploader name
   for it, unless the share includes places (a circle's album has no share, so
   its members see only their own photos' places, and the owner of an album
-  sees the places of others' photos in it only if a share gave them);
+  never sees the places of others' photos in it, since no share points back at
+  the owner);
 - the preview in place of the original: the `files` route, a file in
   `ReadPhoto` and a signed playback address for a file all answer with the
   `large` preview (or a video's `video` preview), named as a picture or a

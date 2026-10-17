@@ -43,11 +43,13 @@ uploads into plain ones; they still work, and restart from the beginning
 when cut.
 
 An upload that has not finished holds bytes that are not photos yet, so the
-bytes of an account's unfinished uploads count towards its limit, and
+bytes of an account's unfinished uploads count toward its limit, and
 starting an upload again for the same photo and file ends the earlier try, so
 that restarts do not pile up. An upload has at most twice as many parts as a
-file of the largest size needs, and a type that is not kept is refused before
-a byte is read. A client that has sent every byte waits, asking where the
+file of the largest size needs. When the request names its type, a type that
+is not kept is refused before a byte is read; a request that names none, or
+names `application/octet-stream`, is judged by its file name and its bytes
+once they have all arrived. A client that has sent every byte waits, asking where the
 upload is, while the server reads the parts back and stores the file, instead
 of sending the last part again.
 

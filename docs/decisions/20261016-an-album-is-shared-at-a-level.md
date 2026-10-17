@@ -27,12 +27,15 @@ person. Every member views and contributes; admins rename and delete them.
 A photo added to somebody else's album stays the photo of the person who
 added it, on their quota. When they leave the circle the album was shared
 through, their photos leave its albums in the same transaction. A reader who
-wants to keep one saves it to their own library, which costs no bytes, since
-the blob is already stored.
+wants to keep one saves it to their own library; where the share includes the
+location that costs no bytes, since the blob is already stored.
 
 Readers do not see where a photo was taken, and get the large preview, with
 no location in it, rather than the original file, unless the owner included
-the location when sharing.
+the location when sharing. Without it they are given no description, text in
+the picture or file name either, since those can name the place. The owner of
+an album does not see where photos others added to it were taken, and the
+members of a circle's album see only their own photos' places.
 
 The reader's agent reads shared albums where they are, through the owner's
 rows, and copies nothing into the reader's library.

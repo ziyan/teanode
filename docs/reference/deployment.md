@@ -403,11 +403,12 @@ rail has a **Photos** row for everybody who may use it.
    button. The same applies to turning on Calendar, Reminders, Contacts or
    mail there. Turning a service off keeps its data.
 
-The iPhone app only signs in over https. The assistant compose file publishes
-port 8080 on the loopback interface alone, so a phone cannot reach it, and
-`http://127.0.0.1:8080` and a plain `http://` address on the local network
-are both refused by the app. Put a TLS reverse proxy in front of 8080 on a
-name such as `photos.example.com` with a certificate from a certificate
+The iPhone app only signs in over https, with one exception: plain `http://` is
+accepted for `localhost`, `127.0.0.1`, `::1` and `*.localhost`, which a phone
+cannot reach, because they name the phone itself. The assistant compose file
+publishes port 8080 on the loopback interface alone, so a phone cannot reach
+it, and a plain `http://` address on the local network is refused by the app.
+Put a TLS reverse proxy in front of 8080 on a name such as `photos.example.com` with a certificate from a certificate
 authority the phone trusts (Caddy, nginx with Let's Encrypt, a tunnel
 service), list the proxy's address under `trustedProxies` (see
 `docs/configuration.md`) so that secure cookies and the addresses in the audit
