@@ -16206,3 +16206,168 @@ body.has-recording-bar .content {
     padding-left: 0;
   }
 }
+
+/* --- the Location page ------------------------------------------------------
+   A map with the people under it, then tabs of rows. The rows are buttons that
+   choose a person, a place or a visit, and keep one height whether chosen or
+   not: the border is there from the start, transparent, and only its color
+   changes. */
+.location-map-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.location-map {
+  position: relative;
+  height: 360px;
+  background: var(--rail);
+}
+
+.location-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* MapLibre's styles are light. In dark mode the map is dimmed rather than
+   drawn from a second style; the markers are elements above the canvas, so
+   the pictures and icons on them keep their colors. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .location-map .maplibregl-canvas {
+    filter: brightness(0.8) contrast(1.1);
+  }
+}
+
+:root[data-theme='dark'] .location-map .maplibregl-canvas {
+  filter: brightness(0.8) contrast(1.1);
+}
+
+.location-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-round);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-raised);
+  cursor: pointer;
+}
+
+.location-marker-person {
+  width: 40px;
+  height: 40px;
+}
+
+.location-marker-place {
+  width: 28px;
+  height: 28px;
+}
+
+.location-marker.is-selected {
+  border-color: var(--leaf);
+}
+
+.location-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  color: var(--text);
+}
+
+.location-people .location-row {
+  margin-bottom: 0;
+}
+
+.location-row.is-selected {
+  border-color: var(--leaf);
+  background: color-mix(in srgb, var(--leaf) 10%, var(--surface));
+}
+
+.location-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+}
+
+.location-row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.location-row-body > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-row-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: var(--text-label);
+}
+
+.location-day-picker {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.location-day-head {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+/* The name of a day that chooses it. A heading first, so it is drawn as one
+   and not as a button. */
+.location-day-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+}
+
+.location-day-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.location-credit {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+}
+
+.location-nearby {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .location-map {
+    height: 300px;
+  }
+}

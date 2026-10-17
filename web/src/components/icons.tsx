@@ -984,3 +984,71 @@ export function ReceiptIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// LocationIcon is a map pin: the page that shows where people are, and a place
+// that has no label to draw instead.
+export function LocationIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </Icon>
+  )
+}
+
+// HomeIcon is a house: the place labeled home.
+export function HomeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m3 10 9-7 9 7" />
+      <path d="M5 9v11h14V9" />
+      <path d="M10 20v-6h4v6" />
+    </Icon>
+  )
+}
+
+// BriefcaseIcon is a briefcase: the place labeled work.
+export function BriefcaseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+      <path d="M3 13h18" />
+    </Icon>
+  )
+}
+
+// GraduationCapIcon is a mortarboard: the place labeled school.
+export function GraduationCapIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m2 9 10-5 10 5-10 5Z" />
+      <path d="M6 11.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-4.5" />
+      <path d="M22 9v6" />
+    </Icon>
+  )
+}
+
+// FamilyIcon is two adults and a child: the place labeled family.
+export function FamilyIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="7" cy="6" r="2.5" />
+      <circle cx="17" cy="6" r="2.5" />
+      <circle cx="12" cy="13" r="2" />
+      <path d="M3 20v-3a3 3 0 0 1 3-3h2" />
+      <path d="M21 20v-3a3 3 0 0 0-3-3h-2" />
+      <path d="M9.5 21v-2.5a2.5 2.5 0 0 1 5 0V21" />
+    </Icon>
+  )
+}
+
+// DumbbellIcon is a barbell: the place labeled gym.
+export function DumbbellIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 7v10M3 9.5v5M18 7v10M21 9.5v5" />
+      <path d="M6 12h12" />
+    </Icon>
+  )
+}

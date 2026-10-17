@@ -57,6 +57,9 @@ const MailboxSettingsPage = lazyPage(async () => ({
 const CalendarPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "calendar" */ './pages/calendar')).CalendarPage,
 }))
+const LocationPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "location" */ './pages/location')).LocationPage,
+}))
 const MailDetailPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "operations" */ './pages/mailDetail')).MailDetailPage,
 }))
@@ -475,6 +478,7 @@ export function App() {
                       <Route path="/contacts" element={<AddressBookPage />} />
                       <Route path="/calendar" element={<CalendarPage />} />
                       <Route path="/reminders" element={<CalendarPage />} />
+                      <Route path="/location" element={<LocationPage />} />
                       <Route path="/mailbox/contacts" element={<AddressBookPage />} />
                       <Route path="/mailbox/calendar" element={<CalendarPage />} />
                       <Route path="/mailbox/subscriptions" element={<MailboxSubscriptionsPage />} />
