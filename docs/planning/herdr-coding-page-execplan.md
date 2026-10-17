@@ -22,14 +22,20 @@ To see it working: open `/coding` on the dashboard with a computer running herdr
 
 ## Progress
 
-- [ ] Milestone 1: server side: session placement fields, `focus` action, `open` beside a pane, on the computer program, agent tool, GraphQL, Go client, CLI, tests, docs.
-- [ ] Milestone 2: dashboard Coding page, rail row, settings card linking to it, i18n in en/zh/ja.
-- [ ] Milestone 3: iPhone Coding screen, TeaNodeKit operations and tests, demo data, CI screenshots, strings in three languages.
-- [ ] Milestone 4: deploy the branch and the computer program on gen7, use it for real from desktop and phone widths, look at every screen, review until clean, parity check.
+- [x] Milestone 1: server side: session placement fields, `focus` action, `open` beside a pane, on the computer program, agent tool, GraphQL, Go client, CLI, tests, docs (2026-10-17).
+- [x] Milestone 2: dashboard Coding page, rail row, settings card linking to it, i18n in en/zh/ja (2026-10-17).
+- [x] Milestone 3: iPhone Coding screen, TeaNodeKit operations and tests, demo data, CI screenshots, strings in three languages (2026-10-17).
+- [x] Milestone 4: deployed with the computer program on three computers; used from the dashboard at desktop and phone widths (answer, send, reply arriving, new tab beside, close, focus) and through the agent; two review rounds fixed (2026-10-17).
+- [ ] Merge on the person's word, then a TestFlight build.
 
 ## Surprises & Discoveries
 
 - herdr 0.8.2's `tab.list` gives each tab `number` (its position) and `focused`; `workspace.list` gives `number`, `focused` and `active_tab_id`. The socket method `agent.focus` takes `{"target": <pane id>}` (the same target `agent.read` takes) and brings the agent's workspace, tab and pane forward. `tab.focus` takes a tab id.
+
+- The computer program had a second list of the herdr actions it accepts (`handle` in `internal/computer/computer.go`), so `focus` was refused there although `RunHerdr` knew it. Every `herdr_` action now goes to `RunHerdr`, and a test sends each one through `handle`.
+- herdr's `tab.create` does not move what is on the computer's screen, so opening beside never disturbs someone at the keyboard (checked on a real herdr).
+- A session that has said nothing has no history file, and reading it is refused; both screens now treat that as an empty transcript.
+- Rows named by their tab ("tab 1") or agent ("Claude Code") could not be told apart. Rows and tab chips now lead with the pane title the coding agent sets, unless it is only the shell prompt, the workspace's name or the agent's name.
 
 ## Decision Log
 
@@ -41,7 +47,7 @@ To see it working: open `/coding` on the dashboard with a computer running herdr
 
 ## Outcomes & Retrospective
 
-(To be written at completion.)
+Every capability is on all five surfaces: list, read, screen, send (with files), answer, watch, open, open beside, close and focus, on the agent tool, GraphQL, the command line, the dashboard and the iPhone. Using it for real found four bugs the tests had not (the second action list, the history-less session, unreadable rows, the Send button under the assistant's round button), and the two review rounds found a lost draft on tab switch, a failed computer closing the open session, and an iPhone presence check that held up mail.
 
 ## Context and Orientation
 
