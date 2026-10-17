@@ -237,4 +237,6 @@ it('shares the location before the calendar, so a retry after a calendar failure
       vi.mocked(graphql).mock.calls.findIndex(([document]) => document.includes('ShareCalendar('))
     ]
   expect(locationOrder).toBeLessThan(calendarOrder)
+  // The thanks names both, not only the calendar.
+  expect(await screen.findByText('Shared your calendar and where you are with Everyone in Fixture Home')).toBeTruthy()
 })

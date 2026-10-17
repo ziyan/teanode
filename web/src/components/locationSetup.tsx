@@ -19,6 +19,10 @@ import { useQuery } from './useQuery'
 // done says whether it is, worked out from the server and not stored; "Not
 // now" puts the setup away for good.
 
+// A browser that knows where it is only to within this many meters (an answer
+// from the Wi-Fi network or the address) would label a place beside the house.
+const HOME_MAXIMUM_ACCURACY_METERS = 300
+
 type FamilyCircle = { id: string; name: string; circleKind: string }
 type SharedWith = { granteeCircleId: string | null }
 type OwnPlace = { id: string; latitudeDegrees: number; longitudeDegrees: number; radiusMeters: number }
@@ -82,6 +86,10 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
       const position = await readBrowserLocation()
       if (position.latitudeDegrees === undefined || position.longitudeDegrees === undefined) {
         toast.failed(t('location.checkInNoPosition'))
+        return
+      }
+      if (position.accuracyMeters !== undefined && position.accuracyMeters > HOME_MAXIMUM_ACCURACY_METERS) {
+        toast.failed(t('location.setupHomeCoarse', { accuracyMeters: Math.round(position.accuracyMeters) }))
         return
       }
       // A place of the person's that already holds the position (a visit may
@@ -164,7 +172,7 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
                     aria-label={t('location.setupShareCurrentLabel', { name: circle.name })}
                     onClick={() => share('current')}
                   >
-                    {t('location.setupShareNow')}
+                    {t('location.shareLevelName.current')}
                   </button>
                   <button
                     type="button"
@@ -173,7 +181,7 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
                     aria-label={t('location.setupShareHistoryLabel', { name: circle.name })}
                     onClick={() => share('history')}
                   >
-                    {t('location.shareAdd')}
+                    {t('location.shareLevelName.history')}
                   </button>
                 </>
               )

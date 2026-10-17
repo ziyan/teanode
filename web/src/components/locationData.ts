@@ -73,15 +73,28 @@ export const LABEL_KEYS: Record<string, Key> = {
   gym: 'location.label.gym',
 }
 
-// placeTitle is what a place is called on screen: the name it has, else the
-// word of its label, else where it is, else that it has no name.
+// placeTitle is what a place is called on screen: the name the person gave
+// it, else the word of its label ("Home"), else the name OpenStreetMap or the
+// address gave it (the server's placeName), else the address, else that it
+// has no name.
 export function placeTitle(place: Place, t: (key: Key) => string): string {
+  const labelWord = LABEL_KEYS[place.placeLabel] ? t(LABEL_KEYS[place.placeLabel]) : ''
   return (
+    (place.isNamedByPerson ? place.placeName.trim() : '') ||
+    labelWord ||
     place.placeName.trim() ||
-    (LABEL_KEYS[place.placeLabel] ? t(LABEL_KEYS[place.placeLabel]) : '') ||
     place.addressText.trim() ||
     t('location.unnamedPlace')
   )
+}
+
+// placeSubtitle is the second line of a place: when the label word stands as
+// its name, the name OpenStreetMap gave it or its address; otherwise nothing.
+export function placeSubtitle(place: Place, t: (key: Key) => string): string {
+  const title = placeTitle(place, t)
+  if (place.isNamedByPerson && place.placeName.trim()) return ''
+  if (!LABEL_KEYS[place.placeLabel] || title !== t(LABEL_KEYS[place.placeLabel])) return ''
+  return place.osmName.trim() || place.addressText.trim()
 }
 
 // dayKeyOf is the calendar day, as the person's own clock counts it, that a

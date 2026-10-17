@@ -174,7 +174,7 @@ it('lists visits by day with how long each lasted', async () => {
       visit(),
       visit({
         id: 'visit-two',
-        place: place({ id: 'place-two', placeName: 'Fixture Library', placeLabel: 'school' }),
+        place: place({ id: 'place-two', placeName: 'Fixture Library', isNamedByPerson: true, placeLabel: 'school' }),
         arrivedAt: '2030-03-02T12:00:00Z',
         departedAt: '2030-03-02T12:25:00Z',
         durationSeconds: 1500,
@@ -326,7 +326,7 @@ it('marks home from the browser position, and offers to share with a family', as
   await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))
   expect(calls('SavePlace')[0][1]).toEqual({ latitudeDegrees: 10.5, longitudeDegrees: 20.5, placeLabel: 'home' })
 
-  fireEvent.click(await screen.findByRole('button', { name: /^Only where I am now/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Share where I am now with Fixture Home' }))
   await waitFor(() => expect(calls('ShareLocation(')).toHaveLength(1))
   expect(calls('ShareLocation(')[0][1]).toEqual({ granteeCircleId: 'circle-one', shareLevel: 'current' })
 })
@@ -570,4 +570,96 @@ it('finds a place by words around the browser position and checks in to it', asy
   fireEvent.click(within(dialog).getByRole('button', { name: /Fixture Bakery/ }))
   await waitFor(() => expect(calls('CheckIn(')).toHaveLength(1))
   expect(calls('CheckIn(')[0][1]).toMatchObject({ placeName: 'Fixture Bakery', osmType: 'node', osmId: 42 })
+})
+
+it('calls a labeled place by its label word, with the map name under it, and a named one by its name', async () => {
+  answerWith({
+    places: [
+      place({ id: 'place-labeled', placeName: 'Fixture Cafe', osmName: 'Fixture Cafe', placeLabel: 'school' }),
+      place({
+        id: 'place-named',
+        placeName: 'Piano teacher',
+        isNamedByPerson: true,
+        placeLabel: 'school',
+        osmName: 'Fixture Hall',
+      }),
+    ],
+  })
+  renderAt('/location?tab=places')
+
+  expect(await screen.findByRole('button', { name: /^School\s*Fixture Cafe/ })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /^Piano teacher/ })).toBeTruthy()
+  expect(screen.queryByText('Fixture Hall')).toBeNull()
+})
+
+it('keeps the map and the people when nobody has a position of their own but others share', async () => {
+  answerWith({ own: { latestPoint: null }, sharedViews: [PERSON_B_VIEW] })
+  renderAt('/location')
+
+  expect(await screen.findByTestId('map')).toBeTruthy()
+  expect(screen.queryByText('Install the TeaNode app on your iPhone')).toBeNull()
+  expect(await screen.findByText('Person B')).toBeTruthy()
+})
+
+it("says that somebody with no position yet is not the viewer's phone to record", async () => {
+  answerWith({ sharedViews: [{ ...PERSON_B_VIEW, latestPoint: null as never }] })
+  renderAt('/location')
+
+  expect(await screen.findByText('No position yet.')).toBeTruthy()
+  expect(screen.queryByText(/The TeaNode app on your phone records where you go, and it appears here/)).toBeNull()
+})
+
+it('drops a person from the address who does not share, says so, and shows the own visits', async () => {
+  answerWith({ visits: [visit()] })
+  renderAt('/location?person=nobody')
+
+  expect(await screen.findByText('That person does not share their location with you.')).toBeTruthy()
+  expect(await screen.findByText('Fixture Park')).toBeTruthy()
+  expect(screen.getByRole('heading', { name: 'Visits' })).toBeTruthy()
+})
+
+it('says the list cannot be shown when the people could not be read for a person in the address', async () => {
+  answerWith({ failSharedLocations: true })
+  renderAt('/location?person=person-b')
+
+  expect(
+    await screen.findByText('The people who share with you could not be read, so this list cannot be shown.'),
+  ).toBeTruthy()
+})
+
+it('keeps the dialog open with what was typed when a save is refused', async () => {
+  answerWith({ places: [place()] })
+  const base = vi.mocked(graphql).getMockImplementation()
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('SavePlace')) throw new Error('The name is too long')
+    return base!(document, variables)
+  })
+  renderAt('/location?tab=places')
+
+  fireEvent.click(await screen.findByRole('button', { name: /Fixture Park/ }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Typed name' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+  // The dialog's error is spoken by the page's toast, and the dialog stays.
+  expect(await screen.findByText('The name is too long')).toBeTruthy()
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Typed name')
+})
+
+it('does not label the browser position as home when the browser is only sure to a kilometer', async () => {
+  answerWith({ own: { latestPoint: null } })
+  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+  Object.defineProperty(navigator, 'geolocation', {
+    configurable: true,
+    value: {
+      getCurrentPosition: (success: (position: unknown) => void) =>
+        success({ coords: { latitude: 10.5, longitude: 20.5, accuracy: 1500 }, timestamp: 1_900_000_000_000 }),
+    },
+  })
+  renderAt('/location')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Use where I am now' }))
+  expect(await screen.findByText(/only knows where you are to within 1500 m/)).toBeTruthy()
+  expect(calls('SavePlace')).toHaveLength(0)
 })

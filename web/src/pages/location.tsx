@@ -19,6 +19,7 @@ import {
   PLACE_FIELDS,
   PlaceVisit,
   parseDayKey,
+  placeSubtitle,
   placeTitle,
   VISIT_FIELDS,
 } from '../components/locationData'
@@ -192,6 +193,9 @@ function LocationContent({ userId }: { userId: string }) {
   const [erasing, setErasing] = useState<{ range: DayRange | null } | null>(null)
   const [placesSearchText, setPlacesSearchText] = useState(placesQuery)
   const [isBusy, setIsBusy] = useState(false)
+  // Why the open dialog's work failed, shown in the dialog with what was typed
+  // still in it.
+  const [dialogProblem, setDialogProblem] = useState<string | null>(null)
 
   function changeParameters(changes: Record<string, string | null>) {
     setParameters((previous) => {
@@ -214,8 +218,8 @@ function LocationContent({ userId }: { userId: string }) {
   const me = useQuery(() => graphql<{ GetLocation: LocationView | null }>(GET_LOCATION), [userId], {
     refresh: false,
   })
-  // The people sharing with this person. A failed first reading is a toast,
-  // and a failed quiet one keeps what is on the map.
+  // The people sharing with this person. A failed first reading is shown above
+  // the map, and a failed quiet one keeps what is on the map.
   const shared = useQuery(
     async () =>
       (await graphql<{ ListSharedLocations: LocationView[] | null }>(LIST_SHARED_LOCATIONS)).ListSharedLocations ?? [],
@@ -233,6 +237,7 @@ function LocationContent({ userId }: { userId: string }) {
     [me.data, shared.data, movedViews],
   )
   const isPersonPending = requestedPersonId !== null && shared.data === null
+  const isPersonUnreadable = isPersonPending && shared.error !== null && shared.error !== undefined
   const viewedPerson = useMemo(
     () => views.find((view) => view.userId === requestedPersonId && view.shareLevel !== 'owner') ?? null,
     [views, requestedPersonId],
@@ -240,6 +245,27 @@ function LocationContent({ userId }: { userId: string }) {
   const viewedUserId = viewedPerson?.userId ?? null
   const isReadOnly = viewedPerson !== null
   const canReadHistory = !isPersonPending && (viewedPerson === null || viewedPerson.shareLevel === 'history')
+
+  // A person in the address who is not sharing (a stale link, or they stopped)
+  // is taken out of it once the people are read, and the person is told, rather
+  // than their own visits standing under a link that named somebody else.
+  const isPersonGone = requestedPersonId !== null && shared.data !== null && viewedPerson === null
+  useEffect(() => {
+    if (!isPersonGone) return
+    if (requestedPersonId !== userId) toast.failed(t('location.personNotSharing'))
+    setParameters(
+      (previous) => {
+        const written = new URLSearchParams(previous)
+        written.delete('person')
+        written.delete('page')
+        written.delete('placesPage')
+        return written
+      },
+      { replace: true },
+    )
+    // Once per link that is found stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPersonGone, requestedPersonId])
 
   // Each answer carries what it was asked (the person, the day, the filters and
   // the page), so the rows of a different person, day or page are not shown
@@ -494,15 +520,17 @@ function LocationContent({ userId }: { userId: string }) {
     }
   }, [userId])
 
+  // Work done from a dialog. A failure stays in the dialog.
   async function act(work: () => Promise<unknown>, done: string, failed: string): Promise<boolean> {
     setIsBusy(true)
+    setDialogProblem(null)
     try {
       await work()
       toast.done(done)
       reloadAll()
       return true
     } catch (failure) {
-      toast.failure(failure, failed)
+      setDialogProblem(failure instanceof Error && failure.message ? failure.message : failed)
       return false
     } finally {
       setIsBusy(false)
@@ -512,6 +540,7 @@ function LocationContent({ userId }: { userId: string }) {
   // Erases everything, or the day when a range is given.
   async function erase(erasedRange: DayRange | null) {
     setIsBusy(true)
+    setDialogProblem(null)
     try {
       const answer = await graphql<{
         EraseLocationHistory: { pointCount: number; visitCount: number; placeCount: number }
@@ -522,7 +551,7 @@ function LocationContent({ userId }: { userId: string }) {
       reloadAll()
       void points.reload()
     } catch (failure) {
-      toast.failure(failure, t('location.eraseFailed'))
+      setDialogProblem(failure instanceof Error && failure.message ? failure.message : t('location.eraseFailed'))
     } finally {
       setIsBusy(false)
     }
@@ -544,7 +573,14 @@ function LocationContent({ userId }: { userId: string }) {
 
   // The first time, with no position recorded yet, a short setup stands where
   // the empty map would be, until it is dismissed.
-  const isSetupShown = me.data !== null && !me.data.GetLocation?.latestPoint && !isSetupDismissed
+  // It stands only while nobody shares with the person either: a family that
+  // already shares is what the map is for.
+  const isSetupShown =
+    me.data !== null &&
+    !me.data.GetLocation?.latestPoint &&
+    !isSetupDismissed &&
+    shared.data !== null &&
+    shared.data.length === 0
   const viewedName = viewedPerson ? personName(viewedPerson) : ''
   const notSharedHistoryText = viewedPerson ? t('location.personSharesNowOnly', { name: viewedName }) : ''
 
@@ -613,7 +649,7 @@ function LocationContent({ userId }: { userId: string }) {
                           {t('location.lastSeen')} <RelativeTime value={view.latestPoint.measuredAt} />
                         </>
                       ) : (
-                        t('location.nowhere')
+                        t(isOwner ? 'location.nowhere' : 'location.nowhereOther')
                       )}
                     </span>
                   </span>
@@ -692,6 +728,8 @@ function LocationContent({ userId }: { userId: string }) {
           </div>
           <ErrorMessage error={visits.error} />
           {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
+          {isPersonPending &&
+            (isPersonUnreadable ? <SettingsEmpty>{t('location.personNotRead')}</SettingsEmpty> : <Loading />)}
           {canReadHistory && !visitPage && visits.loading && <Loading />}
           {visitPage && visitRows.length === 0 && (
             <SettingsEmpty>
@@ -785,6 +823,8 @@ function LocationContent({ userId }: { userId: string }) {
           </div>
           <ErrorMessage error={places.error} />
           {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
+          {isPersonPending &&
+            (isPersonUnreadable ? <SettingsEmpty>{t('location.personNotRead')}</SettingsEmpty> : <Loading />)}
           {canReadHistory && !placePage && places.loading && <Loading />}
           {placePage && placeRows.length === 0 && (
             <SettingsEmpty>
@@ -809,6 +849,7 @@ function LocationContent({ userId }: { userId: string }) {
               </span>
               <span className="location-row-body">
                 <strong>{placeTitle(place, t)}</strong>
+                {placeSubtitle(place, t) && <span className="muted">{placeSubtitle(place, t)}</span>}
                 <span className="muted">
                   {plural(
                     place.visitCount,
@@ -856,8 +897,13 @@ function LocationContent({ userId }: { userId: string }) {
           key={editingPlace.id}
           place={editingPlace}
           isBusy={isBusy}
-          onClose={() => setEditingPlace(null)}
+          error={dialogProblem}
+          onClose={() => {
+            setDialogProblem(null)
+            setEditingPlace(null)
+          }}
           onForget={() => {
+            setDialogProblem(null)
             setForgettingPlace(editingPlace)
             setEditingPlace(null)
           }}
@@ -880,7 +926,11 @@ function LocationContent({ userId }: { userId: string }) {
           body={t('location.forgetBody', { place: placeTitle(forgettingPlace, t) })}
           confirmLabel={t('location.forget')}
           busy={isBusy}
-          onClose={() => setForgettingPlace(null)}
+          error={dialogProblem}
+          onClose={() => {
+            setDialogProblem(null)
+            setForgettingPlace(null)
+          }}
           onConfirm={() =>
             void act(
               () => graphql(FORGET_PLACE, { placeId: forgettingPlace.id }),
@@ -905,7 +955,11 @@ function LocationContent({ userId }: { userId: string }) {
           }
           confirmLabel={t('location.eraseConfirm')}
           busy={isBusy}
-          onClose={() => setErasing(null)}
+          error={dialogProblem}
+          onClose={() => {
+            setDialogProblem(null)
+            setErasing(null)
+          }}
           onConfirm={() => void erase(erasing.range)}
         />
       )}
@@ -922,12 +976,14 @@ type PlaceChanges = { placeName?: string; placeLabel?: string; radiusMeters?: nu
 function PlaceEditor({
   place,
   isBusy,
+  error,
   onClose,
   onForget,
   onSave,
 }: {
   place: Place
   isBusy: boolean
+  error: string | null
   onClose: () => void
   onForget: () => void
   onSave: (changes: PlaceChanges) => Promise<void>
@@ -950,6 +1006,7 @@ function PlaceEditor({
       title={t('location.editPlace')}
       submitLabel={t('common.save')}
       busy={isBusy}
+      error={error}
       canSubmit={isRadiusValid && Object.keys(changes).length > 0}
       onClose={onClose}
       onSubmit={() => void onSave(changes)}
@@ -1043,7 +1100,7 @@ function PlaceVisits({ placeId }: { placeId: string }) {
         </ul>
       )}
       {visits.data?.nextOffset != null && (
-        <p className="muted">{t('location.placeVisitsLatest', { count: PLACE_VISITS_SHOWN_COUNT })}</p>
+        <p className="muted">{t('location.placeVisitsLatest', { visitCount: PLACE_VISITS_SHOWN_COUNT })}</p>
       )}
     </section>
   )

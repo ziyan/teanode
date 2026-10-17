@@ -54,6 +54,9 @@ export type MapPlace = {
 
 export type MapPathPoint = { latitudeDegrees: number; longitudeDegrees: number }
 
+// A map this narrow (a phone) starts with its credit collapsed.
+const NARROW_MAP_WIDTH_PIXELS = 640
+
 const SOURCE_CIRCLES = 'location-circles'
 const SOURCE_PATH = 'location-path'
 
@@ -197,7 +200,9 @@ export function LocationMap({
     const blueColor = readThemeColor('--avatar-7', '#2f5fb3')
     // The layers go on as soon as the style is read, not when the first tiles
     // have drawn, and only once however often the style reports a change.
+    let hasStyleLoaded = false
     const addLayers = () => {
+      hasStyleLoaded = true
       if (map.getSource(SOURCE_CIRCLES)) {
         return
       }
@@ -232,8 +237,22 @@ export function LocationMap({
       setStyleReady(true)
     }
     map.on('style.load', addLayers)
-    map.on('error', () => {
-      if (failure.current.isSaid) {
+    // On a phone the credit starts as its small button, not opened across a
+    // quarter of the map; MapLibre opens it for a compact control, so it is
+    // closed once the map has loaded. A wider map keeps what MapLibre does.
+    map.once('load', () => {
+      if (map.getCanvasContainer().offsetWidth > NARROW_MAP_WIDTH_PIXELS) {
+        return
+      }
+      const credit = map.getContainer().querySelector('.maplibregl-ctrl-attrib')
+      credit?.removeAttribute('open')
+      credit?.classList.remove('maplibregl-compact-show')
+    })
+    // Only a map that cannot be drawn is said: the style that did not come, or
+    // a source whose description did not. One tile, glyph range or sprite
+    // missing leaves a map that is usable, and says nothing.
+    map.on('error', (event: { sourceId?: string; tile?: unknown }) => {
+      if (failure.current.isSaid || event.tile || (hasStyleLoaded && !event.sourceId)) {
         return
       }
       failure.current.isSaid = true
@@ -378,12 +397,21 @@ export function LocationMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey])
 
-  // A person or place chosen from a list is brought to the middle.
-  const selectedKey =
-    people.find((person) => person.isSelected)?.userId ?? places.find((place) => place.isSelected)?.id ?? ''
+  // A person or place chosen from a list is brought to the middle. Both are
+  // in the key: a person viewed for good (the address names them) stays
+  // selected while one of their places is chosen, and the place is what moved.
+  const selectedPersonId = people.find((person) => person.isSelected)?.userId ?? ''
+  const selectedPlaceId = places.find((place) => place.isSelected)?.id ?? ''
+  const selectedKey = `${selectedPersonId}|${selectedPlaceId}`
+  const previousSelection = useRef({ selectedPersonId, selectedPlaceId })
   useEffect(() => {
     const map = mapRef.current
-    const selected = people.find((person) => person.isSelected) ?? places.find((place) => place.isSelected) ?? undefined
+    const wasPlaceChosen = previousSelection.current.selectedPlaceId !== selectedPlaceId
+    previousSelection.current = { selectedPersonId, selectedPlaceId }
+    const selectedPlace = places.find((place) => place.isSelected)
+    const selectedPerson = people.find((person) => person.isSelected)
+    // The place when it is what changed, else the person, else the place.
+    const selected = (wasPlaceChosen ? selectedPlace : undefined) ?? selectedPerson ?? selectedPlace
     if (!map || !selected) {
       return
     }

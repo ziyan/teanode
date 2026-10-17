@@ -361,12 +361,13 @@ function CirclesList() {
           onClose={() => setSuggestion(null)}
           onSubmit={async () => {
             const isCalendarShared = suggestion.isCalendarOffered && suggestedLevel !== 'none'
+            const isLocationShared = suggestion.isLocationOffered && suggestedLocationLevel !== 'none'
             const isShared = await act(
               async () => {
                 // The location first: if the calendar then fails, trying again
                 // shares the location once more, which changes nothing, and
                 // not the calendar twice.
-                if (suggestion.isLocationOffered && suggestedLocationLevel !== 'none') {
+                if (isLocationShared) {
                   await graphql(SHARE_LOCATION, {
                     granteeCircleId: suggestion.circleId,
                     shareLevel: suggestedLocationLevel,
@@ -385,9 +386,13 @@ function CirclesList() {
                   })
                 }
               },
-              isCalendarShared
-                ? t('calendar.shareSaid', { name: t('calendar.shareEveryoneIn', { name: suggestion.name }) })
-                : t('location.shareSaved', { name: t('location.shareEveryoneIn', { name: suggestion.name }) }),
+              isCalendarShared && isLocationShared
+                ? t('circles.shareSuggestion.bothSaved', {
+                    name: t('calendar.shareEveryoneIn', { name: suggestion.name }),
+                  })
+                : isCalendarShared
+                  ? t('calendar.shareSaid', { name: t('calendar.shareEveryoneIn', { name: suggestion.name }) })
+                  : t('location.shareSaved', { name: t('location.shareEveryoneIn', { name: suggestion.name }) }),
               true,
             )
             if (isShared) setSuggestion(null)

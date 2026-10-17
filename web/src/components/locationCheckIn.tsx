@@ -36,8 +36,8 @@ type SearchPage = { foundPlaces: FoundPlace[]; nextOffset: number | null }
 // answers are checked in to the same way. A failure to find where the person
 // is, or what is near, is a toast and the dialog goes: there is nothing in it
 // to correct, and a refusal of the browser's question is not something to
-// retry from inside it. A failed search is a toast and the dialog stays, since
-// the words can be changed.
+// retry from inside it. A failed search or check-in is shown in the dialog,
+// which stays, since the words can be changed and the press tried again.
 export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () => void; onCheckedIn: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
@@ -52,6 +52,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
     nextOffset: number | null
   } | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
 
   useEffect(() => {
     let isCurrent = true
@@ -86,6 +87,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
 
   async function search(query: string, offset: number) {
     setIsBusy(true)
+    setProblem(null)
     try {
       const answer = await graphql<{ SearchPlaces: SearchPage }>(SEARCH_PLACES, { query, offset, ...position })
       setSearched((previous) => ({
@@ -97,7 +99,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
         nextOffset: answer.SearchPlaces.nextOffset,
       }))
     } catch (failure) {
-      toast.failure(failure, t('location.checkInFailed'))
+      setProblem(failure instanceof Error && failure.message ? failure.message : t('location.checkInFailed'))
     } finally {
       setIsBusy(false)
     }
@@ -114,6 +116,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
 
   async function checkIn(foundPlace: FoundPlace) {
     setIsBusy(true)
+    setProblem(null)
     try {
       await graphql(
         CHECK_IN,
@@ -133,7 +136,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
       onCheckedIn()
       onClose()
     } catch (failure) {
-      toast.failure(failure, t('location.checkInFailed'))
+      setProblem(failure instanceof Error && failure.message ? failure.message : t('location.checkInFailed'))
       setIsBusy(false)
     }
   }
@@ -144,6 +147,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
     <ConfirmDialog
       title={t('location.checkInTitle')}
       busy={isBusy}
+      error={problem}
       onClose={onClose}
       body={
         <>

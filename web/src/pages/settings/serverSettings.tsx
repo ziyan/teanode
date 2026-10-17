@@ -624,7 +624,7 @@ export function GeoIPForm({ settings, onSaved }: { settings: GeoIP; onSaved: () 
   )
 }
 
-// PlacesForm is where the names of the spots people go to come from, and the
+// PlacesForm is where the names of places come from, and the
 // map the Location page is drawn on. Both are reached from this server only:
 // a viewer's browser never talks to either.
 export function PlacesForm({ settings, onSaved }: { settings: Places; onSaved: () => void }) {

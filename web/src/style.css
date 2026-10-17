@@ -3389,7 +3389,7 @@ body,
      head-icons (a page's rename and delete): each is a square, two or three
      fit beside a title. A row of words keeps the rule above, since beside
      the title it would squeeze it. */
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3397,23 +3397,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) h3 {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > :is(button, .head-icons, .menu-button) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -3435,16 +3435,16 @@ body,
 
   /* A row whose only action is one icon keeps it beside the title: on a line
      of its own it sat alone under an empty band, the row twice its height. */
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) {
+  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) {
     flex-wrap: nowrap;
     align-items: flex-start;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-body {
+  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) > .settings-row-body {
     min-width: 0;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
+  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) > .settings-row-actions {
     width: auto;
   }
 
@@ -16339,6 +16339,14 @@ body.has-recording-bar .content {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The line under a person's name says where they are and since when. It wraps
+   to a second line rather than losing the time to an ellipsis. */
+.location-people .location-row-body > .muted {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .location-row-meta {
