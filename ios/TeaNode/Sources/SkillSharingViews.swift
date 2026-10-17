@@ -620,15 +620,26 @@ struct SkillShareCallCard: View {
         Button {
             Task { await answer(isApproved: true) }
         } label: {
-            Text("Approve and run it").lineLimit(isOneLine ? 1 : nil).frame(maxWidth: .infinity)
+            answerLabel("Approve and run it", isOneLine: isOneLine)
         }
         .buttonStyle(.borderedProminent)
         Button {
             Task { await answer(isApproved: false) }
         } label: {
-            Text("Decline").lineLimit(isOneLine ? 1 : nil).frame(maxWidth: .infinity).foregroundStyle(.primary)
+            answerLabel("Decline", isOneLine: isOneLine).foregroundStyle(.primary)
         }
         .buttonStyle(.bordered)
+    }
+
+    /// A button's words. Side by side they keep their whole width, so that the
+    /// pair no longer fits, and is stacked, before a word would be cut.
+    @ViewBuilder
+    private func answerLabel(_ words: LocalizedStringKey, isOneLine: Bool) -> some View {
+        if isOneLine {
+            Text(words).fixedSize().frame(maxWidth: .infinity)
+        } else {
+            Text(words).frame(maxWidth: .infinity)
+        }
     }
 
     private func fact(_ name: String, _ value: String, isProminent: Bool = false) -> some View {
