@@ -69,11 +69,11 @@ public struct HerdrSession: Decodable, Hashable, Sendable, Identifiable {
     }
 
     /// What the session is about: the title its coding agent gave its pane,
-    /// unless that is only the shell's prompt (user@host: path) or the
-    /// workspace's name, which say nothing of the session.
+    /// unless that is only the shell's prompt (user@host: path), the
+    /// workspace's name or the coding agent's, which say nothing of it.
     public var sessionTitle: String {
         let title = paneTitle.trimmingCharacters(in: .whitespaces)
-        if title.isEmpty || title == workspaceLabel { return "" }
+        if title.isEmpty || title == workspaceLabel || title.lowercased() == codingAgentName.lowercased() { return "" }
         if title.range(of: #"^[^\s@]+@[^\s:]+:"#, options: .regularExpression) != nil { return "" }
         return title
     }

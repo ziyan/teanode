@@ -161,11 +161,12 @@ export function groupSessions(list: HerdrList): ComputerGroup[] {
 }
 
 // sessionTitleOf is what a session is about: the title its coding agent
-// gave its pane, unless that is only the shell's prompt (user@host: path)
-// or the workspace's name, which say nothing of the session.
+// gave its pane, unless that is only the shell's prompt (user@host: path),
+// the workspace's name or the coding agent's, which say nothing of it.
 function sessionTitleOf(session: HerdrSession): string {
   const title = session.paneTitle.trim()
   if (title === '' || /^[^\s@]+@[^\s:]+:/.test(title) || title === session.workspaceLabel) return ''
+  if (title.toLowerCase() === codingAgentName(session.codingAgentKind).toLowerCase()) return ''
   return title
 }
 
