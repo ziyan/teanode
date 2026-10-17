@@ -4485,22 +4485,6 @@
         }
       }
     },
-    "The directory's name when left empty": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "空欄ならディレクトリ名"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "留空则使用目录名"
-          }
-        }
-      }
-    },
     "This ends %@ in %@ on %@ and closes its pane. What was said stays in its history.": {
       "localizations": {
         "ja": {

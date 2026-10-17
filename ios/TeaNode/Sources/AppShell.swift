@@ -233,6 +233,22 @@ struct MainView: View {
         .task(id: "\(scenePhase)-\(section)") {
             await refreshPresence()
         }
+        // Which computers run herdr is asked in a task of its own, so a slow
+        // computer never holds up the mail above.
+        .task(id: scenePhase) {
+            await refreshCodingPresenceSlowly()
+        }
+    }
+
+    /// Asks at launch and when the app comes to the front, then every five
+    /// minutes. Not while the Coding section is on screen: it reads the list
+    /// itself and says what it finds.
+    private func refreshCodingPresenceSlowly() async {
+        guard scenePhase == .active else { return }
+        repeat {
+            if section != .coding { await app.refreshCodingPresence(isKeeping: false) }
+            do { try await Task.sleep(for: .seconds(300)) } catch { return }
+        } while !Task.isCancelled && scenePhase == .active
     }
 
     private func refreshPresence() async {
@@ -241,7 +257,6 @@ struct MainView: View {
             await app.refreshServices()
             if Task.isCancelled { return }
             if app.services?.isAssistantEnabled == true { try? await connection.reportPresence(isVisible: isVisible) }
-            await app.refreshCodingPresence(isKeeping: section == .coding)
             if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
             if scenePhase != .active { return }
             do { try await Task.sleep(for: .seconds(30)) } catch { return }

@@ -34,7 +34,18 @@ final class CodingModel {
     /// Reads the list again; what was known stays when it cannot be read.
     func load() async {
         do {
-            list = try await connection.herdrSessions()
+            let read = try await connection.herdrSessions()
+            // A computer that did not answer this time keeps the sessions
+            // last known for it, so a session open on screen does not
+            // vanish for one slow answer.
+            if let previous = list, !read.failedComputerNames.isEmpty {
+                let carried = previous.sessions.filter { read.failedComputerNames.contains($0.computer) }
+                list = HerdrList(
+                    computerNames: read.computerNames, failedComputerNames: read.failedComputerNames,
+                    sessions: read.sessions.filter { !read.failedComputerNames.contains($0.computer) } + carried)
+            } else {
+                list = read
+            }
             loadFailureText = nil
         } catch is CancellationError {
         } catch {
@@ -329,6 +340,11 @@ struct CodingSessionView: View {
                 do { try await Task.sleep(for: .seconds(isBusy ? 3 : 15)) } catch { return }
             }
         }
+        .onChange(of: part) {
+            // The other part has not been read yet: a spinner until it is.
+            screenText = ""
+            isRead = false
+        }
         .onChange(of: selectedId) {
             turns = []
             screenText = ""
@@ -565,6 +581,7 @@ struct CodingSessionView: View {
             await model.load()
         } catch is CancellationError {
         } catch {
+            guard reading == selectedId else { return }
             if (error as? URLError)?.code != .cancelled { problemText = app.describe(error) }
             isRead = true
         }
@@ -632,10 +649,22 @@ struct CodingSessionView: View {
 
     private func close(_ session: HerdrSession) async {
         do {
+            // The tab to move to, chosen before this one leaves the list: the
+            // next one in the workspace, else the one before.
+            let tabs = model.siblings(of: session)
+            let position = tabs.firstIndex { $0.id == session.id }
+            let nextTab = position.flatMap { index -> HerdrSession? in
+                if index + 1 < tabs.count { return tabs[index + 1] }
+                return index > 0 ? tabs[index - 1] : nil
+            }
             _ = try await connection.closeHerdrSession(computer: session.computer, paneId: session.paneId)
             model.remove(id: session.id)
             doneText = String(localized: "Closed \(session.tabTitle)")
-            dismiss()
+            if let nextTab {
+                selectedId = nextTab.id
+            } else {
+                dismiss()
+            }
         } catch {
             problemText = app.describe(error)
         }
@@ -666,29 +695,32 @@ struct CodingTabChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if session.isTabFocused {
-                Circle()
-                    .fill(.primary)
-                    .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
-            }
+            // The room for the dot and the mark is always there, so a tab
+            // gaining or losing focus or work does not move its neighbors.
+            Circle()
+                .fill(.primary)
+                .frame(width: 6, height: 6)
+                .opacity(session.isTabFocused ? 1 : 0)
+                .accessibilityHidden(true)
             // One weight whether chosen or not, so choosing a tab does not
             // move the others; the background says which is chosen.
             Text(verbatim: session.chipTitle)
                 .font(.subheadline)
                 .lineLimit(1)
                 .frame(maxWidth: 220, alignment: .leading)
-            if session.isAsking {
-                Image(systemName: "questionmark.bubble.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-            } else if session.isWorking {
-                Image(systemName: "ellipsis")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
+            Group {
+                if session.isAsking {
+                    Image(systemName: "questionmark.bubble.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else if session.isWorking {
+                    Image(systemName: "ellipsis")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .frame(width: 16, height: 16)
+            .accessibilityHidden(true)
         }
         .foregroundStyle(isSelected ? .primary : .secondary)
         .padding(.horizontal, 14)
@@ -1015,7 +1047,7 @@ struct CodingOpenSheet: View {
                         .monospaced()
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    TextField("Name in herdr", text: $agentName, prompt: Text("The directory's name when left empty"))
+                    TextField("Name in herdr", text: $agentName)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
@@ -1045,6 +1077,9 @@ struct CodingOpenSheet: View {
                 }
             }
             .toast(done: $doneText, problem: $problemText)
+        }
+        .onAppear {
+            if computer.isEmpty { computer = computerNames.first ?? "" }
         }
         .interactiveDismissDisabled(isOpening)
     }
