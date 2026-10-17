@@ -115,8 +115,8 @@ const (
 			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt } isTruncated
 		}
 	}`
-	DocumentReadAgentHerdrScreen = `query ($computer: String, $paneId: String!, $lineCount: Int) {
-		ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount) {
+	DocumentReadAgentHerdrScreen = `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
+		ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, lineCount: $lineCount, shouldKeepColor: $shouldKeepColor) {
 			herdrSession { ` + HerdrSessionFields + ` } screenText
 		}
 	}`
@@ -187,14 +187,18 @@ func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, pa
 	return result.ReadAgentHerdrSession, nil
 }
 
-// ReadAgentHerdrScreen is a session's screen, or its last lineCount lines.
-func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, paneId string, lineCount int) (*AgentHerdrScreen, error) {
+// ReadAgentHerdrScreen is a session's screen, or its last lineCount lines,
+// with its colors when shouldKeepColor says so.
+func ReadAgentHerdrScreen(ctx context.Context, connection *Client, computer, paneId string, lineCount int, shouldKeepColor bool) (*AgentHerdrScreen, error) {
 	var result struct {
 		ReadAgentHerdrScreen *AgentHerdrScreen `json:"ReadAgentHerdrScreen"`
 	}
 	variables := herdrVariables(computer, map[string]any{"paneId": paneId})
 	if lineCount > 0 {
 		variables["lineCount"] = lineCount
+	}
+	if shouldKeepColor {
+		variables["shouldKeepColor"] = true
 	}
 	if err := connection.Execute(ctx, DocumentReadAgentHerdrScreen, variables, &result); err != nil {
 		return nil, err

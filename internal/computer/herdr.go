@@ -145,9 +145,12 @@ type HerdrSession struct {
 
 // HerdrArguments are what every herdr action may be given.
 type HerdrArguments struct {
-	PaneID              string `json:"paneId,omitempty"`
-	TurnCount           int    `json:"turnCount,omitempty"`
-	LineCount           int    `json:"lineCount,omitempty"`
+	PaneID    string `json:"paneId,omitempty"`
+	TurnCount int    `json:"turnCount,omitempty"`
+	LineCount int    `json:"lineCount,omitempty"`
+	// ShouldKeepColor asks for the screen with its colors, as the codes
+	// that select them and nothing else a terminal would act on.
+	ShouldKeepColor     bool   `json:"shouldKeepColor,omitempty"`
 	Text                string `json:"text,omitempty"`
 	WaitSeconds         int    `json:"waitSeconds,omitempty"`
 	QuestionFingerprint string `json:"questionFingerprint,omitempty"`
@@ -934,8 +937,15 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 	if err != nil {
 		return nil, err
 	}
+	read := func(source string) (string, error) {
+		if !arguments.ShouldKeepColor {
+			return self.client.readAgent(ctx, session.PaneID, source, 0)
+		}
+		text, err := self.client.readAgentColored(ctx, session.PaneID, source)
+		return keepOnlyColorCodes(text), err
+	}
 	if arguments.LineCount <= 0 {
-		text, err := self.client.readAgent(ctx, session.PaneID, "visible", 0)
+		text, err := read("visible")
 		if err != nil {
 			return nil, err
 		}
@@ -943,13 +953,47 @@ func (self *Herdr) screen(ctx context.Context, arguments *HerdrArguments) (*Herd
 	}
 	// The last lines are cut here: herdr given a count of lines answers
 	// with none.
-	text, err := self.client.readAgent(ctx, session.PaneID, "recent_unwrapped", 0)
+	text, err := read("recent_unwrapped")
 	if err != nil {
 		return nil, err
 	}
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	lines = lines[max(len(lines)-min(arguments.LineCount, herdrMostLineCount), 0):]
 	return &HerdrScreenResult{HerdrSession: session, ScreenText: strings.Join(lines, "\n")}, nil
+}
+
+// colorCode is a terminal code that selects a color or a style (SGR), and
+// terminalCode any escape sequence at all.
+var (
+	colorCode    = regexp.MustCompile(`^\x1b\[[0-9;:]*m`)
+	terminalCode = regexp.MustCompile(`^\x1b(?:\[[0-9;:?<=>]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])`)
+)
+
+// keepOnlyColorCodes keeps the codes that color a screen and drops every
+// other escape sequence and carriage return, so what is shown elsewhere can
+// color the text and nothing else: not move a cursor, set a title or ring
+// a bell.
+func keepOnlyColorCodes(text string) string {
+	var builder strings.Builder
+	for index := 0; index < len(text); {
+		switch text[index] {
+		case '\x1b':
+			if code := colorCode.FindString(text[index:]); code != "" {
+				builder.WriteString(code)
+				index += len(code)
+			} else if code := terminalCode.FindString(text[index:]); code != "" {
+				index += len(code)
+			} else {
+				index++
+			}
+		case '\r':
+			index++
+		default:
+			builder.WriteByte(text[index])
+			index++
+		}
+	}
+	return builder.String()
 }
 
 func (self *Herdr) send(ctx context.Context, arguments *HerdrArguments) (*HerdrSendResult, error) {

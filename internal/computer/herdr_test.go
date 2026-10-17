@@ -27,9 +27,11 @@ type fakeHerdr struct {
 	workspaces []map[string]any
 	tabs       []map[string]any
 	screens    map[string]string
-	pressed    []string
-	typed      []string
-	prompted   []string
+	// coloredScreens are the screens as a read asking for colors sees them.
+	coloredScreens map[string]string
+	pressed        []string
+	typed          []string
+	prompted       []string
 	// created is what was opened, started and closed, in order.
 	created []string
 	// startRefusals are the codes agent.start is refused with, one a call,
@@ -41,7 +43,7 @@ type fakeHerdr struct {
 
 func startFakeHerdr(t *testing.T, home string) *fakeHerdr {
 	t.Helper()
-	fake := &fakeHerdr{screens: map[string]string{}}
+	fake := &fakeHerdr{screens: map[string]string{}, coloredScreens: map[string]string{}}
 	path := filepath.Join(home, ".config", "herdr", "herdr.sock")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -87,7 +89,11 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 	case "tab.list":
 		result = map[string]any{"type": "tab_list", "tabs": self.tabs}
 	case "agent.read":
-		result = map[string]any{"type": "pane_read", "read": map[string]any{"pane_id": target, "text": self.screens[target]}}
+		text := self.screens[target]
+		if request.Params["format"] == "ansi" && request.Params["strip_ansi"] == false {
+			text = self.coloredScreens[target]
+		}
+		result = map[string]any{"type": "pane_read", "read": map[string]any{"pane_id": target, "text": text}}
 	case "agent.send_keys":
 		var keys []string
 		for _, key := range request.Params["keys"].([]any) {
@@ -1085,5 +1091,56 @@ func TestEveryHerdrActionReachesHerdr(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "does not watch herdr") {
 			t.Errorf("%s: %v", action, err)
 		}
+	}
+}
+
+// TestAScreenKeepsItsColorsAndNothingElse checks that a screen read with its
+// colors keeps the codes that select them, and drops every other escape
+// sequence and carriage return.
+func TestAScreenKeepsItsColorsAndNothingElse(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.mutex.Lock()
+	fake.agents = []map[string]any{{"pane_id": "w9:p1", "agent": "claude", "agent_status": "idle", "name": "claude-code"}}
+	fake.screens["w9:p1"] = "red\nplain"
+	fake.coloredScreens["w9:p1"] = "\x1b[38;2;220;40;40mred\x1b[0m\r\n\x1b]0;a title\x07\x1b[2J\x1b[1;1Hplain\x1b[1m!\x1b[22m"
+	fake.mutex.Unlock()
+	herdr := NewHerdr(home)
+	colored, err := RunHerdr(context.Background(), herdr, "herdr_screen", &HerdrArguments{PaneID: "w9:p1", ShouldKeepColor: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := colored.(*HerdrScreenResult).ScreenText, "\x1b[38;2;220;40;40mred\x1b[0m\nplain\x1b[1m!\x1b[22m"; got != want {
+		t.Errorf("colored: %q, want %q", got, want)
+	}
+	plain, err := RunHerdr(context.Background(), herdr, "herdr_screen", &HerdrArguments{PaneID: "w9:p1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plain.(*HerdrScreenResult).ScreenText; got != "red\nplain" {
+		t.Errorf("plain: %q", got)
+	}
+}
+
+// TestAPromptTypedDuringATurnIsAPersonsTurn checks that a prompt Claude Code
+// queued while a turn was running, and recorded only as an attachment, is
+// read as what the person said, with a picture noted; and that a task's
+// notice queued the same way is not.
+func TestAPromptTypedDuringATurnIsAPersonsTurn(t *testing.T) {
+	lines := []string{
+		`{"type":"attachment","attachment":{"type":"queued_command","humanTurn":true,"commandMode":"prompt","prompt":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAAA"}},{"type":"text","text":"The page scrolls sideways"}]}}`,
+		`{"type":"attachment","attachment":{"type":"queued_command","humanTurn":true,"commandMode":"prompt","prompt":"And the footer is cut off"}}`,
+		`{"type":"attachment","attachment":{"type":"queued_command","commandMode":"task-notification","prompt":"<task-notification>done</task-notification>"}}`,
+		`{"type":"attachment","attachment":{"type":"edited_text_file","filename":"notes.txt"}}`,
+	}
+	var said []string
+	for _, line := range lines {
+		for _, turn := range turnsOfLine(CodingAgentKindClaude, []byte(line)) {
+			said = append(said, turn.HerdrTurnRole+": "+turn.TurnText)
+		}
+	}
+	want := []string{"person: (a picture)", "person: The page scrolls sideways", "person: And the footer is cut off"}
+	if strings.Join(said, "\n") != strings.Join(want, "\n") {
+		t.Errorf("turns:\n%s\nwant:\n%s", strings.Join(said, "\n"), strings.Join(want, "\n"))
 	}
 }

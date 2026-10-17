@@ -232,12 +232,12 @@ type HerdrScreen struct {
 }
 
 // ReadHerdrScreen is a session's screen, or its last lineCount lines.
-func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, paneId string, lineCount int) (*HerdrScreen, error) {
+func (self *Agent) ReadHerdrScreen(ctx context.Context, agentId, computerName, paneId string, lineCount int, shouldKeepColor bool) (*HerdrScreen, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrScreenResult](ctx, attached, "herdr_screen", &computer.HerdrArguments{PaneID: paneId, LineCount: lineCount}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrScreenResult](ctx, attached, "herdr_screen", &computer.HerdrArguments{PaneID: paneId, LineCount: lineCount, ShouldKeepColor: shouldKeepColor}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}

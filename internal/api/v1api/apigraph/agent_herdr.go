@@ -97,6 +97,9 @@ type ReadAgentHerdrScreenArguments struct {
 	Computer  string `json:"computer" graphapi:"nullable"`
 	PaneID    string `json:"paneId"`
 	LineCount int    `json:"lineCount" graphapi:"nullable"`
+	// ShouldKeepColor keeps the screen's colors in screenText, as the
+	// terminal codes that select a color or a style and no others.
+	ShouldKeepColor bool `json:"shouldKeepColor" graphapi:"nullable"`
 }
 
 // SendAgentHerdrSessionArguments are the text and where it goes, and the
@@ -336,7 +339,7 @@ func (self *graph) ReadAgentHerdrScreen(ctx context.Context, arguments ReadAgent
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	screen, err := worker.ReadHerdrScreen(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.LineCount)
+	screen, err := worker.ReadHerdrScreen(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.LineCount, arguments.ShouldKeepColor)
 	if err != nil {
 		return nil, err
 	}

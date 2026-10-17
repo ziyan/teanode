@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -52,8 +53,9 @@ func newComputerHerdrCommand() *cli.Command {
 				Name:      "screen",
 				Usage:     "print what a session's pane shows",
 				ArgsUsage: "<pane>",
-				Flags:     []cli.Flag{computerFlag, &cli.IntFlag{Name: "lines", Usage: "the last this many lines, rather than the screen as it stands"}, JSONFlag()},
-				Action:    runComputerHerdrScreen,
+				Flags: []cli.Flag{computerFlag, &cli.IntFlag{Name: "lines", Usage: "the last this many lines, rather than the screen as it stands"},
+					&cli.BoolFlag{Name: "color", Usage: "keep the screen's colors"}, JSONFlag()},
+				Action: runComputerHerdrScreen,
 			},
 			{
 				Name:      "send",
@@ -318,6 +320,26 @@ func runComputerHerdrRead(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// colorForTerminal is forTerminal that lets through the codes selecting a
+// color or a style, and only those, so a screen keeps its colors and cannot
+// make the terminal do anything else.
+func colorForTerminal(text string) string {
+	var builder strings.Builder
+	for len(text) > 0 {
+		location := herdrColorCode.FindStringIndex(text)
+		if location == nil {
+			builder.WriteString(forTerminal(text))
+			break
+		}
+		builder.WriteString(forTerminal(text[:location[0]]))
+		builder.WriteString(text[location[0]:location[1]])
+		text = text[location[1]:]
+	}
+	return builder.String()
+}
+
+var herdrColorCode = regexp.MustCompile(`\x1b\[[0-9;:]*m`)
+
 func runComputerHerdrScreen(ctx context.Context, command *cli.Command) error {
 	paneId, err := herdrPane(command, "screen <pane>")
 	if err != nil {
@@ -327,12 +349,16 @@ func runComputerHerdrScreen(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	screen, err := client.ReadAgentHerdrScreen(ctx, connection, command.String("computer"), paneId, int(command.Int("lines")))
+	screen, err := client.ReadAgentHerdrScreen(ctx, connection, command.String("computer"), paneId, int(command.Int("lines")), command.Bool("color"))
 	if err != nil {
 		return describeError(command, err)
 	}
 	if command.Bool("json") {
 		return PrintJSON(screen)
+	}
+	if command.Bool("color") {
+		_, _ = fmt.Fprintln(command.Writer, colorForTerminal(screen.ScreenText)+"\x1b[0m")
+		return nil
 	}
 	_, _ = fmt.Fprintln(command.Writer, forTerminal(screen.ScreenText))
 	return nil
