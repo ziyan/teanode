@@ -68,6 +68,43 @@ public struct HerdrSession: Decodable, Hashable, Sendable, Identifiable {
         return directoryName.isEmpty ? paneId : directoryName
     }
 
+    /// What the session is about: the title its coding agent gave its pane,
+    /// unless that is only the shell's prompt (user@host: path) or the
+    /// workspace's name, which say nothing of the session.
+    public var sessionTitle: String {
+        let title = paneTitle.trimmingCharacters(in: .whitespaces)
+        if title.isEmpty || title == workspaceLabel { return "" }
+        if title.range(of: #"^[^\s@]+@[^\s:]+:"#, options: .regularExpression) != nil { return "" }
+        return title
+    }
+
+    /// A tab's words: herdr numbers unnamed tabs, and a bare number reads
+    /// better as "tab 2".
+    private var tabWords: String {
+        if tabLabel.isEmpty { return workspaceId.isEmpty ? paneName : "" }
+        return Int(tabLabel) != nil ? "tab \(tabLabel)" : tabLabel
+    }
+
+    /// The first line of the session's row: what it is about, or where it is.
+    public var rowTitle: String {
+        let title = sessionTitle
+        if !title.isEmpty { return title }
+        return tabWords.isEmpty ? codingAgentName : tabWords
+    }
+
+    /// The second line of the session's row: its tab and coding agent.
+    public var rowDetail: String {
+        if sessionTitle.isEmpty { return tabWords.isEmpty ? "" : codingAgentName }
+        return [tabWords, codingAgentName].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// The session's chip in the tab strip: herdr's label for its tab, then
+    /// what it is about.
+    public var chipTitle: String {
+        let words = [tabLabel, sessionTitle].filter { !$0.isEmpty }.joined(separator: " ")
+        return words.isEmpty ? codingAgentName : words
+    }
+
     /// What names the workspace in a list or a bar.
     public var workspaceTitle: String {
         if !workspaceLabel.isEmpty { return workspaceLabel }

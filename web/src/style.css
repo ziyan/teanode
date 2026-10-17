@@ -15248,6 +15248,23 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-bottom: var(--space-2);
 }
 
+/* The assistant's round button sits over the page's bottom right corner,
+   where Send would be, when the page is wide enough to reach it. */
+@media (min-width: 721px) {
+  .coding-composer {
+    padding-right: calc(var(--space-3) + 52px);
+  }
+}
+
+.herdr-tab-label {
+  display: inline-block;
+  vertical-align: bottom;
+  max-width: 16em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @container coding (max-width: 720px) {
   .coding-split {
     grid-template-columns: minmax(0, 1fr);

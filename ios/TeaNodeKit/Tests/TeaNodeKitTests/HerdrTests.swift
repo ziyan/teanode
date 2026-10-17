@@ -47,6 +47,23 @@ final class HerdrTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake), [:])
     }
 
+    func testARowLeadsWithWhatTheSessionIsAbout() throws {
+        func decoded(paneTitle: String, tabLabel: String) throws -> HerdrSession {
+            let json = sessionJSON
+                .replacingOccurrences(of: #""paneTitle":"""#, with: #""paneTitle":"\#(paneTitle)""#)
+                .replacingOccurrences(of: #""tabLabel":"asking""#, with: #""tabLabel":"\#(tabLabel)""#)
+            return try JSONDecoder().decode(HerdrSession.self, from: Data(json.utf8))
+        }
+        let titled = try decoded(paneTitle: "Fix the footer", tabLabel: "2")
+        XCTAssertEqual(titled.rowTitle, "Fix the footer")
+        XCTAssertEqual(titled.rowDetail, "tab 2 · Claude Code")
+        XCTAssertEqual(titled.chipTitle, "2 Fix the footer")
+        let prompt = try decoded(paneTitle: "robin@laptop: ~/work/website", tabLabel: "2")
+        XCTAssertEqual(prompt.rowTitle, "tab 2")
+        XCTAssertEqual(prompt.rowDetail, "Claude Code")
+        XCTAssertEqual(prompt.chipTitle, "2")
+    }
+
     func testTheQuestionKeepsItsAnsweringPathWithTheConversationsCard() async throws {
         let (connection, _) = try connection(
             answering: #"{"data":{"ListAgentHerdrSessions":{"computerNames":["laptop"],"failedComputerNames":[],"sessions":[\#(sessionJSON)]}}}"#)

@@ -73,8 +73,11 @@ function useVisiblePolling<Answer>(
   useEffect(() => {
     let isStopped = false
     let isRunning = false
+    // The first read is made even in a tab in the background, so the page
+    // has something when it is looked at; only the repeats wait for it.
+    let isRead = false
     const run = async () => {
-      if (isRunning || document.visibilityState !== 'visible') return
+      if (isRunning || (isRead && document.visibilityState !== 'visible')) return
       isRunning = true
       try {
         const value = await loadRef.current()
@@ -89,6 +92,7 @@ function useVisiblePolling<Answer>(
         if (!isStopped) setError((previous: unknown) => previous ?? caught)
       } finally {
         isRunning = false
+        isRead = true
       }
     }
     void run()
@@ -156,10 +160,36 @@ export function groupSessions(list: HerdrList): ComputerGroup[] {
     .filter((group) => group.workspaces.length > 0)
 }
 
-// tabLabelOf is what a session is called in a list or a tab strip: its tab,
-// or its coding agent where herdr gave the tab no name.
+// sessionTitleOf is what a session is about: the title its coding agent
+// gave its pane, unless that is only the shell's prompt (user@host: path)
+// or the workspace's name, which say nothing of the session.
+function sessionTitleOf(session: HerdrSession): string {
+  const title = session.paneTitle.trim()
+  if (title === '' || /^[^\s@]+@[^\s:]+:/.test(title) || title === session.workspaceLabel) return ''
+  return title
+}
+
+// rowLabelsOf is a session's row in the list: what it is about first, then
+// which tab and coding agent it is. Without herdr's tabs (an older program
+// on the computer), the pane's name says where it is.
+function rowLabelsOf(session: HerdrSession): { title: string; detail: string } {
+  const agent = codingAgentName(session.codingAgentKind)
+  const where = session.tabLabel ? tabWordsOf(session.tabLabel) : session.workspaceId ? '' : session.paneName
+  const title = sessionTitleOf(session)
+  if (title) return { title, detail: [where, agent].filter(Boolean).join(' · ') }
+  return { title: where || agent, detail: where ? agent : '' }
+}
+
+// tabWordsOf names a tab: herdr numbers unnamed tabs, and a bare number
+// reads better as "tab 2".
+function tabWordsOf(tabLabel: string): string {
+  return /^\d+$/.test(tabLabel) ? `tab ${tabLabel}` : tabLabel
+}
+
+// tabLabelOf is a session's tab in the tab strip: herdr's label for the tab,
+// then what the session is about.
 function tabLabelOf(session: HerdrSession): string {
-  return session.tabLabel || codingAgentName(session.codingAgentKind)
+  return [session.tabLabel, sessionTitleOf(session)].filter(Boolean).join(' ') || codingAgentName(session.codingAgentKind)
 }
 
 function isSameSession(left: { computer: string; paneId: string }, right: { computer: string; paneId: string }) {
@@ -227,8 +257,8 @@ export function CodingPage() {
                 onClick={() => select(session)}
               >
                 <span className="coding-row-text">
-                  <strong>{tabLabelOf(session)}</strong>
-                  {session.tabLabel ? <span className="muted">{codingAgentName(session.codingAgentKind)}</span> : null}
+                  <strong>{rowLabelsOf(session).title}</strong>
+                  {rowLabelsOf(session).detail ? <span className="muted">{rowLabelsOf(session).detail}</span> : null}
                 </span>
                 {session.question ? (
                   <span className="coding-question-mark" role="img" aria-label={t('herdr.hasQuestion')}>
@@ -530,9 +560,10 @@ function CodingSession({
               role="tab"
               aria-selected={isSameSession(tab, latest)}
               className={isSameSession(tab, latest) ? 'active' : ''}
+              title={tabLabelOf(tab)}
               onClick={() => onSelect(tab)}
             >
-              {tabLabelOf(tab)}
+              <span className="herdr-tab-label">{tabLabelOf(tab)}</span>
               <span className={tab.isTabFocused ? 'herdr-onscreen' : 'herdr-onscreen reserved'}>
                 {tab.isTabFocused ? <span className="visually-hidden">{t('herdr.onScreen')}</span> : null}
               </span>

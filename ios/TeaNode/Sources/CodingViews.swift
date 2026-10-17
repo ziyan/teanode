@@ -208,10 +208,12 @@ struct CodingSessionRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: session.tabTitle)
-                Text(verbatim: session.codingAgentName)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(verbatim: session.rowTitle)
+                if !session.rowDetail.isEmpty {
+                    Text(verbatim: session.rowDetail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 8)
             CodingStateLabel(session: session)
@@ -665,9 +667,12 @@ struct CodingTabChip: View {
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
             }
-            Text(verbatim: session.tabTitle)
-                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+            // One weight whether chosen or not, so choosing a tab does not
+            // move the others; the background says which is chosen.
+            Text(verbatim: session.chipTitle)
+                .font(.subheadline)
                 .lineLimit(1)
+                .frame(maxWidth: 220, alignment: .leading)
             if session.isAsking {
                 Image(systemName: "questionmark.bubble.fill")
                     .font(.caption)
@@ -691,7 +696,7 @@ struct CodingTabChip: View {
     }
 
     private var accessibilityText: String {
-        var parts = [session.tabTitle]
+        var parts = [session.chipTitle]
         if session.isTabFocused { parts.append(String(localized: "On screen")) }
         if session.isAsking {
             parts.append(String(localized: "Asking"))
