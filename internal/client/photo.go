@@ -559,7 +559,7 @@ func (self *photoUploader) run(ctx context.Context) (string, error) {
 			}
 			recovered, recoverError := self.recover(ctx)
 			if recoverError == nil {
-				if photoId, err := self.completedPhotoID(ctx, recovered); photoId != "" || err != nil {
+				if photoId, err := self.completedPhotoId(ctx, recovered); photoId != "" || err != nil {
 					return photoId, err
 				}
 				if recovered.offsetBytes > offsetBytes {
@@ -614,7 +614,7 @@ func (self *photoUploader) run(ctx context.Context) (string, error) {
 			failureCount++
 			lastFailure = fmt.Errorf("the server answered HTTP %d: %s", outcome.statusCode, outcome.message)
 			if recovered, err := self.recover(ctx); err == nil {
-				if photoId, err := self.completedPhotoID(ctx, recovered); photoId != "" || err != nil {
+				if photoId, err := self.completedPhotoId(ctx, recovered); photoId != "" || err != nil {
 					return photoId, err
 				}
 				offsetBytes = recovered.offsetBytes
@@ -811,11 +811,11 @@ func (self *photoUploader) recover(ctx context.Context) (*photoRecovery, error) 
 	return recovery, nil
 }
 
-// completedPhotoID is the photo a complete upload made. The server says it in
+// completedPhotoId is the photo a complete upload made. The server says it in
 // the answer to the question of where the upload is; if it does not, the photo
 // is found by the uploader's name for it. The result is empty for an upload
 // that is not complete.
-func (self *photoUploader) completedPhotoID(ctx context.Context, recovery *photoRecovery) (string, error) {
+func (self *photoUploader) completedPhotoId(ctx context.Context, recovery *photoRecovery) (string, error) {
 	if !recovery.isComplete {
 		return "", nil
 	}
@@ -845,7 +845,7 @@ func (self *photoUploader) awaitCompletion(ctx context.Context) (string, *photoR
 		recovery, err := self.recover(ctx)
 		switch {
 		case err == nil:
-			if photoId, err := self.completedPhotoID(ctx, recovery); photoId != "" || err != nil {
+			if photoId, err := self.completedPhotoId(ctx, recovery); photoId != "" || err != nil {
 				return photoId, nil, err
 			}
 			if recovery.offsetBytes < self.upload.SizeBytes {

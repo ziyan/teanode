@@ -82,9 +82,7 @@ func TestPhotoParity(test *testing.T) {
 		"AddPhotosToAlbum":      {client.DocumentAddPhotosToAlbum, []string{"album add"}, []string{"album-add"}},
 		"RemovePhotosFromAlbum": {client.DocumentRemovePhotosFromAlbum, []string{"album remove"}, []string{"album-remove"}},
 		"SuggestPhotoAlbums":    {client.DocumentSuggestPhotoAlbums, []string{"album suggest"}, []string{"album-suggest"}},
-		// Choosing a cover is a person looking at an album; the agent
-		// organizes what is in it and leaves how it is shown.
-		"SetPhotoAlbumCover": {client.DocumentSetPhotoAlbumCover, []string{"album cover"}, nil},
+		"SetPhotoAlbumCover":    {client.DocumentSetPhotoAlbumCover, []string{"album cover"}, []string{"album-cover"}},
 	}
 
 	// What the command line does without a GraphQL operation: the upload

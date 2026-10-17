@@ -33,6 +33,15 @@ func facePreviewOf(asked arguments) (string, bool) {
 		return "Say who a group of faces is, by a contact", true
 	case "person-merge":
 		return "Put groups of faces together as one person", true
+	case "person-unname":
+		return "Take the name off a group of faces; the faces stay grouped", true
+	case "person-hide":
+		if asked.IsHidden != nil && !*asked.IsHidden {
+			return "List a hidden person among the people again", true
+		}
+		return "Leave a person out of the people list", true
+	case "person-remove-face":
+		return "Say a face is not the person its group is", true
 	case "faces":
 		switch {
 		case asked.IsEnabled == nil:
@@ -47,13 +56,14 @@ func facePreviewOf(asked arguments) (string, bool) {
 
 // faceRiskOf is how risky a people operation is. Switching faces off deletes
 // what was found, and the only way back is reading every photo again, so it is
-// destructive and asks the person; naming and merging only change who the
-// groups are called, and the person can change them back.
+// destructive and asks the person; naming, merging, taking a name off, hiding and taking a face out of its
+// group only change who the groups are called and which are listed, and the
+// person can change them back.
 func faceRiskOf(asked arguments) (tools.Risk, bool) {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
 	case "people", "person-photos":
 		return tools.RiskRead, true
-	case "person-name", "person-merge":
+	case "person-name", "person-merge", "person-unname", "person-hide", "person-remove-face":
 		return tools.RiskWrite, true
 	case "faces":
 		switch {
@@ -83,8 +93,8 @@ func groupRow(group *models.PhotoFaceGroup) map[string]any {
 	return row
 }
 
-func people(ctx context.Context, current tools.Run) (*tools.Result, error) {
-	groups, err := client.ListPhotoFaceGroups(ctx, current.Operations(), false)
+func people(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
+	groups, err := client.ListPhotoFaceGroups(ctx, current.Operations(), asked.IsHiddenIncluded)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +107,7 @@ func people(ctx context.Context, current tools.Run) (*tools.Result, error) {
 	}
 	answer := map[string]any{
 		"people": rows,
-		"note":   "a face group is named by a contact; list with face_group_id or contact_id gives a person's photos. A group with contact_name null is nobody yet: ask the person who it is, and name it only with a contact they choose",
+		"note":   "a group nobody has named is listed once it has three faces; a face group is named by a contact; list with face_group_id or contact_id gives a person's photos. A group with contact_name null is nobody yet: ask the person who it is, and name it only with a contact they choose",
 	}
 	if len(groups) > len(rows) {
 		answer["more"] = fmt.Sprintf("%d groups are not listed", len(groups)-len(rows))
@@ -161,6 +171,67 @@ func personMerge(ctx context.Context, executor client.Executor, asked *arguments
 		return nil, err
 	}
 	result.Note = fmt.Sprintf("put %d groups of faces together", len(groupIds))
+	return result, nil
+}
+
+func personUnname(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	faceGroupId := strings.TrimSpace(asked.FaceGroupID)
+	if faceGroupId == "" {
+		return nil, errors.New("person-unname needs face_group_id; people gives them")
+	}
+	group, err := client.UnnamePhotoFaceGroup(ctx, executor, faceGroupId)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(groupRow(group))
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "took the name off a group of faces; its faces stay grouped"
+	return result, nil
+}
+
+// personHide leaves a group out of the people list, or with is_hidden false
+// lists it again. Hiding is the default, as favorite's marking is.
+func personHide(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	faceGroupId := strings.TrimSpace(asked.FaceGroupID)
+	if faceGroupId == "" {
+		return nil, errors.New("person-hide needs face_group_id; people gives them, and people with is_hidden_included gives the hidden ones")
+	}
+	isHidden := asked.IsHidden == nil || *asked.IsHidden
+	group, err := client.HidePhotoFaceGroup(ctx, executor, faceGroupId, isHidden)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(groupRow(group))
+	if err != nil {
+		return nil, err
+	}
+	if isHidden {
+		result.Note = "left a group of faces out of the people list"
+	} else {
+		result.Note = "listed a group of faces among the people again"
+	}
+	return result, nil
+}
+
+// personRemoveFace says one face is not the person its group is: the face
+// goes into a group of its own that stays confirmed, so it is not grouped
+// with them again.
+func personRemoveFace(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	photoFaceId := strings.TrimSpace(asked.PhotoFaceID)
+	if photoFaceId == "" {
+		return nil, errors.New("person-remove-face needs photo_face_id, the face's id as read gives it for a photo")
+	}
+	group, err := client.RemovePhotoFaceFromGroup(ctx, executor, photoFaceId)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(groupRow(group))
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "took a face out of its group; it is in a group of its own and will not be grouped with them again"
 	return result, nil
 }
 

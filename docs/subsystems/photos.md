@@ -115,6 +115,20 @@ them, so a search finds the photo by them from then on. Before that a photo
 is found only by what the server reads without a model; the agent is told so
 and narrows by date or place first.
 
+## Asking the agent about a photo
+
+A photo can be attached to a turn as a reference, as a recording or a finance
+transaction is: `AgentReference.photoId`, with `photoTitle` for the chip. The
+server reads the photo with the asking agent's owner when it keeps the turn,
+so a photo that is not theirs, or is deleted, is refused by `AskAgent` (not
+found) and dropped by any other caller; a photo in the Trash is kept and said
+to be there. The chip is rewritten from the stored row, whatever the client
+sent: the place and the day it was taken on the clock where it was taken,
+separated by a middle dot, or the file name, or "Photo". The model is told the
+photo's id, kind, time, whether it is in the Trash, and the place and file name
+fenced as data, and that it can `look` at it with the photo tool. Nothing from
+the description is copied in. The same photo twice is told once.
+
 ## Faces
 
 `teanode-faces` reads a picture as raw pixels on standard input and prints the
@@ -124,8 +138,17 @@ decoders stay out of the image. The server runs it on the large preview. A
 face joins the person's face group whose vector is closest, if similar
 enough, under a per-person lock; otherwise it starts a group. A group is
 nobody until the person names it by choosing a contact, or making one; the
-agent never names a face by guessing. Faces are on for everybody by default;
-switching them off deletes every face and group the person has.
+agent never names a face by guessing. A group nobody has named is listed as a
+person once it has at least three faces (`MinimumUnnamedPhotoFaceGroupFaceCount`;
+it counts faces, not photos, and a pair is more often a chance likeness); a
+named group is always listed. The agent's photo tool can take a name off a
+group (`person-unname`), hide a group or list it again (`person-hide`, with
+`is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
+face is not that person (`person-remove-face`, with the `photo_face_id` that
+`read` gives), and choose an album's cover (`album-cover`); each is a write
+that does not ask first, since the person can undo it. Faces are on for
+everybody by default; switching them off deletes every face and group the
+person has.
 
 ## The iPhone
 

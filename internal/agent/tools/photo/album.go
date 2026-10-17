@@ -118,6 +118,24 @@ func albumRename(ctx context.Context, executor client.Executor, asked *arguments
 	return tools.TextResult("%s is now called %s", album.ID, album.AlbumTitle), nil
 }
 
+// albumCover chooses which photo of an album stands for it; the server
+// refuses a photo that is not in the album.
+func albumCover(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-cover")
+	if err != nil {
+		return nil, err
+	}
+	photoId := strings.TrimSpace(asked.PhotoID)
+	if photoId == "" {
+		return nil, errors.New("album-cover needs photo_id, a photo that is in the album; list with album_id gives them")
+	}
+	album, err := client.SetPhotoAlbumCover(ctx, executor, albumId, photoId)
+	if err != nil {
+		return nil, err
+	}
+	return tools.TextResult("%s now shows photo %s as its cover", album.ID, photoId), nil
+}
+
 func albumDelete(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
 	albumId, err := albumIdOf(asked, "album-delete")
 	if err != nil {

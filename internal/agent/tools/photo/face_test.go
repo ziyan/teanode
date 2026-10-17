@@ -122,6 +122,56 @@ func TestMergingGroupsNeedsTwoAndNoMoreThanTheServerTakes(test *testing.T) {
 	}
 }
 
+func TestAPersonIsUnnamedHiddenShownAndCorrectedWithTheSharedOperations(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"UnnamePhotoFaceGroup":     unnamedGroupJson,
+		"HidePhotoFaceGroup":       `{"id":"group-two","contactId":"","contactName":"","faceCount":4,"photoCount":4,"isHidden":true}`,
+		"RemovePhotoFaceFromGroup": `{"id":"group-three","contactId":"","contactName":"","faceCount":1,"photoCount":1}`,
+		"ListPhotoFaceGroups":      `[` + unnamedGroupJson + `]`,
+	})
+	operations := current.operations
+	if result, err := current.call(map[string]any{"operation": "person-unname", "face_group_id": " group-one "}); err != nil || !strings.Contains(result.Note, "faces stay grouped") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("UnnamePhotoFaceGroup"); len(asked) != 1 || asked[0]["photoFaceGroupId"] != "group-one" {
+		test.Fatalf("%v", asked)
+	}
+	// Hiding is the default; is_hidden false lists the person again.
+	if result, err := current.call(map[string]any{"operation": "person-hide", "face_group_id": "group-two"}); err != nil || !strings.Contains(result.Note, "left a group of faces out") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if result, err := current.call(map[string]any{"operation": "person-hide", "face_group_id": "group-two", "is_hidden": false}); err != nil || !strings.Contains(result.Note, "among the people again") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("HidePhotoFaceGroup"); len(asked) != 2 || asked[0]["isHidden"] != true || asked[1]["isHidden"] != false || asked[1]["photoFaceGroupId"] != "group-two" {
+		test.Fatalf("%v", asked)
+	}
+	if result, err := current.call(map[string]any{"operation": "person-remove-face", "photo_face_id": "face-one"}); err != nil || !strings.Contains(result.Note, "will not be grouped with them again") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("RemovePhotoFaceFromGroup"); len(asked) != 1 || asked[0]["photoFaceId"] != "face-one" {
+		test.Fatalf("%v", asked)
+	}
+	// The hidden groups are found through people, to be listed again.
+	if _, err := current.call(map[string]any{"operation": "people", "is_hidden_included": true}); err != nil {
+		test.Fatal(err)
+	}
+	if asked := operations.asked("ListPhotoFaceGroups"); len(asked) != 1 || asked[0]["isHiddenIncluded"] != true {
+		test.Fatalf("%v", asked)
+	}
+	for _, arguments := range []map[string]any{
+		{"operation": "person-unname"}, {"operation": "person-hide"}, {"operation": "person-remove-face"},
+		{"operation": "person-remove-face", "face_group_id": "group-one"},
+	} {
+		if _, err := current.call(arguments); err == nil {
+			test.Fatalf("%v was accepted", arguments)
+		}
+	}
+	if len(operations.asked("UnnamePhotoFaceGroup")) != 1 || len(operations.asked("HidePhotoFaceGroup")) != 2 || len(operations.asked("RemovePhotoFaceFromGroup")) != 1 {
+		test.Fatal("something was sent for a call that was refused")
+	}
+}
+
 func TestFacesReadsWhetherTheyAreFoundAndSwitchesThemOnlyWhenToldTo(test *testing.T) {
 	current := newRun(test, map[string]string{
 		"ReadPhotoLibrary":        `{"isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true}`,
@@ -157,6 +207,11 @@ func TestSwitchingFacesOffAsksFirstAndTheRestOfThePeopleOperationsDoNot(test *te
 		{map[string]any{"operation": "person-photos", "face_group_id": "x"}, tools.RiskRead, "List the photos of a person"},
 		{map[string]any{"operation": "person-name"}, tools.RiskWrite, "Say who a group of faces is, by a contact"},
 		{map[string]any{"operation": "person-merge"}, tools.RiskWrite, "Put groups of faces together as one person"},
+		{map[string]any{"operation": "person-unname"}, tools.RiskWrite, "Take the name off a group of faces; the faces stay grouped"},
+		{map[string]any{"operation": "person-hide"}, tools.RiskWrite, "Leave a person out of the people list"},
+		{map[string]any{"operation": "person-hide", "is_hidden": false}, tools.RiskWrite, "List a hidden person among the people again"},
+		{map[string]any{"operation": "person-remove-face"}, tools.RiskWrite, "Say a face is not the person its group is"},
+		{map[string]any{"operation": "album-cover"}, tools.RiskWrite, "Choose the photo an album shows as its cover"},
 		{map[string]any{"operation": "faces"}, tools.RiskRead, "Read whether faces are found in the photos"},
 		{map[string]any{"operation": "faces", "is_enabled": true}, tools.RiskWrite, "Find faces in the photos"},
 		{map[string]any{"operation": "faces", "is_enabled": false}, tools.RiskDestructive, "Stop finding faces in the photos and delete every face and group found so far"},
@@ -209,7 +264,7 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 		test.Fatal("the photo tool is not registered")
 	}
 	properties, _ := photoTool.Parameters["properties"].(map[string]any)
-	for _, name := range []string{"face_group_id", "face_group_ids", "contact_id", "is_enabled", "album_id", "album_title"} {
+	for _, name := range []string{"face_group_id", "face_group_ids", "contact_id", "is_enabled", "album_id", "album_title", "photo_face_id", "is_hidden", "is_hidden_included"} {
 		if _, isDeclared := properties[name]; !isDeclared {
 			test.Errorf("the tool does not declare %s, so a model cannot pass it", name)
 		}
@@ -224,7 +279,7 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 			enum = append(enum, name.(string))
 		}
 	}
-	for _, name := range []string{"people", "person-photos", "person-name", "person-merge", "faces"} {
+	for _, name := range []string{"people", "person-photos", "person-name", "person-unname", "person-hide", "person-remove-face", "person-merge", "faces", "album-cover"} {
 		found := false
 		for _, candidate := range enum {
 			found = found || candidate == name

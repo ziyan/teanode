@@ -834,6 +834,19 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, err
 		}
 	}
+	// A photo pointed at must be the person's own and not deleted, refused
+	// the same way.
+	for _, reference := range arguments.References {
+		if reference.PhotoID == "" {
+			continue
+		}
+		if _, err := tx.GetPhoto(asking.UserID, reference.PhotoID); err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				return nil, api.ErrNotFound
+			}
+			return nil, err
+		}
+	}
 	// A message replied to must be one of this conversation's, refused
 	// the same way. The agent reads it again when it keeps the turn.
 	for _, reference := range arguments.References {

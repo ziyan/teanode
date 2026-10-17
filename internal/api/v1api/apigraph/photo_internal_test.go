@@ -600,6 +600,30 @@ func TestFindPhotosSaysWhichFilesTheServerHolds(test *testing.T) {
 		if got := rolesOf["plain"]; len(got) != 1 || got[0] != models.PhotoFileRoleOriginal {
 			test.Fatalf("the plain photo holds %v, want only the original", got)
 		}
+		for _, photo := range found {
+			if photo.TrashedAt != nil {
+				test.Fatalf("photo %q in the library says it is in the Trash since %v", photo.ClientPhotoID, photo.TrashedAt)
+			}
+		}
+	})
+
+	// A photo in the Trash is found too, and says since when, so an uploader
+	// can tell "already in your library" from "in the Trash".
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		if _, err := transaction.TrashPhotos(ownerId, []string{live.ID}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	world.ask(ownerId, []models.Permission{models.PermissionPhotosUse}, func(ctx context.Context) {
+		found, err := world.graph.FindPhotos(ctx, FindPhotosArguments{ClientPhotoIDs: []string{"live", "plain"}})
+		if err != nil || len(found) != 2 {
+			test.Fatalf("found %v %v", found, err)
+		}
+		for _, photo := range found {
+			if isTrashed := photo.TrashedAt != nil; isTrashed != (photo.ClientPhotoID == "live") {
+				test.Fatalf("photo %q has trashedAt %v", photo.ClientPhotoID, photo.TrashedAt)
+			}
+		}
 	})
 }
 

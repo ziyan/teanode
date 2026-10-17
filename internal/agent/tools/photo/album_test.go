@@ -216,3 +216,23 @@ func TestTheCardForDeletingAnAlbumNamesIt(test *testing.T) {
 		test.Fatalf("the card says %q", line)
 	}
 }
+
+func TestAnAlbumCoverIsChosenFromItsPhotosWithTheSharedOperation(test *testing.T) {
+	current := newRun(test, map[string]string{"SetPhotoAlbumCover": `{"id":"album-one","albumTitle":"Picnic at the lake"}`})
+	if result, err := current.call(map[string]any{"operation": "album-cover", "album_id": " album-one ", "photo_id": "photo-two"}); err != nil || !strings.Contains(result.Content, "album-one now shows photo photo-two as its cover") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := current.operations.asked("SetPhotoAlbumCover"); len(asked) != 1 || asked[0]["photoAlbumId"] != "album-one" || asked[0]["photoId"] != "photo-two" {
+		test.Fatalf("%v", asked)
+	}
+	for _, arguments := range []map[string]any{
+		{"operation": "album-cover", "photo_id": "photo-two"}, {"operation": "album-cover", "album_id": "album-one"},
+	} {
+		if _, err := current.call(arguments); err == nil {
+			test.Fatalf("%v was accepted", arguments)
+		}
+	}
+	if len(current.operations.asked("SetPhotoAlbumCover")) != 1 {
+		test.Fatal("a refused call was sent")
+	}
+}

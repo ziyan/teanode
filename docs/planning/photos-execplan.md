@@ -293,7 +293,7 @@ Completing an upload, in `internal/photo/complete.go`: read every part in order 
     ReadPhoto(PhotoArguments) (*PhotoView, error)     -- photo, files, previews with URLs, albums and faces when those exist
     ReadPhotoLibrary() (*PhotoLibraryView, error)       -- counts (photos, videos, favorites, trash), bytes used, limits,
       upload URL, isFaceRecognitionAvailable, isDescriptionAvailable, the person's face switch
-    FindPhotos(FindPhotosArguments) ([]*models.Photo, error) -- by clientPhotoIds, for an uploader deciding what to skip; each photo carries `photoFileRoles`, the roles of the files the server holds (original, edited, liveVideo), so an uploader after a reinstall sends only what is missing
+    FindPhotos(FindPhotosArguments) ([]*models.Photo, error) -- by clientPhotoIds, for an uploader deciding what to skip; each photo carries `trashedAt` (set when it is in the Trash, so an uploader can tell "already in your library" from "in the Trash") and `photoFileRoles`, the roles of the files the server holds (original, edited, liveVideo), so an uploader after a reinstall sends only what is missing
     UpdatePhoto(UpdatePhotoArguments) (*models.Photo, error) -- isFavorite, takenAt (the person correcting a date)
     TrashPhotos(PhotoIdsArguments) (int, error); RestorePhotos(PhotoIdsArguments) (int, error)
     DeletePhotos(PhotoIdsArguments) (int, error)       -- forever; only photos already in the trash

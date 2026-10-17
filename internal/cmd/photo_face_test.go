@@ -263,16 +263,13 @@ func TestPhotoFaceParity(test *testing.T) {
 		subcommands    []string
 		toolOperations []string
 	}{
-		"ListPhotoFaceGroups": {client.DocumentListPhotoFaceGroups, []string{"people list"}, []string{"people"}},
-		"ReadPhotoFaceGroup":  {client.DocumentReadPhotoFaceGroup, []string{"people show"}, []string{"person-photos"}},
-		"NamePhotoFaceGroup":  {client.DocumentNamePhotoFaceGroup, []string{"people name"}, []string{"person-name"}},
-		// Taking a name off, taking a face out of a group and hiding a person
-		// are a person looking at who is listed; the agent names and merges
-		// and leaves the corrections to them.
-		"UnnamePhotoFaceGroup":     {client.DocumentUnnamePhotoFaceGroup, []string{"people unname"}, nil},
+		"ListPhotoFaceGroups":      {client.DocumentListPhotoFaceGroups, []string{"people list"}, []string{"people"}},
+		"ReadPhotoFaceGroup":       {client.DocumentReadPhotoFaceGroup, []string{"people show"}, []string{"person-photos"}},
+		"NamePhotoFaceGroup":       {client.DocumentNamePhotoFaceGroup, []string{"people name"}, []string{"person-name"}},
+		"UnnamePhotoFaceGroup":     {client.DocumentUnnamePhotoFaceGroup, []string{"people unname"}, []string{"person-unname"}},
 		"MergePhotoFaceGroups":     {client.DocumentMergePhotoFaceGroups, []string{"people merge"}, []string{"person-merge"}},
-		"RemovePhotoFaceFromGroup": {client.DocumentRemovePhotoFaceFromGroup, []string{"people remove"}, nil},
-		"HidePhotoFaceGroup":       {client.DocumentHidePhotoFaceGroup, []string{"people hide", "people unhide"}, nil},
+		"RemovePhotoFaceFromGroup": {client.DocumentRemovePhotoFaceFromGroup, []string{"people remove"}, []string{"person-remove-face"}},
+		"HidePhotoFaceGroup":       {client.DocumentHidePhotoFaceGroup, []string{"people hide", "people unhide"}, []string{"person-hide"}},
 		"SetPhotoFaceRecognition":  {client.DocumentSetPhotoFaceRecognition, []string{"faces on", "faces off"}, []string{"faces"}},
 	}
 	// What the people operations add to the photo operations: the filters of
