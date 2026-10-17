@@ -242,7 +242,12 @@ type FoundPlaceView struct {
 	DistanceMeters   float64 `json:"distanceMeters"`
 
 	// PlaceID is the caller's own place there, null when they have none.
-	PlaceID *string `json:"placeId"`
+	// For such a row PlaceName is the caller's own name for it when they named
+	// it (otherwise the OpenStreetMap name), PlaceLabel is its label (empty
+	// when it has none) and IsNamedByPerson says whose name PlaceName is.
+	PlaceID         *string `json:"placeId"`
+	PlaceLabel      string  `json:"placeLabel"`
+	IsNamedByPerson bool    `json:"isNamedByPerson"`
 }
 
 // FoundPlacePageView is a page of found places.
@@ -258,6 +263,11 @@ type ReportLocationView struct {
 	NewPointCount     int `json:"newPointCount"`
 	NewVisitCount     int `json:"newVisitCount"`
 	UpdatedVisitCount int `json:"updatedVisitCount"`
+
+	// RefusedVisitCount is how many visits were left out because each needed a
+	// new place and the person has as many places as they may have. Their
+	// positions, and the visits at places they have, are stored all the same.
+	RefusedVisitCount int `json:"refusedVisitCount"`
 }
 
 // EraseLocationHistoryView says what was erased.
@@ -627,8 +637,9 @@ func describePlaceVisit(visit *models.PlaceVisit, isOwner bool) *PlaceVisitView 
 }
 
 // describeFoundPlace is a place OpenStreetMap found; placeId is the caller's
-// own place for the same object, if they have one.
-func describeFoundPlace(found *place.Found, placeId string) *FoundPlaceView {
+// own place for the same object, if they have one (own, nil when they have
+// none or it could not be read).
+func describeFoundPlace(found *place.Found, placeId string, own *models.Place) *FoundPlaceView {
 	view := &FoundPlaceView{
 		PlaceName: found.PlaceName, OSMType: found.OSMType, OSMID: found.OSMID, OSMCategory: found.OSMCategory,
 		AddressText: found.AddressText, LatitudeDegrees: found.LatitudeDegrees, LongitudeDegrees: found.LongitudeDegrees,
@@ -636,6 +647,13 @@ func describeFoundPlace(found *place.Found, placeId string) *FoundPlaceView {
 	}
 	if placeId != "" {
 		view.PlaceID = &placeId
+	}
+	if own != nil {
+		view.PlaceLabel = string(own.PlaceLabel)
+		view.IsNamedByPerson = own.IsNamedByPerson
+		if own.IsNamedByPerson {
+			view.PlaceName = own.PlaceName
+		}
 	}
 	return view
 }
@@ -741,26 +759,31 @@ func (self *graph) GetLocation(ctx context.Context, arguments GetLocationArgumen
 
 // describeLocation is where a person is, for a viewer who reaches it.
 func describeLocation(tx db.Transaction, reach *locationReach) (*LocationView, error) {
-	view := &LocationView{
-		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
-		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
-		ShareLevel: string(reach.ShareLevel),
-	}
 	latest, err := tx.GetLatestLocationPoint(reach.User.ID)
 	if err != nil {
 		return nil, err
-	}
-	if latest != nil {
-		view.LatestPoint = describeLocationPoint(latest)
 	}
 	visit, err := openVisitOf(tx, reach.User.ID, latest)
 	if err != nil {
 		return nil, err
 	}
-	if visit != nil {
+	return locationViewOf(reach, latest, visit), nil
+}
+
+// locationViewOf is where a person is, from what was read about them.
+func locationViewOf(reach *locationReach, latest *models.LocationPoint, visit *models.PlaceVisit) *LocationView {
+	view := &LocationView{
+		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
+		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
+		ShareLevel: string(reach.ShareLevel),
+	}
+	if latest != nil {
+		view.LatestPoint = describeLocationPoint(latest)
+	}
+	if visit != nil && place.IsStillThere(visit, latest) {
 		view.OpenVisit = describePlaceVisit(visit, reach.ShareLevel == models.LocationShareLevelOwner)
 	}
-	return view, nil
+	return view
 }
 
 func (self *graph) ListLocationVisits(ctx context.Context, arguments ListLocationVisitsArguments) (*PlaceVisitPageView, error) {
@@ -922,6 +945,7 @@ func (self *graph) mergeFoundWithOwn(tx db.Transaction, userId string, found []*
 			PlaceName: own.Place.PlaceName, OSMType: own.Place.OSMType, OSMID: own.Place.OSMID, OSMCategory: own.Place.OSMCategory,
 			AddressText: own.Place.AddressText, LatitudeDegrees: own.Place.LatitudeDegrees, LongitudeDegrees: own.Place.LongitudeDegrees,
 			DistanceMeters: own.DistanceMeters, PlaceID: &own.Place.ID,
+			PlaceLabel: string(own.Place.PlaceLabel), IsNamedByPerson: own.Place.IsNamedByPerson,
 		})
 	}
 	for _, each := range found {
@@ -929,7 +953,13 @@ func (self *graph) mergeFoundWithOwn(tx db.Transaction, userId string, found []*
 		if placeId != "" && listed[placeId] {
 			continue
 		}
-		rows = append(rows, describeFoundPlace(each, placeId))
+		var ownPlace *models.Place
+		if placeId != "" {
+			if ownPlace, err = tx.GetPlace(userId, placeId); err != nil {
+				return nil, err
+			}
+		}
+		rows = append(rows, describeFoundPlace(each, placeId, ownPlace))
 	}
 	sortFoundByDistance(rows)
 	return rows, nil
@@ -1004,19 +1034,32 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 		references = append(references, db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID})
 	}
 	var ownByObject map[db.OSMReference]string
+	ownPlaces := map[string]*models.Place{}
 	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
 		if _, err := self.requireLocationPerson(phaseContext); err != nil {
 			return err
 		}
+		tx := self.transaction(phaseContext)
 		var err error
-		ownByObject, err = self.transaction(phaseContext).FindPlaceIDsByOSM(userId, references)
-		return err
+		if ownByObject, err = tx.FindPlaceIDsByOSM(userId, references); err != nil {
+			return err
+		}
+		for _, placeId := range ownByObject {
+			if ownPlaces[placeId] != nil {
+				continue
+			}
+			if ownPlaces[placeId], err = tx.GetPlace(userId, placeId); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
 	page := &FoundPlacePageView{FoundPlaces: make([]*FoundPlaceView, 0, len(found)), NextOffset: nextOffsetOf(nextOffset)}
 	for _, each := range found {
-		page.FoundPlaces = append(page.FoundPlaces, describeFoundPlace(each, ownByObject[db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID}]))
+		placeId := ownByObject[db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID}]
+		page.FoundPlaces = append(page.FoundPlaces, describeFoundPlace(each, placeId, ownPlaces[placeId]))
 	}
 	return page, nil
 }
@@ -1207,6 +1250,10 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 		if err != nil {
 			return nil, err
 		}
+		if stored.IsRefused {
+			view.RefusedVisitCount++
+			continue
+		}
 		if stored.IsNew {
 			view.NewVisitCount++
 		} else if stored.IsChanged {
@@ -1221,12 +1268,45 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			madePlaces = append(madePlaces, stored.MadePlace)
 		}
 	}
+	if view.RefusedVisitCount > 0 {
+		log.Warningf("user %s is at %d places, the most there can be: %d visits of a report were left out for needing a new place",
+			user.ID, db.PlaceCountMost, view.RefusedVisitCount)
+	}
+	// Visits delivered in any order end up as the sequence they would have
+	// been in order.
+	if len(arguments.Visits) > 0 {
+		from, until := reportedVisitRange(arguments.Visits)
+		if err := tx.NormalizePlaceVisits(user.ID, from, until); err != nil {
+			return nil, locationFailure(err)
+		}
+	}
+	self.takeNewPlacesAfterCommit(tx, user.ID, len(madePlaces))
 	// A batch the server already had changes nothing, so the people watching
 	// the map are not told to read the same position again.
 	if isChanged {
 		self.afterLocationChange(ctx, tx, user.ID, notices, madePlaces)
 	}
 	return view, nil
+}
+
+// reportedVisitRange is the earliest and the latest time the visits of a
+// report give.
+func reportedVisitRange(reported []ReportedVisit) (time.Time, time.Time) {
+	var from, until time.Time
+	for _, visit := range reported {
+		for _, at := range []*time.Time{visit.ArrivedAt, visit.DepartedAt} {
+			if at == nil {
+				continue
+			}
+			if from.IsZero() || at.Before(from) {
+				from = *at
+			}
+			if until.IsZero() || at.After(until) {
+				until = *at
+			}
+		}
+	}
+	return from, until
 }
 
 // visitNotice is an arrival or a departure the people a location is shared
@@ -1274,6 +1354,10 @@ type storedVisit struct {
 	// shared with, nil for none.
 	Notice *visitNotice
 
+	// IsRefused is true for a visit that was not stored because it needed a new
+	// place and the person has the most places they may have.
+	IsRefused bool
+
 	// MadePlace is the place the visit made because the person had none there,
 	// nil when it was at a place they had.
 	MadePlace *models.Place
@@ -1302,6 +1386,11 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 		visit.PlaceID = known.PlaceID
 	default:
 		matched, isMade, err := self.placeForReportedVisit(tx, userId, reported)
+		if errors.Is(err, db.ErrPlaceCountMost) {
+			// The rest of the batch is stored: the person's positions and
+			// their visits at places they have are not lost for this one.
+			return &storedVisit{IsRefused: true}, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1321,7 +1410,11 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	stored.IsChanged = !isNew && (known == nil || addsATime(known.ArrivedAt, visit.ArrivedAt) || addsATime(known.DepartedAt, visit.DepartedAt))
 	// An arrival is told when it is first heard of, and a departure when it
 	// is added to a visit that had none.
+	// A new visit that comes with its departure (the arrival report was lost)
+	// is told by its latest event: the person has left.
 	switch {
+	case isNew && reported.DepartedAt != nil && reported.ArrivedAt != nil:
+		stored.Notice = &visitNotice{Visit: visit, IsArrival: false, HappenedAt: *reported.DepartedAt}
 	case isNew && reported.ArrivedAt != nil:
 		stored.Notice = &visitNotice{Visit: visit, IsArrival: true, HappenedAt: *reported.ArrivedAt}
 	case !isNew && known != nil && known.DepartedAt == nil && reported.DepartedAt != nil && visit.DepartedAt != nil:
@@ -1357,13 +1450,16 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 	if err != nil || found != nil {
 		return found, false, err
 	}
-	if err := self.allowNewPlace(userId); err != nil {
+	if err := self.requireNewPlaceAllowance(userId); err != nil {
 		return nil, false, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
 		PlaceName: placeNameFor(reported.LatitudeDegrees, reported.LongitudeDegrees), LatitudeDegrees: reported.LatitudeDegrees,
 		LongitudeDegrees: reported.LongitudeDegrees,
 	})
+	if errors.Is(err, db.ErrPlaceCountMost) {
+		return nil, false, err
+	}
 	if err != nil {
 		return nil, false, locationFailure(err)
 	}
@@ -1414,12 +1510,13 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 		} else {
 			made.PlaceName = placeNameFor(made.LatitudeDegrees, made.LongitudeDegrees)
 		}
-		if err := self.allowNewPlace(userId); err != nil {
+		if err := self.requireNewPlaceAllowance(userId); err != nil {
 			return nil, err
 		}
 		if saved, err = tx.CreatePlace(userId, made); err != nil {
 			return nil, locationFailure(err)
 		}
+		self.takeNewPlacesAfterCommit(tx, userId, 1)
 		if !saved.IsNamedByPerson {
 			detached := context.WithoutCancel(ctx)
 			tx.AfterCommit(func() { self.namePlacesNow(detached, []*models.Place{saved}) })
@@ -1566,7 +1663,7 @@ func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments Ch
 	if placeName == "" {
 		placeName = placeNameFor(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
 	}
-	if err := self.allowNewPlace(userId); err != nil {
+	if err := self.requireNewPlaceAllowance(userId); err != nil {
 		return nil, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
@@ -1578,6 +1675,7 @@ func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments Ch
 	if err != nil {
 		return nil, locationFailure(err)
 	}
+	self.takeNewPlacesAfterCommit(tx, userId, 1)
 	return made, nil
 }
 

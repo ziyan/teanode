@@ -72,7 +72,14 @@ func isNotAPlace(osmCategory string) bool {
 // address: the house number and road, then the road, then the neighborhood or
 // suburb, then the city. Empty when no part is known.
 func addressName(houseNumber, road, neighborhood, city string) string {
-	for _, candidate := range []string{strings.TrimSpace(houseNumber + " " + road), road, neighborhood, city} {
+	// A house number alone is not a name (many addresses have no road), so it
+	// is used only beside the road it belongs to.
+	var candidates []string
+	if road = strings.TrimSpace(road); road != "" {
+		candidates = append(candidates, strings.TrimSpace(houseNumber+" "+road), road)
+	}
+	candidates = append(candidates, neighborhood, city)
+	for _, candidate := range candidates {
 		if candidate = strings.TrimSpace(candidate); candidate != "" {
 			return candidate
 		}

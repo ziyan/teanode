@@ -38,7 +38,7 @@ func TestLocationJournalDayTextListsVisitsInOrder(t *testing.T) {
 	}
 	dayStart := time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC)
 
-	got := locationDayText(visits, dayStart, true)
+	got := locationDayText(visits, dayStart, reportedAt(*journalTime(5, 1, 0), *journalTime(5, 1, 0)), true)
 	want := "Places: 3, time away from home: 2 h 35 min\n" + fenced(strings.Join([]string{
 		"00:00 to 08:00 (8 h): Elm Street 4, labeled home, there since the day before",
 		"09:40 to 11:30 (1 h 50 min): Harbor Office, labeled work",
@@ -50,11 +50,11 @@ func TestLocationJournalDayTextListsVisitsInOrder(t *testing.T) {
 	}
 
 	// Without a home place there is nothing to be away from.
-	if without := locationDayText(visits, dayStart, false); strings.Contains(without, "away from home") || !strings.HasPrefix(without, "Places: 3\n") {
+	if without := locationDayText(visits, dayStart, reportedAt(*journalTime(5, 1, 0), *journalTime(5, 1, 0)), false); strings.Contains(without, "away from home") || !strings.HasPrefix(without, "Places: 3\n") {
 		t.Errorf("no home place, no time away: %s", without)
 	}
 	// A day with no visits has no document.
-	if empty := locationDayText(visits, time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC), true); empty != "" {
+	if empty := locationDayText(visits, time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC), reportedAt(*journalTime(5, 1, 0), *journalTime(5, 1, 0)), true); empty != "" {
 		t.Errorf("a day with no visits is empty: %q", empty)
 	}
 }
@@ -65,7 +65,7 @@ func TestLocationJournalDayTextKeepsADepartureWithoutAnArrival(t *testing.T) {
 	visits := []*models.PlaceVisit{
 		{PlaceID: "place-a", Place: &models.Place{ID: "place-a"}, DepartedAt: journalTime(4, 7, 5)},
 	}
-	got := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), false)
+	got := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), locationPresence{}, false)
 	if got != "Places: 1\n"+fenced("07:05 (left): an unnamed place") {
 		t.Errorf("the day reads %q", got)
 	}
@@ -363,7 +363,7 @@ func TestLocationJournalTotalsCountEveryVisitOfABusyDay(t *testing.T) {
 			PlaceID: placeId, Place: &models.Place{ID: placeId, PlaceName: cafe.PlaceName}, ArrivedAt: &arrivedAt, DepartedAt: &departedAt,
 		})
 	}
-	got := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), true)
+	got := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), locationPresence{}, true)
 	wantHeader := fmt.Sprintf("Places: %d, time away from home: %s\n", len(places), locationDurationText(time.Duration(len(visits))*5*time.Minute))
 	if !strings.HasPrefix(got, wantHeader) || !strings.Contains(got, "and 10 more") {
 		t.Errorf("the header counts all %d visits, though the list stops at %d:\n%s", len(visits), locationJournalVisitsMost, got)
@@ -378,7 +378,7 @@ func TestLocationJournalEndsAnOpenVisitWhereALaterOneBegan(t *testing.T) {
 		{ID: "visit-park", PlaceID: park.ID, Place: park, ArrivedAt: journalTime(4, 15, 0), DepartedAt: journalTime(4, 16, 0)},
 		{ID: "visit-office", PlaceID: office.ID, Place: office, ArrivedAt: journalTime(4, 9, 0)},
 	}
-	got := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), false)
+	got := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), locationPresence{}, false)
 	want := "Places: 2\n" + fenced("09:00 to 15:00 (6 h): Harbor Office\n15:00 to 16:00 (1 h): Riverside Park")
 	if got != want {
 		t.Errorf("the office visit ends where the park visit began:\n%s\nwant\n%s", got, want)
@@ -401,8 +401,48 @@ func TestPlaceTextForModelRemovesWhatCouldForgeALine(t *testing.T) {
 		PlaceID: "place-a", Place: &models.Place{ID: "place-a", PlaceName: hostile},
 		ArrivedAt: journalTime(4, 9, 0), DepartedAt: journalTime(4, 10, 0),
 	}}
-	text := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), false)
+	text := locationDayText(visits, time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC), locationPresence{}, false)
 	if strings.Count(text, "\n") != 3 || strings.Contains(text, "</digest>") {
 		t.Errorf("the day has only the header and the fenced line:\n%s", text)
+	}
+}
+
+// A person at home sends no positions, so a visit with no departure fills
+// every day up to now with the place; a position away ends it there; a phone
+// silent for four days stops it 72 hours after the last report.
+func TestLocationJournalDayTextEndsAnOpenVisitWhereTheLatestReportSays(t *testing.T) {
+	home := &models.Place{ID: "place-home", PlaceName: "Elm Street 4", PlaceLabel: models.PlaceLabelHome, RadiusMeters: 100}
+	visits := []*models.PlaceVisit{{ID: "visit-home", PlaceID: home.ID, Place: home, ArrivedAt: journalTime(4, 18, 0)}}
+	day := func(dayOfMonth int) time.Time { return time.Date(2026, 3, dayOfMonth, 0, 0, 0, 0, time.UTC) }
+
+	now := *journalTime(7, 12, 0)
+	presence := reportedAt(now, *journalTime(4, 18, 0))
+	if got := locationDayText(visits, day(4), presence, true); got != "Places: 1, time away from home: 0 min\n"+fenced("18:00 to 24:00 (6 h): Elm Street 4, labeled home, still there at midnight") {
+		t.Errorf("the arrival day reads %q", got)
+	}
+	if got := locationDayText(visits, day(5), presence, true); got != "Places: 1, time away from home: 0 min\n"+fenced("00:00 to 24:00 (24 h): Elm Street 4, labeled home, there the whole day") {
+		t.Errorf("a full day at home reads %q", got)
+	}
+	if got := locationDayText(visits, day(6), presence, true); got == "" {
+		t.Errorf("the day after has a document")
+	}
+
+	away := &models.LocationPoint{MeasuredAt: *journalTime(5, 9, 0), LatitudeDegrees: home.LatitudeDegrees + 1, LongitudeDegrees: home.LongitudeDegrees}
+	awayPresence := locationPresence{now: now, latestPoint: away, latestReportAt: away.MeasuredAt}
+	if got := locationDayText(visits, day(5), awayPresence, true); got != "Places: 1, time away from home: 0 min\n"+fenced("00:00 to 09:00 (9 h): Elm Street 4, labeled home, there since the day before") {
+		t.Errorf("a position away ends the visit there: %q", got)
+	}
+	if got := locationDayText(visits, day(6), awayPresence, true); got != "" {
+		t.Errorf("nothing after the position away: %q", got)
+	}
+
+	// Silent from the 4th at 18:00 for four days: 72 hours, to the 7th at 18:00.
+	silentNow := *journalTime(8, 18, 0)
+	silent := reportedAt(silentNow, *journalTime(4, 18, 0))
+	if got := locationDayText(visits, day(7), silent, true); got != "Places: 1, time away from home: 0 min\n"+fenced("00:00 to 18:00 (18 h): Elm Street 4, labeled home, there since the day before") {
+		t.Errorf("the last day stops 72 hours after the last report: %q", got)
+	}
+	if got := locationDayText(visits, day(8), silent, true); got != "" {
+		t.Errorf("no day after 72 hours of silence: %q", got)
 	}
 }

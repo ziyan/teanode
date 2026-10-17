@@ -3445,17 +3445,19 @@ body,
   }
 
   /* A row whose only action is one icon keeps it beside the title: on a line
-     of its own it sat alone under an empty band, the row twice its height. */
-  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) {
+     of its own it sat alone under an empty band, the row twice its height.
+     The icon may be inside a tooltip's anchor; :has() cannot be nested in
+     :has(), so the anchor is matched by its position, not by what it holds. */
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child, > .settings-row-actions > .tooltip-anchor:only-child > .icon-action:only-child) {
     flex-wrap: nowrap;
     align-items: flex-start;
   }
 
-  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) > .settings-row-body {
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child, > .settings-row-actions > .tooltip-anchor:only-child > .icon-action:only-child) > .settings-row-body {
     min-width: 0;
   }
 
-  .settings-row:has(> .settings-row-actions > :is(.icon-action, .tooltip-anchor:has(> .icon-action)):only-child) > .settings-row-actions {
+  .settings-row:has(> .settings-row-actions > .icon-action:only-child, > .settings-row-actions > .tooltip-anchor:only-child > .icon-action:only-child) > .settings-row-actions {
     width: auto;
   }
 
@@ -18831,6 +18833,11 @@ label.checkbox.is-plain > span > .muted {
 .location-find input {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.location-find button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .location-nearby {

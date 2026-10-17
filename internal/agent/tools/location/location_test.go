@@ -223,6 +223,15 @@ func TestSearchAndNearbyAreAroundWhereTheyWere(t *testing.T) {
 	if found := answer["places"].([]any)[0].(map[string]any); found["place_id"] != "p9" || found["is_the_persons_place"] != true {
 		t.Errorf("already theirs: %v", found)
 	}
+
+	operations.answers["SearchPlaces"] = `{"foundPlaces":[{"placeName":"Elm Playground","osmType":"way","osmId":7,"distanceMeters":900,"placeId":"p9","placeLabel":"gym","isNamedByPerson":false}]}`
+	answer, _, err = act(t, runOf(operations), "search", `{"query":"playground"}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found := answer["places"].([]any)[0].(map[string]any); found["place_display_name"] != "Gym" || found["place_name"] != "Elm Playground" || found["place_label"] != "gym" || found["is_named_by_person"] != false {
+		t.Errorf("a labeled place is called by its label word: %v", found)
+	}
 	if _, _, err := act(t, runOf(operations), "search", `{}`, false); err == nil {
 		t.Error("search needs words")
 	}

@@ -348,9 +348,17 @@ func TestPlacesFromTheProvider(t *testing.T) {
 	// A check-in list still offers the person's own places while the provider
 	// is off, and only a search is refused.
 	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.0001, longitudeDegrees: -75.0001, placeName: "Home") { id } }`)
-	own := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40, longitudeDegrees: -75) { placeName placeId } }`)["ListNearbyPlaces"].([]any)
+	own := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40, longitudeDegrees: -75) { placeName placeId placeLabel isNamedByPerson } }`)["ListNearbyPlaces"].([]any)
 	if len(own) != 1 || own[0].(map[string]any)["placeName"] != "Home" || own[0].(map[string]any)["placeId"] == nil {
 		t.Errorf("their own places with the provider off: %v", own)
+	}
+	if row := own[0].(map[string]any); row["isNamedByPerson"] != true || row["placeLabel"] != "" {
+		t.Errorf("a place they named says so: %v", row)
+	}
+	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.5, longitudeDegrees: -75.0, placeLabel: "gym") { id } }`)
+	labeled := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 41.5, longitudeDegrees: -75.0) { placeName placeLabel isNamedByPerson } }`)["ListNearbyPlaces"].([]any)
+	if row := labeled[0].(map[string]any); row["placeLabel"] != "gym" || row["isNamedByPerson"] != false {
+		t.Errorf("a place they only labeled carries its label and the map's name: %v", labeled)
 	}
 	if message := world.refused(t, world.ada, `query { SearchPlaces(query: "playground", latitudeDegrees: 40, longitudeDegrees: -75) { foundPlaces { placeName } } }`); !strings.Contains(message, "operator") || !strings.Contains(message, "OpenStreetMap") {
 		t.Errorf("whose switch it is: %s", message)
@@ -433,5 +441,252 @@ func TestANewPlaceIsNamedRightAfterTheReport(t *testing.T) {
 			t.Fatalf("the place was not named: %v", places)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// listedVisits is the visits of a person as "place arrived to departed" lines,
+// oldest first, in minutes after the base time.
+func (self *locationWorld) listedVisits(t *testing.T, user *models.User, base time.Time) []string {
+	t.Helper()
+	data := self.call(t, user, `query { ListLocationVisits(limitCount: 200) { placeVisits { arrivedAt departedAt place { id } } } }`)
+	visits := data["ListLocationVisits"].(map[string]any)["placeVisits"].([]any)
+	minutes := func(value any) string {
+		if value == nil {
+			return "open"
+		}
+		moment, err := time.Parse(time.RFC3339, value.(string))
+		if err != nil {
+			t.Fatalf("time %v: %s", value, err)
+		}
+		return fmt.Sprint(int(moment.Sub(base).Minutes()))
+	}
+	lines := make([]string, 0, len(visits))
+	for index := len(visits) - 1; index >= 0; index-- {
+		visit := visits[index].(map[string]any)
+		lines = append(lines, fmt.Sprintf("%s %s to %s", visit["place"].(map[string]any)["id"], minutes(visit["arrivedAt"]), minutes(visit["departedAt"])))
+	}
+	return lines
+}
+
+// One day's arrivals and departures delivered in every order end up as the
+// visits they are in order: no visit inside another, none left open when the
+// person has gone on, and a visit that was joined before the one between its
+// parts arrived is split again.
+func TestVisitsDeliveredInAnyOrderEndUpAsInOrder(t *testing.T) {
+	world := newLocationWorld(t)
+	base := time.Now().Add(-12 * time.Hour).Truncate(time.Minute)
+	at := func(minutes int) string {
+		return base.Add(time.Duration(minutes) * time.Minute).UTC().Format(time.RFC3339)
+	}
+	const (
+		homeLatitude, workLatitude, gymLatitude = 40.0, 41.0, 42.0
+		longitude                               = -75.0
+	)
+
+	// Home, work, and home again.
+	deliverInEveryOrder(t, world, base, []string{
+		visitInput("home-1", homeLatitude, longitude, at(0), ""),
+		visitInput("home-1", homeLatitude, longitude, "", at(60)),
+		visitInput("work-1", workLatitude, longitude, at(60), ""),
+		visitInput("work-1", workLatitude, longitude, "", at(300)),
+		visitInput("home-2", homeLatitude, longitude, at(330), ""),
+		visitInput("home-2", homeLatitude, longitude, "", at(500)),
+	}, []string{"0 to 60", "60 to 300", "330 to 500"})
+
+	// Home, the gym, and home again, the last still going.
+	deliverInEveryOrder(t, world, base, []string{
+		visitInput("home-1", homeLatitude, longitude, at(0), ""),
+		visitInput("home-1", homeLatitude, longitude, "", at(100)),
+		visitInput("gym-1", gymLatitude, longitude, at(100), ""),
+		visitInput("gym-1", gymLatitude, longitude, "", at(160)),
+		visitInput("home-2", homeLatitude, longitude, at(170), ""),
+		visitInput("work-1", workLatitude, longitude, at(400), ""),
+	}, []string{"0 to 100", "100 to 160", "170 to 400", "400 to open"})
+}
+
+// deliverInEveryOrder sends the events, one report each, in every order of
+// them (by Heap's algorithm), and checks that the person's visits end up the
+// ones the first order, which is the order they happened in, makes.
+func deliverInEveryOrder(t *testing.T, world *locationWorld, base time.Time, events []string, wantSuffixes []string) {
+	t.Helper()
+	erase := func() {
+		world.call(t, world.ada, `mutation { EraseLocationHistory { visitCount } }`)
+		// Each order starts with the allowance for new places full.
+		world.graph.locationLimits()
+		world.graph.locationLimitsValue = newLocationRateLimits()
+	}
+	erase()
+	for _, event := range events {
+		world.report(t, world.ada, "", event)
+	}
+	inOrder := world.listedVisits(t, world.ada, base)
+	if len(inOrder) != len(wantSuffixes) {
+		t.Fatalf("in order: %v, want %v", inOrder, wantSuffixes)
+	}
+	for index, want := range wantSuffixes {
+		if !strings.HasSuffix(inOrder[index], " "+want) {
+			t.Fatalf("in order: %v, want %v", inOrder, wantSuffixes)
+		}
+	}
+
+	order := make([]int, len(events))
+	for index := range order {
+		order[index] = index
+	}
+	orderCount, lastOrder := 0, ""
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("the last order started was %s", lastOrder)
+		}
+	})
+	var permute func(size int)
+	permute = func(size int) {
+		if size == 1 {
+			orderCount++
+			lastOrder = fmt.Sprint(order)
+			erase()
+			for _, index := range order {
+				world.report(t, world.ada, "", events[index])
+			}
+			// Place ids differ after an erase: compare the times, and which
+			// visits are at the same place.
+			got := world.listedVisits(t, world.ada, base)
+			if len(got) != len(inOrder) {
+				t.Errorf("order %v: %v, in order %v", order, got, inOrder)
+				return
+			}
+			for first := range got {
+				if got[first][strings.Index(got[first], " "):] != inOrder[first][strings.Index(inOrder[first], " "):] {
+					t.Errorf("order %v: %v, in order %v", order, got, inOrder)
+					return
+				}
+				for second := range got {
+					if (strings.Fields(got[first])[0] == strings.Fields(got[second])[0]) != (strings.Fields(inOrder[first])[0] == strings.Fields(inOrder[second])[0]) {
+						t.Errorf("order %v: places %v, in order %v", order, got, inOrder)
+						return
+					}
+				}
+			}
+			return
+		}
+		for index := 0; index < size; index++ {
+			permute(size - 1)
+			if size%2 == 1 {
+				order[0], order[size-1] = order[size-1], order[0]
+			} else {
+				order[index], order[size-1] = order[size-1], order[index]
+			}
+		}
+	}
+	permute(len(order))
+	factorial := 1
+	for count := 2; count <= len(events); count++ {
+		factorial *= count
+	}
+	if orderCount != factorial {
+		t.Fatalf("%d orders, want %d", orderCount, factorial)
+	}
+}
+
+// A person at the most places they may have loses only the visit that needs a
+// new place: the positions and the visits at places they have are stored, and
+// the answer says how many visits were left out.
+func TestAReportAtTheMostPlacesLeavesOutOnlyTheVisitThatNeedsAPlace(t *testing.T) {
+	world := newLocationWorld(t)
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		for index := 0; index < db.PlaceCountMost; index++ {
+			// A grid of places 1 km apart on the earth of the tests.
+			latitude, longitude := -60+float64(index/100)*0.01, -100+float64(index%100)*0.02
+			if _, err := tx.CreatePlace(world.ada.ID, &models.Place{PlaceName: fmt.Sprintf("Place %d", index), LatitudeDegrees: latitude, LongitudeDegrees: longitude}); err != nil {
+				t.Fatalf("CreatePlace %d: %s", index, err)
+			}
+		}
+	})
+	data := world.call(t, world.ada, fmt.Sprintf(`mutation { ReportLocation(points: [%s], visits: [%s, %s]) { newPointCount newVisitCount updatedVisitCount refusedVisitCount } }`,
+		pointInput(-60.0, -100.0, ago(30*time.Minute)),
+		visitInput("at-a-known-place", -60.0, -100.0, ago(60*time.Minute), ""),
+		visitInput("needs-a-new-place", 10.0, 10.0, ago(20*time.Minute), "")))
+	view := data["ReportLocation"].(map[string]any)
+	if view["newPointCount"] != float64(1) || view["newVisitCount"] != float64(1) || view["refusedVisitCount"] != float64(1) {
+		t.Errorf("one position, one visit stored, one left out: %v", view)
+	}
+}
+
+// The allowance for new places is taken once a report is committed, for the
+// places it made: a full report of new places passes, and a report that made
+// none takes nothing.
+func TestTheAllowanceForNewPlacesIsTakenAfterTheReportForThePlacesItMade(t *testing.T) {
+	world := newLocationWorld(t)
+	available := func() int64 { return world.graph.locationLimits().newPlaces.For(world.ada.ID).Available() }
+	const visitCountMost = 50
+	visits := make([]string, 0, visitCountMost)
+	for index := 0; index < visitCountMost; index++ {
+		visits = append(visits, visitInput(fmt.Sprintf("burst-%d", index), 30+float64(index)*0.1, 50, ago(time.Duration(index+10)*time.Minute), ""))
+	}
+	report := world.report(t, world.ada, "", strings.Join(visits, ", "))
+	if report["newVisitCount"] != float64(visitCountMost) {
+		t.Fatalf("a day offline passes in one report: %v", report)
+	}
+	if left := available(); left > newPlacesPerMinute-visitCountMost+2 {
+		t.Errorf("the places it made were taken: %d left", left)
+	}
+	before := available()
+	world.report(t, world.ada, "", strings.Join(visits, ", "))
+	if after := available(); after < before {
+		t.Errorf("a report that made no place took %d", before-after)
+	}
+}
+
+// A visit that is new and already has its departure tells the people the
+// location is shared with that the person left, and a visit with only an
+// arrival that they arrived.
+func TestANewClosedVisitIsToldAsALeaving(t *testing.T) {
+	world := newLocationWorld(t)
+	reported := func(arrivedAt, departedAt *time.Time) *visitNotice {
+		var notice *visitNotice
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			stored, err := world.graph.putReportedVisit(tx, world.ada.ID, ReportedVisit{
+				ClientVisitKey: fmt.Sprintf("notice-%d", time.Now().UnixNano()), LatitudeDegrees: 40, LongitudeDegrees: -75, AccuracyMeters: 10,
+				VisitSource: string(models.VisitSourceVisit), ArrivedAt: arrivedAt, DepartedAt: departedAt,
+			})
+			if err != nil {
+				t.Fatalf("putReportedVisit: %s", err)
+			}
+			notice = stored.Notice
+		})
+		return notice
+	}
+	arrivedAt, departedAt := time.Now().Add(-12*time.Minute).Truncate(time.Second), time.Now().Add(-2*time.Minute).Truncate(time.Second)
+	if notice := reported(&arrivedAt, &departedAt); notice == nil || notice.IsArrival || !notice.HappenedAt.Equal(departedAt) {
+		t.Errorf("a closed visit is a leaving: %+v", notice)
+	}
+	if notice := reported(&arrivedAt, nil); notice == nil || !notice.IsArrival || !notice.HappenedAt.Equal(arrivedAt) {
+		t.Errorf("an open visit is an arrival: %+v", notice)
+	}
+}
+
+// Everybody who shares with the viewer is described from one read of the
+// positions and one of the visits in progress.
+func TestListSharedLocationsDescribesEverySharer(t *testing.T) {
+	world := newLocationWorld(t)
+	circleId := world.makeCircle(t, world.ada, "Neighbors")
+	world.join(t, world.ada, circleId, world.ben)
+	world.join(t, world.ada, circleId, world.cora)
+	for _, sharer := range []*models.User{world.ada, world.cora} {
+		world.call(t, sharer, fmt.Sprintf(`mutation { ShareLocation(granteeUserId: %q, shareLevel: "current") { id } }`, world.ben.ID))
+	}
+	world.report(t, world.ada, pointInput(40.0, -75.0, ago(5*time.Minute)), visitInput("ada-here", 40.0, -75.0, ago(30*time.Minute), ""))
+	world.report(t, world.cora, pointInput(41.0, -75.0, ago(5*time.Minute)), "")
+
+	people := world.call(t, world.ben, `query { ListSharedLocations { username latestPoint { latitudeDegrees } openVisit { id } } }`)["ListSharedLocations"].([]any)
+	if len(people) != 2 {
+		t.Fatalf("two people share: %v", people)
+	}
+	for _, each := range people {
+		person := each.(map[string]any)
+		hasVisit := person["openVisit"] != nil
+		if person["latestPoint"] == nil || hasVisit != (person["username"] == world.ada.Username) {
+			t.Errorf("%v", person)
+		}
 	}
 }

@@ -47,7 +47,7 @@ func TestPlacesTheyWentSumsTheMonthByLabelThenByHours(t *testing.T) {
 	until := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC)
 
-	got := placesTheyWent(placesVisitsOfMarch(time.UTC, home, gym, park), from, until, now, time.UTC)
+	got := placesTheyWent(placesVisitsOfMarch(time.UTC, home, gym, park), from, until, now, reportedAt(now, now), time.UTC)
 	want := fenced(strings.Join([]string{
 		"- home (Elm Street 4): 1 visit, 7.5 h, Tuesday, nights 22:30 to 23:00",
 		"- gym (Fit Studio): 8 visits, 8.0 h, Tuesday, Thursday, mornings 07:00 to 08:30",
@@ -59,10 +59,10 @@ func TestPlacesTheyWentSumsTheMonthByLabelThenByHours(t *testing.T) {
 
 	// The same month asked again reads the same, so a page written from it
 	// does not change.
-	if again := placesTheyWent(placesVisitsOfMarch(time.UTC, home, gym, park), from, until, now.Add(time.Hour), time.UTC); again != got {
+	if again := placesTheyWent(placesVisitsOfMarch(time.UTC, home, gym, park), from, until, now.Add(time.Hour), reportedAt(now.Add(time.Hour), now), time.UTC); again != got {
 		t.Errorf("an hour later the section changed:\n%s", again)
 	}
-	if empty := placesTheyWent(nil, from, until, now, time.UTC); empty != "" {
+	if empty := placesTheyWent(nil, from, until, now, reportedAt(now, now), time.UTC); empty != "" {
 		t.Errorf("no visits, no section: %q", empty)
 	}
 }
@@ -85,7 +85,7 @@ func TestPlacesTheyWentGroupsPlacesOfOneLabelAndKeepsTenOthers(t *testing.T) {
 		visits = append(visits, &models.PlaceVisit{PlaceID: place.ID, Place: place, ArrivedAt: &arrivedAt, DepartedAt: &departedAt})
 	}
 
-	got := placesTheyWent(visits, from, until, until, time.UTC)
+	got := placesTheyWent(visits, from, until, until, reportedAt(until, until), time.UTC)
 	lines := strings.Split(strings.TrimSuffix(strings.TrimPrefix(got, untrustedOpen+"\n"), "\n"+untrustedClose), "\n")
 	if len(lines) != 11 {
 		t.Fatalf("one line for the label and ten places: %d\n%s", len(lines), got)
@@ -169,11 +169,46 @@ func TestPlacesTheyWentEndsAnOpenVisitAtTheNextAndCleansNames(t *testing.T) {
 		{ID: "visit-office", PlaceID: office.ID, Place: office, ArrivedAt: &officeArrivedAt},
 	}
 
-	got := placesTheyWent(visits, from, until, now, time.UTC)
+	got := placesTheyWent(visits, from, until, now, reportedAt(now, now), time.UTC)
 	if !strings.Contains(got, "- Harbor Office /untrusted-data: 1 visit, 3.0 h,") || !strings.Contains(got, "- Birch Cafe: 1 visit, 0.5 h,") {
 		t.Errorf("the office visit is three hours, not a month:\n%s", got)
 	}
 	if strings.Count(got, untrustedClose) != 1 {
 		t.Errorf("a name closed the fence:\n%s", got)
+	}
+}
+
+func reportedAt(now, latestReportAt time.Time) locationPresence {
+	return locationPresence{now: now, latestReportAt: latestReportAt}
+}
+
+// A person at home sends no positions, so a visit with no departure lasts
+// until now; a position outside the place ends it there; a phone silent for
+// more than 72 hours is not taken as a person still there.
+func TestPlacesTheyWentEndsAnOpenVisitWhereTheLatestReportSays(t *testing.T) {
+	home := &models.Place{ID: "place-home", PlaceName: "Elm Street 4", PlaceLabel: models.PlaceLabelHome, RadiusMeters: 100}
+	arrivedAt := time.Date(2026, time.March, 2, 18, 0, 0, 0, time.UTC)
+	visits := []*models.PlaceVisit{{ID: "visit-home", PlaceID: home.ID, Place: home, ArrivedAt: &arrivedAt}}
+	from := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	until := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+
+	now := arrivedAt.Add(30 * time.Hour)
+	if got := placesTheyWent(visits, from, until, now, reportedAt(now, arrivedAt), time.UTC); !strings.Contains(got, "1 visit, 30 h,") {
+		t.Errorf("no position since the arrival: thirty hours until now:\n%s", got)
+	}
+	insidePoint := &models.LocationPoint{MeasuredAt: arrivedAt.Add(time.Hour), LatitudeDegrees: home.LatitudeDegrees, LongitudeDegrees: home.LongitudeDegrees}
+	if got := placesTheyWent(visits, from, until, now, locationPresence{now: now, latestPoint: insidePoint, latestReportAt: insidePoint.MeasuredAt}, time.UTC); !strings.Contains(got, "1 visit, 30 h,") {
+		t.Errorf("the latest position is at home: still until now:\n%s", got)
+	}
+	outsidePoint := &models.LocationPoint{MeasuredAt: arrivedAt.Add(2 * time.Hour), LatitudeDegrees: home.LatitudeDegrees + 1, LongitudeDegrees: home.LongitudeDegrees}
+	if got := placesTheyWent(visits, from, until, now, locationPresence{now: now, latestPoint: outsidePoint, latestReportAt: outsidePoint.MeasuredAt}, time.UTC); !strings.Contains(got, "1 visit, 2.0 h,") {
+		t.Errorf("the latest position is away: two hours:\n%s", got)
+	}
+	now = arrivedAt.Add(4 * 24 * time.Hour)
+	if got := placesTheyWent(visits, from, until, now, reportedAt(now, arrivedAt), time.UTC); !strings.Contains(got, "1 visit, 72 h,") {
+		t.Errorf("four silent days stop at 72 hours:\n%s", got)
+	}
+	if got := placesTheyWent(visits, from, until, until, reportedAt(until, arrivedAt), time.UTC); !strings.Contains(got, "1 visit, 72 h,") {
+		t.Errorf("a month of silence adds nothing after 72 hours:\n%s", got)
 	}
 }

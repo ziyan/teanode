@@ -195,11 +195,25 @@ struct CheckInSheet: View {
                             Button {
                                 Task { await checkIn(at: foundPlace) }
                             } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(verbatim: foundPlace.placeName).foregroundStyle(.primary)
-                                    Text(verbatim: details(of: foundPlace))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                HStack(spacing: 12) {
+                                    if let labelSymbolName = foundPlace.labelSymbolName {
+                                        Image(systemName: labelSymbolName)
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 28)
+                                            .accessibilityHidden(true)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(verbatim: foundPlace.shownName).foregroundStyle(.primary)
+                                        if let secondaryName = foundPlace.secondaryName {
+                                            Text(verbatim: secondaryName)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Text(verbatim: details(of: foundPlace))
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                                 .frame(minHeight: 44, alignment: .leading)
                             }
@@ -307,7 +321,7 @@ struct CheckInSheet: View {
         isCheckingIn = true
         defer { isCheckingIn = false }
         let target: CheckInTarget = foundPlace.placeId.map { .place($0) } ?? .found(foundPlace)
-        if let refusalText = await model.checkIn(target, placeName: foundPlace.placeName) {
+        if let refusalText = await model.checkIn(target, placeName: foundPlace.shownName) {
             problemText = refusalText
         } else {
             dismiss()

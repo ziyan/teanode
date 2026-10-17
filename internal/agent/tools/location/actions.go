@@ -17,7 +17,7 @@ const (
 	pointFields = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
 	placeFields = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText visitCount lastVisitAt`
 	visitFields = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
-	foundFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId`
+	foundFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	documentGetLocation = `query ($userId: String) {
   GetLocation(userId: $userId) { username name shareLevel latestPoint { ` + pointFields + ` } openVisit { ` + visitFields + ` } }
@@ -110,6 +110,8 @@ type foundData struct {
 	LongitudeDegrees float64 `json:"longitudeDegrees"`
 	DistanceMeters   float64 `json:"distanceMeters"`
 	PlaceID          *string `json:"placeId"`
+	PlaceLabel       string  `json:"placeLabel"`
+	IsNamedByPerson  bool    `json:"isNamedByPerson"`
 }
 
 // scope is what every action needs: the run, the person's zone and now.
@@ -165,10 +167,10 @@ var errOthersInChat = errors.New("another person's location is not repeated into
 	"the person can ask in a private conversation with you instead")
 
 // personId is the account of somebody who shares their location with the
-// person, by username; empty is the person's own. With needsHistory, somebody
+// person, by username; empty is the person's own. With doesNeedHistory, somebody
 // who shares only where they are now is refused in those words. In a chat
 // turn nobody else's location is read.
-func (self *scope) personId(ctx context.Context, username string, needsHistory bool) (*string, error) {
+func (self *scope) personId(ctx context.Context, username string, doesNeedHistory bool) (*string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, nil
@@ -184,7 +186,7 @@ func (self *scope) personId(ctx context.Context, username string, needsHistory b
 	}
 	for _, each := range result.ListSharedLocations {
 		if strings.EqualFold(each.Username, username) {
-			if needsHistory && each.ShareLevel != "history" {
+			if doesNeedHistory && each.ShareLevel != "history" {
 				return nil, fmt.Errorf("%s shares only where they are now", each.Username)
 			}
 			return &each.UserID, nil
@@ -568,9 +570,23 @@ func (self *scope) lastPosition(ctx context.Context) (float64, float64, error) {
 	return result.GetLocation.LatestPoint.LatitudeDegrees, result.GetLocation.LatestPoint.LongitudeDegrees, nil
 }
 
+// foundDisplayName is what to call a found place: the person's own name for
+// it, else its label word, else the map's name, then the address.
+func foundDisplayName(found *foundData) string {
+	switch {
+	case found.IsNamedByPerson && found.PlaceName != "":
+		return found.PlaceName
+	case found.PlaceLabel != "":
+		return strings.ToUpper(found.PlaceLabel[:1]) + found.PlaceLabel[1:]
+	case found.PlaceName != "":
+		return found.PlaceName
+	}
+	return found.AddressText
+}
+
 func (self *scope) foundRow(found *foundData) map[string]any {
 	row := map[string]any{
-		"place_name": found.PlaceName, "distance_meters": math.Round(found.DistanceMeters),
+		"place_display_name": foundDisplayName(found), "place_name": found.PlaceName, "distance_meters": math.Round(found.DistanceMeters),
 		"latitude_degrees": roundTo(found.LatitudeDegrees, 6), "longitude_degrees": roundTo(found.LongitudeDegrees, 6),
 	}
 	if found.OSMCategory != "" {
@@ -585,6 +601,10 @@ func (self *scope) foundRow(found *foundData) map[string]any {
 	if found.PlaceID != nil {
 		row["place_id"] = *found.PlaceID
 		row["is_the_persons_place"] = true
+		row["is_named_by_person"] = found.IsNamedByPerson
+		if found.PlaceLabel != "" {
+			row["place_label"] = found.PlaceLabel
+		}
 	}
 	return row
 }

@@ -44,6 +44,27 @@ extension LocationPlace {
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitudeDegrees, longitude: longitudeDegrees) }
 }
 
+extension FoundPlace {
+    /// What the check-in sheet calls it, the same way a list of the person's
+    /// places does: their own name, else for a labeled place the label's
+    /// word, else the map name.
+    var shownName: String {
+        if !isNamedByPerson, let label { return label.title }
+        return placeName
+    }
+
+    /// For a place that shows its label's word as its name, the map name or
+    /// the address to say under it; nil for any other.
+    var secondaryName: String? {
+        guard !isNamedByPerson, label != nil else { return nil }
+        if !placeName.isEmpty { return placeName }
+        return addressText.isEmpty ? nil : addressText
+    }
+
+    /// The label's symbol for a labeled place of the person's, else nil.
+    var labelSymbolName: String? { label?.symbolName }
+}
+
 extension LocationShareLevel {
     /// What a share at this level is called: the two plain choices.
     var title: String {
@@ -159,31 +180,31 @@ enum LocationText {
         let categoryKey = LocationWords.categoryValue(osmCategory)
         switch categoryKey {
         case "": return ""
-        case "cafe": return String(localized: "Cafe")
-        case "restaurant": return String(localized: "Restaurant")
-        case "fast_food": return String(localized: "Fast food")
-        case "pub", "bar": return String(localized: "Bar")
-        case "school", "kindergarten": return String(localized: "School")
-        case "university", "college": return String(localized: "University")
-        case "library": return String(localized: "Library")
-        case "park": return String(localized: "Park")
-        case "playground": return String(localized: "Playground")
-        case "pitch", "sports_centre", "stadium": return String(localized: "Sports")
-        case "fitness_centre": return String(localized: "Gym")
-        case "supermarket", "convenience", "greengrocer": return String(localized: "Grocery store")
-        case "bakery": return String(localized: "Bakery")
-        case "clinic", "doctors", "dentist": return String(localized: "Clinic")
-        case "hospital": return String(localized: "Hospital")
-        case "pharmacy": return String(localized: "Pharmacy")
-        case "place_of_worship": return String(localized: "Place of worship")
-        case "cinema": return String(localized: "Cinema")
-        case "museum": return String(localized: "Museum")
-        case "bank": return String(localized: "Bank")
-        case "post_office": return String(localized: "Post office")
-        case "fuel": return String(localized: "Gas station")
-        case "parking": return String(localized: "Parking")
-        case "station", "bus_station": return String(localized: "Station")
-        case "hotel", "guest_house": return String(localized: "Hotel")
+        case "cafe": return String(localized: "place-category-cafe", defaultValue: "Cafe")
+        case "restaurant": return String(localized: "place-category-restaurant", defaultValue: "Restaurant")
+        case "fast_food": return String(localized: "place-category-fast-food", defaultValue: "Fast food")
+        case "pub", "bar": return String(localized: "place-category-pub", defaultValue: "Bar")
+        case "school", "kindergarten": return String(localized: "place-category-school", defaultValue: "School")
+        case "university", "college": return String(localized: "place-category-university", defaultValue: "University")
+        case "library": return String(localized: "place-category-library", defaultValue: "Library")
+        case "park": return String(localized: "place-category-park", defaultValue: "Park")
+        case "playground": return String(localized: "place-category-playground", defaultValue: "Playground")
+        case "pitch", "sports_centre", "stadium": return String(localized: "place-category-pitch", defaultValue: "Sports")
+        case "fitness_centre": return String(localized: "place-category-fitness-centre", defaultValue: "Gym")
+        case "supermarket", "convenience", "greengrocer": return String(localized: "place-category-supermarket", defaultValue: "Grocery store")
+        case "bakery": return String(localized: "place-category-bakery", defaultValue: "Bakery")
+        case "clinic", "doctors", "dentist": return String(localized: "place-category-clinic", defaultValue: "Clinic")
+        case "hospital": return String(localized: "place-category-hospital", defaultValue: "Hospital")
+        case "pharmacy": return String(localized: "place-category-pharmacy", defaultValue: "Pharmacy")
+        case "place_of_worship": return String(localized: "place-category-place-of-worship", defaultValue: "Place of worship")
+        case "cinema": return String(localized: "place-category-cinema", defaultValue: "Cinema")
+        case "museum": return String(localized: "place-category-museum", defaultValue: "Museum")
+        case "bank": return String(localized: "place-category-bank", defaultValue: "Bank")
+        case "post_office": return String(localized: "place-category-post-office", defaultValue: "Post office")
+        case "fuel": return String(localized: "place-category-fuel", defaultValue: "Gas station")
+        case "parking": return String(localized: "place-category-parking", defaultValue: "Parking")
+        case "station", "bus_station": return String(localized: "place-category-station", defaultValue: "Station")
+        case "hotel", "guest_house": return String(localized: "place-category-hotel", defaultValue: "Hotel")
         default:
             // A kind this app has no word for: OpenStreetMap's own, spelled out.
             let spelled = categoryKey.replacingOccurrences(of: "_", with: " ")

@@ -292,9 +292,9 @@ func noteNextPage(nextOffset *int, first int) {
 
 // locationPerson is the account of the person named with --person: somebody
 // who shares their location with the caller. Empty without the flag. With
-// needsHistory, somebody who shares only where they are now is refused in
+// doesNeedHistory, somebody who shares only where they are now is refused in
 // those words, since the server answers not found for what they did not share.
-func locationPerson(ctx context.Context, command *cli.Command, connection *client.Client, needsHistory bool) (string, error) {
+func locationPerson(ctx context.Context, command *cli.Command, connection *client.Client, doesNeedHistory bool) (string, error) {
 	username := strings.TrimSpace(command.String("person"))
 	if username == "" {
 		return "", nil
@@ -305,7 +305,7 @@ func locationPerson(ctx context.Context, command *cli.Command, connection *clien
 	}
 	for _, each := range people {
 		if strings.EqualFold(each.Username, username) {
-			if needsHistory && each.ShareLevel != string(models.LocationShareLevelHistory) {
+			if doesNeedHistory && each.ShareLevel != string(models.LocationShareLevelHistory) {
 				return "", fmt.Errorf("%s shares only where they are now", each.Username)
 			}
 			return each.UserID, nil
@@ -518,6 +518,31 @@ func whereFlags(ctx context.Context, command *cli.Command, connection *client.Cl
 	return found.LatestPoint.LatitudeDegrees, found.LatestPoint.LongitudeDegrees, nil
 }
 
+// foundPlaceLine is a found place as one cell, called the way placeLine calls
+// a place: the person's own name with its label in brackets, else the label
+// word with the map's name in parentheses, else the map's name, then the
+// address.
+func foundPlaceLine(found *client.FoundPlace) string {
+	mapName := found.PlaceName
+	if mapName == "" {
+		mapName = found.AddressText
+	}
+	switch {
+	case found.IsNamedByPerson && found.PlaceName != "":
+		if found.PlaceLabel != "" {
+			return fmt.Sprintf("%s [%s]", found.PlaceName, found.PlaceLabel)
+		}
+		return found.PlaceName
+	case found.PlaceLabel != "":
+		label := strings.ToUpper(found.PlaceLabel[:1]) + found.PlaceLabel[1:]
+		if mapName != "" {
+			return fmt.Sprintf("%s (%s)", label, mapName)
+		}
+		return label
+	}
+	return mapName
+}
+
 func foundPlaceRows(found []*client.FoundPlace) [][]string {
 	rows := make([][]string, 0, len(found))
 	for _, each := range found {
@@ -529,7 +554,7 @@ func foundPlaceRows(found []*client.FoundPlace) [][]string {
 		if each.DistanceMeters >= 1000 {
 			distance = fmt.Sprintf("%.1f km", each.DistanceMeters/1000)
 		}
-		rows = append(rows, []string{each.PlaceName, each.OSMCategory, distance, yours})
+		rows = append(rows, []string{foundPlaceLine(each), each.OSMCategory, distance, yours})
 	}
 	return rows
 }

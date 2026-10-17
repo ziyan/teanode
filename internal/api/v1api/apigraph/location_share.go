@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
-	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/deferutil"
@@ -82,21 +81,27 @@ func (self *graph) ListSharedLocations(ctx context.Context) ([]*LocationView, er
 	if err != nil {
 		return nil, err
 	}
+	// The positions and the visits in progress of every sharer are read in
+	// one query each, not three queries for every sharer.
+	userIds := make([]string, 0, len(sharers))
+	for _, sharer := range sharers {
+		userIds = append(userIds, sharer.UserID)
+	}
+	latestPoints, err := tx.GetLatestLocationPoints(userIds)
+	if err != nil {
+		return nil, err
+	}
+	openVisits, err := tx.GetOpenPlaceVisits(userIds)
+	if err != nil {
+		return nil, err
+	}
 	views := make([]*LocationView, 0, len(sharers))
 	for _, sharer := range sharers {
 		user := sharer.User
 		if user == nil {
 			continue
 		}
-		view, err := describeLocation(tx, &locationReach{User: user, ShareLevel: sharer.ShareLevel})
-		if err != nil {
-			return nil, err
-		}
-		// A viewer at current sees where the person is and the place; the
-		// description is the same for both levels, which differ in what else
-		// can be read.
-		view.AvatarColorIndex = avatar.InitialColorIndex(user.ID)
-		views = append(views, view)
+		views = append(views, locationViewOf(&locationReach{User: user, ShareLevel: sharer.ShareLevel}, latestPoints[user.ID], openVisits[user.ID]))
 	}
 	return views, nil
 }

@@ -4,19 +4,19 @@ import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { readBrowserLocation } from './browserLocation'
 import { ConfirmDialog } from './dialog'
-import { FoundPlace } from './locationData'
-import { LocationIcon } from './icons'
+import { FoundPlace, foundPlaceNamed, placeSubtitle, placeTitle } from './locationData'
+import { PlaceLabelIcon } from './placeLabelIcon'
 import { useToast } from './toast'
 
 const LIST_NEARBY_PLACES = `query ($latitudeDegrees: Float!, $longitudeDegrees: Float!) {
   ListNearbyPlaces(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees) {
-    placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId
+    placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
   }
 }`
 const SEARCH_PLACES = `query ($query: String!, $latitudeDegrees: Float, $longitudeDegrees: Float, $offset: Int) {
   SearchPlaces(query: $query, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, offset: $offset) {
     foundPlaces {
-      placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId
+      placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
     }
     nextOffset
   }
@@ -132,7 +132,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
               addressText: foundPlace.addressText,
             },
       )
-      toast.done(t('location.checkedIn', { place: foundPlace.placeName }))
+      toast.done(t('location.checkedIn', { place: placeTitle(foundPlaceNamed(foundPlace), t) }))
       onCheckedIn()
       onClose()
     } catch (failure) {
@@ -185,11 +185,15 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
                   onClick={() => void checkIn(foundPlace)}
                 >
                   <span className="location-row-icon">
-                    <LocationIcon size={16} />
+                    <PlaceLabelIcon placeLabel={foundPlace.placeLabel} />
                   </span>
                   <span className="location-row-body">
-                    <strong>{foundPlace.placeName}</strong>
-                    {foundPlace.addressText && <span className="muted">{foundPlace.addressText}</span>}
+                    <strong>{placeTitle(foundPlaceNamed(foundPlace), t)}</strong>
+                    {(placeSubtitle(foundPlaceNamed(foundPlace), t) || foundPlace.addressText) && (
+                      <span className="muted">
+                        {placeSubtitle(foundPlaceNamed(foundPlace), t) || foundPlace.addressText}
+                      </span>
+                    )}
                   </span>
                   <span className="muted location-row-meta">
                     {t('location.metersAway', { distance: Math.round(foundPlace.distanceMeters) })}
