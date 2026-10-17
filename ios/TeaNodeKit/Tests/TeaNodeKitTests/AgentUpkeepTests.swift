@@ -217,10 +217,27 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertEqual(preferences?.shownDreamUntil, "06:00")
         XCTAssertEqual(preferences?.shownAlertQuietStart, "22:00")
         XCTAssertEqual(preferences?.shownAlertDailyMost, 5)
+        XCTAssertEqual(preferences?.shownLookAroundWeekday, "thursday")
+        XCTAssertEqual(preferences?.shownLookAroundTime, "17:00")
         XCTAssertEqual(preferences?.isRunning, true)
         XCTAssertEqual(UpkeepClock.hourAndMinute("07:05")?.minute, 5)
         XCTAssertNil(UpkeepClock.hourAndMinute("25:00"))
         XCTAssertEqual(UpkeepClock.text(hour: 7, minute: 5), "07:05")
+    }
+
+    func testChangesTheLookAroundDayAndTime() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"UpdateAgent":{"agent":{"id":"agent-1","enabled":true,"operatorDisabledAt":null,"dreamFrom":"","dreamUntil":"",
+                  "dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"","alertQuietEnd":"","alertDailyMost":0,
+                  "lookAroundWeekday":"friday","lookAroundTime":"18:30"}}}}
+                """#)
+        let preferences = try await connection.updateAgentUpkeep(lookAroundWeekday: "friday", lookAroundTime: "18:30")
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["lookAroundWeekday": .string("friday"), "lookAroundTime": .string("18:30")])
+        XCTAssertEqual(preferences?.shownLookAroundWeekday, "friday")
+        XCTAssertEqual(preferences?.shownLookAroundTime, "18:30")
+        XCTAssertEqual(AgentUpkeepPreferences(id: "agent-1", lookAroundWeekday: "someday", lookAroundTime: "late").shownLookAroundWeekday, "thursday")
+        XCTAssertEqual(AgentUpkeepPreferences(id: "agent-1", lookAroundWeekday: "someday", lookAroundTime: "late").shownLookAroundTime, "17:00")
     }
 
     // MARK: Schedules

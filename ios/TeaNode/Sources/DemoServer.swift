@@ -544,7 +544,7 @@
                 "confirm":["mail_send","calendar"],"unattendedAllowedRisks":["outward"],"isMemoryCheckEnabled":true,"isIdeasEnabled":true,
                 "voice":{"tone":"casual","length":"short","greeting":"Hi","signoff":"Robin"},
                 "categories":[{"name":"home","description":"The house, the garden and the people who fix things."},{"name":"travel","description":"Tickets, bookings and plans for trips."}],
-                "dreamFrom":"01:00","dreamUntil":"06:00","dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5},
+                "dreamFrom":"01:00","dreamUntil":"06:00","dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"22:00","alertQuietEnd":"07:00","alertDailyMost":5,"lookAroundWeekday":"thursday","lookAroundTime":"17:00"},
               "sources":[{"mailboxId":"box","name":"Robin","addresses":["robin@example.com"],"policy":{"granted":true,"draftReplies":true,"search":true,"research":false,
                 "triage":{"enabled":true,"backfill":"recent","replyExpectation":"direct"},"summaries":{"enabled":true,"minimumMessages":3,"style":"brief"},
                 "autoReply":null,"alerts":{"enabled":true}}}],

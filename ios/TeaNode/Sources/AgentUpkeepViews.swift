@@ -82,6 +82,13 @@ enum UpkeepWords {
         return UpkeepClock.text(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 
+    /// A day the look around may be set to, in the person's language.
+    static func lookAroundWeekdayName(_ name: String) -> String {
+        guard let index = AgentUpkeepPreferences.lookAroundWeekdays.firstIndex(of: name) else { return name }
+        // weekdaySymbols starts on Sunday, the list on Monday.
+        return Calendar.current.weekdaySymbols[(index + 1) % 7]
+    }
+
     static func shapeName(_ shape: KnowledgeSource.Shape) -> String {
         switch shape {
         case .files: String(localized: "Files and code")
@@ -2248,10 +2255,11 @@ struct AgentScheduleEditor: View {
 
 /// MutedAlertsView is the dashboard's Alerts tab: whether the agent tells
 /// the person unasked what their mail says they should know now, their
-/// quiet hours and the most a day; what it told them lately, each muted in
-/// a scope they choose; what it is following for them (bills, parcels,
-/// deadlines and events), each stopped, and a kind of them muted; and what
-/// they muted, each unmuted again.
+/// quiet hours, the most a day, and the day and time it looks around their
+/// town; what it told them lately, each muted in a scope they choose; what
+/// it is following for them (bills, parcels, deadlines and events), each
+/// stopped, and a kind of them muted; and what they muted, each unmuted
+/// again.
 struct MutedAlertsView: View {
     let connection: Connection
     /// Opens scrolled to what the agent is following, below the alerts.
@@ -2263,6 +2271,8 @@ struct MutedAlertsView: View {
     @State private var quietStart = "22:00"
     @State private var quietEnd = "07:00"
     @State private var dailyMost = 5
+    @State private var lookAroundWeekday = "thursday"
+    @State private var lookAroundTime = "17:00"
     @State private var alerts: [AgentAlert]?
     @State private var mutes: [AgentAlertMute] = []
     @State private var followUps: [AgentFollowUp]?
@@ -2301,6 +2311,8 @@ struct MutedAlertsView: View {
         .task(id: quietStart) { await saveQuiet(start: quietStart) }
         .task(id: quietEnd) { await saveQuiet(end: quietEnd) }
         .task(id: dailyMost) { await saveDailyMost(dailyMost) }
+        .task(id: lookAroundWeekday) { await saveLookAround(weekday: lookAroundWeekday) }
+        .task(id: lookAroundTime) { await saveLookAround(time: lookAroundTime) }
         .toast(done: $doneText, problem: $problemText)
     }
 
@@ -2322,12 +2334,21 @@ struct MutedAlertsView: View {
                         Text(dailyMost, format: .number).monospacedDigit().contentTransition(.numericText())
                     }
                 }
+                Picker("Look around town on", selection: $lookAroundWeekday) {
+                    ForEach(AgentUpkeepPreferences.lookAroundWeekdays, id: \.self) { offeredWeekday in
+                        Text(verbatim: UpkeepWords.lookAroundWeekdayName(offeredWeekday)).tag(offeredWeekday)
+                    }
+                }
+                DatePicker(
+                    "At", selection: Binding(get: { UpkeepWords.clockDate(lookAroundTime) }, set: { lookAroundTime = UpkeepWords.clockText($0) }),
+                    displayedComponents: .hourAndMinute)
             }
             .disabled(!isAlertsEnabled)
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Your agent reads what arrives and tells you, unasked, when your mail shows something you should know now: a notice about your family, someone trying your account, a deadline today. It writes in the main conversation and in the chat app you linked.")
                 Text("In your quiet hours only what cannot wait is said; the rest waits for the morning. The same time at both ends means no quiet hours.")
+                Text("Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.")
             }
         }
         .disabled(preferences == nil)
@@ -2566,6 +2587,8 @@ struct MutedAlertsView: View {
                 quietStart = read.shownAlertQuietStart
                 quietEnd = read.shownAlertQuietEnd
                 dailyMost = read.shownAlertDailyMost
+                lookAroundWeekday = read.shownLookAroundWeekday
+                lookAroundTime = read.shownLookAroundTime
             }
         } catch {
             problemText = error.localizedDescription
@@ -2609,6 +2632,20 @@ struct MutedAlertsView: View {
         if Task.isCancelled { return }
         do {
             self.preferences = try await connection.updateAgentUpkeep(alertQuietStart: start, alertQuietEnd: end) ?? preferences
+            doneText = String(localized: "Saved")
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func saveLookAround(weekday: String? = nil, time: String? = nil) async {
+        guard let preferences else { return }
+        if let weekday, weekday == preferences.shownLookAroundWeekday { return }
+        if let time, time == preferences.shownLookAroundTime { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        if Task.isCancelled { return }
+        do {
+            self.preferences = try await connection.updateAgentUpkeep(lookAroundWeekday: weekday, lookAroundTime: time) ?? preferences
             doneText = String(localized: "Saved")
         } catch {
             problemText = error.localizedDescription

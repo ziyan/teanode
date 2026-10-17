@@ -109,7 +109,7 @@ type AgentJob struct {
 const agentViewSelection = `{
 	agent { id name enabled instructions language knowledgeLanguage askModel speechVoice dreamFrom dreamUntil dreamedAt
 		dailyTokens dailyCost operatorDisabledAt confirm unattendedAllowedRisks
-		isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
+		isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
 		voice { tone length greeting signoff }
 		categories { name description }
 		notifications { heldReply highPriority runFailed } }
@@ -139,13 +139,13 @@ const (
 	DocumentUpdateAgent = `mutation ($enabled: Boolean, $name: String, $instructions: String, $language: String, $knowledgeLanguage: String,
 		$voice: AgentVoiceInput, $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput,
 		$confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String, $dreamFrom: String, $dreamUntil: String,
-		$isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int,
+		$isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String,
 		$forget: Boolean) {
 		UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
 			voice: $voice, categories: $categories, notifications: $notifications, confirm: $confirm,
 			unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, speechVoice: $speechVoice, dreamFrom: $dreamFrom, dreamUntil: $dreamUntil,
 			isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd,
-			alertDailyMost: $alertDailyMost, forget: $forget) ` + agentViewSelection + `
+			alertDailyMost: $alertDailyMost, lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime, forget: $forget) ` + agentViewSelection + `
 	}`
 
 	DocumentGrantAgentMailbox = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) {

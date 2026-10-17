@@ -237,6 +237,12 @@ type UpdateAgentArguments struct {
 	AlertQuietEnd   *string `json:"alertQuietEnd"`
 	AlertDailyMost  *int    `json:"alertDailyMost"`
 
+	// LookAroundWeekday and LookAroundTime are when the agent looks around
+	// their town each week for what is on: a lower-case day name such as
+	// "thursday" and "HH:MM" in their own zone, empty for the default.
+	LookAroundWeekday *string `json:"lookAroundWeekday"`
+	LookAroundTime    *string `json:"lookAroundTime"`
+
 	// Forget deletes the agent and everything it holds; the other fields
 	// are ignored when it is set.
 	Forget *bool `json:"forget"`
@@ -684,6 +690,20 @@ func (self *graph) UpdateAgent(ctx context.Context, arguments UpdateAgentArgumen
 		}
 		if arguments.AlertDailyMost != nil {
 			agent.AlertDailyMost = *arguments.AlertDailyMost
+		}
+		if arguments.LookAroundWeekday != nil {
+			weekday := strings.ToLower(strings.TrimSpace(*arguments.LookAroundWeekday))
+			if weekday != "" && !models.IsLookAroundWeekday(weekday) {
+				return fmt.Errorf("%q is not a day; say one of sunday, monday, tuesday, wednesday, thursday, friday or saturday", *arguments.LookAroundWeekday)
+			}
+			agent.LookAroundWeekday = weekday
+		}
+		if arguments.LookAroundTime != nil {
+			clock, err := clockTime(*arguments.LookAroundTime)
+			if err != nil {
+				return err
+			}
+			agent.LookAroundTime = clock
 		}
 		return nil
 	})

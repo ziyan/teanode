@@ -206,13 +206,23 @@ func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.Ag
 	if local.Weekday() != time.Sunday || local.Hour() < followUpRoundupHour {
 		return nil, nil
 	}
+	reason := fmt.Sprintf("in the week ahead, from tomorrow to %s", today.AddDate(0, 0, followUpRoundupDays).Format(time.DateOnly))
+	return writeRoundup(tx, agent, mutes, followUps, today, followUpRoundupDays, reason, followUpRoundupSubjectKey(today), now)
+}
+
+// writeRoundup writes one candidate listing the open events and deadlines
+// due from tomorrow through lastDay days ahead that no roundup has listed,
+// leaving out a kind the person muted, and marks them listed. The Sunday
+// roundup is one; the look around's weekend message, on the day the person
+// set, is the other, and what it listed is not listed again on Sunday.
+func writeRoundup(tx db.Transaction, agent *models.Agent, mutes []*models.AgentAlertMute, followUps []*models.AgentFollowUp, today time.Time, lastDay int, reason, subjectKey string, now time.Time) (*models.AgentAlertCandidate, error) {
 	var coming []*models.AgentFollowUp
 	for _, followUp := range followUps {
 		if followUp.FollowUpKind != models.AgentFollowUpEvent && followUp.FollowUpKind != models.AgentFollowUpDeadline {
 			continue
 		}
 		days, hasDay := followUpDaysUntil(followUp.DueOn, today)
-		if !hasDay || followUp.FollowUpState != models.AgentFollowUpOpen || days < 1 || days > followUpRoundupDays || followUp.ToldState == models.AgentFollowUpToldRoundup {
+		if !hasDay || followUp.FollowUpState != models.AgentFollowUpOpen || days < 1 || days > lastDay || followUp.ToldState == models.AgentFollowUpToldRoundup {
 			continue
 		}
 		kinds := []string{models.AlertKindFollowUp, string(followUp.FollowUpKind)}
@@ -235,9 +245,9 @@ func roundupFollowUps(tx db.Transaction, agent *models.Agent, mutes []*models.Ag
 	}
 	candidate, err := writeFollowUpCandidate(tx, mutes, &models.AgentAlertCandidate{
 		AgentID: agent.ID, CandidateKind: models.AlertCandidateFollowUp, AlertSignal: models.AlertSignalSoon,
-		CandidateReason: fmt.Sprintf("%s in the week ahead, from tomorrow to %s", plural(len(coming), "one event or deadline", "%d events and deadlines"), today.AddDate(0, 0, followUpRoundupDays).Format(time.DateOnly)),
+		CandidateReason: plural(len(coming), "one event or deadline", "%d events and deadlines") + " " + reason,
 		FollowUpIDs:     followUpIds, FollowUpToldState: models.AgentFollowUpToldRoundup,
-		FollowUpSubjectKey: followUpRoundupSubjectKey(today),
+		FollowUpSubjectKey: subjectKey,
 	}, now)
 	if err != nil {
 		return nil, err
@@ -266,6 +276,12 @@ const followUpRoundupKeyPrefix = "follow-up-roundup:"
 // given.
 func followUpRoundupSubjectKey(sunday time.Time) string {
 	return followUpRoundupKeyPrefix + sunday.Format(time.DateOnly)
+}
+
+// followUpWeekendSubjectKey is the subject key of the weekend message the
+// look around writes on the day given.
+func followUpWeekendSubjectKey(runDay time.Time) string {
+	return followUpRoundupKeyPrefix + "weekend-" + runDay.Format(time.DateOnly)
 }
 
 // writeFollowUpCandidate writes a follow_up candidate, and answers it when

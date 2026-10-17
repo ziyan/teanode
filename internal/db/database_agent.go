@@ -182,6 +182,10 @@ type agentModel struct {
 	AlertQuietEnd   string `gorm:"column:alert_quiet_end"`
 	AlertDailyMost  int    `gorm:"column:alert_daily_most"`
 
+	// The day and time of the weekly look around. See migration 0191.
+	LookAroundWeekday string `gorm:"column:look_around_weekday"`
+	LookAroundTime    string `gorm:"column:look_around_time"`
+
 	// The currency totals are shown in. See migration 0133.
 	ReportingCurrencyCode string `gorm:"column:reporting_currency_code"`
 
@@ -269,6 +273,8 @@ func agentFromModel(model *agentModel) (*models.Agent, error) {
 		AlertQuietStart:        model.AlertQuietStart,
 		AlertQuietEnd:          model.AlertQuietEnd,
 		AlertDailyMost:         model.AlertDailyMost,
+		LookAroundWeekday:      model.LookAroundWeekday,
+		LookAroundTime:         model.LookAroundTime,
 		ReportingCurrencyCode:  model.ReportingCurrencyCode,
 		TaxFilingStatus:        model.TaxFilingStatus,
 		TaxDocumentToken:       model.TaxDocumentToken,
@@ -347,6 +353,8 @@ func agentToModel(agent *models.Agent) (*agentModel, error) {
 		AlertQuietStart:        agent.AlertQuietStart,
 		AlertQuietEnd:          agent.AlertQuietEnd,
 		AlertDailyMost:         agent.AlertDailyMost,
+		LookAroundWeekday:      agent.LookAroundWeekday,
+		LookAroundTime:         agent.LookAroundTime,
 		ReportingCurrencyCode:  agent.ReportingCurrencyCode,
 		TaxFilingStatus:        agent.TaxFilingStatus,
 		TaxDocumentToken:       agent.TaxDocumentToken,
@@ -546,6 +554,8 @@ func (self *transaction) UpdateAgent(agentId string, modify func(*models.Agent) 
 			"alert_quiet_start":       model.AlertQuietStart,
 			"alert_quiet_end":         model.AlertQuietEnd,
 			"alert_daily_most":        model.AlertDailyMost,
+			"look_around_weekday":     model.LookAroundWeekday,
+			"look_around_time":        model.LookAroundTime,
 			"reporting_currency_code": model.ReportingCurrencyCode,
 			"tax_filing_status":       model.TaxFilingStatus,
 			"tax_document_token":      model.TaxDocumentToken,

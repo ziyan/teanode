@@ -4021,6 +4021,38 @@
         }
       }
     },
+    "Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントは毎週、週末とその次の週に近所で開かれることを調べ、この曜日のこの時刻にお伝えします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理每周会查找你附近这个周末和下一周有什么活动，并在这一天的这个时间告诉你。"
+          }
+        }
+      }
+    },
+    "Look around town on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近所を調べる曜日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看附近活动的日子"
+          }
+        }
+      }
+    },
     "what is on near you": {
       "localizations": {
         "ja": {

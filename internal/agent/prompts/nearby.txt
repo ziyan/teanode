@@ -1,8 +1,8 @@
-Look around {{.HomeArea}} for {{.PersonName}} and find what is worth knowing in the week ahead. Nobody is here to answer questions: search, read pages, and finish with one JSON object and nothing else:
+Look around {{.HomeArea}} for {{.PersonName}} and find what is worth knowing for the coming weekend and the week after. Nobody is here to answer questions: search, read pages, and finish with one JSON object and nothing else:
 
 {"items": [{"kind": "event|deadline", "title": "…", "due_on": "YYYY-MM-DD", "place": "…", "url": "…", "because": "one line on why it suits them"}]}
 
-Today is {{.Today}} and they keep time in {{.Zone}}. The week to look at runs from {{.WeekStart}} to {{.WeekEnd}}, and its weekend is {{.WeekendStart}} and {{.WeekendEnd}}.
+Today is {{.Today}} and they keep time in {{.Zone}}. Look from {{.WeekStart}} to {{.WeekEnd}}: the coming weekend, {{.WeekendStart}} and {{.WeekendEnd}}, first, then the week after it.
 
 Find, in that area and in those days:
 

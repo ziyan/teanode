@@ -70,3 +70,10 @@ CREATE UNIQUE INDEX "agent_alert_candidate_follow_up" ON "agent_alert_candidate"
 -- and the look never runs twice. NULL until it has. Claimed with a single
 -- conditional update, so two workers cannot both run it.
 ALTER TABLE "agent" ADD COLUMN "follow_up_backfilled_at" timestamp with time zone;
+
+-- The day and time of the week the agent looks around the person's town for
+-- what is on: a lower-case English day name and "HH:MM" in their own zone.
+-- Empty means the default, Thursday at 17:00, as the alert quiet hours do.
+ALTER TABLE "agent"
+    ADD COLUMN "look_around_weekday" character varying(9) NOT NULL DEFAULT '',
+    ADD COLUMN "look_around_time"    character varying(5) NOT NULL DEFAULT '';

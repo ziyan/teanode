@@ -22,11 +22,13 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     public let alertQuietStart: String?
     public let alertQuietEnd: String?
     public let alertDailyMost: Int
+    public let lookAroundWeekday: String?
+    public let lookAroundTime: String?
 
     public init(
         id: String, enabled: Bool = true, operatorDisabledAt: String? = nil, dreamFrom: String? = nil, dreamUntil: String? = nil,
         dreamBootstrap: Bool? = nil, isAlertsEnabled: Bool = true, alertQuietStart: String? = nil, alertQuietEnd: String? = nil,
-        alertDailyMost: Int = 0
+        alertDailyMost: Int = 0, lookAroundWeekday: String? = nil, lookAroundTime: String? = nil
     ) {
         self.id = id
         self.enabled = enabled
@@ -38,6 +40,8 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
         self.alertQuietStart = alertQuietStart
         self.alertQuietEnd = alertQuietEnd
         self.alertDailyMost = alertDailyMost
+        self.lookAroundWeekday = lookAroundWeekday
+        self.lookAroundTime = lookAroundTime
     }
 
     /// Whether the agent runs at all: on, and not turned off by the
@@ -54,6 +58,17 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     public var shownAlertQuietStart: String { UpkeepClock.orDefault(alertQuietStart, "22:00") }
     public var shownAlertQuietEnd: String { UpkeepClock.orDefault(alertQuietEnd, "07:00") }
     public var shownAlertDailyMost: Int { alertDailyMost > 0 ? alertDailyMost : 5 }
+
+    /// The days the weekly look around may be set to, as the server keeps
+    /// them, Monday first.
+    public static let lookAroundWeekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+    /// The day and time the agent looks around the person's town, with the
+    /// defaults the dashboard shows where none are set.
+    public var shownLookAroundWeekday: String {
+        Self.lookAroundWeekdays.contains(lookAroundWeekday ?? "") ? lookAroundWeekday ?? "thursday" : "thursday"
+    }
+    public var shownLookAroundTime: String { UpkeepClock.orDefault(lookAroundTime, "17:00") }
 }
 
 /// UpkeepClock reads and writes the "HH:MM" times the agent's hours are
@@ -1430,14 +1445,14 @@ public struct MemoryCheckAnswer: Codable, Hashable, Sendable, Identifiable {
 
 extension Documents {
     static let agentUpkeepFields = """
-        id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
+        id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
         """
     public static let agentUpkeep = """
         query { ReadAgent { agent { \(agentUpkeepFields) } } }
         """
     public static let updateAgentUpkeep = """
-        mutation ($dreamFrom: String, $dreamUntil: String, $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int) {
-          UpdateAgent(dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost) {
+        mutation ($dreamFrom: String, $dreamUntil: String, $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String) {
+          UpdateAgent(dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime) {
             agent { \(agentUpkeepFields) }
           }
         }
@@ -1704,7 +1719,8 @@ extension Connection {
     @discardableResult
     public func updateAgentUpkeep(
         dreamFrom: String? = nil, dreamUntil: String? = nil, isAlertsEnabled: Bool? = nil, alertQuietStart: String? = nil,
-        alertQuietEnd: String? = nil, alertDailyMost: Int? = nil
+        alertQuietEnd: String? = nil, alertDailyMost: Int? = nil, lookAroundWeekday: String? = nil,
+        lookAroundTime: String? = nil
     ) async throws -> AgentUpkeepPreferences? {
         struct Answer: Decodable, Sendable {
             struct Updated: Decodable, Sendable { let agent: AgentUpkeepPreferences? }
@@ -1717,6 +1733,8 @@ extension Connection {
         if let alertQuietStart { variables["alertQuietStart"] = .string(alertQuietStart) }
         if let alertQuietEnd { variables["alertQuietEnd"] = .string(alertQuietEnd) }
         if let alertDailyMost { variables["alertDailyMost"] = .number(Double(alertDailyMost)) }
+        if let lookAroundWeekday { variables["lookAroundWeekday"] = .string(lookAroundWeekday) }
+        if let lookAroundTime { variables["lookAroundTime"] = .string(lookAroundTime) }
         return try await execute(Documents.updateAgentUpkeep, variables: variables, as: Answer.self).UpdateAgent?.agent
     }
 

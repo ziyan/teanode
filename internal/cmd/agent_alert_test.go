@@ -59,7 +59,7 @@ func TestTheAlertCommandsSendWhatTheDashboardWould(test *testing.T) {
 	if printed := runAgainst(test, server, "alert", "unmute", "mute-1"); !strings.Contains(printed, "mute-1: unmuted") {
 		test.Errorf("unmute printed %q", printed)
 	}
-	runAgainst(test, server, "settings", "set", "alerts=false", "alert-quiet-start=21:00", "alert-daily-most=3")
+	runAgainst(test, server, "settings", "set", "alerts=false", "alert-quiet-start=21:00", "alert-daily-most=3", "look-around-weekday=friday", "look-around-time=18:30")
 
 	variables := sent()
 	if len(variables) != 3 {
@@ -71,7 +71,8 @@ func TestTheAlertCommandsSendWhatTheDashboardWould(test *testing.T) {
 	if variables[1]["muteId"] != "mute-1" {
 		test.Errorf("unmute sent %v", variables[1])
 	}
-	if variables[2]["isAlertsEnabled"] != false || variables[2]["alertQuietStart"] != "21:00" || variables[2]["alertDailyMost"] != float64(3) {
+	if variables[2]["isAlertsEnabled"] != false || variables[2]["alertQuietStart"] != "21:00" || variables[2]["alertDailyMost"] != float64(3) ||
+		variables[2]["lookAroundWeekday"] != "friday" || variables[2]["lookAroundTime"] != "18:30" {
 		test.Errorf("settings sent %v", variables[2])
 	}
 }

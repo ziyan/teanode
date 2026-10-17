@@ -14,21 +14,23 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// The look around: once a week, on Saturday night before the Sunday
-// roundup, a run with nobody present searches the web for what is on in the
-// person's town in the week ahead (events, places worth knowing, weekend
-// activities that suit the household, dates that matter) and writes what it
-// finds as follow-ups of kind event or deadline, with the page each came
-// from. The Sunday roundup (follow_up_sweep.go) then tells them with the
-// ones read out of mail.
+// The look around: once a week, on the day and at the time the person set
+// (Thursday at 17:00 by default, early enough to plan the weekend by), a run
+// with nobody present searches the web for what is on in the person's town
+// from tomorrow through the week after the coming weekend (events, places
+// worth knowing, weekend activities that suit the household, dates that
+// matter) and writes what it finds as follow-ups of kind event or deadline,
+// with the page each came from. It then tells the weekend's, with any the
+// mail brought, in one message; the Sunday roundup (follow_up_sweep.go)
+// tells the rest of the week's.
 //
 // The town is read from memory. When memory does not say, the run searches
 // for nothing and asks once, as an idea the agent offers unasked.
 
 const (
-	// nearbyRunHour is the hour on Saturday, in the person's zone, from
-	// which the week's run is due.
-	nearbyRunHour = 21
+	// nearbyCatchUpUntilHour is the hour, on the day after the run's day,
+	// until which a run missed while the server was down is still queued.
+	nearbyCatchUpUntilHour = 12
 
 	// nearbyQueueEvery is how often the worker looks for a run that is due.
 	nearbyQueueEvery = 10 * time.Minute
@@ -87,19 +89,35 @@ var nearbyTools = map[string]bool{"web_search": true, "web_fetch": true}
 var nearbyCallLimits = map[string]int{"web_search": nearbySearchMost, "web_fetch": nearbyPageReadMost}
 
 // nearbySlot names the run that is due at now in the person's zone, or is
-// empty when none is: the Saturday evening from nearbyRunHour, and the
-// Sunday until the roundup, for a run missed while the server was down. The
-// name is the Saturday's date and hour, such as "2026-10-17T21".
-func nearbySlot(now time.Time, location *time.Location) string {
+// empty when none is: the person's weekday from their time (Thursday at
+// 17:00 unless they said otherwise), and the day after until noon, for a run
+// missed while the server was down. The name is the date and time of the
+// run, such as "2026-10-15T17:00".
+func nearbySlot(now time.Time, location *time.Location, weekdayName, clock string) string {
+	weekday, runMinute := nearbySchedule(weekdayName, clock)
 	local := now.In(location)
+	minute := local.Hour()*60 + local.Minute()
 	switch {
-	case local.Weekday() == time.Saturday && local.Hour() >= nearbyRunHour:
-	case local.Weekday() == time.Sunday && local.Hour() < followUpRoundupHour:
+	case local.Weekday() == weekday && minute >= runMinute:
+	case local.Weekday() == (weekday+1)%7 && local.Hour() < nearbyCatchUpUntilHour:
 		local = local.AddDate(0, 0, -1)
 	default:
 		return ""
 	}
-	return fmt.Sprintf("%sT%02d", local.Format(time.DateOnly), nearbyRunHour)
+	return fmt.Sprintf("%sT%02d:%02d", local.Format(time.DateOnly), runMinute/60, runMinute%60)
+}
+
+// nearbySchedule reads the day name and the "HH:MM" the person set, falling
+// back to the default for one that does not parse, as clockMinute does for
+// the quiet hours.
+func nearbySchedule(weekdayName, clock string) (weekday time.Weekday, runMinute int) {
+	weekday = time.Thursday
+	for index, name := range models.LookAroundWeekdays {
+		if name == weekdayName {
+			weekday = time.Weekday(index)
+		}
+	}
+	return weekday, clockMinute(clock, models.LookAroundTimeDefault)
 }
 
 // queueNearbyRuns queues the week's look around for each agent that has
@@ -127,7 +145,8 @@ func (self *Agent) queueNearbyRuns(ctx context.Context, now time.Time) {
 		if owner == nil {
 			continue
 		}
-		slot := nearbySlot(now, Location(owner))
+		weekdayName, clock := agent.LookAroundSchedule()
+		slot := nearbySlot(now, Location(owner), weekdayName, clock)
 		if slot == "" {
 			continue
 		}
@@ -144,17 +163,21 @@ func (self *Agent) queueNearbyRuns(ctx context.Context, now time.Time) {
 	}
 }
 
-// nearbyWindow is the week the run looks at, as dates: the Monday after
-// the day given through the Sunday after it, whose Saturday and Sunday are
-// the weekend. The Sunday roundup lists from tomorrow on, so this is the
-// week it will be about.
-func nearbyWindow(today time.Time) (weekStart, weekEnd time.Time) {
-	daysToMonday := (8 - int(today.Weekday())) % 7
-	if daysToMonday == 0 {
-		daysToMonday = 7
+// nearbyWindow is the days the run looks at: from tomorrow through the
+// Sunday of the week after the coming weekend, so that the weekend's message
+// and the next Sunday's roundup both have something to tell.
+func nearbyWindow(today time.Time) (windowStart, windowEnd time.Time) {
+	return today.AddDate(0, 0, 1), today.AddDate(0, 0, nearbyDaysToSunday(today)+7)
+}
+
+// nearbyDaysToSunday is how many days from the day given the coming Sunday
+// is, seven on a Sunday.
+func nearbyDaysToSunday(today time.Time) int {
+	days := (7 - int(today.Weekday())) % 7
+	if days == 0 {
+		days = 7
 	}
-	weekStart = today.AddDate(0, 0, daysToMonday)
-	return weekStart, weekStart.AddDate(0, 0, 6)
+	return days
 }
 
 // nearbyHome is what memory says of where the person lives and who is in
@@ -307,7 +330,7 @@ func askNearbyHomeAreaOnce(tx db.Transaction, agent *models.Agent) (isAsked bool
 		AgentID: agent.ID, IdeaKey: nearbyHomeAreaIdeaKey, IdeaKind: models.IdeaPersonal,
 		IdeaCategory: "home", Emoji: "🏠",
 		Headline:         "To tell you what is on near you each week, which town or neighborhood should I look around?",
-		Body:             "Tell me the town or neighborhood you live in, not a street address. Each Saturday night I look up events, markets, new places and dates that matter there, and what suits your household goes in Sunday's roundup.",
+		Body:             "Tell me the town or neighborhood you live in, not a street address. Each week, on the day you choose in the agent settings, I look up events, markets, new places and dates that matter there, and tell you what suits your household for the weekend and the week after.",
 		OpeningRequest:   "I live in ",
 		NeededToolNames:  []string{},
 		Evidence:         []models.AgentIdeaEvidence{},
@@ -532,6 +555,8 @@ func (self *Agent) lookAround(ctx context.Context, run *Run, now time.Time) erro
 	local := now.In(Location(run.Owner))
 	today := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
 	weekStart, weekEnd := nearbyWindow(today)
+	// The coming weekend, the one the evening's message is about.
+	sunday := today.AddDate(0, 0, nearbyDaysToSunday(today))
 	prompt, err := render("nearby.txt", map[string]any{
 		"PersonName":   personName(run.Owner),
 		"Language":     languageName(KnowledgeLanguage(run.Agent, run.Owner)),
@@ -541,8 +566,8 @@ func (self *Agent) lookAround(ctx context.Context, run *Run, now time.Time) erro
 		"Zone":         Location(run.Owner).String(),
 		"WeekStart":    weekStart.Format("Monday 2 January"),
 		"WeekEnd":      weekEnd.Format("Monday 2 January"),
-		"WeekendStart": weekEnd.AddDate(0, 0, -1).Format("Monday 2 January"),
-		"WeekendEnd":   weekEnd.Format("Monday 2 January"),
+		"WeekendStart": sunday.AddDate(0, 0, -1).Format("Monday 2 January"),
+		"WeekendEnd":   sunday.Format("Monday 2 January"),
 		"ItemsMost":    nearbyItemsMost,
 		"SearchMost":   nearbySearchMost,
 		"FetchMost":    nearbyPageReadMost,
@@ -567,10 +592,35 @@ func (self *Agent) lookAround(ctx context.Context, run *Run, now time.Time) erro
 			return err
 		}
 		storedCount, err = storeNearbyFollowUps(tx, run.Agent.ID, interpretNearbyItems(answer.Items, run.Agent.ID, today, seen), now)
-		return err
+		if err != nil {
+			return err
+		}
+		return self.tellWeekend(tx, run, today, now)
 	}); err != nil {
 		return err
 	}
 	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Looked around %s: %s", home.HomeArea, plural(storedCount, "one thing for the week", "%d things for the week")))
 	return nil
+}
+
+// tellWeekend writes the weekend message: the open events and deadlines
+// from tomorrow through Sunday, from the look around and from mail, in one
+// candidate, and queues the alert job. What it lists is marked, so the
+// Sunday roundup tells only what comes after.
+func (self *Agent) tellWeekend(tx db.Transaction, run *Run, today, now time.Time) error {
+	followUps, err := tx.ListOpenAgentFollowUps(run.Agent.ID)
+	if err != nil {
+		return err
+	}
+	mutes, err := tx.ListAgentAlertMutes(run.Agent.ID)
+	if err != nil {
+		return err
+	}
+	daysToSunday := nearbyDaysToSunday(today)
+	reason := fmt.Sprintf("this weekend, from tomorrow to %s", today.AddDate(0, 0, daysToSunday).Format(time.DateOnly))
+	candidate, err := writeRoundup(tx, run.Agent, mutes, followUps, today, daysToSunday, reason, followUpWeekendSubjectKey(today), now)
+	if err != nil || candidate == nil {
+		return err
+	}
+	return queueAlert(tx, run.Agent.ID, false, now)
 }
