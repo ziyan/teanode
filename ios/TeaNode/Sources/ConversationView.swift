@@ -67,15 +67,25 @@ struct ConversationView: View {
             .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(model.title)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .glassEffect(in: .capsule)
+                    HStack(spacing: 8) {
+                        if let chat = model.chat {
+                            ChatFacesView(chat: chat, ownUserId: model.ownUserId, size: 22)
+                        }
+                        Text(model.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .glassEffect(in: .capsule)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    StatusButton(status: status) { isShowingStatus = true }
+                    // What the agent is doing is no part of a chat of people.
+                    if model.isChat {
+                        ChatMenu(model: model)
+                    } else {
+                        StatusButton(status: status) { isShowingStatus = true }
+                    }
                 }
             }
             .sheet(isPresented: $isShowingStatus) {
@@ -88,6 +98,9 @@ struct ConversationView: View {
             }
             .sheet(item: Binding(get: { model.readingText.map(SelectingText.init) }, set: { model.readingText = $0?.text })) { reading in
                 SelectTextSheet(text: reading.text, title: "The whole message")
+            }
+            .sheet(item: Binding(get: { model.editingLine }, set: { model.editingLine = $0 })) { line in
+                EditMessageSheet(line: line, model: model)
             }
     }
 
@@ -193,11 +206,16 @@ struct ConversationView: View {
                     if hasPersonScrolled { loadEarlier(scroller) }
                 }
             }
-            ForEach(ConversationItem.items(of: shownLines)) { item in
+            let items = ConversationItem.items(of: shownLines)
+            let readers = model.chat.map { model.transcript.readers(of: $0.members, ownUserId: model.ownUserId) } ?? [:]
+            ForEach(Array(items.enumerated()), id: \.element.id) { position, item in
                 ConversationItemView(
-                    item: item, model: model, isShowingUsage: isShowingUsage,
-                    isShowingToolCalls: isShowingToolCalls || model.conversation?.jobKind == "mcp")
+                    item: item, previous: position > 0 ? items[position - 1] : nil, readers: readers, model: model,
+                    isShowingUsage: isShowingUsage, isShowingToolCalls: isShowingToolCalls || model.conversation?.jobKind == "mcp")
                     .id(item.id)
+            }
+            if model.isChat {
+                ChatTypingLine(names: model.typing.names(), agentNames: model.typing.agentSpeakers(ownedWords: ChatWords.agentOf))
             }
             if model.runningRunId != nil, model.transcript.lines.last?.isStreaming != true {
                 TypingBubble()
@@ -208,7 +226,14 @@ struct ConversationView: View {
                 }
             }
             if model.isLoaded, model.transcript.lines.isEmpty {
-                EmptyConversation(model: model)
+                if model.isChat {
+                    Text("Nothing has been said here yet. Say hello.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 40)
+                } else {
+                    EmptyConversation(model: model)
+                }
             }
             Color.clear.frame(height: 1).id(Self.endId)
         }
@@ -240,6 +265,10 @@ struct ConversationView: View {
                 } else {
                     ReplyBar(reply: reference, onCancel: drop)
                 }
+            }
+            // The agents an @ in the box offers, above the keyboard.
+            if !model.mentionSuggestions.isEmpty {
+                MentionRow(agents: model.mentionSuggestions) { agent in model.choose(mention: agent) }
             }
             // The steps sit behind the composer and stick out above it,
             // sliding up from behind it when a turn makes a list and back
@@ -388,6 +417,15 @@ struct ConversationAlerts: ViewModifier {
             } message: { text in
                 Text(text)
             }
+            .alert(
+                "Delete this message?", isPresented: Binding(get: { model.deletingLine != nil }, set: { if !$0 { model.deletingLine = nil } }),
+                presenting: model.deletingLine
+            ) { line in
+                Button("Delete", role: .destructive) { Task { await model.delete(line) } }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("Everybody in the chat will see “Message deleted” in its place.")
+            }
     }
 }
 
@@ -410,6 +448,13 @@ struct ConversationBanners: View {
             }
             if let conversation = model.conversation, conversation.kind == "goal", let goal = conversation.goal, !goal.isEmpty {
                 GoalHeader(conversation: conversation, goal: goal)
+            }
+            if model.isChat, !model.canWrite {
+                if model.chat?.isRemoved == true {
+                    Banner(systemImage: "person.fill.xmark", text: String(localized: "You are not in this chat any more. You can read it, but not write to it."))
+                } else {
+                    Banner(systemImage: "person.fill.xmark", text: String(localized: "You no longer share a circle with this person, so you cannot write to them."))
+                }
             }
         }
         .padding(.horizontal)
@@ -558,6 +603,12 @@ enum ConversationItem: Identifiable {
         }
     }
 
+    /// The line, when this is one.
+    var line: TranscriptLine? {
+        if case .line(let line) = self { return line }
+        return nil
+    }
+
     static func items(of lines: [TranscriptLine]) -> [ConversationItem] {
         var items: [ConversationItem] = []
         var lastDay: Date?
@@ -577,6 +628,11 @@ enum ConversationItem: Identifiable {
 
 struct ConversationItemView: View {
     let item: ConversationItem
+    /// The item before this one, which says whether a chat message begins a
+    /// run of its author's: a day between two ends one.
+    var previous: ConversationItem?
+    /// For a chat, who has read as far as which message.
+    var readers: [String: [ChatMember]] = [:]
     let model: ConversationModel
     let isShowingUsage: Bool
     let isShowingToolCalls: Bool
@@ -592,14 +648,42 @@ struct ConversationItemView: View {
         case .line(let line):
             switch line.kind {
             case .person:
-                PersonBubble(line: line) { model.readingText = line.text }
-                    .onLongPressGesture(minimumDuration: 0.35) {
-                        MessageActionsPresenter.present(line: line, model: model)
+                if let author = line.author {
+                    ChatLineFrame(
+                        line: line, author: author, startsRun: line.beginsRun(after: previous?.line),
+                        readers: line.messageId.flatMap { readers[$0] } ?? []
+                    ) {
+                        PersonBubble(line: line) { model.readingText = line.text }
+                            .onLongPressGesture(minimumDuration: 0.35) {
+                                if line.messageId != nil { MessageActionsPresenter.present(line: line, model: model) }
+                            }
                     }
+                } else {
+                    PersonBubble(line: line) { model.readingText = line.text }
+                        .onLongPressGesture(minimumDuration: 0.35) {
+                            MessageActionsPresenter.present(line: line, model: model)
+                        }
+                }
+            case .answer where line.author != nil:
+                // An agent's words said in a chat: under its name, in front of
+                // the people in it.
+                if let author = line.author {
+                    ChatLineFrame(
+                        line: line, author: author, startsRun: line.beginsRun(after: previous?.line),
+                        readers: line.messageId.flatMap { readers[$0] } ?? []
+                    ) {
+                        AgentBubble(reactions: line.reactions) {
+                            MarkdownView(text: line.text, isSelectable: false)
+                        }
+                        .onLongPressGesture(minimumDuration: 0.35) {
+                            MessageActionsPresenter.present(line: line, model: model)
+                        }
+                    }
+                }
             case .answer:
                 VStack(alignment: .leading, spacing: 4) {
                     AgentBubble(reactions: line.reactions) {
-                        MarkdownView(text: line.text, isSelectable: false)
+                        MarkdownView(text: SharedCitations.linking(line.text, usernames: model.sharedOwnerUsernames), isSelectable: false)
                     }
                     .onLongPressGesture(minimumDuration: 0.35) {
                         MessageActionsPresenter.present(line: line, model: model)
@@ -621,7 +705,13 @@ struct ConversationItemView: View {
             case .checkIn:
                 CheckInLine(line: line)
             case .note:
-                NoteLine(line: line)
+                if line.detail == "payment_waiting" {
+                    // A call of a skill the person shared that waits for
+                    // their word: the card reads the call for how it stands.
+                    PaymentWaitingCard(connection: model.connection, detail: line.text)
+                } else {
+                    NoteLine(line: line)
+                }
             case .approval, .question:
                 CardSurface {
                     CardView(line: line, model: model)
@@ -685,7 +775,9 @@ struct MessageActionsView: View {
     /// leave the keyboard room.
     @State private var isChoosingEmoji = false
 
-    private var isPerson: Bool { line.kind == .person }
+    /// Whose side it is on: the person's own words are on the right. In a
+    /// chat that is the person's own, and not another person's.
+    private var isPerson: Bool { line.author.map(\.isOwnWords) ?? (line.kind == .person) }
 
     var body: some View {
         ZStack {
@@ -697,8 +789,9 @@ struct MessageActionsView: View {
                 .accessibilityAddTraits(.isButton)
             VStack(alignment: isPerson ? .trailing : .leading, spacing: 12) {
                 // Each side reacts to what the other said: the person to the
-                // agent's answers, not to their own messages.
-                if line.messageId != nil, line.kind == .answer {
+                // agent's answers, not to their own messages. In a chat, to
+                // anybody's.
+                if line.messageId != nil, line.kind == .answer || line.author != nil {
                     if isChoosingEmoji {
                         emojiChooser
                     } else {
@@ -743,7 +836,7 @@ struct MessageActionsView: View {
     }
 
     private var reactionButtons: some View {
-        let current = line.reaction(of: "person")
+        let current = line.reaction(of: "person", userId: model.ownUserId)
         var choices = ConversationModel.quickReactions
         if let current, !choices.contains(current) { choices.append(current) }
         return HStack(spacing: 2) {
@@ -819,6 +912,12 @@ struct MessageActionsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+        } else if line.kind == .person {
+            // Another person's words in a chat are shown as typed.
+            Text(line.text)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 20, style: .continuous))
         } else {
             MarkdownView(text: line.text)
                 .padding(.horizontal, 14)
@@ -832,6 +931,12 @@ struct MessageActionsView: View {
             if line.messageId != nil {
                 actionRow("Reply", systemImage: "arrowshape.turn.up.left") {
                     onClose { model.reply(to: line) }
+                }
+                Divider()
+            }
+            if model.canEdit(line) {
+                actionRow("Edit", systemImage: "pencil") {
+                    onClose { model.editingLine = line }
                 }
                 Divider()
             }
@@ -849,6 +954,25 @@ struct MessageActionsView: View {
                 actionLabel("Share", systemImage: "square.and.arrow.up")
             }
             .buttonStyle(.plain)
+            if model.canDelete(line) {
+                Divider()
+                Button {
+                    onClose { model.deletingLine = line }
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: "trash")
+                            .frame(width: 24)
+                        Text("Delete")
+                        Spacer()
+                    }
+                    .font(.body)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 50)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .frame(width: 250)
         .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
@@ -1027,53 +1151,90 @@ struct PersonBubble: View {
         line.text.count > Self.shownCharacterCount || line.text.split(separator: "\n", omittingEmptySubsequences: false).count > Self.shownLineCount
     }
 
+    /// Another person's words in a chat: on the left, in the grey the agent's
+    /// are in, since the accent is the person's own.
+    private var isOthers: Bool {
+        guard let author = line.author else { return false }
+        return !author.isOwnWords
+    }
+
     var body: some View {
         HStack {
-            Spacer(minLength: 56)
-            VStack(alignment: .trailing, spacing: 4) {
-                if !line.quotedText.isEmpty {
-                    Text(line.quotedText)
-                        .font(.footnote)
+            if !isOthers { Spacer(minLength: 56) }
+            VStack(alignment: isOthers ? .leading : .trailing, spacing: 4) {
+                if line.isDeleted {
+                    Text("Message deleted")
+                        .italic()
                         .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .overlay(alignment: .leading) {
-                            Capsule().fill(.tertiary).frame(width: 3)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Color(.separator), lineWidth: 1)
                         }
-                }
-                ForEach(line.references, id: \.self) { reference in
-                    Label(reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(line.attachments, id: \.id) { attachment in
-                    AttachmentView(attachment: attachment)
-                }
-                if !line.text.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if isTooLong {
-                            Text(String(line.text.prefix(Self.shownCharacterCount)))
-                                .lineLimit(Self.shownLineCount)
-                            Button("Show all", action: onShowAll)
-                                .font(.subheadline.weight(.semibold))
-                        } else {
-                            Text(line.text)
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    // The person's side in the accent's tint, the agent's in
-                    // grey, so whose each bubble is shows at a glance.
-                    .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
-                    .overlay(alignment: .bottomLeading) {
-                        ReactionBadges(reactions: line.reactions)
-                            .offset(x: -10, y: 18)
-                    }
-                    .padding(.bottom, line.reactions.isEmpty ? 0 : 18)
+                } else {
+                    content
                 }
             }
+            if isOthers { Spacer(minLength: 40) }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        VStack(alignment: isOthers ? .leading : .trailing, spacing: 4) {
+            if !line.quotedText.isEmpty {
+                Text(line.quotedText)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(.tertiary).frame(width: 3)
+                    }
+            }
+            ForEach(line.references, id: \.self) { reference in
+                Label(reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(line.attachments, id: \.id) { attachment in
+                AttachmentView(attachment: attachment)
+            }
+            if !line.text.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    if isTooLong {
+                        Text(String(line.text.prefix(Self.shownCharacterCount)))
+                            .lineLimit(Self.shownLineCount)
+                        Button("Show all", action: onShowAll)
+                            .font(.subheadline.weight(.semibold))
+                    } else {
+                        Text(line.text)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                // The person's side in the accent's tint, the agent's in
+                // grey, so whose each bubble is shows at a glance.
+                .background(
+                    isOthers ? AnyShapeStyle(Color(.secondarySystemBackground)) : AnyShapeStyle(Color.accentColor.opacity(0.2)),
+                    in: .rect(cornerRadius: 20, style: .continuous)
+                )
+                .overlay(alignment: isOthers ? .bottomTrailing : .bottomLeading) {
+                    ReactionBadges(reactions: line.reactions)
+                        .offset(x: isOthers ? 10 : -10, y: 18)
+                }
+                .padding(.bottom, line.reactions.isEmpty ? 0 : 18)
+            }
+            if line.editedAt != nil {
+                Text("Edited")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 6)
+            }
+        }
+        // A message of a chat on its way is quieter until the chat has it.
+        .opacity(line.author != nil && line.isBeingSent ? 0.6 : 1)
     }
 }
 
@@ -1115,7 +1276,7 @@ struct ReactionBadges: View {
     var body: some View {
         if !reactions.isEmpty {
             HStack(spacing: 2) {
-                ForEach(reactions, id: \.reactorKind) { reaction in
+                ForEach(reactions) { reaction in
                     ReactionBadge(reaction: reaction)
                         .id(reaction.emoji)
                 }
@@ -1143,12 +1304,20 @@ struct ReactionBadge: View {
         Text(verbatim: reaction.emoji)
             .font(.body)
             .scaleEffect(scale)
-            .accessibilityLabel(reaction.reactorKind == "agent" ? Text("The agent reacted \(reaction.emoji)") : Text("You reacted \(reaction.emoji)"))
+            .accessibilityLabel(label)
             .onAppear {
                 guard isFresh, !isReducingMotion else { return }
                 scale = 0.1
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.45)) { scale = 1 }
             }
+    }
+
+    /// Who reacted, in words: by name where the server says whose it is, as in
+    /// a chat, where several people can.
+    private var label: Text {
+        if reaction.reactorKind == "agent" { return Text("The agent reacted \(reaction.emoji)") }
+        if let name = reaction.reactorName, !name.isEmpty { return Text("\(name) reacted \(reaction.emoji)") }
+        return Text("You reacted \(reaction.emoji)")
     }
 
     /// Put there in the last few seconds: one this app has just made has no
@@ -1678,9 +1847,23 @@ struct NoteLine: View {
         case "goal_cleared": return String(localized: "Goal cleared: \(detail)")
         case "goal_met": return String(localized: "Goal met: \(detail)")
         case "goal_stalled": return String(localized: "Goal stalled: \(detail) turns since you last wrote and it is not met. Write to keep going, or clear or change it.")
+        case "circle_invited":
+            // Two names travel as JSON, since one plain detail cannot hold
+            // both; a detail that is not JSON is shown as the server wrote it.
+            guard let data = detail.data(using: .utf8),
+                let invitation = try? JSONDecoder().decode(CircleInvitationNote.self, from: data), !invitation.circleName.isEmpty
+            else { return detail }
+            return String(localized: "\(invitation.invitedByName) invited you to \(invitation.circleName). Answer it under Circles in Settings.")
         default: return detail
         }
     }
+}
+
+/// CircleInvitationNote is the detail of a circle_invited note: who invited
+/// the person, and to which circle.
+private struct CircleInvitationNote: Decodable {
+    var invitedByName: String = ""
+    var circleName: String = ""
 }
 
 /// CardView is something waiting for the person: a tool call to approve, or
@@ -2002,6 +2185,7 @@ struct Composer: View {
                 TextField(placeholder, text: $model.draft, axis: .vertical)
                     .lineLimit(1...8)
                     .focused($isFocused)
+                    .disabled(!model.canWrite)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
@@ -2132,6 +2316,11 @@ struct Composer: View {
     }
 
     private var placeholder: String {
+        if model.isChat {
+            // Where an agent can be asked, the box says how.
+            if !model.addressableAgents.isEmpty { return String(localized: "Message \(model.title), or type @ to ask an agent…") }
+            return String(localized: "Message \(model.title)…")
+        }
         if model.freshQuestion != nil { return String(localized: "Your answer") }
         return app.agentName.isEmpty ? String(localized: "Ask your agent…") : String(localized: "Ask \(app.agentName)…")
     }

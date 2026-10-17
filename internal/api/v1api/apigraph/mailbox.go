@@ -966,6 +966,10 @@ func (self *graph) SortMailboxItems(ctx context.Context, arguments SortMailboxIt
 	if err != nil {
 		return 0, err
 	}
+	// An agent row made so that the person can chat learns nothing from this.
+	if owner.IsPlaceholder() {
+		owner = nil
+	}
 	mailIds := make([]string, 0, len(items))
 	for _, item := range items {
 		mailIds = append(mailIds, item.MailID)
@@ -1077,7 +1081,7 @@ func (self *graph) MoveMailboxItems(ctx context.Context, arguments MoveMailboxIt
 func (self *graph) recordFiled(ctx context.Context, mailbox *models.Mailbox, items []*models.MailboxItem, target *models.MailboxFolder) {
 	tx := self.transaction(ctx)
 	found, err := tx.GetAgentByUser(mailbox.UserID)
-	if err != nil || found == nil {
+	if err != nil || found == nil || found.IsPlaceholder() {
 		return
 	}
 	mailIds := mailIdsOf(items)

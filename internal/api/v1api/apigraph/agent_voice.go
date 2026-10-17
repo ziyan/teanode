@@ -3,6 +3,7 @@ package apigraph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -71,6 +72,11 @@ type AgentVoiceView struct {
 
 func (self *graph) ReadAgentVoice(ctx context.Context) (*AgentVoiceView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
+	if errors.Is(err, agent.ErrUnavailable) {
+		// The drawer opens for chats with the agent off, and a microphone
+		// to talk to an agent that is off is simply not offered.
+		return &AgentVoiceView{SampleRate: voice.SampleRate, SpeechVoices: config.VoiceSpeechVoices}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

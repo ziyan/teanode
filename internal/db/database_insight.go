@@ -228,6 +228,10 @@ type agentConversationModel struct {
 	// How many turns background commands and work have woken since the
 	// person last wrote. See migration 0122.
 	BackgroundWakeCount int `gorm:"column:background_wake_count"`
+
+	// The chat a conversation of the kind chat is a member's own for. See
+	// migration 0194.
+	ChatID *string `gorm:"column:chat_id"`
 }
 
 func (agentConversationModel) TableName() string { return "agent_conversation" }
@@ -528,6 +532,7 @@ func conversationFromModel(model *agentConversationModel) *models.AgentConversat
 		GoalNote:          model.GoalNote,
 
 		BackgroundWakeCount: model.BackgroundWakeCount,
+		ChatID:              valueOfString(model.ChatID),
 	}
 	if model.GoalNextAt != nil {
 		at := model.GoalNextAt.In(time.Local)

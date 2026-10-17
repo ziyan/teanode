@@ -42,7 +42,9 @@ The first segment of a path says whose the page is, and the rail follows it:
 - A feature page is neither, and keeps a path of its own: the mailbox and
   what hangs off it (`/mailbox/...`, its calendar and contacts), the agent's
   conversations (`/agent`), Knowledge (`/knowledge`), Finance (`/finance`).
-  Their rows are in the mailbox's rail.
+  Their rows are in the mailbox's rail. Circles (`/circles`, the people you
+  share the server with) is one too, but has no row: it is reached from the
+  account menu, where a badge counts the invitations waiting for an answer.
 
 A page that moves does not leave a redirect behind: every link to it in the
 code moves with it, and the old path is not found.
@@ -126,6 +128,15 @@ class is not checked, since it goes somewhere.
 The exception is a row that is itself a button, such as an idea on the
 agent's Ideas tab: its one other action is an icon in the row's corner.
 
+A page that is one thing, a circle, puts the icons that change that thing
+(rename, delete) in its first panel's head, in
+`<div className="row-actions head-icons">`. On a phone `head-icons` keeps them
+on the heading's line, where a row of words would drop below it. What ends
+the person's part in the thing without being what the page is for, leaving a
+circle, is a `className="danger"` button in `page-actions page-actions-end`
+at the foot of the page, after every panel, with a confirmation that says what
+will happen.
+
 Every icon button needs its name shown on hover and an `aria-label` that names
 the thing it acts on, because the icon alone says nothing to a screen reader
 and nothing to a person who has not met it before. The name on hover is a
@@ -158,6 +169,42 @@ over the page takes them out of it. Not a panel over the whole box: the head is
 what the box is dragged by and its edges what it is resized by. So the goal is
 set there with a small form of its own rather than a `FormDialog`, the one
 exception to the rule below.
+
+A chat with people is one more conversation in this drawer, and its menu is
+another of the head's dropdowns (`ChatMenu`): who is in it, its name if it is a
+group, its sound, and leaving it. Starting one is in the picker beside the new
+side chat ("Message someone", "New group"). With the agent off the drawer opens
+on the person's chats, and the offer to turn the agent on takes the main
+conversation's place. There is no page of chats and no row for them in the
+rail; the number on the drawer's button is the unread messages in the chats
+that are not muted, asked again every 15 seconds and at once when the window
+regains focus. A small face under a message is a member who has read through
+it: the newest message by somebody else that they have read, never one of their
+own, so in a direct chat it is under the signed-in person's own newest message
+the other has read. The usage ring in the head is the agent's budget, so it is
+left out in a chat and with the agent off, and with the agent off nothing that
+only the agent has is started or told about: no feed of the main conversation,
+and no toast for a refusal that only says the agent is off. What a chat needs
+is kept: the feed of a chat comes from the server's chat hub whether or not it
+runs a model, so the drawer follows it like any other and never reads a chat
+again on a timer, and the tab reports whether it is shown, so a message is not
+sent to the person's phone while they are reading it.
+
+An agent is asked in a chat with an `@`. Typing one at the start of a word offers
+the agents that can answer (`MentionList`, above the box): the person's own,
+first, and the agent of each member whose owner let the others ask it; an agent
+that is off is not offered. Choosing one puts its name in the words and sends
+its id as `addressedAgentIds`, and only a name still in the words is sent, so an
+agent's name typed by hand, or taken out again, addresses nothing. Replying to
+an agent's message addresses that agent. The answer is a message of the chat
+under the agent's name; while it is written every member sees "is thinking"
+under the messages (a person is "is typing"), then its words as they come as a
+message that the stored one replaces where it stood. The turn's own `message`
+and `asked` events draw nothing in a chat. For the owner the calls the answer
+took are the rows before it, as in any conversation; nobody else is sent them.
+The two switches for the person's own agent, which the others see the result of,
+are in the members dialog: one makes it remember the chat, one lets the others
+ask it, each with a line saying what it means.
 
 ## Making, changing, destroying
 

@@ -380,6 +380,17 @@ func (self *Agent) Active() bool {
 	return self != nil && self.Enabled && self.OperatorDisabledAt == nil
 }
 
+// IsPlaceholder says the row was made for a person who chats and has never
+// touched their agent: switched off, and not changed since it was made.
+// Everybody who can chat has an agent row, because their conversations and
+// phones hang from it (db.EnsureAgent), and such a row is to everything that
+// asks whether the person uses an agent -- their settings page, the operator's
+// list, a grant of a mailbox -- as if there were none. The first time the
+// person saves anything about their agent the row is changed, and is theirs.
+func (self *Agent) IsPlaceholder() bool {
+	return self != nil && !self.Enabled && self.OperatorDisabledAt == nil && self.ModifiedAt.Equal(self.CreatedAt)
+}
+
 // DisplayName is what to call the agent.
 func (self *Agent) DisplayName() string {
 	if self == nil || strings.TrimSpace(self.Name) == "" {

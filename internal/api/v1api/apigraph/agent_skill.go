@@ -95,6 +95,13 @@ type AgentSkillToolView struct {
 	// NeedsComputer says whether carrying it out runs a command, which
 	// only happens on a computer the person attached.
 	NeedsComputer bool `json:"needsComputer"`
+
+	// IsAmountDeclared says the skill says where the tool's amount is, so
+	// that it can be shared with limits; such a tool is what a person
+	// shares to let someone pay. IsScoped says it works only on something
+	// an earlier call of a share made, such as a payment request.
+	IsAmountDeclared bool `json:"isAmountDeclared"`
+	IsScoped         bool `json:"isScoped"`
 }
 
 // AgentSkillOffer is one skill the registry publishes.
@@ -162,6 +169,7 @@ func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 		view.Tools = append(view.Tools, &AgentSkillToolView{
 			Name: declared.Name, Description: declared.Description,
 			Kind: declared.Type, NeedsComputer: agent.SkillRunsCommands(declared),
+			IsAmountDeclared: declared.DoesDeclareAmount(), IsScoped: declared.ScopedIDName() != "",
 		})
 	}
 	for _, secret := range parsed.Secrets {

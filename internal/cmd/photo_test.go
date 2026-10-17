@@ -378,25 +378,6 @@ func (self *commandFailure) Error() string { return self.message }
 
 // captureStandardOutput is what a function writes to os.Stdout. The tests
 // that use it do not run side by side.
-func captureStandardOutput(test *testing.T, run func()) string {
-	test.Helper()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		test.Fatal(err)
-	}
-	original := os.Stdout
-	os.Stdout = writer
-	done := make(chan string)
-	go func() {
-		content, _ := io.ReadAll(reader)
-		done <- string(content)
-	}()
-	run()
-	os.Stdout = original
-	_ = writer.Close()
-	return <-done
-}
-
 func TestUploadSkipsWhatTheLibraryHasAndSaysWhatBecameOfEachFile(test *testing.T) {
 	server := newPhotoServer(test)
 	directory := test.TempDir()

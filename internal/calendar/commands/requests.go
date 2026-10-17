@@ -92,8 +92,18 @@ func (self *Commands) ExecuteRequest(ctx context.Context, principal *access.Prin
 		if err != nil {
 			return err
 		}
-		if owned == nil || owned.UserID != principal.User.ID {
+		if owned == nil {
 			return db.ErrNotFound
+		}
+		shareLevel, _, err := transaction.CalendarAccess(principal.User.ID, owned)
+		if err != nil {
+			return err
+		}
+		if shareLevel == "" {
+			return db.ErrNotFound
+		}
+		if !shareLevel.CanWrite() {
+			return refusedLevel(shareLevel)
 		}
 		if requestAction == nil {
 			return db.ErrInvalidArguments

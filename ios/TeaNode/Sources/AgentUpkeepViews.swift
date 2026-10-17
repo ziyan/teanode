@@ -2718,6 +2718,7 @@ struct ConnectionsView: View {
         List {
             if !servers.isEmpty { serversSection }
             if !skillSecrets.isEmpty { skillSecretsSection }
+            skillSharingSection
             if !reaches.isEmpty { reachesSection }
             if !commands.isEmpty { commandsSection }
             chatChannelsSection
@@ -2903,6 +2904,22 @@ struct ConnectionsView: View {
             Text("Your keys for skills")
         } footer: {
             Text("Some installed skills work with a credential of your own rather than one the server shares. They are kept sealed, are used only by your agent, and are never shown again once set.")
+        }
+    }
+
+    // MARK: Shared skills
+
+    /// The way to lend a skill to someone in a circle and to answer what they
+    /// ask; the screen is SkillSharingViews.swift.
+    private var skillSharingSection: some View {
+        Section {
+            NavigationLink {
+                SkillSharingView(connection: connection)
+            } label: {
+                Label("Shared skills", systemImage: "person.2")
+            }
+        } footer: {
+            Text("Lend a skill to someone in a circle you share, and answer what they ask. Each use runs on your computer, as you.")
         }
     }
 

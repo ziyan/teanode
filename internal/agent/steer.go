@@ -30,7 +30,9 @@ import (
 // isSteerable says whether a turn is one a person is typing into: not a
 // run with nobody present, and not a turn a background command woke.
 func isSteerable(settings *AskSettings) bool {
-	return !settings.Headless && settings.Surface != backgroundSurface
+	// In a chat a message is for the people in it, and one that addresses
+	// the agent again is a turn of its own, after the one running.
+	return !settings.Headless && settings.Surface != backgroundSurface && settings.Chat == nil
 }
 
 // steer hands this turn a message the person wrote while it runs, and says

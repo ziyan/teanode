@@ -78,6 +78,9 @@ struct ConversationsSheet: View {
     @State private var renaming: AgentConversation?
     @State private var newTitle = ""
     @State private var deleting: AgentConversation?
+    /// The sheets for starting a chat with a person, and a group.
+    @State private var isMessagingSomeone = false
+    @State private var isStartingGroup = false
 
     var body: some View {
         NavigationStack {
@@ -111,19 +114,41 @@ struct ConversationsSheet: View {
                             .foregroundStyle(.primary)
                         }
                         .menuRow(isSelected: currentId == nil)
-                        if !isPanel {
+                        if !isPanel, app.isAgentOn {
                             Button {
                                 Task { await start() }
                             } label: {
                                 Label("New side chat", systemImage: "plus")
                             }
                         }
+                        if app.canChat {
+                            Button {
+                                isMessagingSomeone = true
+                            } label: {
+                                Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                            }
+                            Button {
+                                isStartingGroup = true
+                            } label: {
+                                Label("New group", systemImage: "person.3")
+                            }
+                        }
                     } header: {
                         if leading != nil { Text("Chats") }
                     }
                     .listSectionSeparator(.hidden)
+                    // The chats with people, by when they were last spoken in
+                    // (the server lists them so), apart from the side chats
+                    // with the agent.
+                    let chats = conversations.filter(\.isChat)
+                    if !chats.isEmpty {
+                        Section("People") {
+                            ForEach(chats) { conversation in chatRow(conversation) }
+                        }
+                        .listSectionSeparator(.hidden)
+                    }
                     Section("Side chats") {
-                        ForEach(conversations.filter { !$0.isMain }) { conversation in row(conversation) }
+                        ForEach(conversations.filter { !$0.isMain && !$0.isChat }) { conversation in row(conversation) }
                     }
                     .listSectionSeparator(.hidden)
                     Section {
@@ -176,11 +201,7 @@ struct ConversationsSheet: View {
                 if isPanel {
                     MenuBrand()
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            Task { await start() }
-                        } label: {
-                            Label("New side chat", systemImage: "square.and.pencil")
-                        }
+                        newMenu
                     }
                 } else {
                     ToolbarItem(placement: .cancellationAction) {
@@ -196,6 +217,124 @@ struct ConversationsSheet: View {
                     let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !title.isEmpty else { return }
                     Task { await act { try await connection.updateConversation(conversation.id, title: title) } }
+                }
+            }
+            .sheet(isPresented: $isMessagingSomeone) {
+                ChatPeopleSheet(connection: connection, purpose: .direct) { userIds, _ in
+                    guard let userId = userIds.first else { return }
+                    await chatOpened(try await connection.openDirectChat(with: userId))
+                }
+            }
+            .sheet(isPresented: $isStartingGroup) {
+                ChatPeopleSheet(connection: connection, purpose: .group) { userIds, groupName in
+                    var draft = GroupChatDraft()
+                    draft.title = groupName
+                    draft.userIds = Set(userIds)
+                    await chatOpened(try await connection.createGroupChat(draft))
+                }
+            }
+        }
+    }
+
+    /// What starts a conversation: a side chat with the agent, when it is
+    /// on, or a chat with a person or a group, which needs no agent.
+    @ViewBuilder
+    private var newMenu: some View {
+        if app.canChat {
+            Menu {
+                if app.isAgentOn {
+                    Button {
+                        Task { await start() }
+                    } label: {
+                        Label("New side chat", systemImage: "plus")
+                    }
+                }
+                Button {
+                    isMessagingSomeone = true
+                } label: {
+                    Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                }
+                Button {
+                    isStartingGroup = true
+                } label: {
+                    Label("New group", systemImage: "person.3")
+                }
+            } label: {
+                Label("New conversation", systemImage: "square.and.pencil")
+            }
+        } else if app.isAgentOn {
+            Button {
+                Task { await start() }
+            } label: {
+                Label("New side chat", systemImage: "square.and.pencil")
+            }
+        }
+    }
+
+    /// A chat just opened or made is shown: the list is read again so that
+    /// it comes with its people.
+    private func chatOpened(_ conversationId: String) async {
+        await load()
+        onChoose(conversations.first { $0.id == conversationId }
+            ?? AgentConversation(id: conversationId, kind: "chat", title: nil, summary: nil, lastAt: nil))
+    }
+
+    /// A chat in the list: its people's faces, its name, bold with a count
+    /// while messages wait in it, and a mark when it is muted.
+    private func chatRow(_ conversation: AgentConversation) -> some View {
+        let chat = conversation.chat
+        let unreadCount = chat?.unreadCount ?? 0
+        let name = ConversationModel.title(of: conversation, agentTitle: app.agentTitle, ownUserId: app.ownUserId)
+        return Button {
+            onChoose(conversation)
+        } label: {
+            HStack(spacing: 12) {
+                if let chat {
+                    ChatFacesView(chat: chat, ownUserId: app.ownUserId, size: 32)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .fontWeight(unreadCount > 0 ? .bold : .regular)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let lastAt = ServerTime.date(conversation.lastAt) {
+                        Text(lastAt, format: .relative(presentation: .named))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if chat?.isMuted == true {
+                    Image(systemName: "bell.slash")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Muted")
+                }
+                if unreadCount > 0 {
+                    UnreadBadge(count: unreadCount)
+                }
+            }
+        }
+        .menuRow(isSelected: conversation.id == currentId)
+        // No swipe actions, as for the other rows: everything is in the
+        // long press.
+        .contextMenu {
+            if chat?.isMuted == true {
+                Button {
+                    Task { await act { try await connection.muteChat(conversation.id, until: nil) } }
+                } label: {
+                    Label("Unmute", systemImage: "bell")
+                }
+            } else {
+                Button {
+                    Task { await act { try await connection.muteChat(conversation.id, until: Date().addingTimeInterval(8 * 60 * 60)) } }
+                } label: {
+                    Label("Mute for 8 hours", systemImage: "bell.slash")
+                }
+                Button {
+                    Task { await act { try await connection.muteChat(conversation.id, until: Date.distantFuture) } }
+                } label: {
+                    Label("Mute until I unmute", systemImage: "bell.slash")
                 }
             }
         }
@@ -336,6 +475,10 @@ struct SettingsForm: View {
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
+    /// Whether the account may use circles, and how many invitations to join
+    /// one are waiting for an answer, as the badge on its row.
+    @State private var canUseCircles = false
+    @State private var openCircleInvitationCount = 0
     #if DEBUG
         /// Whether the screen a screenshot names (`-TeaNodeScreen`) is
         /// pushed, and whether it has been once, so coming back stays here.
@@ -354,6 +497,16 @@ struct SettingsForm: View {
                             PreferencesView(connection: connection)
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
+                        }
+                        // Next to the profile, as on the dashboard's account menu: it is about who
+                        // the person is among other people.
+                        if canUseCircles {
+                            NavigationLink {
+                                CirclesView(connection: connection)
+                            } label: {
+                                Label("Circles", systemImage: "person.2")
+                            }
+                            .badge(openCircleInvitationCount)
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)
@@ -495,6 +648,10 @@ struct SettingsForm: View {
                 }
             }
             .task { await PhotoBackupEngine.shared.refresh() }
+            // Again on coming back from the circles screen, where an invitation may have been answered.
+            .onAppear {
+                Task { await refreshCircles() }
+            }
             #if DEBUG
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
@@ -515,6 +672,12 @@ struct SettingsForm: View {
                 }
             #endif
         }
+    }
+
+    private func refreshCircles() async {
+        guard let connection = app.connection else { return }
+        canUseCircles = (try? await connection.accessSession())?.holds("circle:use") ?? false
+        openCircleInvitationCount = canUseCircles ? ((try? await connection.circleInvitations())?.count ?? 0) : 0
     }
 
     #if DEBUG
@@ -632,6 +795,9 @@ struct NotificationKindToggle: View {
         case "approval": String(localized: "Approvals waiting for you")
         case "question": String(localized: "Questions for you")
         case "answer": String(localized: "Answers that come after you have left")
+        case "circle": String(localized: "Invitations to circles")
+        case "chat": String(localized: "Messages from people in your chats")
+        case "payment": String(localized: "Requests to use a skill you shared, and how yours came out")
         default: notificationKind
         }
     }

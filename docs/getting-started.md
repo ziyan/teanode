@@ -242,6 +242,23 @@ lists what the program will ask for — the incoming server, the outgoing
 server on port 587, and the username — and most programs find those on their
 own from the address.
 
+## 9. Bring the people you share it with
+
+If others use this server, a household or a few friends, put them in a
+**circle**. Open **Circles** from the account menu at the foot of the rail,
+make one called what it is (Family, say), and add the people. Someone who
+already has an account is invited by username and joins when they accept.
+Someone who has none is added with **Make an account for someone**: give a
+username, a name and a first password, and they are in the circle at once,
+with nothing to accept. They sign in with that username and password and can
+change the password themselves under **Settings → Change password**. On the
+command line it is one step: `teanode user create --circle <circle-id>
+personb`.
+
+Once you share a circle with someone you can message each other. Chats are
+in the agent's drawer, under **Message someone**, and every circle has a chat
+of its own.
+
 ## Where to go next
 
 - **More addresses.** Aliases match with a regular expression, so

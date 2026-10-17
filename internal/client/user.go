@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 )
 
@@ -13,9 +14,13 @@ type User struct {
 	Username string `json:"username"`
 	Name     string `json:"name"`
 	Email    string `json:"email"`
+
+	// AvatarURL is where their picture is served, nil while they have none.
+	AvatarURL        *string `json:"avatarUrl"`
+	AvatarColorIndex int     `json:"avatarColorIndex"`
 }
 
-const userFields = `{ id username name email }`
+const userFields = `{ id username name email avatarUrl avatarColorIndex }`
 
 // ListUsers returns the accounts configured on the server.
 func ListUsers(ctx context.Context, connection *Client) ([]*User, error) {
@@ -148,4 +153,60 @@ func DeleteUser(ctx context.Context, connection *Client, username string) error 
 	}
 	query := `mutation ($userId: String!) { DeleteUser(userId: $userId) }`
 	return connection.Execute(ctx, query, map[string]any{"userId": userId}, nil)
+}
+
+// SetUserAvatar replaces an account's picture with a PNG or JPEG. An empty
+// username is the signed-in account, which needs no lookup and no
+// permission; another account's picture is named by username and needs
+// user:manage, like every other change to somebody else's account.
+func SetUserAvatar(ctx context.Context, connection *Client, username string, content []byte) (*User, error) {
+	var result struct {
+		SetUserAvatar *User `json:"SetUserAvatar"`
+	}
+	query := `mutation ($userId: String, $content: String!) {
+		SetUserAvatar(userId: $userId, content: $content) ` + userFields + `
+	}`
+	variables, err := avatarVariables(ctx, connection, username)
+	if err != nil {
+		return nil, err
+	}
+	variables["content"] = base64.StdEncoding.EncodeToString(content)
+	if err := connection.Execute(ctx, query, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SetUserAvatar, nil
+}
+
+// RemoveUserAvatar takes an account's picture away, so they are shown as
+// their initial. An empty username is the signed-in account.
+func RemoveUserAvatar(ctx context.Context, connection *Client, username string) (*User, error) {
+	var result struct {
+		RemoveUserAvatar *User `json:"RemoveUserAvatar"`
+	}
+	query := `mutation ($userId: String) {
+		RemoveUserAvatar(userId: $userId) ` + userFields + `
+	}`
+	variables, err := avatarVariables(ctx, connection, username)
+	if err != nil {
+		return nil, err
+	}
+	if err := connection.Execute(ctx, query, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.RemoveUserAvatar, nil
+}
+
+// avatarVariables names the account whose picture it is, or nothing for the
+// signed-in one.
+func avatarVariables(ctx context.Context, connection *Client, username string) (map[string]any, error) {
+	variables := map[string]any{}
+	if username == "" {
+		return variables, nil
+	}
+	userId, err := userIdFor(ctx, connection, username)
+	if err != nil {
+		return nil, err
+	}
+	variables["userId"] = userId
+	return variables, nil
 }

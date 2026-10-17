@@ -86,6 +86,17 @@ it("links a page of the agent's memory to the Knowledge page, and the drawer is 
   expect(leaving).toHaveBeenCalledTimes(1)
 })
 
+it("links a page another person shared to it with its owner named, and not to the person's own at that path", () => {
+  const { container } = render(
+    <MemoryRouter>
+      <Markdown text={'Her appointment is [on Tuesday](memory:people/a-grandparent#3@ada).'} />
+    </MemoryRouter>,
+  )
+  const link = container.querySelector('a')
+  expect(link?.getAttribute('href')).toBe('/knowledge/people/a-grandparent?owner=ada')
+  expect(link?.textContent).toBe('on Tuesday')
+})
+
 it('draws a memory link whose path is not a page as its words', () => {
   for (const address of [
     'memory:../server/about',
@@ -95,6 +106,7 @@ it('draws a memory link whose path is not a page as its words', () => {
     'memory:people/some-person#first',
     'memory://example.net/people',
     'memory:',
+    'memory:people/a@ada?x=1',
     'mail:item1/../../settings',
   ]) {
     const { container, unmount } = render(

@@ -59,6 +59,7 @@ extension EnvironmentValues {
 /// side menu.
 struct MenuButton: ToolbarContent {
     @Environment(\.openMenu) private var openMenu
+    @Environment(AppModel.self) private var app
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
@@ -67,6 +68,17 @@ struct MenuButton: ToolbarContent {
             } label: {
                 Label("Menu", systemImage: "line.3.horizontal")
             }
+            // Messages waiting in the chats are the news in the menu behind
+            // this button, where the chats are.
+            .overlay(alignment: .topTrailing) {
+                if app.unreadChatCount > 0 {
+                    Circle()
+                        .fill(.tint)
+                        .frame(width: 9, height: 9)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityValue(app.unreadChatCount > 0 ? Text("\(app.unreadChatCount) unread") : Text(verbatim: ""))
         }
     }
 }
@@ -144,6 +156,15 @@ struct MainView: View {
         .task {
             await app.refreshServices()
             if app.services?.isAssistantEnabled == true { await app.loadAgentName() }
+            await app.refreshChats()
+            // With the agent off the screen opens on a chat, the newest, and
+            // with none on the offer to turn the agent on.
+            if !app.isAgentOn, conversation == nil, app.canChat,
+                let chats = try? await connection.conversations().filter(\.isChat),
+                let newest = chats.max(by: { ($0.lastAt ?? "") < ($1.lastAt ?? "") })
+            {
+                conversation = newest
+            }
             await app.setUpNotifications()
         }
         .task {
@@ -178,6 +199,9 @@ struct MainView: View {
         }
         .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
             if knowledgePath != nil { section = .knowledge }
+        }
+        .onChange(of: app.openedSharedKnowledge) { _, link in
+            if link != nil { section = .knowledge }
         }
         .onChange(of: app.openedMailItemId) { _, itemId in
             if itemId != nil { section = .mail }
@@ -242,7 +266,8 @@ struct MainView: View {
         repeat {
             await app.refreshServices()
             if Task.isCancelled { return }
-            if app.services?.isAssistantEnabled == true { try? await connection.reportPresence(isVisible: isVisible) }
+            await app.refreshChats()
+            if app.services?.isAssistantEnabled == true || app.canChat { try? await connection.reportPresence(isVisible: isVisible) }
             if isVisible && app.services?.isMailboxEnabled == true { await mail.load() }
             if scenePhase != .active { return }
             do { try await Task.sleep(for: .seconds(30)) } catch { return }
@@ -273,13 +298,24 @@ struct MainView: View {
         }
     }
 
+    /// The conversation chosen, or where the main one would be with the
+    /// agent off, the offer to turn it on.
+    @ViewBuilder
+    private var agentScreen: some View {
+        if !app.isAgentOn, conversation == nil {
+            AgentOffView()
+        } else {
+            ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
+                .id(conversation?.id ?? "main")
+        }
+    }
+
     @ViewBuilder
     private var availableScreen: some View {
         switch section {
         case .agent:
             NavigationStack {
-                ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
-                    .id(conversation?.id ?? "main")
+                agentScreen
                     .toolbar { MenuButton() }
                     .withoutSwipeBack()
             }
@@ -341,6 +377,20 @@ struct KnowledgeStack: View {
             app.openedKnowledgePath = nil
             path = NavigationPath()
             path.append(KnowledgePlace.page(knowledgePath))
+        }
+        .onChange(of: app.openedSharedKnowledge, initial: true) { _, link in
+            guard let link else { return }
+            app.openedSharedKnowledge = nil
+            // The link names the person by username; the page is asked for
+            // by the identifier they are listed under, which only the pages
+            // shared with this person can say.
+            Task {
+                let roots = (try? await connection.sharedKnowledgeRoots()) ?? []
+                guard let owner = roots.first(where: { $0.ownerUsername.caseInsensitiveCompare(link.ownerUsername) == .orderedSame })
+                else { return }
+                path = NavigationPath()
+                path.append(KnowledgePlace.sharedPage(ownerUserId: owner.ownerUserId, path: link.path))
+            }
         }
         #if DEBUG
             // A screenshot of a page with its records linked
@@ -442,6 +492,9 @@ struct SideMenu: View {
             }
             .menuRow(isSelected: false)
             .accessibilityAddTraits(section == part ? .isSelected : [])
+            // The chats are in the agent's part: what waits in them is the
+            // number on its entry.
+            .badge(part == .agent ? app.unreadChatCount : 0)
         }
     }
 }
@@ -518,6 +571,28 @@ struct ServicesLoadingView: View {
                     .accessibilityLabel("Connecting to your server")
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// AgentOffView is where the main conversation would be for a person who has
+/// not turned their agent on: the offer to, with the way to Settings. Their
+/// chats are in the menu, and need no agent.
+struct AgentOffView: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Your agent is not on", systemImage: "bubble.left")
+        } description: {
+            Text("Your agent is not on yet. Each person turns on their own, under Settings, Your agent.")
+        } actions: {
+            Button {
+                app.openedSection = .settings
+            } label: {
+                Label("Open Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }

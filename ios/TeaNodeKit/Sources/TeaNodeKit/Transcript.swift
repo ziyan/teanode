@@ -68,12 +68,28 @@ public struct TranscriptLine: Identifiable, Hashable, Sendable {
     /// For a note, whether it is waiting on something still to happen
     /// (a turn queued behind another, the conversation being folded).
     public var isPending = false
-    /// The person's and the agent's reactions to it, one each at most.
+    /// The person's and the agent's reactions to it, one each at most; in a
+    /// chat, one for each person who reacted.
     public var reactions: [AgentMessageReaction] = []
+    /// Who said it, for a message of a chat; nil on every other line.
+    public var author: ChatAuthor?
+    /// For a message of a chat: when its author last changed what it says,
+    /// and whether they took it back (its text is then empty).
+    public var editedAt: String?
+    public var isDeleted = false
 
     /// The emoji one side put on it, if any.
     public func reaction(of reactorKind: String) -> String? {
         reactions.first { $0.reactorKind == reactorKind }?.emoji
+    }
+
+    /// The emoji one reactor put on it. With the person's id, a person's
+    /// reaction is theirs only if it names them or names nobody.
+    public func reaction(of reactorKind: String, userId: String?) -> String? {
+        reactions.first { reaction in
+            reaction.reactorKind == reactorKind
+                && (userId == nil || userId == "" || reaction.reactorUserId == nil || reaction.reactorUserId == userId)
+        }?.emoji
     }
 
     public init(
@@ -260,8 +276,12 @@ public struct Transcript: Sendable {
     public private(set) var lines: [TranscriptLine] = []
     /// The cards this app settled while their answer is still on its way.
     private var awaitingCardIds: Set<String> = []
+    /// Whether this is a chat: what an agent says there reaches every member
+    /// as the chat's own events, so the turn's own answer is not drawn again.
+    private var isChat = false
 
-    public init(messages: [AgentMessage], interactions: [AgentInteraction] = []) {
+    public init(messages: [AgentMessage], interactions: [AgentInteraction] = [], isChat: Bool = false) {
+        self.isChat = isChat
         var results: [String: String] = [:]
         for message in messages where message.role == "tool" {
             if let callId = message.toolCallId { results[callId] = message.content }
@@ -276,6 +296,14 @@ public struct Transcript: Sendable {
             turnAnswer = nil
         }
         for message in messages {
+            // What was said in a chat is drawn as what a person or an agent
+            // said there; the rows of the member's own agent's work in it
+            // name no author and are drawn as anywhere else.
+            if isChat, let said = Self.chatLine(of: message) {
+                closeTurn()
+                lines.append(said)
+                continue
+            }
             switch message.role {
             case "user":
                 closeTurn()
@@ -387,9 +415,9 @@ public struct Transcript: Sendable {
     /// line of the newer page that is not on screen was taken away on
     /// purpose (a turn the feed replays, a card answered elsewhere), and
     /// open cards come from the conversation's own reading, not from here.
-    public mutating func prepend(messages: [AgentMessage], earlierCount: Int) {
-        let whole = Transcript(messages: messages)
-        let newer = Transcript(messages: Array(messages.dropFirst(earlierCount)))
+    public mutating func prepend(messages: [AgentMessage], earlierCount: Int, isChat: Bool = false) {
+        let whole = Transcript(messages: messages, isChat: isChat)
+        let newer = Transcript(messages: Array(messages.dropFirst(earlierCount)), isChat: isChat)
         let skippedLineIds = Set(lines.map(\.id)).union(newer.lines.map(\.id))
         lines.insert(contentsOf: whole.lines.filter { line in !skippedLineIds.contains(line.id) }, at: 0)
     }
@@ -401,8 +429,11 @@ public struct Transcript: Sendable {
     /// Shows what the person just sent from this app, before the turn it
     /// begins is under way.
     @discardableResult
-    public mutating func addSent(_ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil) -> String {
+    public mutating func addSent(
+        _ text: String, attachments: [AgentAttachment] = [], replyingTo reply: AgentReference? = nil, author: ChatAuthor? = nil
+    ) -> String {
         var line = TranscriptLine(id: Self.sentPrefix + UUID().uuidString, kind: .person, text: text, attachments: attachments)
+        line.author = author
         if let reply {
             line.quotedText = reply.quotedText ?? ""
             line.quotedRole = reply.quotedRole ?? ""
@@ -432,14 +463,83 @@ public struct Transcript: Sendable {
         return last.suggestions
     }
 
+    /// A message that was just said in a chat: added, unless it is there
+    /// already (read with the chat a moment before the event arrived). The
+    /// person's own, drawn as sent while it was on its way, replaces that
+    /// line.
+    public mutating func apply(said message: AgentMessage) {
+        guard let said = Self.chatLine(of: message) else { return }
+        if lines.contains(where: { $0.messageId == message.id }) { return }
+        // An agent's answer drawn while it was being written is replaced
+        // where it stood, not added beside the message that is the same words
+        // kept.
+        if let author = said.author, author.isAgent, !said.runId.isEmpty,
+            let streaming = lines.firstIndex(where: { $0.id == Self.streamingId(runId: said.runId) })
+        {
+            lines[streaming] = said
+            return
+        }
+        if let author = said.author, author.isOwnWords,
+            let pending = lines.firstIndex(where: { $0.id.hasPrefix(Self.sentPrefix) && $0.author != nil && $0.text == said.text })
+        {
+            lines[pending] = said
+            return
+        }
+        lines.append(said)
+    }
+
+    /// The id of the line an agent's answer in a chat is drawn as while it is
+    /// being written: one for each run, since a run answers in rounds that
+    /// the stored message replaces one after another.
+    static func streamingId(runId: String) -> String { "streaming-\(runId)" }
+
+    /// Words of an agent's answer in a chat that are still being written,
+    /// told to every member: added to the line for its run, or a new one.
+    public mutating func apply(streamed event: AgentEvent) {
+        guard let agentId = event.authorAgentId, !agentId.isEmpty else { return }
+        let id = Self.streamingId(runId: event.runId)
+        if let index = lines.firstIndex(where: { $0.id == id }) {
+            lines[index].streamedText += event.text ?? ""
+            lines[index].text = lines[index].streamedText
+            return
+        }
+        var line = TranscriptLine(id: id, kind: .answer, text: event.text ?? "", isStreaming: true, runId: event.runId, at: event.at)
+        line.streamedText = event.text ?? ""
+        line.author = ChatAuthor(
+            authorKind: "agent", authorName: event.name ?? "", authorOwnerName: event.authorOwnerName ?? "", authorAgentId: agentId)
+        lines.append(line)
+    }
+
+    /// A message of a chat whose words were changed.
+    public mutating func apply(edited message: AgentMessage) {
+        guard let index = lines.firstIndex(where: { $0.messageId == message.id }) else { return }
+        lines[index].text = message.isDeleted == true ? "" : message.content
+        lines[index].editedAt = message.editedAt
+    }
+
+    /// A message of a chat that was taken back: a mark that it was, not a gap.
+    public mutating func apply(unsaid messageId: String) {
+        guard let index = lines.firstIndex(where: { $0.messageId == messageId }) else { return }
+        lines[index].text = ""
+        lines[index].isDeleted = true
+        lines[index].attachments = []
+        lines[index].reactions = []
+    }
+
     /// Applies an event of a running turn.
     /// Puts one side's reaction on a message, or takes it away when the
     /// emoji is empty; as the server keeps it, one each at most.
-    public mutating func react(messageId: String, emoji: String, reactorKind: String) {
+    public mutating func react(messageId: String, emoji: String, reactorKind: String, reactorUserId: String? = nil, reactorName: String? = nil) {
         guard let index = lines.lastIndex(where: { $0.messageId == messageId }) else { return }
-        lines[index].reactions.removeAll { $0.reactorKind == reactorKind }
+        // With a person named only theirs is replaced, in a chat where
+        // others' stay; without, the kind is the reactor.
+        lines[index].reactions.removeAll { reaction in
+            reaction.reactorKind == reactorKind
+                && (reactorUserId == nil || reaction.reactorUserId == nil || reaction.reactorUserId == reactorUserId)
+        }
         if !emoji.isEmpty {
-            lines[index].reactions.append(AgentMessageReaction(emoji: emoji, reactorKind: reactorKind))
+            lines[index].reactions.append(
+                AgentMessageReaction(emoji: emoji, reactorKind: reactorKind, reactorUserId: reactorUserId, reactorName: reactorName))
         }
     }
 
@@ -452,10 +552,24 @@ public struct Transcript: Sendable {
         switch event.kind {
         case "reacted":
             if let messageId = event.messageId, let reactorKind = event.reactorKind {
-                react(messageId: messageId, emoji: event.emoji ?? "", reactorKind: reactorKind)
+                react(
+                    messageId: messageId, emoji: event.emoji ?? "", reactorKind: reactorKind, reactorUserId: event.reactorUserId,
+                    reactorName: event.reactorName)
             }
             return
+        case "said":
+            if let message = event.message { apply(said: message) }
+            return
+        case "edited":
+            if let message = event.message { apply(edited: message) }
+            return
+        case "unsaid":
+            if let messageId = event.messageId { apply(unsaid: messageId) }
+            return
         case "asked":
+            // In a chat what was said is a message of the chat, drawn from its
+            // own event; the turn it started is only followed.
+            if event.note == "chat" { return }
             // A turn began: something the person said, here or anywhere
             // else, or a turn the agent took on its own. One already shown,
             // sent from this app or read back before the feed replayed the
@@ -493,6 +607,12 @@ public struct Transcript: Sendable {
                 lines.append(TranscriptLine(id: "\(event.runId)-asked", kind: .person, text: text, runId: event.runId, at: event.at))
             }
         case "text":
+            // The words of an agent's answer in a chat come with the agent
+            // they are the answer of, and to everybody there.
+            if event.authorAgentId != nil, !(event.authorAgentId ?? "").isEmpty {
+                apply(streamed: event)
+                return
+            }
             if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
                 lines[last].streamedText += event.text ?? ""
                 lines[last].text = Suggestions.split(lines[last].streamedText).text
@@ -504,6 +624,9 @@ public struct Transcript: Sendable {
                 lines.append(line)
             }
         case "message":
+            // In a chat the answer is the chat's message, which arrives as its
+            // own event and replaces the words drawn as they were written.
+            if isChat { return }
             let split = Suggestions.split(event.text ?? "")
             if let last = lines.lastIndex(where: { $0.runId == event.runId && $0.kind == .answer && $0.isStreaming }) {
                 lines[last].text = event.text == nil ? lines[last].text : split.text

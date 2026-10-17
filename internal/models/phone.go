@@ -54,10 +54,19 @@ const (
 	// something asked from the app, or asked in the main conversation on
 	// the dashboard.
 	NotificationAnswer = "answer"
+	// NotificationCircle is an invitation to join a circle.
+	NotificationCircle = "circle"
+	// NotificationChat is a message from another person in a chat.
+	NotificationChat = "chat"
+	// NotificationPayment is a call of a shared skill waiting for its
+	// owner's approval, and how it came out for the person who made it. It
+	// opens the app and never answers from the notification: a lock screen
+	// tap must not spend money.
+	NotificationPayment = "payment"
 )
 
 // NotificationKinds is every kind, in the order a person chooses among them.
-var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer}
+var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationPayment}
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {

@@ -26,7 +26,7 @@ import (
 func newAgentAskCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "ask",
-		Usage:     "say something to your agent and print what it answers; - reads the message from stdin",
+		Usage:     "say something to your agent and print what it answers; - reads the message from stdin. In a chat (--conversation) it says it to the people there and prints that it was sent",
 		ArgsUsage: "<message | ->",
 		Flags: []cli.Flag{
 			JSONFlag(),
@@ -38,6 +38,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: "recording", Usage: "the id of a recording to ask about, as recording list shows them; repeat it for more than one"},
 			&cli.StringSliceFlag{Name: "photo", Usage: "the id of a photo to ask about, as photo list shows them; repeat it for more than one"},
 			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
+			&cli.BoolFlag{Name: "ask-agent", Usage: "in a chat (--conversation), ask your own agent with it: the message goes to the people there and your agent answers them, for everybody to read; its work stays yours. Without it a message in a chat starts no agent"},
 		},
 		Action: runAgentAsk,
 	}
@@ -58,7 +59,7 @@ func newAgentReactCommand() *cli.Command {
 func newAgentChatCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "chat",
-		Usage: "talk to your agent, turn by turn, until you leave",
+		Usage: "talk to your agent, turn by turn, until you leave; with a chat as --conversation, talk in it and see what the others say",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "conversation", Usage: "the conversation, by id; the main one by default"},
 			&cli.BoolFlag{Name: "new", Usage: "start a named conversation"},
@@ -70,18 +71,19 @@ func newAgentChatCommand() *cli.Command {
 func newAgentConversationCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "conversation",
-		Usage: "your conversations with the agent",
-		Commands: []*cli.Command{
+		Usage: "your conversations with the agent, and your chats with other people",
+		Commands: append([]*cli.Command{
 			{
 				Name:  "list",
-				Usage: "the main conversation and the named ones",
+				Usage: "the main conversation, the named ones and your chats with other people",
 				Flags: []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "query", Usage: "find conversations by words in the title or in what was said"},
+					&cli.StringFlag{Name: "kind", Usage: "only one kind: main, named or chat"},
 					&cli.BoolFlag{Name: "archived", Usage: "the archived ones instead of the open ones"}},
 				Action: runAgentConversationList,
 			},
 			{
 				Name:      "show",
-				Usage:     "the newest messages of a conversation",
+				Usage:     "the newest messages of a conversation; in a chat, who wrote each",
 				ArgsUsage: "[conversation-id]",
 				Flags: []cli.Flag{JSONFlag(), &cli.IntFlag{Name: "first", Usage: "how many", Value: 40},
 					&cli.IntFlag{Name: "offset", Usage: "how many of the newest to skip, for the page before"}},
@@ -130,7 +132,7 @@ func newAgentConversationCommand() *cli.Command {
 				Action:    runAgentConversationDelete,
 			},
 			newAgentConversationTodoCommand(),
-		},
+		}, chatCommands()...),
 	}
 }
 
@@ -255,7 +257,13 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 			references = append(references, client.AgentReference{PhotoID: photoId})
 		}
 	}
-	return askOnce(ctx, command, connection, &client.AskAgentRequest{ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort")}, command.Bool("json"), command.Bool("quiet"))
+	if command.Bool("ask-agent") && conversationId == "" {
+		return fmt.Errorf("--ask-agent asks your agent in a chat: name it with --conversation")
+	}
+	return askOnce(ctx, command, connection, &client.AskAgentRequest{
+		ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort"),
+		ShouldAddressOwnAgent: command.Bool("ask-agent"),
+	}, command.Bool("json"), command.Bool("quiet"))
 }
 
 // askOnce says one thing and follows the run to its end, answering
@@ -264,6 +272,18 @@ func askOnce(ctx context.Context, command *cli.Command, connection *client.Clien
 	turn, err := client.AskAgentWith(ctx, connection, request)
 	if err != nil {
 		return describeError(command, err)
+	}
+	// What is said in a chat goes to the people in it: there is no turn to
+	// follow.
+	if turn.RunID == "" {
+		if asJson {
+			return PrintJSON(turn)
+		}
+		_, _ = fmt.Fprintf(command.Writer, "sent in %s\n", turn.ConversationID)
+		if request.ShouldAddressOwnAgent {
+			_, _ = fmt.Fprintln(command.Writer, "your agent started no turn: it is switched off, or you may not use it")
+		}
+		return nil
 	}
 	after := 0
 	answered := false
@@ -371,6 +391,11 @@ func runAgentChat(ctx context.Context, command *cli.Command) error {
 		}
 		conversationId = conversation.ID
 	}
+	if conversationId != "" {
+		if view, err := client.ReadAgentConversation(ctx, connection, conversationId, 1, 0); err == nil && view.Conversation != nil && view.Conversation.Chat != nil {
+			return runChatFollow(ctx, command, connection, conversationId)
+		}
+	}
 	_, _ = fmt.Fprintln(command.Writer, "Talk to your agent; an empty line or Ctrl-D leaves.")
 	reader := readerOf(command.Reader)
 	for {
@@ -388,7 +413,7 @@ func runAgentChat(ctx context.Context, command *cli.Command) error {
 		if conversationId == "" {
 			// The main conversation, once it exists, keeps its id for the
 			// rest of the session.
-			conversations, err := client.ListAgentConversations(ctx, connection, false)
+			conversations, err := client.ListAgentConversationsOfKind(ctx, connection, false, "", "main")
 			if err == nil && len(conversations) > 0 {
 				conversationId = conversations[0].ID
 			}
@@ -401,7 +426,7 @@ func runAgentConversationList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	conversations, err := client.SearchAgentConversations(ctx, connection, command.Bool("archived"), command.String("query"))
+	conversations, err := client.ListAgentConversationsOfKind(ctx, connection, command.Bool("archived"), command.String("query"), strings.TrimSpace(command.String("kind")))
 	if err != nil {
 		return describeError(command, err)
 	}
@@ -414,9 +439,13 @@ func runAgentConversationList(ctx context.Context, command *cli.Command) error {
 		if conversation.Kind == "main" {
 			title = "(main)"
 		}
-		rows = append(rows, []string{conversation.ID, conversation.Kind, title, conversation.LastAt.Local().Format("2006-01-02 15:04")})
+		unread := ""
+		if conversation.Chat != nil && conversation.Chat.UnreadCount > 0 {
+			unread = fmt.Sprintf("%d unread", conversation.Chat.UnreadCount)
+		}
+		rows = append(rows, []string{conversation.ID, conversation.Kind, forTerminal(title), conversation.LastAt.Local().Format("2006-01-02 15:04"), unread})
 	}
-	return printTable([]string{"id", "kind", "title", "last"}, rows)
+	return printTable([]string{"id", "kind", "title", "last", ""}, rows)
 }
 
 func runAgentConversationShow(ctx context.Context, command *cli.Command) error {
@@ -483,6 +512,9 @@ func reactionLine(reactions []client.AgentMessageReaction) string {
 }
 
 func printTranscript(command *cli.Command, view *client.AgentConversationView) error {
+	if view.Conversation.Chat != nil {
+		return printChatTranscript(command, view)
+	}
 	title := view.Conversation.Title
 	if view.Conversation.Kind == "main" {
 		title = "the main conversation"
@@ -522,7 +554,9 @@ func printTranscript(command *cli.Command, view *client.AgentConversationView) e
 			}
 			_, _ = fmt.Fprintf(command.Writer, "[%s] ← %s: %s\n", when, message.Name, content)
 		case "note":
-			_, _ = fmt.Fprintf(command.Writer, "[%s] %s\n", when, message.Content)
+			// A note keeps its kind in the name and only its detail as
+			// content; the words are the kind's.
+			_, _ = fmt.Fprintf(command.Writer, "[%s] %s\n", when, models.NoteText(models.AgentNoteKind(message.Name), message.Content))
 		case "compaction":
 			_, _ = fmt.Fprintf(command.Writer, "[%s] (the earlier conversation was compacted)\n", when)
 		default:
@@ -593,7 +627,14 @@ func runAgentConversationRename(ctx context.Context, command *cli.Command) error
 	if err != nil {
 		return err
 	}
-	conversation, err := client.UpdateAgentConversation(ctx, connection, command.Args().First(), strings.Join(command.Args().Slice()[1:], " "), nil)
+	title := strings.Join(command.Args().Slice()[1:], " ")
+	// A group chat's title is the people's to change, with its own operation.
+	var conversation *client.AgentConversation
+	if view, readError := client.ReadAgentConversation(ctx, connection, command.Args().First(), 1, 0); readError == nil && view.Conversation != nil && view.Conversation.Chat != nil {
+		conversation, err = client.RenameChat(ctx, connection, command.Args().First(), title)
+	} else {
+		conversation, err = client.UpdateAgentConversation(ctx, connection, command.Args().First(), title, nil)
+	}
 	if err != nil {
 		return describeError(command, err)
 	}

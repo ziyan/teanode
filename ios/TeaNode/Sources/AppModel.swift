@@ -74,6 +74,9 @@ final class AppModel {
 
     /// A page of the agent's knowledge a link asks to open.
     var openedKnowledgePath: String?
+    /// A page another person shared, which a link asks to open by the
+    /// username of whoever shared it.
+    var openedSharedKnowledge: SharedKnowledgeLink?
     var openedRecordingLink: RecordingLink?
     private(set) var openedRecordingAccountKey: String?
 
@@ -226,11 +229,20 @@ final class AppModel {
             openedMailItemId = itemId
             return .handled
         case "memory":
-            let path = String(written.dropFirst("memory:".count).split(separator: "#").first ?? "")
+            // memory:PATH#N@username is a page another person shared, with
+            // the username last; without it the page is the person's own.
+            let target = written.dropFirst("memory:".count).split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
+            let path = String(target.first?.split(separator: "#").first ?? "")
             let segments = path.split(separator: "/")
             guard !segments.isEmpty, segments.count <= 8,
                 segments.allSatisfy({ $0.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" } })
             else { return .discarded }
+            if target.count > 1 {
+                let owner = String(target[1])
+                guard !owner.isEmpty, owner.allSatisfy({ $0.isLetter || $0.isNumber || "._~-".contains($0) }) else { return .discarded }
+                openedSharedKnowledge = SharedKnowledgeLink(ownerUsername: owner, path: path)
+                return .handled
+            }
             // A memory link opens the page in the app, under More.
             openedKnowledgePath = path
             return .handled
@@ -279,10 +291,51 @@ final class AppModel {
         set { if !newValue { previewProblemText = nil } }
     }
 
-    /// Reads the agent's name.
+    /// Reads the agent's name, and whether the person has turned it on.
     func loadAgentName() async {
-        if let connection, let name = try? await connection.agentName() {
-            agentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let connection, let identity = try? await connection.agentIdentity() {
+            agentName = identity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            isAgentEnabledByPerson = identity.isOn
+        }
+    }
+
+    /// Whether the person has turned their own agent on, as far as the
+    /// server has said; on until it says otherwise.
+    private(set) var isAgentEnabledByPerson = true
+
+    /// Whether there is an agent to talk to: the server runs agents and the
+    /// person turned theirs on. Without one the conversation screen shows
+    /// their chats, and where the main conversation would be, the offer to
+    /// turn the agent on.
+    var isAgentOn: Bool { (services?.isAssistantEnabled ?? true) && isAgentEnabledByPerson }
+
+    /// Whether the person can write to the people they share a circle with,
+    /// which needs no agent.
+    private(set) var canChat = false
+
+    /// How many messages wait in the chats that are not muted: the badge on
+    /// the entry to the conversations.
+    private(set) var unreadChatCount = 0
+
+    /// The person's own id, which of a chat's members they are; nil until
+    /// read.
+    private(set) var ownUserId: String?
+
+    /// Reads whether the person can chat, and how much is waiting for them
+    /// in their chats.
+    func refreshChats() async {
+        guard let connection else { return }
+        let session = try? await connection.accessSession()
+        guard !Task.isCancelled, self.connection === connection else { return }
+        if let userId = session?.userId { ownUserId = userId }
+        let canUseCircles = session?.holds("circle:use") ?? false
+        canChat = canUseCircles
+        guard canUseCircles else {
+            unreadChatCount = 0
+            return
+        }
+        if let conversations = try? await connection.conversations(), self.connection === connection {
+            unreadChatCount = ChatUnread.total(of: conversations)
         }
     }
 
@@ -459,7 +512,10 @@ final class AppModel {
     func setUpNotifications() async {
         guard let connection else { return }
         await refreshServices()
-        guard services?.isAssistantEnabled == true else { return }
+        // A server with no model has chats and no assistant, and a message in
+        // a chat is told to the phone all the same.
+        if services?.isAssistantEnabled != true { await refreshChats() }
+        guard services?.isAssistantEnabled == true || canChat else { return }
         #if DEBUG
             // The screenshots CI takes would show the permission prompt.
             if DemoServer.isRequested { return }
@@ -810,7 +866,10 @@ extension AppModel {
         // someone who may not use it.
         case .photos: return isPhotosOffered
         case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
-        case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        // The agent's screen also holds the person's chats, which need no
+        // agent.
+        case .agent: return services.isAssistantEnabled || canChat
+        case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .settings: return true
         }
     }

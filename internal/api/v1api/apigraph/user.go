@@ -8,6 +8,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/security"
 )
@@ -33,6 +34,16 @@ type UserMutation interface {
 	// the caller manages users; changing your own goes through ChangePassword,
 	// which does require it.
 	SetUserPassword(ctx context.Context, arguments SetUserPasswordArguments) (*User, error)
+
+	// Set a person's picture from a PNG or JPEG, base64 encoded, replacing
+	// the one they have. It is cropped to the center square and scaled, and
+	// everything else in the file, such as where a photo was taken, is
+	// dropped. A person may change their own; changing somebody else's needs
+	// user:manage.
+	SetUserAvatar(ctx context.Context, arguments SetUserAvatarArguments) (*User, error)
+
+	// Take a person's picture away, so they are shown as their initial
+	RemoveUserAvatar(ctx context.Context, arguments RemoveUserAvatarArguments) (*User, error)
 
 	// Remove a User, along with their sessions, tokens, passkeys and
 	// memberships. Removing the last one leaves the server unclaimed.
@@ -78,6 +89,14 @@ type User struct {
 	GroupIDs []string `json:"groupIds"`
 
 	CreatedAt time.Time `json:"createdAt"`
+
+	// Address of their picture, or null when they have none. It carries the
+	// time the picture changed, so a new picture is a new address.
+	AvatarURL *string `json:"avatarUrl"`
+
+	// Which of the twelve avatar colors their initial is drawn on when they
+	// have no picture. The same for a given person on every screen.
+	AvatarColorIndex int `json:"avatarColorIndex"`
 }
 
 func describeUser(user *models.User) *User {
@@ -101,6 +120,9 @@ func describeUser(user *models.User) *User {
 		TimezoneMode: user.TimezoneMode,
 		GroupIDs:     groupIds,
 		CreatedAt:    user.CreatedAt,
+
+		AvatarURL:        avatarURL(user),
+		AvatarColorIndex: avatar.InitialColorIndex(user.ID),
 	}
 }
 

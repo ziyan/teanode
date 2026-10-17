@@ -21,6 +21,13 @@ export function useSession(): Session {
   return session
 }
 
+// useOptionalSession is the session where there may be none: a component
+// that only needs to know who is here to tell them from others, and can be
+// drawn without.
+export function useOptionalSession(): Session | null {
+  return useContext(SessionContext)
+}
+
 // hasPermission says whether a server or all-domains permission is held.
 export function hasPermission(permissions: Permissions | undefined | null, key: string): boolean {
   return Boolean(permissions?.everywhere.includes(key))

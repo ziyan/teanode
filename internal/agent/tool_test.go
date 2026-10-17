@@ -300,8 +300,10 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// Recording is one new noun with all retained-media verbs grouped together.
 	// 67 since photo, a new thing and not a new verb: the person's library of
 	// photos and videos, with its own service and permission, and every verb
-	// that belongs to it in one tool.
-	if count := len(catalog.All()); count > 67 {
+	// that belongs to it in one tool. 68 since circle, which is one noun with
+	// its verbs and has no other tool's to join: a circle is a set of people,
+	// which nothing else is.
+	if count := len(catalog.All()); count > 68 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

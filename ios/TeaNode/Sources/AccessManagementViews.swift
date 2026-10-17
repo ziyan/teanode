@@ -250,6 +250,13 @@ private struct PersonRow: View {
     let isCurrentUser: Bool
 
     var body: some View {
+        HStack(spacing: 12) {
+            AvatarView(name: user.displayName, avatarUrl: user.avatarUrl, colorIndex: user.avatarColorIndex, size: 36)
+            details
+        }
+    }
+
+    private var details: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(verbatim: user.displayName)
@@ -1616,6 +1623,7 @@ private enum AccessWords {
         case "agent:use": String(localized: "Have an agent, grant it own mailboxes, and talk to it")
         case "contacts:use": String(localized: "Keep an address book, and sync it to a device")
         case "calendar:use": String(localized: "Keep a calendar, and sync it to a device")
+        case "circle:use": String(localized: "Make circles of people on this server, and join them")
         case "agent:audit": String(localized: "See every person's agent: what it may reach, its usage and limits, never its content")
         case "agent:act": String(localized: "Read every person's agent conversations and runs, and speak to their agent as them")
         default: permissionKey

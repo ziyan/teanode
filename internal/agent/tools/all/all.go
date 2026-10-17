@@ -11,6 +11,7 @@ import (
 	_ "github.com/ziyan/teanode/internal/agent/tools/askuser"
 	_ "github.com/ziyan/teanode/internal/agent/tools/browser"
 	_ "github.com/ziyan/teanode/internal/agent/tools/calendar"
+	_ "github.com/ziyan/teanode/internal/agent/tools/circle"
 	_ "github.com/ziyan/teanode/internal/agent/tools/coding"
 	_ "github.com/ziyan/teanode/internal/agent/tools/computer"
 	_ "github.com/ziyan/teanode/internal/agent/tools/connected"

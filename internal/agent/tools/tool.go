@@ -33,7 +33,9 @@ type Risk string
 // The risk classes. Read changes nothing; write changes something the
 // person can change back; destructive cannot be undone; outward leaves the
 // server — a message sent, a request made on the person's behalf; granting
-// hands out a way in, or changes who may do what.
+// hands out a way in, or changes who may do what; money spends or moves
+// somebody's money, which is how a tool of a skill another person shared is
+// held: the person whose agent calls it is shown what will be paid first.
 //
 // Granting is its own class because it is neither of the two it kept being
 // filed under. Minting an API token is not destructive -- nothing is lost --
@@ -48,6 +50,7 @@ const (
 	RiskDestructive Risk = "destructive"
 	RiskOutward     Risk = "outward"
 	RiskGranting    Risk = "granting"
+	RiskMoney       Risk = "money"
 )
 
 // Family is a tool's group, which is also what the operator's policy can
@@ -461,6 +464,8 @@ func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.A
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskDestructive)
 	case RiskGranting:
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskGranting)
+	case RiskMoney:
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskMoney)
 	}
 	if policy != nil && Listed(policy.Confirm, tool) {
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskOperatorListed)

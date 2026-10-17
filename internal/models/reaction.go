@@ -22,6 +22,13 @@ type AgentMessageReaction struct {
 	Emoji       string           `json:"emoji"`
 	ReactorKind AgentReactorKind `json:"reactorKind"`
 	ReactedAt   time.Time        `json:"reactedAt"`
+
+	// ReactorUserID and ReactorName say who, in a chat where there are
+	// several people to tell apart. ReactorUserID is empty once the account
+	// is gone, and for a conversation with an agent, where it is always the
+	// owner.
+	ReactorUserID string `json:"reactorUserId,omitempty"`
+	ReactorName   string `json:"reactorName,omitempty"`
 }
 
 // CanBeReactedToBy says whether a reactor may put a reaction on the

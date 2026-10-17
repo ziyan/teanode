@@ -176,6 +176,11 @@ export interface Session {
   // username stands in.
   name?: string
 
+  // Their picture, a path to fetch with the session, and the color their
+  // initial is drawn on when they have none.
+  avatarUrl?: string | null
+  avatarColorIndex?: number
+
   // Whether this server offers passkeys. The sign-in form shows the passkey
   // button only when it does.
   passkeysEnabled: boolean
@@ -210,7 +215,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
+  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)

@@ -20,12 +20,13 @@ const REPORT_EVERY_MS = 60_000
 // The inputs that say the person is at the keyboard.
 const INPUT_EVENTS = ['keydown', 'pointerdown', 'wheel', 'scroll', 'touchstart'] as const
 
-// useAgentPresence tells the agent whether the person has this tab in front
+// useAgentPresence tells the server whether the person has this tab in front
 // of them, and how long since they last typed, clicked or scrolled in it:
 // every minute, and at once when the tab is shown or hidden. The agent
 // starts a conversation on its own only with somebody who is there to read
-// it, and offers an idea only to somebody who has gone quiet. Nothing is sent
-// while there is no agent to tell.
+// it, and offers an idea only to somebody who has gone quiet; a message in a
+// chat is sent to a phone only when nobody is looking. Nothing is sent
+// while there is neither an agent nor a chat to tell.
 export function useAgentPresence(isAvailable: boolean) {
   useEffect(() => {
     if (!isAvailable) return

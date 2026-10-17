@@ -27,7 +27,7 @@ func newAgentMemoryCommand() *cli.Command {
 	return &cli.Command{
 		Name:     "memory",
 		Usage:    "what your agent knows about you: pages, each with a path, and the facts on them",
-		Commands: newAgentGraphCommands(),
+		Commands: append(newAgentGraphCommands(), newAgentPageShareCommands()...),
 	}
 }
 

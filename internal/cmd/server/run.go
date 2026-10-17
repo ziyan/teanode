@@ -28,6 +28,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/chat"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/dav"
@@ -284,6 +285,12 @@ type server struct {
 	agentRegistry *llm.Registry
 	agentWorker   *agent.Agent
 
+	// chatHub carries what happens in a chat to the people in it, and to the
+	// phones of those who are not looking. Unlike the agent it always
+	// exists: a household may run this server for mail, calendars and chats
+	// with no language model.
+	chatHub *chat.Hub
+
 	// scheduler reads the invitations that arrive as mail. Unlike the
 	// agent it follows the event-calendar service: a person with no agent
 	// still wants their meetings.
@@ -451,6 +458,8 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 			return nil, err
 		}
 	}
+
+	self.openChatHub()
 
 	if err := self.openAgentWorker(configuration); err != nil {
 		return nil, err
@@ -1011,6 +1020,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		Restarter:   self.restarter,
 		AuthLimiter: self.authLimiter(configuration),
 		Agent:       self.agentService(),
+		Chat:        self.chatHub,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the API: %w", err)

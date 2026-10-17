@@ -237,24 +237,131 @@ td a:hover {
   position: relative;
 }
 
+/* The twelve colors a person without a picture gets behind their initial,
+   chosen by the server from a hash of their id so the same person is the same
+   color on every screen and in the iPhone app (the app carries the same
+   twelve). Each holds white text at 4.5 to 1 or better; the dark set is the
+   same hues one step down, so a circle of color does not glare on the dark
+   ground. */
+:root {
+  --avatar-0: #b23a2e;
+  --avatar-1: #b0521a;
+  --avatar-2: #8c6600;
+  --avatar-3: #5c7a1c;
+  --avatar-4: #1d7a45;
+  --avatar-5: #0f7a73;
+  --avatar-6: #0e6e94;
+  --avatar-7: #2f5fb3;
+  --avatar-8: #5b4fc2;
+  --avatar-9: #8a44b3;
+  --avatar-10: #a63a82;
+  --avatar-11: #5f6873;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --avatar-0: #a8392e;
+    --avatar-1: #a4501c;
+    --avatar-2: #7d5c00;
+    --avatar-3: #55711c;
+    --avatar-4: #1b6d3f;
+    --avatar-5: #0e6d67;
+    --avatar-6: #0e6485;
+    --avatar-7: #2c56a3;
+    --avatar-8: #5348b0;
+    --avatar-9: #7c3fa3;
+    --avatar-10: #953676;
+    --avatar-11: #565e69;
+  }
+}
+
+:root[data-theme='dark'] {
+  --avatar-0: #a8392e;
+  --avatar-1: #a4501c;
+  --avatar-2: #7d5c00;
+  --avatar-3: #55711c;
+  --avatar-4: #1b6d3f;
+  --avatar-5: #0e6d67;
+  --avatar-6: #0e6485;
+  --avatar-7: #2c56a3;
+  --avatar-8: #5348b0;
+  --avatar-9: #7c3fa3;
+  --avatar-10: #953676;
+  --avatar-11: #565e69;
+}
+
+/* A person: their picture, or their initial on a color of their own. Sized by
+   the component, which sets width, height and font size inline because the
+   rail, a list row and the settings page each want a different one. */
 .avatar {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font: inherit;
-  font-size: 13px;
+  color: #ffffff;
   font-weight: 600;
   line-height: 1;
-  cursor: pointer;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.avatar-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-color-0 {
+  background: var(--avatar-0);
+}
+
+.avatar-color-1 {
+  background: var(--avatar-1);
+}
+
+.avatar-color-2 {
+  background: var(--avatar-2);
+}
+
+.avatar-color-3 {
+  background: var(--avatar-3);
+}
+
+.avatar-color-4 {
+  background: var(--avatar-4);
+}
+
+.avatar-color-5 {
+  background: var(--avatar-5);
+}
+
+.avatar-color-6 {
+  background: var(--avatar-6);
+}
+
+.avatar-color-7 {
+  background: var(--avatar-7);
+}
+
+.avatar-color-8 {
+  background: var(--avatar-8);
+}
+
+.avatar-color-9 {
+  background: var(--avatar-9);
+}
+
+.avatar-color-10 {
+  background: var(--avatar-10);
+}
+
+.avatar-color-11 {
+  background: var(--avatar-11);
 }
 
 /* Signed in as somebody else: the avatar wears a mark in the warning color,
@@ -3090,6 +3197,12 @@ body,
   margin: 0 0 4px;
 }
 
+/* A card that is only a head, a page's own title with its icons, has nothing
+   under it for the margin to separate from. */
+.settings-section.card > .settings-section-head:last-child {
+  margin-bottom: 0;
+}
+
 .settings-section-head p {
   margin: 0;
   max-width: var(--measure);
@@ -3223,9 +3336,11 @@ body,
 
   /* One button sits on the title's line instead, and the description runs
      the full width under both: the title is short, so the line has room,
-     and the button stays beside what it adds to. A row of controls keeps
-     the rule above, since beside the title it would squeeze it. */
-  .settings-section-head:has(> div:first-child + button:last-child) {
+     and the button stays beside what it adds to. So do a few icons marked
+     head-icons (a page's rename and delete): each is a square, two or three
+     fit beside a title. A row of words keeps the rule above, since beside
+     the title it would squeeze it. */
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3233,23 +3348,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) > div:first-child {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) h3 {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) > div:first-child > p {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) > button {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -3281,6 +3396,23 @@ body,
   }
 
   .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
+    width: auto;
+  }
+
+  /* A row about a person keeps the person's picture beside their name: with
+     the body taking the full width, the picture sat alone on a line above
+     it. A single control (a menu of what can be done to them) stays on the
+     same line; more than one still drops below. */
+  .settings-row:has(> .avatar) > .settings-row-body {
+    min-width: 0;
+    flex: 1 1 calc(100% - 28px - var(--space-3));
+  }
+
+  .settings-row:has(> .avatar):has(> .settings-row-actions > :only-child) {
+    flex-wrap: nowrap;
+  }
+
+  .settings-row:has(> .avatar):has(> .settings-row-actions > :only-child) > .settings-row-actions {
     width: auto;
   }
 }
@@ -6855,7 +6987,12 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
      and fit-content gives it only when it does. */
   align-self: flex-start;
   max-width: 100%;
-  background: var(--field);
+  /* A wash of the text color over the page rather than --field: in the dark
+     theme --field is one shade off the page (#18181b on #141416), so the
+     bubbles of the agent and of the other people in a chat all but vanished
+     into the drawer. Derived from the two tokens, so each theme gets its own
+     contrast and light stays close to what it was. */
+  background: color-mix(in srgb, var(--text) 8%, var(--background));
   white-space: normal;
 }
 
@@ -8543,24 +8680,6 @@ p.notice.domain-logo-note {
   font-weight: 600;
 }
 
-/* The monogram at the head of a row about a person, so a list of people is
-   found by shape before it is read. Sized to the row rather than to a face:
-   this sits beside one line of text, not above a card. */
-.settings-row-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-}
-
 /* What they sign in with, beside what to call them. Set apart by weight and
    size rather than by a separator, because it is a different kind of fact
    about the same person. */
@@ -9973,6 +10092,15 @@ button.with-icon {
   border-left: 3px solid var(--leaf);
 }
 
+/* The lock on the person's own private events: small, in the text color's
+   muted shade, and sitting on the line with the title. */
+.calendar-lock {
+  display: inline-flex;
+  margin-right: 0.25rem;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+
 .calendar-entry-time {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -9986,6 +10114,112 @@ button.with-icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Calendars other than the person's own: a circle's, and the ones shared with
+   them. Each is told apart by a color, which every entry takes through the
+   --leaf the rules above already read, so a shared calendar needs no rules of
+   its own. The caller's own calendar keeps the accent. */
+.calendar-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0.5rem 0 0;
+}
+
+.calendar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.calendar-chip input {
+  margin: 0;
+}
+
+.calendar-chip-swatch {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  background: var(--leaf);
+}
+
+.calendar-chip-level {
+  font-size: 0.75rem;
+}
+
+.calendar-bar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.calendar-tone-0 {
+  --leaf: var(--avatar-0);
+}
+.calendar-tone-1 {
+  --leaf: var(--avatar-1);
+}
+.calendar-tone-2 {
+  --leaf: var(--avatar-2);
+}
+.calendar-tone-3 {
+  --leaf: var(--avatar-3);
+}
+.calendar-tone-4 {
+  --leaf: var(--avatar-4);
+}
+.calendar-tone-5 {
+  --leaf: var(--avatar-5);
+}
+.calendar-tone-6 {
+  --leaf: var(--avatar-6);
+}
+.calendar-tone-7 {
+  --leaf: var(--avatar-7);
+}
+
+/* When someone is busy and nothing else is shared: a grey block that says so
+   and cannot be opened, since there is nothing in it. */
+.calendar-busy-block {
+  --leaf: var(--muted);
+  cursor: default;
+  font-style: italic;
+}
+
+.calendar-placed.calendar-busy-block:hover {
+  background: color-mix(in srgb, var(--leaf) 18%, var(--surface));
+}
+
+.calendar-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.calendar-share-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-share-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-viewed p {
+  margin: 0.25rem 0;
+}
+
+.calendar-viewed-notes {
+  white-space: pre-wrap;
 }
 
 /* The page fills the area it is given and does not grow past it.
@@ -11072,6 +11306,55 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-label);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+/* What other people shared with the person: under the folders at the top of
+   the list, one group for each person, their picture and name over a row for
+   each page they shared. The rows are the list's own; they are links here
+   because a shared page is opened by address, with the owner in it. */
+.knowledge-shared {
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.knowledge-shared-person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+/* The same mark beside a page's own tags, where it is the owner's badge. */
+.knowledge-page-head-meta .knowledge-shared-person {
+  padding: 0;
+}
+
+.knowledge-shared a.knowledge-row {
+  text-decoration: none;
+}
+
+/* What the other side will see, in the dialog that shares a page: the page as
+   they read it, in a box of its own that scrolls so the choice above it and
+   the button under it stay in view. */
+.share-preview {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--space-3);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.share-preview h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.share-preview .settings-section.card {
+  border: 0;
+  padding: 0;
+  margin-top: var(--space-3);
 }
 
 /* A fact the agent folded into another. Greyed rather than hidden: it is
@@ -16156,5 +16439,522 @@ body.has-recording-bar .content {
 
   .photo-suggestion-body {
     flex: 1 1 60%;
+  }
+}
+
+/* The picture row at the head of the profile form: the face, and what can be
+   done to it. */
+.profile-picture {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.profile-picture-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.profile-picture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* The number of invitations waiting, at the end of the account menu's
+   Circles row. The accent says "look here" without a second color for it. */
+.menu-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The circles a person is in, one card each. The card is a link, so the whole
+   of it is the target; its members are a few faces overlapping and a count. */
+.circle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.circle-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: 0;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.circle-card:hover {
+  border-color: var(--accent);
+}
+
+.circle-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.circle-card-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.circle-card-members {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Overlapping faces: a ring in the card's own color separates one from the
+   next. */
+.avatar-stack {
+  display: flex;
+}
+
+.avatar-stack .avatar {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.avatar-stack .avatar + .avatar {
+  margin-left: -8px;
+}
+
+@media (max-width: 600px) {
+  .circle-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Chats in the drawer: a conversation with people in it. The person's own
+   messages are the bubbles they always were, on the right; everybody
+   else's are on the left with a face, and a name above the first of a run. */
+
+/* The number on the drawer's button: the chats with something new in them.
+   The accent, as the account menu's count of invitations. */
+.agent-drawer-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+/* In the picker a chat is its faces, its title and, when something is
+   waiting, a bold title and a count at the end of the line. */
+.agent-drawer-list-name.chat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-drawer-list-name.chat .chat-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-drawer-list-row.unread .chat-title {
+  font-weight: 700;
+}
+
+.chat-muted {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.chat-unread {
+  flex: none;
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-faces {
+  flex: none;
+}
+
+.chat-faces .avatar {
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+.chat-faces .avatar + .avatar {
+  margin-left: -8px;
+}
+
+/* New side chat, Message someone and New group are one block at the top of
+   the list; only the last of them draws the line under it. */
+.agent-drawer-list-row.new.stacked {
+  margin-bottom: 0;
+  border-bottom: 0;
+  border-radius: 6px;
+}
+
+/* The offer where the main conversation would be, with the agent off. */
+.agent-drawer-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin: auto 0;
+}
+
+.head-menu-action {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.head-menu-action:hover,
+.head-menu-action:focus-visible {
+  background: var(--sidebar-hover);
+}
+
+.head-menu-action.danger,
+.head-menu-action.danger svg {
+  color: var(--bad);
+}
+
+/* One message of a chat from somebody else: their face at the left of the
+   first of a run, and the bubble beside it. The ones after it in the run
+   sit closer under it and keep the face's room empty. */
+.agent-chat-turn {
+  display: flex;
+  max-width: 100%;
+  gap: 8px;
+}
+
+.agent-chat-turn:not(.mine):not(.starts-run) {
+  margin-top: -5px;
+}
+
+.agent-chat-turn.mine {
+  align-self: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 85%;
+  gap: 2px;
+}
+
+.agent-chat-turn.mine .agent-line.user {
+  max-width: 100%;
+}
+
+.agent-chat-face {
+  flex: none;
+  width: 28px;
+}
+
+.agent-chat-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-chat-author {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* A person's words are shown as they were typed, line breaks and all. */
+.agent-line.assistant.chat-person {
+  white-space: pre-wrap;
+}
+
+.agent-line.pending {
+  opacity: 0.6;
+}
+
+.agent-line.chat-deleted {
+  font-style: italic;
+  background: none;
+  border: 1px dashed var(--border);
+}
+
+.agent-chat-edited {
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.agent-chat-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  color: var(--text);
+}
+
+/* Under the newest message each of the others has read: their faces,
+   small. */
+.agent-chat-reads {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.agent-chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* The agents an @ offers, above the box they are chosen for. */
+.agent-drawer-input {
+  position: relative;
+}
+
+.agent-mention-list {
+  position: absolute;
+  right: 10px;
+  bottom: 100%;
+  left: 10px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  margin: 0 0 4px;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.agent-mention-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.agent-mention-list li.active {
+  background: var(--sidebar-hover);
+}
+
+.agent-mention-name {
+  font-weight: 600;
+}
+
+/* What a member allows their agent in the chat: two switches, each with the
+   sentence that says what it means. */
+.chat-agent-switches {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.chat-agent-switches legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.chat-agent-switches p {
+  margin: var(--space-1) 0 var(--space-3) 24px;
+  max-width: var(--measure);
+  font-size: 13px;
+}
+
+.chat-people {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.chat-person {
+  margin-top: 0;
+  padding: 6px 0;
+}
+
+.chat-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-members li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* On the page of conversations a chat's tile leads with its faces. */
+.conversation-tile-title .chat-faces {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.tile-detail .chat-unread {
+  display: inline-block;
+  margin-left: 8px;
+}
+
+/* The second way into a circle, for an operator: under the invitation form,
+   set apart by a line, the button and the one sentence that says what it
+   does. */
+.circle-account {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.circle-account p {
+  margin: var(--space-2) 0 0;
+  max-width: var(--measure);
+}
+
+/* A call of a skill the person shared, waiting for their word. The card the
+   drawer and the agent page both draw (components/skillShare.tsx). */
+.payment-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  max-width: 100%;
+}
+.payment-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.payment-card-title {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.payment-card-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+.payment-card-facts dt {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.payment-card-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.payment-card-line {
+  display: contents;
+}
+.payment-card-amount {
+  font-weight: 600;
+  font-size: 1.1em;
+}
+.payment-card-reason {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--border);
+}
+.payment-card-reason blockquote {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.payment-card-note {
+  width: 100%;
+}
+.payment-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.payment-card p {
+  margin: 0;
+}
+.skill-share-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 8px 36px;
+}
+.skill-share-tools {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skill-share-tools legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+@media (max-width: 640px) {
+  .skill-share-calls {
+    padding-left: 0;
   }
 }

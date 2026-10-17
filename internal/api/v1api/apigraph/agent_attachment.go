@@ -36,6 +36,13 @@ type AgentAttachmentUploadResult struct {
 // agentAttachmentPerson is the signed-in person and their agent, for the
 // two file endpoints, settled before a byte of the body is read.
 func (self *graph) agentAttachmentPerson(response http.ResponseWriter, request *http.Request) (*models.User, *models.Agent, bool) {
+	return self.agentAttachmentPersonFor(response, request, false)
+}
+
+// agentAttachmentPersonFor is agentAttachmentPerson, and for the two
+// endpoints a chat uses -- a file sent and a file shown -- it also lets in a
+// person who may use circles whose agent is off.
+func (self *graph) agentAttachmentPersonFor(response http.ResponseWriter, request *http.Request, isChatEnough bool) (*models.User, *models.Agent, bool) {
 	username := api.UsernameFromRequest(request)
 	var user *models.User
 	if username != "" && username != config.LocalUsername {
@@ -59,20 +66,55 @@ func (self *graph) agentAttachmentPerson(response http.ResponseWriter, request *
 		if err != nil {
 			return err
 		}
+		// A person who chats hands the files they send there to an agent of
+		// their own that need not be on: it is where their uploads are kept
+		// until a message claims them.
+		if isChatEnough && permissions.Has(models.PermissionCircleUse) {
+			found, err = tx.EnsureAgent(user.ID)
+			return err
+		}
 		if !permissions.Has(models.PermissionAgentUse) {
 			return api.ErrPermissionDenied
 		}
 		found, err = tx.GetAgentByUser(user.ID)
+		if err == nil && found != nil && !found.Active() {
+			found = nil
+		}
 		return err
-	}); err != nil || found == nil || !found.Active() {
+	}); err != nil || found == nil {
 		writeJSON(response, http.StatusForbidden, map[string]string{"error": "you have no agent to hand a file to"})
 		return nil, nil, false
 	}
 	return user, found, true
 }
 
+// canReadChatAttachment says whether the file came with a chat message the
+// person can read: one written while they were in the chat. A file is the
+// uploader's own, and the others in the chat are shown it with the message
+// it was sent with.
+func (self *graph) canReadChatAttachment(attachment *models.AgentAttachment, user *models.User) (bool, error) {
+	if attachment.MessageID == "" {
+		return false, nil
+	}
+	var isReadable bool
+	err := self.database.Transaction(func(tx db.Transaction) error {
+		message, err := tx.GetChatMessage(attachment.MessageID)
+		if err != nil || message == nil {
+			return err
+		}
+		chat, err := tx.GetChat(message.ChatID)
+		if err != nil || chat == nil {
+			return err
+		}
+		member := chat.Member(user.ID)
+		isReadable = member != nil && isReadableByMember(message, member)
+		return nil
+	})
+	return isReadable, err
+}
+
 func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *http.Request) {
-	user, found, ok := self.agentAttachmentPerson(response, request)
+	user, found, ok := self.agentAttachmentPersonFor(response, request, true)
 	if !ok {
 		return
 	}
@@ -182,7 +224,7 @@ func (self *graph) agentAttachmentView(response http.ResponseWriter, request *ht
 		self.serveAgentAttachment(response, request, attachment)
 		return
 	}
-	_, found, ok := self.agentAttachmentPerson(response, request)
+	user, found, ok := self.agentAttachmentPersonFor(response, request, true)
 	if !ok {
 		return
 	}
@@ -190,7 +232,17 @@ func (self *graph) agentAttachmentView(response http.ResponseWriter, request *ht
 	if !ok {
 		return
 	}
-	if attachment == nil || attachment.AgentID != found.ID {
+	if attachment != nil && attachment.AgentID != found.ID {
+		isReadable, err := self.canReadChatAttachment(attachment, user)
+		if err != nil {
+			writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "failed to read the file"})
+			return
+		}
+		if !isReadable {
+			attachment = nil
+		}
+	}
+	if attachment == nil {
 		writeJSON(response, http.StatusNotFound, map[string]string{"error": "no such file"})
 		return
 	}

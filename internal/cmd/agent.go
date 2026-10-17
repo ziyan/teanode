@@ -876,6 +876,12 @@ func setCollection(ctx context.Context, command *cli.Command, granted bool) erro
 	if err != nil {
 		return err
 	}
+	return grantCollection(ctx, command, connection, granted)
+}
+
+// grantCollection gives the agent the calendar or address book the command
+// names, or takes it back.
+func grantCollection(ctx context.Context, command *cli.Command, connection *client.Client, granted bool) error {
 	kind := strings.ToLower(strings.TrimSpace(command.Args().First()))
 	switch kind {
 	case "calendar":
@@ -890,29 +896,60 @@ func setCollection(ctx context.Context, command *cli.Command, granted bool) erro
 	if err != nil {
 		return describeError(command, err)
 	}
-	var found *client.AgentCollection
-	matches := 0
-	for _, collection := range view.Collections {
-		if collection.Kind != kind {
-			continue
-		}
-		if name != "" && !strings.EqualFold(collection.Name, name) {
-			continue
-		}
-		found = collection
-		matches++
-	}
-	if found == nil {
-		return fmt.Errorf("no %s called %q", kind, name)
-	}
-	if matches > 1 {
-		return fmt.Errorf("there is more than one; say which by name")
+	found, err := chooseCollection(view.Collections, kind, name)
+	if err != nil {
+		return err
 	}
 	updated, err := client.GrantAgentSource(ctx, connection, found.Kind, found.ID, granted)
 	if err != nil {
 		return describeError(command, err)
 	}
 	return printSources(command, updated)
+}
+
+// chooseCollection is the calendar or address book a person means by a kind
+// and, perhaps, a name. With no name the reminders list, which is also a
+// calendar, is not what "the calendar" means while there is a calendar of
+// events: the person is asked for a name only when two of those are what they
+// could mean.
+func chooseCollection(collections []*client.AgentCollection, kind, name string) (*client.AgentCollection, error) {
+	matches := []*client.AgentCollection{}
+	for _, collection := range collections {
+		if collection.Kind != kind {
+			continue
+		}
+		if name != "" && !strings.EqualFold(collection.Name, name) {
+			continue
+		}
+		matches = append(matches, collection)
+	}
+	if len(matches) == 0 {
+		if name == "" {
+			return nil, fmt.Errorf("you have no %s", kind)
+		}
+		return nil, fmt.Errorf("no %s called %q", kind, name)
+	}
+	if name == "" && kind == "calendar" {
+		// A server that does not say what a calendar holds says nothing, and
+		// every calendar is then taken for one of events, as before.
+		events := []*client.AgentCollection{}
+		for _, collection := range matches {
+			if collection.CalendarKind == "" || collection.CalendarKind == string(models.CalendarEvents) {
+				events = append(events, collection)
+			}
+		}
+		if len(events) > 0 {
+			matches = events
+		}
+	}
+	if len(matches) > 1 {
+		names := make([]string, 0, len(matches))
+		for _, collection := range matches {
+			names = append(names, collection.Name)
+		}
+		return nil, fmt.Errorf("there is more than one (%s); say which by name", strings.Join(names, ", "))
+	}
+	return matches[0], nil
 }
 
 func runAgentSourceList(ctx context.Context, command *cli.Command) error {

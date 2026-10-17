@@ -20,6 +20,11 @@ type whatWasFiled struct {
 	Filed           int
 	WithoutQuote    int
 	WithoutEvidence int
+
+	// FromSharedPage is the facts refused because the only thing behind them
+	// was text from a page another person shared (sharedPageRefusal). They
+	// are not in Filed: they were not written.
+	FromSharedPage int
 }
 
 // Describe is what the check did, for the end of a run's title. Empty
@@ -32,6 +37,9 @@ func (self *whatWasFiled) Describe() string {
 	}
 	if self.WithoutEvidence > 0 {
 		parts = append(parts, fmt.Sprintf("%d without evidence", self.WithoutEvidence))
+	}
+	if self.FromSharedPage > 0 {
+		parts = append(parts, fmt.Sprintf("%d not written down because they came from a page another person shared", self.FromSharedPage))
 	}
 	return strings.Join(parts, ", ")
 }
@@ -110,6 +118,15 @@ type preparedFact struct {
 // Facts, links, replacements and the read marker commit together. Page creation
 // and contact binding happen earlier and may remain after a later failure.
 func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *RememberAnswer, theirWords, askedBy map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
+	return self.fileWhatWasLearnedFrom(ctx, run, answer, theirWords, askedBy, evidenceKind, shown, nil, finish)
+}
+
+// fileWhatWasLearnedFrom is fileWhatWasLearned for a reading that may have
+// been shown text from pages other people shared, which it refuses to file
+// (sharedPageRefusal). A conversation can have read such text; the dream
+// cannot, because it does not read shared pages at all, and so files through
+// the call above with nothing shared.
+func (self *Agent) fileWhatWasLearnedFrom(ctx context.Context, run *Run, answer *RememberAnswer, theirWords, askedBy map[string]bool, evidenceKind models.EvidenceKind, shown map[string]string, shared *sharedWords, finish func(tx db.Transaction, filed whatWasFiled) error) (whatWasFiled, error) {
 	tally := whatWasFiled{}
 	if answer == nil {
 		answer = &RememberAnswer{}
@@ -133,7 +150,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 		most = max(most, factsAllowedFor(shown))
 	}
 	asked := askedFrom{askedBy: askedBy, shown: shown, most: max(most, askedFactsAllowedFor(shown))}
-	prepared := self.prepareRememberedFacts(ctx, run, answer, theirWords, asked, selfPage, most)
+	prepared, refusedCount := self.prepareRememberedFacts(ctx, run, answer, theirWords, asked, selfPage, most, shared)
 
 	if err := self.openRememberedPages(ctx, run, prepared); err != nil {
 		return tally, err
@@ -158,6 +175,7 @@ func (self *Agent) fileWhatWasLearned(ctx context.Context, run *Run, answer *Rem
 	}
 
 	tally = self.prepareRememberedEvidence(ctx, agentId, prepared, evidenceKind, shown)
+	tally.FromSharedPage = refusedCount
 
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 		if err := checkRecordingEvidence(ctx, tx, run); err != nil {

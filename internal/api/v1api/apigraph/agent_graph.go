@@ -1547,6 +1547,10 @@ const citationsResolved = 200
 // written.
 func (self *graph) AgentCitedAttachments(ctx context.Context, arguments AgentCitedAttachmentsArguments) ([]*AgentCitedAttachment, error) {
 	_, found, err := self.requireAgentPerson(ctx)
+	if errors.Is(err, agent.ErrUnavailable) {
+		// Nothing is cited in a chat read with the agent off.
+		return []*AgentCitedAttachment{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -2300,9 +2304,13 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 	// A finance source needs the credential its provider hands over at the
 	// end of a link, so it is made only by linking: a row without one would
 	// be a source that can never sync. Nor may another source become one.
+	// A chat source is made by a member's switch on the chat itself.
 	if source.Kind.IsMadeByLinking() && !isExistingLinkedSource {
 		if source.Kind == models.SourceRecording {
 			return nil, fmt.Errorf("%w: a recording source is created automatically from its transcript; change the recording title and metadata instead", api.ErrInvalidArguments)
+		}
+		if source.Kind == models.SourceChat {
+			return nil, fmt.Errorf("%w: a chat is remembered from the chat itself: turn on \"My agent remembers this chat\" in its members panel", api.ErrInvalidArguments)
 		}
 		return nil, fmt.Errorf("%w: a %s source is made by linking an institution, from the Finance tab of the agent page, teanode finance link-plaid or link-simplefin, or the finance tool", api.ErrInvalidArguments, source.Kind)
 	}

@@ -306,7 +306,20 @@ func (self *component) serveCalendars(response http.ResponseWriter, request *htt
 		}
 	}
 
+	// A change to a calendar the person may only read is refused here, before
+	// the library has read a byte of it.
+	if len(segments) >= 3 && changesSomething(request.Method) && self.refuseReadOnly(response, request, backing, signedIn) {
+		return
+	}
+
 	handler := &caldav.Handler{Backend: backing, Prefix: Prefix}
+
+	// And a phone is told, when it asks about the calendars, which of them it
+	// may not change.
+	if request.Method == "PROPFIND" && len(segments) <= 3 {
+		self.serveWithPrivileges(response, request, signedIn, handler)
+		return
+	}
 	handler.ServeHTTP(response, request)
 }
 

@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { graphql } from '../../api'
+import { Avatar } from '../../components/avatar'
+import { pictureToJpegBase64 } from '../../components/avatarPicture'
 import { ErrorMessage, Loading } from '../../components/common'
 import { useQuery } from '../../components/useQuery'
 import { useToast } from '../../components/toast'
@@ -9,7 +11,7 @@ import { useTranslation } from '../../i18n/i18n'
 import { Select } from '../../components/select'
 import { FaceRecognitionPreferences } from '../photos/people'
 
-const CURRENT_USER = `{ GetCurrentUser { id username name email timezone timezoneMode } }`
+const CURRENT_USER = `{ GetCurrentUser { id username name email avatarUrl avatarColorIndex timezone timezoneMode } }`
 
 // An account is named by its identifier, and "username" is the name to sign in
 // with from here on. This page used to send the old username as the identity
@@ -18,11 +20,33 @@ const CURRENT_USER = `{ GetCurrentUser { id username name email timezone timezon
 const UPDATE = `
   mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String) {
     UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode) {
-      id username name email timezone timezoneMode
+      id username name email avatarUrl avatarColorIndex timezone timezoneMode
     }
   }`
 
-type User = { id: string; username: string; name?: string; email?: string; timezone?: string; timezoneMode?: string }
+// The picture is its own pair of requests rather than part of saving the form:
+// choosing one is done the moment it is chosen, like a switch, and should not
+// wait behind a Save button for the name beside it.
+const SET_AVATAR = `
+  mutation ($content: String!) {
+    SetUserAvatar(content: $content) { id avatarUrl avatarColorIndex }
+  }`
+
+const REMOVE_AVATAR = `
+  mutation {
+    RemoveUserAvatar { id avatarUrl avatarColorIndex }
+  }`
+
+type User = {
+  id: string
+  username: string
+  name?: string
+  email?: string
+  avatarUrl?: string | null
+  avatarColorIndex?: number
+  timezone?: string
+  timezoneMode?: string
+}
 
 // The account itself: what to call you, what you sign in with, and where
 // notifications go. Where /settings lands, because it is the one page here
@@ -43,6 +67,8 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [confirmingRename, setConfirmingRename] = useState(false)
+  const [pictureBusy, setPictureBusy] = useState(false)
+  const picker = useRef<HTMLInputElement>(null)
 
   if (loading && !data) {
     return <Loading />
@@ -109,6 +135,44 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
     }
   }
 
+  async function choosePicture(file: File) {
+    setPictureBusy(true)
+    try {
+      let content: string
+      try {
+        content = await pictureToJpegBase64(file)
+      } catch {
+        // The browser could not open it: not a picture, or a format it does
+        // not read. Said as that rather than as a failed upload.
+        toast.failure(null, t('profile.pictureUnreadable'))
+        return
+      }
+      await graphql(SET_AVATAR, { content })
+      toast.done(t('profile.pictureSaved'))
+      await reload()
+      // The rail shows the same picture, and is told like it is for a name.
+      onSaved()
+    } catch (caught) {
+      toast.failure(caught, t('profile.pictureFailed'))
+    } finally {
+      setPictureBusy(false)
+    }
+  }
+
+  async function removePicture() {
+    setPictureBusy(true)
+    try {
+      await graphql(REMOVE_AVATAR)
+      toast.done(t('profile.pictureRemoved'))
+      await reload()
+      onSaved()
+    } catch (caught) {
+      toast.failure(caught, t('profile.pictureRemoveFailed'))
+    } finally {
+      setPictureBusy(false)
+    }
+  }
+
   return (
     <>
       {/* The same shape as every other settings form: a card the width of
@@ -137,6 +201,42 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
         <p className="muted">{t('settings.profile.description')}</p>
 
         <div className="form-narrow">
+          {/* Not a label: it holds two buttons, and a label would make
+              the whole row open the file chooser. */}
+          <div className="profile-picture">
+            <Avatar
+              name={name.trim() || user.username}
+              avatarUrl={user.avatarUrl}
+              colorIndex={user.avatarColorIndex}
+              size={64}
+            />
+            <div className="profile-picture-body">
+              <strong>{t('profile.picture')}</strong>
+              <div className="profile-picture-actions">
+                <button type="button" disabled={pictureBusy} onClick={() => picker.current?.click()}>
+                  {t('profile.pictureChoose')}
+                </button>
+                {user.avatarUrl ? (
+                  <button type="button" disabled={pictureBusy} onClick={() => void removePicture()}>
+                    {t('profile.pictureRemove')}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <input
+              ref={picker}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void choosePicture(file)
+              }}
+            />
+          </div>
+          <p className="muted field-hint">{t('profile.pictureHint')}</p>
+
           <label>
             <span>{t('profile.name')}</span>
             <input

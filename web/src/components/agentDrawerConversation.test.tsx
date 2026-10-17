@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../api'
-import { readConversationSnapshot, sharedFilesOf, toolWords } from './agentDrawer'
+import { citationsIn, readConversationSnapshot, sharedFilesOf, toolWords } from './agentDrawer'
+import { hasSharedCitation, linkSharedCitations } from './dashboardPath'
 
 // The drawer asks the window about the screen when it loads, which jsdom
 // does not answer.
@@ -89,4 +90,26 @@ describe('sharedFilesOf', () => {
     expect(files).toHaveLength(1)
     expect(files[0].photo_id).toBeUndefined()
   })
+})
+
+it('does not look a shared page’s fact up among the person’s own pages', () => {
+  expect(citationsIn('It is on people/a-grandparent#3 (shared by Ada), and on work/plan#7.')).toEqual(['work/plan#7'])
+  expect(citationsIn('people/a-grandparent#3 and self#4')).toEqual(['people/a-grandparent#3', 'self#4'])
+  expect(citationsIn('people/a-grandparent#3 (shared by Ada Example)')).toEqual([])
+})
+
+it('links a shared citation to its owner’s page when the owner is known, and otherwise leaves the words', () => {
+  const written = 'It is on people/a-grandparent#3 (shared by Ada Example), at three.'
+  expect(hasSharedCitation(written)).toBe(true)
+  expect(hasSharedCitation('It is on people/a-grandparent#3.')).toBe(false)
+  const owners: Record<string, string> = { 'ada example': 'ada' }
+  const usernameOf = (name: string) => owners[name.toLowerCase()]
+  expect(linkSharedCitations(written, usernameOf)).toBe(
+    'It is on [people/a-grandparent#3 (shared by Ada Example)](memory:people/a-grandparent#3@ada), at three.',
+  )
+  // An owner not known, a citation already a link, and a name with a bracket.
+  expect(linkSharedCitations(written, () => undefined)).toBe(written)
+  const linked = '[people/a-grandparent#3 (shared by Ada Example)](memory:people/a-grandparent#3@ada)'
+  expect(linkSharedCitations(linked, usernameOf)).toBe(linked)
+  expect(linkSharedCitations('people/a#1 (shared by A]da)', () => 'ada')).toBe('people/a#1 (shared by A]da)')
 })

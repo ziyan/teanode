@@ -345,6 +345,41 @@ func TestARepeatCanBeTakenAway(t *testing.T) {
 	}
 }
 
+// Marking an event private writes CLASS:PRIVATE, leaving the box out keeps it,
+// and clearing it takes the CLASS away, even one a phone wrote as CONFIDENTIAL.
+func TestAnEventCanBeMarkedPrivateAndUnmarked(t *testing.T) {
+	plain := mustBuild(t, nil, &Fields{
+		Summary: text("Dentist"), StartsAt: moment(2026, time.September, 14, 10, 0),
+	})
+	if plain.IsPrivate || plain.Class != "" {
+		t.Fatalf("an event is not private until said so: %q %v", plain.Class, plain.IsPrivate)
+	}
+	private := mustBuild(t, plain.Data, &Fields{IsPrivate: flag(true)})
+	if !private.IsPrivate || private.Class != "PRIVATE" {
+		t.Fatalf("marked private: %q %v", private.Class, private.IsPrivate)
+	}
+	if !strings.Contains(string(Unfold(private.Data)), "CLASS:PRIVATE") {
+		t.Fatalf("CLASS:PRIVATE is written:\n%s", private.Data)
+	}
+	renamed := mustBuild(t, private.Data, &Fields{Summary: text("Appointment")})
+	if !renamed.IsPrivate {
+		t.Fatal("a box left out leaves it private")
+	}
+	public := mustBuild(t, renamed.Data, &Fields{IsPrivate: flag(false)})
+	if public.IsPrivate || strings.Contains(string(Unfold(public.Data)), "CLASS:") {
+		t.Fatalf("unmarked, the CLASS is gone:\n%s", public.Data)
+	}
+	confidential := []byte("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Other//EN\r\nBEGIN:VEVENT\r\nUID:a@example.com\r\nDTSTAMP:20260901T000000Z\r\nDTSTART:20260914T100000Z\r\nCLASS:CONFIDENTIAL\r\nSUMMARY:Review\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+	parsed, err := Parse(confidential)
+	if err != nil || !parsed.IsPrivate {
+		t.Fatalf("CONFIDENTIAL reads as private: %v %v", parsed, err)
+	}
+	cleared := mustBuild(t, confidential, &Fields{IsPrivate: flag(false)})
+	if cleared.IsPrivate || cleared.Class != "" {
+		t.Fatalf("clearing removes a CONFIDENTIAL too: %q", cleared.Class)
+	}
+}
+
 // Writing an event twice gives a file that is stable but for the moment it
 // records having been written, which is meant to change.
 func TestBuildingIsStableExceptForWhenItWasWritten(t *testing.T) {

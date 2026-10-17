@@ -13,7 +13,8 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/photo"
-	"github.com/ziyan/teanode/internal/picture"
+	// Aliased: the package has a test helper of its own named picture.
+	photopicture "github.com/ziyan/teanode/internal/picture"
 	"github.com/ziyan/teanode/internal/storage"
 )
 
@@ -311,7 +312,7 @@ func (self *graph) photoFacePictureView(response http.ResponseWriter, request *h
 
 // cutFacePicture decodes a large preview and cuts the face out of it.
 func cutFacePicture(previewContent []byte, face *models.PhotoFace) ([]byte, error) {
-	decoded, err := picture.Decode(previewContent)
+	decoded, err := photopicture.Decode(previewContent)
 	if err != nil {
 		return nil, err
 	}

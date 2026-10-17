@@ -22,6 +22,7 @@ func TestPagePath(t *testing.T) {
 		{"/settings/preference", "/settings/preference"},
 		{"/finance/net-worth", "/finance/net-worth"},
 		{"memory:projects/example-app#2", "/knowledge/projects/example-app"},
+		{"memory:people/a-grandparent#3@ada", "/knowledge/people/a-grandparent?owner=ada"},
 		{"mail:item42", "/mailbox/starred/item42"},
 	} {
 		got, err := openpage.PagePath(testCase.written)

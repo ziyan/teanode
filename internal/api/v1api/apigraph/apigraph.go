@@ -83,6 +83,10 @@ type graph struct {
 	// for a few seconds, so that the listing and the count a page asks for
 	// together call the embedding model once.
 	photoSearchMeanings photoSearchMeaningCache
+	// chatLimits are what one person may do in chats a minute on this
+	// instance; made the first time they are wanted (chat.go).
+	chatLimitsOnce  sync.Once
+	chatLimitsValue *chatRateLimits
 }
 
 // New builds the GraphQL component, generating the schema by reflection over
@@ -163,6 +167,9 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// A contact's picture, which is inside its card and far too large to
 	// carry through a listing.
 	router.Path(api.PathContactPhoto).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.contactPhotoView)
+	// A person's picture, which is a file in storage and far too large to
+	// carry through a listing.
+	router.Path(api.PathAvatarUser).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.avatarView)
 	// A setup profile, downloaded once by the device that installs it.
 	router.Path(api.PathMailboxSetupProfile).Methods(http.MethodGet).HandlerFunc(self.setupProfileView)
 	return nil

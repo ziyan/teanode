@@ -347,6 +347,10 @@ func (self *graph) agentView(ctx context.Context, tx db.Transaction, user *model
 	if err != nil {
 		return nil, err
 	}
+	// An agent row made so that the person can chat is no agent of theirs yet.
+	if found.IsPlaceholder() {
+		found = nil
+	}
 	// The person's own "always ask me" list, under the names the catalog
 	// has now: what the page shows and what the server enforces have to be
 	// the same list, and a list written before the tools were merged names
@@ -819,7 +823,7 @@ func (self *graph) GrantAgentMailbox(ctx context.Context, arguments GrantAgentMa
 	if err != nil {
 		return nil, err
 	}
-	if found == nil {
+	if found == nil || found.IsPlaceholder() {
 		return nil, fmt.Errorf("turn the agent on before granting it a mailbox")
 	}
 	allowed := self.allowed()
@@ -949,6 +953,10 @@ func (self *graph) ListAgents(ctx context.Context) ([]*AgentSummary, error) {
 	}
 	summaries := make([]*AgentSummary, 0, len(agents))
 	for _, found := range agents {
+		// A row made so that somebody can chat is not an agent anybody uses.
+		if found.IsPlaceholder() {
+			continue
+		}
 		summary, err := self.summarize(tx, found)
 		if err != nil {
 			return nil, err
