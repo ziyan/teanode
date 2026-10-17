@@ -15,6 +15,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         center.delegate = self
         center.setNotificationCategories(NotificationCategories.fixed)
         HomeScreenActions.offer()
+        // The one Core Location manager, made now, whether the app was opened
+        // or iOS relaunched it for a visit, a significant change or a place
+        // being entered: events go only to a manager that exists then.
+        LocationRecorder.shared.launch()
         return true
     }
 

@@ -4,7 +4,7 @@ import TeaNodeKit
 /// AppSection is a part of TeaNode the side menu leads to, as the
 /// dashboard's sidebar does.
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
-    case agent, goals, ideas, mail, calendar, contacts, knowledge, finance, recordings, settings
+    case agent, goals, ideas, mail, calendar, location, contacts, knowledge, finance, recordings, settings
 
     var id: String { rawValue }
 
@@ -15,6 +15,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .ideas: String(localized: "Ideas")
         case .mail: String(localized: "Mail")
         case .calendar: String(localized: "Calendar")
+        case .location: String(localized: "Location")
         case .contacts: String(localized: "Contacts")
         case .knowledge: String(localized: "Knowledge")
         case .finance: String(localized: "Finance")
@@ -30,6 +31,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
         case .ideas: "lightbulb"
         case .mail: "envelope"
         case .calendar: "calendar"
+        case .location: "location"
         case .contacts: "person"
         case .knowledge: "brain"
         case .finance: "creditcard"
@@ -128,7 +130,7 @@ struct MainView: View {
     }
 
     var body: some View {
-        SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail) {
+        SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
                 connection: connection, mail: mail, section: $section, conversation: $conversation, mailPlace: $mailPlace,
                 financePart: $financePart, composing: $composing
@@ -337,6 +339,8 @@ struct MainView: View {
                 .environment(mail)
         case .calendar:
             CalendarScreen(connection: connection, username: app.account?.username ?? "")
+        case .location:
+            LocationScreen(connection: connection)
         case .contacts:
             ContactsScreen(connection: connection)
         case .goals:

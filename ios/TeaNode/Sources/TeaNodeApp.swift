@@ -34,8 +34,9 @@ struct TeaNodeApp: App {
             .environment(app)
             .onOpenURL { url in app.open(url) }
             .onAppear { appearance.apply() }
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active { appearance.apply() }
+                LocationRecorder.shared.sceneDidChange(isActive: phase == .active)
             }
         }
     }

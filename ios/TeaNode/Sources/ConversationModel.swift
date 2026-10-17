@@ -928,6 +928,13 @@ enum LocationReader {
 
     @MainActor
     static func current() async -> Reading {
+        // The recorder follows the person while the app is open: a reading
+        // under a minute old answers without asking Core Location again.
+        if let live = LocationRecorder.shared.livePosition, Date().timeIntervalSince(live.measuredAt) < 60 {
+            return Reading(
+                latitudeDegrees: live.latitudeDegrees, longitudeDegrees: live.longitudeDegrees, accuracyMeters: live.accuracyMeters,
+                measuredAt: live.measuredAt)
+        }
         let manager = CLLocationManager()
         if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()

@@ -323,6 +323,10 @@ final class AppModel {
     /// read.
     private(set) var ownUserId: String?
 
+    /// Whether the account may record where the person goes and look back
+    /// on it (the server's location:use), as far as the server has said.
+    private(set) var canUseLocation = false
+
     /// Reads whether the person can chat, and how much is waiting for them
     /// in their chats.
     func refreshChats() async {
@@ -330,6 +334,7 @@ final class AppModel {
         let session = try? await connection.accessSession()
         guard !Task.isCancelled, self.connection === connection else { return }
         if let userId = session?.userId { ownUserId = userId }
+        if let session { canUseLocation = session.holds("location:use") }
         let canUseCircles = session?.holds("circle:use") ?? false
         canChat = canUseCircles
         guard canUseCircles else {
@@ -362,6 +367,7 @@ final class AppModel {
                 transport = DemoServer()
                 account = DemoServer.account
                 connection = Connection(account: DemoServer.account, transport: transport)
+                canUseLocation = true
                 return
             }
         #endif
@@ -385,6 +391,7 @@ final class AppModel {
     private func forgetAccountFacts() {
         ownUserId = nil
         canChat = false
+        canUseLocation = false
         unreadChatCount = 0
         isAgentEnabledByPerson = true
         hasAgent = true
@@ -408,6 +415,8 @@ final class AppModel {
         if let connection { RecordingUploads.shared.activate(connection: connection) }
         // The widgets read the account in use; one that changed is read again.
         if isChanged { WidgetCenter.shared.reloadAllTimelines() }
+        // What the phone noticed belongs to the account that was in use.
+        LocationRecorder.shared.accountDidChange(accountKey: account.accountKey)
     }
 
     /// Puts another sign-in to use: the whole app is drawn again for it.
@@ -737,6 +746,7 @@ final class AppModel {
         connection = nil
         forgetAccountFacts()
         self.signedOutText = signedOutText
+        LocationRecorder.shared.accountDidChange(accountKey: nil)
     }
 
     /// Signs out of the account in use when its own connection found the
@@ -868,6 +878,7 @@ extension AppModel {
         // agent.
         case .agent: return services.isAssistantEnabled || canChat
         case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .location: return canUseLocation
         case .settings: return true
         }
     }
