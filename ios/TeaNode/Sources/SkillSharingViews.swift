@@ -25,7 +25,7 @@ enum SkillSharingWords {
         if let monthlyLimitMinor = share.monthlyLimitMinor {
             parts.append(String(localized: "up to \(SkillShareMoney.format(minor: monthlyLimitMinor, currencyCode: share.currencyCode)) a month"))
         }
-        if parts.isEmpty { return String(localized: "no limit; anything it cannot price asks you") }
+        if parts.isEmpty { return String(localized: "With no limits, every call that says what it costs runs without asking; anything that does not say is asked") }
         if share.monthlyLimitMinor != nil {
             parts.append(String(localized: "\(SkillShareMoney.format(minor: share.monthTotalMinor, currencyCode: share.currencyCode)) so far this month"))
         }
@@ -79,6 +79,10 @@ struct SkillSharingView: View {
     @State private var shares: [SkillShare] = []
     @State private var people: [CalendarSharePerson] = []
     @State private var isLoaded = false
+    /// Why the first read did not get through; a screen that could not read
+    /// what is shared says so and offers to try again, rather than saying
+    /// nothing is shared.
+    @State private var loadProblemText: String?
     @State private var sharing: LendableSkill?
     @State private var stopping: SkillShare?
     @State private var isBusy = false
@@ -95,7 +99,13 @@ struct SkillSharingView: View {
             if !given.isEmpty { givenSection }
         }
         .navigationTitle("Shared skills")
-        .overlay { if !isLoaded { ProgressView() } }
+        .overlay {
+            if let loadProblemText, !isLoaded {
+                LoadFailedView(problemText: loadProblemText) { await load() }
+            } else if !isLoaded {
+                ProgressView()
+            }
+        }
         .disabled(isBusy)
         .refreshable { await load() }
         .task { await load() }
@@ -127,12 +137,15 @@ struct SkillSharingView: View {
             if isLoaded && skills.filter(\.isLendable).isEmpty {
                 Text("No skill is installed to share.").foregroundStyle(.secondary)
             }
+            if isLoaded && people.isEmpty {
+                OpenCirclesLink(connection: connection)
+            }
         } header: {
             Text("Share a skill")
         } footer: {
             if people.isEmpty && isLoaded {
                 Text("You do not share a circle with anybody yet. Start or join one under Circles to share a skill.")
-            } else {
+            } else if isLoaded {
                 Text("Let someone in a circle you share run a skill of yours. It runs on your own computer, as you. Anything above the limits you set, or that cannot be priced, waits for your word.")
             }
         }
@@ -197,20 +210,37 @@ struct SkillSharingView: View {
             try await connection.unshareSkill(shareId: share.id)
             doneText = String(localized: "Stopped sharing \(share.skillName) with \(share.shownGrantee).")
         } catch {
-            problemText = error.localizedDescription
+            problemText = error.refusalReason(orSay: String(localized: "Sharing was not stopped. Check your connection and try again."))
         }
         await load()
     }
 
+    /// The shares and the skills are what the screen is for, so a failure to
+    /// read either is told; who the person shares a circle with is read for the
+    /// sheet and left as it was when it cannot be.
     private func load() async {
         let connection = connection
-        async let sharesRead = try? connection.skillShares()
-        async let skillsRead = try? connection.lendableSkills()
+        async let sharesRead = connection.skillShares()
+        async let skillsRead = connection.lendableSkills()
         async let peopleRead = try? connection.calendarSharePeople()
-        shares = await sharesRead ?? shares
-        skills = await skillsRead ?? skills
-        people = await peopleRead ?? people
-        isLoaded = true
+        do {
+            let (readShares, readSkills) = try await (sharesRead, skillsRead)
+            shares = readShares
+            skills = readSkills
+            people = await peopleRead ?? people
+            isLoaded = true
+            loadProblemText = nil
+            #if DEBUG
+                // `-TeaNodeScreen skill-share-sheet`: the skill's sheet open, to share it.
+                if DemoServer.isRequested, DemoServer.screen == "skill-share-sheet", sharing == nil {
+                    sharing = skills.first(where: \.isLendable)
+                }
+            #endif
+        } catch {
+            // With the lists already on screen a failed refresh leaves them be
+            // and says so.
+            if isLoaded { problemText = error.loadProblemText } else { loadProblemText = error.loadProblemText }
+        }
     }
 }
 
@@ -268,6 +298,15 @@ struct ShareSkillSheet: View {
         self.people = people
         self.onShared = onShared
         _chosen = State(initialValue: Set(skill.tools.filter(\.isAmountDeclared).map(\.name)))
+        #if DEBUG
+            // `-TeaNodeScreen skill-share-sheet`: a person and limits already chosen.
+            if DemoServer.isRequested, DemoServer.screen == "skill-share-sheet" {
+                _personId = State(initialValue: "sam")
+                _paymentLimit = State(initialValue: "100.00")
+                _monthlyLimit = State(initialValue: "400.00")
+                _currency = State(initialValue: "usd")
+            }
+        #endif
     }
 
     private var code: String { currency.trimmingCharacters(in: .whitespaces).lowercased() }
@@ -278,6 +317,13 @@ struct ShareSkillSheet: View {
     private var isLimitReadable: Bool {
         (paymentLimit.trimmingCharacters(in: .whitespaces).isEmpty || paymentMinor != nil)
             && (monthlyLimit.trimmingCharacters(in: .whitespaces).isEmpty || monthlyMinor != nil)
+    }
+    private var isPaymentUnreadable: Bool { !paymentLimit.trimmingCharacters(in: .whitespaces).isEmpty && paymentMinor == nil }
+    private var isMonthlyUnreadable: Bool { !monthlyLimit.trimmingCharacters(in: .whitespaces).isEmpty && monthlyMinor == nil }
+    /// Said under the amount that could not be read, in the currency's own digits.
+    private var unreadableAmountText: String {
+        let currencyWords = isCurrencyValid ? code.uppercased() : String(localized: "the currency below")
+        return String(localized: "Type the amount in \(currencyWords), such as \(SkillShareMoney.typedExample(currencyCode: code))")
     }
     private var pays: Bool { skill.tools.contains { chosen.contains($0.name) && $0.isAmountDeclared } }
     private var canShare: Bool {
@@ -292,7 +338,7 @@ struct ShareSkillSheet: View {
                     Picker("Share with", selection: $personId) {
                         Text("Choose a person").tag("")
                         ForEach(people) { person in
-                            Text(verbatim: person.displayName).tag(person.userId)
+                            Text(verbatim: person.pickerLabel).tag(person.userId)
                         }
                     }
                 } footer: {
@@ -313,9 +359,9 @@ struct ShareSkillSheet: View {
                                     if tool.isAmountDeclared {
                                         Text("pays: needs a limit or your approval")
                                     } else if tool.isScoped {
-                                        Text("only works on something an earlier tool of this share made")
+                                        Text("Used only for the calls this person makes")
                                     } else {
-                                        Text("does not say what it costs, so it always asks you")
+                                        Text("This tool does not say what it costs, so you are asked every time")
                                     }
                                 }
                                 .font(.footnote).foregroundStyle(.secondary)
@@ -328,13 +374,30 @@ struct ShareSkillSheet: View {
                 Section {
                     Toggle("Ask me every time", isOn: $isAskedEveryTime)
                     if !isAskedEveryTime {
-                        TextField("Most for one payment, such as 100.00", text: $paymentLimit)
-                            .keyboardType(.decimalPad)
-                        TextField("Most in a calendar month, such as 400.00", text: $monthlyLimit)
-                            .keyboardType(.decimalPad)
-                        TextField("Currency, such as usd", text: $currency)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                        // Titled, so a field that has been typed in still says
+                        // what it is for.
+                        LabeledContent("Most for one payment") {
+                            TextField("100.00", text: $paymentLimit)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        if isPaymentUnreadable {
+                            Text(verbatim: unreadableAmountText).font(.footnote).foregroundStyle(.red)
+                        }
+                        LabeledContent("Most in a calendar month") {
+                            TextField("400.00", text: $monthlyLimit)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        if isMonthlyUnreadable {
+                            Text(verbatim: unreadableAmountText).font(.footnote).foregroundStyle(.red)
+                        }
+                        LabeledContent("Currency") {
+                            TextField("usd", text: $currency)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .multilineTextAlignment(.trailing)
+                        }
                     }
                 } footer: {
                     if isAskedEveryTime {
@@ -342,11 +405,8 @@ struct ShareSkillSheet: View {
                     } else if pays && !hasLimit {
                         Text("A tool that pays is shared with a limit, or with Ask me every time.")
                     } else {
-                        Text("Above these limits, or when the amount cannot be read, the tool waits for you. The limits are in the currency you give. One that failed still counts toward the month, because a failure after the command acted looks the same as one before.")
+                        Text("Above these limits, or when the amount cannot be read, the call waits for you. The limits are in the currency you give. A call that fails still counts toward the month, in case the money moved.")
                     }
-                }
-                if let problemText {
-                    Section { Text(verbatim: problemText).foregroundStyle(.red) }
                 }
             }
             .navigationTitle("Share \(skill.name)")
@@ -361,6 +421,7 @@ struct ShareSkillSheet: View {
                 }
             }
             .disabled(isSharing)
+            .toast(done: .constant(nil), problem: $problemText)
         }
     }
 
@@ -378,7 +439,7 @@ struct ShareSkillSheet: View {
             onShared(String(localized: "Shared \(skill.name) with \(person?.displayName ?? "")."))
             dismiss()
         } catch {
-            problemText = error.localizedDescription
+            problemText = error.refusalReason(orSay: String(localized: "The skill was not shared. Check your connection and try again."))
         }
     }
 }
@@ -393,6 +454,7 @@ struct SkillShareCallsView: View {
     let onChanged: () -> Void
     @State private var calls: [SkillShareCall] = []
     @State private var isLoaded = false
+    @State private var loadProblemText: String?
     @State private var doneText: String?
     @State private var problemText: String?
 
@@ -431,7 +493,13 @@ struct SkillShareCallsView: View {
         }
         .navigationTitle(Text(verbatim: share.skillName))
         .navigationBarTitleDisplayMode(.inline)
-        .overlay { if !isLoaded { ProgressView() } }
+        .overlay {
+            if let loadProblemText, !isLoaded {
+                LoadFailedView(problemText: loadProblemText) { await load() }
+            } else if !isLoaded {
+                ProgressView()
+            }
+        }
         .refreshable { await load() }
         .task { await load() }
         .toast(done: $doneText, problem: $problemText)
@@ -444,10 +512,11 @@ struct SkillShareCallsView: View {
     private func load() async {
         do {
             calls = try await connection.skillShareCalls(shareId: share.id)
+            isLoaded = true
+            loadProblemText = nil
         } catch {
-            if !isLoaded { problemText = error.localizedDescription }
+            if isLoaded { problemText = error.loadProblemText } else { loadProblemText = error.loadProblemText }
         }
-        isLoaded = true
     }
 }
 
@@ -543,7 +612,8 @@ struct SkillShareCallCard: View {
     private func fact(_ name: String, _ value: String, isProminent: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(verbatim: name).font(.footnote).foregroundStyle(.secondary).frame(minWidth: 70, alignment: .leading)
-            Text(verbatim: value).font(isProminent ? .headline : .callout)
+            // Whole, and wrapped: the owner approves exactly this call.
+            Text(verbatim: value).font(isProminent ? .headline : .callout).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
     }
@@ -560,7 +630,10 @@ struct SkillShareCallCard: View {
         do {
             onAnswered(try await connection.answerSkillShareCall(callId: call.id, isApproved: isApproved, answerNote: note))
         } catch {
-            problemText = error.localizedDescription
+            problemText = error.refusalReason(
+                orSay: isApproved
+                    ? String(localized: "Nothing was approved. Check your connection and try again.")
+                    : String(localized: "Nothing was declined. Check your connection and try again."))
         }
     }
 }
@@ -585,39 +658,63 @@ enum DeviceOwner {
 /// SkillShareCallWaitingCard is the skill_share_call_waiting note of the main conversation as a
 /// card: the note names the call, the call is read for how it stands now (it may
 /// have been answered on the dashboard since), and the card is drawn from that.
-/// A call that is gone, because the share was taken back, says so.
+/// It is read again every few seconds while the call waits, so an answer given
+/// elsewhere shows here. Only the server answering that the call is not there
+/// says it is gone (the share was taken back, or the two no longer share a
+/// circle); a read that did not get through says so, offers to try again, and
+/// keeps trying.
 struct SkillShareCallWaitingCard: View {
     let connection: Connection
     let noteDetail: String
-    @State private var call: SkillShareCall?
-    @State private var isGone = false
-    @State private var isLoaded = false
+    @State private var reading: SkillShareCallReading?
 
     var body: some View {
         CardSurface {
-            if let call {
-                SkillShareCallCard(connection: connection, call: call, isOwner: true) { answered in self.call = answered }
-            } else if isLoaded || isGone {
-                Label("This is no longer there.", systemImage: "questionmark.circle")
+            switch reading {
+            case .found(let call)?:
+                SkillShareCallCard(connection: connection, call: call, isOwner: true) { answered in reading = .found(answered) }
+            case .gone?:
+                Label("This call is gone. The share was taken back, or you no longer share a circle.", systemImage: "questionmark.circle")
                     .font(.footnote).foregroundStyle(.secondary)
-            } else {
+            case .failed?:
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("This call could not be loaded. It will keep trying.", systemImage: "wifi.exclamationmark")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("Try again") { Task { await read() } }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                }
+            case nil:
                 ProgressView()
             }
         }
-        .task(id: noteDetail) { await load() }
+        .task(id: noteDetail) { await keepReading() }
     }
 
-    private func load() async {
-        defer { isLoaded = true }
+    /// Reads the call, and again every ten seconds while it waits or could not
+    /// be read.
+    private func keepReading() async {
+        repeat {
+            await read()
+            if Task.isCancelled { return }
+            switch reading {
+            case .found(let call)? where call.isWaiting: break
+            case .failed?: break
+            default: return
+            }
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+        } while !Task.isCancelled
+    }
+
+    private func read() async {
         guard let note = SkillShareNote.parsing(noteDetail) else {
-            isGone = true
+            reading = .gone
             return
         }
-        do {
-            call = try await connection.skillShareCalls(shareId: note.skillShareId).first { $0.id == note.callId }
-            isGone = call == nil
-        } catch {
-            isGone = true
-        }
+        let latest = await connection.readSkillShareCall(shareId: note.skillShareId, callId: note.callId)
+        if Task.isCancelled { return }
+        // A read that fails after the card was drawn leaves the card as it was.
+        if case .failed = latest, case .some(.found) = reading { return }
+        reading = latest
     }
 }

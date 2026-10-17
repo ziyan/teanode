@@ -6,8 +6,9 @@ import { useSession } from '../session'
 import { useCalendarMutation } from '../hooks/useCalendarMutation'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { Avatar } from '../components/avatar'
+import { FindATimeDialog } from '../components/calendarFindTime'
 import { CalendarShareDialog } from '../components/calendarShare'
-import { ChevronLeftIcon, ChevronRightIcon, LockIcon, PencilIcon, TrashIcon } from '../components/icons'
+import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, LockIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { TabItem, Tabs } from '../components/tabs'
 import { RemindersView } from '../components/reminders'
@@ -414,6 +415,16 @@ function whoseCalendar(calendar: Calendar | undefined, t: Translate): string {
   return calendar.ownerName ?? t('calendar.busy')
 }
 
+// Whose the busy time or the shared event is, to be said beside it: the
+// person's name for a calendar they shared, and nothing for the caller's own.
+// Blocks of several people's calendars sit in one grid, and a gray "Busy"
+// would not say whose.
+function ownerOfCalendar(calendar: Calendar | undefined): string {
+  if (!calendar || isOwn(calendar)) return ''
+  if (calendar.isCircleCalendar) return calendar.circleName ?? calendar.name
+  return calendar.ownerName ?? ''
+}
+
 export function CalendarPage() {
   const session = useSession()
   return <CalendarPageForAccount key={session.userId ?? ''} ownerId={session.userId ?? ''} />
@@ -469,6 +480,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     writeHidden(ownerId, next)
   }
   const [isSharing, setSharing] = useState(false)
+  const [isFindingTime, setFindingTime] = useState(false)
   // An event in a calendar shared read only, opened to be read.
   const [viewing, setViewing] = useState<CalendarEvent | null>(null)
   // Sunday unless this calendar says Monday. The server answers with one of
@@ -777,6 +789,21 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     }
   }, [view, on, loading])
 
+  // "Busy · Ada" on a block of somebody else's calendar, so that several
+  // people's blocks in one grid can be told apart; a shared event with a title
+  // keeps its title and says whose it is on hover.
+  const busyLabel = (event: CalendarEvent) => {
+    const owner = ownerOfCalendar(calendarsById.get(event.calendarId))
+    return owner ? t('calendar.busyOf', { name: owner }) : t('calendar.busy')
+  }
+  const titleWithOwner = (event: CalendarEvent) => {
+    const owner = ownerOfCalendar(calendarsById.get(event.calendarId))
+    const title = event.summary || t('calendar.untitled')
+    return owner ? `${title} · ${t('calendar.ownersCalendar', { name: owner })}` : title
+  }
+
+  const canEditEvent = (event: CalendarEvent) => canWrite(calendarsById.get(event.calendarId) ?? ({} as Calendar))
+
   const entry = (event: CalendarEvent) => {
     // All the caller is told is that the owner is busy then: a gray block
     // that says so, and cannot be opened, because there is nothing in it.
@@ -787,13 +814,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           className={`calendar-entry calendar-busy-block${event.allDay ? ' all-day' : ''}`}
         >
           {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
-          <span className="calendar-entry-title">{t('calendar.busy')}</span>
+          <span className="calendar-entry-title">{busyLabel(event)}</span>
         </div>
       )
     }
     const tone = toneOf(calendarsById.get(event.calendarId))
     return (
-      <Tooltip key={event.calendarId + event.id + event.startsAt} label={event.summary || t('calendar.untitled')}>
+      <Tooltip key={event.calendarId + event.id + event.startsAt} label={titleWithOwner(event)}>
         <button
           type="button"
           className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''} ${tone.className}`}
@@ -937,6 +964,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
             <span className="calendar-heading">{heading}</span>
           </div>
           <div className="calendar-bar-actions">
+            <button type="button" disabled={!calendarId} onClick={() => setFindingTime(true)}>
+              {t('calendar.findTime')}
+            </button>
             <button type="button" disabled={!calendarId} onClick={() => setSharing(true)}>
               {t('calendar.share')}
             </button>
@@ -1109,16 +1139,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                               <span className="calendar-placed-time">
                                 {timeFormat.format(new Date(event.startsAt))}
                               </span>
-                              <span className="calendar-placed-title">{t('calendar.busy')}</span>
+                              <span className="calendar-placed-title">{busyLabel(event)}</span>
                             </div>
                           )
                         }
                         const tone = toneOf(calendarsById.get(event.calendarId))
                         return (
-                          <Tooltip
-                            key={event.calendarId + event.id + event.startsAt}
-                            label={event.summary || t('calendar.untitled')}
-                          >
+                          <Tooltip key={event.calendarId + event.id + event.startsAt} label={titleWithOwner(event)}>
                             <button
                               type="button"
                               className={[
@@ -1178,7 +1205,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
               <div className="calendar-agenda-what">
                 <span className="calendar-agenda-title">
                   {event.isPrivate && <PrivateMark />}
-                  {event.isBusyOnly ? t('calendar.busy') : event.summary || t('calendar.untitled')}
+                  {event.isBusyOnly ? busyLabel(event) : event.summary || t('calendar.untitled')}
                 </span>
                 {event.location && <span className="muted">{event.location}</span>}
                 {event.recurring && <span className="muted">{t('calendar.repeats')}</span>}
@@ -1188,19 +1215,21 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
               </div>
               {!event.isBusyOnly && (
                 <div className="row-actions">
-                  <Tooltip label={t('common.edit')}>
+                  {/* An event of a calendar shared below edit is only read, so the
+                      action says View, with an eye, rather than promising an edit. */}
+                  <Tooltip label={canEditEvent(event) ? t('common.edit') : t('common.view')}>
                     <button
                       type="button"
                       className="icon-button"
                       disabled={opening === event.id || !!submission.pending || submission.isWorking || busy}
                       onClick={() => void edit(event)}
                       aria-disabled={!!submission.pending || submission.isWorking || busy}
-                      aria-label={t('common.edit')}
+                      aria-label={canEditEvent(event) ? t('common.edit') : t('common.view')}
                     >
-                      <PencilIcon />
+                      {canEditEvent(event) ? <PencilIcon /> : <EyeIcon />}
                     </button>
                   </Tooltip>
-                  {canWrite(calendarsById.get(event.calendarId) ?? ({} as Calendar)) && (
+                  {canEditEvent(event) && (
                     <Tooltip label={t('common.delete')}>
                       <button
                         type="button"
@@ -1456,6 +1485,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
       )}
 
       {isSharing && calendar && <CalendarShareDialog calendar={calendar} onClose={() => setSharing(false)} />}
+      {isFindingTime && <FindATimeDialog ownUserId={ownerId} onClose={() => setFindingTime(false)} />}
 
       {deleting && !submission.pending && (
         <ConfirmDialog

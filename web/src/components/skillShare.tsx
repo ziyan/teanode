@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { graphql } from '../api'
+import { failureText, graphql, isNotFound } from '../api'
 import { Avatar } from './avatar'
 import { Tag, formatTime } from './common'
 import { useToast } from './toast'
@@ -133,8 +133,9 @@ export function limitsLine(share: SkillShare, t: (key: Key, values?: Values) => 
 }
 
 // argumentLines are the arguments a call was made with, one line each, less
-// the amount and currency, which the card shows apart. A value is cut: a long
-// one is somebody's text, and a card is read at a glance.
+// the amount and currency, which the card shows apart. A value is kept whole:
+// the owner is approving exactly this call, and a cut value could hide the part
+// that matters. The card wraps it.
 export function argumentLines(toolArguments: string, hide: string[]): [string, string][] {
   let parsed: unknown
   try {
@@ -147,7 +148,7 @@ export function argumentLines(toolArguments: string, hide: string[]): [string, s
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (hide.includes(key) || value === null || value === undefined || value === '') continue
     const text = typeof value === 'string' ? value : JSON.stringify(value)
-    lines.push([key.replace(/_/g, ' '), text.length > 200 ? text.slice(0, 200) + '…' : text])
+    lines.push([key.replace(/_/g, ' '), text])
   }
   return lines
 }
@@ -187,7 +188,7 @@ export function SkillShareCallCard({
       onAnswered?.(done.AnswerSkillShareCall)
       toast.done(isApproved ? t('skillShare.callToastApproved', { name }) : t('skillShare.callToastDeclined', { name }))
     } catch (caught) {
-      toast.failure(caught, t('skillShare.callAnswerFailed'))
+      toast.failed(failureText(caught, t(isApproved ? 'skillShare.callApproveFailed' : 'skillShare.callDeclineFailed')))
     } finally {
       setBusy(false)
     }
@@ -274,17 +275,11 @@ export function SkillShareCallCard({
 // longer share a circle, says so.
 export function SkillShareCallWaitingNote({ detail }: { detail: string }) {
   const { t } = useTranslation()
-  let note: { skillShareId?: string; callId?: string } | null = null
-  try {
-    note = JSON.parse(detail) as { skillShareId?: string; callId?: string }
-  } catch {
-    note = null
-  }
-  const shareId = note?.skillShareId ?? ''
-  const callId = note?.callId ?? ''
+  const { skillShareId: shareId, callId } = waitingNoteOf(detail)
   // Read again every few seconds while the call waits, so that an answer given
   // on the phone shows here; once it is settled, or gone, it is read no more,
-  // since a transcript can hold many of these notes.
+  // since a transcript can hold many of these notes. A read that failed is not
+  // an answer: it keeps being tried, and can be tried now.
   const [isSettled, setIsSettled] = useState(false)
   const calls = useQuery(
     async () => {
@@ -295,25 +290,47 @@ export function SkillShareCallWaitingNote({ detail }: { detail: string }) {
           callState: null,
         })
         return answer.ListSkillShareCalls.find((each) => each.id === callId) ?? null
-      } catch {
-        return null
+      } catch (caught) {
+        // Only an answer of not found says the share is gone. Anything else
+        // is a read that did not get through.
+        if (isNotFound(caught)) return null
+        throw caught
       }
     },
     [shareId, callId],
     { refresh: !isSettled },
   )
   useEffect(() => {
-    if (!calls.loading && (calls.data === null || calls.data.callState !== 'waiting_for_approval')) setIsSettled(true)
-  }, [calls.loading, calls.data])
+    if (calls.loading || calls.error) return
+    if (calls.data === null || calls.data.callState !== 'waiting_for_approval') setIsSettled(true)
+  }, [calls.loading, calls.error, calls.data])
   const [answered, setAnswered] = useState<SkillShareCall | null>(null)
   const call = answered ?? calls.data
   return (
     <div className="agent-line skill-share-call-card-wrap">
       {call ? (
         <SkillShareCallCard call={call} onAnswered={setAnswered} />
+      ) : calls.error ? (
+        <p className="muted">
+          {t('skillShare.callLoadFailed')}{' '}
+          <button type="button" onClick={() => void calls.reload()}>
+            {t('common.tryAgain')}
+          </button>
+        </p>
       ) : (
         <p className="muted">{calls.loading ? t('skillShare.callLoading') : t('skillShare.callGone')}</p>
       )}
     </div>
   )
+}
+
+// waitingNoteOf reads the share and the call a skill_share_call_waiting note
+// names, from its detail. A detail that is not that names nothing.
+function waitingNoteOf(detail: string): { skillShareId: string; callId: string } {
+  try {
+    const note = JSON.parse(detail) as { skillShareId?: string; callId?: string } | null
+    return { skillShareId: note?.skillShareId ?? '', callId: note?.callId ?? '' }
+  } catch {
+    return { skillShareId: '', callId: '' }
+  }
 }

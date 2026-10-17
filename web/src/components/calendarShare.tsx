@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
-import { graphql } from '../api'
+import { failureText, graphql } from '../api'
 import { Tag } from './common'
 import { FormDialog } from './dialog'
 import { CloseIcon } from './icons'
+import { personLabel, personName } from './personLabel'
 import { useToast } from './toast'
 import { Tooltip } from './tooltip'
 import { useQuery } from './useQuery'
@@ -96,8 +98,9 @@ export function CalendarShareDialog({
       await shares.reload()
       return true
     } catch (failure) {
-      setProblem(failure instanceof Error ? failure.message : String(failure))
-      toast.failure(failure, t('calendar.failed'))
+      // The dialog is open, so the failure is said in it, once, and the dialog
+      // stays up with what was chosen.
+      setProblem(failureText(failure, t('calendar.failed')))
       return false
     } finally {
       setBusy(false)
@@ -107,11 +110,13 @@ export function CalendarShareDialog({
   function add() {
     const [kind, id] = choice.split(':')
     if (!id) return
+    const person = people.find((each) => each.userId === id)
     const name =
       kind === 'circle'
         ? everyoneIn(circles.find((each) => each.id === id)?.name ?? '')
-        : ((people.find((each) => each.userId === id)?.name || people.find((each) => each.userId === id)?.username) ??
-          '')
+        : person
+          ? personName(person)
+          : ''
     void run(
       () =>
         graphql(SHARE, {
@@ -164,7 +169,14 @@ export function CalendarShareDialog({
       </div>
 
       {choices.data && people.length === 0 && circles.length === 0 ? (
-        <p className="muted">{t('calendar.shareNoPeople')}</p>
+        <>
+          <p className="muted">{t('calendar.shareNoPeople')}</p>
+          <p>
+            <Link to="/circles" onClick={onClose}>
+              {t('circles.open')}
+            </Link>
+          </p>
+        </>
       ) : (
         <>
           <label>
@@ -175,7 +187,7 @@ export function CalendarShareDialog({
                 <optgroup label={t('calendar.sharePeople')}>
                   {people.map((person) => (
                     <option key={person.userId} value={`user:${person.userId}`}>
-                      {person.name || person.username}
+                      {personLabel(person)}
                     </option>
                   ))}
                 </optgroup>

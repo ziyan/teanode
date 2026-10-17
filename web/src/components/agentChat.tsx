@@ -912,7 +912,7 @@ export function ChatPeopleDialog({
             <p className="muted">{t('chat.noPeople')}</p>
             <p>
               <Link to="/circles" onClick={onClose}>
-                {t('chat.noPeopleOpenCircles')}
+                {t('circles.open')}
               </Link>
             </p>
           </>
@@ -1067,6 +1067,7 @@ export function ChatMembersDialog({
   return (
     <ConfirmDialog
       title={t('chat.members')}
+      error={error}
       body={
         <>
           <ul className="chat-members">
@@ -1120,11 +1121,6 @@ export function ChatMembersDialog({
                 <span>{t('chat.agentAskable')}</span>
               </label>
               <p className="muted">{t('chat.agentAskableHelp')}</p>
-              {error ? (
-                <p className="form-error" role="alert">
-                  {error}
-                </p>
-              ) : null}
             </fieldset>
           ) : null}
         </>

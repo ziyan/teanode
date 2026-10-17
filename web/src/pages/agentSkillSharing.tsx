@@ -1,15 +1,18 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
-import { graphql } from '../api'
+import { failureText, graphql, isNotFound } from '../api'
 import { Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { TrashIcon } from '../components/icons'
+import { AddPersonIcon, ListIcon, TrashIcon } from '../components/icons'
+import { personLabel, personName } from '../components/personLabel'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import {
   LIST_ENDED_SKILL_SHARE_CALLS,
   LIST_SKILL_SHARE_CALLS,
   SkillShareCallCard,
   SKILL_SHARE_FIELDS,
+  currencyExponent,
   formatMinor,
   limitsLine,
   parseMinor,
@@ -74,10 +77,21 @@ export function SkillSharesCard() {
   const [stopping, setStopping] = useState<SkillShare | null>(null)
   const [opened, setOpened] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [stopProblem, setStopProblem] = useState<string | null>(null)
 
   // Somebody who cannot use circles has nobody to lend to, and the question
-  // is refused: no card at all rather than one that can only fail.
-  if (overview.error || !overview.data) return null
+  // is refused as not found: no card at all rather than one that can only
+  // fail. Any other failure is kept and shown with a way to try again, so
+  // that a dropped connection is not read as "nothing is shared".
+  if (overview.error && !overview.data) {
+    if (isNotFound(overview.error)) return null
+    return (
+      <SettingsSection card title={t('skillShare.title')} description={t('skillShare.intro')}>
+        <LoadFailed onRetry={() => void overview.reload()} />
+      </SettingsSection>
+    )
+  }
+  if (!overview.data) return null
   const shares = overview.data.ListSkillShares
   const mine = shares.filter((share) => share.isOwnedByCaller)
   const withMe = shares.filter((share) => !share.isOwnedByCaller)
@@ -96,13 +110,15 @@ export function SkillSharesCard() {
 
   async function stop(share: SkillShare) {
     setBusy(true)
+    setStopProblem(null)
     try {
       await graphql(UNSHARE_SKILL, { shareId: share.id })
       toast.done(t('skillShare.stopped', { skill: share.skillName, name: share.granteeName || share.granteeUsername }))
       setStopping(null)
       await overview.reload()
     } catch (caught) {
-      toast.failure(caught, t('skillShare.failed'))
+      // The confirmation is open, so the failure is said in it.
+      setStopProblem(failureText(caught, t('skillShare.stopFailed')))
     } finally {
       setBusy(false)
     }
@@ -111,16 +127,28 @@ export function SkillSharesCard() {
   return (
     <>
       <SettingsSection card title={t('skillShare.title')} description={t('skillShare.intro')}>
-        {people.length === 0 ? <SettingsEmpty>{t('skillShare.noPeople')}</SettingsEmpty> : null}
+        {people.length === 0 ? (
+          <SettingsEmpty>
+            {t('skillShare.noPeople')} <Link to="/circles">{t('circles.open')}</Link>
+          </SettingsEmpty>
+        ) : null}
         {lendable.map((skill) => (
           <SettingsRow
             key={skill.name}
             title={skill.name}
             subtitle={[skill.description, skill.tools.map((tool) => tool.name).join(', ')].filter(Boolean).join(' · ')}
             actions={
-              <button type="button" disabled={people.length === 0} onClick={() => setSharing(skill)}>
-                {t('skillShare.share')}
-              </button>
+              <Tooltip label={t('skillShare.share')}>
+                <button
+                  type="button"
+                  className="icon-action"
+                  aria-label={`${skill.name}: ${t('skillShare.share')}`}
+                  disabled={people.length === 0}
+                  onClick={() => setSharing(skill)}
+                >
+                  <AddPersonIcon size={16} />
+                </button>
+              </Tooltip>
             }
           />
         ))}
@@ -150,9 +178,17 @@ export function SkillSharesCard() {
                   subtitle={limitsAndMonth(share, t)}
                   actions={
                     <>
-                      <button type="button" aria-expanded={opened.has(share.id)} onClick={() => toggle(share.id)}>
-                        {t('skillShare.activity')}
-                      </button>
+                      <Tooltip label={t('skillShare.activity')}>
+                        <button
+                          type="button"
+                          className="icon-action"
+                          aria-label={`${share.skillName}, ${name}: ${t('skillShare.activity')}`}
+                          aria-expanded={opened.has(share.id)}
+                          onClick={() => toggle(share.id)}
+                        >
+                          <ListIcon size={16} />
+                        </button>
+                      </Tooltip>
                       <Tooltip label={t('skillShare.stop')}>
                         <button
                           type="button"
@@ -196,9 +232,17 @@ export function SkillSharesCard() {
                   }
                   subtitle={limitsAndMonth(share, t)}
                   actions={
-                    <button type="button" aria-expanded={opened.has(share.id)} onClick={() => toggle(share.id)}>
-                      {t('skillShare.activity')}
-                    </button>
+                    <Tooltip label={t('skillShare.activity')}>
+                      <button
+                        type="button"
+                        className="icon-action"
+                        aria-label={`${share.skillName}, ${name}: ${t('skillShare.activity')}`}
+                        aria-expanded={opened.has(share.id)}
+                        onClick={() => toggle(share.id)}
+                      >
+                        <ListIcon size={16} />
+                      </button>
+                    </Tooltip>
                   }
                 />
                 {opened.has(share.id) ? <ShareCalls share={share} isOwner={false} /> : null}
@@ -232,11 +276,29 @@ export function SkillSharesCard() {
           confirmLabel={t('skillShare.stop')}
           destructive
           busy={busy}
-          onClose={() => setStopping(null)}
+          error={stopProblem}
+          onClose={() => {
+            setStopping(null)
+            setStopProblem(null)
+          }}
           onConfirm={() => void stop(stopping)}
         />
       ) : null}
     </>
+  )
+}
+
+// LoadFailed says a read did not get through and offers to make it again. A
+// failed read is not an empty answer: "nothing is shared" would be a claim.
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <SettingsEmpty>
+      <span role="alert">{t('skillShare.loadFailed')}</span>{' '}
+      <button type="button" onClick={onRetry}>
+        {t('common.tryAgain')}
+      </button>
+    </SettingsEmpty>
   )
 }
 
@@ -248,6 +310,13 @@ function EndedShares() {
   const { t } = useTranslation()
   const calls = useQuery(() => graphql<{ ListSkillShareCalls: SkillShareCall[] }>(LIST_ENDED_SKILL_SHARE_CALLS), [])
   const rows = calls.data?.ListSkillShareCalls ?? []
+  if (calls.error && !calls.data) {
+    return (
+      <SettingsSection card title={t('skillShare.ended')} description={t('skillShare.endedHint')}>
+        <LoadFailed onRetry={() => void calls.reload()} />
+      </SettingsSection>
+    )
+  }
   if (rows.length === 0) return null
   return (
     <SettingsSection card title={t('skillShare.ended')} description={t('skillShare.endedHint')}>
@@ -302,6 +371,13 @@ function ShareCalls({ share, isOwner, onChanged }: { share: SkillShare; isOwner:
       }),
     [share.id],
   )
+  if (calls.error && !calls.data) {
+    return (
+      <div className="skill-share-calls">
+        <LoadFailed onRetry={() => void calls.reload()} />
+      </div>
+    )
+  }
   if (!calls.data) return <p className="muted skill-share-calls">{t('skillShare.callLoading')}</p>
   const rows = calls.data.ListSkillShareCalls
   if (rows.length === 0) return <SettingsEmpty>{t('skillShare.noActivity')}</SettingsEmpty>
@@ -390,8 +466,14 @@ function ShareSkillDialog({
   const isCurrencyValid = /^[a-z]{3}$/.test(code)
   const paymentMinor = paymentLimit.trim() === '' ? null : parseMinor(paymentLimit, code)
   const monthlyMinor = monthlyLimit.trim() === '' ? null : parseMinor(monthlyLimit, code)
-  const isLimitReadable =
-    (paymentLimit.trim() === '' || paymentMinor !== null) && (monthlyLimit.trim() === '' || monthlyMinor !== null)
+  const isPaymentUnreadable = paymentLimit.trim() !== '' && paymentMinor === null
+  const isMonthlyUnreadable = monthlyLimit.trim() !== '' && monthlyMinor === null
+  const isLimitReadable = !isPaymentUnreadable && !isMonthlyUnreadable
+  // Said under the field that could not be read, in the currency's own digits.
+  const unreadableAmount = t('skillShare.amountUnreadable', {
+    currency: isCurrencyValid ? code.toUpperCase() : t('skillShare.amountUnreadableCurrency'),
+    example: currencyExponent(code) === 0 ? '1000' : '1000.00',
+  })
   const canSubmit =
     personId !== '' &&
     chosen.size > 0 &&
@@ -413,11 +495,11 @@ function ShareSkillDialog({
         currencyCode: hasLimit && !isAskedEveryTime ? code : null,
         isApprovalRequired: isAskedEveryTime,
       })
-      toast.done(t('skillShare.shared', { skill: skill.name, name: person?.name || person?.username || '' }))
+      toast.done(t('skillShare.shared', { skill: skill.name, name: person ? personName(person) : '' }))
       onShared()
     } catch (caught) {
-      setProblem(caught instanceof Error ? caught.message : String(caught))
-      toast.failure(caught, t('skillShare.failed'))
+      // The dialog is open, so the failure is said in it, once.
+      setProblem(failureText(caught, t('skillShare.failed')))
     } finally {
       setBusy(false)
     }
@@ -440,7 +522,7 @@ function ShareSkillDialog({
           <option value="">{t('skillShare.choose')}</option>
           {people.map((person) => (
             <option key={person.userId} value={person.userId}>
-              {person.name || person.username}
+              {personLabel(person)}
             </option>
           ))}
         </select>
@@ -494,20 +576,30 @@ function ShareSkillDialog({
               inputMode="decimal"
               value={paymentLimit}
               placeholder="100.00"
-              aria-invalid={!isLimitReadable && paymentMinor === null && paymentLimit.trim() !== ''}
+              aria-invalid={isPaymentUnreadable}
               onChange={(event) => setPaymentLimit(event.target.value)}
             />
           </label>
+          {isPaymentUnreadable ? (
+            <span className="error" role="alert">
+              {unreadableAmount}
+            </span>
+          ) : null}
           <label>
             {t('skillShare.monthlyLimit')}
             <input
               inputMode="decimal"
               value={monthlyLimit}
               placeholder="400.00"
-              aria-invalid={!isLimitReadable && monthlyMinor === null && monthlyLimit.trim() !== ''}
+              aria-invalid={isMonthlyUnreadable}
               onChange={(event) => setMonthlyLimit(event.target.value)}
             />
           </label>
+          {isMonthlyUnreadable ? (
+            <span className="error" role="alert">
+              {unreadableAmount}
+            </span>
+          ) : null}
           <label>
             {t('skillShare.currency')}
             <input

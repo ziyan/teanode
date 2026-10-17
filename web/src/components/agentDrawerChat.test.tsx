@@ -485,6 +485,44 @@ it('opens on the chats when the agent is off, with the offer to turn it on in th
   expect(screen.queryByRole('textbox')).toBeNull()
 })
 
+it('does not offer to turn the agent on, or say Main chat, while the chats are still being looked through', async () => {
+  answerWith({ isAgentOn: false, hasChat: false })
+  const answer = vi.mocked(graphql).getMockImplementation()!
+  let release: () => void = () => undefined
+  const isListed = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  // The first question of the list is what makes the drawer reachable at all;
+  // it is the second, the drawer's own look through the chats, that waits.
+  let listings = 0
+  vi.mocked(graphql).mockImplementation(async (document, variables) => {
+    if (document.includes('ListAgentConversations') && ++listings > 1) await isListed
+    return answer(document, variables)
+  })
+  localStorage.setItem(OPEN_KEY, '1')
+  renderDrawer()
+
+  expect((await screen.findAllByText('loading…')).length).toBeGreaterThan(0)
+  expect(screen.queryByText(/Your agent is not on yet/)).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Main chat' })).toBeNull()
+  // The box has nowhere to write yet.
+  expect(screen.queryByRole('textbox')).toBeNull()
+
+  release()
+  expect(await screen.findByText(/Your agent is not on yet/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Main chat' })).toBeTruthy()
+})
+
+it('labels the icons that edit and delete a message with whose message it is', async () => {
+  answerWith()
+  openOnChat()
+  renderDrawer()
+  const mine = (await screen.findByText('Sounds good')).closest('.agent-line') as HTMLElement
+  const row = (mine.closest('.agent-chat-turn') ?? mine.parentElement) as HTMLElement
+  expect(within(row).getByRole('button', { name: 'Edit message from Person A' })).toBeTruthy()
+  expect(within(row).getByRole('button', { name: 'Delete message from Person A' })).toBeTruthy()
+})
+
 it('offers the chats to a person with no chat yet and no agent, who shares a circle with someone', async () => {
   answerWith({ isAgentOn: false, hasChat: false })
   localStorage.setItem(OPEN_KEY, '1')

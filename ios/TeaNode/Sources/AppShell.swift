@@ -115,6 +115,11 @@ struct MainView: View {
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
     @State private var composing: ComposeStart?
+    /// Whether the services, the agent's identity and the chats have been
+    /// read once. Until then it is not known whether the agent is on, and
+    /// drawing the conversation or the offer to turn the agent on would be a
+    /// guess that the next read undoes.
+    @State private var hasReadAgentFacts = false
 
     init(connection: Connection, username: String) {
         self.connection = connection
@@ -149,6 +154,8 @@ struct MainView: View {
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
+                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`).
+                if let chat = DemoServer.openedChat { conversation = chat }
             #endif
         }
         .task {
@@ -163,6 +170,7 @@ struct MainView: View {
             {
                 conversation = newest
             }
+            hasReadAgentFacts = true
             await app.setUpNotifications()
         }
         .task {
@@ -302,7 +310,11 @@ struct MainView: View {
     /// agent off, the offer to turn it on.
     @ViewBuilder
     private var agentScreen: some View {
-        if !app.isAgentOn, conversation == nil {
+        if !hasReadAgentFacts, conversation == nil {
+            // A conversation chosen from a notification or the menu is shown as
+            // asked; the rest waits until it is known what to show.
+            ServicesLoadingView()
+        } else if !app.isAgentOn, conversation == nil {
             AgentOffView()
         } else {
             ConversationView(model: ConversationModel(conversation: conversation, app: app, connection: connection))
@@ -404,10 +416,14 @@ struct KnowledgeStack: View {
         #if DEBUG
             // A screenshot of a page with its records linked
             // (`-TeaNodeScreen knowledge-records`), or scrolled to the recording
-            // row with its passage count (`knowledge-records-recording`).
+            // row with its passage count (`knowledge-records-recording`), or of a
+            // page another person shared (`knowledge-shared-page`).
             .task {
                 if DemoServer.isRequested, ["knowledge-records", "knowledge-records-recording"].contains(DemoServer.screen), path.isEmpty {
                     path.append(KnowledgePlace.page("people/dana-fixture"))
+                }
+                if DemoServer.isRequested, DemoServer.screen == "knowledge-shared-page", path.isEmpty {
+                    path.append(KnowledgePlace.sharedPage(ownerUserId: "sam", path: "recipes/apple-tart"))
                 }
             }
         #endif
@@ -603,9 +619,9 @@ struct AgentOffView: View {
 
     private var offer: some View {
         ContentUnavailableView {
-            Label("Your agent is not on", systemImage: "bubble.left")
+            Label("Your agent is off", systemImage: "bubble.left")
         } description: {
-            Text("Your agent is not on yet. Each person turns on their own, under Settings, Your agent.")
+            Text("Each person turns on their own agent, under Settings, Your agent. Once it is on, it can answer questions, sort your mail and act for you.")
         } actions: {
             Button {
                 app.openedSection = .settings

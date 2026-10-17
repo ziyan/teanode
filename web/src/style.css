@@ -10214,6 +10214,19 @@ button.with-icon {
   white-space: nowrap;
 }
 
+/* Finding a time together: the people who shared a calendar, one to a line,
+   then the days and the hours as two columns of fields. */
+.calendar-find-people {
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-find-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
 .calendar-viewed p {
   margin: 0.25rem 0;
 }
@@ -15770,6 +15783,10 @@ body.has-recording-bar .content {
 }
 .skill-share-call-card-line {
   display: contents;
+}
+/* An argument is shown whole, in the lines it was written in. */
+.skill-share-call-card-line dd {
+  white-space: pre-wrap;
 }
 .skill-share-call-card-amount {
   font-weight: 600;

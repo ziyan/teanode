@@ -406,6 +406,11 @@ public struct Transcript: Sendable {
 
     static func cardId(runId: String, callId: String) -> String { "\(runId)-\(callId)-card" }
 
+    /// The id of the card for a call of a shared skill that waits, built from
+    /// the call so that each call has one card however the note reached the
+    /// transcript.
+    static func skillShareCallWaitingId(callId: String) -> String { "skill-share-call-waiting-\(callId)" }
+
     /// A tool line's id, the same whether it was read back or arrived live,
     /// so a turn replayed after the feed reconnects does not draw it twice.
     static func toolId(callId: String) -> String { "tool-\(callId)" }
@@ -728,7 +733,14 @@ public struct Transcript: Sendable {
                 // its card folds with what it was answered with.
                 answerCodingQuestion(note: event.noteDetail ?? "")
             default:
-                let id = "\(event.runId)-note-\(event.sequence)"
+                // A call that waits is keyed by the call it names, as the
+                // dashboard keys it: the notes of two calls can arrive with
+                // the same run and sequence, and the second card is not the
+                // first one again.
+                var id = "\(event.runId)-note-\(event.sequence)"
+                if noteKind == "skill_share_call_waiting", let note = SkillShareNote.parsing(event.noteDetail ?? "") {
+                    id = Self.skillShareCallWaitingId(callId: note.callId)
+                }
                 guard !lines.contains(where: { $0.id == id }) else { return }
                 let line = TranscriptLine(id: id, kind: .note, text: event.noteDetail ?? event.note ?? "", detail: noteKind, runId: event.runId, at: event.at)
                 if noteKind == "compacted", let index = lines.firstIndex(where: { $0.id == "\(event.runId)-compacting" }) {

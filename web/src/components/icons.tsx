@@ -944,6 +944,16 @@ export function MinusIcon(props: IconProps) {
   )
 }
 
+// EyeIcon is an eye: to look at something without changing it.
+export function EyeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  )
+}
+
 // InfoIcon is a letter i in a circle: how a number is worked out.
 export function InfoIcon(props: IconProps) {
   return (

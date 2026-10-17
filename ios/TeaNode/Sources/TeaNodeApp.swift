@@ -487,6 +487,8 @@ struct SettingsForm: View {
     /// one are waiting for an answer, as the badge on its row.
     @State private var canUseCircles = false
     @State private var openCircleInvitationCount = 0
+    /// Whether Circles is pushed because a notification of an invitation was pressed.
+    @State private var isShowingCircles = false
     #if DEBUG
         /// Whether the screen a screenshot names (`-TeaNodeScreen`) is
         /// pushed, and whether it has been once, so coming back stays here.
@@ -645,6 +647,14 @@ struct SettingsForm: View {
             .onAppear {
                 Task { await refreshCircles() }
             }
+            .navigationDestination(isPresented: $isShowingCircles) {
+                if let connection = app.connection { CirclesView(connection: connection) }
+            }
+            .onChange(of: app.isCirclesOpened, initial: true) { _, isOpened in
+                guard isOpened else { return }
+                app.isCirclesOpened = false
+                isShowingCircles = true
+            }
             #if DEBUG
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
@@ -703,6 +713,11 @@ struct SettingsForm: View {
                 case "schedules": SchedulesView(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
+                case "circles": CirclesView(connection: connection)
+                case "circle-detail": CircleDetailDemoScreen(connection: connection)
+                case "skill-share-sheet": SkillSharingView(connection: connection)
+                case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
+                case "settings-picture": PreferencesView(connection: connection)
                 default: EmptyView()
                 }
             }

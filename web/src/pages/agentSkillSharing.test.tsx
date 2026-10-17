@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 
-import { graphql } from '../api'
+import { APIError, graphql } from '../api'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
 import { SkillSharesCard } from './agentSkillSharing'
@@ -58,20 +59,18 @@ function overview(shares: unknown[] = [], people = [{ userId: 'ben-id', username
   return { ListSkillShares: shares, ListAgentSkills: [payments], ListCirclePeople: people }
 }
 
-function lastOf<T>(items: T[]): T {
-  return items[items.length - 1]
-}
-
 function inApp(element: React.ReactElement) {
   return render(
-    <TranslationProvider>
-      <ToastProvider>{element}</ToastProvider>
-    </TranslationProvider>,
+    <MemoryRouter>
+      <TranslationProvider>
+        <ToastProvider>{element}</ToastProvider>
+      </TranslationProvider>
+    </MemoryRouter>,
   )
 }
 
 it('draws nothing for somebody who cannot use circles, whose question is refused', async () => {
-  vi.mocked(graphql).mockRejectedValue(new Error('not found'))
+  vi.mocked(graphql).mockRejectedValue(new APIError('api: not found'))
   const { container } = inApp(<SkillSharesCard />)
   await waitFor(() => expect(vi.mocked(graphql)).toHaveBeenCalled())
   expect(container.querySelector('.settings-section')).toBeNull()
@@ -82,15 +81,16 @@ it('lists the installed skills to share, and says when there is nobody to share 
   inApp(<SkillSharesCard />)
   expect(await screen.findByText('payments')).toBeTruthy()
   expect(screen.getByText(/You do not share a circle with anybody yet/)).toBeTruthy()
-  expect((screen.getByRole('button', { name: 'Share' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.getByRole('link', { name: 'Open Circles' }).getAttribute('href')).toBe('/circles')
+  expect((screen.getByRole('button', { name: 'payments: Share' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 it('shares a tool that pays only with a limit, reading the limits into the currency minor unit', async () => {
   vi.mocked(graphql).mockResolvedValue(overview())
   inApp(<SkillSharesCard />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'payments: Share' }))
   const dialog = await screen.findByRole('dialog')
-  const submit = lastOf(within(dialog).getAllByRole('button', { name: 'Share' })) as HTMLButtonElement
+  const submit = within(dialog).getByRole('button', { name: 'Share' }) as HTMLButtonElement
 
   // The tool that pays is already chosen, and the rest are not.
   expect((within(dialog).getByLabelText(/^pay/) as HTMLInputElement).checked).toBe(true)
@@ -131,7 +131,7 @@ it('shares a tool that pays only with a limit, reading the limits into the curre
 it('shares with Ask me every time instead of limits, sending none', async () => {
   vi.mocked(graphql).mockResolvedValue(overview())
   inApp(<SkillSharesCard />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Share' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'payments: Share' }))
   const dialog = await screen.findByRole('dialog')
   fireEvent.change(within(dialog).getByLabelText('Share with'), { target: { value: 'ben-id' } })
   fireEvent.click(within(dialog).getByLabelText(/Ask me every time/))
@@ -139,7 +139,7 @@ it('shares with Ask me every time instead of limits, sending none', async () => 
   vi.mocked(graphql)
     .mockResolvedValueOnce({ ShareSkill: { id: 'share-1' } })
     .mockResolvedValue(overview([share()]))
-  fireEvent.click(lastOf(within(dialog).getAllByRole('button', { name: 'Share' })))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
   await waitFor(() =>
     expect(vi.mocked(graphql).mock.calls.some((each) => String(each[0]).includes('ShareSkill'))).toBe(true),
   )
@@ -206,7 +206,7 @@ it('lists a share with its limits and the month so far, its waiting calls first,
   expect(screen.getByText('music from Cora Example')).toBeTruthy()
   expect(screen.getByText('asks you every time')).toBeTruthy()
 
-  fireEvent.click(screen.getAllByRole('button', { name: 'Activity' })[0])
+  fireEvent.click(screen.getByRole('button', { name: 'payments, Ben Example: Activity' }))
   expect(await screen.findByRole('button', { name: 'Approve and run it' })).toBeTruthy()
   expect(screen.getByText('Example Store')).toBeTruthy()
   // What waits is headed as waiting for the owner, in the screen's words.
@@ -289,4 +289,67 @@ it('draws the record of ended shares even when there is nothing left to lend or 
   inApp(<SkillSharesCard />)
   expect(await screen.findByText('payments, pay, with ben')).toBeTruthy()
   expect(screen.getByText('Expired')).toBeTruthy()
+})
+
+it('names each person with the username in brackets, so two of one name differ', async () => {
+  vi.mocked(graphql).mockResolvedValue(
+    overview(
+      [],
+      [
+        { userId: 'ben-id', username: 'ben', name: 'Ben Example' },
+        { userId: 'ben2-id', username: 'ben2', name: 'Ben Example' },
+        { userId: 'cora-id', username: 'cora', name: '' },
+      ],
+    ),
+  )
+  inApp(<SkillSharesCard />)
+  fireEvent.click(await screen.findByRole('button', { name: 'payments: Share' }))
+  const dialog = await screen.findByRole('dialog')
+  const options = within(dialog)
+    .getAllByRole('option')
+    .map((option) => option.textContent)
+  expect(options).toEqual(['Choose a person', 'Ben Example (ben)', 'Ben Example (ben2)', 'cora'])
+})
+
+it('says under the amount what to type when it cannot be read, in the currency chosen', async () => {
+  vi.mocked(graphql).mockResolvedValue(overview())
+  inApp(<SkillSharesCard />)
+  fireEvent.click(await screen.findByRole('button', { name: 'payments: Share' }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Most for one payment'), { target: { value: '1,000' } })
+  expect(within(dialog).getByText('Type the amount in the currency below, such as 1000.00')).toBeTruthy()
+  fireEvent.change(within(dialog).getByLabelText(/^Currency/), { target: { value: 'jpy' } })
+  expect(within(dialog).getByText('Type the amount in JPY, such as 1000')).toBeTruthy()
+  fireEvent.change(within(dialog).getByLabelText('Most for one payment'), { target: { value: '1000' } })
+  expect(within(dialog).queryByText(/Type the amount in/)).toBeNull()
+})
+
+it('says a share that failed once, in the dialog, and not also in a toast', async () => {
+  vi.mocked(graphql).mockResolvedValue(overview())
+  inApp(<SkillSharesCard />)
+  fireEvent.click(await screen.findByRole('button', { name: 'payments: Share' }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Share with'), { target: { value: 'ben-id' } })
+  fireEvent.click(within(dialog).getByLabelText(/Ask me every time/))
+  vi.mocked(graphql).mockRejectedValue(new TypeError('Failed to fetch'))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  // The dialog's error is said through the toasts, the one place a failure is
+  // said, so it appears once.
+  await waitFor(() =>
+    expect(screen.getAllByText('The skill was not shared. Check your connection and try again.')).toHaveLength(1),
+  )
+})
+
+it('keeps a failed read and offers to try again, rather than drawing nothing', async () => {
+  let isFailing = true
+  vi.mocked(graphql).mockImplementation(async (query: string) => {
+    if (isFailing) throw new TypeError('Failed to fetch')
+    if (query.includes('isShareEnded: true')) return { ListSkillShareCalls: [] }
+    return overview()
+  })
+  inApp(<SkillSharesCard />)
+  expect(await screen.findByText(/shared skills could not be loaded/)).toBeTruthy()
+  isFailing = false
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('payments')).toBeTruthy()
 })

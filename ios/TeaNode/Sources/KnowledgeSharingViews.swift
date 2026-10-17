@@ -159,6 +159,9 @@ struct SharedKnowledgePageView: View {
     let pagePath: String
     @State private var page: SharedKnowledgePage?
     @State private var problemText: String?
+    /// Whether the server answered that the page is not shared, as against a
+    /// read that did not get through.
+    @State private var isNotShared = false
 
     var body: some View {
         List {
@@ -185,13 +188,15 @@ struct SharedKnowledgePageView: View {
         .navigationTitle(page?.shownName ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
-            if let problemText {
+            if isNotShared {
                 // A page that is not shared answers as not found, whoever
                 // asks and whatever the reason, so the screen can only say
-                // that and what the server said.
+                // that.
                 ContentUnavailableView(
                     "This page is not available", systemImage: "lock",
-                    description: Text("The person may have stopped sharing it. \(problemText)"))
+                    description: Text("This page is not shared with you, or the person stopped sharing it."))
+            } else if let problemText, page == nil {
+                LoadFailedView(problemText: problemText) { await load() }
             } else if page == nil {
                 ProgressView()
             }
@@ -204,9 +209,11 @@ struct SharedKnowledgePageView: View {
         do {
             page = try await connection.sharedKnowledgePage(ownerUserId: ownerUserId, path: pagePath)
             problemText = nil
+            isNotShared = false
         } catch {
             // With the page already on screen a failed refresh leaves it be.
-            if page == nil { problemText = error.localizedDescription }
+            guard page == nil else { return }
+            if error.isNotFoundRefusal { isNotShared = true } else { problemText = error.loadProblemText }
         }
     }
 }
@@ -215,8 +222,8 @@ struct SharedKnowledgePageView: View {
 /// it, with a person they share a circle with or a circle they are in. It
 /// lists who the page is already shared with (a share of a page above it
 /// reaches this one too), with a way to stop each, and offers the people and
-/// circles the server would accept. Before they confirm, the person can open
-/// exactly what the other side will be shown.
+/// circles the server would accept. Sharing opens exactly what the other side
+/// will be shown first, and is confirmed there, once that has been read.
 struct KnowledgeShareSheet: View {
     let connection: Connection
     let pagePath: String
@@ -225,9 +232,10 @@ struct KnowledgeShareSheet: View {
     @State private var people: [CalendarSharePerson] = []
     @State private var circles: [CalendarShareCircle] = []
     @State private var isLoaded = false
-    @State private var chosenPersonId: String?
-    @State private var chosenCircleId: String?
+    @State private var loadProblemText: String?
+    @State private var chosen: ShareTarget?
     @State private var isQuoteShared = false
+    @State private var stopping: KnowledgeShare?
     @State private var isWorking = false
     @State private var problemText: String?
     @State private var doneText: String?
@@ -240,21 +248,11 @@ struct KnowledgeShareSheet: View {
                     Section {
                         Text("You do not share a circle with anybody yet. Make or join a circle to share a page.")
                             .foregroundStyle(.secondary)
+                        OpenCirclesLink(connection: connection)
                     }
                 } else if isLoaded {
                     Section {
-                        Picker("Person", selection: $chosenPersonId) {
-                            Text("None").tag(String?.none)
-                            ForEach(people) { person in
-                                Text(person.displayName).tag(Optional(person.userId))
-                            }
-                        }
-                        Picker("Circle", selection: $chosenCircleId) {
-                            Text("None").tag(String?.none)
-                            ForEach(circles) { circle in
-                                Text(circle.name).tag(Optional(circle.id))
-                            }
-                        }
+                        ShareTargetPicker(people: people, circles: circles, chosen: $chosen)
                     } header: {
                         Text("Share with")
                     } footer: {
@@ -268,14 +266,17 @@ struct KnowledgeShareSheet: View {
                     Section {
                         NavigationLink {
                             KnowledgeSharePreviewScreen(
-                                connection: connection, pagePath: pagePath, granteeUserId: chosenPersonId,
-                                granteeCircleId: chosenCircleId, isQuoteShared: isQuoteShared)
+                                connection: connection, pagePath: pagePath, granteeUserId: chosen?.granteeUserId,
+                                granteeCircleId: chosen?.granteeCircleId, isQuoteShared: isQuoteShared
+                            ) {
+                                await share()
+                            }
                         } label: {
-                            Label("What they will see", systemImage: "eye")
+                            Label("Share", systemImage: "square.and.arrow.up")
                         }
-                        .disabled(chosenPersonId == nil && chosenCircleId == nil)
-                        Button("Share") { share() }
-                            .disabled(isWorking || (chosenPersonId == nil && chosenCircleId == nil))
+                        .disabled(chosen == nil || isWorking)
+                    } footer: {
+                        Text("Before it is shared, you see exactly what they will be shown.")
                     }
                 }
             }
@@ -287,15 +288,13 @@ struct KnowledgeShareSheet: View {
                 }
             }
             .overlay {
-                if !isLoaded { ProgressView() }
+                if let loadProblemText, !isLoaded {
+                    LoadFailedView(problemText: loadProblemText) { await load() }
+                } else if !isLoaded {
+                    ProgressView()
+                }
             }
-            // A person and a circle are not both chosen: the last choice wins.
-            .onChange(of: chosenPersonId) { _, person in
-                if person != nil { chosenCircleId = nil }
-            }
-            .onChange(of: chosenCircleId) { _, circle in
-                if circle != nil { chosenPersonId = nil }
-            }
+            .refreshable { await load() }
             .task { await load() }
             .toast(done: $doneText, problem: $problemText)
         }
@@ -310,7 +309,7 @@ struct KnowledgeShareSheet: View {
             }
             ForEach(covering) { share in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName)
+                    Text(Self.name(of: share))
                     if share.path != pagePath {
                         Text("Shared as part of \(share.path)").font(.footnote).foregroundStyle(.secondary)
                     }
@@ -319,17 +318,32 @@ struct KnowledgeShareSheet: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
+                .confirmationDialog(
+                    "Stop sharing", isPresented: Binding(get: { stopping?.id == share.id }, set: { if !$0 { stopping = nil } }),
+                    titleVisibility: .visible, presenting: stopping
+                ) { share in
+                    Button("Stop sharing", role: .destructive) { stop(share) }
+                } message: { share in
+                    Text("\(Self.name(of: share)) will no longer read this page.")
+                }
+                .swipeActions {
+                    Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
+                }
                 .contextMenu {
-                    Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stop(share) }
+                    Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
                 }
             }
         } header: {
             Text("Shared with")
         } footer: {
             if !covering.isEmpty {
-                Text("Touch and hold to stop sharing.")
+                Text("Swipe left, or touch and hold, to stop sharing.")
             }
         }
+    }
+
+    private static func name(of share: KnowledgeShare) -> String {
+        share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName
     }
 
     private func load() async {
@@ -339,38 +353,44 @@ struct KnowledgeShareSheet: View {
             async let readCircles = connection.calendarShareCircles()
             (shares, people, circles) = try await (readShares, readPeople, readCircles)
             isLoaded = true
+            loadProblemText = nil
         } catch {
-            problemText = error.localizedDescription
+            if isLoaded { problemText = error.loadProblemText } else { loadProblemText = error.loadProblemText }
         }
     }
 
-    private func share() {
+    /// Shares the page with the choice, once its preview has been read and
+    /// confirmed. Answers whether it was shared, so that the preview can go
+    /// back to this sheet, which says so.
+    private func share() async -> Bool {
+        guard let target = chosen else { return false }
+        let name = ShareTargetPicker.name(of: target, people: people, circles: circles)
         isWorking = true
-        Task {
-            do {
-                try await connection.shareKnowledgePage(
-                    path: pagePath, granteeUserId: chosenPersonId, granteeCircleId: chosenCircleId, isQuoteShared: isQuoteShared)
-                doneText = String(localized: "Shared")
-                chosenPersonId = nil
-                chosenCircleId = nil
-                isQuoteShared = false
-                shares = try await connection.knowledgeShares()
-            } catch {
-                problemText = error.localizedDescription
-            }
-            isWorking = false
+        defer { isWorking = false }
+        do {
+            try await connection.shareKnowledgePage(
+                path: pagePath, granteeUserId: target.granteeUserId, granteeCircleId: target.granteeCircleId, isQuoteShared: isQuoteShared)
+            doneText = String(localized: "Shared with \(name)")
+            chosen = nil
+            isQuoteShared = false
+            shares = (try? await connection.knowledgeShares()) ?? shares
+            return true
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "Sharing was not changed. Check your connection and try again."))
+            return false
         }
     }
 
     private func stop(_ share: KnowledgeShare) {
+        let name = Self.name(of: share)
         isWorking = true
         Task {
             do {
                 try await connection.unshareKnowledgePage(shareId: share.id)
-                doneText = String(localized: "No longer shared")
+                doneText = String(localized: "Stopped sharing with \(name)")
                 shares = try await connection.knowledgeShares()
             } catch {
-                problemText = error.localizedDescription
+                problemText = error.refusalReason(orSay: String(localized: "Sharing was not changed. Check your connection and try again."))
             }
             isWorking = false
         }
@@ -379,45 +399,72 @@ struct KnowledgeShareSheet: View {
 
 /// KnowledgeSharePreviewScreen is exactly what the person or circle chosen
 /// would be shown of the page, drawn the way they would read it, and how many
-/// pages the share reaches. Nothing is shared by looking.
+/// pages the share reaches. Nothing is shared by looking: Share is here, and is
+/// on only once the preview has been read, so a page is never shared unseen.
 struct KnowledgeSharePreviewScreen: View {
     let connection: Connection
     let pagePath: String
     let granteeUserId: String?
     let granteeCircleId: String?
     let isQuoteShared: Bool
+    /// Shares the page; answers whether it was.
+    let onShare: () async -> Bool
+    @Environment(\.dismiss) private var dismiss
     @State private var preview: KnowledgeSharePreview?
     @State private var problemText: String?
+    @State private var isSharing = false
 
     var body: some View {
         List {
             if let preview {
                 Section {
-                    if preview.isReachedPageCountCut {
-                        Text("Pages shared: at least \(preview.reachedPageCount) (this one and everything under it)")
-                    } else {
-                        Text("Pages shared: \(preview.reachedPageCount) (this one and everything under it)")
-                    }
+                    Text(verbatim: Self.pagesText(of: preview))
                 }
                 SharedKnowledgeSections(page: preview.page, openingOwnerUserId: nil)
             }
         }
         .navigationTitle("What they will see")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Share") {
+                    isSharing = true
+                    Task {
+                        if await onShare() { dismiss() }
+                        isSharing = false
+                    }
+                }
+                .disabled(preview == nil || isSharing)
+            }
+        }
         .overlay {
             if let problemText {
-                ContentUnavailableView("This could not be read", systemImage: "exclamationmark.triangle", description: Text(problemText))
+                LoadFailedView(problemText: problemText) { await load() }
             } else if preview == nil {
                 ProgressView()
             }
         }
-        .task {
-            do {
-                preview = try await connection.previewKnowledgeShare(
-                    path: pagePath, granteeUserId: granteeUserId, granteeCircleId: granteeCircleId, isQuoteShared: isQuoteShared)
-            } catch {
-                problemText = error.localizedDescription
-            }
+        .task { await load() }
+    }
+
+    /// How many pages the share reaches, as the dashboard says it.
+    private static func pagesText(of preview: KnowledgeSharePreview) -> String {
+        let count = preview.reachedPageCount
+        switch (preview.isReachedPageCountCut, count == 1) {
+        case (false, true): return String(localized: "This shares 1 page: this one and everything under it.")
+        case (false, false): return String(localized: "This shares \(count) pages: this one and everything under it.")
+        case (true, true): return String(localized: "This shares at least 1 page: this one and everything under it.")
+        case (true, false): return String(localized: "This shares at least \(count) pages: this one and everything under it.")
+        }
+    }
+
+    private func load() async {
+        do {
+            preview = try await connection.previewKnowledgeShare(
+                path: pagePath, granteeUserId: granteeUserId, granteeCircleId: granteeCircleId, isQuoteShared: isQuoteShared)
+            problemText = nil
+        } catch {
+            problemText = error.loadProblemText
         }
     }
 }

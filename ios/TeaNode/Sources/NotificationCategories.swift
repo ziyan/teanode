@@ -12,6 +12,7 @@ enum NotificationCategories {
     static let message = "message"
     static let chat = "chat"
     static let skillShareCall = "skill_share_call"
+    static let circle = "circle"
     static let questionPrefix = "question-"
 
     /// The categories known before any notification arrives. A question's
@@ -33,6 +34,9 @@ enum NotificationCategories {
             // Only to open the app: an answer that runs somebody's payment is
             // given on the card, not from a lock screen.
             UNNotificationCategory(identifier: skillShareCall, actions: [openAction], intentIdentifiers: []),
+            // An invitation is answered on the Circles screen, which Open goes
+            // to: it is not a question for the agent, so it has no reply field.
+            UNNotificationCategory(identifier: circle, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -66,6 +70,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == chat }
         case "skill_share_call":
             return fixed.first { $0.identifier == skillShareCall }
+        case "circle":
+            return fixed.first { $0.identifier == circle }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in

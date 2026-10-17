@@ -152,7 +152,7 @@ struct PreferencesView: View {
         defer { isChangingPicture = false }
         do {
             guard let pictureData = try await item.loadTransferable(type: Data.self), let jpeg = AvatarPicture.jpeg(from: pictureData) else {
-                problemText = String(localized: "That picture could not be read.")
+                problemText = String(localized: "That picture could not be read. Use a JPEG or PNG.")
                 return
             }
             let saved = try await connection.setAccountAvatar(jpeg)

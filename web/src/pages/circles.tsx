@@ -760,6 +760,7 @@ export function CirclePage() {
                       username,
                       reason: caught instanceof Error ? caught.message : t('circles.failed'),
                     }),
+                    { cause: caught },
                   )
                 }
               },

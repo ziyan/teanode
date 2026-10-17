@@ -72,7 +72,9 @@ struct UnreadBadge: View {
         Text(verbatim: unreadCount > 99 ? "99+" : "\(unreadCount)")
             .font(.caption.weight(.semibold))
             .monospacedDigit()
-            .foregroundStyle(.white)
+            // The window's own color on the tint, light in dark mode and dark in
+            // light mode, so that it holds against the tint in both.
+            .foregroundStyle(.background)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(.tint, in: .capsule)
@@ -316,6 +318,14 @@ struct ChatMenu: View {
             .sheet(isPresented: $isShowingMembers) {
                 ChatMembersSheet(model: model)
             }
+            #if DEBUG
+                // `-TeaNodeScreen chat-members`: the members sheet open over the chat.
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "chat-members" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isShowingMembers = true
+                }
+            #endif
         }
     }
 }
@@ -372,7 +382,17 @@ struct ChatMembersSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(detents)
+    }
+
+    /// The sheet opens half way and can be pulled up. A screenshot of it
+    /// (`-TeaNodeScreen chat-members`) opens it whole, to show the switches
+    /// under the members.
+    private var detents: Set<PresentationDetent> {
+        #if DEBUG
+            if DemoServer.isRequested, DemoServer.screen == "chat-members" { return [.large] }
+        #endif
+        return [.medium, .large]
     }
 
     /// What the person's agent does in this chat, as two switches that are the
@@ -471,6 +491,9 @@ struct ChatPeopleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @State private var people: [ChatPerson]?
+    /// Why the people could not be read, to be said with a way to try again: an
+    /// empty list would say the person shares a circle with nobody.
+    @State private var loadProblemText: String?
     @State private var chosen: Set<String> = []
     @State private var groupName = ""
     @State private var isBusy = false
@@ -520,12 +543,27 @@ struct ChatPeopleSheet: View {
                 }
             }
             .overlay {
-                if people == nil {
+                if let loadProblemText, people == nil {
+                    LoadFailedView(problemText: loadProblemText) { await load() }
+                } else if people == nil {
                     ProgressView()
                 } else if choices.isEmpty {
-                    ContentUnavailableView(
-                        "No one to message yet", systemImage: "person.2",
-                        description: Text("You do not share a circle with anyone yet. Invite people to a circle, then message them from here."))
+                    if purpose == .add, !(people ?? []).isEmpty {
+                        // Adding to a group the person's circles are all in
+                        // already is not the same as sharing a circle with nobody.
+                        ContentUnavailableView(
+                            "Nobody left to add", systemImage: "person.2",
+                            description: Text("Everyone you share a circle with is already in this group."))
+                    } else {
+                        ContentUnavailableView {
+                            Label("No one to message yet", systemImage: "person.2")
+                        } description: {
+                            Text("You do not share a circle with anyone yet. Invite people to a circle, then message them from here.")
+                        } actions: {
+                            OpenCirclesLink(connection: connection)
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
                 }
             }
             .navigationTitle(navigationTitle)
@@ -551,14 +589,16 @@ struct ChatPeopleSheet: View {
             } message: { text in
                 Text(text)
             }
-            .task {
-                do {
-                    people = try await connection.chatPeople()
-                } catch {
-                    people = []
-                    problemText = app.describe(error)
-                }
-            }
+            .task { await load() }
+        }
+    }
+
+    private func load() async {
+        do {
+            people = try await connection.chatPeople()
+            loadProblemText = nil
+        } catch {
+            loadProblemText = error.loadProblemText
         }
     }
 

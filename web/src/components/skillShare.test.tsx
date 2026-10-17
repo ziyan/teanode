@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { graphql } from '../api'
+import { APIError, graphql } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
 import {
   SkillShareCallCard,
@@ -80,7 +80,7 @@ it('writes and reads an amount in the currency own digits, as the server does', 
   }
 })
 
-it('lists the arguments of a call less the amount, currency and reason, and cuts a long one', () => {
+it('lists the arguments of a call less the amount, currency and reason, and keeps a long one whole', () => {
   const lines = argumentLines(
     JSON.stringify({
       merchant: 'Example Store',
@@ -93,7 +93,7 @@ it('lists the arguments of a call less the amount, currency and reason, and cuts
     ['amount_minor', 'currency', 'request_reason'],
   )
   expect(lines.map(([key]) => key)).toEqual(['merchant', 'note'])
-  expect(lines[1][1].length).toBe(201)
+  expect(lines[1][1]).toBe('y'.repeat(300))
   expect(argumentLines('not json', [])).toEqual([])
 })
 
@@ -120,12 +120,21 @@ it('approves with a note, sending exactly the call that was shown, and then show
   expect(answered.mock.calls[0][0].callState).toBe('ran')
 })
 
-it('declines without a note by sending none, and says so when the answer fails', async () => {
-  vi.mocked(graphql).mockRejectedValue(new Error('that call is not waiting for an answer any more'))
+it('declines without a note by sending none, and says why when the server refused the answer', async () => {
+  vi.mocked(graphql).mockRejectedValue(new APIError('that call is not waiting for an answer any more'))
   inApp(<SkillShareCallCard call={call()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
   await waitFor(() => expect(screen.getByText('that call is not waiting for an answer any more')).toBeTruthy())
   expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ callId: 'call-1', isApproved: false, answerNote: null })
+})
+
+it('says what to do when the answer did not get through at all', async () => {
+  vi.mocked(graphql).mockRejectedValue(new TypeError('Failed to fetch'))
+  inApp(<SkillShareCallCard call={call()} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Approve and run it' }))
+  expect(await screen.findByText('Nothing was approved. Check your connection and try again.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
+  expect(await screen.findByText('Nothing was declined. Check your connection and try again.')).toBeTruthy()
 })
 
 it('offers no buttons once the call has been answered, or to the person who asked', () => {
@@ -155,11 +164,21 @@ it('draws the note of the main conversation from the call it names, as it stands
   expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ shareId: 'share-1', callState: null })
 })
 
-it('says a call is gone when its share was taken back', async () => {
-  vi.mocked(graphql).mockRejectedValue(new Error('not found'))
+it('says a call is gone only when the server answers not found', async () => {
+  vi.mocked(graphql).mockRejectedValue(new APIError('api: not found'))
   inApp(<SkillShareCallWaitingNote detail={JSON.stringify({ skillShareId: 'share-1', callId: 'call-1' })} />)
-  expect(await screen.findByText('This is no longer there.')).toBeTruthy()
+  expect(await screen.findByText(/This call is gone/)).toBeTruthy()
   cleanup()
   inApp(<SkillShareCallWaitingNote detail="not json" />)
-  expect(await screen.findByText('This is no longer there.')).toBeTruthy()
+  expect(await screen.findByText(/This call is gone/)).toBeTruthy()
+})
+
+it('does not call a call gone when it could not be read: it offers to try again, and then draws it', async () => {
+  vi.mocked(graphql).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  inApp(<SkillShareCallWaitingNote detail={JSON.stringify({ skillShareId: 'share-1', callId: 'call-1' })} />)
+  expect(await screen.findByText(/could not be loaded/)).toBeTruthy()
+  expect(screen.queryByText(/This call is gone/)).toBeNull()
+  vi.mocked(graphql).mockResolvedValue({ ListSkillShareCalls: [call()] })
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByRole('button', { name: 'Approve and run it' })).toBeTruthy()
 })

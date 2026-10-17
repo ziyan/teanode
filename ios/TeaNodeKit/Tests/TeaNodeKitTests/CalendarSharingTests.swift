@@ -42,6 +42,32 @@ final class CalendarSharingTests: XCTestCase {
         XCTAssertEqual(found.circleId, "circle")
     }
 
+    func testASharedCalendarSaysWhoseItIsBesideItsEventsAndTheirOwnSaysNothing() throws {
+        XCTAssertNil(try calendar(#"{"id":"c","name":"Calendar"}"#).whoseName)
+        XCTAssertEqual(try calendar(#"{"id":"c","name":"Calendar","shareLevel":"busy","ownerName":"Ben Example"}"#).whoseName, "Ben Example")
+        XCTAssertEqual(
+            try calendar(#"{"id":"c","name":"Calendar","shareLevel":"edit","isCircleCalendar":true,"circleName":"The household"}"#).whoseName,
+            "The household")
+        XCTAssertNil(try calendar(#"{"id":"c","name":"Calendar","shareLevel":"titles","ownerName":""}"#).whoseName)
+    }
+
+    func testAPickerNamesAPersonWithTheirUsernameInBrackets() {
+        XCTAssertEqual(PersonWords.pickerLabel(name: "Ben Example", username: "ben"), "Ben Example (ben)")
+        XCTAssertEqual(PersonWords.pickerLabel(name: "Ben Example", username: "ben2"), "Ben Example (ben2)")
+        XCTAssertEqual(PersonWords.pickerLabel(name: nil, username: "cora"), "cora")
+        XCTAssertEqual(PersonWords.pickerLabel(name: "  ", username: "cora"), "cora")
+        XCTAssertEqual(PersonWords.pickerLabel(name: "cora", username: "cora"), "cora")
+        let person = CalendarSharePerson(userId: "u", username: "ben", name: "Ben Example", avatarUrl: nil, avatarColorIndex: nil)
+        XCTAssertEqual(person.pickerLabel, "Ben Example (ben)")
+    }
+
+    func testAShareTargetIsAPersonOrACircleAndNeverBoth() {
+        XCTAssertEqual(ShareTarget.person("u1").granteeUserId, "u1")
+        XCTAssertNil(ShareTarget.person("u1").granteeCircleId)
+        XCTAssertEqual(ShareTarget.circle("c1").granteeCircleId, "c1")
+        XCTAssertNil(ShareTarget.circle("c1").granteeUserId)
+    }
+
     func testOnlyTheFourLevelsCanBeGiven() {
         XCTAssertEqual(CalendarShareLevel.grantable, [.busy, .titles, .details, .edit])
         XCTAssertFalse(CalendarShareLevel.grantable.contains(.owner))
