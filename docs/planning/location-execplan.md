@@ -21,12 +21,16 @@ To see it working at the end: two accounts in one family circle, each with the a
 - [x] (2026-10-17) Maintainer asked for labels on places (home, work, school and so on); added as `place_label`.
 - [x] (2026-10-17) Milestone 0, server half: Nominatim reverse and search, and the OpenFreeMap style's hosts, checked by hand (see Surprises).
 - [ ] Milestone 0, the rest: the map drawn under the dashboard's content security policy (with Milestone 3); visits timed on a real iPhone (with Milestone 2's first TestFlight build).
-- [ ] Milestone 1: storage, reporting and naming on the server, with the command line and the agent's tool.
-- [ ] Milestone 2: the iPhone records, and shows the person their own location.
-- [ ] Milestone 3: the dashboard's Location page.
-- [ ] Milestone 4: sharing with circles, the people on the map, and notifications.
-- [ ] Milestone 5: the agent: memory of where the person goes, their routine, and place search.
-- [ ] Milestone 5b: getting started: setting up Location the first time, the phone tour, and the offer on joining a family circle.
+- [x] (2026-10-17) Milestone 1: storage, reporting and naming on the server, with the command line and the agent's tool (built by subagents from briefs, read and tested here).
+- [x] (2026-10-17) Milestone 2: the iPhone records, and shows the person their own location (compiles on CI only; first CI build found one inaccessible initializer, fixed).
+- [x] (2026-10-17) Milestone 3: the dashboard's Location page.
+- [x] (2026-10-17) Milestone 4: sharing with circles, the people on the map, and notifications.
+- [x] (2026-10-17) Milestone 5: the agent: memory of where the person goes, their routine, and place search.
+- [x] (2026-10-17) Milestone 5b: getting started: setting up Location the first time, the phone tour, and the offer on joining a family circle.
+- [x] (2026-10-17) First use on a development server: a family circle of two invented accounts, a morning reported as a phone would, resent unchanged (nothing new), read back with `teanode location now`, `visits`, `places`.
+- [x] (2026-10-17) Review round 1: security, correctness, parity, words and conventions, the dashboard, the iPhone; about a hundred findings.
+- [ ] Fix round 1, then review round 2, until a round finds nothing.
+- [ ] Walk every screen in Chrome (desktop and 390 px, light and dark) and the iPhone screenshots from CI; the ux-review skill.
 - [ ] Milestone 6: documentation, the security review section, review rounds, use it for real, deploy.
 
 ## Surprises & Discoveries
@@ -51,6 +55,12 @@ To see it working at the end: two accounts in one family circle, each with the a
 
 - Observation (Milestone 0): every file the OpenFreeMap style names comes from one host: the style (`https://tiles.openfreemap.org/styles/liberty`), its vector tiles (`https://tiles.openfreemap.org/planet`, a TileJSON pointing at dated `{z}/{x}/{y}.pbf` files, zoom 0 to 14), its fonts (`/fonts/{fontstack}/{range}.pbf`), its icons (`/sprites/...`) and a shaded relief (`/natural_earth/...png`). The proxy rewrites that one origin to `/api/v1/map` in the style and the TileJSON, and fetches only from it.
   Evidence: the style's `sources`, `sprite` and `glyphs` fields, read with curl on 2026-10-17.
+
+- Observation (first use): places were never named on a server whose agent is off, because the naming job ran only in the agent's worker, which the server does not build while the agent is off. Location belongs to the person, not to the agent.
+  Evidence: a development server with no model: `teanode location places` still said "Paris, France" (the city table's name) for both places after three minutes, and `internal/agent/agent.go` says "Nothing here is constructed while the agent is off".
+
+- Observation (review round 1): joining two visits deleted the row holding the absorbed visit's key, so a resent batch counted it again and notified again; erasing history left the journal documents the agent reads; a departure iOS never sent left a visit open for ever, which the journal read as a whole day there.
+  Evidence: `review-1-correctness.md` findings 2 to 4, reproduced with throwaway tests.
 
 ## Decision Log
 
@@ -96,6 +106,18 @@ To see it working at the end: two accounts in one family circle, each with the a
 
 - Decision: what the agent learns goes through memory as it does for recordings: a **location** knowledge source per person writes one document per finished day ("where they went on Saturday 11 October"), which the dream reads into facts on pages under Places; and the month digest the timeline is written from gets a section of places and hours. Questions about particular days are answered by the tool from the visits themselves, never from memory.
   Rationale: the dream already turns documents into pages with evidence, and the recordings feature set the pattern (`docs/decisions/20261012-recordings-are-passive-knowledge-sources.md`). A routine is a fact about many days; a day is a record. Keeping both answers exact.
+  Date/Author: 2026-10-17, design.
+
+- Decision: one word per idea, settled in review round 1: **visit** (never "stay"); **position** in everything a person reads and **point** in API and code identifiers, defined as one reported position; **erase** for deleting history (`EraseLocationHistory`, renamed from `ForgetLocationHistory`) and **forget** for deleting one place; `shareLevel` on every view; the two levels read "Where I am now" and "Where I am and where I have been".
+  Rationale: the reviewers found "stay" in two hundred lines beside "visit", "point" and "position" mixed in what people read, and "forget" and "erase" for the same action. Renaming the API's point would touch every surface for a word only developers see; a person never reads "point".
+  Date/Author: 2026-10-17, design.
+
+- Decision: OpenStreetMap stays on by default, and the person is told where names come from where they set Location up and the operator beside the provider setting: the server sends the position of each new place to the place provider.
+  Rationale: the maintainer asked for OpenStreetMap names; the security review pointed out that positions leave the server without notice. Telling, rather than switching it off, keeps the feature working on a new server.
+  Date/Author: 2026-10-17, design.
+
+- Decision: a new place is named right after the report that made it is committed, outside the agent; the agent's periodic job only retries places whose first try failed. Notifications go out only for an arrival or departure in the last fifteen minutes and after the share was made.
+  Rationale: naming must work with the agent off (see Surprises); a phone that was offline for a day must not ring the family for every place it passed.
   Date/Author: 2026-10-17, design.
 
 ## Outcomes & Retrospective
