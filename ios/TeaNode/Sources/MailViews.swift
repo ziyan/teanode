@@ -669,7 +669,10 @@ struct ThreadList: View {
 }
 
 /// ThreadRow is a conversation in a list: who, the agent's marks, the
-/// subject, the agent's summary, the shield and when.
+/// subject, the agent's summary, the shield and when. Every row is the same
+/// height, as Mail draws them: the summary always takes two lines, empty or
+/// not, and the marks are symbols on the first line rather than a line of
+/// their own.
 struct ThreadRow: View {
     let thread: MailThread
     let folderName: String?
@@ -695,6 +698,24 @@ struct ThreadRow: View {
                         .font(.headline)
                         .lineLimit(1)
                     Spacer(minLength: 4)
+                    // Only what asks for attention: high priority, a reply
+                    // owed, and a sender whose checks failed.
+                    let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
+                    if marks.isHigh {
+                        Image(systemName: "exclamationmark.circle.fill").font(.caption).foregroundStyle(.red)
+                            .accessibilityLabel("Important")
+                    }
+                    if marks.needsReply {
+                        Image(systemName: "arrowshape.turn.up.left.fill").font(.caption).foregroundStyle(.tint)
+                            .accessibilityLabel("Needs reply")
+                    }
+                    if marks.verdict == .bad {
+                        Image(systemName: "xmark.shield.fill").font(.caption).foregroundStyle(.red)
+                            .accessibilityLabel("Not verified")
+                    } else if marks.verdict == .warn {
+                        Image(systemName: "exclamationmark.shield.fill").font(.caption).foregroundStyle(.orange)
+                            .accessibilityLabel("Looks like spam")
+                    }
                     if thread.flagged {
                         Image(systemName: "star.fill").font(.caption).foregroundStyle(.orange)
                             .accessibilityLabel("Starred")
@@ -733,32 +754,10 @@ struct ThreadRow: View {
                     }
                 }
                 .font(.subheadline)
-                let preview = insight?.summary ?? ""
-                if !preview.isEmpty {
-                    Text(preview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                // Only what asks for attention: high priority, a reply owed,
-                // and a sender whose checks failed.
-                let marks = MailRowMarks(insight: insight, verdict: MailVerdict.of(message?.authenticationResults))
-                if marks.hasAny {
-                    HStack(spacing: 12) {
-                        if marks.isHigh {
-                            RowMark(systemImage: "exclamationmark.circle.fill", text: String(localized: "Important")).foregroundStyle(.red)
-                        }
-                        if marks.needsReply {
-                            RowMark(systemImage: "arrowshape.turn.up.left.fill", text: String(localized: "Needs reply")).foregroundStyle(.tint)
-                        }
-                        if marks.verdict == .bad {
-                            RowMark(systemImage: "xmark.shield.fill", text: String(localized: "Not verified")).foregroundStyle(.red)
-                        } else if marks.verdict == .warn {
-                            RowMark(systemImage: "exclamationmark.shield.fill", text: String(localized: "Looks like spam")).foregroundStyle(.orange)
-                        }
-                    }
-                    .padding(.top, 1)
-                }
+                Text(insight?.summary ?? "")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2, reservesSpace: true)
             }
         }
         .padding(.leading, -12)
@@ -867,20 +866,6 @@ enum ListRowSpacing {
     static let insets = EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16)
 }
 
-/// RowMark is a small mark on a row: a symbol close to its word.
-struct RowMark: View {
-    let systemImage: String
-    let text: String
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: systemImage).imageScale(.small)
-            Text(text)
-        }
-        .font(.caption.weight(.medium))
-    }
-}
-
 /// MailRowMarks are what a mail row says beyond who and what: only what
 /// asks for attention.
 struct MailRowMarks {
@@ -893,8 +878,6 @@ struct MailRowMarks {
         needsReply = insight?.needsReply == true
         self.verdict = verdict
     }
-
-    var hasAny: Bool { isHigh || needsReply || verdict == .bad || verdict == .warn }
 }
 
 /// InsightChips are the agent's marks on a message: high priority, its
