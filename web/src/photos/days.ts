@@ -184,3 +184,52 @@ export function formatDate(moment: string, language: string, timeZone?: string):
   if (Number.isNaN(date.getTime())) return ''
   return new Intl.DateTimeFormat(language, { timeZone, year: 'numeric', month: 'long', day: 'numeric' }).format(date)
 }
+
+// photoDate is the day a photo was taken, on the clock where it was taken, in
+// the reader's language: "July 12, 2025". Without the weekday, which a
+// description of a picture does not need.
+export function photoDate(photo: PlacedPhoto, language: string, browserTimeZone?: string): string {
+  const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
+  if (Number.isNaN(moment.getTime())) return ''
+  return new Intl.DateTimeFormat(language, { timeZone, year: 'numeric', month: 'long', day: 'numeric' }).format(moment)
+}
+
+// The most characters of a description that stand for a picture to a screen
+// reader: long enough to say what it shows, short enough to listen to again.
+const MOST_ALT_TEXT_CHARACTERS = 160
+
+// firstSentence is the first sentence of a description, cut at a word if even
+// that is long. Empty for an empty description.
+export function firstSentence(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, ' ')
+  // A full stop ends a sentence when a space or the end follows it ("3.5 mm"
+  // does not); the full stops of Chinese and Japanese are followed by no space.
+  const match = /^(.+?(?:[.!?](?=\s|$)|[\u3002\uff01\uff1f]))/.exec(trimmed)
+  const sentence = match ? match[1] : trimmed
+  if (sentence.length <= MOST_ALT_TEXT_CHARACTERS) return sentence
+  const cut = sentence.slice(0, MOST_ALT_TEXT_CHARACTERS)
+  const lastSpace = cut.lastIndexOf(' ')
+  return `${(lastSpace > MOST_ALT_TEXT_CHARACTERS / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}\u2026`
+}
+
+// photoAltText is what a picture is called to somebody who cannot see it: the
+// first sentence of its description when it has one, else where and when it
+// was taken, else only when. The caller supplies the words around the place
+// and the date, since they are the language's.
+export function photoAltText(
+  photo: PlacedPhoto & { placeName: string },
+  description: string,
+  language: string,
+  words: {
+    placeAndDate: (place: string, date: string) => string
+    dateOnly: (date: string) => string
+  },
+  browserTimeZone?: string,
+): string {
+  const sentence = firstSentence(description)
+  if (sentence) return sentence
+  const date = photoDate(photo, language, browserTimeZone)
+  const place = (photo.placeName ?? '').trim()
+  if (place && date) return words.placeAndDate(place, date)
+  return words.dateOnly(date)
+}

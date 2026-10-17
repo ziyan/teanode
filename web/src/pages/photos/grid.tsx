@@ -2,6 +2,7 @@ import { CheckIcon, HeartIcon, WarningIcon } from '../../components/icons'
 import { useTranslation } from '../../i18n/i18n'
 import type { Photo } from '../../photos/api'
 import { formatDuration, groupByDay, personTimeZone } from '../../photos/days'
+import { usePhotoAltText } from './altText'
 
 // The timeline's grid: day headings, and under each the day's photos as
 // square cells. A cell opens the photo; its checkbox selects it. The checkbox
@@ -67,6 +68,7 @@ function PhotoCell({
   onToggle: (isRange: boolean) => void
 }) {
   const { t } = useTranslation()
+  const altText = usePhotoAltText()
   const name = photo.originalFilename || photo.placeName || t('nav.photos')
   // A video whose length is not known yet (it is still being read) shows no
   // length rather than 0:00.
@@ -81,11 +83,14 @@ function PhotoCell({
         // to a range) rather than opens, as in every file browser.
         onClick={(event) => (isSelecting ? onToggle(event.shiftKey) : onOpen())}
       >
-        {photo.photoProcessingState === 'waiting' ? (
+        {photo.photoProcessingState !== 'failed' && !photo.smallPreviewUrl ? (
+          // Waiting, or ready with no small preview yet (the server makes one
+          // again): the same wait, not the failure of a photo that has not
+          // failed.
           <span className="photo-state" title={t('photos.waiting')} role="img" aria-label={t('photos.waiting')}>
             <span className="photo-spinner" />
           </span>
-        ) : photo.photoProcessingState === 'failed' || !photo.smallPreviewUrl ? (
+        ) : photo.photoProcessingState === 'failed' ? (
           <span
             className="photo-state photo-state-failed"
             role="img"
@@ -99,7 +104,13 @@ function PhotoCell({
             <WarningIcon size={22} />
           </span>
         ) : (
-          <img className="photo-image" src={photo.smallPreviewUrl} alt="" loading="lazy" draggable={false} />
+          <img
+            className="photo-image"
+            src={photo.smallPreviewUrl}
+            alt={altText(photo)}
+            loading="lazy"
+            draggable={false}
+          />
         )}
         {photo.photoKind === 'livePhoto' && (
           <span className="photo-mark photo-mark-live" title={t('photos.livePhoto')}>

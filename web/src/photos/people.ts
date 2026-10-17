@@ -138,12 +138,21 @@ export async function findContactChoices(searchText: string, signal?: AbortSigna
   return found.flatMap((answer) => answer.ListContacts)
 }
 
+// The person has no address book to make a contact in. A page says it in its
+// own words, in the reader's language.
+export class NoAddressBookError extends Error {
+  constructor() {
+    super('The person has no address book.')
+    this.name = 'NoAddressBookError'
+  }
+}
+
 // A new contact with only a name, in the person's first address book, for a
 // person typed in the naming dialog who is not in the address book yet.
 export async function createContact(name: string): Promise<ContactChoice> {
   const books = (await graphql<{ ListAddressBooks: { id: string }[] }>(PEOPLE_DOCUMENTS.ListAddressBooks))
     .ListAddressBooks
-  if (books.length === 0) throw new Error('no address book')
+  if (books.length === 0) throw new NoAddressBookError()
   const answer = await graphql<{ SaveContact: { id: string; name: string } }>(PEOPLE_DOCUMENTS.SaveContact, {
     addressBookId: books[0].id,
     name,

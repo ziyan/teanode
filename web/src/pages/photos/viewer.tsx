@@ -16,6 +16,7 @@ import {
   TrashIcon,
   ZoomInIcon,
 } from '../../components/icons'
+import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
@@ -26,11 +27,14 @@ import {
   type PhotoAlbum,
   type PhotoFace,
   type PhotoFile,
+  type PhotoFileRole,
   type PhotoLibrary,
 } from '../../photos/api'
 import { formatByteSize, formatDuration, formatDate, personTimeZone, photoDateTime } from '../../photos/days'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu } from './albumControls'
+import { usePhotoAltText } from './altText'
+import { useAssistantWords } from './assistantName'
 import { FacePicture, personAddress } from './personControls'
 
 // The viewer: one photo over the grid, with its details beside it (under it
@@ -50,11 +54,64 @@ const SWIPE_DISTANCE = 60
 const DESCRIPTION_POLL_MS = 3000
 const DESCRIPTION_POLL_LIMIT_MS = 2 * 60 * 1000
 
+// The files of a photo that can be downloaded, in the order the menu lists them.
+const DOWNLOADABLE_ROLES: {
+  photoFileRole: PhotoFileRole
+  label: 'photos.downloadOriginal' | 'photos.downloadEdited' | 'photos.downloadLiveVideo'
+}[] = [
+  { photoFileRole: 'original', label: 'photos.downloadOriginal' },
+  { photoFileRole: 'edited', label: 'photos.downloadEdited' },
+  { photoFileRole: 'liveVideo', label: 'photos.downloadLiveVideo' },
+]
+
+// Whether the key is meant for the element it went to: a video's own controls
+// use the arrows to seek, and a field uses them to move its cursor.
+function isTakingKeys(element: HTMLElement): boolean {
+  return (
+    element.tagName === 'VIDEO' ||
+    element.tagName === 'INPUT' ||
+    element.tagName === 'TEXTAREA' ||
+    element.tagName === 'SELECT' ||
+    element.isContentEditable ||
+    element.closest('[contenteditable]:not([contenteditable="false"])') !== null ||
+    element.closest('[role="textbox"]') !== null
+  )
+}
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+// Tab and Shift+Tab stay inside the viewer: from its last control to its
+// first, and from its first to its last. A menu open over it (it is drawn in
+// the body, outside the viewer) keeps the Tab to itself.
+function keepFocusInside(event: KeyboardEvent, viewer: HTMLElement | null) {
+  if (!viewer || document.querySelector('.menu[role="menu"]')) return
+  const controls = Array.from(viewer.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((control) => {
+    const style = window.getComputedStyle(control)
+    return style.display !== 'none' && style.visibility !== 'hidden'
+  })
+  if (controls.length === 0) return
+  const first = controls[0]
+  const last = controls[controls.length - 1]
+  const active = document.activeElement
+  if (!(active instanceof Node) || !viewer.contains(active)) {
+    event.preventDefault()
+    ;(event.shiftKey ? last : first).focus()
+  } else if (event.shiftKey && active === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
 export function PhotoViewer({
   photo,
   previousPhoto,
   nextPhoto,
   isTrashed,
+  isBusy = false,
   isPaused,
   photoAlbumId,
   onNavigate,
@@ -76,6 +133,9 @@ export function PhotoViewer({
   previousPhoto: Photo | null
   nextPhoto: Photo | null
   isTrashed: boolean
+  // The page is moving, restoring or deleting photos: the buttons that would
+  // do it again wait.
+  isBusy?: boolean
   // Set while a dialog is open over the viewer, so that its keys are the
   // dialog's.
   isPaused: boolean
@@ -104,6 +164,8 @@ export function PhotoViewer({
   onRemoveFaceFromGroup?: (face: PhotoFace) => Promise<void>
 }) {
   const { t, language } = useTranslation()
+  const altText = usePhotoAltText()
+  const assistantWords = useAssistantWords()
   const files = useQuery(() => readPhoto(photo.id), [photo.id], { refresh: false })
   const isRead = files.data !== null && files.data.photo.id === photo.id
   const photoFiles: PhotoFile[] = isRead ? files.data!.photoFiles : []
@@ -116,6 +178,8 @@ export function PhotoViewer({
   const [isZoomed, setIsZoomed] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
+  const viewerElement = useRef<HTMLDivElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
   const zoomScroller = useRef<HTMLDivElement>(null)
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
@@ -156,9 +220,11 @@ export function PhotoViewer({
     }
   }
 
-  // The element that opened the viewer gets the focus back when it closes.
+  // The focus moves into the viewer when it opens, to the button that closes
+  // it, and the element that opened the viewer gets it back when it closes.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    closeButton.current?.focus()
     return () => {
       if (opener && document.contains(opener)) opener.focus()
     }
@@ -174,6 +240,13 @@ export function PhotoViewer({
   const zoomedSource = canZoomOriginal ? original.fileUrl : fittedSource
   const videoSource = photo.videoPreviewUrl || (isVideo ? photoFilePath(photo.id, 'original') : '')
   const liveSource = photo.videoPreviewUrl || photoFilePath(photo.id, 'liveVideo')
+
+  // The files the photo has that can be saved: the original always, and the
+  // edited version and a Live Photo's video when it has them.
+  const downloadChoices = DOWNLOADABLE_ROLES.filter(
+    (choice) =>
+      choice.photoFileRole === 'original' || photoFiles.some((file) => file.photoFileRole === choice.photoFileRole),
+  )
 
   const goTo = useCallback(
     (target: Photo | null) => {
@@ -194,14 +267,16 @@ export function PhotoViewer({
         onClose()
         return
       }
+      // Tab goes round inside the viewer: the page behind it is not reachable
+      // while it is open.
+      if (event.key === 'Tab') {
+        keepFocusInside(event, viewerElement.current)
+        return
+      }
       // A video's own controls use the arrows to seek, and a field uses them
       // to move its cursor.
       const target = event.target
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === 'VIDEO' || target.tagName === 'INPUT' || target.isContentEditable)
-      )
-        return
+      if (target instanceof HTMLElement && isTakingKeys(target)) return
       if (event.key === 'ArrowLeft') {
         event.preventDefault()
         goTo(previousPhoto)
@@ -231,6 +306,9 @@ export function PhotoViewer({
     if (!isVideo && fittedSource) setIsZoomed((previous) => !previous)
   }
 
+  // What the picture is to somebody who cannot see it: the first sentence of
+  // its description once it has one.
+  const alt = altText(photo, detail?.photoDescription ?? '')
   const cameraText = [photo.cameraMake, photo.cameraModel]
     .filter((part, index, parts) => part && !(index === 1 && part.startsWith(parts[0])))
     .join(' ')
@@ -250,11 +328,17 @@ export function PhotoViewer({
   ]
 
   return createPortal(
-    <div className="photo-viewer" role="dialog" aria-modal="true" aria-label={t('photos.viewer')}>
+    <div className="photo-viewer" role="dialog" aria-modal="true" aria-label={t('photos.viewer')} ref={viewerElement}>
       <div className="photo-viewer-main">
         <div className="photo-viewer-bar">
           <Tooltip label={t('common.close')}>
-            <button type="button" className="icon-button" aria-label={t('common.close')} onClick={onClose}>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('common.close')}
+              ref={closeButton}
+              onClick={onClose}
+            >
               <CloseIcon size={18} />
             </button>
           </Tooltip>
@@ -297,6 +381,7 @@ export function PhotoViewer({
                   type="button"
                   className="icon-button"
                   aria-label={t('photos.restore')}
+                  disabled={isBusy}
                   onClick={() => onRestore(photo)}
                 >
                   <RestoreIcon size={18} />
@@ -307,6 +392,7 @@ export function PhotoViewer({
                   type="button"
                   className="icon-button danger"
                   aria-label={t('photos.deleteForever')}
+                  disabled={isBusy}
                   onClick={() => onDeleteForever(photo)}
                 >
                   <TrashIcon size={18} />
@@ -355,21 +441,45 @@ export function PhotoViewer({
                   </button>
                 </Tooltip>
               )}
-              <Tooltip label={t('photos.downloadOriginal')}>
-                <a
-                  className="icon-button"
-                  href={photoFilePath(photo.id, 'original')}
-                  download
-                  aria-label={t('photos.downloadOriginal')}
-                >
-                  <DownloadIcon size={18} />
-                </a>
-              </Tooltip>
+              {downloadChoices.length > 1 ? (
+                <Tooltip label={t('photos.download')}>
+                  <MenuButton
+                    label={t('photos.download')}
+                    className="icon-button"
+                    icon={<DownloadIcon size={18} />}
+                    render={(close) =>
+                      downloadChoices.map((choice) => (
+                        <a
+                          key={choice.photoFileRole}
+                          role="menuitem"
+                          href={photoFilePath(photo.id, choice.photoFileRole)}
+                          download
+                          onClick={close}
+                        >
+                          {t(choice.label)}
+                        </a>
+                      ))
+                    }
+                  />
+                </Tooltip>
+              ) : (
+                <Tooltip label={t('photos.downloadOriginal')}>
+                  <a
+                    className="icon-button"
+                    href={photoFilePath(photo.id, 'original')}
+                    download
+                    aria-label={t('photos.downloadOriginal')}
+                  >
+                    <DownloadIcon size={18} />
+                  </a>
+                </Tooltip>
+              )}
               <Tooltip label={t('photos.trash')}>
                 <button
                   type="button"
                   className="icon-button"
                   aria-label={t('photos.trash')}
+                  disabled={isBusy}
                   onClick={() => onTrash(photo)}
                 >
                   <TrashIcon size={18} />
@@ -454,7 +564,7 @@ export function PhotoViewer({
                 key={zoomedSource}
                 className={canZoomOriginal ? 'photo-zoomed' : 'photo-zoomed photo-zoomed-preview'}
                 src={zoomedSource}
-                alt=""
+                alt={alt}
                 draggable={false}
                 onLoad={() => {
                   const scroller = zoomScroller.current
@@ -466,7 +576,7 @@ export function PhotoViewer({
             </div>
           ) : (
             <div className="photo-viewer-picture" onDoubleClick={toggleZoom}>
-              <img className="photo-fitted" key={photo.id} src={fittedSource} alt="" draggable={false} />
+              <img className="photo-fitted" key={photo.id} src={fittedSource} alt={alt} draggable={false} />
               {photo.photoKind === 'livePhoto' && isLive && (
                 <video
                   className="photo-live-video"
@@ -484,6 +594,14 @@ export function PhotoViewer({
       {isShowingDetails && (
         <aside className="photo-viewer-details" aria-label={t('photos.details')}>
           <h2>{t('photos.details')}</h2>
+          {Boolean(files.error) && !isRead && !files.loading && (
+            <div className="photo-viewer-failure" role="alert">
+              <p>{t('photos.detailsFailed')}</p>
+              <button type="button" onClick={() => void files.reload()}>
+                {t('photos.tryAgain')}
+              </button>
+            </div>
+          )}
           <dl>
             {details
               .filter(([, value]) => value !== '')
@@ -575,7 +693,7 @@ export function PhotoViewer({
               ) : !detail?.describedAt && photoLibrary ? (
                 photoLibrary.isDescriptionAvailable && onDescribe ? (
                   <>
-                    <p className="muted">{t('photos.describeHint')}</p>
+                    <p className="muted">{assistantWords.describeHint}</p>
                     <button type="button" onClick={() => void describe(false)}>
                       {t('photos.describe')}
                     </button>
@@ -588,7 +706,7 @@ export function PhotoViewer({
               ) : null}
               {onAskAssistant && fittedSource && (
                 <button type="button" className="photo-ask-assistant" onClick={() => onAskAssistant(photo)}>
-                  <SparkIcon size={16} /> {t('photos.askAssistant')}
+                  <SparkIcon size={16} /> {assistantWords.askAboutPhoto}
                 </button>
               )}
             </section>

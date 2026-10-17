@@ -4,9 +4,15 @@ import { Tooltip } from '../../components/tooltip'
 import { Key, useTranslation } from '../../i18n/i18n'
 import { photoUploads, useUploadItems, type UploadItem, type UploadItemState } from '../../photos/uploadQueue'
 
-// The tray at the bottom right: every file on its way to the library, with
-// how far it has got. It folds down to its heading when the last file is
-// done, and goes when the person clears it.
+// The tray at the bottom right: the files on their way to the library, with
+// how far they have got. It folds down to its heading when the last file is
+// done, and goes when the person clears it. Thousands of files make thousands
+// of lines nobody reads, so the tray draws the few that are being worked on,
+// the ones that failed (each one has something to say), and counts the rest.
+
+// How many lines of files being sent, and of files that failed, are drawn.
+const MOST_ACTIVE_ROWS = 6
+const MOST_FAILED_ROWS = 8
 
 const STATE_LABELS: Record<UploadItemState, Key> = {
   waiting: 'photos.stateWaiting',
@@ -14,6 +20,7 @@ const STATE_LABELS: Record<UploadItemState, Key> = {
   sending: 'photos.stateSending',
   done: 'photos.stateDone',
   skipped: 'photos.stateSkipped',
+  inTrash: 'photos.stateInTrash',
   failed: 'photos.stateFailed',
   canceled: 'photos.stateCanceled',
 }
@@ -33,20 +40,32 @@ export function UploadTray() {
   const items = useUploadItems()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const activeCount = items.filter(isActive).length
+  const failedCount = items.filter((item) => item.state === 'failed').length
   const wasBusy = useRef(false)
 
   // Opens when work starts and folds when it ends, so a finished upload does
-  // not keep a list over the corner of the photos.
+  // not keep a list over the corner of the photos. What failed stays open: a
+  // tray that folded over a failure said only that the upload was finished.
   useEffect(() => {
     if (activeCount > 0 && !wasBusy.current) setIsCollapsed(false)
-    if (activeCount === 0 && wasBusy.current) setIsCollapsed(true)
+    if (activeCount === 0 && wasBusy.current) setIsCollapsed(failedCount === 0)
     wasBusy.current = activeCount > 0
-  }, [activeCount])
+  }, [activeCount, failedCount])
 
   if (items.length === 0) return null
   const finishedCount = items.length - activeCount
+  const activeItems = items.filter(isActive)
+  const failedItems = items.filter((item) => item.state === 'failed')
+  const shownItems = [...activeItems.slice(0, MOST_ACTIVE_ROWS), ...failedItems.slice(0, MOST_FAILED_ROWS)]
+  const hiddenActiveCount = activeItems.length - Math.min(activeItems.length, MOST_ACTIVE_ROWS)
+  const hiddenFailedCount = failedItems.length - Math.min(failedItems.length, MOST_FAILED_ROWS)
+  const quietFinishedCount = finishedCount - failedItems.length
   const title =
-    activeCount > 0 ? t('photos.trayBusy', { done: finishedCount, total: items.length }) : t('photos.trayDone')
+    activeCount > 0
+      ? t('photos.trayBusy', { done: finishedCount, total: items.length })
+      : failedCount > 0
+        ? t('photos.trayFailed', { count: failedCount })
+        : t('photos.trayDone')
   return (
     <section className="photo-tray" aria-label={title}>
       <header className="photo-tray-head">
@@ -78,7 +97,7 @@ export function UploadTray() {
       </header>
       {!isCollapsed && (
         <ul className="photo-tray-list">
-          {items.map((item) => (
+          {shownItems.map((item) => (
             <li key={item.id} className={`photo-tray-item is-${item.state}`}>
               <span className="photo-tray-name" title={item.name}>
                 {item.name}
@@ -115,6 +134,21 @@ export function UploadTray() {
               )}
             </li>
           ))}
+          {hiddenActiveCount > 0 && (
+            <li className="photo-tray-item photo-tray-summary muted">
+              {t('photos.trayMoreWaiting', { count: hiddenActiveCount })}
+            </li>
+          )}
+          {hiddenFailedCount > 0 && (
+            <li className="photo-tray-item photo-tray-summary muted">
+              {t('photos.trayMoreFailed', { count: hiddenFailedCount })}
+            </li>
+          )}
+          {quietFinishedCount > 0 && (
+            <li className="photo-tray-item photo-tray-summary muted">
+              {t('photos.trayFinished', { count: quietFinishedCount })}
+            </li>
+          )}
         </ul>
       )}
     </section>

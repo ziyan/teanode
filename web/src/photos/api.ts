@@ -162,14 +162,14 @@ const PHOTO_ALBUM_FIELDS =
   'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl'
 
 export const PHOTO_DOCUMENTS = {
-  ListPhotos: `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { ${PHOTO_FIELDS} } }`,
+  ListPhotos: `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { ${PHOTO_FIELDS} } }`,
   CountPhotos:
-    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) }',
+    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, photoKind: $photoKind, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) }',
   ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_DETAIL_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } faces { ${PHOTO_FACE_FIELDS} } } }`,
   ReadPhotoLibrary:
     'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
   FindPhotos:
-    'query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId } }',
+    'query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId trashedAt } }',
   UpdatePhoto: `mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { ${PHOTO_FIELDS} } }`,
   DescribePhoto: `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) { ${PHOTO_DETAIL_FIELDS} } }`,
   TrashPhotos: 'mutation ($photoIds: [String!]!) { TrashPhotos(photoIds: $photoIds) }',
@@ -200,7 +200,11 @@ export interface PhotoFilter {
   photoAlbumId?: string
   // Keeps the photos with a face in one group of faces, one person.
   photoFaceGroupId?: string
-  // Keeps the photos taken in a range, for the photos of a suggestion.
+  // Keeps one kind: only pictures, only Live Photos or only videos.
+  photoKind?: PhotoKind
+  // Keeps the photos taken in a range: from the first moment to just before
+  // the second. The date filter of the library and the photos of a suggestion
+  // both are this.
   takenAfter?: string
   takenBefore?: string
 }
@@ -212,6 +216,7 @@ function filterVariables(filter: PhotoFilter) {
     searchText: filter.searchText || null,
     albumId: filter.photoAlbumId || null,
     faceGroupId: filter.photoFaceGroupId || null,
+    photoKind: filter.photoKind || null,
     takenAfter: filter.takenAfter || null,
     takenBefore: filter.takenBefore || null,
   }
@@ -258,16 +263,30 @@ export async function readPhotoLibrary(signal?: AbortSignal): Promise<PhotoLibra
   return answer.ReadPhotoLibrary
 }
 
-// The client ids, of those asked about, that the library already holds.
-export async function findKnownClientPhotoIds(clientPhotoIds: string[], signal?: AbortSignal): Promise<Set<string>> {
-  const known = new Set<string>()
+// A photo the library already holds, as found by the uploader's name for it.
+export interface KnownPhoto {
+  id: string
+  // The photo is in the Trash, where it is not shown with the others.
+  isTrashed: boolean
+}
+
+// The photos, of those asked about by their client ids, that the library
+// already holds, with the Trash told apart: a file sent again after it was
+// trashed is held, but a person looking at the library does not see it.
+export async function findKnownPhotos(
+  clientPhotoIds: string[],
+  signal?: AbortSignal,
+): Promise<Map<string, KnownPhoto>> {
+  const known = new Map<string, KnownPhoto>()
   for (let start = 0; start < clientPhotoIds.length; start += MOST_PHOTO_IDS_PER_CALL) {
-    const answer = await graphql<{ FindPhotos: { clientPhotoId: string }[] }>(
+    const answer = await graphql<{ FindPhotos: { id: string; clientPhotoId: string; trashedAt: string | null }[] }>(
       PHOTO_DOCUMENTS.FindPhotos,
       { clientPhotoIds: clientPhotoIds.slice(start, start + MOST_PHOTO_IDS_PER_CALL) },
       signal,
     )
-    for (const found of answer.FindPhotos) known.add(found.clientPhotoId)
+    for (const found of answer.FindPhotos) {
+      known.set(found.clientPhotoId, { id: found.id, isTrashed: Boolean(found.trashedAt) })
+    }
   }
   return known
 }

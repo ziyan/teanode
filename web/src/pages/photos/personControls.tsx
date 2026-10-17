@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FormDialog } from '../../components/dialog'
 import { MoreIcon } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
@@ -80,8 +80,15 @@ export function NamePersonDialog({
     (contact) => contactChoiceLabel(contact).toLowerCase() === typedName.toLowerCase(),
   )
   const canMakeContact = typedName !== '' && !hasTypedNameContact
-  const isNewChosen = chosen === NEW_CONTACT
-  const canSubmit = (chosen !== '' && !isNewChosen) || (isNewChosen && canMakeContact)
+  // Only what is on the screen is chosen. A contact chosen before the search
+  // changed, and no longer listed, is not submitted; neither is "new contact"
+  // for a name that is now one in the list.
+  const chosenContact = contacts.find((contact) => contact.id === chosen) ?? null
+  const isNewChosen = chosen === NEW_CONTACT && canMakeContact
+  const canSubmit = chosenContact !== null || isNewChosen
+  useEffect(() => {
+    if (chosen !== '' && chosenContact === null && !isNewChosen && !choices.loading) setChosen('')
+  }, [chosen, chosenContact, isNewChosen, choices.loading])
 
   return (
     <FormDialog
@@ -91,7 +98,9 @@ export function NamePersonDialog({
       error={error ?? (choices.error ? messageOf(choices.error) : null)}
       canSubmit={canSubmit}
       onSubmit={() =>
-        onSubmit(isNewChosen ? { kind: 'new', contactName: typedName } : { kind: 'contact', contactId: chosen })
+        onSubmit(
+          isNewChosen ? { kind: 'new', contactName: typedName } : { kind: 'contact', contactId: chosenContact!.id },
+        )
       }
       onClose={onClose}
     >
@@ -122,7 +131,7 @@ export function NamePersonDialog({
             <input
               type="radio"
               name="named-contact"
-              checked={chosen === contact.id}
+              checked={chosenContact?.id === contact.id}
               onChange={() => setChosen(contact.id)}
             />
             <span>

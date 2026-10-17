@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { findKnownClientPhotoIds } from './api'
+import { findKnownPhotos, type KnownPhoto } from './api'
 import { isPhotoFile, sha256Of, uploadPhotoFile, type UploadOptions, type UploadedPhoto } from './uploader'
 
 // The files on their way to the library. The queue is a module of its own,
@@ -7,7 +7,9 @@ import { isPhotoFile, sha256Of, uploadPhotoFile, type UploadOptions, type Upload
 // between the timeline and a photo, or to another page and back; the tray
 // reads it, and the page listens for what happened to say it in toasts.
 
-export type UploadItemState = 'waiting' | 'hashing' | 'sending' | 'done' | 'skipped' | 'failed' | 'canceled'
+// inTrash is a file the library holds, in the Trash: it is not uploaded again,
+// and the person is told where it is and can restore it.
+export type UploadItemState = 'waiting' | 'hashing' | 'sending' | 'done' | 'skipped' | 'inTrash' | 'failed' | 'canceled'
 
 export interface UploadItem {
   id: number
@@ -24,9 +26,21 @@ export interface UploadItem {
 
 export interface UploadSummary {
   uploadedCount: number
+  // Files the library already holds, not in the Trash.
   skippedCount: number
+  // Files the library holds in the Trash, and which photos those are.
+  trashedCount: number
+  trashedPhotoIds: string[]
   failedCount: number
 }
+
+const emptySummary = (): UploadSummary => ({
+  uploadedCount: 0,
+  skippedCount: 0,
+  trashedCount: 0,
+  trashedPhotoIds: [],
+  failedCount: 0,
+})
 
 export type UploadEvent =
   | { kind: 'itemDone'; item: UploadItem }
@@ -36,13 +50,13 @@ export type UploadEvent =
 
 export interface UploadSteps {
   hash: (file: File, onProgress: (readBytes: number) => void, signal: AbortSignal) => Promise<string>
-  findKnown: (clientPhotoIds: string[], signal: AbortSignal) => Promise<Set<string>>
+  findKnown: (clientPhotoIds: string[], signal: AbortSignal) => Promise<Map<string, KnownPhoto>>
   upload: (file: File, clientPhotoId: string, sha256: string, options: UploadOptions) => Promise<UploadedPhoto>
 }
 
 const realSteps: UploadSteps = {
   hash: sha256Of,
-  findKnown: findKnownClientPhotoIds,
+  findKnown: findKnownPhotos,
   upload: uploadPhotoFile,
 }
 
@@ -51,8 +65,16 @@ const realSteps: UploadSteps = {
 // read, without a phone's worth of videos all in flight.
 const WORKER_COUNT = 2
 
+// How long a change waits to be shown when no frame is drawn. A tab in the
+// background draws none, and the queue still has to say where it has got to.
+const HIDDEN_TAB_PUBLISH_MS = 250
+
 export class PhotoUploadQueue {
   private items: UploadItem[] = []
+  // The lines not yet started, in the order they were added. A line canceled
+  // while it waits is passed over when its turn comes.
+  private waitingItems: UploadItem[] = []
+  private waitingHead = 0
   private files = new Map<number, File>()
   private controllers = new Map<number, AbortController>()
   private listeners = new Set<() => void>()
@@ -64,7 +86,13 @@ export class PhotoUploadQueue {
   // A new snapshot object each time anything changes, which is what
   // useSyncExternalStore compares.
   private snapshot: readonly UploadItem[] = []
-  private countsSinceDrain: UploadSummary = { uploadedCount: 0, skippedCount: 0, failedCount: 0 }
+  // The copy of each item that the snapshot holds. A line that did not change
+  // since the last snapshot keeps its copy, so that a snapshot of thousands of
+  // lines is a list of references and not thousands of new objects.
+  private copies = new Map<UploadItem, UploadItem>()
+  private changedItems = new Set<UploadItem>()
+  private cancelScheduledPublish: (() => void) | null = null
+  private countsSinceDrain: UploadSummary = emptySummary()
 
   constructor(private readonly steps: UploadSteps = realSteps) {}
 
@@ -87,6 +115,10 @@ export class PhotoUploadQueue {
     this.ownerId = ownerId
     this.cancelAll()
     this.items = []
+    this.waitingItems = []
+    this.waitingHead = 0
+    this.copies.clear()
+    this.changedItems.clear()
     this.publish()
   }
 
@@ -114,6 +146,7 @@ export class PhotoUploadQueue {
         photoId: '',
       }
       this.items.push(item)
+      this.waitingItems.push(item)
       this.files.set(item.id, file)
     }
     this.publish()
@@ -125,17 +158,22 @@ export class PhotoUploadQueue {
 
   cancel(itemId: number) {
     const item = this.items.find((candidate) => candidate.id === itemId)
-    if (!item) return
+    if (item) this.cancelItem(item)
+    this.publish()
+  }
+
+  cancelAll() {
+    for (const item of this.items) this.cancelItem(item)
+    this.publish()
+  }
+
+  private cancelItem(item: UploadItem) {
     if (item.state === 'waiting') {
       this.update(item, { state: 'canceled' })
       this.files.delete(item.id)
     } else {
-      this.controllers.get(itemId)?.abort()
+      this.controllers.get(item.id)?.abort()
     }
-  }
-
-  cancelAll() {
-    for (const item of this.items) this.cancel(item.id)
   }
 
   // Takes the finished lines off the tray; what is still on its way stays.
@@ -143,20 +181,51 @@ export class PhotoUploadQueue {
     this.items = this.items.filter(
       (item) => item.state === 'waiting' || item.state === 'hashing' || item.state === 'sending',
     )
+    const kept = new Set(this.items)
+    for (const item of this.copies.keys()) if (!kept.has(item)) this.copies.delete(item)
     this.publish()
   }
 
+  // A change is shown with the next frame, not at once: a file reports its
+  // progress many times a second, and with thousands of files on their way
+  // each report would otherwise rebuild the list and redraw the tray.
   private update(item: UploadItem, changes: Partial<UploadItem>) {
     Object.assign(item, changes)
-    this.publish()
+    this.changedItems.add(item)
+    this.schedulePublish()
   }
 
+  private schedulePublish() {
+    if (this.cancelScheduledPublish) return
+    const publish = () => this.publish()
+    const frame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(publish) : null
+    const timer = window.setTimeout(publish, HIDDEN_TAB_PUBLISH_MS)
+    this.cancelScheduledPublish = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+      this.cancelScheduledPublish = null
+    }
+  }
+
+  // Shows what has changed now. What a person did (adding files, canceling,
+  // clearing) and what a listener is about to be told are shown at once.
   private publish() {
-    this.snapshot = this.items.map((item) => ({ ...item }))
+    this.cancelScheduledPublish?.()
+    this.snapshot = this.items.map((item) => {
+      let copy = this.copies.get(item)
+      if (!copy || this.changedItems.has(item)) {
+        copy = { ...item }
+        this.copies.set(item, copy)
+      }
+      return copy
+    })
+    this.changedItems.clear()
     for (const listener of this.listeners) listener()
   }
 
   private emit(event: UploadEvent) {
+    // What the listeners are told is true of the lines they can read.
+    this.publish()
     for (const listener of this.eventListeners) listener(event)
   }
 
@@ -164,7 +233,7 @@ export class PhotoUploadQueue {
     this.activeWorkerCount++
     try {
       for (;;) {
-        const item = this.items.find((candidate) => candidate.state === 'waiting')
+        const item = this.nextWaitingItem()
         if (!item) return
         await this.process(item)
       }
@@ -172,12 +241,24 @@ export class PhotoUploadQueue {
       this.activeWorkerCount--
       if (this.activeWorkerCount === 0 && !this.isBusy) {
         const summary = this.countsSinceDrain
-        this.countsSinceDrain = { uploadedCount: 0, skippedCount: 0, failedCount: 0 }
-        if (summary.uploadedCount + summary.skippedCount + summary.failedCount > 0) {
+        this.countsSinceDrain = emptySummary()
+        if (summary.uploadedCount + summary.skippedCount + summary.trashedCount + summary.failedCount > 0) {
           this.emit({ kind: 'drained', summary })
+        } else {
+          this.publish()
         }
       }
     }
+  }
+
+  private nextWaitingItem(): UploadItem | null {
+    while (this.waitingHead < this.waitingItems.length) {
+      const item = this.waitingItems[this.waitingHead++]
+      if (item.state === 'waiting') return item
+    }
+    this.waitingItems = []
+    this.waitingHead = 0
+    return null
   }
 
   private async process(item: UploadItem) {
@@ -193,10 +274,18 @@ export class PhotoUploadQueue {
         controller.signal,
       )
       // The digest is the photo's name here, as it is on the command line.
-      const known = await this.steps.findKnown([sha256], controller.signal)
-      if (known.has(sha256)) {
-        this.update(item, { state: 'skipped', sentBytes: item.sizeBytes })
-        this.countsSinceDrain.skippedCount++
+      const known = (await this.steps.findKnown([sha256], controller.signal)).get(sha256)
+      if (known) {
+        // A photo in the Trash is held too, and sending it again would only
+        // put a second copy beside it: the person is told where it is.
+        if (known.isTrashed) {
+          this.update(item, { state: 'inTrash', sentBytes: item.sizeBytes, photoId: known.id })
+          this.countsSinceDrain.trashedCount++
+          this.countsSinceDrain.trashedPhotoIds.push(known.id)
+        } else {
+          this.update(item, { state: 'skipped', sentBytes: item.sizeBytes, photoId: known.id })
+          this.countsSinceDrain.skippedCount++
+        }
         return
       }
       this.update(item, { state: 'sending' })

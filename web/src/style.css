@@ -15355,6 +15355,32 @@ body.has-recording-bar .content {
   margin: 0 0 var(--space-3);
 }
 
+/* Kind and dates beside the search: three fields and the way to clear them,
+   folding to a line each on a phone. */
+.photo-filters {
+  margin-bottom: var(--space-4);
+}
+
+.photo-filters > label {
+  flex: 0 1 180px;
+  min-width: 140px;
+}
+
+.photo-filters > .shrink {
+  align-self: flex-end;
+}
+
+/* Rows left over from the list the person has just left, until this list's
+   arrive: dimmed, and out of reach of the buttons of the new list. */
+.photo-list {
+  transition: opacity 120ms ease;
+}
+
+.photo-list.is-loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .photo-day-heading {
   margin: var(--space-6) 0 var(--space-2);
   font-size: var(--text-body);
@@ -15737,26 +15763,41 @@ body.has-recording-bar .content {
 }
 
 @media (max-width: 760px) {
-  /* Under the picture rather than beside it: a sheet that rises from the
-     bottom edge. */
+  /* Under the picture rather than beside it, and not over it: the viewer
+     becomes a column, the picture is fitted to the room the details leave, and
+     the details scroll in a box of their own below it. A sheet laid over the
+     picture hid half of it. */
+  .photo-viewer {
+    flex-direction: column;
+  }
+
+  .photo-viewer-main {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
   .photo-viewer-details {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 2;
-    max-height: 55%;
+    flex: 0 1 auto;
+    max-height: 45%;
     padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
     border-left: none;
-    border-radius: var(--radius-3) var(--radius-3) 0 0;
-    box-shadow: var(--shadow-floating);
+    overscroll-behavior: contain;
   }
 
   .photo-viewer-step {
     width: 36px;
     height: 36px;
   }
+}
+
+/* The details could not be read: the sentence and the way to try again. */
+.photo-viewer-failure {
+  margin-bottom: var(--space-3);
+}
+
+.photo-viewer-failure p {
+  margin: 0 0 var(--space-2);
 }
 
 /* --- the drop target --- */
@@ -15817,6 +15858,11 @@ body.has-recording-bar .content {
 
 .photo-tray-item + .photo-tray-item {
   border-top: 1px solid var(--border);
+}
+
+/* The line that counts the files the tray does not list. */
+.photo-tray-summary {
+  display: block;
 }
 
 .photo-tray-name {
@@ -15904,6 +15950,23 @@ body.has-recording-bar .content {
 @media (max-width: 600px) {
   .photo-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* The kind on a line of its own, the two dates side by side, the way to
+     clear them under. */
+  .photo-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .photo-filters > label {
+    min-width: 0;
+  }
+
+  .photo-filters > label:first-child,
+  .photo-filters > .shrink {
+    grid-column: 1 / -1;
   }
 
   .photo-tray {

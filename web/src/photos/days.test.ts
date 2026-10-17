@@ -6,9 +6,11 @@ import {
   formatDate,
   formatDateRange,
   formatDuration,
+  firstSentence,
   formatOffset,
   groupByDay,
   indexRange,
+  photoAltText,
   photoDateTime,
 } from './days'
 
@@ -139,5 +141,40 @@ describe('days', () => {
     expect(formatDate('2030-07-12T23:30:00Z', 'en', 'UTC')).toBe('July 12, 2030')
     expect(formatDate('2030-07-12T23:30:00Z', 'en', 'Asia/Tokyo')).toBe('July 13, 2030')
     expect(formatDate('not a date', 'en', 'UTC')).toBe('')
+  })
+})
+
+describe('alternative text', () => {
+  const words = {
+    placeAndDate: (place: string, date: string) => `${place} on ${date}`,
+    dateOnly: (date: string) => `taken ${date}`,
+  }
+  const photo = { takenAt: '2030-07-12T09:00:00Z', createdAt: '2030-07-13T00:00:00Z', takenAtOffsetMinutes: 0 }
+
+  it('is the first sentence of the description', () => {
+    expect(firstSentence('A red kite over a field. It is windy. Nobody is there.')).toBe('A red kite over a field.')
+    expect(firstSentence('A lens of 3.5 mm. Wide.')).toBe('A lens of 3.5 mm.')
+    expect(firstSentence('  one\n\nline   only  ')).toBe('one line only')
+    expect(firstSentence('')).toBe('')
+  })
+
+  it('ends a sentence at the full stop of Chinese and Japanese, which no space follows', () => {
+    expect(firstSentence('一只红色的风筝飞过田野。风很大。')).toBe('一只红色的风筝飞过田野。')
+    expect(firstSentence('赤い凧が野原の上を飛んでいます。風が強いです。')).toBe('赤い凧が野原の上を飛んでいます。')
+  })
+
+  it('cuts a very long sentence at a word', () => {
+    const long = `${'word '.repeat(100)}end.`
+    const cut = firstSentence(long)
+    expect(cut.length).toBeLessThanOrEqual(161)
+    expect(cut.endsWith('…')).toBe(true)
+    expect(cut).not.toMatch(/wor…$/)
+  })
+
+  it('falls back to the place and the date, then to the date', () => {
+    const named = { ...photo, placeName: 'Fixtureville' }
+    expect(photoAltText(named, 'A kite. More.', 'en', words)).toBe('A kite.')
+    expect(photoAltText(named, '', 'en', words)).toBe('Fixtureville on July 12, 2030')
+    expect(photoAltText({ ...photo, placeName: '' }, '  ', 'en', words)).toBe('taken July 12, 2030')
   })
 })

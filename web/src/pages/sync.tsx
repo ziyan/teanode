@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { graphql } from '../api'
-import { ErrorMessage, Loading } from '../components/common'
+import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { SettingsSection, SettingsRow, SettingsEmpty, SecretDialog } from '../components/settingsList'
 import { TrashIcon } from '../components/icons'
@@ -165,40 +165,50 @@ function AccountDeviceSetupPage() {
       >
         <ErrorMessage error={error} />
         {!data?.ListSyncCredentials.length && <SettingsEmpty>{t('services.noDevices')}</SettingsEmpty>}
-        {sortNewestFirst(data?.ListSyncCredentials ?? []).map((credential) => (
-          <SettingsRow
-            key={credential.id}
-            title={credential.credentialName}
-            subtitle={
-              <>
-                {[
-                  credential.hasCalendarAccess && t('nav.calendar'),
-                  credential.hasRemindersAccess && t('services.remindersLabel'),
-                  credential.hasContactsAccess && t('nav.contacts'),
-                  credential.hasPhotosAccess && t('nav.photos'),
-                ]
-                  .filter(Boolean)
-                  .join(', ')}
-                <br />
-                <PasswordUsage password={credential} />
-              </>
-            }
-            actions={
-              <button
-                type="button"
-                className="icon-action danger"
-                title={t('services.revoke')}
-                aria-label={credential.credentialName + ': ' + t('services.revoke')}
-                onClick={() => {
-                  setProblem(null)
-                  setRevoking(credential)
-                }}
-              >
-                <TrashIcon size={16} />
-              </button>
-            }
-          />
-        ))}
+        {sortNewestFirst(data?.ListSyncCredentials ?? []).map((credential) => {
+          const collections = [
+            credential.hasCalendarAccess && t('nav.calendar'),
+            credential.hasRemindersAccess && t('services.remindersLabel'),
+            credential.hasContactsAccess && t('nav.contacts'),
+            credential.hasPhotosAccess && t('nav.photos'),
+          ].filter(Boolean)
+          // A password that grants nothing but Photos is a phone's photo
+          // backup, named after the phone; say so, since the list of what it
+          // opens is then one word.
+          const isPhotosOnly =
+            credential.hasPhotosAccess &&
+            !credential.hasCalendarAccess &&
+            !credential.hasRemindersAccess &&
+            !credential.hasContactsAccess
+          return (
+            <SettingsRow
+              key={credential.id}
+              title={credential.credentialName}
+              badge={credential.hasPhotosAccess ? <Tag value={t('nav.photos')} /> : undefined}
+              subtitle={
+                <>
+                  {isPhotosOnly ? t('services.photosOnlyPassword') : collections.join(', ')}
+                  <br />
+                  <PasswordUsage password={credential} />
+                </>
+              }
+              actions={
+                <button
+                  type="button"
+                  className="icon-action danger"
+                  title={t('services.revoke')}
+                  aria-label={credential.credentialName + ': ' + t('services.revoke')}
+                  onClick={() => {
+                    setProblem(null)
+                    setRevoking(credential)
+                  }}
+                >
+                  <TrashIcon size={16} />
+                </button>
+              }
+            />
+          )
+        })}
       </SettingsSection>
       {isCreating && (
         <FormDialog

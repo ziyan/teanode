@@ -128,14 +128,14 @@ it('shows the description and the words read in the picture, with the day it was
   expect(screen.getByText('KITE FESTIVAL')).toBeTruthy()
   expect(screen.getByText('Described on July 13, 2030')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Describe again' })).toBeTruthy()
-  expect(screen.queryByRole('button', { name: 'Describe' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Describe this photo' })).toBeNull()
 })
 
 it('offers Describe for a photo nobody described, and asks for it', async () => {
   serveRead({ photo: undescribedPhoto })
   const onDescribe = vi.fn().mockResolvedValue(undefined)
   show(vi.fn(), { photoLibrary: library(), onDescribe })
-  fireEvent.click(await screen.findByRole('button', { name: 'Describe' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Describe this photo' }))
   await waitFor(() => expect(onDescribe).toHaveBeenCalledWith(expect.objectContaining({ id: 'photo-1' }), false))
 })
 
@@ -154,7 +154,7 @@ it("says why a photo cannot be described, in the server's words, and offers noth
     onDescribe: vi.fn(),
   })
   expect(await screen.findByText('The assistant is off.')).toBeTruthy()
-  expect(screen.queryByRole('button', { name: 'Describe' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Describe this photo' })).toBeNull()
 })
 
 it('reads the photo again every three seconds while a description is on its way', async () => {
@@ -234,4 +234,125 @@ it('leaves out a face that is in no group, which has no person to link to', asyn
   show(vi.fn(), { photoLibrary: library() })
   await screen.findByText('A red kite over a field.')
   expect(screen.queryByText('People')).toBeNull()
+})
+
+it('moves the focus into the viewer, to the button that closes it, and keeps Tab inside', async () => {
+  const outside = document.createElement('button')
+  outside.textContent = 'behind'
+  document.body.appendChild(outside)
+  outside.focus()
+  show()
+  const dialog = await screen.findByRole('dialog', { name: 'Photo viewer' })
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
+  const controls = Array.from(dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled])'))
+  controls[controls.length - 1].focus()
+  fireEvent.keyDown(document.activeElement!, { key: 'Tab' })
+  expect(document.activeElement).toBe(controls[0])
+  fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true })
+  expect(document.activeElement).toBe(controls[controls.length - 1])
+  // Focus that is somewhere behind the viewer comes back into it.
+  outside.focus()
+  fireEvent.keyDown(outside, { key: 'Tab' })
+  expect(dialog.contains(document.activeElement)).toBe(true)
+  outside.remove()
+})
+
+it('gives the focus back to what opened it when it closes', async () => {
+  const opener = document.createElement('button')
+  document.body.appendChild(opener)
+  opener.focus()
+  show()
+  await screen.findByRole('dialog', { name: 'Photo viewer' })
+  cleanup()
+  expect(document.activeElement).toBe(opener)
+  opener.remove()
+})
+
+it('turns to the next photo with the arrow keys, but not while the key goes to a field', async () => {
+  const onNavigate = vi.fn()
+  const next = { ...photo, id: 'photo-2' } as Photo
+  show(vi.fn(), { nextPhoto: next, onNavigate })
+  await screen.findByRole('dialog', { name: 'Photo viewer' })
+  const fields = [
+    document.createElement('textarea'),
+    document.createElement('select'),
+    document.createElement('input'),
+    document.createElement('div'),
+    document.createElement('div'),
+  ]
+  fields[3].setAttribute('contenteditable', 'true')
+  fields[4].setAttribute('role', 'textbox')
+  const inner = document.createElement('span')
+  fields[3].appendChild(inner)
+  for (const field of fields) document.body.appendChild(field)
+  for (const field of [...fields, inner]) fireEvent.keyDown(field, { key: 'ArrowRight' })
+  expect(onNavigate).not.toHaveBeenCalled()
+  fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+  expect(onNavigate).toHaveBeenCalledWith(next)
+  for (const field of fields) field.remove()
+})
+
+it('describes the picture to a screen reader: the first sentence of its description, else where and when', async () => {
+  serveRead({ photo: { ...describedPhoto, photoDescription: 'A red kite over a field. It is windy.' } })
+  show()
+  const picture = () => document.querySelector<HTMLImageElement>('.photo-fitted')!
+  expect(picture().alt).toBe('Photo taken on July 12, 2030')
+  await waitFor(() => expect(picture().alt).toBe('A red kite over a field.'))
+})
+
+it('names the place in the alternative text when the picture has no description', async () => {
+  serveRead({ photo: { ...undescribedPhoto, placeName: 'Fixtureville, Nowhere' } })
+  show(vi.fn(), { photo: { ...photo, placeName: 'Fixtureville, Nowhere' } as Photo })
+  expect(document.querySelector<HTMLImageElement>('.photo-fitted')!.alt).toBe(
+    'Photo taken in Fixtureville, Nowhere on July 12, 2030',
+  )
+})
+
+it('waits to trash or restore while the page is busy with it', async () => {
+  show(vi.fn(), { isBusy: true })
+  expect((await screen.findByRole('button', { name: 'Move to Trash' })).hasAttribute('disabled')).toBe(true)
+  cleanup()
+  show(vi.fn(), { isBusy: true, isTrashed: true })
+  expect((await screen.findByRole('button', { name: 'Restore' })).hasAttribute('disabled')).toBe(true)
+  expect(screen.getByRole('button', { name: 'Delete forever' }).hasAttribute('disabled')).toBe(true)
+})
+
+it('says that the details could not be read, and reads them again on request', async () => {
+  vi.mocked(graphql).mockRejectedValueOnce(new Error('connection refused'))
+  show()
+  expect(await screen.findByText('The details of this photo could not be read.')).toBeTruthy()
+  serveRead({ photo, albums: [{ id: 'album-1', albumTitle: 'Picnic' }] })
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByRole('link', { name: 'Picnic' })).toBeTruthy()
+  expect(screen.queryByText('The details of this photo could not be read.')).toBeNull()
+})
+
+it('downloads the original with one click when it is the only file', async () => {
+  serveRead({
+    photo,
+    photoFiles: [{ photoFileRole: 'original', contentType: 'image/jpeg', fileSizeBytes: 10, fileUrl: '/o' }],
+  })
+  show()
+  const link = await screen.findByRole('link', { name: 'Download original' })
+  expect(link.getAttribute('href')).toBe('/api/v1/photos/photo-1/files/original')
+})
+
+it('lists the edited version and the Live Photo video in the download menu when the photo has them', async () => {
+  serveRead({
+    photo,
+    photoFiles: ['original', 'edited', 'liveVideo'].map((photoFileRole) => ({
+      photoFileRole,
+      contentType: 'image/jpeg',
+      fileSizeBytes: 10,
+      fileUrl: `/${photoFileRole}`,
+    })),
+  })
+  show()
+  fireEvent.click(await screen.findByRole('button', { name: 'Download' }))
+  const items = await screen.findAllByRole('menuitem')
+  expect(items.map((item) => [item.textContent, item.getAttribute('href')])).toEqual([
+    ['Download original', '/api/v1/photos/photo-1/files/original'],
+    ['Download edited version', '/api/v1/photos/photo-1/files/edited'],
+    ['Download Live Photo video', '/api/v1/photos/photo-1/files/liveVideo'],
+  ])
 })

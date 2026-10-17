@@ -16,6 +16,7 @@ import {
 } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
 import { Pager, useKeepPageInRange, usePageInAddress } from '../../components/pager'
+import { Select } from '../../components/select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
 import { Tooltip } from '../../components/tooltip'
@@ -44,10 +45,14 @@ import {
   type Photo,
   type PhotoAlbum,
   type PhotoFace,
+  type PhotoKind,
   type PhotoListKind,
 } from '../../photos/api'
+import { usePhotosChanged } from '../../photos/changes'
+import { FILTER_KINDS, parseDay, parsePhotoKind, startOfDay, startOfNextDay } from '../../photos/filters'
 import { formatByteSize, indexRange } from '../../photos/days'
 import {
+  NoAddressBookError,
   createContact,
   hidePhotoFaceGroup,
   listPhotoFaceGroups,
@@ -57,7 +62,7 @@ import {
   removePhotoFaceFromGroup,
   unnamePhotoFaceGroup,
 } from '../../photos/people'
-import { photoUploads, useUploadItems } from '../../photos/uploadQueue'
+import { photoUploads } from '../../photos/uploadQueue'
 import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, type PhotoSection } from './albumControls'
@@ -71,7 +76,6 @@ import {
   useDisplayedPersonName,
   type PersonNaming,
 } from './personControls'
-import { UploadTray } from './uploadTray'
 import { PhotoViewer } from './viewer'
 
 // The Photos page: the timeline of the person's library with its three
@@ -81,14 +85,19 @@ import { PhotoViewer } from './viewer'
 
 // How often a list that holds photos still being made ready is read again.
 const WAITING_POLL_MS = 3000
-// How long after an upload finishes the list is read again; a burst of files
-// finishing together is one read.
-const UPLOADED_REFRESH_MS = 800
+// How long typing in the search box pauses before the search is sent.
+const SEARCH_PAUSE_MS = 300
 // How many favorites are changed at once.
 const FAVORITE_CONCURRENCY = 6
 // The gap between downloads when several are saved together, which browsers
 // otherwise take for a flood and block.
 const DOWNLOAD_GAP_MS = 300
+
+const KIND_LABELS: Record<PhotoKind, 'photos.kindPicture' | 'photos.kindLivePhoto' | 'photos.kindVideo'> = {
+  picture: 'photos.kindPicture',
+  livePhoto: 'photos.kindLivePhoto',
+  video: 'photos.kindVideo',
+}
 
 type Confirmation =
   | { kind: 'trash'; photos: Photo[] }
@@ -149,35 +158,114 @@ function AccountPhotosPage() {
         ? 'trash'
         : 'library'
   const searchText = parameters.get('search') ?? ''
-  const [searchInput, setSearchInput] = useState(searchText)
+  const photoKind = parsePhotoKind(parameters.get('kind'))
+  const fromDay = parseDay(parameters.get('from'))
+  const toDay = parseDay(parameters.get('to'))
+  const hasFilters = photoKind !== '' || fromDay !== '' || toDay !== ''
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
+  const takenAfter = fromDay ? startOfDay(fromDay) : undefined
+  const takenBefore = toDay ? startOfNextDay(toDay) : undefined
   const filter = useMemo(
-    () => ({ listKind, searchText, photoAlbumId, photoFaceGroupId }),
-    [listKind, searchText, photoAlbumId, photoFaceGroupId],
+    () => ({
+      listKind,
+      searchText,
+      photoAlbumId,
+      photoFaceGroupId,
+      photoKind: photoKind || undefined,
+      takenAfter,
+      takenBefore,
+    }),
+    [listKind, searchText, photoAlbumId, photoFaceGroupId, photoKind, takenAfter, takenBefore],
   )
   const userId = session.userId ?? ''
+  // A search costs something every time it runs, so a list that is a search
+  // is read again when the search changes or the person does something to it,
+  // and not on a timer.
+  const isSearching = searchText !== ''
 
-  // The search is sent once typing pauses, and starts again at the first
-  // page.
+  // ---- The search box and the address ----
+
+  // The box holds what is typed; the address holds what is searched for. The
+  // search is written to the address once typing pauses, and starts again at
+  // the first page. When the address changes some other way (the sidebar, a
+  // link in a toast, Back) the box shows what the address says, and what was
+  // typed but not yet sent is dropped, so a pause cannot write it back.
+  const [searchInput, setSearchInput] = useState(searchText)
+  const searchTimer = useRef<number | null>(null)
+  const latestSearchText = useRef(searchText)
+  latestSearchText.current = searchText
+  // The search this page wrote itself, so that its arrival in the address is
+  // not mistaken for a change from outside.
+  const writtenSearchText = useRef<string | null>(null)
   useEffect(() => {
-    if (searchInput.trim() === searchText) return
-    const timer = window.setTimeout(() => {
+    if (writtenSearchText.current === searchText) {
+      writtenSearchText.current = null
+      return
+    }
+    writtenSearchText.current = null
+    if (searchTimer.current !== null) {
+      window.clearTimeout(searchTimer.current)
+      searchTimer.current = null
+    }
+    setSearchInput(searchText)
+  }, [searchText])
+  useEffect(
+    () => () => {
+      if (searchTimer.current !== null) window.clearTimeout(searchTimer.current)
+    },
+    [],
+  )
+  const typeSearch = (typed: string) => {
+    setSearchInput(typed)
+    if (searchTimer.current !== null) window.clearTimeout(searchTimer.current)
+    searchTimer.current = window.setTimeout(() => {
+      searchTimer.current = null
+      const searched = typed.trim()
+      // The address already says this: nothing to write.
+      if (searched === latestSearchText.current) return
+      writtenSearchText.current = searched
       setParameters(
         (previous) => {
           const written = new URLSearchParams(previous)
-          if (searchInput.trim()) written.set('search', searchInput.trim())
+          if (searched) written.set('search', searched)
           else written.delete('search')
           written.delete('page')
           return written
         },
         { replace: true },
       )
-    }, 300)
-    return () => window.clearTimeout(timer)
-  }, [searchInput, searchText, setParameters])
+    }, SEARCH_PAUSE_MS)
+  }
 
-  const library = useQuery(() => listPhotos(filter, offset, pageSize), [filter, offset, pageSize, userId])
-  const count = useQuery(() => countPhotos(filter), [filter, userId])
+  // A filter is one parameter of the address; changing one starts again at
+  // the first page.
+  const setFilterParameter = (name: 'kind' | 'from' | 'to', value: string) =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      if (value) written.set(name, value)
+      else written.delete(name)
+      written.delete('page')
+      return written
+    })
+  const clearFilters = () =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      for (const name of ['kind', 'from', 'to']) written.delete(name)
+      written.delete('page')
+      return written
+    })
+
+  // ---- Reading ----
+
+  // Which list a set of photos is of, so that rows that arrive for a list the
+  // person has left are not drawn under the new list's buttons.
+  const listKey = JSON.stringify([filter, offset, pageSize, userId])
+  const library = useQuery(
+    async () => ({ listKey, photos: await listPhotos(filter, offset, pageSize) }),
+    [filter, offset, pageSize, userId],
+    { refresh: !isSearching },
+  )
+  const count = useQuery(() => countPhotos(filter), [filter, userId], { refresh: !isSearching })
   const info = useQuery(() => readPhotoLibrary(), [userId])
   const album = useQuery(async () => (photoAlbumId ? await readPhotoAlbum(photoAlbumId) : null), [photoAlbumId, userId])
   const person = useQuery(
@@ -185,20 +273,42 @@ function AccountPhotosPage() {
     [photoFaceGroupId, userId],
   )
   const people = useQuery(async () => (isMergingPerson ? await listPhotoFaceGroups(true) : []), [isMergingPerson])
+  // What was read for a different album or person is not this one's.
+  const shownAlbum = album.data?.id === photoAlbumId ? album.data : null
+  const shownPerson = person.data?.id === photoFaceGroupId ? person.data : null
   // The trail and the heading read the album's title, or the person's name,
   // not the id.
-  useBreadcrumbDetail(album.data?.albumTitle ?? (person.data ? displayedName(person.data) : null))
+  useBreadcrumbDetail(shownAlbum?.albumTitle ?? (shownPerson ? displayedName(shownPerson) : null))
   useKeepPageInRange(pageIndex, pageSize, count.data ?? null, setPageIndex)
 
-  const photos = useMemo(
-    () =>
-      (library.data ?? []).map((photo) =>
-        favoriteOverrides.has(photo.id) ? { ...photo, isFavorite: favoriteOverrides.get(photo.id)! } : photo,
-      ),
-    [library.data, favoriteOverrides],
+  const listedPhotos = library.data?.photos
+  // Rows of another list stay on the screen, dimmed and out of reach, until
+  // the rows of this one arrive.
+  const isListStale = library.data !== null && library.data.listKey !== listKey
+  const withFavoriteOverride = useCallback(
+    <T extends Photo>(photo: T): T =>
+      favoriteOverrides.has(photo.id) ? { ...photo, isFavorite: favoriteOverrides.get(photo.id)! } : photo,
+    [favoriteOverrides],
   )
-  // What the server says wins again once it has been asked.
-  useEffect(() => setFavoriteOverrides(new Map()), [library.data])
+  const photos = useMemo(() => (listedPhotos ?? []).map(withFavoriteOverride), [listedPhotos, withFavoriteOverride])
+
+  // A favorite changed here shows at once and is sent in the order it was
+  // chosen, one request after another for the same photo; the heart and the
+  // server cannot end up disagreeing because two clicks arrived out of order.
+  // The server's answer replaces the shown one when nothing is on its way.
+  const favoriteQueues = useRef(new Map<string, Promise<unknown>>())
+  const pendingFavoriteCounts = useRef(new Map<string, number>())
+  const settleFavoriteOverrides = useCallback((photoIds?: string[]) => {
+    setFavoriteOverrides((previous) => {
+      const next = new Map(previous)
+      for (const photoId of photoIds ?? previous.keys()) {
+        if (!pendingFavoriteCounts.current.get(photoId)) next.delete(photoId)
+      }
+      return next.size === previous.size ? previous : next
+    })
+  }, [])
+  useEffect(() => settleFavoriteOverrides(), [listedPhotos, settleFavoriteOverrides])
+
   function clearSelection() {
     setSelectedIds(new Set())
     setIsSelectionMode(false)
@@ -208,118 +318,149 @@ function AccountPhotosPage() {
     setSelectedIds(new Set())
     setIsSelectionMode(false)
     anchorIndex.current = null
-  }, [listKind, searchText, offset, photoAlbumId, photoFaceGroupId])
+  }, [listKind, searchText, photoKind, fromDay, toDay, offset, photoAlbumId, photoFaceGroupId])
+
+  // ---- The viewer's photo, when it is not in the list ----
+
+  const viewerIndex = photoId ? photos.findIndex((photo) => photo.id === photoId) : -1
+  const isOutsideList = Boolean(photoId) && viewerIndex < 0
+  // A link to a photo of another page, or one found some other way, is read on
+  // its own. What failed is remembered by the photo it failed for, so that the
+  // answer to the photo before is never taken for this one's.
+  const [failedLookupId, setFailedLookupId] = useState<string | null>(null)
+  const lookup = useQuery(
+    async () => {
+      if (!photoId || !isOutsideList) return null
+      try {
+        const view = await readPhoto(photoId)
+        setFailedLookupId(null)
+        return view
+      } catch (caught) {
+        setFailedLookupId(photoId)
+        throw caught
+      }
+    },
+    [photoId, isOutsideList, userId],
+    { refresh: false },
+  )
+  const lookedUpPhoto = photoId && lookup.data && lookup.data.photo.id === photoId ? lookup.data.photo : null
+
+  // ---- The photos either side of the page ----
+
+  // At the first or last photo of a page the neighbor is on the page before
+  // or after. One photo is read from there, so that Previous and Next go on
+  // across the pages.
+  const totalCount = count.data ?? 0
+  const needsPreviousEdge = viewerIndex === 0 && offset > 0
+  const needsNextEdge = viewerIndex >= 0 && viewerIndex === photos.length - 1 && offset + photos.length < totalCount
+  const previousEdge = useQuery(
+    async () => ({
+      position: offset - 1,
+      photo: needsPreviousEdge ? ((await listPhotos(filter, offset - 1, 1))[0] ?? null) : null,
+    }),
+    [needsPreviousEdge, filter, offset, userId],
+    { refresh: false },
+  )
+  const nextEdge = useQuery(
+    async () => ({
+      position: offset + photos.length,
+      photo: needsNextEdge ? ((await listPhotos(filter, offset + photos.length, 1))[0] ?? null) : null,
+    }),
+    [needsNextEdge, filter, offset, photos.length, userId],
+    { refresh: false },
+  )
+  const previousEdgePhoto =
+    needsPreviousEdge && previousEdge.data?.position === offset - 1 ? previousEdge.data.photo : null
+  const nextEdgePhoto = needsNextEdge && nextEdge.data?.position === offset + photos.length ? nextEdge.data.photo : null
 
   const refresh = useCallback(() => {
-    void library.reload(true)
-    void count.reload(true)
-    void info.reload(true)
-    void album.reload(true)
-    void person.reload(true)
+    return Promise.all([
+      library.reload(true),
+      count.reload(true),
+      info.reload(true),
+      album.reload(true),
+      person.reload(true),
+      isOutsideList ? lookup.reload(true) : null,
+    ]).then(() => undefined)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [library.reload, count.reload, info.reload, album.reload, person.reload])
+  }, [library.reload, count.reload, info.reload, album.reload, person.reload, lookup.reload, isOutsideList])
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
 
+  // Files that finished uploading, or photos restored from a toast on another
+  // page, change the library. A search is not read again for that: it is the
+  // person's to repeat.
+  usePhotosChanged(() => {
+    void info.reload(true)
+    if (isSearching) return
+    void library.reload(true)
+    void count.reload(true)
+  })
+
   // Photos that are still being made ready are looked at again soon, rather
-  // than after the page's slow refresh.
+  // than after the page's slow refresh. Not when the list is a search.
   const hasWaitingPhotos = photos.some((photo) => photo.photoProcessingState === 'waiting')
   useEffect(() => {
-    if (!hasWaitingPhotos) return
+    if (!hasWaitingPhotos || isSearching) return
     const timer = window.setInterval(() => void library.reload(true), WAITING_POLL_MS)
     return () => window.clearInterval(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasWaitingPhotos, library.reload])
+  }, [hasWaitingPhotos, isSearching, library.reload])
 
   // ---- Uploading ----
 
-  const uploadItems = useUploadItems()
-  const isUploading = uploadItems.some(
-    (item) => item.state === 'waiting' || item.state === 'hashing' || item.state === 'sending',
-  )
-  useEffect(() => {
-    photoUploads.setOwner(userId)
-  }, [userId])
+  // The queue, its tray, what it says in toasts and the warning before the tab
+  // is left are the layout's (layout.tsx), since they outlive this page.
   useEffect(() => {
     if (info.data?.uploadPartBytes) photoUploads.setPartBytes(info.data.uploadPartBytes)
   }, [info.data?.uploadPartBytes])
-  // Leaving the tab while files are on their way loses them.
-  useEffect(() => {
-    if (!isUploading) return
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [isUploading])
-
-  const speak = useRef({ toast, t, plural })
-  speak.current = { toast, t, plural }
-  useEffect(() => {
-    let refreshTimer: number | null = null
-    let hasToldOfFailure = false
-    const stopListening = photoUploads.onEvent((event) => {
-      const { toast: toaster, t: translate, plural: pluralize } = speak.current
-      if (event.kind === 'itemDone') {
-        if (refreshTimer !== null) window.clearTimeout(refreshTimer)
-        refreshTimer = window.setTimeout(() => refreshRef.current(), UPLOADED_REFRESH_MS)
-      } else if (event.kind === 'itemFailed') {
-        // The tray lists every failure; one toast says that there was one.
-        if (!hasToldOfFailure) {
-          hasToldOfFailure = true
-          toaster.failed(
-            translate('photos.uploadFailedFile', { name: event.item.name, message: event.item.errorMessage }),
-          )
-        }
-      } else {
-        hasToldOfFailure = false
-        const { uploadedCount, skippedCount, failedCount } = event.summary
-        const sentences = [
-          uploadedCount > 0 && pluralize(uploadedCount, { one: 'photos.uploadedOne', other: 'photos.uploadedOther' }),
-          skippedCount > 0 && pluralize(skippedCount, { one: 'photos.skippedOne', other: 'photos.skippedOther' }),
-          failedCount > 0 &&
-            pluralize(failedCount, { one: 'photos.failedUploadOne', other: 'photos.failedUploadOther' }),
-        ].filter(Boolean)
-        if (failedCount > 0) toaster.failed(sentences.join(' '))
-        else toaster.done(sentences.join(' '))
-        refreshRef.current()
-      }
-    })
-    return () => {
-      stopListening()
-      if (refreshTimer !== null) window.clearTimeout(refreshTimer)
-    }
-  }, [])
 
   // Files go into the library; an album is filled from the photos in it.
   const canUpload = !isInsideCollection
   const addFiles = (files: File[]) => {
-    if (!canUpload) return
+    if (!canUpload) {
+      toast.failed(t('photos.uploadInLibrary'))
+      return
+    }
     const { addedCount, ignoredCount } = photoUploads.add(files)
-    if (ignoredCount > 0 && addedCount >= 0) toast.failed(t('photos.uploadIgnored'))
+    if (ignoredCount > 0) toast.failed(t('photos.uploadIgnored'))
+    // New photos arrive in the library, not in the Favorites or the Trash.
+    if (addedCount > 0 && listKind !== 'library') setListKind('library')
   }
-  const hasFiles = (event: React.DragEvent) => canUpload && Array.from(event.dataTransfer.types).includes('Files')
+  const hasFiles = (event: React.DragEvent) => Array.from(event.dataTransfer.types).includes('Files')
 
   // ---- The viewer and its address ----
 
-  const viewerIndex = photoId ? photos.findIndex((photo) => photo.id === photoId) : -1
-  const lookup = useQuery(
-    async () => (photoId && viewerIndex < 0 ? await readPhoto(photoId).catch(() => null) : null),
-    [photoId, viewerIndex < 0, userId],
-    { refresh: false },
-  )
-  const viewerPhoto = viewerIndex >= 0 ? photos[viewerIndex] : (lookup.data?.photo ?? null)
-  const viewerPrevious = viewerIndex > 0 ? photos[viewerIndex - 1] : null
-  const viewerNext = viewerIndex >= 0 && viewerIndex < photos.length - 1 ? photos[viewerIndex + 1] : null
+  const viewerPhoto =
+    viewerIndex >= 0 ? photos[viewerIndex] : lookedUpPhoto ? withFavoriteOverride(lookedUpPhoto) : null
+  const viewerPrevious = viewerIndex > 0 ? photos[viewerIndex - 1] : previousEdgePhoto
+  const viewerNext = viewerIndex >= 0 && viewerIndex < photos.length - 1 ? photos[viewerIndex + 1] : nextEdgePhoto
+  const isViewerUnavailable = Boolean(photoId) && !viewerPhoto && !lookup.loading && failedLookupId === photoId
 
   const openPhoto = (photo: Photo) =>
     navigate(
       { pathname: `${basePath}/${encodeURIComponent(photo.id)}`, search: location.search },
       { state: { isFromGrid: true } },
     )
-  const showPhoto = (photo: Photo) =>
+  // A photo from the page before or after is shown with that page loaded
+  // behind it, so that Previous and Next go on from there.
+  const showPhoto = (photo: Photo) => {
+    let search = location.search
+    if (!photos.some((listed) => listed.id === photo.id)) {
+      const targetPageIndex =
+        photo.id === nextEdgePhoto?.id ? pageIndex + 1 : photo.id === previousEdgePhoto?.id ? pageIndex - 1 : null
+      if (targetPageIndex !== null) {
+        const written = new URLSearchParams(location.search)
+        if (targetPageIndex <= 0) written.delete('page')
+        else written.set('page', String(targetPageIndex + 1))
+        search = written.toString() ? `?${written.toString()}` : ''
+      }
+    }
     navigate(
-      { pathname: `${basePath}/${encodeURIComponent(photo.id)}`, search: location.search },
+      { pathname: `${basePath}/${encodeURIComponent(photo.id)}`, search },
       { replace: true, state: location.state },
     )
+  }
   const closeViewer = useCallback(() => {
     // Opened from the grid, the viewer is one step on the way back; opened
     // from a link, there is no step to go back to.
@@ -339,21 +480,28 @@ function AccountPhotosPage() {
   const failedWith = (caught: unknown) => toast.failure(caught, t('photos.actionFailed'))
 
   async function setFavorites(targets: Photo[], isFavorite: boolean) {
-    setFavoriteOverrides(
-      (previous) => new Map([...previous, ...targets.map((photo) => [photo.id, isFavorite] as const)]),
-    )
-    try {
-      for (let start = 0; start < targets.length; start += FAVORITE_CONCURRENCY) {
-        await Promise.all(
-          targets.slice(start, start + FAVORITE_CONCURRENCY).map((photo) => setPhotoFavorite(photo.id, isFavorite)),
-        )
+    const targetIds = targets.map((photo) => photo.id)
+    setFavoriteOverrides((previous) => new Map([...previous, ...targetIds.map((id) => [id, isFavorite] as const)]))
+    for (const id of targetIds) pendingFavoriteCounts.current.set(id, (pendingFavoriteCounts.current.get(id) ?? 0) + 1)
+    const send = async (photo: Photo) => {
+      const earlier = favoriteQueues.current.get(photo.id) ?? Promise.resolve()
+      const mine = earlier.catch(() => undefined).then(() => setPhotoFavorite(photo.id, isFavorite))
+      favoriteQueues.current.set(photo.id, mine)
+      try {
+        await mine
+      } finally {
+        pendingFavoriteCounts.current.set(photo.id, (pendingFavoriteCounts.current.get(photo.id) ?? 1) - 1)
       }
-      refresh()
-    } catch (caught) {
-      setFavoriteOverrides(new Map())
-      failedWith(caught)
-      refresh()
     }
+    let failure: { reason: unknown } | null = null
+    for (let start = 0; start < targets.length; start += FAVORITE_CONCURRENCY) {
+      const results = await Promise.allSettled(targets.slice(start, start + FAVORITE_CONCURRENCY).map(send))
+      for (const result of results) if (result.status === 'rejected' && !failure) failure = { reason: result.reason }
+    }
+    if (failure) failedWith(failure.reason)
+    // What the server says wins again, once it has been asked.
+    await refresh()
+    settleFavoriteOverrides(targetIds)
   }
 
   async function restore(targets: Photo[]) {
@@ -363,7 +511,7 @@ function AccountPhotosPage() {
       toast.done(plural(restoredCount, { one: 'photos.restoredOne', other: 'photos.restoredOther' }))
       if (targets.some((photo) => photo.id === photoId)) moveViewerOn()
       clearSelection()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     } finally {
@@ -390,7 +538,7 @@ function AccountPhotosPage() {
       setConfirmation(null)
       if (trashedIds.includes(photoId ?? '')) moveViewerOn()
       clearSelection()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     } finally {
@@ -406,7 +554,7 @@ function AccountPhotosPage() {
       setConfirmation(null)
       if (targets.some((photo) => photo.id === photoId)) moveViewerOn()
       clearSelection()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     } finally {
@@ -422,7 +570,7 @@ function AccountPhotosPage() {
       setConfirmation(null)
       clearSelection()
       if (photoId) closeViewer()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     } finally {
@@ -450,7 +598,7 @@ function AccountPhotosPage() {
           viewAlbum,
         )
       clearSelection()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     }
@@ -469,7 +617,7 @@ function AccountPhotosPage() {
       })
       setNewAlbumPhotos(null)
       clearSelection()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     } finally {
@@ -495,7 +643,7 @@ function AccountPhotosPage() {
       })
       if (removedIds.includes(photoId ?? '')) moveViewerOn()
       clearSelection()
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     }
@@ -506,7 +654,7 @@ function AccountPhotosPage() {
     try {
       await setPhotoAlbumCover(photoAlbumId, photo.id)
       toast.done(t('photos.coverSet'))
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     }
@@ -531,7 +679,7 @@ function AccountPhotosPage() {
     setIsBusy(true)
     try {
       await deletePhotoAlbum(photoAlbumId)
-      toast.done(t('photos.albumDeleted', { title: album.data?.albumTitle ?? '' }))
+      toast.done(t('photos.albumDeleted', { title: shownAlbum?.albumTitle ?? '' }))
       setConfirmation(null)
       navigate('/photos/albums', { replace: true })
     } catch (caught) {
@@ -568,7 +716,7 @@ function AccountPhotosPage() {
     try {
       await removePhotoFaceFromGroup(face.id)
       toast.done(t('photos.faceRemoved'))
-      refresh()
+      void refresh()
     } catch (caught) {
       failedWith(caught)
     }
@@ -585,15 +733,21 @@ function AccountPhotosPage() {
       toast.done(t('photos.personNamed', { name: displayedName(named) }))
       await person.reload(true)
     } catch (caught) {
-      setPersonError(caught instanceof Error ? caught.message : String(caught))
+      setPersonError(
+        caught instanceof NoAddressBookError
+          ? t('photos.noAddressBook')
+          : caught instanceof Error
+            ? caught.message
+            : String(caught),
+      )
     } finally {
       setIsBusy(false)
     }
   }
 
   async function removeName() {
-    if (!photoFaceGroupId || !person.data) return
-    const previousContactId = person.data.contactId
+    if (!photoFaceGroupId || !shownPerson) return
+    const previousContactId = shownPerson.contactId
     try {
       await unnamePhotoFaceGroup(photoFaceGroupId)
       toast.done(t('photos.nameRemoved'), {
@@ -621,7 +775,7 @@ function AccountPhotosPage() {
       await mergePhotoFaceGroups([photoFaceGroupId, other.id])
       setIsMergingPerson(false)
       toast.done(t('photos.peopleMerged'))
-      refresh()
+      void refresh()
     } catch (caught) {
       setPersonError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -630,8 +784,8 @@ function AccountPhotosPage() {
   }
 
   async function toggleHidden() {
-    if (!photoFaceGroupId || !person.data) return
-    const isNowHidden = !person.data.isHidden
+    if (!photoFaceGroupId || !shownPerson) return
+    const isNowHidden = !shownPerson.isHidden
     try {
       await hidePhotoFaceGroup(photoFaceGroupId, isNowHidden)
       toast.done(isNowHidden ? t('photos.personHidden') : t('photos.personShown'), {
@@ -712,19 +866,20 @@ function AccountPhotosPage() {
   // ---- Drawing ----
 
   const isTrash = listKind === 'trash'
-  const totalCount = count.data ?? 0
   const emptyText =
-    searchText !== ''
+    searchText !== '' && !hasFilters
       ? t('photos.emptySearch')
-      : photoAlbumId
-        ? t('photos.emptyAlbum')
-        : photoFaceGroupId
-          ? t('photos.emptyPerson')
-          : listKind === 'favorites'
-            ? t('photos.emptyFavorites')
-            : isTrash
-              ? t('photos.emptyTrash')
-              : t('photos.emptyLibrary')
+      : searchText !== '' || hasFilters
+        ? t('photos.emptyFiltered')
+        : photoAlbumId
+          ? t('photos.emptyAlbum')
+          : photoFaceGroupId
+            ? t('photos.emptyPerson')
+            : listKind === 'favorites'
+              ? t('photos.emptyFavorites')
+              : isTrash
+                ? t('photos.emptyTrash')
+                : t('photos.emptyLibrary')
   const trashedCount = info.data?.trashedCount ?? 0
   const trashDays = info.data?.trashRetentionDays ?? 0
 
@@ -734,7 +889,7 @@ function AccountPhotosPage() {
       onDragEnter={(event) => {
         if (!hasFiles(event)) return
         event.preventDefault()
-        setIsDragging(true)
+        if (canUpload) setIsDragging(true)
       }}
       onDragOver={(event) => {
         if (!hasFiles(event)) return
@@ -798,9 +953,9 @@ function AccountPhotosPage() {
             )}
           />
         )}
-        {person.data && (
+        {shownPerson && (
           <PersonMenu
-            person={person.data}
+            person={shownPerson}
             onName={startNamingPerson}
             onRemoveName={() => void removeName()}
             onMerge={() => {
@@ -929,7 +1084,7 @@ function AccountPhotosPage() {
             value={searchInput}
             placeholder={t('photos.search')}
             aria-label={t('photos.search')}
-            onChange={(event) => setSearchInput(event.target.value)}
+            onChange={(event) => typeSearch(event.target.value)}
           />
           {!isInsideCollection && <PhotoSections current={listKind} onSelect={selectSection} />}
           {isTrash && trashedCount > 0 && (
@@ -939,16 +1094,56 @@ function AccountPhotosPage() {
           )}
         </div>
       )}
+      {selectedPhotos.length === 0 && (
+        <div className="row photo-filters">
+          <label>
+            <span>{t('photos.filterKind')}</span>
+            <Select
+              block
+              value={photoKind}
+              label={t('photos.filterKind')}
+              options={[
+                { value: '', label: t('photos.kindAll') },
+                ...FILTER_KINDS.map((kind) => ({ value: kind, label: t(KIND_LABELS[kind]) })),
+              ]}
+              onChange={(value) => setFilterParameter('kind', value)}
+            />
+          </label>
+          <label>
+            <span>{t('photos.filterFrom')}</span>
+            <input
+              type="date"
+              value={fromDay}
+              max={toDay || undefined}
+              onChange={(event) => setFilterParameter('from', parseDay(event.target.value))}
+            />
+          </label>
+          <label>
+            <span>{t('photos.filterTo')}</span>
+            <input
+              type="date"
+              value={toDay}
+              min={fromDay || undefined}
+              onChange={(event) => setFilterParameter('to', parseDay(event.target.value))}
+            />
+          </label>
+          {hasFilters && (
+            <button type="button" className="shrink" onClick={clearFilters}>
+              {t('photos.clearFilters')}
+            </button>
+          )}
+        </div>
+      )}
 
-      {person.data && (
+      {shownPerson && (
         <div className="photo-person-head">
-          <FacePicture facePictureUrl={person.data.facePictureUrl} name={displayedName(person.data)} size="large" />
+          <FacePicture facePictureUrl={shownPerson.facePictureUrl} name={displayedName(shownPerson)} size="large" />
           <div className="photo-person-head-body">
             <span className="muted">
-              {plural(person.data.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
-              {person.data.isHidden ? ` · ${t('photos.hiddenFromPeople')}` : ''}
+              {plural(shownPerson.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
+              {shownPerson.isHidden ? ` · ${t('photos.hiddenFromPeople')}` : ''}
             </span>
-            {person.data.contactName.trim() === '' && (
+            {shownPerson.contactName.trim() === '' && (
               <button type="button" onClick={startNamingPerson}>
                 {t('photos.nameThisPerson')}
               </button>
@@ -965,16 +1160,18 @@ function AccountPhotosPage() {
 
       {library.loading && !library.data ? (
         <Loading />
-      ) : photos.length === 0 ? (
+      ) : photos.length === 0 && !isListStale ? (
         <SettingsEmpty>{emptyText}</SettingsEmpty>
       ) : (
-        <PhotoGrid
-          photos={photos}
-          selectedIds={selectedIds}
-          isSelectionMode={isSelectionMode}
-          onOpen={openPhoto}
-          onToggle={toggleSelection}
-        />
+        <div className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
+          <PhotoGrid
+            photos={photos}
+            selectedIds={selectedIds}
+            isSelectionMode={isSelectionMode}
+            onOpen={openPhoto}
+            onToggle={toggleSelection}
+          />
+        </div>
       )}
 
       {(totalCount > pageSize || pageIndex > 0) && (
@@ -985,7 +1182,7 @@ function AccountPhotosPage() {
             pageSize={pageSize}
             shownCount={photos.length}
             totalCount={Math.max(totalCount, offset + photos.length)}
-            isLoading={library.loading && !library.data}
+            isLoading={library.loading && (!library.data || isListStale)}
             onPageIndex={(next) => setPageIndex(next)}
           />
         </div>
@@ -1012,7 +1209,7 @@ function AccountPhotosPage() {
         </SettingsSection>
       )}
 
-      {isDragging && (
+      {isDragging && canUpload && (
         <div className="photo-drop" aria-hidden="true">
           <UploadIcon size={28} />
           <p>{t('photos.dropToUpload')}</p>
@@ -1025,6 +1222,7 @@ function AccountPhotosPage() {
           previousPhoto={viewerPrevious}
           nextPhoto={viewerNext}
           isTrashed={Boolean(viewerPhoto.trashedAt) || isTrash}
+          isBusy={isBusy}
           isPaused={
             confirmation !== null || newAlbumPhotos !== null || isRenamingAlbum || isNamingPerson || isMergingPerson
           }
@@ -1045,7 +1243,7 @@ function AccountPhotosPage() {
           onSetCover={photoAlbumId ? (photo) => makeCover(photo) : undefined}
         />
       )}
-      {photoId && !viewerPhoto && !library.loading && !lookup.loading && (
+      {isViewerUnavailable && (
         <ConfirmDialog
           title={t('nav.photos')}
           body={t('photos.unavailable')}
@@ -1092,7 +1290,7 @@ function AccountPhotosPage() {
 
       {confirmation?.kind === 'deleteAlbum' && (
         <ConfirmDialog
-          title={t('photos.deleteAlbumTitle', { title: album.data?.albumTitle ?? '' })}
+          title={t('photos.deleteAlbumTitle', { title: shownAlbum?.albumTitle ?? '' })}
           body={t('photos.deleteAlbumBody')}
           confirmLabel={t('photos.deleteAlbum')}
           busy={isBusy}
@@ -1108,19 +1306,19 @@ function AccountPhotosPage() {
           onClose={() => setConfirmation(null)}
         />
       )}
-      {isNamingPerson && person.data && (
+      {isNamingPerson && shownPerson && (
         <NamePersonDialog
-          currentName={person.data.contactName}
+          currentName={shownPerson.contactName}
           isBusy={isBusy}
           error={personError}
           onSubmit={(naming) => void nameGroup(naming)}
           onClose={() => setIsNamingPerson(false)}
         />
       )}
-      {isMergingPerson && person.data && (
+      {isMergingPerson && shownPerson && (
         <MergePersonDialog
-          person={person.data}
-          others={(people.data ?? []).filter((other) => other.id !== person.data!.id)}
+          person={shownPerson}
+          others={(people.data ?? []).filter((other) => other.id !== shownPerson!.id)}
           isLoading={people.loading && !people.data}
           isBusy={isBusy}
           error={personError}
@@ -1141,14 +1339,12 @@ function AccountPhotosPage() {
         <AlbumTitleDialog
           title={t('photos.renameAlbum')}
           submitLabel={t('common.save')}
-          initialTitle={album.data?.albumTitle ?? ''}
+          initialTitle={shownAlbum?.albumTitle ?? ''}
           isBusy={isBusy}
           onSubmit={(albumTitle) => void renameAlbum(albumTitle)}
           onClose={() => setIsRenamingAlbum(false)}
         />
       )}
-
-      <UploadTray />
     </div>
   )
 }

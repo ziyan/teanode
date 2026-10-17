@@ -112,3 +112,18 @@ it('shows no selection state when nothing is chosen and the page is not in selec
   const { container } = show([photoFixture({ id: 'a', originalFilename: 'a.jpg' })])
   expect(container.querySelector('.photo-timeline')?.classList.contains('is-selecting')).toBe(false)
 })
+
+it('waits for a ready photo that has no small preview yet instead of calling it failed', () => {
+  show([photoFixture({ id: 'bare', photoProcessingState: 'ready', smallPreviewUrl: '', originalFilename: 'bare.jpg' })])
+  expect(screen.getByRole('img', { name: 'Getting this photo ready' })).toBeTruthy()
+  expect(screen.queryByTitle('This photo could not be read.')).toBeNull()
+})
+
+it('describes each picture by where and when it was taken, or when', () => {
+  show([
+    photoFixture({ id: 'placed', placeName: 'Fixtureville, Nowhere', originalFilename: 'placed.jpg' }),
+    photoFixture({ id: 'bare', placeName: '', originalFilename: 'bare.jpg' }),
+  ])
+  expect(screen.getByRole('img', { name: 'Photo taken in Fixtureville, Nowhere on July 12, 2030' })).toBeTruthy()
+  expect(screen.getByRole('img', { name: 'Photo taken on July 12, 2030' })).toBeTruthy()
+})

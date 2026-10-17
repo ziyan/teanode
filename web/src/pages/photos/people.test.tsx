@@ -6,6 +6,7 @@ import { ToastProvider } from '../../components/toast'
 import { TranslationProvider } from '../../i18n/i18n'
 import { PhotoSections } from './albumControls'
 import { FaceRecognitionPreferences, PhotoPeoplePage } from './people'
+import { NoAddressBookError, createContact } from '../../photos/people'
 import { MergePersonDialog, NamePersonDialog } from './personControls'
 
 vi.mock('../../api', async (importOriginal) => ({
@@ -230,6 +231,37 @@ it('offers a new contact for a name the address book does not have, and not for 
   fireEvent.change(field, { target: { value: 'sample person' } })
   await within(dialog).findByLabelText('Sample Person')
   await waitFor(() => expect(within(dialog).queryByLabelText(/New contact named/)).toBeNull())
+})
+
+it('does not save a contact that was chosen and is no longer in the list', async () => {
+  serveContacts([
+    { id: 'contact-1', name: 'Sample Person' },
+    { id: 'contact-2', name: 'Other Person' },
+  ])
+  const onSubmit = vi.fn()
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <NamePersonDialog currentName="" onSubmit={onSubmit} onClose={vi.fn()} />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  const dialog = screen.getByRole('dialog')
+  fireEvent.click(await within(dialog).findByLabelText('Other Person'))
+  expect(within(dialog).getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(false)
+  // A search that no longer lists the chosen contact leaves nothing chosen.
+  fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: 'sample' } })
+  await waitFor(() => expect(within(dialog).queryByLabelText('Other Person')).toBeNull())
+  expect(within(dialog).getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
+  // Searching for it again does not choose it again by itself.
+  fireEvent.change(within(dialog).getByRole('searchbox'), { target: { value: '' } })
+  expect(((await within(dialog).findByLabelText('Other Person')) as HTMLInputElement).checked).toBe(false)
+  expect(onSubmit).not.toHaveBeenCalled()
+})
+
+it('says that there is no address book with an error the page can put in its own words', async () => {
+  vi.mocked(graphql).mockResolvedValue({ ListAddressBooks: [] } as never)
+  await expect(createContact('Someone')).rejects.toBeInstanceOf(NoAddressBookError)
 })
 
 it('merges with the person chosen, after saying what it does', async () => {
