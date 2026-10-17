@@ -384,6 +384,46 @@ use the right origin. The iPhone app needs that HTTPS address. Mail DNS
 checks appear only for hosted mail, and mail can be added later in
 Server → Setup without losing anything.
 
+### Photos and the iPhone app
+
+Photos is on from the first start, with nothing to choose and no restart: it
+costs no disk until somebody uploads. The welcome page that asks for a model
+key also has **Open Photos** for people who came for their photos, and the
+rail has a **Photos** row for everybody who may use it.
+
+1. Open **Photos** and upload from the page, or with
+   `teanode photo upload <folder>` from a computer.
+2. Back up an iPhone: install the TeaNode app, sign in with this server's
+   address, then open Settings, **Photo backup** and turn it on. The empty
+   library and **Settings → Devices** say the same, with this server's address
+   filled in.
+3. To stop hosting Photos, untick it under **Manage → Server → Setup**, press
+   **Review your choices** and **Apply choices**, and restart; the page says
+   that the change takes effect after a restart and has a **Restart now**
+   button. The same applies to turning on Calendar, Reminders, Contacts or
+   mail there. Turning a service off keeps its data.
+
+The iPhone app only signs in over https. The assistant compose file publishes
+port 8080 on the loopback interface alone, so a phone cannot reach it, and
+`http://127.0.0.1:8080` and a plain `http://` address on the local network
+are both refused by the app. Put a TLS reverse proxy in front of 8080 on a
+name such as `photos.example.com` with a certificate from a certificate
+authority the phone trusts (Caddy, nginx with Let's Encrypt, a tunnel
+service), list the proxy's address under `trustedProxies` (see
+`docs/configuration.md`) so that secure cookies and the addresses in the audit
+log are right, and sign in to the app with `https://photos.example.com`. The
+dashboard shows a warning on those pages when it is opened from `localhost`, a
+private address or plain http.
+
+The photos and videos are files in the `assistant-files` volume, under
+`/var/lib/teanode`, in the storage directory (`storage.directory` relative to
+`server.dataDirectory`); the database holds what is known about each one. Back
+both up, as "What to back up" says. A phone's library is commonly tens to
+hundreds of gigabytes, so check the free space of the disk that holds Docker's
+volumes (`docker system df`, or `df -h /var/lib/docker`) before turning on
+backup on a phone, and set `photos.maxAccountBytes` if several people share
+the disk. The largest single file is `photos.maxFileBytes`, 8 GiB by default.
+
 For a binary with your own database, generate an HTTP-only starter file:
 
     teanode-server config env --preset assistant --output .env --database-url <connection-url>
