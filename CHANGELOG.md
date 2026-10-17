@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.169.1] - 2026-10-17
+
+### Fixed
+
+- The agent reads a long page in the browser a part at a time instead of reopening it. (#529)
+
 ## [0.169.0] - 2026-10-17
 
 ### Added
