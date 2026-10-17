@@ -16223,9 +16223,11 @@ body.has-recording-bar .content {
   background: var(--rail);
 }
 
+/* MapLibre's own stylesheet makes this element position: relative, loaded
+   after this one, so its size is given outright rather than by its edges. */
 .location-map-canvas {
-  position: absolute;
-  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 /* MapLibre's styles are light. In dark mode the map is dimmed rather than
