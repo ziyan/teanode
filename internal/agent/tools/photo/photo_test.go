@@ -306,6 +306,18 @@ func TestFavoriteTrashRestoreAndSaveUseTheSharedOperations(test *testing.T) {
 	if _, err := current.call(map[string]any{"operation": "trash"}); err == nil {
 		test.Fatal("trashing nothing was accepted")
 	}
+	// Retrying makes the previews of photos again; it is a write, and it names
+	// the photos the way trash does.
+	operations.answers["RetryPhotoProcessing"] = "1"
+	if result, err := current.call(map[string]any{"operation": "retry", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "1 of 2 photos queued to have their previews made again") {
+		test.Fatalf("%v %v", result, err)
+	}
+	if asked := operations.asked("RetryPhotoProcessing"); len(asked) != 1 || len(asked[0]["photoIds"].([]string)) != 2 {
+		test.Fatalf("%v", asked)
+	}
+	if _, err := current.call(map[string]any{"operation": "retry"}); err == nil {
+		test.Fatal("retrying nothing was accepted")
+	}
 
 	// A file of the conversation is kept as a photo through the API's own
 	// operation; one of another conversation is not found.
@@ -343,7 +355,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	for operation, want := range map[string]tools.Risk{
 		"library": tools.RiskRead, "list": tools.RiskRead, "read": tools.RiskRead, "look": tools.RiskRead, "show": tools.RiskRead,
-		"favorite": tools.RiskWrite, "restore": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive,
+		"favorite": tools.RiskWrite, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive,
 	} {
 		arguments, _ := json.Marshal(map[string]any{"operation": operation})
 		if got := photoTool.RiskFor(arguments); got != want {
@@ -364,7 +376,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	properties, _ := photoTool.Parameters["properties"].(map[string]any)
 	operation, _ := properties["operation"].(map[string]any)
-	if enum, _ := operation["enum"].([]string); len(enum) != 23 {
+	if enum, _ := operation["enum"].([]string); len(enum) != 24 {
 		test.Errorf("operations %v", enum)
 	}
 }
@@ -385,12 +397,8 @@ func TestLibraryAnswersCountsAndLimits(test *testing.T) {
 }
 
 func TestAPhotosDateIsTheClockWhereItWasTakenWithItsOffset(test *testing.T) {
-	newYork, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		test.Skip("no time zone database")
-	}
 	// 08:00 on April 4 where the offset is +09:00 is the evening of April 3
-	// for a person in New York, and the photo must still be April 4.
+	// for a person west of it, and the photo must still be April 4.
 	offset := 9 * 60
 	taken := time.Date(2025, 4, 3, 23, 0, 0, 0, time.UTC)
 	for _, check := range []struct {
@@ -401,14 +409,16 @@ func TestAPhotosDateIsTheClockWhereItWasTakenWithItsOffset(test *testing.T) {
 		{"offset known", &models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: &offset}, "2025-04-04 08:00 (UTC+09:00)"},
 		{"offset west of UTC", &models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: new(-210)}, "2025-04-03 19:30 (UTC-03:30)"},
 		{"offset zero", &models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: new(0)}, "2025-04-03 23:00 (UTC+00:00)"},
-		{"offset unknown", &models.Photo{TakenAt: &taken}, "2025-04-03 19:00"},
+		// A photo not processed yet has no offset: it is on UTC, and says so,
+		// whatever zone the person is in.
+		{"offset unknown", &models.Photo{TakenAt: &taken}, "2025-04-03 23:00 (UTC)"},
 		{"no date", &models.Photo{}, ""},
 	} {
-		if got := takenAtText(check.photo, newYork); got != check.want {
+		if got := takenAtText(check.photo); got != check.want {
 			test.Errorf("%s: %q, want %q", check.name, got, check.want)
 		}
 	}
-	if got := describePhoto(&models.Photo{ID: "photo-x", PhotoKind: models.PhotoKindPicture, TakenAt: &taken, TakenAtOffsetMinutes: &offset}, newYork); !strings.Contains(got, "taken 2025-04-04 08:00 (UTC+09:00)") {
+	if got := describePhoto(&models.Photo{ID: "photo-x", PhotoKind: models.PhotoKindPicture, TakenAt: &taken, TakenAtOffsetMinutes: &offset}); !strings.Contains(got, "taken 2025-04-04 08:00 (UTC+09:00)") {
 		test.Errorf("the line that goes with a shown photo says %q", got)
 	}
 }

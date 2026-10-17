@@ -137,9 +137,20 @@ func quadrantAt(test *testing.T, picture image.Image, column, row int) string {
 // the way orientation says.
 func exifJpeg(test *testing.T, widthPixels, heightPixels int, orientation uint16) []byte {
 	test.Helper()
+	return exifJpegDated(test, widthPixels, heightPixels, orientation, "2024:05:06 07:08:09", "+02:00")
+}
+
+// exifJpegDated is exifJpeg with the date and offset the camera wrote. An
+// empty offset is a camera that wrote none.
+func exifJpegDated(test *testing.T, widthPixels, heightPixels int, orientation uint16, date, offset string) []byte {
+	test.Helper()
+	dateEntries := []exifEntry{exifText(0x9003, date)}
+	if offset != "" {
+		dateEntries = append(dateEntries, exifText(0x9011, offset))
+	}
 	exif := buildExif(
 		[]exifEntry{exifText(0x010F, "Example Camera Co"), exifText(0x0110, "Model 1"), exifShort(0x0112, orientation)},
-		[]exifEntry{exifText(0x9003, "2024:05:06 07:08:09"), exifText(0x9011, "+02:00")},
+		dateEntries,
 		[]exifEntry{
 			exifText(0x0001, "N"), exifRationals(0x0002, [2]uint32{10, 1}, [2]uint32{0, 1}, [2]uint32{0, 1}),
 			exifText(0x0003, "E"), exifRationals(0x0004, [2]uint32{20, 1}, [2]uint32{0, 1}, [2]uint32{0, 1}),
@@ -273,10 +284,18 @@ func TestWhatTheUploaderSaidWinsOverWhatTheFileSays(test *testing.T) {
 	}
 }
 
+// setOwnerZone sets the time zone of the account the fixture signs in as.
+func (self *fixture) setOwnerZone(zone string) {
+	self.test.Helper()
+	self.age(`UPDATE "user" SET timezone = '` + zone + `' WHERE id = '` + self.userId + `'`)
+}
+
 // The picture exifJpeg makes says 2024-05-06 07:08:09 at +02:00, which is
 // 05:08:09 UTC.
-func TestADateEndingInZTakesItsOffsetFromTheFile(test *testing.T) {
+func TestADateEndingInZTakesItsOffsetFromTheFileOrFromTheOwnersZone(test *testing.T) {
 	fixture := newFixture(test)
+	// The owner's zone is five hours east of UTC all year.
+	fixture.setOwnerZone("Etc/GMT-5")
 	instant := time.Date(2024, 5, 6, 5, 8, 9, 0, time.UTC)
 
 	// A phone knows the instant and not the zone.
@@ -292,21 +311,49 @@ func TestADateEndingInZTakesItsOffsetFromTheFile(test *testing.T) {
 		test.Fatalf("the instant %v with offset %v, want an offset of 0", utc.TakenAt, utc.TakenAtOffsetMinutes)
 	}
 
-	// An instant that is not the file's own moment keeps no offset: the date
-	// was changed after the file was written.
+	// An instant that is not the file's own moment has not the file's offset:
+	// the date was changed after the file was written. It has the owner's.
 	changed := fixture.uploadAndProcess("changed", jpegHeaders("changed", "X-Photo-Taken-At", "2024-05-07T05:08:09Z"), exifJpeg(test, 80, 42, 1))
-	if changed.TakenAt == nil || !changed.TakenAt.Equal(instant.Add(24*time.Hour)) || changed.TakenAtOffsetMinutes != nil {
-		test.Fatalf("the instant %v with offset %v, want the header's instant and no offset", changed.TakenAt, changed.TakenAtOffsetMinutes)
+	if changed.TakenAt == nil || !changed.TakenAt.Equal(instant.Add(24*time.Hour)) || changed.TakenAtOffsetMinutes == nil || *changed.TakenAtOffsetMinutes != 300 {
+		test.Fatalf("the instant %v with offset %v, want the header's instant and the owner's +300", changed.TakenAt, changed.TakenAtOffsetMinutes)
 	}
 
-	// A file that says no offset leaves the photo with none.
+	// A file that says no offset gives the photo the owner's.
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, quadrants(30, 20)); err != nil {
 		test.Fatal(err)
 	}
 	plain := fixture.uploadAndProcess("plain-z", map[string]string{"Content-Type": "image/png", "X-Photo-Client-ID": "plain-z", "X-Photo-Taken-At": "2024-05-06T05:08:09Z"}, encoded.Bytes())
-	if plain.TakenAt == nil || !plain.TakenAt.Equal(instant) || plain.TakenAtOffsetMinutes != nil {
-		test.Fatalf("the instant %v with offset %v, want no offset", plain.TakenAt, plain.TakenAtOffsetMinutes)
+	if plain.TakenAt == nil || !plain.TakenAt.Equal(instant) || plain.TakenAtOffsetMinutes == nil || *plain.TakenAtOffsetMinutes != 300 {
+		test.Fatalf("the instant %v with offset %v, want the owner's +300", plain.TakenAt, plain.TakenAtOffsetMinutes)
+	}
+}
+
+// A camera that wrote a date and no offset wrote a clock reading, not a moment.
+// It is read on the clock of the owner's zone, which gives it an instant and an
+// offset, so that a photo with a date always has both.
+func TestAPictureDateWithNoOffsetIsAClockReadingInTheOwnersZone(test *testing.T) {
+	fixture := newFixture(test)
+	// Eight hours behind UTC all year.
+	fixture.setOwnerZone("Etc/GMT+8")
+	west := fixture.uploadAndProcess("west", jpegHeaders("west"), exifJpegDated(test, 80, 40, 1, "2024:05:06 07:08:09", ""))
+	wantInstant := time.Date(2024, 5, 6, 15, 8, 9, 0, time.UTC)
+	if west.TakenAt == nil || !west.TakenAt.Equal(wantInstant) || west.TakenAtOffsetMinutes == nil || *west.TakenAtOffsetMinutes != -480 {
+		test.Fatalf("the instant %v with offset %v, want 15:08:09 UTC and -480", west.TakenAt, west.TakenAtOffsetMinutes)
+	}
+
+	// An account with no zone is on UTC.
+	fixture.setOwnerZone("")
+	bare := fixture.uploadAndProcess("bare", jpegHeaders("bare"), exifJpegDated(test, 80, 41, 1, "2024:05:06 07:08:09", ""))
+	if bare.TakenAt == nil || !bare.TakenAt.Equal(time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)) || bare.TakenAtOffsetMinutes == nil || *bare.TakenAtOffsetMinutes != 0 {
+		test.Fatalf("the instant %v with offset %v, want the clock reading on UTC", bare.TakenAt, bare.TakenAtOffsetMinutes)
+	}
+
+	// A zone this server does not know is the same as none.
+	fixture.setOwnerZone("Nowhere/Invented")
+	odd := fixture.uploadAndProcess("odd", jpegHeaders("odd"), exifJpegDated(test, 80, 42, 1, "2024:05:06 07:08:09", ""))
+	if odd.TakenAtOffsetMinutes == nil || *odd.TakenAtOffsetMinutes != 0 {
+		test.Fatalf("offset %v", odd.TakenAtOffsetMinutes)
 	}
 }
 
@@ -342,7 +389,7 @@ func TestAVideoGetsItsLengthAPosterAndAPlayableCopy(test *testing.T) {
 	}
 	path := filepath.Join(test.TempDir(), "generated.mp4")
 	command := exec.Command("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=15",
-		"-pix_fmt", "yuv420p", "-c:v", "libx264", path)
+		"-pix_fmt", "yuv420p", "-c:v", "libx264", "-metadata", "creation_time=2024-05-06T05:08:09.000000Z", path)
 	if output, err := command.CombinedOutput(); err != nil {
 		test.Skipf("ffmpeg cannot make a test video: %v: %s", err, output)
 	}
@@ -350,15 +397,22 @@ func TestAVideoGetsItsLengthAPosterAndAPlayableCopy(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	// Work is done in a directory of its own, which must be gone afterwards.
-	// The directory is the test's, because /tmp is shared with whatever else
-	// is running.
+	// Work is done in a directory of its own inside the work directory, which
+	// must be empty afterwards, and nothing is made in the system's temporary
+	// directory, which may be memory. Both are the test's, because /tmp is
+	// shared with whatever else is running.
 	temporaryDirectory := test.TempDir()
 	test.Setenv("TMPDIR", temporaryDirectory)
 	fixture := newFixture(test)
+	fixture.setOwnerZone("Etc/GMT-5")
 	found := fixture.uploadAndProcess("clip", map[string]string{"Content-Type": "video/mp4", "X-Photo-Client-ID": "clip"}, content)
 	if found.PhotoProcessingState != models.PhotoProcessingReady {
 		test.Fatalf("%+v", found)
+	}
+	// A video's creation time is an instant, and the photo has the owner's
+	// offset for it.
+	if found.TakenAt == nil || !found.TakenAt.Equal(time.Date(2024, 5, 6, 5, 8, 9, 0, time.UTC)) || found.TakenAtOffsetMinutes == nil || *found.TakenAtOffsetMinutes != 300 {
+		test.Fatalf("taken at %v, offset %v", found.TakenAt, found.TakenAtOffsetMinutes)
 	}
 	if found.PhotoKind != models.PhotoKindVideo || found.WidthPixels != 320 || found.HeightPixels != 240 || found.DurationMS < 1900 || found.DurationMS > 2200 {
 		test.Fatalf("kind %s, size %d by %d, %d ms", found.PhotoKind, found.WidthPixels, found.HeightPixels, found.DurationMS)
@@ -377,24 +431,48 @@ func TestAVideoGetsItsLengthAPosterAndAPlayableCopy(test *testing.T) {
 		test.Fatalf("the video preview: %+v", playable)
 	}
 	if entries, err := os.ReadDir(temporaryDirectory); err != nil || len(entries) != 0 {
+		test.Fatalf("something was made in the system's temporary directory: %v %v", entries, err)
+	}
+	if entries, err := os.ReadDir(fixture.workDirectory); err != nil || len(entries) != 0 {
 		test.Fatalf("the work directory was left behind: %v %v", entries, err)
 	}
 }
 
-func TestACorruptFileFailsAfterItsAttemptsWithTheReason(test *testing.T) {
+func TestACorruptFileWaitsLongerAfterEachFailureAndFailsAfterItsAttemptsWithAPlainReason(test *testing.T) {
 	fixture := newFixture(test)
 	fixture.uploadAndProcess("corrupt", jpegHeaders("corrupt"), append([]byte{0xFF, 0xD8, 0xFF}, randomBytes(200, 41)...))
+	// One, five, fifteen and then sixty minutes.
+	waits := []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour}
 	for attempt := 1; attempt < 5; attempt++ {
 		found := fixture.photoByClientId("corrupt")
-		if found.PhotoProcessingState != models.PhotoProcessingWaiting || found.ProcessingAttemptCount != attempt || found.ProcessingErrorMessage == "" || found.ProcessingClaimedAt != nil {
+		if found.PhotoProcessingState != models.PhotoProcessingWaiting || found.ProcessingAttemptCount != attempt || found.ProcessingClaimedAt != nil {
 			test.Fatalf("after %d attempts: %+v", attempt, found)
 		}
+		// What the person and the model read is a fixed sentence: nothing of
+		// what the decoder said, which names the format and where it failed.
+		if found.ProcessingErrorMessage != "The picture could not be read." {
+			test.Fatalf("the reason is %q", found.ProcessingErrorMessage)
+		}
+		if found.ProcessingNotBefore == nil {
+			test.Fatalf("no wait after %d attempts: %+v", attempt, found)
+		}
+		if wait := time.Until(*found.ProcessingNotBefore); wait < waits[attempt-1]-10*time.Second || wait > waits[attempt-1]+10*time.Second {
+			test.Fatalf("after %d attempts the photo waits %s, want about %s", attempt, wait, waits[attempt-1])
+		}
+		// While it waits, a pass leaves it alone.
+		if err := fixture.store.Process(test.Context(), 4); err != nil {
+			test.Fatal(err)
+		}
+		if again := fixture.photoByClientId("corrupt"); again.ProcessingAttemptCount != attempt {
+			test.Fatalf("a photo that waits was tried: %+v", again)
+		}
+		fixture.age("UPDATE photo SET processing_not_before = now() - interval '1 second' WHERE client_photo_id = 'corrupt'")
 		if err := fixture.store.Process(test.Context(), 4); err != nil {
 			test.Fatal(err)
 		}
 	}
 	found := fixture.photoByClientId("corrupt")
-	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 5 || !strings.Contains(found.ProcessingErrorMessage, "picture") {
+	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 5 || found.ProcessingErrorMessage != "The picture could not be read." || found.ProcessingNotBefore != nil {
 		test.Fatalf("after the attempts: %+v", found)
 	}
 	// A failed photo is not tried again.
@@ -407,12 +485,26 @@ func TestACorruptFileFailsAfterItsAttemptsWithTheReason(test *testing.T) {
 	if found.PhotoKind != models.PhotoKindPicture {
 		test.Fatalf("a failed photo lost its kind: %s", found.PhotoKind)
 	}
+
+	// Asking again puts it back with a fresh count; it fails the same way, and
+	// is counted again from one.
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if retried, err := transaction.RetryPhotoProcessing(fixture.userId, []string{found.ID}); err != nil || retried != 1 {
+			test.Fatalf("retried %d: %v", retried, err)
+		}
+	})
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if again := fixture.photoByClientId("corrupt"); again.PhotoProcessingState != models.PhotoProcessingWaiting || again.ProcessingAttemptCount != 1 {
+		test.Fatalf("after a retry: %+v", again)
+	}
 }
 
 func TestAKindOfPictureThatCannotBeReadFailsAtOnce(test *testing.T) {
 	fixture := newFixture(test)
 	found := fixture.uploadAndProcess("webp", map[string]string{"Content-Type": "image/webp", "X-Photo-Client-ID": "webp"}, append([]byte("RIFF\x10\x00\x00\x00WEBPVP8 "), randomBytes(100, 42)...))
-	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 1 || !strings.Contains(found.ProcessingErrorMessage, "kind of file is not supported") {
+	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 1 || found.ProcessingErrorMessage != "This kind of file is not supported." {
 		test.Fatalf("%+v", found)
 	}
 	if found.PhotoKind != models.PhotoKindPicture {
@@ -510,11 +602,16 @@ func TestAHeicIsDecodedByHeifDecAndItsPreviewsComeFromThatPicture(test *testing.
 		test.Fatalf("the small preview: %+v", preview)
 	}
 
-	// Without heif-dec the photo is not lost: it waits, with the reason, and
-	// its size and kind are known from the file.
+	// Without heif-dec the photo is not lost: it waits, and its size and kind
+	// are known from the file. A program the server lacks says nothing of the
+	// file, so the attempt is not counted, and the reason is a plain sentence
+	// that does not name the program.
 	test.Setenv("PATH", test.TempDir())
 	missing := fixture.uploadAndProcess("heic-missing", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic-missing"}, exifJpeg(test, 48, 24, 1))
-	if missing.PhotoProcessingState != models.PhotoProcessingWaiting || !strings.Contains(missing.ProcessingErrorMessage, "heif-dec") || missing.WidthPixels != 48 {
+	if missing.PhotoProcessingState != models.PhotoProcessingWaiting || missing.ProcessingAttemptCount != 0 || missing.WidthPixels != 48 || missing.ProcessingNotBefore == nil {
 		test.Fatalf("%+v", missing)
+	}
+	if strings.Contains(missing.ProcessingErrorMessage, "heif-dec") || missing.ProcessingErrorMessage != "The previews could not be made yet; they will be tried again." {
+		test.Fatalf("the reason is %q", missing.ProcessingErrorMessage)
 	}
 }

@@ -41,6 +41,12 @@ Tables `photo`, `photo_file`, `photo_blob`, `photo_upload`,
 cleanup job, after no file refers to it, so two uploads of the same bytes
 never race a deletion.
 
+A blob's row is written as soon as its bytes are stored, in a transaction of
+its own, so bytes whose file could not be recorded are an unreferenced blob
+that the cleanup job deletes when it is an hour old. Deleting an account
+deletes the previews and upload parts its rows named before the rows go; its
+blobs are deleted by the same cleanup.
+
 A backup of the database alone does not back up the library; the bucket or
 directory has to be backed up as well. Previews do not need to be.
 

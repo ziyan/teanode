@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -59,6 +60,10 @@ type PhotoOperation interface {
 	// model read it, replacing the vectors of other models.
 	PutPhotoVector(userId, photoId, model string, vector []float32) error
 	FindPhotosByClientIDs(userId string, clientPhotoIds []string) ([]*models.Photo, error)
+
+	// UpdatePhoto corrects a photo. A new date is stored with the offset that
+	// came with it, in the same statement, so a date never keeps the offset of
+	// the one it replaced.
 	UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error)
 	TrashPhotos(userId string, photoIds []string) (int, error)
 	RestorePhotos(userId string, photoIds []string) (int, error)
@@ -84,7 +89,10 @@ type PhotoOperation interface {
 	// DeleteMarkedPhotos deletes the rows of marked photos, with their files
 	// and previews, and says how many there were. A photo that is not marked is
 	// left alone. The files' blobs are deleted by cleanup once nothing refers
-	// to them.
+	// to them. The groups of faces the photos' faces were in are worked out
+	// again in the same transaction, so that a group does not keep the
+	// vectors of faces that are gone, and a group left with no face is
+	// deleted.
 	DeleteMarkedPhotos(photoIds []string) (int, error)
 
 	ReadPhotoLibraryCounts(userId string) (*PhotoLibraryCounts, error)
@@ -92,6 +100,13 @@ type PhotoOperation interface {
 	// PhotoUsedBytes is the size of every file of every photo the account
 	// has, those in the trash included and those being deleted not.
 	PhotoUsedBytes(userId string) (int64, error)
+
+	// PhotoOpenUploadBytes is how many bytes the account's uploads that are
+	// still receiving hold, which count towards the account's limit before
+	// they are photos. The uploads of the named uploader photo and file role
+	// are left out when both are given, because starting that upload again
+	// ends the ones before it.
+	PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole) (int64, error)
 
 	// SetPhotoFile records a file of a photo, replacing the one in that role.
 	// The size is checked against the account's limit, the photo is queued for
@@ -104,8 +119,9 @@ type PhotoOperation interface {
 	GetPhotoBlob(blobSha256 string) (*models.PhotoBlob, error)
 
 	// InsertPhotoBlobIfAbsent records a blob whose bytes are stored. A blob
-	// marked for deletion is unmarked. The value says a row was made, as
-	// opposed to found.
+	// marked for deletion is unmarked and given a new age, so that cleanup
+	// leaves it for the hour a file needs to name it. The value says a row was
+	// made, as opposed to found.
 	InsertPhotoBlobIfAbsent(blob *models.PhotoBlob) (bool, error)
 
 	// MarkUnreferencedPhotoBlobDeleting finds a blob created before the time
@@ -137,10 +153,23 @@ type PhotoOperation interface {
 	UpdatePhotoMetadata(photoId string, metadata *PhotoMetadata) error
 
 	// ClaimPhotosForProcessing takes up to limit photos that wait for their
-	// previews: those nobody has claimed, and those whose claim is older than
-	// the time, which the instance that made it did not finish.
-	ClaimPhotosForProcessing(limit int, staleBefore time.Time) ([]*models.Photo, error)
+	// previews and are due: those nobody has claimed, and those whose claim is
+	// older than the time, which the instance that made it did not finish,
+	// except those that wait out a backoff. Claiming counts an attempt, so a
+	// file that kills the process each time it is read runs out of attempts. A
+	// photo that has used all of them and is claimed again (its last claim ran
+	// out) is failed instead of returned.
+	ClaimPhotosForProcessing(limit int, staleBefore time.Time, maximumAttemptCount int) ([]*models.Photo, error)
+
+	// MarkPhotoReady records that previews are made, and clears the attempts
+	// and the failure.
 	MarkPhotoReady(photoId string) error
+
+	// RetryPhotoProcessing puts the named photos that are failed, or ready (to
+	// make their previews again), back to waiting with a fresh count of
+	// attempts and no wait, and says how many it moved. Photos that are
+	// waiting already, in the trash or somebody else's are left alone.
+	RetryPhotoProcessing(userId string, photoIds []string) (int, error)
 
 	// TouchPhotoProcessingClaims renews the claims on photos an instance is
 	// still working on, so that a long video is not taken by another
@@ -153,10 +182,15 @@ type PhotoOperation interface {
 	// were lost.
 	RequeuePhotosWithoutPreviews(limit int) (int, error)
 
-	// MarkPhotoProcessingFailed counts one failure. After the maximum, the
-	// photo is failed and stays so; before it, the photo waits to be tried
-	// again.
-	MarkPhotoProcessingFailed(photoId, errorMessage string, maximumAttemptCount int) error
+	// MarkPhotoProcessingFailed records a failure of an attempt that claiming
+	// has counted. A failure that is the file's fault keeps the count: after
+	// the maximum the photo is failed and stays so, and before it the photo
+	// waits for a backoff of 1, 5, 15 and then 60 minutes. A failure that is
+	// not the file's (the store or the database) gives the attempt back, so
+	// that an outage does not use up a photo's attempts; the photo waits a
+	// minute. The message is kept as given and must be plain: no path and no
+	// output of a tool.
+	MarkPhotoProcessingFailed(photoId, errorMessage string, isFileAtFault bool, maximumAttemptCount int) error
 }
 
 // PhotoFilter narrows a page of the library.
@@ -255,12 +289,26 @@ const photoSearchFusionConstant = 60
 // are kept.
 type PhotoUpdate struct {
 	IsFavorite *bool
-	TakenAt    *time.Time
+
+	// TakenAt is the new date, and TakenAtOffsetMinutes the offset that came
+	// with it; they are stored together. An offset needs a date.
+	TakenAt              *time.Time
+	TakenAtOffsetMinutes *int
 }
 
 // PhotoMetadata is what is read from a photo's file. Zero values say the file
 // did not say: the photo keeps what it has.
 type PhotoMetadata struct {
+	// OwnerLocation is the owner's time zone, which gives an instant to a
+	// date the file wrote as a wall clock, and an offset to a date that has
+	// none. Nil is UTC.
+	OwnerLocation *time.Location
+
+	// IsTakenAtWallClock says TakenAt, which has no offset, is a reading of a
+	// clock held as if it were UTC (a picture's EXIF date), and not an
+	// instant that is UTC (a video container's creation time).
+	IsTakenAtWallClock bool
+
 	PhotoKind            models.PhotoKind
 	WidthPixels          int
 	HeightPixels         int
@@ -305,6 +353,7 @@ func photoFromModel(row *photoModel) *models.Photo {
 	photo.TakenAt = utcTime(photo.TakenAt)
 	photo.TrashedAt = utcTime(photo.TrashedAt)
 	photo.ProcessingClaimedAt = utcTime(photo.ProcessingClaimedAt)
+	photo.ProcessingNotBefore = utcTime(photo.ProcessingNotBefore)
 	photo.DescribedAt = utcTime(photo.DescribedAt)
 	photo.DescriptionRequestedAt = utcTime(photo.DescriptionRequestedAt)
 	photo.IsDescriptionRequested = photo.DescriptionRequestedAt != nil && time.Since(*photo.DescriptionRequestedAt) < models.PhotoDescriptionRequestLifetime
@@ -374,7 +423,7 @@ func (self *transaction) CreatePhoto(photo *models.Photo) (*models.Photo, bool, 
 	row.PhotoProcessingState = models.PhotoProcessingWaiting
 	row.ProcessingAttemptCount = 0
 	row.ProcessingErrorMessage = ""
-	row.ProcessingClaimedAt = nil
+	row.ProcessingClaimedAt, row.ProcessingNotBefore = nil, nil
 	row.TrashedAt = nil
 	row.PhotoDescription, row.DescriptionVisibleText, row.DescriptionModel = "", "", ""
 	row.DescribedAt, row.DescriptionRequestedAt = nil, nil
@@ -534,7 +583,7 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 
 func (self *transaction) CountPhotos(userId string, filter *PhotoFilter) (int, error) {
 	if filter != nil && strings.TrimSpace(filter.SearchText) != "" {
-		rankedIds, err := self.rankPhotos(userId, filter)
+		rankedIds, err := self.rankPhotos(userId, filter, MaximumRankedPhotos)
 		return len(rankedIds), err
 	}
 	query, err := self.photosMatching(userId, filter)
@@ -573,7 +622,8 @@ func (self *transaction) FindPhotosByClientIDs(userId string, clientPhotoIds []s
 }
 
 func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error) {
-	if update == nil {
+	if update == nil || (update.TakenAt == nil && update.TakenAtOffsetMinutes != nil) ||
+		(update.TakenAtOffsetMinutes != nil && !isPlausibleOffsetMinutes(*update.TakenAtOffsetMinutes)) {
 		return nil, ErrInvalidArguments
 	}
 	if _, err := self.GetPhoto(userId, photoId); err != nil {
@@ -584,12 +634,26 @@ func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate
 		changes["is_favorite"] = *update.IsFavorite
 	}
 	if update.TakenAt != nil {
+		// The date and its offset change together: the old offset belongs to
+		// the old date. A date given with no offset has none stored.
 		changes["taken_at"] = update.TakenAt.UTC()
+		if update.TakenAtOffsetMinutes != nil {
+			changes["taken_at_offset_minutes"] = *update.TakenAtOffsetMinutes
+		} else {
+			changes["taken_at_offset_minutes"] = gorm.Expr("NULL")
+		}
 	}
 	if err := self.tx.Model(&photoModel{}).Where("id = ? AND user_id = ?", photoId, userId).Updates(changes).Error; err != nil {
 		return nil, err
 	}
 	return self.GetPhoto(userId, photoId)
+}
+
+// isPlausibleOffsetMinutes says an offset is one a clock has had: nothing is
+// further from UTC than 14 hours east or 12 hours west, and a day either way
+// is room for any error.
+func isPlausibleOffsetMinutes(offsetMinutes int) bool {
+	return offsetMinutes >= -24*60 && offsetMinutes <= 24*60
 }
 
 func (self *transaction) TrashPhotos(userId string, photoIds []string) (int, error) {
@@ -673,8 +737,31 @@ func (self *transaction) DeleteMarkedPhotos(photoIds []string) (int, error) {
 	if len(photoIds) == 0 {
 		return 0, nil
 	}
+	// The groups these photos' faces are in, found before the faces go with
+	// their photos.
+	var groupIds []string
+	if err := self.tx.Table("photo_face").Distinct().
+		Where("photo_face.photo_face_group_id IS NOT NULL AND photo_face.photo_id IN (SELECT photo.id FROM photo WHERE photo.id IN ? AND photo.trashed_at = ?)", photoIds, photoMarkedForDeletion).
+		Pluck("photo_face.photo_face_group_id", &groupIds).Error; err != nil {
+		return 0, err
+	}
 	deleted := self.tx.Where("id IN ? AND trashed_at = ?", photoIds, photoMarkedForDeletion).Delete(&photoModel{})
-	return int(deleted.RowsAffected), deleted.Error
+	if deleted.Error != nil {
+		return 0, deleted.Error
+	}
+	// A group keeps the sum of the vectors of the faces it had, so the faces
+	// that are gone are taken out of it, and a group with none left is deleted.
+	for _, groupId := range groupIds {
+		if err := self.recomputePhotoFaceGroup(groupId); err != nil {
+			return 0, err
+		}
+	}
+	if len(groupIds) > 0 {
+		if err := self.tx.Exec(`DELETE FROM photo_face_group WHERE id IN ? AND NOT EXISTS (SELECT 1 FROM photo_face WHERE photo_face.photo_face_group_id = photo_face_group.id)`, groupIds).Error; err != nil {
+			return 0, err
+		}
+	}
+	return int(deleted.RowsAffected), nil
 }
 
 func (self *transaction) ReadPhotoLibraryCounts(userId string) (*PhotoLibraryCounts, error) {
@@ -697,6 +784,20 @@ func (self *transaction) PhotoUsedBytes(userId string) (int64, error) {
 	var usedBytes int64
 	err := self.tx.Table("photo_file").Select("COALESCE(SUM(photo_file.file_size_bytes), 0)").Joins("JOIN photo ON photo.id = photo_file.photo_id").Where("photo.user_id = ? AND "+photoIsReadable, userId, photoMarkedForDeletion).Scan(&usedBytes).Error
 	return usedBytes, err
+}
+
+func (self *transaction) PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole) (int64, error) {
+	if userId == "" {
+		return 0, ErrNotFound
+	}
+	query := self.tx.Model(&photoUploadModel{}).Select("COALESCE(SUM(received_size_bytes), 0)").
+		Where("user_id = ? AND photo_upload_state = ?", userId, models.PhotoUploadReceiving)
+	if exceptClientPhotoId != "" {
+		query = query.Where("NOT (upload_headers->>'clientPhotoId' = ? AND upload_headers->>'photoFileRole' = ?)", exceptClientPhotoId, string(exceptPhotoFileRole))
+	}
+	var openBytes int64
+	err := query.Scan(&openBytes).Error
+	return openBytes, err
 }
 
 func isPhotoFileSourceOfPreviews(photoFileRole models.PhotoFileRole) bool {
@@ -761,6 +862,7 @@ func (self *transaction) SetPhotoFile(userId, photoId string, file *models.Photo
 		changes["processing_attempt_count"] = 0
 		changes["processing_error_message"] = ""
 		changes["processing_claimed_at"] = nil
+		changes["processing_not_before"] = nil
 		// The pixels differ, so the faces are found again; the ones the
 		// person confirmed are kept where they are still found.
 		changes["faces_found_at"] = nil
@@ -831,7 +933,7 @@ func (self *transaction) InsertPhotoBlobIfAbsent(blob *models.PhotoBlob) (bool, 
 	// updated, which is how a caller learns that the blob it believed
 	// was there had gone.
 	rows, err := self.tx.Raw(`INSERT INTO photo_blob (blob_sha256, blob_size_bytes, created_at, deleting_at) VALUES (?, ?, ?, NULL)
-		ON CONFLICT (blob_sha256) DO UPDATE SET deleting_at = NULL WHERE photo_blob.deleting_at IS NOT NULL
+		ON CONFLICT (blob_sha256) DO UPDATE SET deleting_at = NULL, created_at = EXCLUDED.created_at WHERE photo_blob.deleting_at IS NOT NULL
 		RETURNING (xmax = 0)`, blob.BlobSHA256, blob.BlobSizeBytes, photoNow()).Rows()
 	if err != nil {
 		return false, err
@@ -966,41 +1068,113 @@ func (self *transaction) DeletePhotoPreview(userId, photoId string, photoPreview
 	return self.tx.Where("photo_id = ? AND photo_preview_size = ?", photoId, photoPreviewSize).Delete(&photoPreviewModel{}).Error
 }
 
-func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Time) ([]*models.Photo, error) {
-	if limit < 1 || limit > 100 {
+// photoProcessingBackoffs are the waits after the first, second, third and
+// later failures of a photo that are the file's fault.
+var photoProcessingBackoffs = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour}
+
+// photoProcessingBackoff is how long a photo waits after its attempt of that
+// number failed.
+func photoProcessingBackoff(attemptCount int) time.Duration {
+	if attemptCount < 1 {
+		return photoProcessingBackoffs[0]
+	}
+	return photoProcessingBackoffs[min(attemptCount, len(photoProcessingBackoffs))-1]
+}
+
+// photoProcessingInterruptedMessage is what a photo is given when it used all
+// its attempts and was claimed again: the instance that had it never said how
+// it went, which for a file that is always read the same way means reading it
+// stops the process.
+const photoProcessingInterruptedMessage = "The file could not be processed."
+
+func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Time, maximumAttemptCount int) ([]*models.Photo, error) {
+	if limit < 1 || limit > 100 || maximumAttemptCount < 1 {
 		return nil, ErrInvalidArguments
 	}
 	// A photo with only a Live Photo's video has nothing to make previews
-	// from yet; it waits for its picture to arrive.
-	var rows []photoModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where(`photo_processing_state = ? AND (processing_claimed_at IS NULL OR processing_claimed_at < ?)
-			AND `+photoIsReadable+`
-			AND EXISTS (SELECT 1 FROM photo_file WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role IN ?)`,
-			models.PhotoProcessingWaiting, staleBefore, photoMarkedForDeletion, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}).
-		Order("created_at, id").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, err
-	}
+	// from yet; it waits for its picture to arrive. One that failed waits out
+	// its backoff.
 	claimedAt := photoNow()
-	for index := range rows {
-		if err := self.tx.Model(&photoModel{}).Where("id = ?", rows[index].ID).Update("processing_claimed_at", claimedAt).Error; err != nil {
+	claimed := make([]photoModel, 0, limit)
+	// A photo that is failed instead of claimed does not count towards the
+	// limit, so more are looked at until the limit is reached or none wait.
+	// Each round changes every photo it looks at, so it ends.
+	for len(claimed) < limit {
+		var rows []photoModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where(`photo_processing_state = ? AND (processing_claimed_at IS NULL OR processing_claimed_at < ?)
+				AND (processing_not_before IS NULL OR processing_not_before <= ?)
+				AND `+photoIsReadable+`
+				AND EXISTS (SELECT 1 FROM photo_file WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role IN ?)`,
+				models.PhotoProcessingWaiting, staleBefore, claimedAt, photoMarkedForDeletion, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}).
+			Order("created_at, id").Limit(limit - len(claimed)).Find(&rows).Error; err != nil {
 			return nil, err
 		}
-		rows[index].ProcessingClaimedAt = &claimedAt
+		if len(rows) == 0 {
+			break
+		}
+		for index := range rows {
+			if rows[index].ProcessingAttemptCount >= maximumAttemptCount {
+				// Every attempt was claimed and none ended in a record: the
+				// process died each time.
+				if err := self.tx.Model(&photoModel{}).Where("id = ?", rows[index].ID).Updates(map[string]any{
+					"photo_processing_state":   models.PhotoProcessingFailed,
+					"processing_error_message": photoProcessingInterruptedMessage,
+					"processing_claimed_at":    nil,
+					"processing_not_before":    nil,
+					"updated_at":               claimedAt,
+				}).Error; err != nil {
+					return nil, err
+				}
+				continue
+			}
+			rows[index].ProcessingAttemptCount++
+			if err := self.tx.Model(&photoModel{}).Where("id = ?", rows[index].ID).Updates(map[string]any{
+				"processing_claimed_at":    claimedAt,
+				"processing_attempt_count": rows[index].ProcessingAttemptCount,
+			}).Error; err != nil {
+				return nil, err
+			}
+			rows[index].ProcessingClaimedAt = &claimedAt
+			claimed = append(claimed, rows[index])
+		}
 	}
-	return photosFromModels(rows), nil
+	return photosFromModels(claimed), nil
 }
 
 func (self *transaction) MarkPhotoReady(photoId string) error {
 	return self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(map[string]any{
 		"photo_processing_state":   models.PhotoProcessingReady,
+		"processing_attempt_count": 0,
 		"processing_error_message": "",
 		"processing_claimed_at":    nil,
+		"processing_not_before":    nil,
 		"updated_at":               photoNow(),
 	}).Error
 }
 
-func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string, maximumAttemptCount int) error {
+func (self *transaction) RetryPhotoProcessing(userId string, photoIds []string) (int, error) {
+	if userId == "" || len(photoIds) > 500 {
+		return 0, ErrInvalidArguments
+	}
+	if len(photoIds) == 0 {
+		return 0, nil
+	}
+	retried := self.tx.Model(&photoModel{}).
+		Where("user_id = ? AND id IN ? AND photo_processing_state IN ? AND trashed_at IS NULL", userId, photoIds,
+			[]models.PhotoProcessingState{models.PhotoProcessingFailed, models.PhotoProcessingReady}).
+		Updates(map[string]any{
+			"photo_processing_state":   models.PhotoProcessingWaiting,
+			"processing_attempt_count": 0,
+			"processing_error_message": "",
+			"processing_claimed_at":    nil,
+			"processing_not_before":    nil,
+			"updated_at":               photoNow(),
+		})
+	return int(retried.RowsAffected), retried.Error
+}
+
+func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string, isFileAtFault bool, maximumAttemptCount int) error {
 	if maximumAttemptCount < 1 {
 		return ErrInvalidArguments
 	}
@@ -1012,52 +1186,74 @@ func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string,
 	if !isFound {
 		return ErrNotFound
 	}
-	attemptCount := row.ProcessingAttemptCount + 1
+	// Claiming counted this attempt. A failure that is not the file's gives it
+	// back and waits the shortest time.
+	attemptCount := row.ProcessingAttemptCount
 	photoProcessingState := models.PhotoProcessingWaiting
-	if attemptCount >= maximumAttemptCount {
-		photoProcessingState = models.PhotoProcessingFailed
+	backoff := photoProcessingBackoff(1)
+	if isFileAtFault {
+		attemptCount = max(attemptCount, 1)
+		if attemptCount >= maximumAttemptCount {
+			photoProcessingState = models.PhotoProcessingFailed
+		}
+		backoff = photoProcessingBackoff(attemptCount)
+	} else {
+		attemptCount = max(attemptCount-1, 0)
 	}
 	if len(errorMessage) > photoErrorMessageBytes {
 		errorMessage = strings.ToValidUTF8(errorMessage[:photoErrorMessageBytes], "")
 	}
-	return self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(map[string]any{
+	changes := map[string]any{
 		"photo_processing_state":   photoProcessingState,
 		"processing_attempt_count": attemptCount,
 		"processing_error_message": errorMessage,
 		"processing_claimed_at":    nil,
 		"updated_at":               photoNow(),
-	}).Error
+	}
+	if photoProcessingState == models.PhotoProcessingWaiting {
+		changes["processing_not_before"] = photoNow().Add(backoff)
+	} else {
+		changes["processing_not_before"] = nil
+	}
+	return self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(changes).Error
 }
 
 func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMetadata) error {
 	if metadata == nil || (metadata.PhotoKind != "" && !metadata.PhotoKind.IsValid()) || metadata.WidthPixels < 0 || metadata.HeightPixels < 0 || metadata.DurationMS < 0 ||
 		len(metadata.PlaceName) > 255 || len(metadata.CameraMake) > 128 || len(metadata.CameraModel) > 128 ||
-		(metadata.Latitude != nil && (*metadata.Latitude < -90 || *metadata.Latitude > 90)) || (metadata.Longitude != nil && (*metadata.Longitude < -180 || *metadata.Longitude > 180)) {
+		(metadata.Latitude != nil && (*metadata.Latitude < -90 || *metadata.Latitude > 90)) || (metadata.Longitude != nil && (*metadata.Longitude < -180 || *metadata.Longitude > 180)) ||
+		(metadata.TakenAtOffsetMinutes != nil && !isPlausibleOffsetMinutes(*metadata.TakenAtOffsetMinutes)) {
 		return ErrInvalidArguments
 	}
+	// The row is locked, so that the date it has is the date the offset is
+	// decided against: a correction made while the file was being read is
+	// neither undone nor given the wrong offset.
+	var current photoModel
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", photoId), &current)
+	if err != nil {
+		return err
+	}
+	if !isFound {
+		return ErrNotFound
+	}
+	takenAt, offsetMinutes := settlePhotoTakenAt(current.TakenAt, current.TakenAtOffsetMinutes, metadata)
+
 	// A column is only replaced where the photo has nothing. The size and the
 	// length describe the file itself, so they are replaced whenever the file
 	// said, and the kind is whatever the caller settled on.
-	offsetExpression := gorm.Expr("CASE WHEN taken_at IS NULL THEN ? ELSE taken_at_offset_minutes END", metadata.TakenAtOffsetMinutes)
-	if metadata.TakenAt != nil && metadata.TakenAtOffsetMinutes != nil {
-		// A photo whose date came from the uploader as an instant alone (a
-		// date ending in Z) has no offset, and the file's own offset
-		// completes it, provided the file's date is the same moment. A
-		// photo whose date the person has corrected since, or that has a
-		// date the file does not share, keeps having no offset.
-		offsetExpression = gorm.Expr(
-			"CASE WHEN taken_at IS NULL THEN ? WHEN taken_at_offset_minutes IS NULL AND ABS(EXTRACT(EPOCH FROM (taken_at - ?::timestamptz))) <= ? THEN ? ELSE taken_at_offset_minutes END",
-			*metadata.TakenAtOffsetMinutes, utcTime(metadata.TakenAt), photoTakenAtAgreementSeconds, *metadata.TakenAtOffsetMinutes)
-	}
 	changes := map[string]any{
-		"updated_at":              photoNow(),
-		"taken_at_offset_minutes": offsetExpression,
-		"taken_at":                gorm.Expr("COALESCE(taken_at, ?)", utcTime(metadata.TakenAt)),
-		"latitude":                gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude),
-		"longitude":               gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude),
-		"place_name":              gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName),
-		"camera_make":             gorm.Expr("CASE WHEN camera_make = '' THEN ? ELSE camera_make END", metadata.CameraMake),
-		"camera_model":            gorm.Expr("CASE WHEN camera_model = '' THEN ? ELSE camera_model END", metadata.CameraModel),
+		"updated_at":   photoNow(),
+		"latitude":     gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude),
+		"longitude":    gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude),
+		"place_name":   gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName),
+		"camera_make":  gorm.Expr("CASE WHEN camera_make = '' THEN ? ELSE camera_make END", metadata.CameraMake),
+		"camera_model": gorm.Expr("CASE WHEN camera_model = '' THEN ? ELSE camera_model END", metadata.CameraModel),
+	}
+	if takenAt != nil {
+		changes["taken_at"] = takenAt.UTC()
+		if offsetMinutes != nil {
+			changes["taken_at_offset_minutes"] = *offsetMinutes
+		}
 	}
 	if metadata.PhotoKind != "" {
 		changes["photo_kind"] = metadata.PhotoKind
@@ -1068,14 +1264,59 @@ func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMeta
 	if metadata.DurationMS > 0 {
 		changes["duration_ms"] = metadata.DurationMS
 	}
-	updated := self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(changes)
-	if updated.Error != nil {
-		return updated.Error
-	}
-	if updated.RowsAffected == 0 {
-		return ErrNotFound
+	if err := self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(changes).Error; err != nil {
+		return err
 	}
 	return self.refreshPhotoSearchDocumentsOf([]string{photoId})
+}
+
+// settlePhotoTakenAt is the date and offset a photo has once what its file
+// says is taken in, so that a photo that has a date always has an instant and
+// an offset.
+//
+//   - A photo with no date takes the file's. A date the file wrote as a wall
+//     clock, with no offset, is read on the owner's clock, and gets the
+//     offset that clock had then; an instant with no offset gets the owner's
+//     offset at that instant.
+//   - A photo that has a date keeps it. If it has no offset (the uploader
+//     sent an instant with a Z), the file's own offset completes it when the
+//     file's date is the same moment, and the owner's clock gives it
+//     otherwise.
+//
+// The date is nil when the photo has none and the file did not say.
+func settlePhotoTakenAt(currentTakenAt *time.Time, currentOffsetMinutes *int, metadata *PhotoMetadata) (*time.Time, *int) {
+	ownerLocation := metadata.OwnerLocation
+	if ownerLocation == nil {
+		ownerLocation = time.UTC
+	}
+	offsetOf := func(moment time.Time) *int {
+		_, offsetSeconds := moment.In(ownerLocation).Zone()
+		offsetMinutes := offsetSeconds / 60
+		return &offsetMinutes
+	}
+	if currentTakenAt == nil {
+		if metadata.TakenAt == nil {
+			return nil, nil
+		}
+		if metadata.TakenAtOffsetMinutes != nil {
+			return metadata.TakenAt, metadata.TakenAtOffsetMinutes
+		}
+		if !metadata.IsTakenAtWallClock {
+			return metadata.TakenAt, offsetOf(*metadata.TakenAt)
+		}
+		// A wall clock, held as if it were UTC.
+		wallClock := metadata.TakenAt.UTC()
+		moment := time.Date(wallClock.Year(), wallClock.Month(), wallClock.Day(), wallClock.Hour(), wallClock.Minute(), wallClock.Second(), wallClock.Nanosecond(), ownerLocation)
+		return &moment, offsetOf(moment)
+	}
+	if currentOffsetMinutes != nil {
+		return nil, nil
+	}
+	if metadata.TakenAt != nil && metadata.TakenAtOffsetMinutes != nil &&
+		math.Abs(metadata.TakenAt.Sub(*currentTakenAt).Seconds()) <= photoTakenAtAgreementSeconds {
+		return currentTakenAt, metadata.TakenAtOffsetMinutes
+	}
+	return currentTakenAt, offsetOf(*currentTakenAt)
 }
 
 func (self *transaction) TouchPhotoProcessingClaims(photoIds []string) error {
@@ -1092,7 +1333,7 @@ func (self *transaction) RequeuePhotosWithoutPreviews(limit int) (int, error) {
 	if limit < 1 || limit > 100 {
 		return 0, ErrInvalidArguments
 	}
-	requeued := self.tx.Exec(`UPDATE photo SET photo_processing_state = ?, processing_attempt_count = 0, processing_error_message = '', processing_claimed_at = NULL, updated_at = ?
+	requeued := self.tx.Exec(`UPDATE photo SET photo_processing_state = ?, processing_attempt_count = 0, processing_error_message = '', processing_claimed_at = NULL, processing_not_before = NULL, updated_at = ?
 		WHERE id IN (
 			SELECT id FROM photo
 			WHERE photo_processing_state = ? AND (trashed_at IS NULL OR trashed_at > ?)

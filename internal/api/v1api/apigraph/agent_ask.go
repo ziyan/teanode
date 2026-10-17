@@ -357,7 +357,17 @@ func (self *agentOperations) Execute(ctx context.Context, document string, varia
 	}
 	ctx = db.ContextWithAuditPrincipal(ctx, auditPrincipal)
 	var outcome *graphql.Result
-	if err := self.graph.database.TransactionContext(ctx, func(tx db.Transaction) error {
+	if operation, err := selectGraphOperation(prepared.AST, prepared.OperationName); err == nil && hasOnlyTransactionFreeMutations(operation) {
+		// A mutation that does slow work reads and writes in short
+		// transactions of its own, as it does over HTTP; the agent's limits
+		// on what it may do are applied there.
+		prepared.Context = context.WithValue(ctx, queryExecutionKey{}, &queryExecution{
+			Username: self.user.Username, User: self.user, Impersonator: self.impersonator, PermissionLimit: self.permissionLimit,
+		})
+		if outcome = graphql.Execute(prepared); len(outcome.Errors) > 0 {
+			return errors.New(outcome.Errors[0].Message)
+		}
+	} else if err := self.graph.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		ctx := api.ContextWithTransaction(ctx, tx)
 		principal, err := self.graph.resolvePrincipal(tx, self.user.Username, self.user)
 		if err != nil {

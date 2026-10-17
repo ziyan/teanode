@@ -83,6 +83,19 @@ func PhotoOffsetText(offsetMinutes int) string {
 	return fmt.Sprintf("UTC%s%02d:%02d", sign, offsetMinutes/60, offsetMinutes%60)
 }
 
+// PhotoTakenText is when a photo was taken as the dashboard's Photos page
+// writes it, on the clock where it was taken: "2025-04-04 08:00". It is the
+// photo's offset that says which clock, and the same one every place that
+// shows a photo's date uses (models.Photo.TakenAtOnClock). Empty when the
+// photo has no date.
+func PhotoTakenText(photo *models.Photo) string {
+	clock := photo.TakenAtOnClock()
+	if clock == nil {
+		return ""
+	}
+	return clock.Format("2006-01-02 15:04")
+}
+
 // SpaceUsedText is the library's space used in the dashboard's words: "1.2 GB
 // of 5 GB", or "1.2 GB · No limit" when the person has no limit.
 func (self *PhotoLibrary) SpaceUsedText() string {
@@ -222,6 +235,8 @@ const (
 	DocumentDeletePhotos = `mutation ($photoIds: [String!]!) { DeletePhotos(photoIds: $photoIds) }`
 
 	DocumentEmptyPhotoTrash = `mutation { EmptyPhotoTrash }`
+
+	DocumentRetryPhotoProcessing = `mutation ($photoIds: [String!]!) { RetryPhotoProcessing(photoIds: $photoIds) }`
 
 	DocumentDescribePhoto = `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) ` + photoSelection + ` }`
 
@@ -383,6 +398,20 @@ func EmptyPhotoTrash(ctx context.Context, executor Executor) (int, error) {
 	return result.EmptyPhotoTrash, nil
 }
 
+// RetryPhotoProcessing puts photos whose previews failed, or that are ready and
+// should have their previews made again, back in line with a fresh count of
+// attempts, and says how many it moved. Photos that are waiting already are
+// left alone.
+func RetryPhotoProcessing(ctx context.Context, executor Executor, photoIds []string) (int, error) {
+	var result struct {
+		RetryPhotoProcessing int `json:"RetryPhotoProcessing"`
+	}
+	if err := executor.Execute(ctx, DocumentRetryPhotoProcessing, map[string]any{"photoIds": photoIds}, &result); err != nil {
+		return 0, err
+	}
+	return result.RetryPhotoProcessing, nil
+}
+
 // DescribePhoto asks the assistant to look at a photo and write what is in it.
 // It answers at once with the photo as it is: the description arrives some
 // seconds later, and isDescriptionRequested says it is on its way. A photo
@@ -492,6 +521,32 @@ func (self *photoUploader) run(ctx context.Context) (string, error) {
 		if failureCount >= photoUploadTryCount {
 			return "", fmt.Errorf("client: %s could not be uploaded after %d tries: %w", self.describe(), photoUploadTryCount, lastFailure)
 		}
+		// Every byte is there and the server has not said it is done: it is
+		// reading the parts back to check them and storing the file, which for
+		// a large one takes minutes. Sending the last part again would only be
+		// told the server is busy, so the client asks until it is done.
+		if self.location != "" && offsetBytes >= self.upload.SizeBytes {
+			photoId, recovered, err := self.awaitCompletion(ctx)
+			switch {
+			case photoId != "":
+				self.reportProgress(self.upload.SizeBytes)
+				return photoId, nil
+			case errors.Is(err, errPhotoUploadLost):
+				// Failed on the server; the upload begins again.
+				failureCount++
+				lastFailure = err
+				self.location, offsetBytes = "", 0
+				continue
+			case err != nil:
+				return "", err
+			}
+			// The server has less than all of it after all.
+			offsetBytes = recovered.offsetBytes
+			self.reportProgress(offsetBytes)
+			failureCount++
+			lastFailure = fmt.Errorf("the server was at %d bytes of %d", offsetBytes, self.upload.SizeBytes)
+			continue
+		}
 		endBytes := min(offsetBytes+models.PhotoUploadPartBytes, self.upload.SizeBytes)
 		isLast := endBytes == self.upload.SizeBytes
 		outcome, err := self.sendPart(ctx, offsetBytes, endBytes, isLast)
@@ -504,8 +559,8 @@ func (self *photoUploader) run(ctx context.Context) (string, error) {
 			}
 			recovered, recoverError := self.recover(ctx)
 			if recoverError == nil {
-				if recovered.photoId != "" {
-					return recovered.photoId, nil
+				if photoId, err := self.completedPhotoID(ctx, recovered); photoId != "" || err != nil {
+					return photoId, err
 				}
 				if recovered.offsetBytes > offsetBytes {
 					failureCount = 0
@@ -539,13 +594,16 @@ func (self *photoUploader) run(ctx context.Context) (string, error) {
 			offsetBytes = storedBytes
 			self.reportProgress(offsetBytes)
 		case outcome.statusCode == http.StatusConflict:
-			// The server is somewhere else than we thought: it says where.
+			// The server is somewhere else than we thought: it says where. If
+			// that is the end, another request of ours is finishing the file.
 			storedBytes, err := strconv.ParseInt(outcome.header.Get("Upload-Offset"), 10, 64)
 			if err != nil || storedBytes < 0 || storedBytes > self.upload.SizeBytes {
 				return "", fmt.Errorf("client: the server and the upload disagree about %s: %s", self.describe(), outcome.message)
 			}
-			failureCount++
-			lastFailure = fmt.Errorf("the server was at %d bytes, not %d", storedBytes, offsetBytes)
+			if storedBytes < self.upload.SizeBytes {
+				failureCount++
+				lastFailure = fmt.Errorf("the server was at %d bytes, not %d", storedBytes, offsetBytes)
+			}
 			offsetBytes = storedBytes
 		case outcome.statusCode == http.StatusNotFound && self.location != "":
 			// Cancelled or failed on the server; the upload begins again.
@@ -556,10 +614,12 @@ func (self *photoUploader) run(ctx context.Context) (string, error) {
 			failureCount++
 			lastFailure = fmt.Errorf("the server answered HTTP %d: %s", outcome.statusCode, outcome.message)
 			if recovered, err := self.recover(ctx); err == nil {
-				if recovered.photoId != "" {
-					return recovered.photoId, nil
+				if photoId, err := self.completedPhotoID(ctx, recovered); photoId != "" || err != nil {
+					return photoId, err
 				}
 				offsetBytes = recovered.offsetBytes
+			} else if errors.Is(err, errPhotoUploadLost) {
+				self.location, offsetBytes = "", 0
 			}
 		case outcome.statusCode == http.StatusUnauthorized:
 			return "", fmt.Errorf("%w: %s refused the upload", ErrUnauthorized, self.client.url)
@@ -694,7 +754,20 @@ var errPhotoUploadLost = errors.New("client: the server has no such upload")
 type photoRecovery struct {
 	offsetBytes int64
 	photoId     string
+
+	// isComplete says the server reports the upload as complete, whether or not
+	// it names the photo.
+	isComplete bool
 }
+
+// How the client waits for the server to finish an upload that has all its
+// bytes: it asks, then waits a little longer each time, up to the longest the
+// server takes over it (its completion timeout is half an hour).
+var (
+	photoCompletionWait       = 35 * time.Minute
+	photoCompletionFirstDelay = 2 * time.Second
+	photoCompletionLastDelay  = 30 * time.Second
+)
 
 // recover asks the server how much of the upload it has, or that it is
 // complete and which photo it made.
@@ -721,17 +794,83 @@ func (self *photoUploader) recover(ctx context.Context) (*photoRecovery, error) 
 	case http.StatusNoContent, http.StatusOK:
 	case http.StatusNotFound:
 		return nil, errPhotoUploadLost
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("%w: %s refused the question of where the upload is", ErrUnauthorized, self.client.url)
 	default:
 		return nil, fmt.Errorf("the server answered HTTP %d when asked where the upload is", outcome.statusCode)
 	}
-	if outcome.header.Get("Upload-Complete") == "?1" && outcome.header.Get("X-Photo-ID") != "" {
-		return &photoRecovery{photoId: outcome.header.Get("X-Photo-ID")}, nil
+	recovery := &photoRecovery{photoId: outcome.header.Get("X-Photo-ID"), isComplete: outcome.header.Get("Upload-Complete") == "?1"}
+	if recovery.isComplete {
+		return recovery, nil
 	}
 	storedBytes, err := strconv.ParseInt(outcome.header.Get("Upload-Offset"), 10, 64)
 	if err != nil || storedBytes < 0 || storedBytes > self.upload.SizeBytes {
 		return nil, fmt.Errorf("the server did not say how much of the upload it has")
 	}
-	return &photoRecovery{offsetBytes: storedBytes}, nil
+	recovery.offsetBytes = storedBytes
+	return recovery, nil
+}
+
+// completedPhotoID is the photo a complete upload made. The server says it in
+// the answer to the question of where the upload is; if it does not, the photo
+// is found by the uploader's name for it. The result is empty for an upload
+// that is not complete.
+func (self *photoUploader) completedPhotoID(ctx context.Context, recovery *photoRecovery) (string, error) {
+	if !recovery.isComplete {
+		return "", nil
+	}
+	if recovery.photoId != "" {
+		return recovery.photoId, nil
+	}
+	photos, err := FindPhotos(ctx, self.client, []string{self.upload.ClientPhotoID})
+	if err != nil {
+		return "", fmt.Errorf("client: %s was stored, and which photo it is could not be found: %w", self.describe(), err)
+	}
+	if len(photos) == 0 {
+		return "", fmt.Errorf("client: the server says %s is stored, and has no photo of that name", self.describe())
+	}
+	return photos[0].ID, nil
+}
+
+// awaitCompletion asks the server whether the upload is done, again and again
+// with longer waits in between, until it is, it is lost (errPhotoUploadLost),
+// it turns out to be short of bytes (recovery returned, no photo), or the
+// longest the server takes has passed. A question that gets no answer is asked
+// again: the server is busy.
+func (self *photoUploader) awaitCompletion(ctx context.Context) (string, *photoRecovery, error) {
+	deadline := time.Now().Add(photoCompletionWait)
+	delay := photoCompletionFirstDelay
+	var lastError error
+	for {
+		recovery, err := self.recover(ctx)
+		switch {
+		case err == nil:
+			if photoId, err := self.completedPhotoID(ctx, recovery); photoId != "" || err != nil {
+				return photoId, nil, err
+			}
+			if recovery.offsetBytes < self.upload.SizeBytes {
+				return "", recovery, nil
+			}
+		case errors.Is(err, errPhotoUploadLost), errors.Is(err, ErrUnauthorized), ctx.Err() != nil:
+			return "", nil, err
+		default:
+			lastError = err
+		}
+		if time.Now().Add(delay).After(deadline) {
+			if lastError != nil {
+				return "", nil, fmt.Errorf("client: the server did not finish storing %s: %w", self.describe(), lastError)
+			}
+			return "", nil, fmt.Errorf("client: the server did not finish storing %s in %s", self.describe(), photoCompletionWait)
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", nil, ctx.Err()
+		case <-timer.C:
+		}
+		delay = min(delay*3/2, photoCompletionLastDelay)
+	}
 }
 
 // DownloadPhotoFile streams one of a photo's files to destination and checks

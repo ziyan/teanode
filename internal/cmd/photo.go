@@ -77,6 +77,10 @@ func NewPhotoCommand() *cli.Command {
 			{Name: "favorite", Usage: "make a photo a favorite", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "off", Usage: "take it out of the favorites"}}, Action: runPhotoFavorite},
 			{Name: "trash", Usage: "move photos to the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
 			{Name: "restore", Usage: "take photos out of the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
+			{
+				Name: "retry", Usage: "make the previews of photos again: the ones that failed, and ones that are ready but look wrong", ArgsUsage: "<id>...",
+				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRetry,
+			},
 			{Name: "delete", Usage: "delete photos in the trash forever", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoDelete},
 			{Name: "empty-trash", Usage: "delete everything in the trash forever", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoEmptyTrash},
 			{Name: "library", Usage: "how many photos and videos there are, the space used and the largest file", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
@@ -127,17 +131,11 @@ func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
 	return filter, nil
 }
 
-// photoTakenText is when a photo was taken, on the clock where it was taken
-// when its offset is known, and on this computer's clock when it is not: the
-// same rule as the dashboard's Photos page.
+// photoTakenText is when a photo was taken, on the clock where it was taken:
+// the photo's offset says which, the same rule as the dashboard's Photos page
+// and the agent's photo tool.
 func photoTakenText(photo *models.Photo) string {
-	if photo.TakenAt == nil {
-		return ""
-	}
-	if photo.TakenAtOffsetMinutes != nil {
-		return photo.TakenAt.In(time.FixedZone("", *photo.TakenAtOffsetMinutes*60)).Format("2006-01-02 15:04")
-	}
-	return photo.TakenAt.In(time.Local).Format("2006-01-02 15:04")
+	return client.PhotoTakenText(photo)
 }
 
 // photoDateText is photoTakenText for the details of one photo, with the
@@ -777,6 +775,10 @@ func runPhotoTrash(ctx context.Context, command *cli.Command) error {
 
 func runPhotoRestore(ctx context.Context, command *cli.Command) error {
 	return runPhotoMove(ctx, command, client.RestorePhotos, "restoredCount", "restored")
+}
+
+func runPhotoRetry(ctx context.Context, command *cli.Command) error {
+	return runPhotoMove(ctx, command, client.RetryPhotoProcessing, "retriedCount", "queued to make previews again for")
 }
 
 func runPhotoDelete(ctx context.Context, command *cli.Command) error {

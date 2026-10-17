@@ -6,10 +6,13 @@ package photo
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/op/go-logging"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -41,13 +44,70 @@ type Store struct {
 
 	// faceFinder finds the faces in photos; see faces.go.
 	faceFinder faceFinder
+
+	// pixelBudget bounds the pixels of the pictures being decoded at once,
+	// across the workers of a process.
+	pixelBudget *semaphore.Weighted
+
+	// workPath is where temporary copies of files are made. Empty, it is the
+	// photo-work directory inside the server's data directory.
+	workPath string
+
+	// claimPollInterval is how long a worker with nothing to claim waits
+	// before it looks again, while another worker is still busy.
+	claimPollInterval time.Duration
 }
 
 // New requires range-capable storage, because files are large. The
 // configuration is a function so that a limit changed in the dashboard
 // applies to the next request.
 func New(database db.Database, files storage.StreamFiles, configuration func() *config.Configuration) *Store {
-	return &Store{database: database, files: files, configuration: configuration, now: time.Now}
+	return &Store{database: database, files: files, configuration: configuration, now: time.Now, pixelBudget: semaphore.NewWeighted(maximumPixelsInFlight), claimPollInterval: claimPollInterval}
+}
+
+// workDirectoryName is the directory inside the data directory that temporary
+// copies of files are made in. It is on the disk the data is on, which has the
+// room for a video, and not in the system's temporary directory, which may be
+// memory.
+const workDirectoryName = "photo-work"
+
+// workDirectory is where temporary copies of files are made.
+func (self *Store) workDirectory() string {
+	if self.workPath != "" {
+		return self.workPath
+	}
+	return filepath.Join(self.configuration().DataDirectory(), workDirectoryName)
+}
+
+// prepareWorkDirectory makes sure the work directory is there and says where it
+// is.
+func (self *Store) prepareWorkDirectory() (string, error) {
+	directory := self.workDirectory()
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", fmt.Errorf("the work directory could not be made: %w", err)
+	}
+	return directory, nil
+}
+
+// PrepareWorkDirectory makes the work directory and empties it of what an
+// earlier run left: nothing in it is wanted once the process that made it has
+// gone. It is called once, when the server starts, before any photo is
+// processed.
+func (self *Store) PrepareWorkDirectory() error {
+	directory, err := self.prepareWorkDirectory()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return fmt.Errorf("the work directory could not be read: %w", err)
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(directory, entry.Name())); err != nil {
+			return fmt.Errorf("the work directory could not be emptied: %w", err)
+		}
+	}
+	return nil
 }
 
 // How long things wait before cleanup takes them.

@@ -43,6 +43,9 @@ CREATE TABLE "photo" (
     "processing_attempt_count" integer NOT NULL DEFAULT 0,
     "processing_error_message" text NOT NULL DEFAULT '',
     "processing_claimed_at" timestamptz,
+    -- A failed attempt waits before the next: "processing_not_before" is the
+    -- earliest time a waiting photo is claimed again, null for no wait.
+    "processing_not_before" timestamptz,
     -- A deleted photo waits here before it is deleted for good.
     "trashed_at" timestamptz,
     UNIQUE ("user_id", "client_photo_id")
@@ -93,6 +96,9 @@ CREATE TABLE "photo_upload" (
     "photo_upload_state" varchar(32) NOT NULL,
     "declared_size_bytes" bigint,
     "received_size_bytes" bigint NOT NULL DEFAULT 0 CHECK ("received_size_bytes" >= 0),
+    -- How many parts have a receipt, which is the index of the next part, so
+    -- that appending does not list or count them.
+    "part_count" integer NOT NULL DEFAULT 0 CHECK ("part_count" >= 0),
     "upload_headers" jsonb NOT NULL,
     "photo_id" varchar(32)
 );

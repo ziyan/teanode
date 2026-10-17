@@ -144,7 +144,7 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
-| `photo` | your library of photos and videos: `list`, `show`, `describe`, `upload`, `download`, `favorite`, `trash`, `restore`, `delete`, `empty-trash`, `library`, `album` for named sets of photos, and `people` and `faces` for the people found in them; see below |
+| `photo` | your library of photos and videos: `list`, `show`, `describe`, `upload`, `download`, `favorite`, `trash`, `restore`, `retry`, `delete`, `empty-trash`, `library`, `album` for named sets of photos, and `people` and `faces` for the people found in them; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `api` | everything else, straight from the schema |
 
@@ -465,13 +465,14 @@ prints data takes `--json`.
 
 | Command | What it does |
 | --- | --- |
-| `teanode photo list [--favorites] [--trash] [--search WORDS] [--after DATE] [--before DATE] [--kind picture\|video\|livePhoto] [--album ID] [--face-group ID] [--contact ID] [--limit N] [--continue-after ID]` | the library, newest first: id, date (when it was taken, on the clock where the camera was when the offset is known, else on this computer's clock), kind, place, size, length, state and file name. `--search` finds photos by words, best match first (at most 500): the place, the file name, the camera, the titles of the albums a photo is in and, for a photo that has been described, its description and the words read in it; a photo nobody described is found only by the rest. With `--after` or `--before` it also says on standard error how many photos in those dates have no description yet. A date is `2025-07-12` (that day in your zone) or an RFC 3339 time. A full page says on standard error how many photos match, and the id to continue after. `--face-group` keeps the photos with a face in one group of faces (the ids are in `people list`) and `--contact` the photos with a face in any group that contact names, so the photos of a person are found by whichever you have |
+| `teanode photo list [--favorites] [--trash] [--search WORDS] [--after DATE] [--before DATE] [--kind picture\|video\|livePhoto] [--album ID] [--face-group ID] [--contact ID] [--limit N] [--continue-after ID]` | the library, newest first: id, date (when it was taken, on the clock where the camera was, by the photo's own offset: a photo with a date always has one once it is processed, and a photo not processed yet is shown on UTC), kind, place, size, length, state and file name. `--search` finds photos by words, best match first (at most 500): the place, the file name, the camera, the titles of the albums a photo is in and, for a photo that has been described, its description and the words read in it; a photo nobody described is found only by the rest. With `--after` or `--before` it also says on standard error how many photos in those dates have no description yet. A date is `2025-07-12` (that day in your zone) or an RFC 3339 time. A full page says on standard error how many photos match, and the id to continue after. `--face-group` keeps the photos with a face in one group of faces (the ids are in `people list`) and `--contact` the photos with a face in any group that contact names, so the photos of a person are found by whichever you have |
 | `teanode photo show ID` | everything known about a photo: its date (with the offset where it was taken, when known), place, camera, size, files, the albums it is in, how its previews are going, and its description with the words read in the picture (or that none was written yet, or is on its way). Each face found in it is a line `person`: the contact that names it, or that nobody has named its group yet, with the group and face ids to name or correct it |
 | `teanode photo describe ID [--again]` | have your assistant look at a photo and write what is in it, so that a search finds it by that. It answers at once and the description arrives a few seconds later (`show` has it). A photo that has a description is left alone unless `--again`. It needs the assistant to be on and a model that reads pictures; nothing describes photos unasked except the assistant when it looks at one |
 | `teanode photo upload FILE-OR-FOLDER...` | add pictures and videos. A folder is walked, leaving out names that start with a dot and files that are not pictures or videos; a file named on the command line is always sent. Each file is hashed (SHA-256, which is the name the library knows the photo by), the library is asked which of the first 200 it already has, and only the rest are sent. One line a file says `uploaded`, `already there` or `failed`, then a summary such as `12 uploaded, 3 already there, 1 failed`; the command fails if any file did |
 | `teanode photo download ID [--file original\|edited\|liveVideo] [--output PATH] [--force]` | save one of a photo's files, under its own name here by default, or at the path given, or in the folder given. It never replaces a file that is there unless `--force` says so, and a file that arrives short is not kept |
 | `teanode photo favorite ID [--off]` | make a photo a favorite, or take it back |
 | `teanode photo trash ID...` / `restore ID...` | move photos to the trash and back; the trash is emptied after the days `library` shows |
+| `teanode photo retry ID...` | make the previews of photos again, at most 500 at once. A photo whose previews failed is put back in line with a fresh count of attempts and no wait; a photo that is ready is done again, to replace previews that look wrong. A photo that is waiting already, in the trash or not yours is left alone, and the command says how many it queued. The server tries a photo up to five times, waiting 1, 5, 15 and then 60 minutes after a failure that is the file's; a failure of the server's own store or database is not counted. `show` has how it is going |
 | `teanode photo delete ID...` / `empty-trash` | delete forever the photos in the trash, or all of them; both ask first, or take `--force`. The photos leave the trash at once and their files are deleted by the server within minutes |
 | `teanode photo library` | how many photos and videos there are, the space used (with the account's limit, or No limit) the largest file and whether faces are being found (on, off by you, or not available and why), in the words of the dashboard's Photos page |
 | `teanode photo album list` | your albums, the most recently changed first: id, title, how many photos are in each and the days they span. A photo in the trash is not counted until it is restored |
@@ -496,7 +497,13 @@ photo that fits in one part is one request, and a larger one starts the
 upload, then appends each part at the offset the server has. A part is tried
 three times, asking the server how much it has stored (`HEAD`) after each
 failure, so a dropped connection costs at most the part in flight and a
-lost answer is not sent twice. The command keeps nothing on disk. Run again
+lost answer is not sent twice. When every byte is there and the server is
+still reading the parts back to check the file and store it, which for a large
+file takes minutes, the command does not send the last part again: it asks
+(`HEAD`) every few seconds, and then every thirty, until the server says the
+upload is complete (and which photo it made, or the photo is found by its
+name), up to 35 minutes. An upload the server lost starts over. The command
+keeps nothing on disk. Run again
 after it was interrupted, it starts the interrupted file over (the library
 does not list a half-sent upload), and the server deletes the part it was left
 with after a week of silence.

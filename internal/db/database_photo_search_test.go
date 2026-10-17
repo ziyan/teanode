@@ -328,3 +328,55 @@ func TestSearchWordsAreCheckedAndTheTrashIsNotSearched(test *testing.T) {
 		}
 	})
 }
+
+// A part of a word finds a photo too, after the photos whose document has the
+// word, and the parts are looked for only when the words alone leave room: a
+// page the words fill is the words' alone, and a page they do not fill goes on
+// with the parts.
+func TestAPartOfAWordFindsAPhotoAfterThoseThatHaveTheWord(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-parts-owner")
+	for index, day := range []int{4, 3, 2} {
+		taken := time.Date(2024, 5, day, 12, 0, 0, 0, time.UTC)
+		found := newTestPhoto(test, database, ownerId, "with-word-"+string(rune('a'+index)), &taken)
+		describePhoto(test, database, ownerId, found.ID, "A sailboat in the harbor at dusk.", "")
+	}
+	taken := time.Date(2024, 5, 5, 12, 0, 0, 0, time.UTC)
+	partial := newTestPhoto(test, database, ownerId, "harborside-trip", &taken)
+	dbtest.Exec(test, database, "UPDATE photo SET original_filename = 'harborside-trip.jpg' WHERE id = '"+partial.ID+"'")
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.SetPhotoDescription(ownerId, partial.ID, &db.PhotoDescription{PhotoDescription: "A quiet street.", ModelName: "test-model"}); err != nil {
+			test.Fatal(err)
+		}
+	})
+
+	page := func(offset, pageSize int) []string {
+		var photoIds []string
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			photos, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{SearchText: "harbor", Offset: offset, PageSize: pageSize})
+			if err != nil {
+				test.Fatal(err)
+			}
+			photoIds = photoIdsOf(photos)
+		})
+		return photoIds
+	}
+	all := page(0, 50)
+	if len(all) != 4 || all[3] != partial.ID {
+		test.Fatalf("the whole ranking %v, want the three with the word and then the partial match", all)
+	}
+	// A page the words fill is theirs alone.
+	if first := page(0, 2); !equalIds(first, all[:2]) {
+		test.Fatalf("first page %v, want %v", first, all[:2])
+	}
+	// One they do not fill goes on with the parts.
+	if second := page(2, 2); !equalIds(second, all[2:]) {
+		test.Fatalf("second page %v, want %v", second, all[2:])
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if count, err := transaction.CountPhotos(ownerId, &db.PhotoFilter{SearchText: "harbor"}); err != nil || count != 4 {
+			test.Fatalf("the count is the whole ranking: %d %v", count, err)
+		}
+	})
+}

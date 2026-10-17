@@ -66,19 +66,24 @@ func photoSearchWords(searchText string) ([]string, error) {
 	return words, nil
 }
 
-// photoSearchCondition keeps the photos whose search document has the words,
-// and those where every word is part of the place, the file name or the camera:
-// a document matches whole words only, and "kyo" or "IMG_12" are still ways to
-// look for a place or a file.
-func photoSearchCondition(searchText string, words []string) (string, []any) {
-	arguments := []any{searchText}
+// photoSearchDocumentCondition keeps the photos whose search document has the
+// words. It is the search an index can serve.
+const photoSearchDocumentCondition = "photo.search_document @@ websearch_to_tsquery('simple', ?)"
+
+// photoSearchPartCondition keeps the photos where every word is part of the
+// place, the file name or the camera: a document matches whole words only, and
+// "harb" or "IMG_12" are still ways to look for a place or a file. It reads
+// every photo the filters keep, so it is asked only when the document search
+// leaves room.
+func photoSearchPartCondition(words []string) (string, []any) {
+	arguments := []any{}
 	parts := make([]string, 0, len(words))
 	for _, word := range words {
 		pattern := "%" + escapeLike(word) + "%"
 		parts = append(parts, "(photo.place_name ILIKE ? OR photo.original_filename ILIKE ? OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)")
 		arguments = append(arguments, pattern, pattern, pattern, pattern)
 	}
-	return "(photo.search_document @@ websearch_to_tsquery('simple', ?) OR (" + strings.Join(parts, " AND ") + "))", arguments
+	return "(" + strings.Join(parts, " AND ") + ")", arguments
 }
 
 // rankPhotos is the identifiers of the photos a search finds, best first, at
@@ -86,19 +91,25 @@ func photoSearchCondition(searchText string, words []string) (string, []any) {
 // well their document matches, newest first among equals, and those found by
 // meaning in the order of how near their description is; a photo found by both
 // is ranked by both lists' places, which is how the knowledge search ranks.
-func (self *transaction) rankPhotos(userId string, filter *PhotoFilter) ([]string, error) {
+//
+// The photos found by parts of words (see photoSearchPartCondition) come after
+// those whose document matches, and are looked for only when the document
+// search did not find as many photos as the caller needs: neededCount is how
+// many of the best the caller reads. With a search by meaning the best are a
+// mix of the two lists, so then the parts are skipped only when the document
+// search filled the whole ranking.
+func (self *transaction) rankPhotos(userId string, filter *PhotoFilter, neededCount int) ([]string, error) {
 	words, err := photoSearchWords(filter.SearchText)
 	if err != nil {
 		return nil, err
 	}
 	searchText := strings.Join(words, " ")
-	condition, conditionArguments := photoSearchCondition(searchText, words)
 	query, err := self.photosMatching(userId, filter)
 	if err != nil {
 		return nil, err
 	}
 	var keywordIds []string
-	if err := query.Where(condition, conditionArguments...).
+	if err := query.Where(photoSearchDocumentCondition, searchText).
 		Clauses(clause.OrderBy{Expression: clause.Expr{
 			SQL:  "ts_rank_cd(photo.search_document, websearch_to_tsquery('simple', ?)) DESC, " + photoTimelineExpression + " DESC, photo.id DESC",
 			Vars: []any{searchText},
@@ -106,8 +117,29 @@ func (self *transaction) rankPhotos(userId string, filter *PhotoFilter) ([]strin
 		Limit(MaximumRankedPhotos).Pluck("photo.id", &keywordIds).Error; err != nil {
 		return nil, err
 	}
+	hasMeaning := filter.SearchMeaning != nil && filter.SearchMeaning.ModelName != "" && len(filter.SearchMeaning.Vector) > 0
+	if hasMeaning {
+		neededCount = MaximumRankedPhotos
+	}
+	if len(keywordIds) < min(neededCount, MaximumRankedPhotos) && len(words) > 0 {
+		partCondition, partArguments := photoSearchPartCondition(words)
+		partQuery, err := self.photosMatching(userId, filter)
+		if err != nil {
+			return nil, err
+		}
+		partQuery = partQuery.Where(partCondition, partArguments...)
+		if len(keywordIds) > 0 {
+			partQuery = partQuery.Where("NOT (photo.id = ANY(?))", pq.Array(keywordIds))
+		}
+		var partIds []string
+		if err := partQuery.Order(photoTimelineExpression+" DESC, photo.id DESC").Limit(MaximumRankedPhotos-len(keywordIds)).Pluck("photo.id", &partIds).Error; err != nil {
+			return nil, err
+		}
+		keywordIds = append(keywordIds, partIds...)
+	}
 	var nearest []Scored
-	if meaning := filter.SearchMeaning; meaning != nil && meaning.ModelName != "" && len(meaning.Vector) > 0 {
+	if hasMeaning {
+		meaning := filter.SearchMeaning
 		// The same filters as the words, as a subquery: a photo outside the
 		// dates asked for is not a near one.
 		kept, err := self.photosMatching(userId, filter)
@@ -147,7 +179,12 @@ func (self *transaction) rankPhotos(userId string, filter *PhotoFilter) ([]strin
 // listRankedPhotos is a page of a search, in the order of its ranking. A page
 // is reached by Offset or after the last photo of the previous page.
 func (self *transaction) listRankedPhotos(userId string, filter *PhotoFilter) ([]*models.Photo, error) {
-	rankedIds, err := self.rankPhotos(userId, filter)
+	// A page read after a photo is placed by its position in the whole ranking.
+	neededCount := MaximumRankedPhotos
+	if filter.BeforePhotoID == "" {
+		neededCount = filter.Offset + filter.PageSize
+	}
+	rankedIds, err := self.rankPhotos(userId, filter, neededCount)
 	if err != nil {
 		return nil, err
 	}

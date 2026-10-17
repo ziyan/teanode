@@ -779,3 +779,48 @@ func TestTwoGroupingsOfOnePersonTakeTurns(test *testing.T) {
 		test.Fatalf("%v", order)
 	}
 }
+
+// A group keeps the sum of the vectors of its faces, so deleting a photo for
+// good takes its faces out of the sum, and a group left with no face goes.
+func TestDeletingPhotosForGoodTakesTheirFacesOutOfTheirGroups(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "delete-faces-owner")
+	kept := readyPhotoWithPreview(test, database, ownerId, "kept")
+	deleted := readyPhotoWithPreview(test, database, ownerId, "deleted")
+	alone := readyPhotoWithPreview(test, database, ownerId, "alone")
+	shared := groupOwnFace(test, database, ownerId, storeFaces(test, database, ownerId, kept.ID, foundFaceAt(0, 0.1))[0].ID)
+	joinFaceToGroup(test, database, ownerId, storeFaces(test, database, ownerId, deleted.ID, foundFaceAt(40, 0.1))[0].ID, shared)
+	loner := groupOwnFace(test, database, ownerId, storeFaces(test, database, ownerId, alone.ID, foundFaceAt(90, 0.1))[0].ID)
+
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		photoIds := []string{deleted.ID, alone.ID}
+		if trashed, err := transaction.TrashPhotos(ownerId, photoIds); err != nil || trashed != 2 {
+			test.Fatalf("trashed %d: %v", trashed, err)
+		}
+		if marked, err := transaction.MarkPhotosForDeletion(ownerId, photoIds); err != nil || marked != 2 {
+			test.Fatalf("marked %d: %v", marked, err)
+		}
+		if removed, err := transaction.DeleteMarkedPhotos(photoIds); err != nil || removed != 2 {
+			test.Fatalf("deleted %d: %v", removed, err)
+		}
+		vectors, err := transaction.ListPhotoFaceGroupVectors(ownerId)
+		if err != nil || len(vectors) != 1 || vectors[0].ID != shared {
+			test.Fatalf("the groups with faces: %+v %v", vectors, err)
+		}
+		// Only the kept photo's face, at 0 degrees, is in the sum now.
+		if math.Abs(float64(vectors[0].VectorSum[0])-1) > 1e-5 || math.Abs(float64(vectors[0].VectorSum[1])) > 1e-5 {
+			test.Fatalf("the sum still has the deleted face in it: %v", vectors[0].VectorSum[:2])
+		}
+		group, err := transaction.GetPhotoFaceGroup(ownerId, shared)
+		if err != nil || group.FaceCount != 1 {
+			test.Fatalf("%+v %v", group, err)
+		}
+		if _, err := transaction.GetPhotoFaceGroup(ownerId, loner); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("a group with no face left stayed: %v", err)
+		}
+	})
+	if groups := dbtest.QueryString(test, database, "SELECT count(*) FROM photo_face_group WHERE user_id = '"+ownerId+"'"); groups != "1" {
+		test.Fatalf("%s groups are left", groups)
+	}
+}

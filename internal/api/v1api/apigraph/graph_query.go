@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -16,6 +17,10 @@ type queryExecution struct {
 	Username     string
 	User         *models.User
 	Impersonator *models.User
+
+	// PermissionLimit, when set, is what the caller is held to besides its own
+	// permissions: the agent's.
+	PermissionLimit *models.EffectivePermissions
 }
 
 // isModelBackedQuery is the queries that ask a model, or wait on runs
@@ -24,9 +29,20 @@ type queryExecution struct {
 // embeds it, and a survey is minutes of runs.
 var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true}
 
+// isTransactionFreeMutation is the mutations that do slow work, such as reading
+// and storing a file as large as a video, and so are not run inside the
+// request's one transaction (graphView), which that work would hold open. They
+// run the way a model-backed query does: with no transaction in the context,
+// reading and writing in short transactions of their own through
+// inShortTransaction. Everything such a mutation changes it changes in
+// transactions it commits itself, so a failure late in it does not undo what it
+// did before.
+var isTransactionFreeMutation = map[string]bool{"SavePhotoFromAttachment": true}
+
 // Queries materialize their results within each root resolver. Keeping the
 // transaction there lets model-backed resolvers use separate read phases.
-// Mutations retain the existing request transaction.
+// Mutations retain the existing request transaction, except those in
+// isTransactionFreeMutation.
 func (self *graph) wrapQueryTransactions() {
 	for fieldName, field := range self.schema.QueryType().Fields() {
 		resolve := field.Resolve
@@ -92,6 +108,77 @@ func (self *graph) queryPrincipal(transaction db.Transaction, execution *queryEx
 	principal, err := self.resolvePrincipal(transaction, execution.Username, user)
 	if principal != nil {
 		principal.Impersonator = execution.Impersonator
+		if execution.PermissionLimit != nil {
+			principal.Permissions = principal.Permissions.Within(execution.PermissionLimit)
+		}
 	}
 	return principal, err
+}
+
+// wrapTransactionFreeMutations gives the mutations in isTransactionFreeMutation
+// the principal that the request's transaction would have, worked out in a
+// short transaction of their own, so that the checks wrapped around them (that
+// somebody is signed in, that the service is on) see who is asking. It is
+// called after the other wrappers, so that it is the outermost. A mutation
+// that finds a transaction in its context, as in a test that calls it
+// directly, runs as it always did.
+func (self *graph) wrapTransactionFreeMutations() {
+	for fieldName := range isTransactionFreeMutation {
+		field := self.schema.MutationType().Fields()[fieldName]
+		if field == nil {
+			continue
+		}
+		resolve := field.Resolve
+		field.Resolve = func(parameters graphql.ResolveParams) (interface{}, error) {
+			execution, isFree := parameters.Context.Value(queryExecutionKey{}).(*queryExecution)
+			if !isFree {
+				return resolve(parameters)
+			}
+			var principal *api.Principal
+			if err := self.database.TransactionContext(parameters.Context, func(transaction db.Transaction) (err error) {
+				principal, err = self.queryPrincipal(transaction, execution)
+				return err
+			}); err != nil {
+				return nil, err
+			}
+			parameters.Context = api.ContextWithPrincipal(parameters.Context, principal)
+			return resolve(parameters)
+		}
+	}
+}
+
+// hasOnlyTransactionFreeMutations says the operation is a mutation all of whose
+// root fields are in isTransactionFreeMutation. A mutation that also asks for
+// anything else runs in the request's transaction as every mutation does.
+func hasOnlyTransactionFreeMutations(operation *ast.OperationDefinition) bool {
+	if operation == nil || operation.Operation != "mutation" || operation.SelectionSet == nil || len(operation.SelectionSet.Selections) == 0 {
+		return false
+	}
+	for _, selection := range operation.SelectionSet.Selections {
+		field, isField := selection.(*ast.Field)
+		if !isField || field.Name == nil || !isTransactionFreeMutation[field.Name.Value] {
+			return false
+		}
+	}
+	return true
+}
+
+// inShortTransaction runs read with a transaction and a principal in its
+// context. Where the request has its own transaction (a mutation like any
+// other, or a test that calls the resolver directly) read runs in it. Where it
+// has none (isTransactionFreeMutation, isModelBackedQuery) read runs in a
+// transaction of its own that ends when it returns, and what the caller does
+// after is outside any transaction.
+func (self *graph) inShortTransaction(ctx context.Context, read func(ctx context.Context) error) error {
+	execution, isFree := ctx.Value(queryExecutionKey{}).(*queryExecution)
+	if !isFree || self.transaction(ctx) != nil {
+		return read(ctx)
+	}
+	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		principal, err := self.queryPrincipal(transaction, execution)
+		if err != nil {
+			return err
+		}
+		return read(api.ContextWithPrincipal(api.ContextWithTransaction(ctx, transaction), principal))
+	})
 }

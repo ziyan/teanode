@@ -23,8 +23,9 @@ import (
 // file's metadata says. Ending in Z it says only the instant: the offset is
 // then unknown, and is taken from the file's EXIF OffsetTimeOriginal (or a
 // video's creation date) when the photo is processed and finds one that
-// agrees with the instant; without one the photo has no offset and is shown
-// in the viewer's own zone.
+// agrees with the instant; without one the photo is given the offset that the
+// time zone of the account's owner had at that instant, so that every photo
+// with a date has an offset.
 const (
 	headerClientId       = "X-Photo-Client-ID"
 	headerFileRole       = "X-Photo-File-Role"
@@ -128,9 +129,10 @@ func parseUploadHeaders(request *http.Request) (*models.PhotoUploadHeaders, *hea
 		headers.TakenAt = &utc
 		// A date written with Z says the instant and nothing about where the
 		// photo was taken: a phone knows when, and not in which zone. The
-		// offset is left empty, for the file's EXIF OffsetTimeOriginal to
-		// fill in when it is read. An uploader that means UTC itself, with
-		// the offset known to be zero, writes +00:00.
+		// offset is left empty, for the file's EXIF OffsetTimeOriginal or
+		// the owner's time zone to fill in when the photo is processed. An
+		// uploader that means UTC itself, with the offset known to be zero,
+		// writes +00:00.
 		if !strings.HasSuffix(value, "Z") {
 			_, offsetSeconds := takenAt.Zone()
 			offsetMinutes := offsetSeconds / 60

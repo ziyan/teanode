@@ -162,8 +162,10 @@ type Server struct {
 	Name string `yaml:"name"`
 
 	// DataDirectory holds everything the server writes that is not in the
-	// database: keys, certificates, the message spool and the secret.
-	// Relative paths elsewhere in this file resolve against it.
+	// database: keys, certificates, the message spool and the secret, and, in
+	// photo-work, the temporary copies of videos while previews are made of
+	// them, which are emptied when the server starts. Relative paths elsewhere
+	// in this file resolve against it.
 	DataDirectory string `yaml:"dataDirectory"`
 
 	// MailServers are the hosts to publish in every domain's MX records, in
@@ -902,9 +904,10 @@ type Photos struct {
 	MaxFileBytes ByteSize `yaml:"maxFileBytes"`
 
 	// MaxAccountBytes bounds everything one person's library holds, counting
-	// each file of each photo including those in the trash. Zero is no limit
-	// beyond the disk, which is the right default for a server run for a
-	// family; set it when several people share a disk.
+	// each file of each photo including those in the trash, and the bytes of
+	// uploads that have not finished. Zero is no limit beyond the disk, which
+	// is the right default for a server run for a family; set it when several
+	// people share a disk.
 	MaxAccountBytes ByteSize `yaml:"maxAccountBytes"`
 
 	// TrashRetention is how long a photo stays in the trash before it is

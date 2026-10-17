@@ -414,7 +414,7 @@ func TestThePhotoJobWaitsForPreviewsAndLetsGoOfWhatIsGone(test *testing.T) {
 		test.Fatal("a model was called without a picture")
 	}
 	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
-		if err := tx.MarkPhotoProcessingFailed(waiting.ID, "cannot decode", 1); err != nil {
+		if err := tx.MarkPhotoProcessingFailed(waiting.ID, "The picture could not be read.", true, 1); err != nil {
 			test.Fatal(err)
 		}
 	})

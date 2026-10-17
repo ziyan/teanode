@@ -13,9 +13,11 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -115,6 +117,9 @@ type fixture struct {
 	server        *httptest.Server
 	userId        string
 	configuration *config.Configuration
+
+	// workDirectory is where the store makes temporary copies of files.
+	workDirectory string
 }
 
 func newFixture(test *testing.T) *fixture {
@@ -124,6 +129,9 @@ func newFixture(test *testing.T) *fixture {
 	self := &fixture{test: test, database: database, files: newMemoryFiles(), configuration: config.Default()}
 	self.userId = dbtest.CreateUser(test, database, "photo-person")
 	self.store = photo.New(database, self.files, func() *config.Configuration { return self.configuration })
+	self.workDirectory = filepath.Join(test.TempDir(), "photo-work")
+	self.store.SetWorkDirectory(self.workDirectory)
+	self.store.SetClaimPollInterval(10 * time.Millisecond)
 	router := mux.NewRouter()
 	router.Path(api.PathPhotoUploads).HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		self.store.ServeCollection(response, request, self.userId)

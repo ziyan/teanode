@@ -330,13 +330,20 @@ func TestAnAccountOverItsLimitIsRefusedWithTheLimitInTheMessage(test *testing.T)
 		test.Fatal("a refused file made a photo")
 	}
 
-	// One that does not, until it has all arrived.
+	// One that does not say how big it is is judged as each part arrives: the
+	// part that takes it past the limit is refused, and the upload ends.
 	started := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("late", "Upload-Complete", "?0"), randomBytes(1000, 8))
-	fixture.expect(started, http.StatusCreated)
-	late := fixture.send(http.MethodPatch, started.header.Get("Location"), map[string]string{"Upload-Offset": "1000", "Upload-Complete": "?1"}, nil)
-	fixture.expect(late, http.StatusRequestEntityTooLarge)
-	if !strings.Contains(late.body, "1500") || fixture.photoByClientId("late") != nil {
-		test.Fatalf("the refusal at the end: %s", late.body)
+	fixture.expect(started, http.StatusRequestEntityTooLarge)
+	if !strings.Contains(started.body, "1500") || fixture.photoByClientId("late") != nil {
+		test.Fatalf("the refusal as the part arrives: %s", started.body)
+	}
+	// A part that fits is let in, and the next that does not is refused.
+	small := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("grows-late", "Upload-Complete", "?0"), randomBytes(300, 8))
+	fixture.expect(small, http.StatusCreated)
+	grown := fixture.send(http.MethodPatch, small.header.Get("Location"), map[string]string{"Upload-Offset": "300", "Upload-Complete": "?1"}, randomBytes(1000, 18))
+	fixture.expect(grown, http.StatusRequestEntityTooLarge)
+	if !strings.Contains(grown.body, "1500") || fixture.photoByClientId("grows-late") != nil {
+		test.Fatalf("the refusal at the end: %s", grown.body)
 	}
 
 	// A file the photo already has is let in again, though the account is full.

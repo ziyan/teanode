@@ -44,7 +44,7 @@ func temporaryDirectoryIsEmpty(t *testing.T) func() {
 func TestDecodeHEICReturnsWhatHeifDecWrites(t *testing.T) {
 	checkClean := temporaryDirectoryIsEmpty(t)
 	fakeHeifDec(t, `cp "$input" "$output"`)
-	decoded, err := DecodeHEIC(context.Background(), strings.NewReader("pretend heic bytes"))
+	decoded, err := DecodeHEIC(context.Background(), strings.NewReader("pretend heic bytes"), "")
 	if err != nil || string(decoded) != "pretend heic bytes" {
 		t.Errorf("decoded = %q, err = %v", decoded, err)
 	}
@@ -53,7 +53,7 @@ func TestDecodeHEICReturnsWhatHeifDecWrites(t *testing.T) {
 
 func TestDecodeHEICTakesTheFirstOfSeveralPictures(t *testing.T) {
 	fakeHeifDec(t, `printf second > "${base}-2.jpg"; printf tenth > "${base}-10.jpg"; printf first > "${base}-1.jpg"`)
-	decoded, err := DecodeHEIC(context.Background(), strings.NewReader("x"))
+	decoded, err := DecodeHEIC(context.Background(), strings.NewReader("x"), "")
 	if err != nil || string(decoded) != "first" {
 		t.Errorf("decoded = %q, err = %v", decoded, err)
 	}
@@ -62,14 +62,14 @@ func TestDecodeHEICTakesTheFirstOfSeveralPictures(t *testing.T) {
 func TestDecodeHEICReportsWhyItFailed(t *testing.T) {
 	checkClean := temporaryDirectoryIsEmpty(t)
 	fakeHeifDec(t, `echo "first line" >&2; echo "Could not read the file: not a HEIF file" >&2; exit 1`)
-	_, err := DecodeHEIC(context.Background(), strings.NewReader("x"))
+	_, err := DecodeHEIC(context.Background(), strings.NewReader("x"), "")
 	if err == nil || !strings.Contains(err.Error(), "not a HEIF file") {
 		t.Errorf("err = %v", err)
 	}
 	checkClean()
 
 	fakeHeifDec(t, `exit 0`)
-	if _, err := DecodeHEIC(context.Background(), strings.NewReader("x")); err == nil {
+	if _, err := DecodeHEIC(context.Background(), strings.NewReader("x"), ""); err == nil {
 		t.Error("a run that wrote nothing: want an error")
 	}
 }
@@ -79,7 +79,7 @@ func TestDecodeHEICStopsWhenAskedTo(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	started := time.Now()
-	_, err := DecodeHEIC(ctx, strings.NewReader("x"))
+	_, err := DecodeHEIC(ctx, strings.NewReader("x"), "")
 	if err == nil {
 		t.Fatal("want an error")
 	}
@@ -90,7 +90,7 @@ func TestDecodeHEICStopsWhenAskedTo(t *testing.T) {
 
 func TestDecodeHEICNamesThePackageToInstall(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	_, err := DecodeHEIC(context.Background(), strings.NewReader("x"))
+	_, err := DecodeHEIC(context.Background(), strings.NewReader("x"), "")
 	if err == nil || !strings.Contains(err.Error(), "libheif-examples") {
 		t.Errorf("err = %v", err)
 	}
@@ -141,7 +141,7 @@ func TestDecodeHEICAssemblesTilesAndTurnsThePicture(t *testing.T) {
 	// 640 by 384 in 256 pixel tiles, turned a quarter clockwise: the way an
 	// iPhone stores a portrait photo, and the way ffmpeg gets wrong.
 	heic := encodeHeic(t, encodePng(t, quadrantPicture(640, 384)), ".png", "--cut-tiles", "256", "--rotate-cw", "90")
-	converted, err := DecodeHEIC(context.Background(), bytes.NewReader(heic))
+	converted, err := DecodeHEIC(context.Background(), bytes.NewReader(heic), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestHEICMadeFromAJPEGWithExif(t *testing.T) {
 
 	// Upright once, not twice: whatever heif-dec does with the orientation
 	// the file carried, the JPEG it writes must read as turned exactly once.
-	converted, err := DecodeHEIC(context.Background(), bytes.NewReader(heic))
+	converted, err := DecodeHEIC(context.Background(), bytes.NewReader(heic), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestHEICMadeFromAJPEGWithExif(t *testing.T) {
 
 func TestDecodeHEICRefusesGarbage(t *testing.T) {
 	requireHeifTools(t)
-	if _, err := DecodeHEIC(context.Background(), strings.NewReader("this is not a HEIC file")); err == nil {
+	if _, err := DecodeHEIC(context.Background(), strings.NewReader("this is not a HEIC file"), ""); err == nil {
 		t.Error("want an error")
 	}
 }

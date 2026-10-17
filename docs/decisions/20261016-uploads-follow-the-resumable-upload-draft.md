@@ -42,4 +42,13 @@ A proxy in front of the server that drops 1xx responses turns resumable
 uploads into plain ones; they still work, and restart from the beginning
 when cut.
 
+An upload that has not finished holds bytes that are not photos yet, so the
+bytes of an account's unfinished uploads count towards its limit, and
+starting an upload again for the same photo and file ends the earlier try, so
+that restarts do not pile up. An upload has at most twice as many parts as a
+file of the largest size needs, and a type that is not kept is refused before
+a byte is read. A client that has sent every byte waits, asking where the
+upload is, while the server reads the parts back and stores the file, instead
+of sending the last part again.
+
 Recordings keep their own protocol for now.

@@ -138,11 +138,17 @@ type Photo struct {
 	IsFavorite           bool                 `json:"isFavorite"`
 	IsScreenshot         bool                 `json:"isScreenshot"`
 	PhotoProcessingState PhotoProcessingState `json:"photoProcessingState"`
-	// ProcessingAttemptCount is how many times making previews has failed.
+	// ProcessingAttemptCount is how many times making previews has been tried
+	// since the photo last became ready or was asked to be tried again; a try
+	// is counted when the photo is claimed. ProcessingErrorMessage is a fixed,
+	// plain reason for the last failure, with no path or tool output in it.
 	ProcessingAttemptCount int    `json:"processingAttemptCount"`
 	ProcessingErrorMessage string `json:"processingErrorMessage"`
 	// ProcessingClaimedAt is when an instance took the photo to process it.
 	ProcessingClaimedAt *time.Time `json:"-"`
+	// ProcessingNotBefore is the earliest time a waiting photo is claimed
+	// again, after a failure.
+	ProcessingNotBefore *time.Time `json:"-"`
 	TrashedAt           *time.Time `json:"trashedAt" graphapi:"nullable"`
 
 	// FacesFoundAt is when the photo's faces were found, null until then.
@@ -186,6 +192,22 @@ type Photo struct {
 	// version or the Live Photo's video that is missing. Worked out when the
 	// photo is read.
 	PhotoFileRoles []PhotoFileRole `json:"photoFileRoles" gorm:"-"`
+}
+
+// TakenAtOnClock is when the photo was taken on the clock where it was taken:
+// its instant in its own offset. This is the one rule every place that writes
+// a photo's date follows. Processing gives every photo that has a date an
+// offset, so a date without one is only a photo not processed yet, and it is
+// shown on the UTC clock until then.
+func (self *Photo) TakenAtOnClock() *time.Time {
+	if self.TakenAt == nil {
+		return nil
+	}
+	clock := self.TakenAt.UTC()
+	if self.TakenAtOffsetMinutes != nil {
+		clock = self.TakenAt.In(time.FixedZone("", *self.TakenAtOffsetMinutes*60))
+	}
+	return &clock
 }
 
 // PhotoDescriptionRequestLifetime is how long a request for a description
@@ -240,13 +262,16 @@ type PhotoUploadHeaders struct {
 
 // PhotoUpload is a file on its way in, received in parts.
 type PhotoUpload struct {
-	ID                 string             `json:"id"`
-	UserID             string             `json:"userId"`
-	CreatedAt          time.Time          `json:"createdAt"`
-	UpdatedAt          time.Time          `json:"updatedAt"`
-	PhotoUploadState   PhotoUploadState   `json:"photoUploadState"`
-	DeclaredSizeBytes  *int64             `json:"declaredSizeBytes" graphapi:"nullable"`
-	ReceivedSizeBytes  int64              `json:"receivedSizeBytes"`
+	ID                string           `json:"id"`
+	UserID            string           `json:"userId"`
+	CreatedAt         time.Time        `json:"createdAt"`
+	UpdatedAt         time.Time        `json:"updatedAt"`
+	PhotoUploadState  PhotoUploadState `json:"photoUploadState"`
+	DeclaredSizeBytes *int64           `json:"declaredSizeBytes" graphapi:"nullable"`
+	ReceivedSizeBytes int64            `json:"receivedSizeBytes"`
+	// PartCount is how many parts have a receipt, which is also the index the
+	// next part is stored under.
+	PartCount          int                `json:"partCount"`
 	PhotoUploadHeaders PhotoUploadHeaders `json:"photoUploadHeaders" gorm:"column:upload_headers;serializer:json"`
 	// PhotoID is the photo the upload became, once it is complete.
 	PhotoID *string `json:"photoId" graphapi:"nullable"`

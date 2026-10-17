@@ -2,7 +2,9 @@ package photo_test
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"net/http"
 	"os"
@@ -345,4 +347,27 @@ func (self *fixture) claimOne() *models.Photo {
 		return nil
 	}
 	return claimed[0]
+}
+
+// pngClaiming is just the signature and header of a PNG of the given size, with
+// no pixels: they are never read.
+func pngClaiming(widthPixels, heightPixels uint32) []byte {
+	header := binary.BigEndian.AppendUint32(nil, widthPixels)
+	header = binary.BigEndian.AppendUint32(header, heightPixels)
+	header = append(header, 8, 2, 0, 0, 0)
+	content := []byte("\x89PNG\r\n\x1a\n")
+	content = binary.BigEndian.AppendUint32(content, uint32(len(header)))
+	chunk := append([]byte("IHDR"), header...)
+	content = append(content, chunk...)
+	return binary.BigEndian.AppendUint32(content, crc32.ChecksumIEEE(chunk))
+}
+
+// A picture of more than 64 megapixels is refused from its header, before a
+// pixel is allocated, and failed at once: asking again would say the same.
+func TestAPictureOverSixtyFourMegapixelsIsFailedAtOnceAndNotDecoded(test *testing.T) {
+	fixture := newFixture(test)
+	found := fixture.uploadAndProcess("enormous", map[string]string{"Content-Type": "image/png", "X-Photo-Client-ID": "enormous"}, pngClaiming(16000, 4001))
+	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 1 || found.ProcessingErrorMessage != "This picture is too large to make previews of." {
+		test.Fatalf("%+v", found)
+	}
 }

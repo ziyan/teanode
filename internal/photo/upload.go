@@ -49,6 +49,10 @@ const completionTimeout = 30 * time.Minute
 // the connection dropped.
 var errBodyCut = errors.New("photo: the request body was cut short")
 
+// ErrTooManyParts is an upload that came in more pieces than a file of the
+// largest size needs twice over.
+var ErrTooManyParts = errors.New("photo: the upload is in too many parts; send it in parts of 8 MiB")
+
 // errOffsetMoved is an append that found the upload somewhere other than where
 // the request believed.
 var errOffsetMoved = errors.New("photo: the upload is not where the request thinks it is")
@@ -123,6 +127,13 @@ func (self *Store) serveCreate(response http.ResponseWriter, request *http.Reque
 	headers, problem := parseUploadHeaders(request)
 	if problem != nil {
 		http.Error(response, problem.Error(), http.StatusBadRequest)
+		return
+	}
+	// A file of a kind that is not kept is refused before any of it is sent,
+	// when the request names its kind. One that names none is looked at
+	// when it has all arrived.
+	if err := checkDeclaredContentType(headers.ContentType); err != nil {
+		self.writeProblem(response, err)
 		return
 	}
 	isComplete, problem := parseCompleteness(request)
@@ -281,14 +292,11 @@ func (self *Store) receiveAndRespond(response http.ResponseWriter, request *http
 // reporting. Bytes read of a part that did not come whole are dropped.
 func (self *Store) receiveBody(ctx context.Context, controller *http.ResponseController, userId string, upload *models.PhotoUpload, body io.Reader, contentLength int64) (*models.PhotoUpload, bool, error) {
 	maximumFileBytes := int64(self.configuration().Photos.MaxFileBytes)
-	var partIndex int
-	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
-		parts, err := transaction.ListPhotoUploadParts(userId, upload.ID)
-		partIndex = len(parts)
-		return err
-	}); err != nil {
-		return upload, false, err
-	}
+	// The upload says how many parts it has, so they are not listed to find
+	// the next index. A request that finds the upload moved is told so when it
+	// stores a part.
+	partIndex := upload.PartCount
+	maximumPartCount := maximumPartCountOf(maximumFileBytes)
 	bufferPointer := pieceBuffers.Get().(*[]byte)
 	defer pieceBuffers.Put(bufferPointer)
 	buffer := *bufferPointer
@@ -308,6 +316,12 @@ func (self *Store) receiveBody(ctx context.Context, controller *http.ResponseCon
 			}
 			if upload.DeclaredSizeBytes != nil && upload.ReceivedSizeBytes+int64(filledBytes) > *upload.DeclaredSizeBytes {
 				return upload, false, ErrWrongSize
+			}
+			if partIndex >= maximumPartCount {
+				return upload, false, ErrTooManyParts
+			}
+			if err := self.checkRoomForPart(ctx, userId, upload, int64(filledBytes)); err != nil {
+				return upload, false, err
 			}
 			updated, err := self.storePart(ctx, userId, upload, partIndex, buffer[:filledBytes])
 			if err != nil {
@@ -364,35 +378,90 @@ func (self *Store) storePart(ctx context.Context, userId string, upload *models.
 }
 
 // checkRoomFor refuses a file the account has no room for before any of it
-// is sent. A file that replaces one the photo already has is let through:
-// whether it fits is settled when it arrives, and a client retrying a file
-// that is already stored must not be turned away at the door.
+// is sent. The room is what the limit leaves after the library and after the
+// bytes of the account's other uploads that have not finished: those are not
+// photos yet, and counting only photos would let any number of uploads each
+// pass the check and then fill the store. A file that replaces one the photo
+// already has is let through: whether it fits is settled when it arrives, and a
+// client retrying a file that is already stored must not be turned away at the
+// door.
 func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *models.PhotoUploadHeaders, sizeBytes int64) error {
 	maximumAccountBytes := int64(self.configuration().Photos.MaxAccountBytes)
 	if maximumAccountBytes <= 0 {
 		return nil
 	}
 	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
-		photos, err := transaction.FindPhotosByClientIDs(userId, []string{headers.ClientPhotoID})
-		if err != nil {
+		isReplacement, err := hasFileInRole(transaction, userId, headers)
+		if err != nil || isReplacement {
 			return err
-		}
-		if len(photos) > 0 {
-			if _, err := transaction.GetPhotoFile(userId, photos[0].ID, headers.PhotoFileRole); err == nil {
-				return nil
-			} else if !errors.Is(err, db.ErrNotFound) {
-				return err
-			}
 		}
 		usedBytes, err := transaction.PhotoUsedBytes(userId)
 		if err != nil {
 			return err
 		}
-		if usedBytes > maximumAccountBytes-sizeBytes {
+		// Starting this upload ends an unfinished one of the same file, so
+		// that one is not counted.
+		openBytes, err := transaction.PhotoOpenUploadBytes(userId, headers.ClientPhotoID, headers.PhotoFileRole)
+		if err != nil {
+			return err
+		}
+		if usedBytes+openBytes > maximumAccountBytes-sizeBytes {
 			return &QuotaError{LimitBytes: maximumAccountBytes}
 		}
 		return nil
 	})
+}
+
+// checkRoomForPart is checkRoomFor for a part that has arrived: the bytes the
+// upload already holds are among the account's open ones, so the part is added
+// to them. It is asked of every part, because a file whose size was not
+// declared, or was declared falsely, is only known as it comes.
+func (self *Store) checkRoomForPart(ctx context.Context, userId string, upload *models.PhotoUpload, partBytes int64) error {
+	maximumAccountBytes := int64(self.configuration().Photos.MaxAccountBytes)
+	if maximumAccountBytes <= 0 {
+		return nil
+	}
+	return self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		isReplacement, err := hasFileInRole(transaction, userId, &upload.PhotoUploadHeaders)
+		if err != nil || isReplacement {
+			return err
+		}
+		usedBytes, err := transaction.PhotoUsedBytes(userId)
+		if err != nil {
+			return err
+		}
+		openBytes, err := transaction.PhotoOpenUploadBytes(userId, "", "")
+		if err != nil {
+			return err
+		}
+		if usedBytes+openBytes > maximumAccountBytes-partBytes {
+			return &QuotaError{LimitBytes: maximumAccountBytes}
+		}
+		return nil
+	})
+}
+
+// hasFileInRole says whether the uploader's photo is there already with a file
+// in the role the upload is for.
+func hasFileInRole(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders) (bool, error) {
+	photos, err := transaction.FindPhotosByClientIDs(userId, []string{headers.ClientPhotoID})
+	if err != nil || len(photos) == 0 {
+		return false, err
+	}
+	if _, err := transaction.GetPhotoFile(userId, photos[0].ID, headers.PhotoFileRole); err == nil {
+		return true, nil
+	} else if !errors.Is(err, db.ErrNotFound) {
+		return false, err
+	}
+	return false, nil
+}
+
+// maximumPartCountOf is how many parts one upload may have: twice as many as
+// the largest file needs when every part is full, and a few more. Parts are
+// made as the bytes of a request arrive, so a client that sends a byte at a
+// time would otherwise make a row and an object for each.
+func maximumPartCountOf(maximumFileBytes int64) int {
+	return int(2*maximumFileBytes/models.PhotoUploadPartBytes) + 16
 }
 
 // readUpload reads the upload, or answers that there is none: one that is
@@ -455,7 +524,7 @@ func (self *Store) writeCurrentOffsetConflict(ctx context.Context, response http
 func (self *Store) failAndWriteProblem(ctx context.Context, response http.ResponseWriter, userId string, upload *models.PhotoUpload, err error) {
 	var tooLarge *FileTooLargeError
 	var overQuota *QuotaError
-	if errors.As(err, &tooLarge) || errors.As(err, &overQuota) || errors.Is(err, ErrDigestMismatch) || errors.Is(err, ErrWrongSize) || errors.Is(err, ErrEmptyFile) || errors.Is(err, ErrNotAPhoto) {
+	if errors.As(err, &tooLarge) || errors.As(err, &overQuota) || errors.Is(err, ErrDigestMismatch) || errors.Is(err, ErrWrongSize) || errors.Is(err, ErrEmptyFile) || errors.Is(err, ErrNotAPhoto) || errors.Is(err, ErrPartDamaged) || errors.Is(err, ErrTooManyParts) {
 		failContext := context.WithoutCancel(ctx)
 		if failError := self.database.TransactionContext(failContext, func(transaction db.Transaction) error {
 			_, err := transaction.FailPhotoUpload(userId, upload.ID)
@@ -478,8 +547,11 @@ func (self *Store) writeProblem(response http.ResponseWriter, err error) {
 		http.Error(response, headerDeclaredSha256+": "+err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrWrongSize):
 		http.Error(response, headerUploadLength+": "+err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrEmptyFile):
+	case errors.Is(err, ErrEmptyFile), errors.Is(err, ErrTooManyParts):
 		http.Error(response, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrPartDamaged):
+		// The server's fault, not the client's: it is told to start again.
+		http.Error(response, err.Error(), http.StatusInternalServerError)
 	case errors.Is(err, ErrNotAPhoto):
 		http.Error(response, err.Error(), http.StatusUnsupportedMediaType)
 	case errors.Is(err, db.ErrNotFound):

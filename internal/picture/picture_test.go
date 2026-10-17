@@ -75,15 +75,27 @@ func pngClaiming(width, height uint32) []byte {
 }
 
 func TestDecodeRefusesTooManyPixelsBeforeDecoding(t *testing.T) {
-	// 100 megapixels is allowed by the header check; one more row is not.
-	_, err := Decode(pngClaiming(20000, 5001))
+	// 64 megapixels is allowed by the header check; one more row is not.
+	_, err := Decode(pngClaiming(16000, 4001))
 	if err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Errorf("err = %v, want a refusal for size", err)
 	}
 	// Within the limit the header passes and the missing pixels are what fail.
-	_, err = Decode(pngClaiming(1000, 1000))
+	_, err = Decode(pngClaiming(8000, 8000))
 	if err == nil || strings.Contains(err.Error(), "too large") {
 		t.Errorf("err = %v, want a decoding failure", err)
+	}
+	// The size can be asked of the header alone, which is how a caller learns
+	// what decoding would take.
+	widthPixels, heightPixels, err := ReadSize(pngClaiming(1000, 500))
+	if err != nil || widthPixels != 1000 || heightPixels != 500 {
+		t.Errorf("size = %d by %d, err = %v", widthPixels, heightPixels, err)
+	}
+	if _, _, err := ReadSize(pngClaiming(16000, 4001)); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("err = %v, want a refusal for size", err)
+	}
+	if _, _, err := ReadSize([]byte("plain text")); err == nil {
+		t.Error("text has a size")
 	}
 }
 
@@ -119,6 +131,57 @@ func TestDecodeTurnsEveryOrientationUpright(t *testing.T) {
 					pixel := decoded.At(want.width/4+column*want.width/2, want.height/4+row*want.height/2)
 					if got := quadrantName(t, pixel); got != want.rows[row][column] {
 						t.Errorf("orientation %d: quarter at row %d column %d is %s, want %s", orientation, row, column, got, want.rows[row][column])
+					}
+				}
+			}
+		}
+	}
+}
+
+// The turn is made while the picture is sampled: what Decode gives is a view of
+// the stored pixels, and Scale writes each pixel where the turn puts it, at the
+// size it is shrunk to, whether or not it is shrunk.
+func TestScaleTurnsEveryOrientationWhileItSamples(t *testing.T) {
+	expected := map[uint16]struct {
+		width, height int
+		rows          [2][2]string
+	}{
+		1: {64, 32, [2][2]string{{"A", "B"}, {"C", "D"}}},
+		2: {64, 32, [2][2]string{{"B", "A"}, {"D", "C"}}},
+		3: {64, 32, [2][2]string{{"D", "C"}, {"B", "A"}}},
+		4: {64, 32, [2][2]string{{"C", "D"}, {"A", "B"}}},
+		5: {32, 64, [2][2]string{{"A", "C"}, {"B", "D"}}},
+		6: {32, 64, [2][2]string{{"C", "A"}, {"D", "B"}}},
+		7: {32, 64, [2][2]string{{"D", "B"}, {"C", "A"}}},
+		8: {32, 64, [2][2]string{{"B", "D"}, {"A", "C"}}},
+	}
+	for orientation, want := range expected {
+		tiff := buildTiff(binary.LittleEndian, []testEntry{shortEntry(binary.LittleEndian, tagOrientation, orientation)}, nil, nil)
+		decoded, err := Decode(jpegWith(t, quadrantPicture(128, 64), tiff))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if orientation >= 2 {
+			if _, isView := decoded.(*uprightView); !isView {
+				t.Errorf("orientation %d: Decode made a copy of the picture, %T", orientation, decoded)
+			}
+		}
+		// Shrunk to half, and then not shrunk at all.
+		for _, limit := range []int{64, 1000} {
+			scaled := Scale(decoded, limit)
+			wantWidth, wantHeight := want.width, want.height
+			if limit == 1000 {
+				wantWidth, wantHeight = want.width*2, want.height*2
+			}
+			if scaled.Bounds().Dx() != wantWidth || scaled.Bounds().Dy() != wantHeight {
+				t.Errorf("orientation %d, limit %d: size = %v, want %d by %d", orientation, limit, scaled.Bounds(), wantWidth, wantHeight)
+				continue
+			}
+			for row := 0; row < 2; row++ {
+				for column := 0; column < 2; column++ {
+					pixel := scaled.At(wantWidth/4+column*wantWidth/2, wantHeight/4+row*wantHeight/2)
+					if got := quadrantName(t, pixel); got != want.rows[row][column] {
+						t.Errorf("orientation %d, limit %d: quarter at row %d column %d is %s, want %s", orientation, limit, row, column, got, want.rows[row][column])
 					}
 				}
 			}

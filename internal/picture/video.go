@@ -27,6 +27,11 @@ const (
 	// VideoPreviewLongSidePixels is the longest side of a video preview.
 	VideoPreviewLongSidePixels = 1280
 
+	// encodeThreadCount is how many threads one ffmpeg run may use. Photos are
+	// processed two at a time on a server that does other work, and a run that
+	// takes every core to itself starves it.
+	encodeThreadCount = "2"
+
 	// The container formats a camera or a phone makes. As in the recording
 	// decoder, nothing else is opened, so a playlist cannot name another file.
 	supportedVideoFormats = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi,mpegts,mpeg,asf,flv,ogg"
@@ -178,7 +183,7 @@ func parseVideoDate(quickTimeDate, containerDate string) (*time.Time, *int) {
 	return nil, nil
 }
 
-// iso6709 matches "+37.3349-122.0090+012.345/": a signed latitude, a signed
+// iso6709 matches "+10.0000+020.0000+012.345/": a signed latitude, a signed
 // longitude, an optional altitude, an optional coordinate system, and a slash.
 var iso6709 = regexp.MustCompile(`^([+-][0-9]+(?:\.[0-9]+)?)([+-][0-9]+(?:\.[0-9]+)?)(?:[+-][0-9]+(?:\.[0-9]+)?)?(?:CRS[A-Za-z0-9_]+)?/?$`)
 
@@ -250,10 +255,10 @@ func VideoPoster(ctx context.Context, path string) ([]byte, error) {
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			return nil, err
 		}
-		arguments := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-ss", seekSeconds}
+		arguments := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-threads", encodeThreadCount, "-ss", seekSeconds}
 		arguments = append(arguments, videoInputArguments()...)
 		arguments = append(arguments, "-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn",
-			"-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "2", "pipe:1")
+			"-threads", encodeThreadCount, "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "2", "pipe:1")
 		output := &boundedWriter{maximumBytes: maximumPosterBytes}
 		if lastErr = runVideoProgram(ctx, program, arguments, file, output); lastErr != nil {
 			if ctx.Err() != nil || errors.Is(lastErr, errOutputTooLarge) {
@@ -296,14 +301,14 @@ func VideoPreview(ctx context.Context, inputPath, outputPath string) error {
 	// nothing is made larger than it was.
 	limit := strconv.Itoa(VideoPreviewLongSidePixels)
 	scale := fmt.Sprintf("scale=w='min(%s,iw)':h='min(%s,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", limit, limit)
-	arguments := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y"}
+	arguments := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-threads", encodeThreadCount}
 	arguments = append(arguments, videoInputArguments()...)
 	// The metadata is dropped so a preview does not carry the place it was
 	// filmed to whoever it is shown to.
 	arguments = append(arguments, "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn",
 		"-map_metadata", "-1", "-map_chapters", "-1",
 		"-vf", scale,
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p",
+		"-threads", encodeThreadCount, "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "128k",
 		"-max_muxing_queue_size", "1024",
 		"-movflags", "+faststart", "-f", "mp4", outputPath)
@@ -317,7 +322,7 @@ func VideoPreview(ctx context.Context, inputPath, outputPath string) error {
 func findVideoProgram(name string) (string, error) {
 	program, err := exec.LookPath(name)
 	if err != nil {
-		return "", fmt.Errorf("picture: videos cannot be read because %s was not found; install FFmpeg", name)
+		return "", fmt.Errorf("%w: videos cannot be read because %s was not found; install FFmpeg", ErrProgramMissing, name)
 	}
 	return program, nil
 }

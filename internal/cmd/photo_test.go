@@ -56,6 +56,9 @@ func TestPhotoParity(test *testing.T) {
 		"UpdatePhoto":          {client.DocumentUpdatePhoto, []string{"favorite"}, []string{"favorite"}},
 		"TrashPhotos":          {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
 		"RestorePhotos":        {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
+		// Making the previews of photos again: a person whose photo failed, or
+		// looks wrong, and the agent they ask to do it.
+		"RetryPhotoProcessing": {client.DocumentRetryPhotoProcessing, []string{"retry"}, []string{"retry"}},
 		// What an uploader asks to decide what to skip; the agent keeps no
 		// files of its own to upload.
 		"FindPhotos": {client.DocumentFindPhotos, []string{"upload"}, nil},
@@ -294,6 +297,8 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"ReadPhoto":` + view + `}}`))
 			case strings.Contains(asked.Query, "TrashPhotos("):
 				_, _ = response.Write([]byte(`{"data":{"TrashPhotos":2}}`))
+			case strings.Contains(asked.Query, "RetryPhotoProcessing("):
+				_, _ = response.Write([]byte(`{"data":{"RetryPhotoProcessing":1}}`))
 			case strings.Contains(asked.Query, "ListPhotoAlbums"):
 				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbums":[` + fixtureAlbum + `,{"id":"album-2","userId":"u","albumTitle":"Empty one","photoCount":0,"coverPreviewUrl":""}]}}`))
 			case strings.Contains(asked.Query, "ReadPhotoAlbum("):
@@ -586,6 +591,50 @@ func TestTrashNamesThePhotosAndDeleteAsksFirst(test *testing.T) {
 	}
 	if len(server.documents) != before {
 		test.Fatal("something was sent without confirmation")
+	}
+}
+
+func TestRetryNamesThePhotosAndSaysHowManyWereQueued(test *testing.T) {
+	server := newPhotoServer(test)
+	output, _, err := server.run(test, "retry", "photo-1", "photo-2")
+	if err != nil || !strings.Contains(output, "queued to make previews again for 1 of 2 photos") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	if got := server.variables[len(server.variables)-1]["photoIds"]; !reflect.DeepEqual(got, []any{"photo-1", "photo-2"}) {
+		test.Fatalf("%v", got)
+	}
+	if !strings.Contains(server.documents[len(server.documents)-1], "RetryPhotoProcessing(") {
+		test.Fatalf("%s", server.documents[len(server.documents)-1])
+	}
+	_, output, err = server.run(test, "retry", "--json", "photo-1")
+	if err != nil || !strings.Contains(output, `"retriedCount": 1`) {
+		test.Fatalf("%v: %s", err, output)
+	}
+	if _, _, err := server.run(test, "retry"); err == nil {
+		test.Fatal("retrying nothing was accepted")
+	}
+}
+
+// Every place that writes a photo's date follows the photo's own offset, and
+// the zone of the computer the command runs on has no say.
+func TestAPhotoDateIsOnTheClockOfItsOffsetWhateverZoneTheComputerIsIn(test *testing.T) {
+	original := time.Local
+	time.Local = time.FixedZone("here", 9*3600)
+	defer func() { time.Local = original }()
+	taken := time.Date(2025, 3, 4, 10, 30, 0, 0, time.UTC)
+	offset := 60
+	if got := photoTakenText(&models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: &offset}); got != "2025-03-04 11:30" {
+		test.Errorf("with an offset: %q", got)
+	}
+	// A photo not yet processed has no offset; it is on UTC, not on this clock.
+	if got := photoTakenText(&models.Photo{TakenAt: &taken}); got != "2025-03-04 10:30" {
+		test.Errorf("without an offset: %q", got)
+	}
+	if got := photoTakenText(&models.Photo{}); got != "" {
+		test.Errorf("without a date: %q", got)
+	}
+	if got := photoDateText(&models.Photo{TakenAt: &taken, TakenAtOffsetMinutes: &offset}); got != "2025-03-04 11:30 (UTC+01:00)" {
+		test.Errorf("in the details: %q", got)
 	}
 }
 

@@ -78,6 +78,11 @@ type graph struct {
 	// first time a photo is touched; nil when the blob store cannot stream.
 	photoStoreOnce  sync.Once
 	photoStoreValue *photo.Store
+
+	// photoSearchMeanings keeps the words of a photo search read as a vector
+	// for a few seconds, so that the listing and the count a page asks for
+	// together call the embedding model once.
+	photoSearchMeanings photoSearchMeaningCache
 }
 
 // New builds the GraphQL component, generating the schema by reflection over
@@ -115,6 +120,7 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 	self.schema = schema
 	self.wrapServiceOperations()
 	self.wrapQueryTransactions()
+	self.wrapTransactionFreeMutations()
 	return self, nil
 }
 

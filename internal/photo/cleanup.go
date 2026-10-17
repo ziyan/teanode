@@ -22,35 +22,51 @@ func (self *Store) Cleanup(ctx context.Context, batchSize int) error {
 	return errors.Join(self.cleanUploads(ctx, batchSize), self.cleanTrash(ctx, batchSize), self.cleanBlobs(ctx, batchSize), self.cleanFaceGroups(ctx))
 }
 
+// cleanUploads deletes the parts of uploads that failed or went idle, and then
+// the uploads. It claims an upload and lists its parts in a transaction, ends
+// that transaction, deletes the objects with no lock held, and then deletes the
+// row, as deletePhotoBatch does: object store calls take as long as the store
+// takes, and are not worth holding a row lock across. Claiming ends an upload
+// that is still receiving, so that no part can be appended to it while its
+// objects go; if anything fails after that, the upload is still failed, and the
+// next pass finds it again.
 func (self *Store) cleanUploads(ctx context.Context, batchSize int) error {
 	for range batchSize {
-		hasFoundUpload := false
+		var upload *models.PhotoUpload
+		var parts []*models.PhotoUploadPart
 		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			upload, err := transaction.LockPhotoUploadForCleanup(self.now().Add(-idleUploadRetention))
+			found, err := transaction.LockPhotoUploadForCleanup(self.now().Add(-idleUploadRetention))
 			if errors.Is(err, db.ErrNotFound) {
 				return nil
 			}
 			if err != nil {
 				return err
 			}
-			hasFoundUpload = true
-			parts, err := transaction.ListPhotoUploadPartsForCleanup(upload.ID)
-			if err != nil {
+			if _, err := transaction.FailPhotoUpload(found.UserID, found.ID); err != nil {
 				return err
 			}
-			// The part after the last receipt may have been written and
-			// never recorded, and is deleted by name with the rest.
-			for partIndex := 0; partIndex <= len(parts); partIndex++ {
-				if err := self.files.DeleteFileEverywhere(ctx, models.PhotoUploadPartFileID(upload.ID, partIndex)); err != nil {
-					return err
-				}
+			if parts, err = transaction.ListPhotoUploadPartsForCleanup(found.ID); err != nil {
+				return err
 			}
-			return transaction.DeletePhotoUpload(upload.ID)
+			upload = found
+			return nil
 		}); err != nil {
 			return err
 		}
-		if !hasFoundUpload {
+		if upload == nil {
 			return nil
+		}
+		// The part after the last receipt may have been written and never
+		// recorded, and is deleted by name with the rest.
+		for partIndex := 0; partIndex <= len(parts); partIndex++ {
+			if err := self.files.DeleteFileEverywhere(ctx, models.PhotoUploadPartFileID(upload.ID, partIndex)); err != nil {
+				return err
+			}
+		}
+		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			return transaction.DeletePhotoUpload(upload.ID)
+		}); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -152,4 +168,75 @@ func (self *Store) cleanBlobs(ctx context.Context, batchSize int) error {
 		}
 	}
 	return nil
+}
+
+// accountObjectPageSize is how many photos or uploads of an account are read
+// at once when its objects are deleted.
+const accountObjectPageSize = 500
+
+// DeleteAccountObjects deletes the objects in the store that the account's
+// previews and the parts of its uploads are, for the caller to run before the
+// account's rows go with it: afterwards nothing names them. Each preview is
+// deleted by every name it can have, as the cleanup of a photo does, and each
+// upload by the names of its parts and the one after. It is best effort: a
+// failure is logged and the rest goes on, because the account is being
+// deleted whatever happens here. The blobs of the photos' files are not
+// touched; they are unreferenced once the rows are gone, and the cleanup of
+// blobs deletes them.
+func (self *Store) DeleteAccountObjects(ctx context.Context, userId string) {
+	afterPhotoId := ""
+	for {
+		var photoIds []string
+		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+			photoIds, err = transaction.ListPhotoIDsOfAccount(userId, afterPhotoId, accountObjectPageSize)
+			return err
+		}); err != nil {
+			log.Warningf("cannot list the photos of account %s to delete their previews: %s", userId, err)
+			break
+		}
+		for _, photoId := range photoIds {
+			for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge, models.PhotoPreviewVideo} {
+				if err := self.files.DeleteFileEverywhere(ctx, models.PhotoPreviewFileID(photoId, photoPreviewSize)); err != nil {
+					log.Warningf("cannot delete the %s preview of photo %s of a deleted account: %s", photoPreviewSize, photoId, err)
+				}
+			}
+		}
+		if len(photoIds) < accountObjectPageSize {
+			break
+		}
+		afterPhotoId = photoIds[len(photoIds)-1]
+	}
+
+	afterUploadId := ""
+	for {
+		var uploads []*models.PhotoUpload
+		partCounts := map[string]int{}
+		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+			if uploads, err = transaction.ListPhotoUploadsOfAccount(userId, afterUploadId, accountObjectPageSize); err != nil {
+				return err
+			}
+			for _, upload := range uploads {
+				parts, err := transaction.ListPhotoUploadPartsForCleanup(upload.ID)
+				if err != nil {
+					return err
+				}
+				partCounts[upload.ID] = len(parts)
+			}
+			return nil
+		}); err != nil {
+			log.Warningf("cannot list the uploads of account %s to delete their parts: %s", userId, err)
+			return
+		}
+		for _, upload := range uploads {
+			for partIndex := 0; partIndex <= partCounts[upload.ID]; partIndex++ {
+				if err := self.files.DeleteFileEverywhere(ctx, models.PhotoUploadPartFileID(upload.ID, partIndex)); err != nil {
+					log.Warningf("cannot delete part %d of upload %s of a deleted account: %s", partIndex, upload.ID, err)
+				}
+			}
+		}
+		if len(uploads) < accountObjectPageSize {
+			return
+		}
+		afterUploadId = uploads[len(uploads)-1].ID
+	}
 }

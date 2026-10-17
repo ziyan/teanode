@@ -777,16 +777,23 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 		// Which services run is fixed at start, so this is decided once.
 		if configuration.Services.IsEnabled(models.ServicePhotos) {
 			photos := photo.New(self.database, files, self.store.Current)
+			// Temporary copies of videos are made inside the data directory,
+			// which an earlier run may have left files in.
+			if err := photos.PrepareWorkDirectory(); err != nil {
+				log.Warningf("cannot prepare the photo work directory: %s", err)
+			}
 			var photoGroup sync.WaitGroup
 			// Deleting what the library no longer needs: parts of uploads
 			// that went nowhere, photos past the trash, unreferenced files.
 			photoCleanup := periodic.New(context.Background(), &photoGroup, func(ctx context.Context) error {
 				return photos.Cleanup(ctx, 100)
 			}, &periodic.Settings{Interval: time.Minute, Name: "photo:cleanup"})
-			// Previews and metadata for photos that arrived. Four at a time
-			// every fifteen seconds; instances share the waiting photos.
+			// Previews and metadata for photos that arrived. Two workers take
+			// one photo each, every fifteen seconds, and go on taking the next
+			// while photos wait (up to 200 in a pass); instances share the
+			// waiting photos.
 			photoProcess := periodic.New(context.Background(), &photoGroup, func(ctx context.Context) error {
-				return photos.Process(ctx, 4)
+				return photos.Process(ctx, 200)
 			}, &periodic.Settings{Interval: 15 * time.Second, Name: "photo:process"})
 			photoCleanup.Start()
 			photoProcess.Start()

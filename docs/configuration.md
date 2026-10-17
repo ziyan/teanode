@@ -262,8 +262,10 @@ its reverse DNS should match, or receiving servers will distrust mail from
 here.
 
 **`dataDirectory`** — DataDirectory holds everything the server writes that is
-not in the database: keys, certificates, the message spool and the secret.
-Relative paths elsewhere in this file resolve against it.
+not in the database: keys, certificates, the message spool and the secret, and,
+in photo-work, the temporary copies of videos while previews are made of them,
+which are emptied when the server starts. Relative paths elsewhere in this file
+resolve against it.
 
 **`logLevel`** — LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR,
 CRITICAL.
@@ -1019,9 +1021,9 @@ sends anything, so a file over it is never started. A few minutes of video at
 high quality runs to gigabytes, which is why the default, 8 GiB, is large.
 
 **`maxAccountBytes`** — MaxAccountBytes bounds everything one person's library
-holds, counting each file of each photo including those in the trash. Zero,
-the default, is no limit beyond the disk; set it when several people share a
-disk.
+holds, counting each file of each photo including those in the trash, and the
+bytes of uploads that have not finished. Zero, the default, is no limit beyond
+the disk; set it when several people share a disk.
 
 **`trashRetention`** — TrashRetention is how long a photo stays in the trash
 before it is deleted for good, 30 days by default. Its bytes go a little later,

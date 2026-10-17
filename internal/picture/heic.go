@@ -24,19 +24,24 @@ const (
 // holds several top level pictures: output-1.jpg, output-2.jpg, and so on.
 var numberedOutput = regexp.MustCompile(`^output-([0-9]+)\.jpg$`)
 
+// ErrProgramMissing is a program that reading a file needs and the server does
+// not have. It is the server's lack and not the file's.
+var ErrProgramMissing = errors.New("picture: a program needed to read the file is not installed")
+
 // DecodeHEIC turns a HEIC or HEIF file into a JPEG with libheif's heif-dec.
 // ffmpeg cannot do it: it decodes one tile of the tiled pictures an iPhone
 // writes, where heif-dec assembles the tiles and applies the rotation, so the
 // JPEG that comes back is upright and carries no orientation to apply.
 //
 // heif-dec needs a path it can seek in, so the file goes into a private
-// temporary directory that is removed afterwards.
-func DecodeHEIC(ctx context.Context, content io.Reader) ([]byte, error) {
+// temporary directory, made inside workDirectory (the system's temporary
+// directory when that is empty), that is removed afterwards.
+func DecodeHEIC(ctx context.Context, content io.Reader, workDirectory string) ([]byte, error) {
 	program, err := exec.LookPath("heif-dec")
 	if err != nil {
-		return nil, errors.New("picture: HEIC pictures cannot be read because heif-dec was not found; install libheif-examples")
+		return nil, fmt.Errorf("%w: HEIC pictures cannot be read because heif-dec was not found; install libheif-examples", ErrProgramMissing)
 	}
-	directory, err := os.MkdirTemp("", "teanode-heic-")
+	directory, err := os.MkdirTemp(workDirectory, "teanode-heic-")
 	if err != nil {
 		return nil, fmt.Errorf("picture: a private directory for a HEIC could not be made: %w", err)
 	}

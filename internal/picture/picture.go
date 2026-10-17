@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/jpeg"
 	"math"
@@ -23,73 +24,116 @@ import (
 	_ "image/png"
 )
 
-// MaximumPixels is the largest picture Decode will decode. The check reads
-// only the header, so a small file that claims a huge picture costs nothing.
-const MaximumPixels = 100_000_000
+// MaximumPixels is the largest picture Decode will decode: 64 megapixels. The
+// check reads only the header, so a small file that claims a huge picture
+// costs nothing.
+const MaximumPixels = 64_000_000
 
-// Decode decodes a JPEG, PNG or GIF and turns a JPEG the right way up by its
-// EXIF orientation, because every picture written later loses the tag that
-// said so and a phone's photo would lie on its side.
-func Decode(content []byte) (image.Image, error) {
-	config, format, err := image.DecodeConfig(bytes.NewReader(content))
+// ErrTooLarge is a picture with more than MaximumPixels pixels.
+var ErrTooLarge = errors.New("picture: the picture is too large")
+
+// ReadSize reads the size of a JPEG, PNG or GIF from its header, and refuses
+// one that is empty or has more than MaximumPixels pixels. It is what a caller
+// asks before it decodes, to learn what the decoded picture will take.
+func ReadSize(content []byte) (widthPixels, heightPixels int, err error) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return nil, fmt.Errorf("picture: not a JPEG, PNG or GIF: %w", err)
+		return 0, 0, fmt.Errorf("picture: not a JPEG, PNG or GIF: %w", err)
 	}
 	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > MaximumPixels {
-		return nil, fmt.Errorf("picture: a picture of %d by %d pixels is too large", config.Width, config.Height)
+		return 0, 0, fmt.Errorf("%w: %d by %d pixels", ErrTooLarge, config.Width, config.Height)
 	}
-	decoded, _, err := image.Decode(bytes.NewReader(content))
+	return config.Width, config.Height, nil
+}
+
+// Decode decodes a JPEG, PNG or GIF. A JPEG that its EXIF orientation says is
+// turned comes back as a view of the pixels as they are stored, seen the right
+// way up, because every picture written later loses the tag that said so and a
+// phone's photo would lie on its side. The view turns nothing: it costs no copy
+// of the picture, and Scale reads through it while it samples. Anything else
+// that asks a pixel of it is told the upright one.
+func Decode(content []byte) (image.Image, error) {
+	if _, _, err := ReadSize(content); err != nil {
+		return nil, err
+	}
+	decoded, format, err := image.Decode(bytes.NewReader(content))
 	if err != nil {
-		return nil, fmt.Errorf("picture: the %s could not be decoded: %w", format, err)
+		return nil, fmt.Errorf("picture: the decoding failed: %w", err)
 	}
 	if format != "jpeg" {
 		return decoded, nil
 	}
-	return orient(decoded, jpegOrientation(content)), nil
+	if orientation := jpegOrientation(content); orientation >= 2 && orientation <= 8 {
+		return &uprightView{stored: decoded, orientation: orientation}, nil
+	}
+	return decoded, nil
 }
 
-// orient turns source the way an EXIF orientation of 2 to 8 says it was meant
-// to be seen. Anything else, including no orientation, returns source itself.
-// The result of a turn is an *image.RGBA, copied once from whatever the
-// decoder made, which is cheaper than asking a YCbCr picture for every pixel.
-func orient(source image.Image, orientation int) image.Image {
-	if orientation < 2 || orientation > 8 {
-		return source
-	}
-	bounds := source.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	flat := image.NewRGBA(image.Rect(0, 0, width, height))
-	draw.Draw(flat, flat.Bounds(), source, bounds.Min, draw.Src)
+// uprightView is a picture seen the way an EXIF orientation of 2 to 8 says it
+// was meant to be seen, without a copy of its pixels.
+type uprightView struct {
+	stored      image.Image
+	orientation int
+}
 
-	turnedWidth, turnedHeight := width, height
-	if orientation >= 5 {
-		turnedWidth, turnedHeight = height, width
+func (self *uprightView) ColorModel() color.Model { return self.stored.ColorModel() }
+
+func (self *uprightView) Bounds() image.Rectangle {
+	bounds := self.stored.Bounds()
+	if self.orientation >= 5 {
+		return image.Rect(0, 0, bounds.Dy(), bounds.Dx())
 	}
-	turned := image.NewRGBA(image.Rect(0, 0, turnedWidth, turnedHeight))
-	for row := 0; row < height; row++ {
-		sourceRow := flat.Pix[row*flat.Stride : row*flat.Stride+width*4]
-		for column := 0; column < width; column++ {
-			var turnedColumn, turnedRow int
-			switch orientation {
-			case 2:
-				turnedColumn, turnedRow = width-1-column, row
-			case 3:
-				turnedColumn, turnedRow = width-1-column, height-1-row
-			case 4:
-				turnedColumn, turnedRow = column, height-1-row
-			case 5:
-				turnedColumn, turnedRow = row, column
-			case 6:
-				turnedColumn, turnedRow = height-1-row, column
-			case 7:
-				turnedColumn, turnedRow = height-1-row, width-1-column
-			case 8:
-				turnedColumn, turnedRow = row, width-1-column
-			}
-			copy(turned.Pix[turnedRow*turned.Stride+turnedColumn*4:][:4], sourceRow[column*4:][:4])
-		}
+	return image.Rect(0, 0, bounds.Dx(), bounds.Dy())
+}
+
+func (self *uprightView) At(column, row int) color.Color {
+	bounds := self.stored.Bounds()
+	storedColumn, storedRow := uprightToStored(self.orientation, column, row, bounds.Dx(), bounds.Dy())
+	return self.stored.At(bounds.Min.X+storedColumn, bounds.Min.Y+storedRow)
+}
+
+// uprightToStored is the pixel of a stored picture of the given size that is
+// at (column, row) once the orientation has turned it.
+func uprightToStored(orientation, column, row, storedWidth, storedHeight int) (int, int) {
+	switch orientation {
+	case 2:
+		return storedWidth - 1 - column, row
+	case 3:
+		return storedWidth - 1 - column, storedHeight - 1 - row
+	case 4:
+		return column, storedHeight - 1 - row
+	case 5:
+		return row, column
+	case 6:
+		return row, storedHeight - 1 - column
+	case 7:
+		return storedWidth - 1 - row, storedHeight - 1 - column
+	case 8:
+		return storedWidth - 1 - row, column
 	}
-	return turned
+	return column, row
+}
+
+// storedToUpright is the place in the turned picture of a stored pixel, for a
+// stored picture of the given size.
+func storedToUpright(orientation, column, row, storedWidth, storedHeight int) (int, int) {
+	switch orientation {
+	case 2:
+		return storedWidth - 1 - column, row
+	case 3:
+		return storedWidth - 1 - column, storedHeight - 1 - row
+	case 4:
+		return column, storedHeight - 1 - row
+	case 5:
+		return row, column
+	case 6:
+		return storedHeight - 1 - row, column
+	case 7:
+		return storedHeight - 1 - row, storedWidth - 1 - column
+	case 8:
+		return row, storedWidth - 1 - column
+	}
+	return column, row
 }
 
 // Scale returns source with its longest side no longer than
@@ -98,18 +142,38 @@ func orient(source image.Image, orientation int) image.Image {
 // covers). The standard library has no downscaler that averages, and picking
 // every n-th pixel makes text and fine patterns shimmer. A picture that is
 // already small enough comes back unchanged: nothing is ever enlarged.
+//
+// A picture from Decode that is turned by its EXIF orientation is turned while
+// it is sampled: each output pixel is written where the turn puts it, so the
+// full-size picture is never copied, flipped or transposed. Such a picture is
+// always scaled, to the size it has if it is small enough, because the result
+// has to be a picture with the turn applied.
 func Scale(source image.Image, maximumLongSidePixels int) image.Image {
+	orientation := 0
+	view, isTurned := source.(*uprightView)
+	if isTurned {
+		source, orientation = view.stored, view.orientation
+	}
 	bounds := source.Bounds()
 	sourceWidth, sourceHeight := bounds.Dx(), bounds.Dy()
 	longSidePixels := max(sourceWidth, sourceHeight)
-	if maximumLongSidePixels < 1 || longSidePixels <= maximumLongSidePixels {
+	if maximumLongSidePixels < 1 || (longSidePixels <= maximumLongSidePixels && !isTurned) {
+		if isTurned {
+			return view
+		}
 		return source
 	}
-	ratio := float64(maximumLongSidePixels) / float64(longSidePixels)
+	ratio := math.Min(float64(maximumLongSidePixels)/float64(longSidePixels), 1)
 	outputWidth := max(int(math.Round(float64(sourceWidth)*ratio)), 1)
 	outputHeight := max(int(math.Round(float64(sourceHeight)*ratio)), 1)
 
-	output := image.NewRGBA(image.Rect(0, 0, outputWidth, outputHeight))
+	// The picture is made in the stored orientation's shape and each pixel is
+	// put where the turn sends it; a turn on its side swaps the two sides.
+	turnedWidth, turnedHeight := outputWidth, outputHeight
+	if orientation >= 5 {
+		turnedWidth, turnedHeight = outputHeight, outputWidth
+	}
+	output := image.NewRGBA(image.Rect(0, 0, turnedWidth, turnedHeight))
 	columnSpans := makeSpans(sourceWidth, outputWidth)
 	rowSpans := makeSpans(sourceHeight, outputHeight)
 	loadRow := rowLoader(source)
@@ -117,12 +181,24 @@ func Scale(source image.Image, maximumLongSidePixels int) image.Image {
 	// Rows are independent, so they are shared out in bands, one per core.
 	workerCount := min(runtime.NumCPU(), outputHeight, 8)
 	var waitGroup sync.WaitGroup
+	var panicMutex sync.Mutex
+	var panicked any
 	for worker := 0; worker < workerCount; worker++ {
 		firstRow := outputHeight * worker / workerCount
 		endRow := outputHeight * (worker + 1) / workerCount
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
+			// A panic here would take the whole process down, since nothing
+			// above this goroutine can catch it. It is handed to the caller,
+			// which can.
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					panicMutex.Lock()
+					panicked = recovered
+					panicMutex.Unlock()
+				}
+			}()
 			// Each output row is first the weighted sum of the source rows it
 			// covers, then that row is shrunk across.
 			sourceRowValues := make([]float32, sourceWidth*4)
@@ -136,7 +212,6 @@ func Scale(source image.Image, maximumLongSidePixels int) image.Image {
 						accumulated[index] += value * weight
 					}
 				}
-				destination := output.Pix[outputRow*output.Stride : outputRow*output.Stride+outputWidth*4]
 				for outputColumn := 0; outputColumn < outputWidth; outputColumn++ {
 					columnSpan := columnSpans[outputColumn]
 					var red, green, blue, alpha float32
@@ -147,16 +222,20 @@ func Scale(source image.Image, maximumLongSidePixels int) image.Image {
 						blue += accumulated[base+2] * weight
 						alpha += accumulated[base+3] * weight
 					}
-					base := outputColumn * 4
-					destination[base] = roundByte(red)
-					destination[base+1] = roundByte(green)
-					destination[base+2] = roundByte(blue)
-					destination[base+3] = roundByte(alpha)
+					turnedColumn, turnedRow := storedToUpright(orientation, outputColumn, outputRow, outputWidth, outputHeight)
+					destination := output.Pix[turnedRow*output.Stride+turnedColumn*4:][:4]
+					destination[0] = roundByte(red)
+					destination[1] = roundByte(green)
+					destination[2] = roundByte(blue)
+					destination[3] = roundByte(alpha)
 				}
 			}
 		}()
 	}
 	waitGroup.Wait()
+	if panicked != nil {
+		panic(panicked)
+	}
 	return output
 }
 

@@ -155,14 +155,12 @@ func proposedAlbumTitle(placeNames []string, first, last *models.Photo) string {
 	return withCountry(cities[0] + ", " + cities[1] + " and more")
 }
 
-// localTime is when a photo was taken on the clock of the place it was taken,
-// where the file said which zone that was, and on the camera's own clock
-// otherwise, which is stored as if it were UTC.
+// localTime is when a photo was taken on the clock where it was taken: the
+// rule of every place that writes a photo's date, which is the photo's own
+// offset (models.Photo.TakenAtOnClock). Processing gives every photo with a
+// date an offset.
 func localTime(photo *models.Photo) time.Time {
-	if photo.TakenAtOffsetMinutes != nil {
-		return photo.TakenAt.In(time.FixedZone("", *photo.TakenAtOffsetMinutes*60))
-	}
-	return photo.TakenAt.UTC()
+	return *photo.TakenAtOnClock()
 }
 
 // dateRangeInWords writes two days as "July 12 to 14, 2025", saying only what

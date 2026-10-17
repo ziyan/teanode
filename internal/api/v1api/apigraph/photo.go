@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
@@ -45,6 +46,12 @@ type PhotoMutation interface {
 	RestorePhotos(context.Context, PhotoIDsArguments) (int, error)
 	DeletePhotos(context.Context, PhotoIDsArguments) (int, error)
 	EmptyPhotoTrash(context.Context) (int, error)
+
+	// RetryPhotoProcessing puts photos whose previews failed, or that are
+	// ready and whose previews should be made again, back to waiting with a
+	// fresh count of attempts, and says how many it moved. Photos that are
+	// waiting already are left alone.
+	RetryPhotoProcessing(context.Context, PhotoIDsArguments) (int, error)
 	SavePhotoFromAttachment(context.Context, SavePhotoFromAttachmentArguments) (*models.Photo, error)
 
 	// DescribePhoto asks the person's assistant to look at the picture and
@@ -130,9 +137,13 @@ type FindPhotosArguments struct {
 
 // UpdatePhotoArguments corrects a photo. A field left out is kept.
 type UpdatePhotoArguments struct {
-	PhotoID    string     `json:"photoId"`
-	IsFavorite *bool      `json:"isFavorite"`
-	TakenAt    *time.Time `json:"takenAt"`
+	PhotoID    string `json:"photoId"`
+	IsFavorite *bool  `json:"isFavorite"`
+
+	// TakenAt is the new date. It is an RFC 3339 time, and its offset is the
+	// offset the photo is shown at: send the offset of the place the photo was
+	// taken at, such as +09:00, and not Z unless that place is on UTC.
+	TakenAt *time.Time `json:"takenAt"`
 }
 
 // SavePhotoFromAttachmentArguments names a file of a conversation to keep.
@@ -299,16 +310,77 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 // photoSearchMeaning is the words of a search as a vector, for finding
 // described photos by what they mean. Nil, and the search by words alone,
 // when the person has no assistant on or the server no embedding model.
+//
+// A page of a search asks for the listing and the count together, with the
+// same words, so what the model answered is kept for a few seconds and the
+// second does not call it again.
 func (self *graph) photoSearchMeaning(ctx context.Context, userId, searchText string) *db.PhotoSearchMeaning {
 	worker := self.agentWorker()
 	if worker == nil || strings.TrimSpace(searchText) == "" {
 		return nil
 	}
-	found, err := self.transaction(ctx).GetAgentByUser(userId)
-	if err != nil || !found.Active() {
-		return nil
+	return self.photoSearchMeanings.read(userId, strings.TrimSpace(searchText), func() *db.PhotoSearchMeaning {
+		found, err := self.transaction(ctx).GetAgentByUser(userId)
+		if err != nil || !found.Active() {
+			return nil
+		}
+		return worker.EmbedPhotoSearch(ctx, found, searchText)
+	})
+}
+
+// photoSearchMeaningLifetime is how long the reading of a search's words is
+// kept, and photoSearchMeaningLimit how many are kept at once.
+const (
+	photoSearchMeaningLifetime = 10 * time.Second
+	photoSearchMeaningLimit    = 256
+)
+
+// photoSearchMeaningCache keeps the readings of the words of recent searches,
+// by whose search it was and the words. An answer of nothing is kept too: a
+// model that did not answer is not asked again for each of the requests of one
+// page.
+type photoSearchMeaningCache struct {
+	mutex   sync.Mutex
+	entries map[string]photoSearchMeaningEntry
+}
+
+type photoSearchMeaningEntry struct {
+	meaning   *db.PhotoSearchMeaning
+	expiresAt time.Time
+}
+
+// read gives the kept reading of the words, or makes one with embed and keeps
+// it. Two requests that ask at the same moment may both make one; the cost of
+// that is the cost of not having the cache.
+func (self *photoSearchMeaningCache) read(userId, searchText string, embed func() *db.PhotoSearchMeaning) *db.PhotoSearchMeaning {
+	key := userId + "\x00" + searchText
+	now := time.Now()
+	self.mutex.Lock()
+	if entry, isKept := self.entries[key]; isKept && now.Before(entry.expiresAt) {
+		self.mutex.Unlock()
+		return entry.meaning
 	}
-	return worker.EmbedPhotoSearch(ctx, found, searchText)
+	self.mutex.Unlock()
+
+	meaning := embed()
+
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if self.entries == nil {
+		self.entries = map[string]photoSearchMeaningEntry{}
+	}
+	if len(self.entries) >= photoSearchMeaningLimit {
+		for oldKey, entry := range self.entries {
+			if !now.Before(entry.expiresAt) {
+				delete(self.entries, oldKey)
+			}
+		}
+		if len(self.entries) >= photoSearchMeaningLimit {
+			clear(self.entries)
+		}
+	}
+	self.entries[key] = photoSearchMeaningEntry{meaning: meaning, expiresAt: now.Add(photoSearchMeaningLifetime)}
+	return meaning
 }
 
 // CountPhotos is how many photos the filters of a listing keep. The paging
@@ -504,7 +576,15 @@ func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArgumen
 	if arguments.IsFavorite == nil && arguments.TakenAt == nil {
 		return nil, fmt.Errorf("%w: say what to change", api.ErrInvalidArguments)
 	}
-	updated, err := self.transaction(ctx).UpdatePhoto(principal.User.ID, arguments.PhotoID, &db.PhotoUpdate{IsFavorite: arguments.IsFavorite, TakenAt: arguments.TakenAt})
+	update := &db.PhotoUpdate{IsFavorite: arguments.IsFavorite, TakenAt: arguments.TakenAt}
+	if arguments.TakenAt != nil {
+		// The date comes with the offset it was written in, and replaces the
+		// offset of the date it corrects.
+		_, offsetSeconds := arguments.TakenAt.Zone()
+		offsetMinutes := offsetSeconds / 60
+		update.TakenAtOffsetMinutes = &offsetMinutes
+	}
+	updated, err := self.transaction(ctx).UpdatePhoto(principal.User.ID, arguments.PhotoID, update)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -556,6 +636,15 @@ func (self *graph) EmptyPhotoTrash(ctx context.Context) (int, error) {
 	return deletedCount, translateError(err)
 }
 
+func (self *graph) RetryPhotoProcessing(ctx context.Context, arguments PhotoIDsArguments) (int, error) {
+	principal, err := self.requirePhotosPerson(ctx)
+	if err != nil {
+		return 0, err
+	}
+	retriedCount, err := self.transaction(ctx).RetryPhotoProcessing(principal.User.ID, arguments.PhotoIDs)
+	return retriedCount, translateError(err)
+}
+
 func (self *graph) DescribePhoto(ctx context.Context, arguments DescribePhotoArguments) (*models.Photo, error) {
 	principal, err := self.requirePhotosPerson(ctx)
 	if err != nil {
@@ -597,27 +686,38 @@ func (self *graph) DescribePhoto(ctx context.Context, arguments DescribePhotoArg
 // SavePhotoFromAttachment keeps a file of the person's conversation with
 // their agent as a photo. The photo is named by the digest of the file, so
 // saving the same file again finds the photo that is already there.
+//
+// Reading the file and storing it takes as long as the file is big, so this
+// mutation does not run inside the request's transaction (see
+// isTransactionFreeMutation): it reads the attachment's row in a short
+// transaction of its own, leaves it, and then hashes and stores the file.
 func (self *graph) SavePhotoFromAttachment(ctx context.Context, arguments SavePhotoFromAttachmentArguments) (*models.Photo, error) {
-	principal, err := self.requirePhotosPerson(ctx)
-	if err != nil {
+	var principal *api.Principal
+	var attachment *models.AgentAttachment
+	if err := self.inShortTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		if principal, err = self.requirePhotosPerson(ctx); err != nil {
+			return err
+		}
+		transaction := self.transaction(ctx)
+		if attachment, err = transaction.GetAgentAttachment(arguments.AgentAttachmentID); err != nil {
+			return translateError(err)
+		}
+		if attachment == nil {
+			return api.ErrNotFound
+		}
+		assistant, err := transaction.GetAgent(attachment.AgentID)
+		if err != nil {
+			return translateError(err)
+		}
+		// A file of somebody else's conversation is not found, rather than
+		// refused, because whose it is is not the caller's business.
+		if assistant == nil || assistant.UserID != principal.User.ID {
+			return api.ErrNotFound
+		}
+		return nil
+	}); err != nil {
 		return nil, err
-	}
-	transaction := self.transaction(ctx)
-	attachment, err := transaction.GetAgentAttachment(arguments.AgentAttachmentID)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if attachment == nil {
-		return nil, api.ErrNotFound
-	}
-	assistant, err := transaction.GetAgent(attachment.AgentID)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	// A file of somebody else's conversation is not found, rather than
-	// refused, because whose it is is not the caller's business.
-	if assistant == nil || assistant.UserID != principal.User.ID {
-		return nil, api.ErrNotFound
 	}
 	store, err := self.photoStore()
 	if err != nil {

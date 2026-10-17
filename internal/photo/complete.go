@@ -29,6 +29,12 @@ var ErrNotAPhoto = errors.New("photo: the file is not a picture or a video of a 
 // ErrDigestMismatch is a file whose bytes are not the ones the uploader said.
 var ErrDigestMismatch = errors.New("photo: the uploaded bytes do not match the declared SHA-256")
 
+// ErrPartDamaged is an upload one of whose stored parts no longer matches the
+// receipt it was given when it arrived: it was overwritten by a second request
+// or damaged in the store. The upload cannot be completed, and ends, so that
+// the client starts it again instead of being told to retry for ever.
+var ErrPartDamaged = errors.New("photo: a stored part of the upload does not match its receipt; start the upload again")
+
 // ErrEmptyFile is an upload that ended with no bytes.
 var ErrEmptyFile = errors.New("photo: the file is empty")
 
@@ -169,13 +175,20 @@ func (self *Store) completeUpload(ctx context.Context, userId string, upload *mo
 	var firstBytes []byte
 	for partIndex, part := range parts {
 		partDigest, err := self.readSegment(ctx, segments[partIndex], wholeDigest, &firstBytes)
+		if errors.Is(err, storage.ErrNotFound) {
+			// A part that has a receipt and no bytes is as unusable as one
+			// that changed.
+			log.Warningf("part %d of upload %s is not in the store", partIndex, upload.ID)
+			return nil, ErrPartDamaged
+		}
 		if err != nil {
 			return nil, err
 		}
 		// A part overwritten by a second request, or damaged in the store,
 		// no longer matches the receipt the first request was given.
 		if partDigest != part.PartSHA256 {
-			return nil, fmt.Errorf("photo: part %d of upload %s failed integrity verification", partIndex, upload.ID)
+			log.Warningf("part %d of upload %s no longer matches its receipt", partIndex, upload.ID)
+			return nil, ErrPartDamaged
 		}
 	}
 	blobSha256 := hex.EncodeToString(wholeDigest.Sum(nil))
@@ -285,6 +298,23 @@ func settleContentType(declared, filename string, firstBytes []byte) (string, er
 	return contentType, nil
 }
 
+// checkDeclaredContentType refuses a type the request names that is not on the
+// list of kinds that are kept. A request that names none, or names what a form
+// says by default, is not judged here: its file name and its bytes decide.
+func checkDeclaredContentType(declared string) error {
+	contentType := strings.ToLower(declared)
+	if contentType == "" || contentType == "application/octet-stream" || contentType == "application/x-www-form-urlencoded" {
+		return nil
+	}
+	if spelling, isRespelled := contentTypeSpellings[contentType]; isRespelled {
+		contentType = spelling
+	}
+	if !allowedContentTypes[contentType] {
+		return fmt.Errorf("%w: files of type %s are not kept", ErrNotAPhoto, contentType)
+	}
+	return nil
+}
+
 // keepFile records a file whose bytes are readable from the source, under
 // the digest of those bytes, as one file of the uploader's photo. Several
 // people, or several photos, with the same bytes share one blob.
@@ -308,8 +338,24 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 		}); err != nil {
 			return nil, err
 		}
+		hasStoredBytes := false
 		if existing == nil || existing.DeletingAt != nil {
 			if err := self.files.PutFileStream(ctx, models.PhotoBlobFileID(blobSha256), source, sizeBytes); err != nil {
+				return nil, err
+			}
+			hasStoredBytes = true
+			// The blob's row is written at once, in a transaction of its own,
+			// before the one that records the file, which can fail: quota, the
+			// database, a cancelled request. Bytes with no row are bytes
+			// nothing can find to delete. With the row they are an
+			// unreferenced blob, which cleanup deletes once it is an hour old
+			// if no file has named it by then. The row goes after the bytes
+			// and not before, so that a row is never there with bytes that are
+			// not: a file arriving with the same digest trusts a row it finds.
+			if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+				_, err := transaction.InsertPhotoBlobIfAbsent(&models.PhotoBlob{BlobSHA256: blobSha256, BlobSizeBytes: sizeBytes})
+				return err
+			}); err != nil {
 				return nil, err
 			}
 		}
@@ -318,10 +364,10 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 			if err != nil {
 				return err
 			}
-			// The row that was trusted is gone and this made a new one:
-			// cleanup deleted the bytes in between, and nothing stored them
-			// again.
-			if isInserted && existing != nil {
+			// The row that was trusted, or the one made when the bytes were
+			// stored, is gone and this made a new one: cleanup deleted the
+			// bytes in between, and nothing stored them again.
+			if isInserted && (existing != nil || hasStoredBytes) {
 				return errBlobGone
 			}
 			photo, _, err = transaction.CreatePhoto(newPhoto(userId, headers))
