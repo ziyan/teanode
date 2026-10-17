@@ -146,6 +146,12 @@ public struct HerdrTurn: Decodable, Hashable, Sendable {
     public let herdrTurnRole: String
     public let turnText: String
     public let turnAt: String?
+    /// A tool call's whole input and what the tool answered; empty when
+    /// the read did not ask for them.
+    public let toolInputText: String?
+    public let toolResultText: String?
+
+    public var hasToolDetail: Bool { !(toolInputText ?? "").isEmpty || !(toolResultText ?? "").isEmpty }
 }
 
 /// HerdrRead is a session's last turns.
@@ -173,9 +179,9 @@ extension Documents {
         }
         """
     public static let readHerdrSession = """
-        query ($computer: String, $paneId: String!, $turnCount: Int) {
-          ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
-            herdrSession { \(herdrSessionFields) } turns { herdrTurnRole turnText turnAt } isTruncated
+        query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
+          ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
+            herdrSession { \(herdrSessionFields) } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
           }
         }
         """
@@ -227,7 +233,10 @@ extension Connection {
         struct Answer: Decodable, Sendable { let ReadAgentHerdrSession: HerdrRead }
         return try await execute(
             Documents.readHerdrSession,
-            variables: ["computer": .string(computer), "paneId": .string(paneId), "turnCount": .number(Double(turnCount))],
+            variables: [
+                "computer": .string(computer), "paneId": .string(paneId), "turnCount": .number(Double(turnCount)),
+                "shouldIncludeToolDetail": .bool(true),
+            ],
             as: Answer.self
         ).ReadAgentHerdrSession
     }

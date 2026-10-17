@@ -876,6 +876,59 @@ struct CodingTabChip: View {
 /// CodingTurnView is one thing said or done in a session: the person's words
 /// on the right in a bubble, the agent's on the left, a tool as one quiet
 /// line.
+/// CodingToolTurnView is a tool call: one line, which opens, when the read
+/// gave them, to the tool's whole input and what it answered.
+struct CodingToolTurnView: View {
+    let turn: HerdrTurn
+    @State private var isOpen = false
+
+    var body: some View {
+        if turn.hasToolDetail {
+            // The system's own disclosure, which says open or closed to
+            // VoiceOver as it does everywhere else.
+            DisclosureGroup(isExpanded: $isOpen) {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let input = turn.toolInputText, !input.isEmpty {
+                        detail(title: String(localized: "Input"), text: input)
+                    }
+                    if let result = turn.toolResultText, !result.isEmpty {
+                        detail(title: String(localized: "Result"), text: result)
+                    }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 10))
+                .padding(.top, 6)
+            } label: {
+                line
+            }
+            .tint(.secondary)
+            .padding(.horizontal, 4)
+        } else {
+            line.padding(.horizontal, 4)
+        }
+    }
+
+    private var line: some View {
+        Text(verbatim: turn.turnText)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(isOpen ? nil : 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func detail(title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(verbatim: text)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+        }
+    }
+}
+
 struct CodingTurnView: View {
     let turn: HerdrTurn
 
@@ -891,12 +944,7 @@ struct CodingTurnView: View {
                     .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
             }
         case "tool":
-            Text(verbatim: turn.turnText)
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
+            CodingToolTurnView(turn: turn)
         default:
             AgentBubble {
                 Text(Self.markdown(turn.turnText))
