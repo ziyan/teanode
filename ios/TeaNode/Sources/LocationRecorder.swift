@@ -444,8 +444,10 @@ final class LocationRecorder {
 
     // MARK: Following live
 
+    // Never without the manager: the screenshots run with no manager and must
+    // not make Core Location ask the person anything.
     private var isLiveWanted: Bool {
-        isAppActive && isAuthorizedToLocate && AppModel.shared.account != nil && (isRecordingOn || viewerCount > 0)
+        manager != nil && isAppActive && isAuthorizedToLocate && AppModel.shared.account != nil && (isRecordingOn || viewerCount > 0)
     }
 
     private func startLiveUpdates() {
