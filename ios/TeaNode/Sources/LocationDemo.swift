@@ -52,6 +52,70 @@
                 radiusMeters: 60, osmCategory: "amenity=cafe", visitCount: 5, lastVisitDaysAgo: 0),
         ]
 
+        // Two invented people sharing with the person: the first at "Where I
+        // am and where I have been", the second at "Where I am now".
+        static let historyPersonId = "sam"
+        static let currentPersonId = "alex"
+
+        /// One of their places, which belongs to them and not to the person.
+        static func sharedPlaceJSON(userId: String, id: String, name: String, label: String, latitude: Double, longitude: Double) -> String {
+            #"""
+            {"id":"\#(id)","userId":"\#(userId)","placeName":"\#(name)","isNamedByPerson":true,"placeLabel":"\#(label)","latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"radiusMeters":100,"osmType":"way","osmId":2001,"osmName":"\#(name)","osmCategory":"","addressText":"","visitCount":12,"lastVisitAt":"\#(CalendarDates.text(Date()))","namingErrorMessage":"","createdAt":"2026-09-01T08:00:00Z","updatedAt":"2026-09-01T08:00:00Z"}
+            """#
+        }
+
+        static var historyPersonSchool: String {
+            sharedPlaceJSON(userId: historyPersonId, id: "place-sam-school", name: "Hillside School", label: "school", latitude: 10.5080, longitude: 20.4950)
+        }
+
+        static var historyPersonGym: String {
+            sharedPlaceJSON(userId: historyPersonId, id: "place-sam-gym", name: "Harbor Gym", label: "gym", latitude: 10.4960, longitude: 20.5120)
+        }
+
+        static func sharedVisitJSON(id: String, placeJSON: String, latitude: Double, longitude: Double, arrivedAt: Date, departedAt: Date?) -> String {
+            let departed = departedAt.map { #""\#(CalendarDates.text($0))""# } ?? "null"
+            let duration = departedAt.map { String(Int($0.timeIntervalSince(arrivedAt))) } ?? "null"
+            return #"""
+                {"id":"\#(id)","arrivedAt":"\#(CalendarDates.text(arrivedAt))","departedAt":\#(departed),"durationSeconds":\#(duration),"latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"accuracyMeters":30,"visitSource":"visit","place":\#(placeJSON)}
+                """#
+        }
+
+        /// The first person's visits today, the one at the school still in progress.
+        static var historyPersonVisits: [String] {
+            let now = Date()
+            return [
+                sharedVisitJSON(
+                    id: "visit-sam-1", placeJSON: historyPersonSchool, latitude: 10.5080, longitude: 20.4950,
+                    arrivedAt: now.addingTimeInterval(-50 * 60), departedAt: nil),
+                sharedVisitJSON(
+                    id: "visit-sam-2", placeJSON: historyPersonGym, latitude: 10.4960, longitude: 20.5120,
+                    arrivedAt: now.addingTimeInterval(-4 * 3600), departedAt: now.addingTimeInterval(-3 * 3600)),
+            ]
+        }
+
+        /// A person as `GetLocation` and `ListSharedLocations` give them.
+        static func sharedPersonJSON(userId: String) -> String {
+            let person = DemoServer.demoPerson(userId)
+            let isHistory = userId == historyPersonId
+            let latitude = isHistory ? 10.5080 : 10.5110
+            let longitude = isHistory ? 20.4950 : 20.5210
+            let measuredAt = Date().addingTimeInterval(isHistory ? -60 : -12 * 60)
+            let point =
+                #"{"latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"accuracyMeters":12,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
+            let open = isHistory ? historyPersonVisits[0] : "null"
+            return #"""
+                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"locationShareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open)}
+                """#
+        }
+
+        /// The person's own shares: the family circle at the fuller level, and
+        /// one person at the lesser.
+        static var sharesJSON: String {
+            #"""
+            [{"id":"share-1","granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"history","createdAt":"2026-09-02T08:00:00Z"},{"id":"share-2","granteeUserId":"alex","granteeUsername":"alex","granteeName":"Alex","granteeCircleId":null,"granteeCircleName":"","shareLevel":"current","createdAt":"2026-09-03T08:00:00Z"}]
+            """#
+        }
+
         static func place(_ id: String) -> Place { places.first { $0.id == id } ?? places[0] }
 
         struct Visit {
@@ -110,6 +174,27 @@
         /// What the Location screens ask, or nil for any other question.
         static func locationAnswer(query: String, body: Data?) -> String? {
             let variables = requestVariables(body)
+            // `-TeaNodeScreen location-setup`: the server has no position yet.
+            let isSetupScreen = screen == "location-setup"
+            if query.contains("GetLocation("), let userId = variables["userId"] as? String {
+                return #"{"data":{"GetLocation":\#(LocationDemo.sharedPersonJSON(userId: userId))}}"#
+            }
+            if query.contains("ListSharedLocations") {
+                let people = [LocationDemo.historyPersonId, LocationDemo.currentPersonId].map(LocationDemo.sharedPersonJSON)
+                return #"{"data":{"ListSharedLocations":[\#(people.joined(separator: ","))]}}"#
+            }
+            if query.contains("ListLocationShares") {
+                return #"{"data":{"ListLocationShares":\#(isSetupScreen ? "[]" : LocationDemo.sharesJSON)}}"#
+            }
+            if query.contains("ShareLocation(") {
+                return
+                    #"{"data":{"ShareLocation":{"id":"share-3","granteeUserId":null,"granteeUsername":"","granteeName":"","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"history","createdAt":"2026-09-04T08:00:00Z"}}}"#
+            }
+            if query.contains("UnshareLocation(") { return #"{"data":{"UnshareLocation":true}}"# }
+            if query.contains("GetLocation("), isSetupScreen {
+                return
+                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"locationShareLevel":"owner","latestPoint":null,"openVisit":null}}}"#
+            }
             if query.contains("GetLocation(") {
                 let open = LocationDemo.visits[0]
                 let park = LocationDemo.place(LocationDemo.parkPlaceId)
@@ -117,6 +202,22 @@
                     #"{"latitudeDegrees":\#(park.latitudeDegrees),"longitudeDegrees":\#(park.longitudeDegrees),"accuracyMeters":10,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(Date()))","locationSource":"phone"}"#
                 return
                     #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"locationShareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open.json)}}}"#
+            }
+            if query.contains("ListLocationVisits("), variables["userId"] as? String == LocationDemo.historyPersonId {
+                var visits = LocationDemo.historyPersonVisits
+                // Only today has visits; an earlier day has none.
+                if let text = variables["from"] as? String, let from = ServerTime.date(text), from < Calendar.current.startOfDay(for: Date()) {
+                    visits = []
+                }
+                return #"{"data":{"ListLocationVisits":{"placeVisits":[\#(visits.joined(separator: ","))],"nextOffset":null}}}"#
+            }
+            if query.contains("ListPlaces("), variables["userId"] as? String == LocationDemo.historyPersonId {
+                return
+                    #"{"data":{"ListPlaces":{"places":[\#(LocationDemo.historyPersonSchool),\#(LocationDemo.historyPersonGym)],"nextOffset":null}}}"#
+            }
+            if query.contains("ListPlaces("), query.contains("placeLabel"), variables["placeLabel"] as? String == "home" {
+                let homes = isSetupScreen ? [] : [LocationDemo.place(LocationDemo.homePlaceId).json]
+                return #"{"data":{"ListPlaces":{"places":[\#(homes.joined(separator: ","))],"nextOffset":null}}}"#
             }
             if query.contains("ListLocationVisits(") {
                 var visits = LocationDemo.visits
@@ -130,7 +231,8 @@
                 return #"{"data":{"ListLocationVisits":{"placeVisits":[\#(visits.map(\.json).joined(separator: ","))],"nextOffset":null}}}"#
             }
             if query.contains("ListPlaces(") {
-                return #"{"data":{"ListPlaces":{"places":[\#(LocationDemo.places.map(\.json).joined(separator: ","))],"nextOffset":null}}}"#
+                let places = isSetupScreen ? LocationDemo.places.filter { $0.id != LocationDemo.homePlaceId } : LocationDemo.places
+                return #"{"data":{"ListPlaces":{"places":[\#(places.map(\.json).joined(separator: ","))],"nextOffset":null}}}"#
             }
             if query.contains("ListNearbyPlaces(") {
                 return

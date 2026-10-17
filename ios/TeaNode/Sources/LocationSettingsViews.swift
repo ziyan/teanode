@@ -81,7 +81,7 @@ struct LocationSettingsView: View {
         return nil
     }
 
-    private static func openSettings() {
+    static func openSettings() {
         guard let address = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(address)
     }

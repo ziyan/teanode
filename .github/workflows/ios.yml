@@ -279,6 +279,12 @@ jobs:
           shoot location-place-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
           shoot location-place-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
           shoot location-settings-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings
+          # Sharing, a person chosen on the map, and setting Location up.
+          for location_screen in location-sharing location-person location-setup; do
+            shoot "$location_screen-light" light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-dark" dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
@@ -373,7 +379,7 @@ jobs:
           # each screen in light, dark and the largest text. Circles, a
           # circle's page as its admin, the picture on the profile, and the
           # sheet and the card of a shared skill: Settings pushes them.
-          for circles_screen in circles circle-detail settings-picture skill-share-sheet skill-share-call; do
+          for circles_screen in circles circle-detail circle-join-offer settings-picture skill-share-sheet skill-share-call; do
             shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"

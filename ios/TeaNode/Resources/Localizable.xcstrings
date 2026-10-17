@@ -59007,6 +59007,598 @@
           }
         }
       }
+    },
+    "Sharing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享"
+          }
+        }
+      }
+    },
+    "Where I am now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我现在的位置"
+          }
+        }
+      }
+    },
+    "Where I am and where I have been": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所と訪れた場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我现在的位置和去过的地方"
+          }
+        }
+      }
+    },
+    "They see where you are now, and nothing before it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所だけが見えます。それ以前の場所は見えません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方能看到你现在的位置,看不到更早的记录。"
+          }
+        }
+      }
+    },
+    "They see where you are now, and the places you have been and when.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所と、訪れた場所とその時刻が見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方能看到你现在的位置,以及去过的地方和时间。"
+          }
+        }
+      }
+    },
+    "%@ · at %@ since %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %3$@から%2$@にいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %3$@起在%2$@"
+          }
+        }
+      }
+    },
+    "%@ · at %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@にいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · 在%2$@"
+          }
+        }
+      }
+    },
+    "%@ · no position yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · まだ位置がありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 暂无位置"
+          }
+        }
+      }
+    },
+    "Show fewer people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示する人を減らす"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起"
+          }
+        }
+      }
+    },
+    "Show all %lld people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 人すべてを表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示全部 %lld 人"
+          }
+        }
+      }
+    },
+    "Shows your own location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の位置を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示你自己的位置"
+          }
+        }
+      }
+    },
+    "Shows them on the map": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図にその人を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在地图上显示对方"
+          }
+        }
+      }
+    },
+    "Back to my location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の位置に戻る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到我的位置"
+          }
+        }
+      }
+    },
+    "%@ shares where they are now. Their visits and places are not shared with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんは今いる場所だけを共有しています。訪れた場所は共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@只与你共享现在的位置,没有共享去过的地方。"
+          }
+        }
+      }
+    },
+    "Your location is not shared with anybody yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの位置はまだ誰とも共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的位置还没有与任何人共享。"
+          }
+        }
+      }
+    },
+    "%@ will no longer see where you are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はあなたの居場所を見られなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将无法再看到你的位置。"
+          }
+        }
+      }
+    },
+    "Touch a row to change how much they see, or to stop sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行をタップすると、見える範囲の変更や共有の停止ができます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按一行可更改对方能看到的范围,或停止共享。"
+          }
+        }
+      }
+    },
+    "Choose a person or a circle, and whether they see where you are now or the places you have been too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有する相手(人またはサークル)と、今いる場所だけか訪れた場所も見せるかを選びます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人或一个圈子,以及对方只能看到你现在的位置,还是也能看到去过的地方。"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anybody yet. Make or join a circle to share where you are.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。居場所を共有するには、サークルを作るか参加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人共处一个圈子。创建或加入圈子后,才能共享你的位置。"
+          }
+        }
+      }
+    },
+    "Share where I am": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の居場所を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享我的位置"
+          }
+        }
+      }
+    },
+    "Changed what %@ can see": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に見える範囲を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更改%@能看到的范围"
+          }
+        }
+      }
+    },
+    "Location is set up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報の設定が完了しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置已设置完成"
+          }
+        }
+      }
+    },
+    "This place is now labeled Home": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所に「自宅」のラベルを付けました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将此处标为“家”"
+          }
+        }
+      }
+    },
+    "First while you use the app, then Always, so your visits are recorded when it is closed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まずアプリの使用中のみ、次に「常に」を許可すると、アプリを閉じていても訪問が記録されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先允许使用期间,再允许始终,这样应用关闭时也能记录你的到访。"
+          }
+        }
+      }
+    },
+    "This is home": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここが自宅"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里是家"
+          }
+        }
+      }
+    },
+    "Labels the place you are at now as Home.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所に「自宅」のラベルを付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把你现在所在的地方标为“家”。"
+          }
+        }
+      }
+    },
+    "Allow location first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に位置情報を許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先允许位置。"
+          }
+        }
+      }
+    },
+    "Share with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@と共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@共享"
+          }
+        }
+      }
+    },
+    "Only where I am now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所だけ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只共享我现在的位置"
+          }
+        }
+      }
+    },
+    "Set up Location": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報を設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置位置"
+          }
+        }
+      }
+    },
+    "Not now hides this. You can still allow location in the settings, label a place under Places, and share under Sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「今はしない」を押すとこの表示は消えます。位置情報の許可は設定で、場所のラベルは「場所」で、共有は「共有」でいつでもできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点“暂不”会隐藏这里。你仍可在设置中允许位置,在“地点”中给地点加标签,在“共享”中共享位置。"
+          }
+        }
+      }
+    },
+    "Your calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのカレンダー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的日历"
+          }
+        }
+      }
+    },
+    "Where you are": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの居場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的位置"
+          }
+        }
+      }
+    },
+    "Everyone in %@ could see it. You can change this under Sharing in Location.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のメンバー全員に見えます。変更は「位置情報」の「共有」でできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@中的所有人都能看到。你可以在“位置”的“共享”中更改。"
+          }
+        }
+      }
+    },
+    "Share with %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@と共有しますか?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要与%@共享吗?"
+          }
+        }
+      }
+    },
+    "Share where you are with %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "居場所を%@と共有しますか?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要把你的位置共享给%@吗?"
+          }
+        }
+      }
+    },
+    "People who share their location arriving at and leaving places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置を共有している人が場所に着いたときと出たとき"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享位置的人到达和离开某地"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

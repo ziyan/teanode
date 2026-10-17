@@ -29,9 +29,57 @@ final class LocationModel {
     var problemText: String?
     var doneText: String?
 
+    // MARK: People sharing, the person's own shares and the setup
+
+    /// The people sharing their location with the person, as the server last
+    /// said.
+    private(set) var people: [PersonLocation] = []
+    /// The shares of the person's own location.
+    private(set) var shares: [LocationShare] = []
+    /// The circles the person is in, for the setup and the share sheet.
+    private(set) var circles: [PeopleCircle] = []
+    /// The person's places labeled home, for the setup.
+    private(set) var homePlaces: [LocationPlace] = []
+    /// Whether the shares and the home places were both read, which is what
+    /// the setup is worked out from: a failed read must not end it.
+    private(set) var isSetupKnown = false
+    /// Why the shares could not be read, said on the Sharing list.
+    private(set) var sharingProblemText: String?
+    /// Whether the person said "Not now" to the setup, or finished it.
+    private(set) var isSetupDismissed: Bool
+
+    // MARK: The person selected on the map
+
+    /// Whose visits and places are shown under the map: somebody sharing, or
+    /// nobody for the person's own.
+    private(set) var selectedUserId: String?
+    /// The day of the selected person's visits shown.
+    private(set) var personDay = Calendar.current.startOfDay(for: Date())
+    private(set) var personVisits: [PlaceVisit] = []
+    private(set) var personPlaces: [LocationPlace] = []
+    private(set) var isLoadingPerson = false
+    private(set) var personProblemText: String?
+
     init(connection: Connection) {
         self.connection = connection
+        isSetupDismissed = LocationRecorder.shared.isSetupDismissed(accountKey: AppModel.shared.account?.accountKey)
     }
+
+    /// The selected person, once the server has said they share.
+    var selectedPerson: PersonLocation? { people.first { $0.userId == selectedUserId } }
+
+    /// How far setting Location up has got.
+    var setup: LocationSetup {
+        LocationSetup(isPermissionDone: LocationRecorder.shared.isAuthorizedAlways, homePlaces: homePlaces, circles: circles, shares: shares)
+    }
+
+    /// Whether the setup is shown in place of the lists.
+    var isSetupShown: Bool {
+        hasLoaded && isSetupKnown && location != nil && setup.isShown(isDismissed: isSetupDismissed, hasLatestPoint: location?.latestPoint != nil)
+    }
+
+    /// The person's own user identifier, once their location is read.
+    var ownUserId: String? { location?.userId }
 
     /// The visits grouped by day, newest first.
     var days: [LocationVisitDay] { LocationDays.group(visits) }
@@ -61,7 +109,13 @@ final class LocationModel {
         async let readLocation = attempt { try await connection.location() }
         async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
         async let readPlaces = attempt { try await connection.locationPlaces(limitCount: LocationModel.placePageSize) }
+        async let readPeople = attempt { try await connection.sharedLocations() }
+        async let readShares = attempt { try await connection.locationShares() }
+        async let readCircles = attempt { try await connection.circles() }
+        async let readHomes = attempt { try await connection.locationPlaces(placeLabel: PlaceLabel.home.rawValue, limitCount: 1) }
         let (locationResult, visitsResult, placesResult) = await (readLocation, readVisits, readPlaces)
+        let (peopleResult, sharesResult, circlesResult, homesResult) = await (readPeople, readShares, readCircles, readHomes)
+        apply(people: peopleResult, shares: sharesResult, circles: circlesResult, homes: homesResult)
         var failure: Error?
         switch locationResult {
         case .success(let read): location = read
@@ -89,6 +143,30 @@ final class LocationModel {
             }
         } else {
             loadFailedText = nil
+        }
+        finishSetupIfDone()
+        if selectedUserId != nil { await loadPerson() }
+    }
+
+    private func apply(
+        people peopleResult: Result<[PersonLocation], Error>, shares sharesResult: Result<[LocationShare], Error>,
+        circles circlesResult: Result<[PeopleCircle], Error>, homes homesResult: Result<PlacePage, Error>
+    ) {
+        if case .success(let read) = peopleResult {
+            people = read
+            // Somebody who stopped sharing is no longer selected.
+            if let selectedUserId, !read.contains(where: { $0.userId == selectedUserId }) { clearSelection() }
+        }
+        // A person with no circle permission has no circles; that is not a failure.
+        circles = (try? circlesResult.get()) ?? []
+        switch (sharesResult, homesResult) {
+        case (.success(let readShares), .success(let page)):
+            shares = readShares
+            homePlaces = page.places
+            isSetupKnown = true
+            sharingProblemText = nil
+        case (.failure(let error), _), (_, .failure(let error)):
+            sharingProblemText = error.loadProblemText
         }
     }
 
@@ -231,6 +309,266 @@ final class LocationModel {
             problemText = error.localizedDescription
             return false
         }
+    }
+
+    // MARK: Following people
+
+    /// Keeps the screen current while it is visible: reads again whoever the
+    /// server says moved, and everyone every thirty seconds in case a
+    /// message was missed. Ends when the screen goes away.
+    func follow() async {
+        async let listening: Void = listen()
+        async let polling: Void = poll()
+        _ = await (listening, polling)
+    }
+
+    private static let pollInterval = Duration.seconds(30)
+
+    private func poll() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.pollInterval)
+            if Task.isCancelled { return }
+            await refreshEveryone()
+        }
+    }
+
+    private func listen() async {
+        #if DEBUG
+            // The demo has no socket to listen to.
+            if DemoServer.isRequested { return }
+        #endif
+        var delay = Duration.seconds(1)
+        while !Task.isCancelled {
+            do {
+                for try await event in LocationFeed.events(connection: connection) {
+                    await refresh(userId: event.userId)
+                    delay = .seconds(1)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                // The feed dropped; what was missed is read again below.
+            }
+            try? await Task.sleep(for: delay)
+            if Task.isCancelled { return }
+            delay = min(delay * 2, .seconds(30))
+            await refreshEveryone()
+        }
+    }
+
+    /// Reads the person who moved again: the person's own, or somebody
+    /// sharing with them.
+    func refresh(userId: String) async {
+        if userId == ownUserId {
+            await refreshOwn()
+            return
+        }
+        do {
+            let fresh = try await connection.location(userId: userId)
+            guard let index = people.firstIndex(where: { $0.userId == userId }) else {
+                // Somebody not listed yet, such as a share just made.
+                await refreshPeople()
+                return
+            }
+            people[index] = fresh
+            if selectedUserId == userId { await loadPerson() }
+        } catch {
+            // They may have stopped sharing; the list says so.
+            await refreshPeople()
+        }
+    }
+
+    /// The person's own position and newest visits, which a report from the
+    /// phone changes.
+    private func refreshOwn() async {
+        let connection = self.connection
+        async let readLocation = attempt { try await connection.location() }
+        async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
+        let (locationResult, visitsResult) = await (readLocation, readVisits)
+        if case .success(let read) = locationResult { location = read }
+        if case .success(let page) = visitsResult {
+            // The newest page in front of what was scrolled to, each visit once.
+            let freshIds = Set(page.placeVisits.map(\.id))
+            if visits.isEmpty { nextVisitOffset = page.nextOffset }
+            visits = page.placeVisits + visits.filter { !freshIds.contains($0.id) }
+        }
+    }
+
+    private func refreshPeople() async {
+        guard let read = try? await connection.sharedLocations() else { return }
+        people = read
+        if let selectedUserId, !read.contains(where: { $0.userId == selectedUserId }) { clearSelection() }
+    }
+
+    private func refreshEveryone() async {
+        await refreshOwn()
+        await refreshPeople()
+        if selectedUserId != nil { await loadPerson() }
+    }
+
+    // MARK: The selected person
+
+    /// Selects somebody sharing: the map centers on them and their visits
+    /// and places show under it. The person is in `people` once the server
+    /// has said so; until then the selection waits for it.
+    func select(userId: String) {
+        guard userId != ownUserId else {
+            clearSelection()
+            return
+        }
+        selectedUserId = userId
+        personDay = Calendar.current.startOfDay(for: Date())
+        personVisits = []
+        personPlaces = []
+        personProblemText = nil
+        Task { await loadPerson() }
+    }
+
+    /// Goes back to the person's own location.
+    func clearSelection() {
+        selectedUserId = nil
+        personVisits = []
+        personPlaces = []
+        personProblemText = nil
+    }
+
+    /// Whether the selected person's day can move later: not past today.
+    var canMovePersonDayLater: Bool { personDay < Calendar.current.startOfDay(for: Date()) }
+
+    func movePersonDay(by days: Int) {
+        let today = Calendar.current.startOfDay(for: Date())
+        guard let moved = Calendar.current.date(byAdding: .day, value: days, to: personDay) else { return }
+        personDay = min(Calendar.current.startOfDay(for: moved), today)
+        Task { await loadPerson() }
+    }
+
+    /// Reads the selected person's visits for the day shown and their places.
+    /// Only at "Where I am and where I have been" does the server give them.
+    func loadPerson() async {
+        guard let person = selectedPerson, person.level == .history else {
+            personVisits = []
+            personPlaces = []
+            return
+        }
+        let userId = person.userId
+        let day = personDay
+        let window = LocationDays.window(of: day)
+        isLoadingPerson = true
+        defer { isLoadingPerson = false }
+        let connection = self.connection
+        async let readVisits = attempt {
+            try await connection.locationVisits(userId: userId, from: window.from, until: window.until, limitCount: 200)
+        }
+        async let readPlaces = attempt { try await connection.locationPlaces(userId: userId, limitCount: LocationModel.placePageSize) }
+        let (visitsResult, placesResult) = await (readVisits, readPlaces)
+        // Another person or day was chosen while this was read.
+        guard selectedUserId == userId, personDay == day else { return }
+        switch (visitsResult, placesResult) {
+        case (.success(let visitPage), .success(let placePage)):
+            personVisits = visitPage.placeVisits
+            personPlaces = placePage.places
+            personProblemText = nil
+        case (.failure(let error), _), (_, .failure(let error)):
+            personProblemText = error.loadProblemText
+        }
+    }
+
+    // MARK: Sharing
+
+    /// The words for a thing shared with: a person's name, or "Everyone in" a
+    /// circle.
+    static func shareName(of share: LocationShare) -> String {
+        share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName
+    }
+
+    private func reloadShares() async {
+        do {
+            shares = try await connection.locationShares()
+            sharingProblemText = nil
+        } catch {
+            sharingProblemText = error.loadProblemText
+        }
+    }
+
+    /// Shares the person's location with a person or a circle, at a level.
+    @discardableResult
+    func share(with target: ShareTarget, name: String, level: LocationShareLevel) async -> Bool {
+        do {
+            try await connection.shareLocation(granteeUserId: target.granteeUserId, granteeCircleId: target.granteeCircleId, level: level)
+            doneText = String(localized: "Shared with \(name)")
+            await reloadShares()
+            finishSetupIfDone()
+            return true
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            return false
+        }
+    }
+
+    /// Changes how much of the person's location a share gives.
+    func change(_ share: LocationShare, to level: LocationShareLevel) async {
+        do {
+            try await connection.shareLocation(granteeUserId: share.granteeUserId, granteeCircleId: share.granteeCircleId, level: level)
+            doneText = String(localized: "Changed what \(Self.shareName(of: share)) can see")
+            await reloadShares()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    /// Takes a share back.
+    func stop(_ share: LocationShare) async {
+        do {
+            try await connection.unshareLocation(shareId: share.id)
+            doneText = String(localized: "No longer shared with \(Self.shareName(of: share))")
+            await reloadShares()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    // MARK: Setting Location up
+
+    /// The person's "Not now": the setup does not come back.
+    func dismissSetup() {
+        isSetupDismissed = true
+        LocationRecorder.shared.dismissSetup(accountKey: AppModel.shared.account?.accountKey)
+    }
+
+    /// Ends the setup when every row that applies is done, saying so once.
+    func finishSetupIfDone() {
+        guard isSetupKnown, !isSetupDismissed, setup.isFinished else { return }
+        // Said when it was on the screen: nothing to say of one finished elsewhere.
+        let wasOnScreen = hasLoaded && location != nil && location?.latestPoint == nil
+        dismissSetup()
+        if wasOnScreen { doneText = String(localized: "Location is set up") }
+    }
+
+    /// "This is home": labels the place the person is at now. A place of
+    /// theirs that already holds the position is the one labeled (a visit
+    /// may have made it); otherwise `SavePlace` with the coordinates makes a
+    /// new place there, with no visit recorded, which a check-in would add.
+    func markHome() async {
+        guard let position = await currentPosition() else { return }
+        let here = CLLocation(latitude: position.latitudeDegrees, longitude: position.longitudeDegrees)
+        let holding = places.filter { CLLocation(latitude: $0.latitudeDegrees, longitude: $0.longitudeDegrees).distance(from: here) <= $0.radiusMeters }
+        let nearest = holding.min {
+            CLLocation(latitude: $0.latitudeDegrees, longitude: $0.longitudeDegrees).distance(from: here)
+                < CLLocation(latitude: $1.latitudeDegrees, longitude: $1.longitudeDegrees).distance(from: here)
+        }
+        let change =
+            nearest.map { PlaceChange(placeId: $0.id, placeLabel: PlaceLabel.home.rawValue) }
+            ?? PlaceChange(
+                placeLabel: PlaceLabel.home.rawValue, latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees)
+        guard await save(change) != nil else { return }
+        doneText = String(localized: "This place is now labeled Home")
+        await load()
+    }
+
+    /// Shares the person's location with their family circle from the setup.
+    func shareWithFamily(at level: LocationShareLevel) async {
+        guard let circle = setup.familyCircle else { return }
+        await share(with: .circle(circle.id), name: String(localized: "Everyone in \(circle.name)"), level: level)
     }
 }
 

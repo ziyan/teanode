@@ -211,4 +211,18 @@ final class CirclesTests: XCTestCase {
         XCTAssertEqual(CircleCalendarOffer.ownCalendar(among: [reminders, theirs, own])?.id, "own")
         XCTAssertNil(CircleCalendarOffer.ownCalendar(among: [reminders, theirs]))
     }
+
+    func testJoiningAFamilyAlsoOffersLocationButColleaguesDoNot() {
+        XCTAssertEqual(CircleCalendarOffer(accepting: invitation(circleKind: "family"), calendarId: "calendar-1")?.isLocationOffered, true)
+        XCTAssertEqual(CircleCalendarOffer(accepting: invitation(circleKind: "colleagues"), calendarId: "calendar-1")?.isLocationOffered, false)
+        XCTAssertEqual(CircleCalendarOffer.locationLevels, [.history, .current])
+    }
+
+    func testAFamilyIsOfferedLocationEvenWithoutACalendarButColleaguesAreOfferedNothing() {
+        let family = CircleCalendarOffer(accepting: invitation(circleKind: "family"), calendarId: nil)
+        XCTAssertEqual(family?.isCalendarOffered, false)
+        XCTAssertEqual(family?.isLocationOffered, true)
+        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "colleagues"), calendarId: nil))
+        XCTAssertNil(CircleCalendarOffer(accepting: invitation(circleKind: "friends"), calendarId: nil))
+    }
 }

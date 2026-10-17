@@ -461,4 +461,26 @@
                 .task { await directory.load() }
         }
     }
+
+    /// CircleJoinOfferDemoScreen is the sheet asked as a person joins a
+    /// family (`-TeaNodeScreen circle-join-offer`): the calendar and where
+    /// they are, in one sheet.
+    struct CircleJoinOfferDemoScreen: View {
+        let connection: Connection
+        @State private var isOffering = true
+
+        var body: some View {
+            CirclesView(connection: connection)
+                .sheet(isPresented: $isOffering) {
+                    if let offer = CircleCalendarOffer(
+                        accepting: CircleInvitation(
+                            id: "invitation-demo", circleId: "circle-home", circleName: "Home", circleKind: "family", invitedByName: "Sam",
+                            invitedUsername: "robin", memberRole: "member", createdAt: "2026-10-15T09:00:00Z", expiresAt: "2026-10-29T09:00:00Z"),
+                        calendarId: "home")
+                    {
+                        CircleCalendarOfferSheet(connection: connection, offer: offer) { _ in }
+                    }
+                }
+        }
+    }
 #endif

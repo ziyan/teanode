@@ -92,29 +92,45 @@ public struct CircleInvitation: Codable, Hashable, Sendable, Identifiable {
 
 /// CircleCalendarOffer is the question asked once, as a person joins a family or
 /// a group of colleagues: share their calendar with everyone in it, at a level
-/// they choose, or not now. It is asked only as the invitation is accepted and
-/// never again, as the dashboard's Circles page does; the calendar screen has
-/// the same choice whenever they want it. Friends are not asked, since a
-/// calendar is not what friends are assumed to share.
+/// they choose, or not now. For a family it also asks about location, in the
+/// same sheet: share where they are, now and where they have been, only where
+/// they are now, or not now. It is asked only as the invitation is accepted and
+/// never again, as the dashboard's Circles page does; the calendar screen and
+/// Location's Sharing have the same choices whenever they want them. Friends are
+/// not asked, since neither is what friends are assumed to share.
 public struct CircleCalendarOffer: Hashable, Sendable, Identifiable {
     public let circleId: String
     public let circleName: String
-    /// The person's own calendar of events, which is what would be shared.
-    public let calendarId: String
+    /// The person's own calendar of events, which is what would be shared; nil
+    /// when they have none, and then only a family's location is offered.
+    public let calendarId: String?
+    /// Whether where the person is can be shared too: a family only.
+    public let isLocationOffered: Bool
 
     public var id: String { circleId }
+
+    /// Whether the calendar is part of the question.
+    public var isCalendarOffered: Bool { calendarId != nil }
 
     /// The levels offered: edit is a choice made on the calendar screen, not
     /// in passing.
     public static let levels: [CalendarShareLevel] = [.busy, .titles, .details]
 
+    /// The location levels offered, the fuller one first. "Not now" is the
+    /// absence of a choice.
+    public static let locationLevels: [LocationShareLevel] = [.history, .current]
+
     /// The offer for an invitation just accepted, or nil for a circle of
-    /// friends.
-    public init?(accepting invitation: CircleInvitation, calendarId: String) {
+    /// friends, and for a circle that is not a family when the person has no
+    /// calendar to share.
+    public init?(accepting invitation: CircleInvitation, calendarId: String?) {
         guard invitation.circleKind != CircleKind.friends.rawValue else { return nil }
+        let isFamily = invitation.circleKind == CircleKind.family.rawValue
+        guard calendarId != nil || isFamily else { return nil }
         circleId = invitation.circleId
         circleName = invitation.circleName
         self.calendarId = calendarId
+        isLocationOffered = isFamily
     }
 
     /// The calendar a share would be of: the person's own calendar of events,

@@ -304,6 +304,28 @@ final class LocationRecorder {
         defaults.set(true, forKey: Self.hasDeclinedAlwaysKey)
     }
 
+    /// Whether the person said "Not now" to setting Location up, or finished
+    /// it, on this phone for this account. The one thing about the setup that
+    /// is kept; what is done is worked out from the server and the permission.
+    func isSetupDismissed(accountKey: String?) -> Bool {
+        #if DEBUG
+            // The screenshots run the same app again and again.
+            if DemoServer.isRequested { return false }
+        #endif
+        return defaults.bool(forKey: Self.setupDismissedKey(accountKey))
+    }
+
+    func dismissSetup(accountKey: String?) {
+        #if DEBUG
+            if DemoServer.isRequested { return }
+        #endif
+        defaults.set(true, forKey: Self.setupDismissedKey(accountKey))
+    }
+
+    private static func setupDismissedKey(_ accountKey: String?) -> String {
+        "locationSetupIsDismissed.\(accountKey ?? "")"
+    }
+
     // MARK: Authorization
 
     func authorizationDidChange(_ status: CLAuthorizationStatus) {

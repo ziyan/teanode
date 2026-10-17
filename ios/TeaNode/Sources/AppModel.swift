@@ -88,6 +88,13 @@ final class AppModel {
 
     /// A part of the app the agent asked to show.
     var openedSection: AppSection?
+    /// The person whose location the Location screen opens with selected: a
+    /// pressed notification, or a link, names them. The screen takes it and
+    /// clears it.
+    var openedLocationUserId: String?
+    /// The day the Location screen opens on the map of, from a link such as
+    /// `/location?day=2030-01-15`. The screen takes it and clears it.
+    var openedLocationDay: Date?
     /// The section to open again after the app is drawn anew, as it is when
     /// the display language changes.
     var keptSection: AppSection?
@@ -148,6 +155,28 @@ final class AppModel {
         }
     }
 
+    /// The Location page's address, `/location`, with the day it may name
+    /// (`?day=2030-01-15`); nil for any other address. The day is nil when it
+    /// is absent or not a date.
+    static func locationLink(_ written: String) -> LocationLink? {
+        let parts = written.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let pathText = parts.first, pathText == "/location" || pathText == "/location/" else { return nil }
+        guard parts.count == 2 else { return LocationLink(day: nil) }
+        for pair in parts[1].split(separator: "&") {
+            let sides = pair.split(separator: "=", maxSplits: 1)
+            guard sides.count == 2, sides[0] == "day" else { continue }
+            let numbers = sides[1].split(separator: "-", omittingEmptySubsequences: false).compactMap { Int($0) }
+            guard numbers.count == 3 else { continue }
+            let calendar = Calendar.current
+            guard let day = calendar.date(from: DateComponents(year: numbers[0], month: numbers[1], day: numbers[2])) else { continue }
+            // A date that does not exist (month 13) rolls over into the next
+            // one in a calendar; it is not the day that was written.
+            let read = calendar.dateComponents([.year, .month, .day], from: day)
+            if read.year == numbers[0], read.month == numbers[1], read.day == numbers[2] { return LocationLink(day: day) }
+        }
+        return LocationLink(day: nil)
+    }
+
     /// Goes to the dashboard path the agent's open_page names, checked as
     /// the dashboard checks it: the person's own pages, in plain segments.
     func show(path written: String) {
@@ -155,6 +184,11 @@ final class AppModel {
             openedRecordingAccountKey = account.accountKey
             openedRecordingLink = citation
             openedSection = .recordings
+            return
+        }
+        if let location = Self.locationLink(written) {
+            openedLocationDay = location.day
+            openedSection = .location
             return
         }
         let path = written.count > 1 && written.hasSuffix("/") ? String(written.dropLast()) : written
@@ -667,6 +701,10 @@ final class AppModel {
                 // An invitation is answered on Circles, in the settings.
                 openedSection = .settings
                 isCirclesOpened = true
+            } else if info.notificationKind == "location" {
+                // Somebody arrived or left: Location, with them selected.
+                openedLocationUserId = info.locationUserId.isEmpty ? nil : info.locationUserId
+                openedSection = .location
             } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
@@ -882,4 +920,10 @@ extension AppModel {
         case .settings: return true
         }
     }
+}
+
+/// LocationLink is what an address of the Location page asks for.
+struct LocationLink: Equatable {
+    /// The day to open on the map, when the address names one.
+    let day: Date?
 }

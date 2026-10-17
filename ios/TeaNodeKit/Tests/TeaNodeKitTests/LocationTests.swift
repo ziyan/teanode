@@ -368,4 +368,55 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(window.from, date("2030-01-02T00:00:00Z"))
         XCTAssertEqual(window.until, date("2030-01-03T00:00:00Z"))
     }
+
+    // MARK: Setting Location up
+
+    private func fixturePlace(label: String) -> LocationPlace {
+        LocationPlace(id: "place-1", placeName: "Fixture", placeLabel: label, latitudeDegrees: 10.5, longitudeDegrees: 20.5)
+    }
+
+    private func fixtureCircle(circleKind: String) -> PeopleCircle {
+        PeopleCircle(id: "circle-1", name: "Fixture Home", circleKind: circleKind, createdAt: "2030-01-01T00:00:00Z", memberRole: "admin", members: [])
+    }
+
+    private func fixtureShare(circleId: String) -> LocationShare {
+        LocationShare(
+            id: "share-1", granteeUserId: nil, granteeUsername: nil, granteeName: nil, granteeCircleId: circleId, granteeCircleName: "Fixture Home",
+            shareLevel: "history", createdAt: "2030-01-01T00:00:00Z")
+    }
+
+    func testTheSetupIsWorkedOutFromTheServerAndThePermission() {
+        let begun = LocationSetup(isPermissionDone: false, homePlaces: [], circles: [fixtureCircle(circleKind: "family")], shares: [])
+        XCTAssertTrue(begun.isShareOffered)
+        XCTAssertFalse(begun.isFinished)
+        XCTAssertTrue(begun.isShown(isDismissed: false, hasLatestPoint: false))
+        XCTAssertFalse(begun.isShown(isDismissed: true, hasLatestPoint: false))
+        XCTAssertFalse(begun.isShown(isDismissed: false, hasLatestPoint: true))
+
+        let finished = LocationSetup(
+            isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: [fixtureCircle(circleKind: "family")],
+            shares: [fixtureShare(circleId: "circle-1")])
+        XCTAssertTrue(finished.isFinished)
+        XCTAssertFalse(finished.isShown(isDismissed: false, hasLatestPoint: false))
+    }
+
+    func testTheShareRowIsOnlyForAFamilyAndAPlaceLabeledWorkIsNotHome() {
+        let noFamily = LocationSetup(
+            isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: [fixtureCircle(circleKind: "friends")], shares: [])
+        XCTAssertFalse(noFamily.isShareOffered)
+        XCTAssertTrue(noFamily.isFinished)
+        let notHome = LocationSetup(isPermissionDone: true, homePlaces: [fixturePlace(label: "work")], circles: [], shares: [])
+        XCTAssertFalse(notHome.isHomeDone)
+        let shareElsewhere = LocationSetup(
+            isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: [fixtureCircle(circleKind: "family")],
+            shares: [fixtureShare(circleId: "circle-other")])
+        XCTAssertFalse(shareElsewhere.isShareDone)
+    }
+
+    func testALocationNotificationCarriesTheUserWhoMoved() throws {
+        let json = #"{"notificationKind":"location","locationUserId":"user-2","title":"Person B arrived home","body":"","threadId":"location-user-2"}"#
+        let content = try JSONDecoder().decode(NotificationContent.self, from: Data(json.utf8))
+        XCTAssertEqual(content.locationUserId, "user-2")
+        XCTAssertTrue(AgentPhone.allNotificationKinds.contains("location"))
+    }
 }

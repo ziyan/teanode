@@ -734,6 +734,7 @@ struct SettingsForm: View {
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "circles": CirclesView(connection: connection)
                 case "circle-detail": CircleDetailDemoScreen(connection: connection)
+                case "circle-join-offer": CircleJoinOfferDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection)
@@ -807,6 +808,7 @@ struct NotificationKindToggle: View {
         case "circle": String(localized: "Invitations to circles")
         case "chat": String(localized: "Messages from people in your chats")
         case "skill_share_call": String(localized: "Skill calls waiting for your approval")
+        case "location": String(localized: "People who share their location arriving at and leaving places")
         default: notificationKind
         }
     }

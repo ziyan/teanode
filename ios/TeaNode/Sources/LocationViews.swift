@@ -9,11 +9,11 @@ enum LocationRoute: Hashable {
     case settings
 }
 
-/// LocationSegment is what the list under the map shows. Sharing joins
-/// these in a later milestone.
+/// LocationSegment is what the list under the map shows.
 enum LocationSegment: String, CaseIterable, Identifiable {
     case visits
     case places
+    case sharing
 
     var id: String { rawValue }
 
@@ -21,6 +21,7 @@ enum LocationSegment: String, CaseIterable, Identifiable {
         switch self {
         case .visits: String(localized: "Visits")
         case .places: String(localized: "Places")
+        case .sharing: String(localized: "Sharing")
         }
     }
 }
@@ -63,7 +64,9 @@ struct LocationScreen: View {
     @State private var path: [LocationRoute] = []
     @State private var isCheckingIn = false
     @State private var isExplainingAlways = false
+    @State private var isAllowingLocation = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(AppModel.self) private var app
     private let recorder = LocationRecorder.shared
 
     init(connection: Connection) {
@@ -75,17 +78,26 @@ struct LocationScreen: View {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
                     LocationMapHeader(model: model, recorder: recorder)
-                        .frame(height: proxy.size.height * (dynamicTypeSize.isAccessibilitySize ? 0.3 : 0.45))
-                    LocationStatusRow(model: model)
-                    Picker("Show", selection: $segment) {
-                        ForEach(LocationSegment.allCases) { choice in
-                            Text(choice.title).tag(choice)
+                        .frame(height: proxy.size.height * mapHeightFraction)
+                    LocationPeopleRows(model: model)
+                    if let person = model.selectedPerson {
+                        LocationPersonPanel(model: model, person: person)
+                    } else {
+                        LocationStatusRow(model: model)
+                        if model.isSetupShown {
+                            LocationSetupList(model: model, recorder: recorder, allowLocation: allowLocation)
+                        } else {
+                            Picker("Show", selection: $segment) {
+                                ForEach(LocationSegment.allCases) { choice in
+                                    Text(choice.title).tag(choice)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .padding(.horizontal)
+                            .padding(.bottom, 8)
+                            content
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-                    content
                 }
             }
             .navigationTitle("Location")
@@ -116,16 +128,52 @@ struct LocationScreen: View {
         .sheet(isPresented: $isExplainingAlways) { AlwaysExplanationSheet() }
         .toast(done: $model.doneText, problem: $model.problemText)
         .task {
-            recorder.askForAuthorizationIfUndecided()
             await model.load()
+            // The first time, the setup asks in its own row instead.
+            if !model.isSetupShown {
+                recorder.askForAuthorizationIfUndecided()
+                if recorder.shouldExplainAlways { isExplainingAlways = true }
+            }
             #if DEBUG
                 openDemoScreen()
             #endif
         }
+        // Follows the people sharing while this screen is visible.
+        .task { await model.follow() }
         .onAppear { recorder.viewerAppeared() }
         .onDisappear { recorder.viewerDisappeared() }
         .onChange(of: recorder.authorizationStatus, initial: true) {
-            if recorder.shouldExplainAlways { isExplainingAlways = true }
+            if model.hasLoaded, recorder.shouldExplainAlways, !model.isSetupShown || isAllowingLocation { isExplainingAlways = true }
+            model.finishSetupIfDone()
+        }
+        .onChange(of: app.openedLocationUserId, initial: true) { _, userId in
+            guard let userId else { return }
+            app.openedLocationUserId = nil
+            model.select(userId: userId)
+        }
+        .onChange(of: app.openedLocationDay, initial: true) { _, day in
+            guard let day else { return }
+            app.openedLocationDay = nil
+            path = [.day(day)]
+        }
+    }
+
+    /// The map shares the screen with the people under it.
+    private var mapHeightFraction: Double {
+        if dynamicTypeSize.isAccessibilitySize { return 0.3 }
+        return model.people.isEmpty ? 0.45 : 0.36
+    }
+
+    /// The setup's first row: When In Use, then Always, through the flow the
+    /// screen already has; Settings once the person has said no to either.
+    private func allowLocation() {
+        isAllowingLocation = true
+        if recorder.isAuthorizationUndecided {
+            recorder.askForAuthorizationIfUndecided()
+        } else if recorder.shouldExplainAlways {
+            isExplainingAlways = true
+        } else {
+            LocationSettingsView.openSettings()
         }
     }
 
@@ -139,18 +187,23 @@ struct LocationScreen: View {
             switch segment {
             case .visits: LocationVisitsList(model: model, recorder: recorder)
             case .places: LocationPlacesList(model: model)
+            case .sharing: LocationSharingList(model: model)
             }
         }
     }
 
     #if DEBUG
         /// The screens a screenshot names: `-TeaNodeScreen location-day`,
-        /// `location-places`, `location-place`, `location-settings`.
+        /// `location-places`, `location-place`, `location-settings`,
+        /// `location-sharing`, `location-person`; `location-setup` is the
+        /// server having no position yet.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
             case "location-day": path = [.day(Date())]
             case "location-places": segment = .places
+            case "location-sharing": segment = .sharing
+            case "location-person": model.select(userId: LocationDemo.historyPersonId)
             case "location-place":
                 segment = .places
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
@@ -186,12 +239,30 @@ struct LocationMapHeader: View {
             ForEach(model.places.filter(\.isOfPersonsOwn).prefix(40)) { place in
                 Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
             }
+            ForEach(model.people) { person in
+                if let coordinate = person.coordinate {
+                    Annotation(person.displayName, coordinate: coordinate) {
+                        Button {
+                            if person.userId == model.selectedUserId { model.clearSelection() } else { model.select(userId: person.userId) }
+                        } label: {
+                            AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
+                                .overlay(
+                                    Circle().stroke(
+                                        person.userId == model.selectedUserId ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(person.displayName)
+                    }
+                }
+            }
         }
         .mapControls {
             if isShowingPhone { MapUserLocationButton() }
             MapCompass()
         }
         .onChange(of: model.latestCoordinate?.latitude, initial: true) { focus() }
+        // Centers on the person chosen, or back on the person's own.
+        .onChange(of: model.selectedPerson?.userId) { focus() }
         .onChange(of: recorder.livePosition?.latitudeDegrees) { _, _ in
             // The first reading centers the map once; after that the person
             // moves it as they like.
@@ -206,7 +277,9 @@ struct LocationMapHeader: View {
     @State private var hasFollowedPhone = false
 
     private func focus() {
-        if isShowingPhone, let live = recorder.livePosition {
+        if let coordinate = model.selectedPerson?.coordinate {
+            position = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1500, longitudinalMeters: 1500))
+        } else if isShowingPhone, let live = recorder.livePosition {
             position = .region(MKCoordinateRegion(center: live.coordinate, latitudinalMeters: 1500, longitudinalMeters: 1500))
         } else if let coordinate = model.latestCoordinate {
             position = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1500, longitudinalMeters: 1500))

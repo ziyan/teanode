@@ -306,6 +306,50 @@ public struct LocationShare: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// LocationEvent is the server telling a viewer that a person they can see
+/// (themselves included) has a new position or visit.
+public struct LocationEvent: Codable, Hashable, Sendable {
+    public let userId: String
+}
+
+/// LocationSetup is how far the person has got with setting Location up the
+/// first time: allowing it, labeling the place they live as home, and, when
+/// they are in a family circle, sharing where they are with it. It is worked
+/// out from what the server and the phone say and never stored; only the
+/// person's "Not now" is kept.
+public struct LocationSetup: Equatable, Sendable {
+    /// Whether the phone may record while the app is closed (Always).
+    public let isPermissionDone: Bool
+    /// Whether a place labeled home exists.
+    public let isHomeDone: Bool
+    /// The family circle to offer sharing with, if the person is in one.
+    public let familyCircle: PeopleCircle?
+    /// Whether the person's location is already shared with that circle.
+    public let isShareDone: Bool
+
+    public init(isPermissionDone: Bool, homePlaces: [LocationPlace], circles: [PeopleCircle], shares: [LocationShare]) {
+        self.isPermissionDone = isPermissionDone
+        isHomeDone = homePlaces.contains { $0.label == .home }
+        let family = circles.first { $0.knownCircleKind == .family }
+        familyCircle = family
+        isShareDone = family.map { circle in shares.contains { $0.granteeCircleId == circle.id } } ?? false
+    }
+
+    /// Whether the share row is part of the setup: the person is in a family
+    /// circle.
+    public var isShareOffered: Bool { familyCircle != nil }
+
+    /// Whether every row that applies is done.
+    public var isFinished: Bool { isPermissionDone && isHomeDone && (!isShareOffered || isShareDone) }
+
+    /// Whether the setup is shown in place of the lists: the server has no
+    /// position for the person yet, they have not said "Not now", and
+    /// something is left to do.
+    public func isShown(isDismissed: Bool, hasLatestPoint: Bool) -> Bool {
+        !isDismissed && !hasLatestPoint && !isFinished
+    }
+}
+
 /// PlaceChange is what SavePlace is told: only the fields given change. With
 /// no place identifier it makes a place at the coordinates.
 public struct PlaceChange: Sendable, Equatable {

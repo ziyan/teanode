@@ -36,6 +36,32 @@ extension LocationPlace {
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitudeDegrees, longitude: longitudeDegrees) }
 }
 
+extension LocationShareLevel {
+    /// What a share at this level is called: the two plain choices.
+    var title: String {
+        switch self {
+        case .current: String(localized: "Where I am now")
+        case .history: String(localized: "Where I am and where I have been")
+        case .owner: String(localized: "You")
+        }
+    }
+
+    /// What somebody a location is shared at this level can see.
+    var explanation: String {
+        switch self {
+        case .current: String(localized: "They see where you are now, and nothing before it.")
+        case .history: String(localized: "They see where you are now, and the places you have been and when.")
+        case .owner: ""
+        }
+    }
+}
+
+extension PersonLocation {
+    /// Where to draw them: their latest position, else the place of the visit
+    /// in progress.
+    var coordinate: CLLocationCoordinate2D? { latestPoint?.coordinate ?? openVisit?.coordinate }
+}
+
 extension PlaceVisit {
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitudeDegrees, longitude: longitudeDegrees) }
 }
@@ -79,6 +105,22 @@ enum LocationText {
         let timesText = times(of: visit)
         guard let stay = visit.stayDuration else { return timesText }
         return String(localized: "\(timesText) · \(duration(stay))")
+    }
+
+    /// One person sharing, in a line: "Sam · at Hillside School since 14:05",
+    /// else "Sam · 12 min. ago" for how long ago their latest position was.
+    static func line(of person: PersonLocation) -> String {
+        let name = person.displayName
+        if let visit = person.openVisit {
+            let place = visit.place.shownName
+            if let arrived = visit.arrivedDate { return String(localized: "\(name) · at \(place) since \(time(arrived))") }
+            return String(localized: "\(name) · at \(place)")
+        }
+        if let measured = person.latestPoint?.measuredDate {
+            let ago = measured.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
+            return String(localized: "\(name) · \(ago)")
+        }
+        return String(localized: "\(name) · no position yet")
     }
 
     /// "At Home since 14:05", for the visit in progress.
