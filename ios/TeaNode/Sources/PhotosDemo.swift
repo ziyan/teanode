@@ -136,7 +136,7 @@
         /// A person the demo server has found in the photos, with the photos they
         /// are in. Invented, like everything here; an empty name is a person
         /// nobody has named.
-        private struct DemoPerson {
+        private struct DemoFaceGroup {
             let id: String
             let name: String
             let photoIds: [String]
@@ -145,13 +145,13 @@
             var coverFaceId: String { "face-\(id)" }
         }
 
-        private static let demoPeople: [DemoPerson] = [
-            DemoPerson(id: "demo-person-1", name: "Robin Example", photoIds: ["demo-01", "demo-02", "demo-05", "demo-06", "demo-09", "demo-10"]),
-            DemoPerson(id: "demo-person-2", name: "Sam Placeholder", photoIds: ["demo-01", "demo-02", "demo-09", "demo-11"]),
-            DemoPerson(id: "demo-person-3", name: "", photoIds: ["demo-13", "demo-15", "demo-16"]),
+        private static let demoFaceGroups: [DemoFaceGroup] = [
+            DemoFaceGroup(id: "demo-person-1", name: "Robin Example", photoIds: ["demo-01", "demo-02", "demo-05", "demo-06", "demo-09", "demo-10"]),
+            DemoFaceGroup(id: "demo-person-2", name: "Sam Placeholder", photoIds: ["demo-01", "demo-02", "demo-09", "demo-11"]),
+            DemoFaceGroup(id: "demo-person-3", name: "", photoIds: ["demo-13", "demo-15", "demo-16"]),
         ]
 
-        private static func personJSON(_ person: DemoPerson) -> String {
+        private static func faceGroupJSON(_ person: DemoFaceGroup) -> String {
             let photoCount = person.photoIds.count
             let contactId = person.name.isEmpty ? "" : "contact-" + person.id
             let bookId = person.name.isEmpty ? "" : "book-demo"
@@ -167,7 +167,7 @@
                     #"{"id":"face-shared-\#(photoId)-\#(index)","photoId":"\#(photoId)","boxLeftFraction":\#(0.2 + 0.3 * Double(index)),"boxTopFraction":0.3,"boxWidthFraction":0.2,"boxHeightFraction":0.2,"photoFaceGroupId":"","contactId":"","contactName":"\#(name)","facePictureUrl":""}"#
                 }.joined(separator: ",")
             }
-            return demoPeople.filter { $0.photoIds.contains(photoId) }.enumerated().map { index, person in
+            return demoFaceGroups.filter { $0.photoIds.contains(photoId) }.enumerated().map { index, person in
                 let contactId = person.name.isEmpty ? "" : "contact-" + person.id
                 return #"{"id":"\#(person.coverFaceId)","photoId":"\#(photoId)","boxLeftFraction":\#(0.2 + 0.3 * Double(index)),"boxTopFraction":0.3,"boxWidthFraction":0.2,"boxHeightFraction":0.2,"photoFaceGroupId":"\#(person.id)","contactId":"\#(contactId)","contactName":"\#(person.name)","facePictureUrl":"/api/v1/photos/faces/\#(person.coverFaceId)/picture"}"#
             }.joined(separator: ",")
@@ -270,26 +270,26 @@
                 let album = demoAlbums.first { $0.id == (variables["photoAlbumId"] as? String) } ?? demoAlbums[0]
                 json = #"{"data":{"SetPhotoAlbumCover":\#(albumJSON(album))}}"#
             } else if body.contains("UnnamePhotoFaceGroup") {
-                let person = demoPeople.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoPeople[0]
-                json = #"{"data":{"UnnamePhotoFaceGroup":\#(personJSON(DemoPerson(id: person.id, name: "", photoIds: person.photoIds)))}}"#
+                let person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
+                json = #"{"data":{"UnnamePhotoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "", photoIds: person.photoIds)))}}"#
             } else if body.contains("NamePhotoFaceGroup") {
-                let person = demoPeople.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoPeople[0]
-                json = #"{"data":{"NamePhotoFaceGroup":\#(personJSON(DemoPerson(id: person.id, name: "Chris Placeholder", photoIds: person.photoIds)))}}"#
+                let person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
+                json = #"{"data":{"NamePhotoFaceGroup":\#(faceGroupJSON(DemoFaceGroup(id: person.id, name: "Chris Placeholder", photoIds: person.photoIds)))}}"#
             } else if body.contains("MergePhotoFaceGroups") {
-                json = #"{"data":{"MergePhotoFaceGroups":\#(personJSON(demoPeople[0]))}}"#
+                json = #"{"data":{"MergePhotoFaceGroups":\#(faceGroupJSON(demoFaceGroups[0]))}}"#
             } else if body.contains("RemovePhotoFaceFromGroup") {
-                json = #"{"data":{"RemovePhotoFaceFromGroup":\#(personJSON(demoPeople[2]))}}"#
+                json = #"{"data":{"RemovePhotoFaceFromGroup":\#(faceGroupJSON(demoFaceGroups[2]))}}"#
             } else if body.contains("HidePhotoFaceGroup") {
-                var person = demoPeople.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoPeople[0]
+                var person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
                 person.isHidden = variables["isHidden"] as? Bool ?? false
-                json = #"{"data":{"HidePhotoFaceGroup":\#(personJSON(person))}}"#
+                json = #"{"data":{"HidePhotoFaceGroup":\#(faceGroupJSON(person))}}"#
             } else if body.contains("SetPhotoFaceRecognition") {
                 json = #"{"data":{"SetPhotoFaceRecognition":\#(variables["isEnabled"] as? Bool ?? true)}}"#
             } else if body.contains("ListPhotoFaceGroups") {
-                json = #"{"data":{"ListPhotoFaceGroups":["# + (isEmpty ? [] : demoPeople).map(personJSON).joined(separator: ",") + "]}}"
+                json = #"{"data":{"ListPhotoFaceGroups":["# + (isEmpty ? [] : demoFaceGroups).map(faceGroupJSON).joined(separator: ",") + "]}}"
             } else if body.contains("ReadPhotoFaceGroup") {
-                let person = demoPeople.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoPeople[0]
-                json = #"{"data":{"ReadPhotoFaceGroup":\#(personJSON(person))}}"#
+                let person = demoFaceGroups.first { $0.id == (variables["photoFaceGroupId"] as? String) } ?? demoFaceGroups[0]
+                json = #"{"data":{"ReadPhotoFaceGroup":\#(faceGroupJSON(person))}}"#
             } else if body.contains("DescribePhoto") {
                 json = #"{"data":{"DescribePhoto":{"photoDescription":"","descriptionVisibleText":"","describedAt":null,"isDescriptionRequested":true}}}"#
             } else if body.contains("RetryPhotoProcessing") {
@@ -307,7 +307,7 @@
                     chosen = chosen.filter { members.contains($0.id) }
                 }
                 if let faceGroupId = variables["faceGroupId"] as? String {
-                    let members = demoPeople.first { $0.id == faceGroupId }?.photoIds ?? []
+                    let members = demoFaceGroups.first { $0.id == faceGroupId }?.photoIds ?? []
                     chosen = chosen.filter { members.contains($0.id) }
                 }
                 if let latitude = variables["nearLatitude"] as? Double, let longitude = variables["nearLongitude"] as? Double,
@@ -357,7 +357,7 @@
         /// colored disc with the person's initials, so it is plainly not a real face.
         private static func facePicture(faceId: String) -> Data {
             let personId = faceId.hasPrefix("face-") ? String(faceId.dropFirst(5)) : faceId
-            let name = demoPeople.first { $0.id == personId }?.name ?? ""
+            let name = demoFaceGroups.first { $0.id == personId }?.name ?? ""
             let initials = name.split(separator: " ").compactMap(\.first).prefix(2).map(String.init).joined()
             let hue = CGFloat(personId.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 360 }) / 360
             let canvas = CGSize(width: 240, height: 240)
