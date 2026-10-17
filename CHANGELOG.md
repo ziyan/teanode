@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.169.0] - 2026-10-17
+
+### Added
+
+- The agent keeps track of bills, parcels, deadlines and coming events from your mail and tells you when one needs you, with a weekly look at what is on near you. (#526)
+
 ## [0.168.3] - 2026-10-17
 
 ### Changed
