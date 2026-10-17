@@ -84,96 +84,111 @@ struct ConversationsSheet: View {
     /// The sheets for starting a chat with a person, and a group.
     @State private var isMessagingSomeone = false
     @State private var isStartingGroup = false
+    /// The row a screenshot scrolls to, to show the rows that start a chat.
+    private static let messageSomeoneRowId = "message-someone"
 
     var body: some View {
         NavigationStack {
-            List {
-                if let leading {
-                    Section { leading }
-                        .listSectionSeparator(.hidden)
-                }
-                if let found {
-                    if found.isEmpty {
-                        Text("Nothing matches.").foregroundStyle(.secondary)
+            // A reader around the list, so a screenshot can bring the chat rows into view.
+            ScrollViewReader { scroller in
+                List {
+                    if let leading {
+                        Section { leading }
+                            .listSectionSeparator(.hidden)
                     }
-                    ForEach(found) { conversation in listRow(conversation) }
-                } else {
-                    Section {
-                        // A person with no agent has no main chat to open.
-                        if app.hasAgent {
-                            Button {
-                                onChoose(nil)
-                            } label: {
-                                Label {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Main chat")
-                                        if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
-                                            WaitingMark()
+                    if let found {
+                        if found.isEmpty {
+                            Text("Nothing matches.").foregroundStyle(.secondary)
+                        }
+                        ForEach(found) { conversation in listRow(conversation) }
+                    } else {
+                        Section {
+                            // A person with no agent has no main chat to open.
+                            if app.hasAgent {
+                                Button {
+                                    onChoose(nil)
+                                } label: {
+                                    Label {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Main chat")
+                                            if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
+                                                WaitingMark()
+                                            }
                                         }
+                                    } icon: {
+                                        Image(systemName: "bubble.left")
                                     }
-                                } icon: {
-                                    Image(systemName: "bubble.left")
+                                    // Marked by its highlight when it is the one on
+                                    // screen; green only marks what can be pressed.
+                                    .foregroundStyle(.primary)
                                 }
-                                // Marked by its highlight when it is the one on
-                                // screen; green only marks what can be pressed.
-                                .foregroundStyle(.primary)
+                                .menuRow(isSelected: currentId == nil)
                             }
-                            .menuRow(isSelected: currentId == nil)
+                            if !isPanel, app.isAgentOn {
+                                Button {
+                                    Task { await start() }
+                                } label: {
+                                    Label("New side chat", systemImage: "plus")
+                                }
+                                .menuRow(isSelected: false)
+                            }
+                            if app.canChat {
+                                Button {
+                                    isMessagingSomeone = true
+                                } label: {
+                                    Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                                }
+                                .id(Self.messageSomeoneRowId)
+                                .menuRow(isSelected: false)
+                                Button {
+                                    isStartingGroup = true
+                                } label: {
+                                    Label("New group", systemImage: "person.2")
+                                }
+                                .menuRow(isSelected: false)
+                            }
+                        } header: {
+                            if leading != nil { Text("Chats") }
                         }
-                        if !isPanel, app.isAgentOn {
-                            Button {
-                                Task { await start() }
-                            } label: {
-                                Label("New side chat", systemImage: "plus")
+                        .listSectionSeparator(.hidden)
+                        // The chats with people, by when they were last spoken in
+                        // (the server lists them so), apart from the side chats
+                        // with the agent.
+                        let chats = conversations.filter(\.isChat)
+                        if !chats.isEmpty {
+                            Section("People") {
+                                ForEach(chats) { conversation in chatRow(conversation) }
                             }
-                            .menuRow(isSelected: false)
+                            .listSectionSeparator(.hidden)
                         }
-                        if app.canChat {
-                            Button {
-                                isMessagingSomeone = true
-                            } label: {
-                                Label("Message someone", systemImage: "person.crop.circle.badge.plus")
-                            }
-                            .menuRow(isSelected: false)
-                            Button {
-                                isStartingGroup = true
-                            } label: {
-                                Label("New group", systemImage: "person.2")
-                            }
-                            .menuRow(isSelected: false)
+                        Section("Side chats") {
+                            ForEach(conversations.filter { !$0.isMain && !$0.isChat }) { conversation in row(conversation) }
                         }
-                    } header: {
-                        if leading != nil { Text("Chats") }
-                    }
-                    .listSectionSeparator(.hidden)
-                    // The chats with people, by when they were last spoken in
-                    // (the server lists them so), apart from the side chats
-                    // with the agent.
-                    let chats = conversations.filter(\.isChat)
-                    if !chats.isEmpty {
-                        Section("People") {
-                            ForEach(chats) { conversation in chatRow(conversation) }
+                        .listSectionSeparator(.hidden)
+                        Section {
+                            DisclosureGroup("Archived chats", isExpanded: $isShowingArchived) {
+                                if let archived {
+                                    if archived.isEmpty {
+                                        Text("Nothing has been archived.").foregroundStyle(.secondary)
+                                    }
+                                    ForEach(archived) { conversation in listRow(conversation) }
+                                } else {
+                                    ProgressView()
+                                }
+                            }
                         }
                         .listSectionSeparator(.hidden)
                     }
-                    Section("Side chats") {
-                        ForEach(conversations.filter { !$0.isMain && !$0.isChat }) { conversation in row(conversation) }
-                    }
-                    .listSectionSeparator(.hidden)
-                    Section {
-                        DisclosureGroup("Archived chats", isExpanded: $isShowingArchived) {
-                            if let archived {
-                                if archived.isEmpty {
-                                    Text("Nothing has been archived.").foregroundStyle(.secondary)
-                                }
-                                ForEach(archived) { conversation in listRow(conversation) }
-                            } else {
-                                ProgressView()
-                            }
-                        }
-                    }
-                    .listSectionSeparator(.hidden)
                 }
+                #if DEBUG
+                    .task {
+                        // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
+                        // to show the rows that start one.
+                        guard DemoServer.isRequested, DemoServer.screen == "conversations", leading != nil else { return }
+                        try? await Task.sleep(for: .seconds(1))
+                        withAnimation { scroller.scrollTo(Self.messageSomeoneRowId, anchor: .top) }
+                    }
+                #endif
             }
             .menuListStyle(isPanel)
             .searchable(text: $words, prompt: Text("Search conversations"))
