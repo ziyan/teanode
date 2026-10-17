@@ -82,6 +82,13 @@ enum UpkeepWords {
         return UpkeepClock.text(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
     }
 
+    /// A day the look around may be set to, in the person's language.
+    static func lookAroundWeekdayName(_ name: String) -> String {
+        guard let index = AgentUpkeepPreferences.lookAroundWeekdays.firstIndex(of: name) else { return name }
+        // weekdaySymbols starts on Sunday, the list on Monday.
+        return Calendar.current.weekdaySymbols[(index + 1) % 7]
+    }
+
     static func shapeName(_ shape: KnowledgeSource.Shape) -> String {
         switch shape {
         case .files: String(localized: "Files and code")
@@ -188,6 +195,8 @@ enum UpkeepWords {
         case "tax_document": String(localized: "Read a tax document")
         case "tax_mail": String(localized: "Tax documents mailed in")
         case "watch": String(localized: "Watching")
+        case "follow_up_sweep": String(localized: "Check follow-ups")
+        case "nearby": String(localized: "Look around town")
         default: jobKind
         }
     }
@@ -2246,10 +2255,15 @@ struct AgentScheduleEditor: View {
 
 /// MutedAlertsView is the dashboard's Alerts tab: whether the agent tells
 /// the person unasked what their mail says they should know now, their
-/// quiet hours and the most a day; what it told them lately, each muted in
-/// a scope they choose; and what they muted, each unmuted again.
+/// quiet hours, the most a day, and the day and time it looks around their
+/// town; what it told them lately, each muted in a scope they choose; what
+/// it is following for them (bills, parcels, deadlines and events), each
+/// stopped, and a kind of them muted; and what they muted, each unmuted
+/// again.
 struct MutedAlertsView: View {
     let connection: Connection
+    /// Opens scrolled to what the agent is following, below the alerts.
+    var focusesFollowing = false
     @State private var preferences: AgentUpkeepPreferences?
     @State private var isAgentRead = false
     @State private var isAgentMissing = false
@@ -2257,8 +2271,12 @@ struct MutedAlertsView: View {
     @State private var quietStart = "22:00"
     @State private var quietEnd = "07:00"
     @State private var dailyMost = 5
+    @State private var lookAroundWeekday = "thursday"
+    @State private var lookAroundTime = "17:00"
     @State private var alerts: [AgentAlert]?
     @State private var mutes: [AgentAlertMute] = []
+    @State private var followUps: [AgentFollowUp]?
+    @State private var isMutingFollowUps = false
     @State private var categoryNames: [String: String] = [:]
     @State private var muting: AgentAlert?
     @State private var isBusy = false
@@ -2266,15 +2284,23 @@ struct MutedAlertsView: View {
     @State private var problemText: String?
 
     var body: some View {
-        List {
-            if isAgentMissing {
-                ContentUnavailableView("Your agent is off", systemImage: "bell.slash", description: Text("Turn it on in its overview first."))
-            } else {
-                settingsSection
-                if preferences?.isRunning == true {
-                    alertsSection
-                    mutesSection
+        ScrollViewReader { scrollProxy in
+            List {
+                if isAgentMissing {
+                    ContentUnavailableView("Your agent is off", systemImage: "bell.slash", description: Text("Turn it on in its overview first."))
+                } else {
+                    settingsSection
+                    if preferences?.isRunning == true {
+                        alertsSection
+                        followingSection.id(Self.followingId)
+                        mutesSection
+                    }
                 }
+            }
+            .task(id: followUps?.count) {
+                guard focusesFollowing, followUps != nil else { return }
+                try? await Task.sleep(for: .milliseconds(200))
+                scrollProxy.scrollTo(Self.followingId, anchor: .top)
             }
         }
         .navigationTitle("Alerts")
@@ -2285,6 +2311,8 @@ struct MutedAlertsView: View {
         .task(id: quietStart) { await saveQuiet(start: quietStart) }
         .task(id: quietEnd) { await saveQuiet(end: quietEnd) }
         .task(id: dailyMost) { await saveDailyMost(dailyMost) }
+        .task(id: lookAroundWeekday) { await saveLookAround(weekday: lookAroundWeekday) }
+        .task(id: lookAroundTime) { await saveLookAround(time: lookAroundTime) }
         .toast(done: $doneText, problem: $problemText)
     }
 
@@ -2306,12 +2334,21 @@ struct MutedAlertsView: View {
                         Text(dailyMost, format: .number).monospacedDigit().contentTransition(.numericText())
                     }
                 }
+                Picker("Look around town on", selection: $lookAroundWeekday) {
+                    ForEach(AgentUpkeepPreferences.lookAroundWeekdays, id: \.self) { offeredWeekday in
+                        Text(verbatim: UpkeepWords.lookAroundWeekdayName(offeredWeekday)).tag(offeredWeekday)
+                    }
+                }
+                DatePicker(
+                    "At", selection: Binding(get: { UpkeepWords.clockDate(lookAroundTime) }, set: { lookAroundTime = UpkeepWords.clockText($0) }),
+                    displayedComponents: .hourAndMinute)
             }
             .disabled(!isAlertsEnabled)
         } footer: {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Your agent reads what arrives and tells you, unasked, when your mail shows something you should know now: a notice about your family, someone trying your account, a deadline today. It writes in the main conversation and in the chat app you linked.")
                 Text("In your quiet hours only what cannot wait is said; the rest waits for the morning. The same time at both ends means no quiet hours.")
+                Text("Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.")
             }
         }
         .disabled(preferences == nil)
@@ -2372,6 +2409,118 @@ struct MutedAlertsView: View {
         }
     }
 
+    private static let followingId = "alerts-following"
+
+    @ViewBuilder
+    private var followingSection: some View {
+        Section {
+            if let followUps, followUps.isEmpty {
+                Text("Your agent is not following anything right now.").foregroundStyle(.secondary)
+            }
+            ForEach(followUps ?? []) { followUp in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: followUp.followUpTitle)
+                        if followUp.isOverdue {
+                            UpkeepTag(text: String(localized: "Overdue"), tone: .bad)
+                        } else if followUp.isStalled {
+                            UpkeepTag(text: String(localized: "Stalled"), tone: .warning)
+                        }
+                    }
+                    Text(verbatim: followUpLine(followUp)).font(.footnote).foregroundStyle(.secondary)
+                    if let page = followUp.sourcePageURL, let host = page.host {
+                        Link(destination: page) {
+                            Label(host, systemImage: "link").font(.footnote)
+                        }
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                .swipeActions {
+                    stopFollowUpButton(followUp).tint(.orange)
+                }
+                .contextMenu {
+                    stopFollowUpButton(followUp)
+                }
+            }
+            if followUps != nil {
+                Button("Mute follow-ups", systemImage: "bell.slash") { isMutingFollowUps = true }
+                    .confirmationDialog("Stop telling me about follow-ups", isPresented: $isMutingFollowUps, titleVisibility: .visible) {
+                        ForEach(AgentFollowUp.muteKinds, id: \.self) { kind in
+                            Button(sentenceCase(followUpKindName(kind))) {
+                                Task {
+                                    await act(saying: String(localized: "Muted: \(targetLabel("kind", target: kind))")) {
+                                        try await connection.muteAgentAlertKind(kind)
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+        } header: {
+            Text("Following")
+        } footer: {
+            Text("Bills, parcels, deadlines and events your agent is keeping track of from your mail. It tells you when one needs you. Stop one to drop it.")
+        }
+    }
+
+    private func stopFollowUpButton(_ followUp: AgentFollowUp) -> some View {
+        Button("Stop", systemImage: "stop.circle") {
+            Task {
+                await act(saying: String(localized: "Stopped following: \(followUp.followUpTitle)")) {
+                    try await connection.stopAgentFollowUp(followUp.id)
+                }
+            }
+        }
+    }
+
+    /// A follow-up's second line: what kind it is, its day, then what the
+    /// kind has: who is to be paid and how much, who carries a parcel and
+    /// its number, where an event is.
+    private func followUpLine(_ followUp: AgentFollowUp) -> String {
+        var parts: [String] = [sentenceCase(followUpKindName(followUp.followUpKind, isSingular: true))]
+        if let day = followUp.dueDate() {
+            parts.append(day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year()))
+        } else {
+            parts.append(String(localized: "No day yet"))
+        }
+        if let payee = followUp.payee, !payee.isEmpty { parts.append(payee) }
+        if let amount = followUp.amount, !amount.isEmpty {
+            if let number = Double(amount), let currencyCode = followUp.currencyCode, !currencyCode.isEmpty {
+                parts.append(UpkeepWords.money(number, currency: currencyCode))
+            } else {
+                parts.append(amount)
+            }
+        }
+        let carrier = [followUp.carrier, followUp.trackingNumber].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        if !carrier.isEmpty { parts.append(carrier) }
+        if let place = followUp.place, !place.isEmpty { parts.append(place) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// A kind of follow-up in words, in lower case so it reads inside a
+    /// sentence: "bills", or with isSingular "bill".
+    private func followUpKindName(_ kind: String, isSingular: Bool = false) -> String {
+        switch (kind, isSingular) {
+        case ("bill", true): return String(localized: "bill")
+        case ("parcel", true): return String(localized: "parcel")
+        case ("deadline", true): return String(localized: "deadline")
+        case ("event", true): return String(localized: "event")
+        case ("bill", false): return String(localized: "bills")
+        case ("parcel", false): return String(localized: "parcels")
+        case ("deadline", false): return String(localized: "deadlines")
+        case ("event", false): return String(localized: "events")
+        case ("nearby", _): return String(localized: "what is on near you")
+        case ("follow_up", _): return String(localized: "all follow-ups")
+        default: return kind
+        }
+    }
+
+    /// The first letter in capitals, for a word that begins a line or a
+    /// button; the rest as it is, since Chinese and Japanese have no case.
+    private func sentenceCase(_ text: String) -> String {
+        text.prefix(1).uppercased() + text.dropFirst()
+    }
+
     @ViewBuilder
     private var mutesSection: some View {
         Section {
@@ -2412,6 +2561,7 @@ struct MutedAlertsView: View {
     private func targetLabel(_ muteScope: String, target: String) -> String {
         if muteScope == "spendingCategory" { return categoryNames[target] ?? String(localized: "a deleted spending category") }
         if muteScope == "kind" && target == "budget" { return String(localized: "budget and savings target alerts") }
+        if muteScope == "kind" && AgentFollowUp.muteKinds.contains(target) { return followUpKindName(target) }
         return target
     }
 
@@ -2437,6 +2587,8 @@ struct MutedAlertsView: View {
                 quietStart = read.shownAlertQuietStart
                 quietEnd = read.shownAlertQuietEnd
                 dailyMost = read.shownAlertDailyMost
+                lookAroundWeekday = read.shownLookAroundWeekday
+                lookAroundTime = read.shownLookAroundTime
             }
         } catch {
             problemText = error.localizedDescription
@@ -2451,6 +2603,7 @@ struct MutedAlertsView: View {
             if isCategoryNamed, let categories = try? await connection.spendingCategories() {
                 categoryNames = Dictionary(categories.map { ($0.id, FinanceCategoryNames.shown($0)) }, uniquingKeysWith: { first, _ in first })
             }
+            followUps = try await connection.agentFollowUps()
         } catch {
             problemText = error.localizedDescription
             if alerts == nil { alerts = [] }
@@ -2479,6 +2632,20 @@ struct MutedAlertsView: View {
         if Task.isCancelled { return }
         do {
             self.preferences = try await connection.updateAgentUpkeep(alertQuietStart: start, alertQuietEnd: end) ?? preferences
+            doneText = String(localized: "Saved")
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func saveLookAround(weekday: String? = nil, time: String? = nil) async {
+        guard let preferences else { return }
+        if let weekday, weekday == preferences.shownLookAroundWeekday { return }
+        if let time, time == preferences.shownLookAroundTime { return }
+        try? await Task.sleep(for: .milliseconds(700))
+        if Task.isCancelled { return }
+        do {
+            self.preferences = try await connection.updateAgentUpkeep(lookAroundWeekday: weekday, lookAroundTime: time) ?? preferences
             doneText = String(localized: "Saved")
         } catch {
             problemText = error.localizedDescription

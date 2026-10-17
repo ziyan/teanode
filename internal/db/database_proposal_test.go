@@ -104,3 +104,54 @@ func TestExtractionWaitsForProposalAcceptance(test *testing.T) {
 		}
 	})
 }
+
+// A second reading of a message (the look back over past mail reads ones
+// sorting flagged long ago) replaces the offers still waiting and does not
+// offer again what the person already accepted or dismissed, but does add
+// what is new.
+func TestRereadingDoesNotOfferADecidedProposalAgain(test *testing.T) {
+	database, original := proposalInsightFixture(test)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.ReplaceMailProposals(original.MailboxID, original.MailID, []models.MailProposal{
+			{Kind: models.MailProposalEvent, Summary: "Parents evening", Starts: "2026-11-05T18:00:00Z"},
+			{Kind: models.MailProposalEvent, Summary: "Bake sale", Starts: "2026-11-07T10:00:00Z"},
+			{Kind: models.MailProposalContact, Name: "Pat Example", Emails: []string{"pat@example.org"}},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		// The original offer is replaced; accept the first of the new ones
+		// and dismiss the contact.
+		for index, proposalStatus := range map[int]string{0: models.MailProposalAccepted, 2: models.MailProposalDismissed} {
+			if err := transaction.SetMailProposalStatus(original.MailboxID, original.MailID, index, proposalStatus); err != nil {
+				test.Fatal(err)
+			}
+		}
+	})
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.ReplaceMailProposals(original.MailboxID, original.MailID, []models.MailProposal{
+			{Kind: models.MailProposalEvent, Summary: "parents evening", Starts: "2026-11-05T18:00:00Z"},
+			{Kind: models.MailProposalEvent, Summary: "Bake sale", Starts: "2026-11-07T10:00:00Z"},
+			{Kind: models.MailProposalContact, Name: "P. Example", Emails: []string{"PAT@example.org"}},
+			{Kind: models.MailProposalEvent, Summary: "Book fair", Starts: "2026-11-09T10:00:00Z"},
+		}); err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.GetMailInsights(original.MailboxID, []string{original.MailID})
+		if err != nil {
+			test.Fatal(err)
+		}
+		summaries := []string{}
+		for _, proposal := range found[original.MailID].Proposals {
+			summaries = append(summaries, proposal.Summary+proposal.Name+"/"+proposal.Status)
+		}
+		want := []string{"Parents evening/accepted", "Pat Example/dismissed", "Bake sale/", "Book fair/"}
+		if len(summaries) != len(want) {
+			test.Fatalf("the decided ones kept once, the offered replaced and the new one added: %q", summaries)
+		}
+		for index := range want {
+			if summaries[index] != want[index] {
+				test.Fatalf("proposal %d: %q, want %q (all %q)", index, summaries[index], want[index], summaries)
+			}
+		}
+	})
+}

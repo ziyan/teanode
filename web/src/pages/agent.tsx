@@ -126,6 +126,8 @@ export type Agent = {
   alertQuietStart?: string
   alertQuietEnd?: string
   alertDailyMost: number
+  lookAroundWeekday?: string
+  lookAroundTime?: string
 }
 export type AgentSource = { mailboxId: string; name: string; addresses: string[]; policy?: AgentMailboxPolicy | null }
 // A calendar or an address book as a source: a switch, and how much is in it.
@@ -151,7 +153,7 @@ export type AgentView = {
 
 const VIEW = `{
   agent { id name enabled instructions language knowledgeLanguage askModel speechVoice dreamFrom dreamUntil dailyTokens operatorDisabledAt confirm unattendedAllowedRisks
-    isMemoryCheckEnabled isIdeasEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
+    isMemoryCheckEnabled isIdeasEnabled isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
     voice { tone length greeting signoff }
     categories { name description }
     notifications { heldReply highPriority runFailed } }
@@ -172,13 +174,14 @@ const UPDATE_AGENT = `
     $voice: AgentVoiceInput,
     $categories: [AgentCategoryInput!], $notifications: AgentNotificationsInput, $confirm: [String!], $unattendedAllowedRisks: [String!], $askModel: String, $speechVoice: String,
     $dreamFrom: String, $dreamUntil: String, $isMemoryCheckEnabled: Boolean, $isIdeasEnabled: Boolean,
-    $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $forget: Boolean) {
+    $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String, $forget: Boolean) {
     UpdateAgent(enabled: $enabled, name: $name, instructions: $instructions, language: $language, knowledgeLanguage: $knowledgeLanguage,
       voice: $voice,
       categories: $categories, notifications: $notifications, confirm: $confirm, unattendedAllowedRisks: $unattendedAllowedRisks, askModel: $askModel, speechVoice: $speechVoice,
       dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isMemoryCheckEnabled: $isMemoryCheckEnabled,
       isIdeasEnabled: $isIdeasEnabled, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart,
-      alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, forget: $forget) ${VIEW}
+      alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost,
+      lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime, forget: $forget) ${VIEW}
   }`
 const GRANT = `mutation ($mailboxId: String!, $policy: AgentMailboxInput) { GrantAgentMailbox(mailboxId: $mailboxId, policy: $policy) ${VIEW} }`
 const REVOKE = `mutation ($mailboxId: String!) { RevokeAgentMailbox(mailboxId: $mailboxId) ${VIEW} }`
@@ -518,6 +521,9 @@ export function AgentPage() {
   )
 }
 
+// The days the look around may be set to, as the server stores them.
+const LOOK_AROUND_WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
+
 type SaveProps = {
   agent: Agent
   busy: boolean
@@ -526,7 +532,8 @@ type SaveProps = {
 
 // AlertSettings: whether the agent tells the person, unasked, what they
 // should know now; their night, when only what cannot wait is said; and how
-// many a day at most. They have a tab of their own with what the agent told
+// many a day at most; and the day and hour it looks around their town for
+// what is on. They have a tab of their own with what the agent told
 // them and what they muted, the Alerts card beneath them.
 function AlertSettings({ agent, busy, onSave }: SaveProps) {
   const { t } = useTranslation()
@@ -588,6 +595,31 @@ function AlertSettings({ agent, busy, onSave }: SaveProps) {
         </div>
       </div>
       <p className="muted field-hint">{t('agent.alertQuietHint')}</p>
+      <div className="form-narrow">
+        <div className="row alert-settings">
+          <label>
+            <span>{t('agent.lookAroundWeekday')}</span>
+            <Select
+              block
+              value={agent.lookAroundWeekday || 'thursday'}
+              disabled={busy || !agent.isAlertsEnabled}
+              label={t('agent.lookAroundWeekday')}
+              options={LOOK_AROUND_WEEKDAYS.map((weekday) => ({ value: weekday, label: t(`agent.weekday.${weekday}`) }))}
+              onChange={(weekday) => void onSave({ lookAroundWeekday: weekday }, t('agent.saved'))}
+            />
+          </label>
+          <label>
+            <span>{t('agent.lookAroundTime')}</span>
+            <input
+              type="time"
+              disabled={busy || !agent.isAlertsEnabled}
+              value={agent.lookAroundTime || '17:00'}
+              onChange={(event) => void onSave({ lookAroundTime: event.target.value }, t('agent.saved'))}
+            />
+          </label>
+        </div>
+      </div>
+      <p className="muted field-hint">{t('agent.lookAroundHint')}</p>
     </SettingsSection>
   )
 }

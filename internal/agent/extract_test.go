@@ -34,7 +34,7 @@ func TestAnAppointmentInTheWordsIsOfferedAndNotWritten(t *testing.T) {
 	defer closeDatabase()
 
 	sorted := `{\"category\":\"personal\",\"priority\":\"normal\",\"needs_reply\":true,\"research\":false,\"extract\":true,\"summary\":\"Lunch on Thursday.\",\"action_items\":[]}`
-	found := `{\"events\":[{\"summary\":\"Lunch with Maria\",\"starts\":\"2026-09-17T13:00\",\"location\":\"Nadia's\",\"because\":\"Shall we say Thursday at 1pm at Nadia's?\"}],\"contacts\":[]}`
+	found := `{\"events\":[{\"summary\":\"Lunch with Maria\",\"starts\":\"2036-09-17T13:00\",\"location\":\"Nadia's\",\"because\":\"Shall we say Thursday at 1pm at Nadia's?\"}],\"contacts\":[]}`
 
 	var mutex sync.Mutex
 	rounds := 0
@@ -181,8 +181,8 @@ func TestOnlyUsableFindingsBecomeOffers(t *testing.T) {
 
 	proposals := agent.InterpretExtraction(&agent.ExtractAnswer{
 		Events: []agent.ExtractedEvent{
-			{Summary: "Lunch", Starts: "2026-09-17T13:00", Because: "Thursday at one"},
-			{Summary: "", Starts: "2026-09-17T13:00"},
+			{Summary: "Lunch", Starts: "2036-09-17T13:00", Because: "Thursday at one"},
+			{Summary: "", Starts: "2036-09-17T13:00"},
 			{Summary: "Something", Starts: ""},
 		},
 		Contacts: []agent.ExtractedContact{

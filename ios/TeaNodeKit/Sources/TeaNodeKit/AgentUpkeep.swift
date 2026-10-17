@@ -22,11 +22,13 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     public let alertQuietStart: String?
     public let alertQuietEnd: String?
     public let alertDailyMost: Int
+    public let lookAroundWeekday: String?
+    public let lookAroundTime: String?
 
     public init(
         id: String, enabled: Bool = true, operatorDisabledAt: String? = nil, dreamFrom: String? = nil, dreamUntil: String? = nil,
         dreamBootstrap: Bool? = nil, isAlertsEnabled: Bool = true, alertQuietStart: String? = nil, alertQuietEnd: String? = nil,
-        alertDailyMost: Int = 0
+        alertDailyMost: Int = 0, lookAroundWeekday: String? = nil, lookAroundTime: String? = nil
     ) {
         self.id = id
         self.enabled = enabled
@@ -38,6 +40,8 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
         self.alertQuietStart = alertQuietStart
         self.alertQuietEnd = alertQuietEnd
         self.alertDailyMost = alertDailyMost
+        self.lookAroundWeekday = lookAroundWeekday
+        self.lookAroundTime = lookAroundTime
     }
 
     /// Whether the agent runs at all: on, and not turned off by the
@@ -54,6 +58,17 @@ public struct AgentUpkeepPreferences: Codable, Hashable, Sendable {
     public var shownAlertQuietStart: String { UpkeepClock.orDefault(alertQuietStart, "22:00") }
     public var shownAlertQuietEnd: String { UpkeepClock.orDefault(alertQuietEnd, "07:00") }
     public var shownAlertDailyMost: Int { alertDailyMost > 0 ? alertDailyMost : 5 }
+
+    /// The days the weekly look around may be set to, as the server keeps
+    /// them, Monday first.
+    public static let lookAroundWeekdays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+    /// The day and time the agent looks around the person's town, with the
+    /// defaults the dashboard shows where none are set.
+    public var shownLookAroundWeekday: String {
+        Self.lookAroundWeekdays.contains(lookAroundWeekday ?? "") ? lookAroundWeekday ?? "thursday" : "thursday"
+    }
+    public var shownLookAroundTime: String { UpkeepClock.orDefault(lookAroundTime, "17:00") }
 }
 
 /// UpkeepClock reads and writes the "HH:MM" times the agent's hours are
@@ -988,6 +1003,67 @@ public struct AgentAlertMute: Codable, Hashable, Sendable, Identifiable {
     public let createdAt: String
 }
 
+// MARK: - Follow-ups
+
+/// AgentFollowUp is something the agent keeps track of from the person's
+/// mail until something closes it: a bill, a parcel, a deadline or a coming
+/// event. What a kind does not use is nil. Only the ones still being watched
+/// are listed, so followUpState is open, overdue or stalled.
+public struct AgentFollowUp: Codable, Hashable, Sendable, Identifiable {
+    public let id: String
+    /// bill, parcel, deadline or event.
+    public let followUpKind: String
+    public let followUpTitle: String
+    public let payee: String?
+    public let carrier: String?
+    /// A decimal such as "84.20", in currencyCode.
+    public let amount: String?
+    public let currencyCode: String?
+    public let trackingNumber: String?
+    /// A day written YYYY-MM-DD.
+    public let dueOn: String?
+    public let place: String?
+    /// The page a follow-up found on the web came from, nil for what mail said.
+    public let sourceUrl: String?
+    public let followUpState: String
+
+    /// The kinds a person can mute, all of them first, as the server's kind
+    /// mutes name them.
+    public static let muteKinds = ["follow_up", "bill", "parcel", "deadline", "event", "nearby"]
+
+    public var isOverdue: Bool { followUpState == "overdue" }
+    public var isStalled: Bool { followUpState == "stalled" }
+
+    /// The page it was found on, when it is a web page: only http and https
+    /// are linked, since the address came from a stranger's page.
+    public var sourcePageURL: URL? {
+        guard let sourceUrl, let address = URL(string: sourceUrl), let scheme = address.scheme?.lowercased(),
+              scheme == "https" || scheme == "http", address.host != nil else { return nil }
+        return address
+    }
+
+    /// The day it is due as the start of that day in the calendar given, nil
+    /// when it has none. Built from its parts rather than parsed, since a
+    /// bare date read as UTC midnight is the evening before anywhere west of
+    /// Greenwich.
+    public func dueDate(calendar: Calendar = .current) -> Date? {
+        guard let dueOn else { return nil }
+        let parts = dueOn.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+    }
+
+    /// The nearest day first, the ones with no day last, and the server's
+    /// order within a day.
+    public static func ordered(_ followUps: [AgentFollowUp]) -> [AgentFollowUp] {
+        followUps.enumerated().sorted { left, right in
+            let leftDay = left.element.dueOn ?? "9999-12-31"
+            let rightDay = right.element.dueOn ?? "9999-12-31"
+            return leftDay == rightDay ? left.offset < right.offset : leftDay < rightDay
+        }.map(\.element)
+    }
+}
+
 // MARK: - Connections
 
 /// AgentConnectedServer is a server the operator connected for everyone,
@@ -1113,7 +1189,7 @@ public struct AgentRunSummary: Codable, Hashable, Sendable, Identifiable {
     public static let jobKinds = [
         "triage", "reply", "research", "summarize", "remember", "ingest", "recording", "dream", "schedule", "extract", "draft", "describe", "compact",
         "evaluate", "survey", "subagent", "mcp", "goal", "background", "speak_first", "alert", "categorize", "statement_import",
-        "read_receipt", "tax_document", "tax_mail", "watch",
+        "read_receipt", "tax_document", "tax_mail", "watch", "follow_up_sweep", "nearby",
     ]
 
     /// Every token it used: read fresh, read from the cache, and written.
@@ -1369,14 +1445,14 @@ public struct MemoryCheckAnswer: Codable, Hashable, Sendable, Identifiable {
 
 extension Documents {
     static let agentUpkeepFields = """
-        id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost
+        id enabled operatorDisabledAt dreamFrom dreamUntil dreamBootstrap isAlertsEnabled alertQuietStart alertQuietEnd alertDailyMost lookAroundWeekday lookAroundTime
         """
     public static let agentUpkeep = """
         query { ReadAgent { agent { \(agentUpkeepFields) } } }
         """
     public static let updateAgentUpkeep = """
-        mutation ($dreamFrom: String, $dreamUntil: String, $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int) {
-          UpdateAgent(dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost) {
+        mutation ($dreamFrom: String, $dreamUntil: String, $isAlertsEnabled: Boolean, $alertQuietStart: String, $alertQuietEnd: String, $alertDailyMost: Int, $lookAroundWeekday: String, $lookAroundTime: String) {
+          UpdateAgent(dreamFrom: $dreamFrom, dreamUntil: $dreamUntil, isAlertsEnabled: $isAlertsEnabled, alertQuietStart: $alertQuietStart, alertQuietEnd: $alertQuietEnd, alertDailyMost: $alertDailyMost, lookAroundWeekday: $lookAroundWeekday, lookAroundTime: $lookAroundTime) {
             agent { \(agentUpkeepFields) }
           }
         }
@@ -1486,6 +1562,19 @@ extension Documents {
         """
     public static let unmuteAgentAlert = """
         mutation ($muteId: String!) { UnmuteAgentAlert(muteId: $muteId) }
+        """
+    public static let agentFollowUps = """
+        query {
+          ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place sourceUrl followUpState }
+        }
+        """
+    public static let stopAgentFollowUp = """
+        mutation ($followUpId: String!) { StopAgentFollowUp(followUpId: $followUpId) { id followUpState } }
+        """
+    public static let muteAgentAlertKind = """
+        mutation ($muteTarget: String) {
+          MuteAgentAlert(muteScope: "kind", muteTarget: $muteTarget) { id muteScope muteTarget }
+        }
         """
 
     public static let learnedFacts = """
@@ -1630,7 +1719,8 @@ extension Connection {
     @discardableResult
     public func updateAgentUpkeep(
         dreamFrom: String? = nil, dreamUntil: String? = nil, isAlertsEnabled: Bool? = nil, alertQuietStart: String? = nil,
-        alertQuietEnd: String? = nil, alertDailyMost: Int? = nil
+        alertQuietEnd: String? = nil, alertDailyMost: Int? = nil, lookAroundWeekday: String? = nil,
+        lookAroundTime: String? = nil
     ) async throws -> AgentUpkeepPreferences? {
         struct Answer: Decodable, Sendable {
             struct Updated: Decodable, Sendable { let agent: AgentUpkeepPreferences? }
@@ -1643,6 +1733,8 @@ extension Connection {
         if let alertQuietStart { variables["alertQuietStart"] = .string(alertQuietStart) }
         if let alertQuietEnd { variables["alertQuietEnd"] = .string(alertQuietEnd) }
         if let alertDailyMost { variables["alertDailyMost"] = .number(Double(alertDailyMost)) }
+        if let lookAroundWeekday { variables["lookAroundWeekday"] = .string(lookAroundWeekday) }
+        if let lookAroundTime { variables["lookAroundTime"] = .string(lookAroundTime) }
         return try await execute(Documents.updateAgentUpkeep, variables: variables, as: Answer.self).UpdateAgent?.agent
     }
 
@@ -1825,6 +1917,28 @@ extension Connection {
     public func unmuteAgentAlert(_ muteId: String) async throws {
         struct Answer: Decodable, Sendable { let UnmuteAgentAlert: JSONValue? }
         _ = try await execute(Documents.unmuteAgentAlert, variables: ["muteId": .string(muteId)], as: Answer.self)
+    }
+
+    /// What the agent is following for the person, the nearest day first:
+    /// bills, parcels, deadlines and coming events, only those still being
+    /// watched.
+    public func agentFollowUps() async throws -> [AgentFollowUp] {
+        struct Answer: Decodable, Sendable { let ListAgentFollowUps: [AgentFollowUp?] }
+        let answer = try await execute(Documents.agentFollowUps, as: Answer.self)
+        return AgentFollowUp.ordered(answer.ListAgentFollowUps.compactMap { $0 })
+    }
+
+    /// Stops following one: it is kept, and nothing more is said about it.
+    public func stopAgentFollowUp(_ followUpId: String) async throws {
+        struct Answer: Decodable, Sendable { let StopAgentFollowUp: JSONValue? }
+        _ = try await execute(Documents.stopAgentFollowUp, variables: ["followUpId": .string(followUpId)], as: Answer.self)
+    }
+
+    /// Stops the alerts about a kind of follow-up: one of
+    /// AgentFollowUp.muteKinds.
+    public func muteAgentAlertKind(_ muteTarget: String) async throws {
+        struct Answer: Decodable, Sendable { let MuteAgentAlert: JSONValue? }
+        _ = try await execute(Documents.muteAgentAlertKind, variables: ["muteTarget": .string(muteTarget)], as: Answer.self)
     }
 
     /// What the agent filed in the last so many days, newest first.

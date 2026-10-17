@@ -233,7 +233,8 @@ of the agent's own (`internal/channel/relay.go`).
 **The person's say.** Alerts are on for every agent (`isAlertsEnabled`) and
 for every mailbox the agent sorts (`AgentMailbox.alerts`, absent meaning
 on). The night and the day's most are theirs to change (`alertQuietStart`,
-`alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night).
+`alertQuietEnd`, `alertDailyMost`; the same time at both ends is no night), as
+are the day and time of the look around.
 "Don't tell me about these" is a **mute**, a row of `agent_alert_mute`
 naming a sender's address, a domain (and its subdomains), a subject key, or
 a kind: `burst`, or a category of the sorting such as `notification`. The
@@ -252,6 +253,62 @@ was said and what is muted), the Mail tab's switch per mailbox, `teanode agent a
 set`, and `agent_profile`'s `no_alerts`, `alerts_on`, `mute_alert` and
 `unmute_alert`, which the agent calls when the person answers an alert with
 "stop telling me about these".
+
+**Follow-ups.** Some of what mail says is not one moment but a situation that
+unfolds: a bill due on a day, a parcel on its way, a form to return, an event
+coming up. The agent keeps these in its own list, `agent_follow_up`
+(`models.AgentFollowUp`), with a kind (`bill`, `parcel`, `deadline`, `event`),
+a title, a day, and what the kind has (payee and amount, carrier and tracking
+number, place). The extract job writes them from mail the sorting flagged
+(`internal/agent/extract.go`), one row per situation, found again by a key
+that `FollowUpKeyOf` makes the same way for mail and for people. Later mail or
+a matching bank transaction closes one (`follow_up_payment.go`), and a daily
+sweep (`follow_up_sweep.go`) marks a bill overdue or a parcel stalled and
+writes `follow_up` candidates for what is due to be said, plus a roundup of
+the week's events and deadlines on Sunday evening; those pass through the
+same bounds and mutes as every other candidate. The person sees and changes
+the list through `ListAgentFollowUps`, `AddAgentFollowUp` and
+`StopAgentFollowUp` (the same permission as the alert mutations): the
+Following list on the Alerts card and in the iPhone app's alert settings,
+`teanode agent follow list|add|stop`, and `agent_profile`'s `list_follow_ups`,
+`add_follow_up` and `stop_follow_up`. Stopping one keeps its row, in the state
+`stopped`, and nothing more is said about it. A kind of them is muted with the
+kind mutes `follow_up` (all of them), `bill`, `parcel`, `deadline` or `event`,
+and the mute offered on an alert about a follow-up is its kind.
+
+**The look back.** So the list is useful the day follow-ups ship, the worker
+looks, every ten minutes, for an active agent with alerts on whose
+`agent.follow_up_backfilled_at` is empty (`follow_up_backfill.go`). It claims
+that column with one conditional update, so it runs once per agent, and
+queues ordinary `extract` jobs, 20 seconds apart, for at most 150 messages of
+the last 45 days that triage already stored an insight for, newest first, in
+mailboxes the agent reads: those with the extract flag, plus those whose
+category or subject has a bill, shipment, form, RSVP or notice word (a net
+for this alone, no model), never junk, phishing, promotions or anything in
+Junk or Trash. Nothing is triaged again. Reading a message twice is safe:
+follow-ups are found again by key, and `ReplaceMailProposals` replaces the
+waiting offers and leaves out any the person already accepted or dismissed.
+A parcel more than a week late, an event or deadline whose day went, and a
+bill long past are let go by the sweep without a word.
+`BackfillAgentFollowUps` and `teanode agent follow backfill` run it again on
+demand, for someone who turned alerts on later.
+
+**The look around.** Once a week, on the day and at the time the person set
+(`lookAroundWeekday`, `lookAroundTime`; Thursday at 17:00 in their zone by
+default), each agent with alerts on is queued a `nearby` job (`nearby.go`, subject the slot,
+like the sweep). It reads the person's town and household from the self page
+and the place pages (one model call that is told to leave out any street
+address; `cleanHomeArea` strips what is left), and with a town runs one turn
+with nobody present that has only `web_search` and `web_fetch`, at most 12
+searches and 10 page reads (`AskSettings.CallLimits`: the loop refuses the
+call past them). What it finds is written as `event` and `deadline`
+follow-ups with `source_url`, the page. It then tells the weekend in one
+message (`tellWeekend`: the open events and deadlines due from tomorrow through
+Sunday, from the look around and from mail), and the Sunday roundup lists the
+rest. When
+memory gives no town the run searches nothing and offers the person one idea,
+once (`nearby_home_area`), asking which town to look around. The kind mute
+`nearby` stops the run and keeps what it wrote out of the roundup.
 
 ## Runs
 

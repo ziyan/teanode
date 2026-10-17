@@ -2,7 +2,10 @@ package apigraph
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/config"
@@ -51,25 +54,31 @@ func TestAlertSettingsRoundTrip(t *testing.T) {
 	if start != "22:00" || end != "07:00" {
 		t.Fatalf("the default night is ten to seven: %s to %s", start, end)
 	}
+	if weekday, clock := created.LookAroundSchedule(); created.LookAroundWeekday != "" || weekday != "thursday" || clock != "17:00" {
+		t.Fatalf("the look around defaults to Thursday at 17:00: %s %s", weekday, clock)
+	}
 	isOff, quietStart, quietEnd, dailyMost := false, "21:30", "06:00", 3
+	lookAroundWeekday, lookAroundTime := " Saturday ", "09:15"
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		view, err := resolver.UpdateAgent(asListener(principal, tx), UpdateAgentArguments{
 			IsAlertsEnabled: &isOff, AlertQuietStart: &quietStart, AlertQuietEnd: &quietEnd, AlertDailyMost: &dailyMost,
+			LookAroundWeekday: &lookAroundWeekday, LookAroundTime: &lookAroundTime,
 		})
 		if err != nil {
 			t.Fatalf("UpdateAgent: %s", err)
 		}
-		if view.Agent.IsAlertsEnabled || view.Agent.AlertQuietStart != "21:30" || view.Agent.AlertQuietEnd != "06:00" || view.Agent.AlertDailyMost != 3 {
-			t.Fatalf("what was set is read back: %+v", view.Agent)
+		if view.Agent.IsAlertsEnabled || view.Agent.AlertQuietStart != "21:30" || view.Agent.AlertQuietEnd != "06:00" || view.Agent.AlertDailyMost != 3 ||
+			view.Agent.LookAroundWeekday != "saturday" || view.Agent.LookAroundTime != "09:15" {
+			t.Fatalf("what was set is read back, the day in lower case: %+v", view.Agent)
 		}
 	})
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		stored, err := tx.GetAgent(created.ID)
-		if err != nil || stored.IsAlertsEnabled || stored.AlertQuietStart != "21:30" || stored.AlertDailyMost != 3 {
+		if err != nil || stored.IsAlertsEnabled || stored.AlertQuietStart != "21:30" || stored.AlertDailyMost != 3 || stored.LookAroundWeekday != "saturday" || stored.LookAroundTime != "09:15" {
 			t.Fatalf("and kept: %+v %v", stored, err)
 		}
 	})
-	for _, refused := range []UpdateAgentArguments{{AlertQuietStart: new("late")}, {AlertDailyMost: new(-1)}} {
+	for _, refused := range []UpdateAgentArguments{{AlertQuietStart: new("late")}, {AlertDailyMost: new(-1)}, {LookAroundWeekday: new("someday")}, {LookAroundTime: new("5pm")}} {
 		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 			if _, err := resolver.UpdateAgent(asListener(principal, tx), refused); err == nil {
 				t.Fatalf("refused: %+v", refused)
@@ -144,6 +153,96 @@ func TestAlertMutesThroughTheAPI(t *testing.T) {
 	})
 }
 
+// What the agent follows: named by the person, found again as one row when
+// named twice, listed open or all, stopped, and never reachable by somebody
+// else's agent.
+func TestFollowUpsThroughTheAPI(t *testing.T) {
+	database, resolver, principal, created := alertAPIFixture(t)
+	var otherFollowUp *models.AgentFollowUp
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		stranger, err := tx.CreateUser(&models.User{Username: "stranger", Name: "Sam Example"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		strangerAgent, err := tx.CreateAgent(&models.Agent{UserID: stranger.ID, Enabled: true})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		if otherFollowUp, _, err = tx.UpsertAgentFollowUp(&models.AgentFollowUp{AgentID: strangerAgent.ID, FollowUpKind: models.AgentFollowUpEvent, FollowUpKey: "event:book fair 2026-11-07", FollowUpTitle: "Book fair", DueOn: "2026-11-07"}); err != nil {
+			t.Fatalf("UpsertAgentFollowUp: %s", err)
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := asListener(principal, tx)
+		bill, err := resolver.AddAgentFollowUp(ctx, AddAgentFollowUpArguments{
+			FollowUpKind: "bill", FollowUpTitle: "Water bill", Payee: "Example Water", Amount: "$1,084.20", CurrencyCode: "usd", DueOn: "2026-11-03",
+		})
+		if err != nil || bill.FollowUpState != models.AgentFollowUpOpen || bill.Amount != "1084.20" || bill.CurrencyCode != "USD" || bill.AgentID != created.ID || bill.FollowUpKey != "bill:example water 2026-11-03" {
+			t.Fatalf("a bill is followed with its key made as extract makes it: %+v %v", bill, err)
+		}
+		again, err := resolver.AddAgentFollowUp(ctx, AddAgentFollowUpArguments{FollowUpKind: "Bill", FollowUpTitle: "Water bill, reminder", Payee: "example  water", Amount: "1084.20", DueOn: "2026-11-03"})
+		if err != nil || again.ID != bill.ID {
+			t.Fatalf("the same bill named again is the one row: %+v %v", again, err)
+		}
+		if _, err := resolver.AddAgentFollowUp(ctx, AddAgentFollowUpArguments{FollowUpKind: "parcel", FollowUpTitle: "Garden shears", Carrier: "Example Post", TrackingNumber: "EX123456789"}); err != nil {
+			t.Fatalf("a parcel needs no day: %s", err)
+		}
+		for _, refused := range []AddAgentFollowUpArguments{
+			{FollowUpKind: "invoice", FollowUpTitle: "Water bill", DueOn: "2026-11-03"},
+			{FollowUpKind: "bill", FollowUpTitle: "Water bill", DueOn: "2026-11-03"},
+			{FollowUpKind: "bill", FollowUpTitle: "Water bill", Amount: "84.20"},
+			{FollowUpKind: "event", FollowUpTitle: "Street fair", DueOn: "next Friday"},
+			{FollowUpKind: "event", DueOn: "2026-10-31"},
+		} {
+			if _, err := resolver.AddAgentFollowUp(ctx, refused); err == nil {
+				t.Fatalf("refused: %+v", refused)
+			}
+		}
+
+		open, err := resolver.ListAgentFollowUps(ctx, ListAgentFollowUpsArguments{})
+		if err != nil || len(open) != 2 {
+			t.Fatalf("what is open, none of the other person's: %+v %v", open, err)
+		}
+		stopped, err := resolver.StopAgentFollowUp(ctx, StopAgentFollowUpArguments{FollowUpID: bill.ID})
+		if err != nil || stopped.FollowUpState != models.AgentFollowUpStopped || stopped.ClosedReason == "" {
+			t.Fatalf("StopAgentFollowUp: %+v %v", stopped, err)
+		}
+		if _, err := resolver.StopAgentFollowUp(ctx, StopAgentFollowUpArguments{FollowUpID: otherFollowUp.ID}); !errors.Is(err, api.ErrNotFound) {
+			t.Fatalf("another person's follow-up is not found: %v", err)
+		}
+		if _, err := resolver.StopAgentFollowUp(ctx, StopAgentFollowUpArguments{FollowUpID: "no-such-follow-up"}); !errors.Is(err, api.ErrNotFound) {
+			t.Fatalf("and neither is one that does not exist: %v", err)
+		}
+		isOpenOnly := true
+		if open, _ = resolver.ListAgentFollowUps(ctx, ListAgentFollowUpsArguments{IsOpenOnly: &isOpenOnly}); len(open) != 1 {
+			t.Fatalf("a stopped one is not open: %+v", open)
+		}
+		isOpenOnly = false
+		if all, _ := resolver.ListAgentFollowUps(ctx, ListAgentFollowUpsArguments{IsOpenOnly: &isOpenOnly}); len(all) != 2 {
+			t.Fatalf("but is listed with all: %+v", all)
+		}
+		reopened, err := resolver.AddAgentFollowUp(ctx, AddAgentFollowUpArguments{FollowUpKind: "bill", FollowUpTitle: "Water bill", Payee: "Example Water", Amount: "1084.20", DueOn: "2026-11-03"})
+		if err != nil || reopened.ID != bill.ID || reopened.FollowUpState != models.AgentFollowUpOpen || reopened.ClosedReason != "" {
+			t.Fatalf("naming a stopped one follows it again: %+v %v", reopened, err)
+		}
+	})
+}
+
+// A follow-up kind is muted like any other kind of alert, by the word the
+// surfaces offer.
+func TestFollowUpKindsAreMuted(t *testing.T) {
+	database, resolver, principal, _ := alertAPIFixture(t)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := asListener(principal, tx)
+		for _, target := range []string{"follow_up", "bill", "parcel", "deadline", "event", "nearby"} {
+			mute, err := resolver.MuteAgentAlert(ctx, MuteAgentAlertArguments{MuteScope: "kind", MuteTarget: " " + strings.ToUpper(target)})
+			if err != nil || mute.MuteScope != models.AlertMuteKind || mute.MuteTarget != target {
+				t.Fatalf("%s: %+v %v", target, mute, err)
+			}
+		}
+	})
+}
+
 // A person chooses the voice their answers are read aloud in, one of the
 // provider's, and an empty choice goes back to the server's.
 func TestTheSpeakingVoiceIsThePersons(t *testing.T) {
@@ -173,4 +272,53 @@ func TestTheSpeakingVoiceIsThePersons(t *testing.T) {
 	if got := speechVoiceOf(resolver.config.Current(), &models.Agent{}); got != config.VoiceSpeechVoiceDefault {
 		t.Fatalf("the server's voice: %s", got)
 	}
+}
+
+// The look back over past mail runs for the caller's own agent, on demand
+// and as often as asked: it queues the extract runs of the sorted messages
+// that look like follow-ups and answers how many, and it needs the agent
+// permission.
+func TestBackfillAgentFollowUpsThroughTheAPI(t *testing.T) {
+	database, resolver, principal, created := alertAPIFixture(t)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		mailbox, err := tx.CreateMailbox(&models.Mailbox{UserID: created.UserID, Name: "Personal", Agent: &models.AgentMailbox{Granted: true, Triage: &models.AgentTriage{Enabled: true}}})
+		if err != nil {
+			t.Fatalf("CreateMailbox: %s", err)
+		}
+		inbox, err := tx.GetFolderByKind(mailbox.ID, models.MailboxFolderKindInbox)
+		if err != nil || inbox == nil {
+			t.Fatalf("GetFolderByKind: %v %v", inbox, err)
+		}
+		mail, err := tx.CreateMail(&models.Mail{Subject: "Your water statement is ready", Kind: models.MailKindIncoming, ReceivedAt: time.Now().Add(-48 * time.Hour)}, nil)
+		if err != nil {
+			t.Fatalf("CreateMail: %s", err)
+		}
+		if _, err := tx.AddItem(inbox.ID, mail.ID, "", models.MailboxItemFlags{}); err != nil {
+			t.Fatalf("AddItem: %s", err)
+		}
+		if err := tx.PutMailInsight(&models.MailInsight{MailboxID: mailbox.ID, MailID: mail.ID, AgentID: created.ID, Category: "notification", Priority: "low"}); err != nil {
+			t.Fatalf("PutMailInsight: %s", err)
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		ctx := asListener(principal, tx)
+		for round := 1; round <= 2; round++ {
+			view, err := resolver.BackfillAgentFollowUps(ctx)
+			if err != nil || view.QueuedMessageCount != 1 {
+				t.Fatalf("round %d: one message queued, even though it ran before: %+v %v", round, view, err)
+			}
+		}
+		jobs, err := tx.ListAgentJobs(&db.AgentJobFilter{AgentID: created.ID, Kinds: []models.AgentJobKind{models.AgentJobExtract}}, nil)
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("one extract job, not two: %+v %v", jobs, err)
+		}
+		found, err := tx.GetAgent(created.ID)
+		if err != nil || found.FollowUpBackfilledAt == nil {
+			t.Fatalf("the time is written: %+v %v", found, err)
+		}
+		stranger := &api.Principal{User: principal.User}
+		if _, err := resolver.BackfillAgentFollowUps(asListener(stranger, tx)); err == nil {
+			t.Fatalf("without the agent permission it is refused")
+		}
+	})
 }

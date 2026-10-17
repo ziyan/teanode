@@ -125,6 +125,9 @@ type Agent struct {
 	lastDream                            time.Time
 	lastSpeak                            time.Time
 	lastWatch                            time.Time
+	lastFollowUpSweep                    time.Time
+	lastFollowUpBackfill                 time.Time
+	lastNearbyQueue                      time.Time
 
 	// watchesQueuedAt is when a look was last queued for each person's
 	// watch, by agent and skill/watch; see queueWatching.
@@ -305,6 +308,8 @@ func New(settings *Settings) *Agent {
 	self.Register(models.AgentJobTaxDocument, self.runReadTaxDocument)
 	self.Register(models.AgentJobTaxMail, self.runTaxMail)
 	self.Register(models.AgentJobWatch, self.runWatch)
+	self.Register(models.AgentJobFollowUpSweep, self.runFollowUpSweep)
+	self.Register(models.AgentJobNearby, self.runNearby)
 	self.catalog = FullCatalog()
 	return self
 }
@@ -492,6 +497,9 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueDreaming(ctx, now)
 	self.queueSpeakingFirst(ctx, now)
 	self.queueWatching(ctx, now)
+	self.queueFollowUpSweeps(ctx, now)
+	self.queueFollowUpBackfills(ctx, now)
+	self.queueNearbyRuns(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)
 	self.sweepBrowsers()

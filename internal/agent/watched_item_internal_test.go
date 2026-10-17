@@ -205,6 +205,10 @@ func TestSkillWatchesNoteFirstThenJudgeWhatIsNew(t *testing.T) {
 	provider := &judgingModel{}
 	server := provider.serve(t)
 	fixture := newAlertFixtureWith(t, server.URL, zoneAtHour(t, 12))
+	// At noon a tick would also queue the follow-up sweep, the look back
+	// over past mail and the look around town, which would take the slot
+	// one of the watches needs; this is about the watches alone.
+	fixture.worker.lastFollowUpSweep, fixture.worker.lastFollowUpBackfill, fixture.worker.lastNearbyQueue = time.Now(), time.Now(), time.Now()
 	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
 		if _, err := tx.PutAgentSkill(&models.AgentSkill{Name: "papers", Enabled: true, Content: watchingSkillForTest}); err != nil {
 			t.Fatalf("PutAgentSkill: %s", err)

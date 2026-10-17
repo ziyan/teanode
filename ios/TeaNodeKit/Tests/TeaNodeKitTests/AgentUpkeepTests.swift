@@ -217,10 +217,27 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertEqual(preferences?.shownDreamUntil, "06:00")
         XCTAssertEqual(preferences?.shownAlertQuietStart, "22:00")
         XCTAssertEqual(preferences?.shownAlertDailyMost, 5)
+        XCTAssertEqual(preferences?.shownLookAroundWeekday, "thursday")
+        XCTAssertEqual(preferences?.shownLookAroundTime, "17:00")
         XCTAssertEqual(preferences?.isRunning, true)
         XCTAssertEqual(UpkeepClock.hourAndMinute("07:05")?.minute, 5)
         XCTAssertNil(UpkeepClock.hourAndMinute("25:00"))
         XCTAssertEqual(UpkeepClock.text(hour: 7, minute: 5), "07:05")
+    }
+
+    func testChangesTheLookAroundDayAndTime() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"UpdateAgent":{"agent":{"id":"agent-1","enabled":true,"operatorDisabledAt":null,"dreamFrom":"","dreamUntil":"",
+                  "dreamBootstrap":false,"isAlertsEnabled":true,"alertQuietStart":"","alertQuietEnd":"","alertDailyMost":0,
+                  "lookAroundWeekday":"friday","lookAroundTime":"18:30"}}}}
+                """#)
+        let preferences = try await connection.updateAgentUpkeep(lookAroundWeekday: "friday", lookAroundTime: "18:30")
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["lookAroundWeekday": .string("friday"), "lookAroundTime": .string("18:30")])
+        XCTAssertEqual(preferences?.shownLookAroundWeekday, "friday")
+        XCTAssertEqual(preferences?.shownLookAroundTime, "18:30")
+        XCTAssertEqual(AgentUpkeepPreferences(id: "agent-1", lookAroundWeekday: "someday", lookAroundTime: "late").shownLookAroundWeekday, "thursday")
+        XCTAssertEqual(AgentUpkeepPreferences(id: "agent-1", lookAroundWeekday: "someday", lookAroundTime: "late").shownLookAroundTime, "17:00")
     }
 
     // MARK: Schedules
@@ -313,6 +330,41 @@ final class AgentUpkeepTests: XCTestCase {
         XCTAssertEqual(answer.alerts[0].muteChoices.first?.muteScope, "sender")
         XCTAssertEqual(answer.alerts[0].covered[0].fromAddress, "shop@example.com")
         XCTAssertEqual(answer.mutes[0].muteTarget, "budget")
+    }
+
+    func testReadsWhatTheAgentFollowsNearestDayFirst() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"ListAgentFollowUps":[
+                  {"id":"parcel-1","followUpKind":"parcel","followUpTitle":"Garden shears","payee":null,"carrier":"Example Post","amount":null,
+                   "currencyCode":null,"trackingNumber":"EX123456789","dueOn":null,"place":null,"followUpState":"open"},
+                  {"id":"bill-1","followUpKind":"bill","followUpTitle":"Power bill","payee":"Example Power","carrier":null,"amount":"61.00",
+                   "currencyCode":"USD","trackingNumber":null,"dueOn":"2030-01-20","place":null,"followUpState":"overdue"},
+                  {"id":"event-1","followUpKind":"event","followUpTitle":"Street fair","payee":null,"carrier":null,"amount":null,
+                   "currencyCode":null,"trackingNumber":null,"dueOn":"2030-01-05","place":"Elm Street","sourceUrl":"https://events.example.org/fair","followUpState":"open"}
+                ]}}
+                """#)
+        let followUps = try await connection.agentFollowUps()
+        XCTAssertEqual(followUps.map(\.id), ["event-1", "bill-1", "parcel-1"])
+        XCTAssertTrue(followUps[1].isOverdue)
+        XCTAssertEqual(followUps[0].sourcePageURL?.host, "events.example.org")
+        XCTAssertNil(followUps[1].sourcePageURL)
+        XCTAssertFalse(followUps[0].isStalled)
+        XCTAssertNil(followUps[2].dueDate())
+        let day = try XCTUnwrap(followUps[0].dueDate(calendar: Calendar(identifier: .gregorian)))
+        let parts = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: day)
+        XCTAssertEqual([parts.year, parts.month, parts.day], [2030, 1, 5])
+        let sentBody = try XCTUnwrap(fake.sent[0].httpBody)
+        XCTAssertTrue(String(decoding: sentBody, as: UTF8.self).contains("isOpenOnly: true"))
+    }
+
+    func testStopsAFollowUpAndMutesAKind() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"StopAgentFollowUp":{"id":"bill-1","followUpState":"stopped"},"MuteAgentAlert":{"id":"mute-1"}}}"#)
+        try await connection.stopAgentFollowUp("bill-1")
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["followUpId": .string("bill-1")])
+        try await connection.muteAgentAlertKind("parcel")
+        XCTAssertEqual(try sentVariables(fake.sent[1]), ["muteTarget": .string("parcel")])
+        XCTAssertEqual(AgentFollowUp.muteKinds.first, "follow_up")
     }
 
     func testSaysWhyAServerRefusedTheCredential() async throws {

@@ -2,9 +2,13 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -25,7 +29,11 @@ import (
 // the reader draws a card from it with the fields filled in and the line they
 // came from quoted underneath. Adding it is a press.
 //
-// That it proposes rather than writes is the whole design. A message is a
+// That it proposes rather than writes is the whole design for the diary and
+// the address book. A follow-up is different. It goes on the agent's own list
+// of what is due, on its way or coming up (models.AgentFollowUp), which
+// changes nothing the person owns, so it is written at once: a card for every
+// parcel would be the hassle the list exists to remove. A message is a
 // stranger's words; putting an appointment in somebody's diary because those
 // words mentioned a day is how a calendar stops being trusted. It is the same
 // reasoning as the hold window on an automatic reply.
@@ -40,8 +48,59 @@ var extractTools = map[string]bool{
 
 // ExtractAnswer is the object the run answers with.
 type ExtractAnswer struct {
-	Events   []ExtractedEvent   `json:"events"`
-	Contacts []ExtractedContact `json:"contacts"`
+	Events    []ExtractedEvent    `json:"events"`
+	Contacts  []ExtractedContact  `json:"contacts"`
+	FollowUps []ExtractedFollowUp `json:"follow_ups"`
+}
+
+// ExtractedAmount is an amount as the model wrote it, a number or the text
+// of one such as "1,234.00", which is read when the follow-up is.
+type ExtractedAmount string
+
+// UnmarshalJSON accepts a JSON number or string.
+func (self *ExtractedAmount) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		*self = ExtractedAmount(text)
+		return nil
+	}
+	var number json.Number
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	*self = ExtractedAmount(number.String())
+	return nil
+}
+
+// ExtractedFollowUp is something the message says is due, on its way or
+// coming up, or says is done.
+type ExtractedFollowUp struct {
+	Kind           string          `json:"kind"`
+	Title          string          `json:"title"`
+	Payee          string          `json:"payee"`
+	Carrier        string          `json:"carrier"`
+	Amount         ExtractedAmount `json:"amount"`
+	CurrencyCode   string          `json:"currency_code"`
+	TrackingNumber string          `json:"tracking_number"`
+	DueOn          string          `json:"due_on"`
+	Place          string          `json:"place"`
+	Key            string          `json:"key"`
+	Resolves       bool            `json:"resolves"`
+	Because        string          `json:"because"`
+}
+
+// FollowUpFinding is a follow-up the answer carried that is usable: the
+// follow-up to keep, or, when Resolves, the one to close and the words that
+// say why.
+type FollowUpFinding struct {
+	FollowUp models.AgentFollowUp
+	Resolves bool
+	Because  string
+
+	// ParcelNumbers are the order and tracking numbers a parcel's message
+	// gave, by which a delivery notice closes the parcel whatever key the
+	// first message made.
+	ParcelNumbers []string
 }
 
 // ExtractedEvent is an appointment the words describe.
@@ -127,14 +186,27 @@ func (self *Agent) runExtract(ctx context.Context, run *Run) error {
 		log.Warningf("the extract run for %q did not answer with an object: %s", mail.ID, err)
 		return nil
 	}
-	proposals := InterpretExtraction(&answer)
-	if len(proposals) == 0 {
+	proposals := currentProposals(InterpretExtraction(&answer), mail.ReceivedAt, time.Now(), Location(run.Owner))
+	findings := InterpretFollowUps(&answer, run.Agent.ID, mail.ID)
+	if len(proposals) == 0 && len(findings) == 0 {
 		self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Read %q: nothing to add", mail.Subject))
 		return nil
 	}
-	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Found %s in %q", describeProposals(proposals), mail.Subject))
+	found := describeProposals(proposals)
+	if len(findings) > 0 {
+		if found != "" {
+			found += " and "
+		}
+		found += plural(len(findings), "something to follow up", "%d things to follow up")
+	}
+	self.retitle(ctx, run, thinking.Conversation, fmt.Sprintf("Found %s in %q", found, mail.Subject))
 	return run.Database().TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.ReplaceMailProposals(run.Mailbox.ID, mail.ID, proposals)
+		if len(proposals) > 0 {
+			if err := tx.ReplaceMailProposals(run.Mailbox.ID, mail.ID, proposals); err != nil {
+				return err
+			}
+		}
+		return StoreFollowUps(tx, findings)
 	})
 }
 
@@ -178,6 +250,242 @@ func InterpretExtraction(answer *ExtractAnswer) []models.MailProposal {
 	return proposals
 }
 
+// proposalCardDays is how old a message may be and still have its offers
+// shown: a card for a meeting or a signature from a message weeks old, as a
+// look back over past mail reads them, would only surprise the person. Its
+// follow-ups are still kept.
+const proposalCardDays = 7
+
+// currentProposals are the offers still worth a card: none for a message
+// received more than proposalCardDays ago, and no appointment that has
+// already started, whatever the message's age.
+func currentProposals(proposals []models.MailProposal, receivedAt, now time.Time, location *time.Location) []models.MailProposal {
+	if !receivedAt.IsZero() && now.Sub(receivedAt) > proposalCardDays*24*time.Hour {
+		return nil
+	}
+	kept := []models.MailProposal{}
+	for _, proposal := range proposals {
+		if proposal.Kind == models.MailProposalEvent && hasProposalStarted(&proposal, now, location) {
+			continue
+		}
+		kept = append(kept, proposal)
+	}
+	return kept
+}
+
+// hasProposalStarted says an appointment's time has come: its start for one
+// with a time, the end of its day for one that lasts all day or gives only
+// a date.
+func hasProposalStarted(proposal *models.MailProposal, now time.Time, location *time.Location) bool {
+	day, err := time.ParseInLocation(time.DateOnly, proposal.Starts, location)
+	if err != nil {
+		starts, err := time.ParseInLocation("2006-01-02T15:04", proposal.Starts, location)
+		if err != nil {
+			return false
+		}
+		if !proposal.AllDay {
+			return starts.Before(now)
+		}
+		day = time.Date(starts.Year(), starts.Month(), starts.Day(), 0, 0, 0, 0, location)
+	}
+	return !day.AddDate(0, 0, 1).After(now)
+}
+
+// InterpretFollowUps turns the model's answer into follow-ups for the agent,
+// refusing what is not usable: an unknown kind, one with no key, a bill with
+// no amount that can be read, a bill, deadline or event with no day. Those
+// are guesses, and a guessed bill is worse than a missing one. A follow-up
+// that resolves is held to less, since a receipt or a delivery notice often
+// leaves out the amount and the day, and only has to name what it closes.
+//
+// The key is made here and not left to the model's spelling: the kind in
+// front, the rest in lower case with its spaces gathered, so a later message
+// about the same parcel or bill finds the same row.
+func InterpretFollowUps(answer *ExtractAnswer, agentId, mailId string) []FollowUpFinding {
+	findings := []FollowUpFinding{}
+	for _, followUp := range answer.FollowUps {
+		kind := models.AgentFollowUpKind(strings.ToLower(strings.TrimSpace(followUp.Kind)))
+		if !kind.IsValid() {
+			continue
+		}
+		trackingNumber := cut(strings.TrimSpace(followUp.TrackingNumber), 100)
+		key := followUp.Key
+		var numbers []string
+		if kind == models.AgentFollowUpParcel {
+			// A parcel nothing numbers cannot be told from the next one,
+			// nor closed by its delivery notice; it would only be called
+			// late. One the person adds by hand is kept by its words.
+			if numbers = parcelNumbers(key + " " + trackingNumber + " " + followUp.Title); len(numbers) == 0 {
+				continue
+			}
+		}
+		followUpKey := FollowUpKeyOf(kind, key+" "+trackingNumber)
+		if followUpKey == "" {
+			continue
+		}
+		finding := FollowUpFinding{
+			Resolves:      followUp.Resolves,
+			Because:       cut(strings.TrimSpace(followUp.Because), 300),
+			ParcelNumbers: numbers,
+			FollowUp: models.AgentFollowUp{
+				AgentID: agentId, FollowUpKind: kind, FollowUpKey: followUpKey,
+				FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{mailId},
+			},
+		}
+		if followUp.Resolves {
+			findings = append(findings, finding)
+			continue
+		}
+		title := cut(strings.TrimSpace(followUp.Title), 200)
+		if title == "" {
+			continue
+		}
+		dueOn := ""
+		if day, err := time.Parse(time.DateOnly, strings.TrimSpace(followUp.DueOn)); err == nil {
+			dueOn = day.Format(time.DateOnly)
+		}
+		if dueOn == "" && kind != models.AgentFollowUpParcel {
+			continue
+		}
+		amount := ""
+		if kind == models.AgentFollowUpBill {
+			if amount = parseFollowUpAmount(string(followUp.Amount)); amount == "" {
+				continue
+			}
+		}
+		finding.FollowUp.FollowUpTitle = title
+		finding.FollowUp.Payee = cut(strings.TrimSpace(followUp.Payee), 200)
+		finding.FollowUp.Carrier = cut(strings.TrimSpace(followUp.Carrier), 100)
+		finding.FollowUp.Amount = amount
+		finding.FollowUp.CurrencyCode = cut(strings.ToUpper(strings.TrimSpace(followUp.CurrencyCode)), 3)
+		finding.FollowUp.TrackingNumber = trackingNumber
+		finding.FollowUp.DueOn = dueOn
+		finding.FollowUp.Place = cut(strings.TrimSpace(followUp.Place), 200)
+		findings = append(findings, finding)
+	}
+	return findings
+}
+
+// FollowUpKeyOf is the stored key of a follow-up: the kind in front, then
+// the key in lower case with its spaces gathered, or "" when the key says
+// nothing. Extract and the people who add a follow-up by hand make it the
+// same way, so a later message about a bill someone added finds that row.
+//
+// A parcel's key is its number when the words carry one: an order number
+// first, since every message from the shop names it, then a tracking
+// number. The model writes the words around it differently each time ("the
+// garden hose order 112-...", "112-..."), and the number is what the next
+// message has in common with the first.
+func FollowUpKeyOf(kind models.AgentFollowUpKind, key string) string {
+	if kind == models.AgentFollowUpParcel {
+		if numbers := parcelNumbers(key); len(numbers) > 0 {
+			return cut(string(kind)+":"+numbers[0], 300)
+		}
+	}
+	key = strings.Join(strings.Fields(strings.ToLower(key)), " ")
+	if key == "" {
+		return ""
+	}
+	return cut(string(kind)+":"+key, 300)
+}
+
+// parseFollowUpAmount reads an amount the way a bill writes it, with a
+// currency sign or a thousands separator, as a decimal with two places, or
+// "" when it is not a positive number.
+func parseFollowUpAmount(text string) string {
+	cleaned := strings.Map(func(character rune) rune {
+		if (character >= '0' && character <= '9') || character == '.' {
+			return character
+		}
+		return -1
+	}, text)
+	amount, err := strconv.ParseFloat(cleaned, 64)
+	if err != nil || amount <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(amount, 'f', 2, 64)
+}
+
+// StoreFollowUps writes what InterpretFollowUps found. A finding that
+// resolves closes the open follow-up with its key, and when there is none
+// writes nothing: a delivery notice for a parcel nobody was told was coming
+// is not something to follow. The others are kept by key, so the same
+// message read twice, or a third notice about one parcel, changes one row.
+//
+// A parcel that closes this way is also a candidate for an alert saying it
+// was delivered, since that is the news the person was waiting for; a bill
+// or a deadline that a message closes is not, they only wanted to hear of
+// it going wrong.
+func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
+	now := time.Now()
+	for _, finding := range findings {
+		followUp := finding.FollowUp
+		if !finding.Resolves {
+			if _, _, err := tx.UpsertAgentFollowUp(&followUp); err != nil {
+				return err
+			}
+			continue
+		}
+		open, err := tx.ListOpenAgentFollowUps(followUp.AgentID)
+		if err != nil {
+			return err
+		}
+		for _, candidate := range open {
+			if candidate.FollowUpKey != followUp.FollowUpKey && !isSameParcel(candidate, finding.ParcelNumbers) {
+				continue
+			}
+			closedReason := finding.Because
+			if closedReason == "" {
+				closedReason = "a later message says it is done"
+			}
+			isTold := candidate.FollowUpKind == models.AgentFollowUpParcel
+			closed, err := tx.UpdateAgentFollowUp(candidate.ID, func(locked *models.AgentFollowUp) error {
+				locked.FollowUpState = models.AgentFollowUpClosed
+				locked.ClosedReason = closedReason
+				locked.SourceItemIDs = append(locked.SourceItemIDs, followUp.SourceItemIDs...)
+				if isTold {
+					locked.ToldState, locked.ToldAt = models.AgentFollowUpToldDelivered, &now
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			if isTold {
+				if err := noteParcelDelivered(tx, closed, now); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// noteParcelDelivered writes the alert candidate that a parcel arrived and
+// queues the alert job, for an agent that has alerts on.
+func noteParcelDelivered(tx db.Transaction, parcel *models.AgentFollowUp, now time.Time) error {
+	agent, err := tx.GetAgent(parcel.AgentID)
+	if err != nil {
+		return err
+	}
+	if agent == nil || !agent.Active() || !agent.IsAlertsEnabled {
+		return nil
+	}
+	mutes, err := tx.ListAgentAlertMutes(agent.ID)
+	if err != nil {
+		return err
+	}
+	candidate, err := writeFollowUpCandidate(tx, mutes, &models.AgentAlertCandidate{
+		AgentID: agent.ID, CandidateKind: models.AlertCandidateFollowUp, AlertSignal: models.AlertSignalSoon,
+		CandidateReason: "a message says it was delivered", FollowUpIDs: []string{parcel.ID},
+		FollowUpToldState: models.AgentFollowUpToldDelivered, FollowUpSubjectKey: parcel.FollowUpKey + ":" + string(models.AgentFollowUpToldDelivered),
+	}, now)
+	if err != nil || candidate == nil {
+		return err
+	}
+	return queueAlert(tx, agent.ID, false, now)
+}
+
 func trimmed(values []string) []string {
 	kept := []string{}
 	for _, value := range values {
@@ -206,6 +514,9 @@ func describeProposals(proposals []models.MailProposal) string {
 		}
 	}
 	parts := []string{}
+	if events+contacts == 0 {
+		return ""
+	}
 	if events > 0 {
 		parts = append(parts, plural(events, "an appointment", "%d appointments"))
 	}
@@ -220,4 +531,58 @@ func plural(count int, one, many string) string {
 		return one
 	}
 	return fmt.Sprintf(many, count)
+}
+
+// orderNumberPattern is an order number as large shops write it: three
+// digits, seven, seven.
+var orderNumberPattern = regexp.MustCompile(`\b\d{3}-\d{7}-\d{7}\b`)
+
+// parcelNumbers are the order numbers, then the tracking numbers, in the
+// text, in lower case and each once. A tracking number is taken to be a run
+// of letters, digits and dashes of ten characters or more with at least six
+// digits in it, which a carrier's number is and a word or a date is not.
+func parcelNumbers(text string) []string {
+	text = strings.ToLower(text)
+	seen := map[string]bool{}
+	numbers := []string{}
+	add := func(number string) {
+		if !seen[number] {
+			seen[number] = true
+			numbers = append(numbers, number)
+		}
+	}
+	for _, number := range orderNumberPattern.FindAllString(text, -1) {
+		add(number)
+	}
+	for _, word := range strings.FieldsFunc(text, func(character rune) bool {
+		return !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != '-'
+	}) {
+		word = strings.Trim(word, "-")
+		digitCount := 0
+		for _, character := range word {
+			if unicode.IsDigit(character) {
+				digitCount++
+			}
+		}
+		if len(word) >= 10 && digitCount >= 6 {
+			add(word)
+		}
+	}
+	return numbers
+}
+
+// isSameParcel says an open parcel is the one a delivery notice with these
+// numbers is about: its key or its tracking number is one of them. The shop
+// names the order and the carrier its own number, so the notice that closes
+// a parcel need not have the key the first message made.
+func isSameParcel(candidate *models.AgentFollowUp, numbers []string) bool {
+	if candidate.FollowUpKind != models.AgentFollowUpParcel {
+		return false
+	}
+	for _, number := range numbers {
+		if candidate.FollowUpKey == string(models.AgentFollowUpParcel)+":"+number || strings.EqualFold(candidate.TrackingNumber, number) {
+			return true
+		}
+	}
+	return false
 }

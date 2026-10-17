@@ -111,12 +111,18 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ListAgentAlertMutes": client.DocumentListAgentAlertMutes,
 		"MuteAgentAlert":      client.DocumentMuteAgentAlert,
 		"UnmuteAgentAlert":    client.DocumentUnmuteAgentAlert,
-		"ListAgentRuns":       client.DocumentListAgentRuns,
-		"ListAllAgentRuns":    client.DocumentListAllAgentRuns,
-		"StopAgentRun":        client.DocumentStopAgentRun,
-		"ListAgentSchedules":  client.DocumentListAgentSchedules,
-		"SaveAgentSchedule":   client.DocumentSaveAgentSchedule,
-		"SaveAgentNode":       client.DocumentSaveAgentNode,
+		// What the agent follows from mail, and what the person asks of it.
+		"ListAgentFollowUps": client.DocumentListAgentFollowUps,
+		"StopAgentFollowUp":  client.DocumentStopAgentFollowUp,
+		"AddAgentFollowUp":   client.DocumentAddAgentFollowUp,
+		// The look back over past mail, run again on demand.
+		"BackfillAgentFollowUps": client.DocumentBackfillAgentFollowUps,
+		"ListAgentRuns":          client.DocumentListAgentRuns,
+		"ListAllAgentRuns":       client.DocumentListAllAgentRuns,
+		"StopAgentRun":           client.DocumentStopAgentRun,
+		"ListAgentSchedules":     client.DocumentListAgentSchedules,
+		"SaveAgentSchedule":      client.DocumentSaveAgentSchedule,
+		"SaveAgentNode":          client.DocumentSaveAgentNode,
 		// A page read on its own carries its overview, the night's record
 		// counts the overviews written, and a person can ask for one again.
 		"AgentGraphPage": client.DocumentAgentGraphPage,
@@ -264,6 +270,16 @@ func TestTheSchemaHasWhatTheDashboardNames(test *testing.T) {
 }`,
 		"answering one": `mutation ($itemId: String!, $answer: String!) {
   AnswerMailInvitation(itemId: $itemId, answer: $answer) { id participation cancelled }
+}`,
+
+		// And the Alerts card's Following list, its Stop, and the mute of a
+		// kind of follow-up.
+		"the followed": `query {
+  ListAgentFollowUps(isOpenOnly: true) { id followUpKind followUpTitle payee carrier amount currencyCode trackingNumber dueOn place followUpState }
+}`,
+		"stopping a follow-up": `mutation ($followUpId: String!) { StopAgentFollowUp(followUpId: $followUpId) { id followUpState } }`,
+		"muting a kind of follow-up": `mutation ($muteTarget: String) {
+  MuteAgentAlert(muteScope: "kind", muteTarget: $muteTarget) { id muteScope muteTarget }
 }`,
 
 		// And the Accounts section's rename and delete of an imported account.

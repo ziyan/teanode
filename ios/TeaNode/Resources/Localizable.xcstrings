@@ -4005,6 +4005,70 @@
         }
       }
     },
+    "all follow-ups": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのフォロー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有跟进"
+          }
+        }
+      }
+    },
+    "Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントは毎週、週末とその次の週に近所で開かれることを調べ、この曜日のこの時刻にお伝えします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理每周会查找你附近这个周末和下一周有什么活动，并在这一天的这个时间告诉你。"
+          }
+        }
+      }
+    },
+    "Look around town on": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近所を調べる曜日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看附近活动的日子"
+          }
+        }
+      }
+    },
+    "what is on near you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近所のできごと"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你附近有什么"
+          }
+        }
+      }
+    },
     "An estimate from your documents and this year's settings: %@ taxable after %@ of itemized deductions (mortgage interest %@, state and local taxes %@, gifts %@). A state's tax on investment income is not counted.": {
       "localizations": {
         "ja": {
@@ -7685,6 +7749,22 @@
         }
       }
     },
+    "bill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求書"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单"
+          }
+        }
+      }
+    },
     "Billing key": {
       "localizations": {
         "ja": {
@@ -7697,6 +7777,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "账单密钥"
+          }
+        }
+      }
+    },
+    "bills": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求書"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单"
+          }
+        }
+      }
+    },
+    "Bills, parcels, deadlines and events your agent is keeping track of from your mail. It tells you when one needs you. Stop one to drop it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メールをもとに、エージェントが追いかけている請求書、荷物、期限、イベントです。対応が必要になったらお知らせします。停止すると、追いかけなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理根据你的邮件在跟进的账单、包裹、截止事项和活动。哪一项需要你处理时，它会告诉你。停止一项，就不再跟进它。"
           }
         }
       }
@@ -9029,6 +9141,38 @@
         }
       }
     },
+    "Check follow-ups": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォローアップの確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查跟进事项"
+          }
+        }
+      }
+    },
+    "Look around town": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "近所の情報を調べる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看附近动态"
+          }
+        }
+      }
+    },
     "Check now": {
       "localizations": {
         "ja": {
@@ -10353,6 +10497,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "费用"
+          }
+        }
+      }
+    },
+    "deadline": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截止事项"
+          }
+        }
+      }
+    },
+    "deadlines": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截止事项"
           }
         }
       }
@@ -13461,6 +13637,38 @@
         }
       }
     },
+    "event": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "イベント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动"
+          }
+        }
+      }
+    },
+    "events": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "イベント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活动"
+          }
+        }
+      }
+    },
     "Events could not be read": {
       "localizations": {
         "ja": {
@@ -13521,6 +13729,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "免税利息股息"
+          }
+        }
+      }
+    },
+    "Following": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォロー中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟进中"
           }
         }
       }
@@ -13909,6 +14133,22 @@
         }
       }
     },
+    "Mute follow-ups": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォローをミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音跟进"
+          }
+        }
+      }
+    },
     "Net investment income tax": {
       "localizations": {
         "ja": {
@@ -13921,6 +14161,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "净投资收入税"
+          }
+        }
+      }
+    },
+    "No day yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日付なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有日期"
           }
         }
       }
@@ -14129,6 +14385,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "未偿还房贷本金"
+          }
+        }
+      }
+    },
+    "Overdue": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限超過"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已逾期"
+          }
+        }
+      }
+    },
+    "parcel": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "荷物"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包裹"
+          }
+        }
+      }
+    },
+    "parcels": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "荷物"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包裹"
           }
         }
       }
@@ -27137,6 +27441,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "所选月份每天的支出，对比上个月同一天的累计。不含转账，金额以汇总货币计。"
+          }
+        }
+      }
+    },
+    "Stalled": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停滞"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停滞"
+          }
+        }
+      }
+    },
+    "Stop telling me about follow-ups": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォローについては伝えない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不要再告诉我跟进的事"
+          }
+        }
+      }
+    },
+    "Stopped following: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追いかけるのをやめました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止跟进：%@"
           }
         }
       }
@@ -44212,6 +44564,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的 %@"
+          }
+        }
+      }
+    },
+    "Your agent is not following anything right now.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントは今、何も追いかけていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理现在没有在跟进任何事。"
           }
         }
       }

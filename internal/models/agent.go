@@ -101,6 +101,11 @@ type Agent struct {
 	// first pass, which fades nothing and only writes this down.
 	DecayedAt *time.Time `json:"decayedAt,omitempty" graphapi:"nullable"`
 
+	// FollowUpBackfilledAt is when the one look back over the last 45 days
+	// of mail for bills, parcels and notices ran, empty until it has. See
+	// internal/agent/follow_up_backfill.go.
+	FollowUpBackfilledAt *time.Time `json:"followUpBackfilledAt,omitempty" graphapi:"nullable"`
+
 	// DreamBootstrap says the night runs again as soon as it can, with
 	// wider limits, until nothing waits to be read: what a first ingest
 	// needs. The night clears it itself.
@@ -128,6 +133,13 @@ type Agent struct {
 	AlertQuietStart string `json:"alertQuietStart,omitempty" graphapi:"nullable"`
 	AlertQuietEnd   string `json:"alertQuietEnd,omitempty" graphapi:"nullable"`
 	AlertDailyMost  int    `json:"alertDailyMost"`
+
+	// LookAroundWeekday and LookAroundTime are when the agent looks around
+	// the person's town each week for what is on: a lower-case English day
+	// name such as "thursday", and "17:00" in their own zone. Empty means
+	// the default. See internal/agent/nearby.go.
+	LookAroundWeekday string `json:"lookAroundWeekday,omitempty" graphapi:"nullable"`
+	LookAroundTime    string `json:"lookAroundTime,omitempty" graphapi:"nullable"`
 
 	// ReportingCurrencyCode is the one currency the person wants totals
 	// shown in, an ISO 4217 code. Empty means the currency of their first
@@ -176,6 +188,41 @@ func (self *Agent) AlertQuietHours() (string, string) {
 		end = AlertQuietEndDefault
 	}
 	return start, end
+}
+
+// The day and time the look around runs when the person has not said:
+// Thursday afternoon, early enough to plan the weekend by.
+const (
+	LookAroundWeekdayDefault = "thursday"
+	LookAroundTimeDefault    = "17:00"
+)
+
+// LookAroundWeekdays are the days the look around may be set to, in the
+// order of time.Weekday, so a name's index is its day.
+var LookAroundWeekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"}
+
+// IsLookAroundWeekday says text is one of LookAroundWeekdays.
+func IsLookAroundWeekday(text string) bool {
+	for _, weekday := range LookAroundWeekdays {
+		if text == weekday {
+			return true
+		}
+	}
+	return false
+}
+
+// LookAroundSchedule is the day and time the look around runs, filled in.
+func (self *Agent) LookAroundSchedule() (weekday, clock string) {
+	if self != nil {
+		weekday, clock = self.LookAroundWeekday, self.LookAroundTime
+	}
+	if weekday == "" {
+		weekday = LookAroundWeekdayDefault
+	}
+	if clock == "" {
+		clock = LookAroundTimeDefault
+	}
+	return weekday, clock
 }
 
 // EffectiveAlertDailyMost resolves the zero value.
@@ -300,6 +347,14 @@ func (self *Agent) Validate() error {
 		}
 		if _, err := time.Parse("15:04", clock); err != nil {
 			errors.add(field, "%q is not a time of day like 22:00", clock)
+		}
+	}
+	if self.LookAroundWeekday != "" && !IsLookAroundWeekday(self.LookAroundWeekday) {
+		errors.add("lookAroundWeekday", "%q is not a day; say one of sunday, monday, tuesday, wednesday, thursday, friday or saturday", self.LookAroundWeekday)
+	}
+	if self.LookAroundTime != "" {
+		if _, err := time.Parse("15:04", self.LookAroundTime); err != nil {
+			errors.add("lookAroundTime", "%q is not a time of day like 17:00", self.LookAroundTime)
 		}
 	}
 	for _, unattendedRisk := range self.UnattendedAllowedRisks {
@@ -680,6 +735,19 @@ const (
 	// tools, judges each new item and makes alert candidates of what
 	// deserves one. Its subject is "skill/watch".
 	AgentJobWatch AgentJobKind = "watch"
+
+	// AgentJobFollowUpSweep reads the agent's open follow-ups against the
+	// day and writes the alert candidates for the bills, parcels, deadlines
+	// and coming events that are due to be told. Its subject is the day and
+	// the hour it belongs to, so a sweep is queued once; it makes no model
+	// call.
+	AgentJobFollowUpSweep AgentJobKind = "follow_up_sweep"
+
+	// AgentJobNearby is the weekly look around the person's town: a run
+	// with nobody present that searches the web for what is on in the week
+	// ahead, and writes what it finds as follow-ups. Its subject is the
+	// day and the hour it belongs to, so a week's run is queued once.
+	AgentJobNearby AgentJobKind = "nearby"
 )
 
 // AgentJobStatus is where a job is.

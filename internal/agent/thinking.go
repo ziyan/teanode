@@ -174,6 +174,8 @@ func (self *Agent) thinkingOn(ctx context.Context, run *Run, title, prompt strin
 		Message: prompt, Surface: string(kind), ReadOnly: readOnly, ReadOnlyTools: readOnlyTools, Short: true,
 		Allow: allow, Headless: true, MaxRounds: rounds, UsageKind: string(kind), Work: work, Model: modelName,
 		Pictures:                pictures,
+		CallLimits:              toolCallLimitsOf(ctx),
+		IsPersonOmitted:         isPersonOmittedIn(ctx),
 		recordingEvidenceSafety: recordingEvidenceSafetyOf(ctx),
 		ReadThenAnswer:          true, ResultCharacters: thinkResultCharacters,
 	})
