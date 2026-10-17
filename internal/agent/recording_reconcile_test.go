@@ -33,6 +33,12 @@ func (self *recordingReconciliationTransaction) ListRecordingsAwaitingReferenceR
 	return []*models.Recording{{ID: "fixture-recording", UserID: "fixture-owner"}}, nil
 }
 
+// ClaimPlacesToName is called by the place naming run that every tick may
+// start; this fake has no places waiting.
+func (self *recordingReconciliationTransaction) ClaimPlacesToName(int, time.Time) ([]*models.Place, error) {
+	return nil, nil
+}
+
 func (self *recordingReconciliationTransaction) ReconcileRecordingReferenceInvalidations(userId, recordingId string) error {
 	if userId != "fixture-owner" || recordingId != "fixture-recording" {
 		return db.ErrNotFound
