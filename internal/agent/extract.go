@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
@@ -94,6 +96,11 @@ type FollowUpFinding struct {
 	FollowUp models.AgentFollowUp
 	Resolves bool
 	Because  string
+
+	// ParcelNumbers are the order and tracking numbers a parcel's message
+	// gave, by which a delivery notice closes the parcel whatever key the
+	// first message made.
+	ParcelNumbers []string
 }
 
 // ExtractedEvent is an appointment the words describe.
@@ -303,16 +310,23 @@ func InterpretFollowUps(answer *ExtractAnswer, agentId, mailId string) []FollowU
 		}
 		trackingNumber := cut(strings.TrimSpace(followUp.TrackingNumber), 100)
 		key := followUp.Key
-		if strings.TrimSpace(key) == "" && kind == models.AgentFollowUpParcel {
-			key = trackingNumber
+		var numbers []string
+		if kind == models.AgentFollowUpParcel {
+			// A parcel nothing numbers cannot be told from the next one,
+			// nor closed by its delivery notice; it would only be called
+			// late. One the person adds by hand is kept by its words.
+			if numbers = parcelNumbers(key + " " + trackingNumber + " " + followUp.Title); len(numbers) == 0 {
+				continue
+			}
 		}
-		followUpKey := FollowUpKeyOf(kind, key)
+		followUpKey := FollowUpKeyOf(kind, key+" "+trackingNumber)
 		if followUpKey == "" {
 			continue
 		}
 		finding := FollowUpFinding{
-			Resolves: followUp.Resolves,
-			Because:  cut(strings.TrimSpace(followUp.Because), 300),
+			Resolves:      followUp.Resolves,
+			Because:       cut(strings.TrimSpace(followUp.Because), 300),
+			ParcelNumbers: numbers,
 			FollowUp: models.AgentFollowUp{
 				AgentID: agentId, FollowUpKind: kind, FollowUpKey: followUpKey,
 				FollowUpState: models.AgentFollowUpOpen, SourceItemIDs: []string{mailId},
@@ -356,7 +370,18 @@ func InterpretFollowUps(answer *ExtractAnswer, agentId, mailId string) []FollowU
 // the key in lower case with its spaces gathered, or "" when the key says
 // nothing. Extract and the people who add a follow-up by hand make it the
 // same way, so a later message about a bill someone added finds that row.
+//
+// A parcel's key is its number when the words carry one: an order number
+// first, since every message from the shop names it, then a tracking
+// number. The model writes the words around it differently each time ("the
+// garden hose order 112-...", "112-..."), and the number is what the next
+// message has in common with the first.
 func FollowUpKeyOf(kind models.AgentFollowUpKind, key string) string {
+	if kind == models.AgentFollowUpParcel {
+		if numbers := parcelNumbers(key); len(numbers) > 0 {
+			return cut(string(kind)+":"+numbers[0], 300)
+		}
+	}
 	key = strings.Join(strings.Fields(strings.ToLower(key)), " ")
 	if key == "" {
 		return ""
@@ -406,7 +431,7 @@ func StoreFollowUps(tx db.Transaction, findings []FollowUpFinding) error {
 			return err
 		}
 		for _, candidate := range open {
-			if candidate.FollowUpKey != followUp.FollowUpKey {
+			if candidate.FollowUpKey != followUp.FollowUpKey && !isSameParcel(candidate, finding.ParcelNumbers) {
 				continue
 			}
 			closedReason := finding.Because
@@ -506,4 +531,58 @@ func plural(count int, one, many string) string {
 		return one
 	}
 	return fmt.Sprintf(many, count)
+}
+
+// orderNumberPattern is an order number as large shops write it: three
+// digits, seven, seven.
+var orderNumberPattern = regexp.MustCompile(`\b\d{3}-\d{7}-\d{7}\b`)
+
+// parcelNumbers are the order numbers, then the tracking numbers, in the
+// text, in lower case and each once. A tracking number is taken to be a run
+// of letters, digits and dashes of ten characters or more with at least six
+// digits in it, which a carrier's number is and a word or a date is not.
+func parcelNumbers(text string) []string {
+	text = strings.ToLower(text)
+	seen := map[string]bool{}
+	numbers := []string{}
+	add := func(number string) {
+		if !seen[number] {
+			seen[number] = true
+			numbers = append(numbers, number)
+		}
+	}
+	for _, number := range orderNumberPattern.FindAllString(text, -1) {
+		add(number)
+	}
+	for _, word := range strings.FieldsFunc(text, func(character rune) bool {
+		return !(unicode.IsLetter(character) || unicode.IsDigit(character) || character == '-')
+	}) {
+		word = strings.Trim(word, "-")
+		digitCount := 0
+		for _, character := range word {
+			if unicode.IsDigit(character) {
+				digitCount++
+			}
+		}
+		if len(word) >= 10 && digitCount >= 6 {
+			add(word)
+		}
+	}
+	return numbers
+}
+
+// isSameParcel says an open parcel is the one a delivery notice with these
+// numbers is about: its key or its tracking number is one of them. The shop
+// names the order and the carrier its own number, so the notice that closes
+// a parcel need not have the key the first message made.
+func isSameParcel(candidate *models.AgentFollowUp, numbers []string) bool {
+	if candidate.FollowUpKind != models.AgentFollowUpParcel {
+		return false
+	}
+	for _, number := range numbers {
+		if candidate.FollowUpKey == string(models.AgentFollowUpParcel)+":"+number || strings.EqualFold(candidate.TrackingNumber, number) {
+			return true
+		}
+	}
+	return false
 }

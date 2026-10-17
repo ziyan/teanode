@@ -13,7 +13,7 @@ A follow-up is something the message says is due, on its way or coming up, which
 - deadline: something they must do or return by a date: a form, a permission slip, an RSVP, a renewal. Give title and due_on.
 - event: a dated happening they may want to go to: a school concert, a parents' evening, a street fair, a council meeting. Give title, due_on and place.
 
-title is one line, in {{.Language}}. due_on is always a date, never "Friday". key is what the same situation always gives, so a later message about it gets the same key: for a parcel its tracking number; for a bill the payee and the due date; for an event the sender's domain and the date; for a deadline what is due and the date. Write the key the same way each time, in lower case.
+title is one line, in {{.Language}}. due_on is always a date, never "Friday". key is what the same situation always gives, so a later message about it gets the same key: for a parcel the shop's order number when the message gives one, otherwise its tracking number, written as the number alone; for a bill the payee and the due date; for an event the sender's domain and the date; for a deadline what is due and the date. Write the key the same way each time, in lower case.
 
 When the message says the thing is done -- the parcel was delivered, the bill was paid, the event was cancelled, the form was received -- answer with the follow-up it closes, resolves true, and the key it would have had. Do not make a new follow-up out of it, and leave out the fields the message does not give.
 

@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/agent"
@@ -218,7 +219,8 @@ func TestInterpretFollowUpsRefusesWhatIsNotUsable(t *testing.T) {
 		{"a bill with a currency sign", `{"follow_ups":[{"kind":"bill","title":"Water","due_on":"2026-11-02","amount":"$1,048.20","key":"water"}]}`, 1},
 		{"a deadline with no day", `{"follow_ups":[{"kind":"deadline","title":"Form","key":"form"}]}`, 0},
 		{"an event with a day in words", `{"follow_ups":[{"kind":"event","title":"Fair","due_on":"next Saturday","key":"fair"}]}`, 0},
-		{"a parcel with no day is fine", `{"follow_ups":[{"kind":"parcel","title":"Hose","tracking_number":"TN-1"}]}`, 1},
+		{"a parcel with no day is fine", `{"follow_ups":[{"kind":"parcel","title":"Hose","tracking_number":"TN-48151623"}]}`, 1},
+		{"a parcel with no number", `{"follow_ups":[{"kind":"parcel","title":"Hose","key":"brightleaf"}]}`, 0},
 		{"no key and no tracking number", `{"follow_ups":[{"kind":"event","title":"Fair","due_on":"2026-10-24"}]}`, 0},
 		{"no title", `{"follow_ups":[{"kind":"event","due_on":"2026-10-24","key":"fair"}]}`, 0},
 		{"a kind in capitals", `{"follow_ups":[{"kind":"Event","title":"Fair","due_on":"2026-10-24","key":"fair"}]}`, 1},
@@ -324,6 +326,66 @@ func TestClosingAParcelWritesADeliveredCandidate(t *testing.T) {
 				parcels[0].FollowUpState != models.AgentFollowUpClosed || parcels[0].ToldState != models.AgentFollowUpToldDelivered {
 				t.Errorf("%s: %+v %+v", name, candidate, parcels[0])
 			}
+		}
+	})
+}
+
+// A parcel is kept by its number, whatever the model wrote around it: the
+// shop's order number first, then the carrier's tracking number. One with
+// no number at all is not kept, since nothing could close it.
+func TestParcelKeysAreTheirNumbers(t *testing.T) {
+	answer := &agent.ExtractAnswer{FollowUps: []agent.ExtractedFollowUp{
+		{Kind: "parcel", Title: "Garden hose", Key: "brightleaf garden hose order 112-1234567-7654321"},
+		{Kind: "parcel", Title: "Garden hose", Key: "112-1234567-7654321"},
+		{Kind: "parcel", Title: "Lamp", TrackingNumber: "1ZX9990000000001"},
+		{Kind: "parcel", Title: "Something from a shop", Key: "brightleaf"},
+	}}
+	findings := agent.InterpretFollowUps(answer, "agent-1", "mail-1")
+	keys := []string{}
+	for _, finding := range findings {
+		keys = append(keys, finding.FollowUp.FollowUpKey)
+	}
+	if strings.Join(keys, ", ") != "parcel:112-1234567-7654321, parcel:112-1234567-7654321, parcel:1zx9990000000001" {
+		t.Fatalf("keys %q", keys)
+	}
+}
+
+// The shop's message names the order and the parcel is kept by it; the
+// carrier's delivery notice names only its tracking number, and still
+// closes it, because the shop's message gave that number too.
+func TestADeliveryNoticeClosesTheParcelByAnyOfItsNumbers(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+	var agentId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, _ := tx.CreateUser(&models.User{Username: "robin", Name: "Robin Example"})
+		created, err := tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		agentId = created.ID
+	})
+	store := func(mailId, answer string) {
+		t.Helper()
+		parsed, err := llm.Extract[agent.ExtractAnswer](answer)
+		if err != nil {
+			t.Fatalf("Extract: %s", err)
+		}
+		dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+			if err := agent.StoreFollowUps(tx, agent.InterpretFollowUps(&parsed, agentId, mailId)); err != nil {
+				t.Fatalf("StoreFollowUps: %s", err)
+			}
+		})
+	}
+	store("mail-shipped", `{"follow_ups":[{"kind":"parcel","title":"Garden hose","carrier":"Fast Freight","tracking_number":"FF4815162342","key":"brightleaf order 112-1234567-7654321","due_on":"2026-10-21"}]}`)
+	store("mail-delivered", `{"follow_ups":[{"kind":"parcel","resolves":true,"key":"FF4815162342","because":"Your package was delivered"}]}`)
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		all, err := tx.ListAgentFollowUps(agentId, 10)
+		if err != nil || len(all) != 1 {
+			t.Fatalf("one parcel: %v %+v", err, all)
+		}
+		if all[0].FollowUpKey != "parcel:112-1234567-7654321" || all[0].FollowUpState != models.AgentFollowUpClosed {
+			t.Fatalf("kept by the order and closed by the tracking number: %+v", all[0])
 		}
 	})
 }
