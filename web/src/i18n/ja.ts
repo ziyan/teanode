@@ -1389,6 +1389,7 @@ export const ja: Catalog = {
   'herdr.onScreen': '表示中',
   'herdr.hasQuestion': '質問しています',
   'herdr.earlierTurns': '以前のやり取りを表示',
+  'herdr.noTurns': 'このセッションではまだ何も話していません。',
   'herdr.readFailed': 'セッションを読み取れませんでした。',
   'herdr.sessionGone': 'このセッションはもう開いていません。',
   'backgroundWork.title': 'バックグラウンドの作業',

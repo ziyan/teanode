@@ -1395,6 +1395,7 @@ export const en = {
   'herdr.onScreen': 'On screen',
   'herdr.hasQuestion': 'Asking a question',
   'herdr.earlierTurns': 'Show earlier turns',
+  'herdr.noTurns': 'Nothing has been said in this session yet.',
   'herdr.readFailed': 'The session could not be read.',
   'herdr.sessionGone': 'This session is no longer open.',
   'backgroundWork.title': 'Work in the background',

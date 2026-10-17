@@ -1352,6 +1352,7 @@ export const zh: Catalog = {
   'herdr.onScreen': '屏幕上',
   'herdr.hasQuestion': '正在提问',
   'herdr.earlierTurns': '显示更早的对话',
+  'herdr.noTurns': '这个会话里还没有对话。',
   'herdr.readFailed': '无法读取这个会话。',
   'herdr.sessionGone': '这个会话已不再打开。',
   'backgroundWork.title': '后台工作',

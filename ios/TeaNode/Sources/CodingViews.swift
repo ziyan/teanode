@@ -543,6 +543,11 @@ struct CodingSessionView: View {
         let reading = session.id
         do {
             switch part {
+            // A session that has not said anything yet has no history to
+            // read: its transcript is empty, which is not a failure.
+            case .turns where session.transcriptPath.isEmpty:
+                turns = []
+                isTruncated = false
             case .turns:
                 let read = try await connection.readHerdrSession(computer: session.computer, paneId: session.paneId, turnCount: turnCount)
                 guard reading == selectedId else { return }

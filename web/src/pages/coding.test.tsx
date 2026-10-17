@@ -23,7 +23,7 @@ function sessionOf(fields: Partial<HerdrSession> & Pick<HerdrSession, 'computer'
     herdrAgentStatus: 'idle',
     paneTitle: '',
     workingDirectory: '~/src/website',
-    transcriptPath: '',
+    transcriptPath: '~/.claude/projects/website/session.jsonl',
     isWatched: false,
     ...fields,
   }
@@ -231,4 +231,25 @@ it('does not close a session that is working', async () => {
   renderAt('/coding?computer=laptop&pane=w1%3Ap1')
   await screen.findByText('hello w1:p1')
   expect((screen.getByRole('button', { name: 'Close session' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+it('shows a session that has not said anything yet as empty, without asking for its history', async () => {
+  const fresh = sessionOf({
+    computer: 'laptop',
+    paneId: 'w9:p1',
+    transcriptPath: '',
+    workspaceId: 'w9',
+    workspaceLabel: 'scratch',
+  })
+  list.sessions.push(fresh)
+  try {
+    renderAt('/coding?computer=laptop&pane=w9%3Ap1')
+    await screen.findByText('Nothing has been said in this session yet.')
+    expect(execute).not.toHaveBeenCalledWith(
+      HERDR_DOCUMENTS.ReadAgentHerdrSession,
+      expect.objectContaining({ paneId: 'w9:p1' }),
+    )
+  } finally {
+    list.sessions.pop()
+  }
 })

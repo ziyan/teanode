@@ -15282,3 +15282,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
     display: flex;
   }
 }
+
+.coding-empty {
+  margin: var(--space-4) 0;
+  text-align: center;
+}

@@ -388,11 +388,18 @@ function CodingSession({
   const [isClosing, setClosing] = useState(false)
   const [isClosingBusy, setClosingBusy] = useState(false)
   useEffect(() => setLatest(session), [session])
+  const latestRef = useRef(latest)
+  latestRef.current = latest
 
   const everyMS =
     latest.herdrSessionState === 'working' || latest.herdrSessionState === 'asking' ? BUSY_EVERY_MS : IDLE_EVERY_MS
   const read = useVisiblePolling<SessionRead>(
     async () => {
+      // A session that has not said anything yet has no history to read:
+      // its transcript is empty, which is not a failure.
+      if (view === 'turns' && !latestRef.current.transcriptPath) {
+        return { herdrSession: latestRef.current, turns: [], isTruncated: false, screenText: '' }
+      }
       if (view === 'turns') {
         const response = await graphql<{
           ReadAgentHerdrSession: { herdrSession: HerdrSession; turns: HerdrTurn[]; isTruncated: boolean }
@@ -636,7 +643,11 @@ function CodingSession({
                 {t('herdr.earlierTurns')}
               </button>
             ) : null}
-            <HerdrTurnsList turns={shown.turns} />
+            {shown.turns.length === 0 ? (
+              <p className="coding-empty muted">{t('herdr.noTurns')}</p>
+            ) : (
+              <HerdrTurnsList turns={shown.turns} />
+            )}
           </>
         )}
       </div>
