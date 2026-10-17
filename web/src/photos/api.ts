@@ -54,10 +54,45 @@ export interface PhotoAlbumReference {
   albumTitle: string
 }
 
+// What a model wrote about a picture, as ReadPhoto and DescribePhoto say it.
+// The list leaves these out: a page of two hundred descriptions is weight no
+// grid cell uses.
+export interface PhotoDescriptionFields {
+  // Empty until somebody works with the photo. Words a model wrote from a
+  // picture that may carry words meant for it: shown, never obeyed.
+  photoDescription: string
+  descriptionVisibleText: string
+  // When they were written; null while the photo is undescribed.
+  describedAt: string | null
+  // A description is on its way: asked for, and not yet written.
+  isDescriptionRequested: boolean
+}
+
+export type PhotoDetail = Photo & PhotoDescriptionFields
+
+// One face found in a photo. The box is in fractions of the picture from its
+// top left corner.
+export interface PhotoFace {
+  id: string
+  photoId: string
+  boxLeftFraction: number
+  boxTopFraction: number
+  boxWidthFraction: number
+  boxHeightFraction: number
+  // Empty for a face too small or too uncertain to be grouped.
+  photoFaceGroupId: string
+  // Those of the face's group; empty while the group is unnamed.
+  contactId: string
+  contactName: string
+  // Where the face's picture is fetched from (a square cut from the photo).
+  facePictureUrl: string
+}
+
 export interface PhotoView {
-  photo: Photo
+  photo: PhotoDetail
   photoFiles: PhotoFile[]
   albums: PhotoAlbumReference[]
+  faces: PhotoFace[]
 }
 
 export interface PhotoAlbum {
@@ -98,6 +133,15 @@ export interface PhotoLibrary {
   trashRetentionDays: number
   uploadPath: string
   uploadPartBytes: number
+  // Whether this server and this person can have a photo described, and when
+  // not, why, in the server's words.
+  isDescriptionAvailable: boolean
+  descriptionUnavailableMessage: string
+  // Whether this server can find faces, why not when it cannot, and the
+  // person's own switch for it.
+  isFaceRecognitionAvailable: boolean
+  faceRecognitionUnavailableMessage: string
+  isPhotoFaceRecognitionEnabled: boolean
 }
 
 // Which of the library's three lists is shown.
@@ -109,19 +153,25 @@ export const PHOTOS_PER_PAGE = 200
 const PHOTO_FIELDS =
   'id clientPhotoId photoKind photoSource createdAt takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingErrorMessage trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl'
 
+const PHOTO_DETAIL_FIELDS = `${PHOTO_FIELDS} photoDescription descriptionVisibleText describedAt isDescriptionRequested`
+
+const PHOTO_FACE_FIELDS =
+  'id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName facePictureUrl'
+
 const PHOTO_ALBUM_FIELDS =
   'id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl'
 
 export const PHOTO_DOCUMENTS = {
-  ListPhotos: `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $takenAfter: DateTime, $takenBefore: DateTime) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, albumId: $albumId, takenAfter: $takenAfter, takenBefore: $takenBefore) { ${PHOTO_FIELDS} } }`,
+  ListPhotos: `query ($offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime) { ListPhotos(offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { ${PHOTO_FIELDS} } }`,
   CountPhotos:
-    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $takenAfter: DateTime, $takenBefore: DateTime) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, albumId: $albumId, takenAfter: $takenAfter, takenBefore: $takenBefore) }',
-  ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } } }`,
+    'query ($isFavorite: Boolean, $isTrashed: Boolean, $searchText: String, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime) { CountPhotos(isFavorite: $isFavorite, isTrashed: $isTrashed, searchText: $searchText, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) }',
+  ReadPhoto: `query ($photoId: String!) { ReadPhoto(photoId: $photoId) { photo { ${PHOTO_DETAIL_FIELDS} } photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl } albums { id albumTitle } faces { ${PHOTO_FACE_FIELDS} } } }`,
   ReadPhotoLibrary:
-    'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes } }',
+    'query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes maximumFileBytes maximumAccountBytes trashRetentionDays uploadPath uploadPartBytes isDescriptionAvailable descriptionUnavailableMessage isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled } }',
   FindPhotos:
     'query ($clientPhotoIds: [String!]!) { FindPhotos(clientPhotoIds: $clientPhotoIds) { id clientPhotoId } }',
   UpdatePhoto: `mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { ${PHOTO_FIELDS} } }`,
+  DescribePhoto: `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) { ${PHOTO_DETAIL_FIELDS} } }`,
   TrashPhotos: 'mutation ($photoIds: [String!]!) { TrashPhotos(photoIds: $photoIds) }',
   RestorePhotos: 'mutation ($photoIds: [String!]!) { RestorePhotos(photoIds: $photoIds) }',
   DeletePhotos: 'mutation ($photoIds: [String!]!) { DeletePhotos(photoIds: $photoIds) }',
@@ -148,6 +198,8 @@ export interface PhotoFilter {
   searchText: string
   // Keeps the photos of one album.
   photoAlbumId?: string
+  // Keeps the photos with a face in one group of faces, one person.
+  photoFaceGroupId?: string
   // Keeps the photos taken in a range, for the photos of a suggestion.
   takenAfter?: string
   takenBefore?: string
@@ -159,6 +211,7 @@ function filterVariables(filter: PhotoFilter) {
     isTrashed: filter.listKind === 'trash' ? true : null,
     searchText: filter.searchText || null,
     albumId: filter.photoAlbumId || null,
+    faceGroupId: filter.photoFaceGroupId || null,
     takenAfter: filter.takenAfter || null,
     takenBefore: filter.takenBefore || null,
   }
@@ -187,6 +240,17 @@ export async function countPhotos(filter: PhotoFilter, signal?: AbortSignal): Pr
 export async function readPhoto(photoId: string, signal?: AbortSignal): Promise<PhotoView> {
   const answer = await graphql<{ ReadPhoto: PhotoView }>(PHOTO_DOCUMENTS.ReadPhoto, { photoId }, signal)
   return answer.ReadPhoto
+}
+
+// Asks for a description of a photo, or a new one. The answer is the photo as
+// it now stands: with isDescriptionRequested true while the description is on
+// its way, and describedAt once it has been written.
+export async function describePhoto(photoId: string, isRedescribed: boolean): Promise<PhotoDetail> {
+  const answer = await graphql<{ DescribePhoto: PhotoDetail }>(PHOTO_DOCUMENTS.DescribePhoto, {
+    photoId,
+    isRedescribed,
+  })
+  return answer.DescribePhoto
 }
 
 export async function readPhotoLibrary(signal?: AbortSignal): Promise<PhotoLibrary> {

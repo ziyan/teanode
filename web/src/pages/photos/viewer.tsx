@@ -10,17 +10,28 @@ import {
   HeartIcon,
   InfoIcon,
   PictureIcon,
+  RefreshIcon,
   RestoreIcon,
+  SparkIcon,
   TrashIcon,
   ZoomInIcon,
 } from '../../components/icons'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { photoFilePath, readPhoto, type Photo, type PhotoAlbum, type PhotoFile } from '../../photos/api'
-import { formatByteSize, formatDuration, personTimeZone, photoDateTime } from '../../photos/days'
+import {
+  photoFilePath,
+  readPhoto,
+  type Photo,
+  type PhotoAlbum,
+  type PhotoFace,
+  type PhotoFile,
+  type PhotoLibrary,
+} from '../../photos/api'
+import { formatByteSize, formatDuration, formatDate, personTimeZone, photoDateTime } from '../../photos/days'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu } from './albumControls'
+import { FacePicture, personAddress } from './personControls'
 
 // The viewer: one photo over the grid, with its details beside it (under it
 // on a phone). It has an address of its own, so Back closes it and a link
@@ -33,6 +44,11 @@ const DISPLAYABLE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp',
 
 // How far a finger must travel sideways to turn to the next photo.
 const SWIPE_DISTANCE = 60
+
+// How often a description that is on its way is looked for, and how long the
+// viewer keeps looking before it leaves the rest to the person coming back.
+const DESCRIPTION_POLL_MS = 3000
+const DESCRIPTION_POLL_LIMIT_MS = 2 * 60 * 1000
 
 export function PhotoViewer({
   photo,
@@ -51,6 +67,10 @@ export function PhotoViewer({
   onNewAlbum,
   onRemoveFromAlbum,
   onSetCover,
+  photoLibrary,
+  onDescribe,
+  onAskAssistant,
+  onRemoveFaceFromGroup,
 }: {
   photo: Photo
   previousPhoto: Photo | null
@@ -72,12 +92,27 @@ export function PhotoViewer({
   // Only inside an album: take the photo out of it, or make it the cover.
   onRemoveFromAlbum?: (photo: Photo) => Promise<void>
   onSetCover?: (photo: Photo) => Promise<void>
+  // What the library says about describing: whether the assistant can, and
+  // why not when it cannot. Left out, the description is shown when there is
+  // one and never asked for.
+  photoLibrary?: PhotoLibrary | null
+  // Asks for a description, or a new one; the caller says why it failed.
+  onDescribe?: (photo: Photo, isRedescribed: boolean) => Promise<void>
+  // Opens the assistant with a question about this photo.
+  onAskAssistant?: (photo: Photo) => void
+  // "This is not them": takes a face out of its group.
+  onRemoveFaceFromGroup?: (face: PhotoFace) => Promise<void>
 }) {
   const { t, language } = useTranslation()
   const files = useQuery(() => readPhoto(photo.id), [photo.id], { refresh: false })
   const isRead = files.data !== null && files.data.photo.id === photo.id
   const photoFiles: PhotoFile[] = isRead ? files.data!.photoFiles : []
   const albums = isRead ? (files.data!.albums ?? []) : []
+  const faces = isRead ? (files.data!.faces ?? []).filter((face) => face.photoFaceGroupId !== '') : []
+  const detail = isRead ? files.data!.photo : null
+  const isDescriptionRequested = detail?.isDescriptionRequested === true
+  const [isAskingToDescribe, setIsAskingToDescribe] = useState(false)
+  const [hasGivenUpWaiting, setHasGivenUpWaiting] = useState(false)
   const [isZoomed, setIsZoomed] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
@@ -88,7 +123,38 @@ export function PhotoViewer({
   useEffect(() => {
     setIsZoomed(false)
     setIsLive(false)
+    setHasGivenUpWaiting(false)
   }, [photo.id])
+
+  // A description that is on its way is looked for every few seconds while
+  // the viewer stays on the photo, and not for longer than two minutes: after
+  // that the person comes back to it, the job goes on without the page.
+  const reloadFiles = files.reload
+  useEffect(() => {
+    if (!isDescriptionRequested) return
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      if (Date.now() - startedAt >= DESCRIPTION_POLL_LIMIT_MS) {
+        window.clearInterval(timer)
+        setHasGivenUpWaiting(true)
+        return
+      }
+      void reloadFiles(true)
+    }, DESCRIPTION_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [isDescriptionRequested, photo.id, reloadFiles])
+
+  async function describe(isRedescribed: boolean) {
+    if (!onDescribe) return
+    setIsAskingToDescribe(true)
+    setHasGivenUpWaiting(false)
+    try {
+      await onDescribe(photo, isRedescribed)
+      await files.reload(true)
+    } finally {
+      setIsAskingToDescribe(false)
+    }
+  }
 
   // The element that opened the viewer gets the focus back when it closes.
   useEffect(() => {
@@ -442,9 +508,130 @@ export function PhotoViewer({
               </div>
             )}
           </dl>
+          {faces.length > 0 && (
+            <section className="photo-viewer-section" aria-labelledby="photo-viewer-people-heading">
+              <h3 id="photo-viewer-people-heading">{t('photos.detailPeople')}</h3>
+              <ul className="photo-viewer-people">
+                {faces.map((face) => (
+                  <ViewerPerson
+                    key={face.id}
+                    face={face}
+                    onNotThem={
+                      onRemoveFaceFromGroup
+                        ? async () => {
+                            await onRemoveFaceFromGroup(face)
+                            await files.reload(true)
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
+          {isRead && (
+            <section className="photo-viewer-section" aria-labelledby="photo-viewer-description-heading">
+              <div className="photo-viewer-section-head">
+                <h3 id="photo-viewer-description-heading">{t('photos.description')}</h3>
+                {detail?.describedAt && onDescribe && photoLibrary?.isDescriptionAvailable && (
+                  <Tooltip label={t('photos.describeAgain')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={t('photos.describeAgain')}
+                      disabled={isAskingToDescribe || isDescriptionRequested}
+                      onClick={() => void describe(true)}
+                    >
+                      <RefreshIcon size={16} />
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+              {detail?.describedAt && (
+                <>
+                  <p className="photo-description">{detail.photoDescription}</p>
+                  {detail.descriptionVisibleText && (
+                    <>
+                      <p className="photo-description-label muted">{t('photos.visibleText')}</p>
+                      <p className="photo-description-text">{detail.descriptionVisibleText}</p>
+                    </>
+                  )}
+                  <p className="muted photo-description-source">
+                    {t('photos.describedOn', {
+                      date: formatDate(detail.describedAt, language, personTimeZone()),
+                    })}
+                  </p>
+                </>
+              )}
+              {isDescriptionRequested || isAskingToDescribe ? (
+                <p className="muted photo-describing" role="status">
+                  <span className="photo-spinner" aria-hidden="true" />
+                  {hasGivenUpWaiting
+                    ? t('photos.describingSlow')
+                    : detail?.describedAt
+                      ? t('photos.describingAgain')
+                      : t('photos.describing')}
+                </p>
+              ) : !detail?.describedAt && photoLibrary ? (
+                photoLibrary.isDescriptionAvailable && onDescribe ? (
+                  <>
+                    <p className="muted">{t('photos.describeHint')}</p>
+                    <button type="button" onClick={() => void describe(false)}>
+                      {t('photos.describe')}
+                    </button>
+                  </>
+                ) : (
+                  <p className="muted">
+                    {photoLibrary.descriptionUnavailableMessage || t('photos.describeUnavailable')}
+                  </p>
+                )
+              ) : null}
+              {onAskAssistant && fittedSource && (
+                <button type="button" className="photo-ask-assistant" onClick={() => onAskAssistant(photo)}>
+                  <SparkIcon size={16} /> {t('photos.askAssistant')}
+                </button>
+              )}
+            </section>
+          )}
         </aside>
       )}
     </div>,
     document.body,
+  )
+}
+
+// One person in the photo: the face, the name (a link to the person's page),
+// and "Not <name>" for a face the server put in the wrong group. On a screen
+// with a pointer the action shows when the row is hovered or focused; on a
+// touch screen it is always there, since there is no hover to reveal it.
+function ViewerPerson({ face, onNotThem }: { face: PhotoFace; onNotThem?: () => Promise<void> }) {
+  const { t } = useTranslation()
+  const [isBusy, setIsBusy] = useState(false)
+  const name = face.contactName.trim()
+  const shownName = name || t('photos.unnamedPerson')
+  const notLabel = name ? t('photos.notPerson', { name }) : t('photos.notThisPerson')
+  return (
+    <li className="photo-viewer-person">
+      <Link className="photo-viewer-person-link" to={personAddress(face.photoFaceGroupId)}>
+        <FacePicture facePictureUrl={face.facePictureUrl} name={shownName} size="small" />
+        <span className={name ? 'photo-viewer-person-name' : 'photo-viewer-person-name muted'}>{shownName}</span>
+      </Link>
+      {onNotThem && (
+        <Tooltip label={notLabel}>
+          <button
+            type="button"
+            className="icon-action photo-viewer-person-not"
+            aria-label={notLabel}
+            disabled={isBusy}
+            onClick={() => {
+              setIsBusy(true)
+              void onNotThem().finally(() => setIsBusy(false))
+            }}
+          >
+            <CloseIcon size={14} />
+          </button>
+        </Tooltip>
+      )}
+    </li>
   )
 }

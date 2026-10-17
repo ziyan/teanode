@@ -65,6 +65,10 @@ final class AppModel {
     /// refers to.
     var askingAbout: AgentReference?
 
+    /// A message another screen wrote for the person to read, change and send,
+    /// such as a question about a photo; the conversation puts it in its box.
+    var draftedMessage: String?
+
     /// A page of the agent's knowledge a link asks to open.
     var openedKnowledgePath: String?
     var openedRecordingLink: RecordingLink?

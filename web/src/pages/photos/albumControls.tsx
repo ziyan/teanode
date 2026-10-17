@@ -5,23 +5,41 @@ import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { listPhotoAlbums, type PhotoAlbum } from '../../photos/api'
+import { listPhotoAlbums, readPhotoLibrary, type PhotoAlbum } from '../../photos/api'
+import { listPhotoFaceGroups } from '../../photos/people'
 
 // The pieces the library, the albums page and the viewer share: the choice
 // between the library's views, the question that asks for an album's title,
 // and the menu that puts photos in an album.
 
-export type PhotoSection = 'library' | 'favorites' | 'albums' | 'trash'
+export type PhotoSection = 'library' | 'favorites' | 'albums' | 'people' | 'trash'
 
 const SECTIONS: {
   section: PhotoSection
-  label: 'photos.listLibrary' | 'photos.listFavorites' | 'photos.listAlbums' | 'photos.listTrash'
+  label: 'photos.listLibrary' | 'photos.listFavorites' | 'photos.listAlbums' | 'photos.listPeople' | 'photos.listTrash'
 }[] = [
   { section: 'library', label: 'photos.listLibrary' },
   { section: 'favorites', label: 'photos.listFavorites' },
   { section: 'albums', label: 'photos.listAlbums' },
+  { section: 'people', label: 'photos.listPeople' },
   { section: 'trash', label: 'photos.listTrash' },
 ]
+
+// Whether People is offered: when faces can be found on this server, or when
+// the person has people from before (the server may have been changed since).
+// Read once when the choice is first drawn; until then it is left out, so that
+// the other choices do not shift when it arrives on a server that has faces.
+function useIsPeopleShown(): boolean {
+  const library = useQuery(() => readPhotoLibrary(), [], { refresh: false })
+  const isAvailable = library.data?.isFaceRecognitionAvailable === true
+  const hasAnswered = library.data !== null
+  const groups = useQuery(
+    async () => (hasAnswered && !isAvailable ? await listPhotoFaceGroups(true) : []),
+    [hasAnswered, isAvailable],
+    { refresh: false },
+  )
+  return isAvailable || (groups.data?.length ?? 0) > 0
+}
 
 // The segmented choice at the head of Photos. Choosing leaves the page's own
 // state to the caller: the library keeps its search when it changes list,
@@ -34,9 +52,10 @@ export function PhotoSections({
   onSelect: (section: PhotoSection) => void
 }) {
   const { t } = useTranslation()
+  const isPeopleShown = useIsPeopleShown()
   return (
     <div className="segmented" role="group" aria-label={t('photos.show')}>
-      {SECTIONS.map((entry) => (
+      {SECTIONS.filter((entry) => entry.section !== 'people' || isPeopleShown || current === 'people').map((entry) => (
         <button
           key={entry.section}
           type="button"

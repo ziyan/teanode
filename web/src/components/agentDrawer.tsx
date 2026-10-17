@@ -1040,6 +1040,13 @@ function clockTime(at?: string): string {
   return moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
+// What goes in the box when a page asks for a draft: after what is already
+// written there, on a line of its own.
+function withAskedDraft(kept: string, asked: string): string {
+  if (asked === '') return kept
+  return kept.trim() === '' ? asked : `${kept.trimEnd()}\n${asked}`
+}
+
 function draftKey(conversationId: string): string {
   return `teanode.agent.draft.${conversationId || 'main'}`
 }
@@ -2493,6 +2500,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const movedAt = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
+  // A draft another page asked for before the conversation it belongs in was
+  // read: put in the box, after what is kept, once it has been.
+  const askedDraft = useRef('')
   // The conversation whose draft is sent as soon as it is open and its
   // draft read back: an idea or a goal started from a page, or from the
   // suggestions here.
@@ -2607,7 +2617,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       // reaches the list.
       setTodos(snapshot.todos ?? [])
       if (draftLoadedFor.current !== snapshot.conversation.id) {
-        setDraft(remembered(draftKey(snapshot.conversation.id)))
+        const kept = remembered(draftKey(snapshot.conversation.id))
+        setDraft(withAskedDraft(kept, askedDraft.current))
+        askedDraft.current = ''
         draftLoadedFor.current = snapshot.conversation.id
       }
     },
@@ -2834,8 +2846,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
       if (!available || !detail) return
       detail.handled = true
-      // Asked to open with no conversation named: open on the one it shows.
+      // Asked to open with no conversation named: open on the one it shows,
+      // with the draft, if there is one, put in its box after what is there.
       if (!detail.conversationId) {
+        const asked = detail.draft
+        if (asked) {
+          // Read already: into the box at once. Not yet: when it is read.
+          if (draftLoadedFor.current !== '') setDraft((previous) => withAskedDraft(previous, asked))
+          else askedDraft.current = asked
+        }
         setOpen(true)
         remember(OPEN_KEY, '1')
         setTimeout(() => input.current?.focus(), 50)

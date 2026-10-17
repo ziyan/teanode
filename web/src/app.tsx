@@ -106,6 +106,9 @@ const PhotosPage = lazyPage(async () => ({
 const PhotoAlbumsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "photos" */ './pages/photos/albums')).PhotoAlbumsPage,
 }))
+const PhotoPeoplePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "photos" */ './pages/photos/people')).PhotoPeoplePage,
+}))
 const KnowledgePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
 }))
@@ -545,6 +548,9 @@ export function App() {
                       <Route path="/photos/albums" element={<PhotoAlbumsPage />} />
                       <Route path="/photos/albums/:photoAlbumId" element={<PhotosPage />} />
                       <Route path="/photos/albums/:photoAlbumId/:photoId" element={<PhotosPage />} />
+                      <Route path="/photos/people" element={<PhotoPeoplePage />} />
+                      <Route path="/photos/people/:photoFaceGroupId" element={<PhotosPage />} />
+                      <Route path="/photos/people/:photoFaceGroupId/:photoId" element={<PhotosPage />} />
                       <Route path="/photos/:photoId" element={<PhotosPage />} />
                       <Route path="/recordings" element={<RecordingsPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />

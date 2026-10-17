@@ -3,6 +3,7 @@ import {
   dayHeading,
   dayKey,
   formatByteSize,
+  formatDate,
   formatDateRange,
   formatDuration,
   formatOffset,
@@ -132,5 +133,11 @@ describe('days', () => {
     expect(range.replace(/[\u2009\u202f]/g, ' ')).toBe('Jul 12 – 14, 2030')
     expect(formatDateRange('2030-07-12T09:00:00Z', '2030-07-12T18:00:00Z', 'en', 'UTC')).toBe('Jul 12, 2030')
     expect(formatDateRange(null, null, 'en', 'UTC')).toBe('')
+  })
+
+  it('writes one moment as a date in the zone it is read in', () => {
+    expect(formatDate('2030-07-12T23:30:00Z', 'en', 'UTC')).toBe('July 12, 2030')
+    expect(formatDate('2030-07-12T23:30:00Z', 'en', 'Asia/Tokyo')).toBe('July 13, 2030')
+    expect(formatDate('not a date', 'en', 'UTC')).toBe('')
   })
 })

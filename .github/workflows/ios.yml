@@ -324,6 +324,17 @@ jobs:
           shoot photos-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-album-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
+          # Descriptions and people: Info over the viewer with a description and the people in the photo, the
+          # People section, one person, and the switch for finding faces.
+          shoot photos-viewer-described-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-described
+          shoot photos-viewer-described-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-described
+          shoot photos-people-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-people
+          shoot photos-people-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-people
+          shoot photos-people-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-people
+          shoot photos-person-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-person
+          shoot photos-person-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-person
+          shoot photos-faces-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-faces
+          shoot photos-faces-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-faces
           # Photo backup, off and part way through a library, with invented counts (opened from Settings).
           shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
           shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off

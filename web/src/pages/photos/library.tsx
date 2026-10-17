@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { openAgentConversation } from '../../api'
 import { PageHeadingActions, useBreadcrumbDetail } from '../../components/breadcrumb'
 import { ErrorMessage, Loading } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
@@ -27,6 +28,7 @@ import {
   createPhotoAlbum,
   deletePhotoAlbum,
   deletePhotosForever,
+  describePhoto,
   emptyPhotoTrash,
   listPhotos,
   photoFilePath,
@@ -41,14 +43,34 @@ import {
   trashPhotos,
   type Photo,
   type PhotoAlbum,
+  type PhotoFace,
   type PhotoListKind,
 } from '../../photos/api'
 import { formatByteSize, indexRange } from '../../photos/days'
+import {
+  createContact,
+  hidePhotoFaceGroup,
+  listPhotoFaceGroups,
+  mergePhotoFaceGroups,
+  namePhotoFaceGroup,
+  readPhotoFaceGroup,
+  removePhotoFaceFromGroup,
+  unnamePhotoFaceGroup,
+} from '../../photos/people'
 import { photoUploads, useUploadItems } from '../../photos/uploadQueue'
-import { useSession } from '../../session'
+import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, type PhotoSection } from './albumControls'
 import { PhotoGrid } from './grid'
+import {
+  FacePicture,
+  MergePersonDialog,
+  NamePersonDialog,
+  PersonMenu,
+  personAddress,
+  useDisplayedPersonName,
+  type PersonNaming,
+} from './personControls'
 import { UploadTray } from './uploadTray'
 import { PhotoViewer } from './viewer'
 
@@ -73,6 +95,7 @@ type Confirmation =
   | { kind: 'delete'; photos: Photo[] }
   | { kind: 'emptyTrash' }
   | { kind: 'deleteAlbum' }
+  | { kind: 'needsContacts' }
 
 export function PhotosPage() {
   const session = useSession()
@@ -87,7 +110,9 @@ function AccountPhotosPage() {
   const location = useLocation()
   // The album being looked into, when the address is an album's: the same
   // page then shows that album's photos, in the same grid and viewer.
-  const { photoId, photoAlbumId } = useParams()
+  // The person being looked into, when the address is a person's: the photos
+  // with a face in that group, in the same grid and viewer.
+  const { photoId, photoAlbumId, photoFaceGroupId } = useParams()
   const [parameters, setParameters] = useSearchParams()
   const fileInput = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -102,9 +127,21 @@ function AccountPhotosPage() {
   // The photos a new album is being named for, from a selection or the viewer.
   const [newAlbumPhotos, setNewAlbumPhotos] = useState<Photo[] | null>(null)
   const [isRenamingAlbum, setIsRenamingAlbum] = useState(false)
-  const basePath = photoAlbumId ? albumAddress(photoAlbumId) : '/photos'
+  const [isNamingPerson, setIsNamingPerson] = useState(false)
+  const [isMergingPerson, setIsMergingPerson] = useState(false)
+  const [personError, setPersonError] = useState<string | null>(null)
+  const basePath = photoAlbumId
+    ? albumAddress(photoAlbumId)
+    : photoFaceGroupId
+      ? personAddress(photoFaceGroupId)
+      : '/photos'
+  const isInsideCollection = Boolean(photoAlbumId || photoFaceGroupId)
+  const displayedName = useDisplayedPersonName()
+  const canNamePeople =
+    session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
+  const isAssistantOn = session.services?.isAssistantEnabled === true
 
-  const listKind: PhotoListKind = photoAlbumId
+  const listKind: PhotoListKind = isInsideCollection
     ? 'library'
     : parameters.get('view') === 'favorites'
       ? 'favorites'
@@ -114,7 +151,10 @@ function AccountPhotosPage() {
   const searchText = parameters.get('search') ?? ''
   const [searchInput, setSearchInput] = useState(searchText)
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
-  const filter = useMemo(() => ({ listKind, searchText, photoAlbumId }), [listKind, searchText, photoAlbumId])
+  const filter = useMemo(
+    () => ({ listKind, searchText, photoAlbumId, photoFaceGroupId }),
+    [listKind, searchText, photoAlbumId, photoFaceGroupId],
+  )
   const userId = session.userId ?? ''
 
   // The search is sent once typing pauses, and starts again at the first
@@ -140,8 +180,14 @@ function AccountPhotosPage() {
   const count = useQuery(() => countPhotos(filter), [filter, userId])
   const info = useQuery(() => readPhotoLibrary(), [userId])
   const album = useQuery(async () => (photoAlbumId ? await readPhotoAlbum(photoAlbumId) : null), [photoAlbumId, userId])
-  // The trail and the heading read the album's title, not its id.
-  useBreadcrumbDetail(album.data?.albumTitle ?? null)
+  const person = useQuery(
+    async () => (photoFaceGroupId ? await readPhotoFaceGroup(photoFaceGroupId) : null),
+    [photoFaceGroupId, userId],
+  )
+  const people = useQuery(async () => (isMergingPerson ? await listPhotoFaceGroups(true) : []), [isMergingPerson])
+  // The trail and the heading read the album's title, or the person's name,
+  // not the id.
+  useBreadcrumbDetail(album.data?.albumTitle ?? (person.data ? displayedName(person.data) : null))
   useKeepPageInRange(pageIndex, pageSize, count.data ?? null, setPageIndex)
 
   const photos = useMemo(
@@ -162,15 +208,16 @@ function AccountPhotosPage() {
     setSelectedIds(new Set())
     setIsSelectionMode(false)
     anchorIndex.current = null
-  }, [listKind, searchText, offset, photoAlbumId])
+  }, [listKind, searchText, offset, photoAlbumId, photoFaceGroupId])
 
   const refresh = useCallback(() => {
     void library.reload(true)
     void count.reload(true)
     void info.reload(true)
     void album.reload(true)
+    void person.reload(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [library.reload, count.reload, info.reload, album.reload])
+  }, [library.reload, count.reload, info.reload, album.reload, person.reload])
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
 
@@ -243,7 +290,7 @@ function AccountPhotosPage() {
   }, [])
 
   // Files go into the library; an album is filled from the photos in it.
-  const canUpload = !photoAlbumId
+  const canUpload = !isInsideCollection
   const addFiles = (files: File[]) => {
     if (!canUpload) return
     const { addedCount, ignoredCount } = photoUploads.add(files)
@@ -494,6 +541,122 @@ function AccountPhotosPage() {
     }
   }
 
+  // ---- Describing, asking, and people ----
+
+  // Asks for a description and says so when that failed; the viewer reads
+  // the photo again and shows it arriving.
+  async function describe(photo: Photo, isRedescribed: boolean) {
+    try {
+      await describePhoto(photo.id, isRedescribed)
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  // The assistant has no reference to a photo in the drawer, so the question
+  // names it by id in a draft the person can add to before sending. The
+  // viewer covers the drawer, so it closes and the drawer is what is seen.
+  function askAssistant(photo: Photo) {
+    if (!openAgentConversation('', t('photos.askAssistantDraft', { id: photo.id }))) {
+      navigate('/settings/agent')
+      return
+    }
+    closeViewer()
+  }
+
+  async function removeFaceFromGroup(face: PhotoFace) {
+    try {
+      await removePhotoFaceFromGroup(face.id)
+      toast.done(t('photos.faceRemoved'))
+      refresh()
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  async function nameGroup(naming: PersonNaming) {
+    if (!photoFaceGroupId) return
+    setIsBusy(true)
+    setPersonError(null)
+    try {
+      const contactId = naming.kind === 'new' ? (await createContact(naming.contactName)).id : naming.contactId
+      const named = await namePhotoFaceGroup(photoFaceGroupId, contactId)
+      setIsNamingPerson(false)
+      toast.done(t('photos.personNamed', { name: displayedName(named) }))
+      await person.reload(true)
+    } catch (caught) {
+      setPersonError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function removeName() {
+    if (!photoFaceGroupId || !person.data) return
+    const previousContactId = person.data.contactId
+    try {
+      await unnamePhotoFaceGroup(photoFaceGroupId)
+      toast.done(t('photos.nameRemoved'), {
+        label: t('common.undo'),
+        run: async () => {
+          try {
+            await namePhotoFaceGroup(photoFaceGroupId, previousContactId)
+            refreshRef.current()
+          } catch (caught) {
+            failedWith(caught)
+          }
+        },
+      })
+      await person.reload(true)
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  async function mergeGroup(other: { id: string }) {
+    if (!photoFaceGroupId) return
+    setIsBusy(true)
+    setPersonError(null)
+    try {
+      await mergePhotoFaceGroups([photoFaceGroupId, other.id])
+      setIsMergingPerson(false)
+      toast.done(t('photos.peopleMerged'))
+      refresh()
+    } catch (caught) {
+      setPersonError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function toggleHidden() {
+    if (!photoFaceGroupId || !person.data) return
+    const isNowHidden = !person.data.isHidden
+    try {
+      await hidePhotoFaceGroup(photoFaceGroupId, isNowHidden)
+      toast.done(isNowHidden ? t('photos.personHidden') : t('photos.personShown'), {
+        label: t('common.undo'),
+        run: async () => {
+          try {
+            await hidePhotoFaceGroup(photoFaceGroupId, !isNowHidden)
+            refreshRef.current()
+          } catch (caught) {
+            failedWith(caught)
+          }
+        },
+      })
+      await person.reload(true)
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  function startNamingPerson() {
+    setPersonError(null)
+    if (canNamePeople) setIsNamingPerson(true)
+    else setConfirmation({ kind: 'needsContacts' })
+  }
+
   // One file each; several are several downloads, a moment apart.
   async function downloadOriginals(targets: Photo[]) {
     for (const photo of targets) {
@@ -534,6 +697,7 @@ function AccountPhotosPage() {
 
   const selectSection = (section: PhotoSection) => {
     if (section === 'albums') navigate('/photos/albums')
+    else if (section === 'people') navigate('/photos/people')
     else setListKind(section)
   }
   const setListKind = (kind: PhotoListKind) =>
@@ -554,11 +718,13 @@ function AccountPhotosPage() {
       ? t('photos.emptySearch')
       : photoAlbumId
         ? t('photos.emptyAlbum')
-        : listKind === 'favorites'
-          ? t('photos.emptyFavorites')
-          : isTrash
-            ? t('photos.emptyTrash')
-            : t('photos.emptyLibrary')
+        : photoFaceGroupId
+          ? t('photos.emptyPerson')
+          : listKind === 'favorites'
+            ? t('photos.emptyFavorites')
+            : isTrash
+              ? t('photos.emptyTrash')
+              : t('photos.emptyLibrary')
   const trashedCount = info.data?.trashedCount ?? 0
   const trashDays = info.data?.trashRetentionDays ?? 0
 
@@ -630,6 +796,18 @@ function AccountPhotosPage() {
                 </button>
               </>
             )}
+          />
+        )}
+        {person.data && (
+          <PersonMenu
+            person={person.data}
+            onName={startNamingPerson}
+            onRemoveName={() => void removeName()}
+            onMerge={() => {
+              setPersonError(null)
+              setIsMergingPerson(true)
+            }}
+            onToggleHidden={() => void toggleHidden()}
           />
         )}
       </PageHeadingActions>
@@ -753,12 +931,29 @@ function AccountPhotosPage() {
             aria-label={t('photos.search')}
             onChange={(event) => setSearchInput(event.target.value)}
           />
-          {!photoAlbumId && <PhotoSections current={listKind} onSelect={selectSection} />}
+          {!isInsideCollection && <PhotoSections current={listKind} onSelect={selectSection} />}
           {isTrash && trashedCount > 0 && (
             <button type="button" className="danger" onClick={() => setConfirmation({ kind: 'emptyTrash' })}>
               {t('photos.emptyTrashButton')}
             </button>
           )}
+        </div>
+      )}
+
+      {person.data && (
+        <div className="photo-person-head">
+          <FacePicture facePictureUrl={person.data.facePictureUrl} name={displayedName(person.data)} size="large" />
+          <div className="photo-person-head-body">
+            <span className="muted">
+              {plural(person.data.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
+              {person.data.isHidden ? ` · ${t('photos.hiddenFromPeople')}` : ''}
+            </span>
+            {person.data.contactName.trim() === '' && (
+              <button type="button" onClick={startNamingPerson}>
+                {t('photos.nameThisPerson')}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -796,7 +991,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {info.data && !searchText && !photoAlbumId && listKind === 'library' && (
+      {info.data && !searchText && !isInsideCollection && listKind === 'library' && (
         <SettingsSection card title={t('photos.libraryTitle')} description={t('photos.libraryHint')}>
           <SettingsRow
             title={t('photos.libraryContents')}
@@ -830,8 +1025,14 @@ function AccountPhotosPage() {
           previousPhoto={viewerPrevious}
           nextPhoto={viewerNext}
           isTrashed={Boolean(viewerPhoto.trashedAt) || isTrash}
-          isPaused={confirmation !== null || newAlbumPhotos !== null || isRenamingAlbum}
+          isPaused={
+            confirmation !== null || newAlbumPhotos !== null || isRenamingAlbum || isNamingPerson || isMergingPerson
+          }
           photoAlbumId={photoAlbumId}
+          photoLibrary={info.data}
+          onDescribe={describe}
+          onAskAssistant={isAssistantOn ? askAssistant : undefined}
+          onRemoveFaceFromGroup={removeFaceFromGroup}
           onNavigate={showPhoto}
           onClose={closeViewer}
           onToggleFavorite={(photo) => void setFavorites([photo], !photo.isFavorite)}
@@ -897,6 +1098,34 @@ function AccountPhotosPage() {
           busy={isBusy}
           onConfirm={() => void confirmDeleteAlbum()}
           onClose={() => setConfirmation(null)}
+        />
+      )}
+      {confirmation?.kind === 'needsContacts' && (
+        <ConfirmDialog
+          title={t('photos.nameThisPerson')}
+          body={t('photos.nameNeedsContacts')}
+          destructive={false}
+          onClose={() => setConfirmation(null)}
+        />
+      )}
+      {isNamingPerson && person.data && (
+        <NamePersonDialog
+          currentName={person.data.contactName}
+          isBusy={isBusy}
+          error={personError}
+          onSubmit={(naming) => void nameGroup(naming)}
+          onClose={() => setIsNamingPerson(false)}
+        />
+      )}
+      {isMergingPerson && person.data && (
+        <MergePersonDialog
+          person={person.data}
+          others={(people.data ?? []).filter((other) => other.id !== person.data!.id)}
+          isLoading={people.loading && !people.data}
+          isBusy={isBusy}
+          error={personError}
+          onSubmit={(other) => void mergeGroup(other)}
+          onClose={() => setIsMergingPerson(false)}
         />
       )}
       {newAlbumPhotos && (

@@ -31,7 +31,13 @@ export function albumAddress(photoAlbumId: string) {
 
 // Where choosing a view of the library goes. Albums is this page.
 export function sectionAddress(section: PhotoSection): string {
-  return section === 'library' ? '/photos' : section === 'albums' ? '/photos/albums' : `/photos?view=${section}`
+  return section === 'library'
+    ? '/photos'
+    : section === 'albums'
+      ? '/photos/albums'
+      : section === 'people'
+        ? '/photos/people'
+        : `/photos?view=${section}`
 }
 
 export function PhotoAlbumsPage() {

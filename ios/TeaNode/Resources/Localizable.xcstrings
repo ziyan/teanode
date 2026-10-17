@@ -3775,6 +3775,22 @@
         }
       }
     },
+    "A person appears here once their face has been found in at least three photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔が3枚以上の写真で見つかると、ここに表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "某个人的脸在至少三张照片中被找到后，就会出现在这里。"
+          }
+        }
+      }
+    },
     "A phone with no name": {
       "localizations": {
         "ja": {
@@ -4175,6 +4191,22 @@
         }
       }
     },
+    "Ask TeaNode": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode に聞く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问 TeaNode"
+          }
+        }
+      }
+    },
     "Back up this iPhone's photos in Settings, or add photos on the dashboard.": {
       "localizations": {
         "ja": {
@@ -4239,6 +4271,22 @@
         }
       }
     },
+    "Change Name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改名称"
+          }
+        }
+      }
+    },
     "Choose photos in your library and add them to a new album, or make an empty one.": {
       "localizations": {
         "ja": {
@@ -4267,6 +4315,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "在图库中选择照片，再添加到这里。"
+          }
+        }
+      }
+    },
+    "Choose the contact who is in these photos. The name comes from your address book.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらの写真に写っている連絡先を選んでください。名前は連絡先から付けられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择出现在这些照片中的联系人。名称来自你的通讯录。"
+          }
+        }
+      }
+    },
+    "Choose the person who is the same as this one. Their photos are shown together as one person.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人物と同じ人を選んでください。写真は1人の人物としてまとめて表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择与此人物是同一个人的人物。他们的照片会合并显示为一个人物。"
+          }
+        }
+      }
+    },
+    "Chosen": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选择"
           }
         }
       }
@@ -4315,6 +4411,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "创建相簿"
+          }
+        }
+      }
+    },
+    "Current name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の名前"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前名称"
           }
         }
       }
@@ -4431,6 +4543,118 @@
         }
       }
     },
+    "Describe": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明を作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成描述"
+          }
+        }
+      }
+    },
+    "Describe a photo": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真の説明の作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述照片"
+          }
+        }
+      }
+    },
+    "Describe Again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明を作り直す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新生成描述"
+          }
+        }
+      }
+    },
+    "Described on %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に作成された説明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "描述生成于 %@"
+          }
+        }
+      }
+    },
+    "Describing again…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明を作り直し中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在重新生成描述…"
+          }
+        }
+      }
+    },
+    "Describing photos is not available.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真の説明は利用できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前无法生成照片描述。"
+          }
+        }
+      }
+    },
+    "Describing…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "説明を作成中…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在生成描述…"
+          }
+        }
+      }
+    },
     "Each week your agent finds what is on near you for the weekend and the week after, and tells you on this day at this time.": {
       "localizations": {
         "ja": {
@@ -4443,6 +4667,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理每周会查找你附近这个周末和下一周有什么活动，并在这一天的这个时间告诉你。"
+          }
+        }
+      }
+    },
+    "Faces are not found here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここでは顔を検出しません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里不查找人脸"
           }
         }
       }
@@ -4491,6 +4731,102 @@
           "stringUnit": {
             "state": "translated",
             "value": "文件名"
+          }
+        }
+      }
+    },
+    "Find Faces in My Photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真から顔を見つける"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在我的照片中查找人脸"
+          }
+        }
+      }
+    },
+    "Finding faces in your photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真から顔を見つけています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在查找照片中的人脸"
+          }
+        }
+      }
+    },
+    "Finding faces is off": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔の検出がオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找人脸已关闭"
+          }
+        }
+      }
+    },
+    "Finds the people in your photos and groups them, so you can browse by person. Turning this off deletes the faces found so far and the names given to them. Your photos are not changed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真に写っている人物を見つけてまとめ、人物ごとに見られるようにします。オフにすると、これまでに見つけた顔とその名前が削除されます。写真は変更されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找出照片中的人物并归类，方便按人物浏览。关闭后，已找到的人脸及其名称会被删除。你的照片不会改变。"
+          }
+        }
+      }
+    },
+    "Hidden from People": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「人物」で非表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在“人物”中隐藏"
+          }
+        }
+      }
+    },
+    "Hide from People": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「人物」で非表示にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“人物”中隐藏"
           }
         }
       }
@@ -4575,6 +4911,70 @@
         }
       }
     },
+    "Look at photo %@ and tell me about it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真 %@ を見て、どんな写真か教えてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请查看照片 %@，并告诉我它的内容。"
+          }
+        }
+      }
+    },
+    "Merge %@ into %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@を%2$@に統合しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将%1$@合并到%2$@？"
+          }
+        }
+      }
+    },
+    "Merge With…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并到…"
+          }
+        }
+      }
+    },
+    "Merged the two people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2人の人物を統合しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已合并这两个人物"
+          }
+        }
+      }
+    },
     "Move these photos to the Trash?": {
       "localizations": {
         "ja": {
@@ -4619,6 +5019,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "移到废纸篓"
+          }
+        }
+      }
+    },
+    "Name This Person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人物に名前を付ける"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为此人物命名"
+          }
+        }
+      }
+    },
+    "Named “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」と名付けました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已命名为“%@”"
+          }
+        }
+      }
+    },
+    "Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人物に名前を付けるには連絡先から選ぶ必要がありますが、連絡先が有効になっていません。このサーバーの管理者に連絡先を有効にしてもらってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为人物命名需要从通讯录中选择联系人，而你的账户没有开启联系人功能。请让管理此服务器的人开启联系人。"
+          }
+        }
+      }
+    },
+    "New Contact “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい連絡先「%@」"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建联系人“%@”"
           }
         }
       }
@@ -4671,6 +5135,22 @@
         }
       }
     },
+    "No contacts yet. Type a name to make one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ連絡先がありません。名前を入力すると作成できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有联系人。输入名字即可新建。"
+          }
+        }
+      }
+    },
     "No favorites": {
       "localizations": {
         "ja": {
@@ -4683,6 +5163,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有收藏"
+          }
+        }
+      }
+    },
+    "No people yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ人物がいません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有人物"
           }
         }
       }
@@ -4703,6 +5199,22 @@
         }
       }
     },
+    "No photos of this person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人物の写真はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有这个人物的照片"
+          }
+        }
+      }
+    },
     "No photos yet": {
       "localizations": {
         "ja": {
@@ -4719,6 +5231,54 @@
         }
       }
     },
+    "Nobody to merge with": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合する相手がいません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可合并的人物"
+          }
+        }
+      }
+    },
+    "Not %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ではない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是%@"
+          }
+        }
+      }
+    },
+    "Not This Person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人物ではない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是这个人"
+          }
+        }
+      }
+    },
     "Open in Photos": {
       "localizations": {
         "ja": {
@@ -4731,6 +5291,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "在照片中打开"
+          }
+        }
+      }
+    },
+    "People in Photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真の人物"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片中的人物"
           }
         }
       }
@@ -4915,6 +5491,28 @@
         }
       }
     },
+    "photos.people": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "People"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人物"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人物"
+          }
+        }
+      }
+    },
     "Place": {
       "localizations": {
         "ja": {
@@ -4975,6 +5573,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消收藏"
+          }
+        }
+      }
+    },
+    "Remove Name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除名称"
+          }
+        }
+      }
+    },
+    "Removed the name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移除名称"
           }
         }
       }
@@ -5091,6 +5721,86 @@
         }
       }
     },
+    "Search or type a new name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を検索、または新しい名前を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索联系人，或输入新的名字"
+          }
+        }
+      }
+    },
+    "Show Hidden": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非表示を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示已隐藏的"
+          }
+        }
+      }
+    },
+    "Show in People": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「人物」に表示する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“人物”中显示"
+          }
+        }
+      }
+    },
+    "Shown in People again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「人物」に再び表示しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重新在“人物”中显示"
+          }
+        }
+      }
+    },
+    "Stop finding faces?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔の検出を停止しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止查找人脸？"
+          }
+        }
+      }
+    },
     "Stop Live Photo": {
       "localizations": {
         "ja": {
@@ -5103,6 +5813,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "停止播放实况照片"
+          }
+        }
+      }
+    },
+    "Stopped finding faces": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔の検出を停止しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止查找人脸"
           }
         }
       }
@@ -5171,6 +5897,38 @@
         }
       }
     },
+    "TeaNode looks at the picture and writes what it shows, so a search can find it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode が写真を見て内容を書き出すので、検索で見つけられるようになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 会查看这张图片并写下其中的内容，这样搜索就能找到它。"
+          }
+        }
+      }
+    },
+    "Text in the picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真に写っている文字"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片中的文字"
+          }
+        }
+      }
+    },
     "The photos stay in your library.": {
       "localizations": {
         "ja": {
@@ -5199,6 +5957,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "废纸篓是空的"
+          }
+        }
+      }
+    },
+    "Their photos are gone from your library, or were moved to the Trash.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人物の写真はライブラリにないか、ゴミ箱に移動されました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他们的照片已不在你的资料库中，或已移到废纸篓。"
+          }
+        }
+      }
+    },
+    "There is nobody else to merge with yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合できるほかの人物はまだいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有可以合并的其他人物。"
           }
         }
       }
@@ -5235,6 +6025,118 @@
         }
       }
     },
+    "This deletes every face found in your photos and the names you gave to people. Your photos and your contacts stay. Turning it on again finds the faces again, but not the names.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真から見つけたすべての顔と、人物に付けた名前を削除します。写真と連絡先は残ります。再びオンにすると顔は見つけ直されますが、名前は戻りません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会删除在你的照片中找到的所有人脸以及你为人物起的名称。你的照片和联系人会保留。重新打开后会再次查找人脸，但名称不会恢复。"
+          }
+        }
+      }
+    },
+    "This is taking longer than usual. It keeps going in the background, so look again in a few minutes.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "いつもより時間がかかっています。バックグラウンドで続くので、数分後にもう一度確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这比平时花的时间长。它会在后台继续进行，请过几分钟再来看。"
+          }
+        }
+      }
+    },
+    "This server cannot find faces in photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーでは写真から顔を検出できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器无法查找照片中的人脸。"
+          }
+        }
+      }
+    },
+    "Took the face out of this person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この顔をこの人物から外しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将这张脸从此人物中移除"
+          }
+        }
+      }
+    },
+    "Touch and hold a person if it is not them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その人物でない場合は、長押ししてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果不是此人，请按住该人物。"
+          }
+        }
+      }
+    },
+    "Turn it on to see the people in your photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オンにすると、写真に写っている人物が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开后即可看到照片中的人物。"
+          }
+        }
+      }
+    },
+    "Turn Off and Delete": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフにして削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭并删除"
+          }
+        }
+      }
+    },
     "Unknown date": {
       "localizations": {
         "ja": {
@@ -5247,6 +6149,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日期未知"
+          }
+        }
+      }
+    },
+    "Unnamed person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前のない人物"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名的人物"
           }
         }
       }

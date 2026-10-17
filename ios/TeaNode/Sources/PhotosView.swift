@@ -3,9 +3,9 @@ import TeaNodeKit
 import UIKit
 
 /// PhotoSection is what the segmented control under the title chooses: three
-/// lists of photos, and the albums.
+/// lists of photos, the albums and the people.
 enum PhotoSection: String, CaseIterable, Identifiable {
-    case library, favorites, albums, trash
+    case library, favorites, albums, people, trash
 
     var id: String { rawValue }
 
@@ -15,27 +15,30 @@ enum PhotoSection: String, CaseIterable, Identifiable {
         case .library: String(localized: "Library")
         case .favorites: String(localized: "Favorites")
         case .albums: String(localized: "Albums")
+        case .people: String(localized: "photos.people", defaultValue: "People")
         case .trash: String(localized: "Trash")
         }
     }
 
-    /// The list of photos the section shows; nil for Albums, which shows
-    /// albums and opens each on a list of its own.
+    /// The list of photos the section shows; nil for Albums and People, which
+    /// show albums and people and open each on a list of its own.
     var collection: PhotoCollection? {
         switch self {
         case .library: .library
         case .favorites: .favorites
         case .trash: .trash
-        case .albums: nil
+        case .albums, .people: nil
         }
     }
 }
 
 /// PhotoListKey names one list of photos the model holds: a list of the
-/// library, or the photos of one album.
+/// library, the photos of one album, or the photos of one person (a group of
+/// faces).
 enum PhotoListKey: Hashable {
     case collection(PhotoCollection)
     case album(String)
+    case faceGroup(String)
 
     static let library = PhotoListKey.collection(.library)
     static let favorites = PhotoListKey.collection(.favorites)
@@ -44,6 +47,12 @@ enum PhotoListKey: Hashable {
     /// The album whose photos the list holds, if it is one.
     var albumId: String? {
         if case .album(let albumId) = self { return albumId }
+        return nil
+    }
+
+    /// The group of faces whose photos the list holds, if it is one.
+    var photoFaceGroupId: String? {
+        if case .faceGroup(let photoFaceGroupId) = self { return photoFaceGroupId }
         return nil
     }
 }
@@ -110,6 +119,11 @@ final class PhotosModel {
     /// The sample photos of the suggestions, by id, for their pictures.
     private(set) var suggestionSamples: [String: Photo] = [:]
     private(set) var hasReadSuggestions = false
+    /// The groups of faces, the ones the person hid left out unless
+    /// isHiddenPeopleShown; nil until read. See PhotoPeople.swift.
+    var faceGroups: [PhotoFaceGroup]?
+    var faceGroupsFailureText: String?
+    var isHiddenPeopleShown = false
     var doneText: String?
     var problemText: String?
     /// The title being asked for, by an alert on whichever screen raised it.
@@ -126,12 +140,34 @@ final class PhotosModel {
     }
 
     func listing(_ key: PhotoListKey) -> PhotoListing? { listings[key] }
+
+    /// Forgets a list that has been read, so that it is read again when it is
+    /// next shown.
+    func forgetListing(_ key: PhotoListKey) { listings[key] = nil }
+
+    /// Forgets every list that has been read and matches.
+    func forgetListings(where matches: (PhotoListKey) -> Bool) {
+        for key in Array(listings.keys) where matches(key) { listings[key] = nil }
+    }
     func photos(in key: PhotoListKey) -> [Photo] { listings[key]?.photos ?? [] }
     func failureText(_ key: PhotoListKey) -> String? { failureTexts[key] }
     func hasWaitingPhotos(in key: PhotoListKey) -> Bool { photos(in: key).contains { $0.isWaiting } }
 
     func loadLibrary() async {
         library = try? await connection.photoLibrary()
+        // A server that cannot find faces still has the people found before,
+        // and People is offered if there are any.
+        if library?.isFaceRecognitionAvailable == false, faceGroups == nil { await reloadFaceGroups(isQuiet: true) }
+    }
+
+    /// The choices of the segmented control: People only when faces can be
+    /// found, or people were found before, or it is the one being looked at.
+    var sections: [PhotoSection] {
+        PhotoSection.allCases.filter { $0 != .people || isPeopleShown || section == .people }
+    }
+
+    var isPeopleShown: Bool {
+        library?.isFaceRecognitionAvailable == true || !(faceGroups ?? []).isEmpty
     }
 
     private func fetchPage(_ key: PhotoListKey, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
@@ -140,6 +176,8 @@ final class PhotosModel {
             return try await connection.photos(in: collection, beforePhotoId: beforePhotoId, pageSize: pageSize)
         case .album(let albumId):
             return try await connection.photos(inAlbum: albumId, beforePhotoId: beforePhotoId, pageSize: pageSize)
+        case .faceGroup(let photoFaceGroupId):
+            return try await connection.photos(inFaceGroup: photoFaceGroupId, beforePhotoId: beforePhotoId, pageSize: pageSize)
         }
     }
 
@@ -476,6 +514,7 @@ struct PhotosScreen: View {
     #if DEBUG
         @State private var isDemoViewerOpened = false
         @State private var isDemoAlbumOpened = false
+        @State private var isDemoPersonOpened = false
     #endif
 
     init(connection: Connection) {
@@ -485,6 +524,7 @@ struct PhotosScreen: View {
             // `photos-albums` on the Albums.
             if DemoServer.isRequested, DemoServer.screen == "photos-trash" { model.section = .trash }
             if DemoServer.isRequested, DemoServer.screen == "photos-albums" || DemoServer.screen == "photos-album" { model.section = .albums }
+            if DemoServer.isRequested, DemoServer.screen == "photos-people" || DemoServer.screen == "photos-person" { model.section = .people }
         #endif
         _model = State(initialValue: model)
         #if DEBUG
@@ -508,7 +548,7 @@ struct PhotosScreen: View {
                 .navigationTitle(isSelecting ? selectionTitle : String(localized: "Photos"))
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Picker("Show", selection: $model.section) {
-                        ForEach(PhotoSection.allCases) { section in
+                        ForEach(model.sections) { section in
                             Text(section.title).tag(section)
                         }
                     }
@@ -520,10 +560,22 @@ struct PhotosScreen: View {
                 .toolbar { toolbarContent }
                 .withoutSwipeBack()
                 .refreshable {
-                    if let key { await model.reload(key) } else { await model.refreshAlbumsSection() }
+                    if let key {
+                        await model.reload(key)
+                    } else if model.section == .people {
+                        await model.reloadFaceGroups()
+                    } else {
+                        await model.refreshAlbumsSection()
+                    }
                 }
                 .task(id: model.section) {
-                    if let key { await model.load(key) } else { await model.loadAlbumsSection() }
+                    if let key {
+                        await model.load(key)
+                    } else if model.section == .people {
+                        await model.loadFaceGroups()
+                    } else {
+                        await model.loadAlbumsSection()
+                    }
                 }
                 .task { await model.loadLibrary() }
                 // The albums the Add to Album menus list.
@@ -537,6 +589,9 @@ struct PhotosScreen: View {
                     .navigationDestination(isPresented: $isDemoAlbumOpened) {
                         if let first = model.albums?.first { PhotoAlbumScreen(model: model, albumId: first.id) }
                     }
+                    .navigationDestination(isPresented: $isDemoPersonOpened) {
+                        if let first = model.faceGroups?.first { PhotoPersonScreen(model: model, photoFaceGroupId: first.id) }
+                    }
                 #endif
         }
         .fullScreenCover(item: $opened) { opened in
@@ -548,9 +603,14 @@ struct PhotosScreen: View {
             .task(id: model.albums?.first?.id) {
                 if DemoServer.isRequested, DemoServer.screen == "photos-album", model.albums?.first != nil { isDemoAlbumOpened = true }
             }
-            // `-TeaNodeScreen photos-viewer` opens the viewer on the first photo.
+            // `-TeaNodeScreen photos-person` opens the first person.
+            .task(id: model.faceGroups?.first?.id) {
+                if DemoServer.isRequested, DemoServer.screen == "photos-person", model.faceGroups?.first != nil { isDemoPersonOpened = true }
+            }
+            // `-TeaNodeScreen photos-viewer` opens the viewer on the first photo, and
+            // `photos-viewer-described` opens it with Info over it.
             .task(id: model.photos(in: .library).first?.id) {
-                if DemoServer.isRequested, DemoServer.screen == "photos-viewer", !isDemoViewerOpened, let first = model.photos(in: .library).first {
+                if DemoServer.isRequested, DemoServer.screen == "photos-viewer" || DemoServer.screen == "photos-viewer-described", !isDemoViewerOpened, let first = model.photos(in: .library).first {
                     isDemoViewerOpened = true
                     opened = OpenedPhoto(id: first.id)
                 }
@@ -574,6 +634,14 @@ struct PhotosScreen: View {
             ToolbarItem(placement: .primaryAction) {
                 Button("New Album", systemImage: "plus") {
                     model.requestAlbumTitle(.new, scope: .library)
+                }
+            }
+        } else if model.section == .people {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Toggle("Show Hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
+                } label: {
+                    Label("More", systemImage: "ellipsis")
                 }
             }
         } else if isSelecting {
@@ -657,6 +725,8 @@ struct PhotosScreen: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        } else if model.section == .people {
+            PhotoPeopleView(model: model)
         } else {
             PhotoAlbumsView(model: model)
         }

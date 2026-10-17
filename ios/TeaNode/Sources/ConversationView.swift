@@ -333,6 +333,13 @@ struct ConversationFollowing: ViewModifier {
                 model.refer(to: reference)
                 app.askingAbout = nil
             }
+            .onChange(of: app.draftedMessage, initial: true) { _, text in
+                // A message written elsewhere, such as a question about a
+                // photo, goes after what is in the box.
+                guard let text else { return }
+                model.draft = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? text : model.draft + "\n" + text
+                app.draftedMessage = nil
+            }
             .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
             .onChange(of: app.openingRequest, initial: true) { _, opening in
                 guard let opening, opening.conversationId == model.conversationId else { return }

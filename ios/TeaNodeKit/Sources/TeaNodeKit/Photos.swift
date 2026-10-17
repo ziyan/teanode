@@ -97,27 +97,185 @@ public struct PhotoAlbumReference: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-/// PhotoDetail is one photo with its files, previews and the albums it is in.
+/// PhotoDescription is what a model wrote about a picture, as ReadPhoto and
+/// DescribePhoto say it. The list of photos leaves it out. The words are text a
+/// model wrote from a picture that may carry words meant for it: shown, never
+/// obeyed.
+public struct PhotoDescription: Codable, Hashable, Sendable {
+    /// Empty until somebody works with the photo.
+    public let photoDescription: String
+    /// The words the model could read in the picture.
+    public let descriptionVisibleText: String
+    /// When they were written; nil while the photo is undescribed.
+    public let describedAt: String?
+    /// A description is on its way: asked for, and not yet written.
+    public let isDescriptionRequested: Bool
+
+    public init(photoDescription: String = "", descriptionVisibleText: String = "", describedAt: String? = nil, isDescriptionRequested: Bool = false) {
+        self.photoDescription = photoDescription
+        self.descriptionVisibleText = descriptionVisibleText
+        self.describedAt = describedAt
+        self.isDescriptionRequested = isDescriptionRequested
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        photoDescription = try container.decodeIfPresent(String.self, forKey: .photoDescription) ?? ""
+        descriptionVisibleText = try container.decodeIfPresent(String.self, forKey: .descriptionVisibleText) ?? ""
+        describedAt = try container.decodeIfPresent(String.self, forKey: .describedAt)
+        isDescriptionRequested = try container.decodeIfPresent(Bool.self, forKey: .isDescriptionRequested) ?? false
+    }
+
+    /// Whether a description has been written.
+    public var isDescribed: Bool { describedAt != nil }
+
+    /// When it was written, as a date in the phone's zone, or nil.
+    public func describedOnText(timeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let date = ServerTime.date(describedAt) else { return nil }
+        return date.formatted(Date.FormatStyle(date: .long, time: .omitted, locale: locale, timeZone: timeZone))
+    }
+}
+
+/// PhotoDescriptionPolling is how a description that is on its way is waited
+/// for: asked about every few seconds while the person stays on the photo, and
+/// not for longer than two minutes. After that the job goes on without the
+/// screen, and the person finds the description when they come back.
+public enum PhotoDescriptionPolling {
+    public static let intervalSeconds = 3
+    public static let limitSeconds = 120
+
+    /// Whether a screen that has waited this long should ask once more.
+    public static func shouldAskAgain(afterWaiting waitedSeconds: Int) -> Bool {
+        waitedSeconds < limitSeconds
+    }
+}
+
+/// PhotoFace is one face found in a photo. The box is in fractions of the
+/// picture from its top left corner. The picture of the face is cut from the
+/// photo by the server and needs the app's sign-in, so it is read through the
+/// app's connection and its preview cache, never by an address alone.
+public struct PhotoFace: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let photoId: String
+    public let boxLeftFraction: Double
+    public let boxTopFraction: Double
+    public let boxWidthFraction: Double
+    public let boxHeightFraction: Double
+    /// Empty for a face too small or too uncertain to be grouped.
+    public let photoFaceGroupId: String
+    /// Those of the face's group; empty while the group is unnamed.
+    public let contactId: String
+    public let contactName: String
+    public let facePictureUrl: String
+
+    public init(
+        id: String, photoId: String, boxLeftFraction: Double = 0, boxTopFraction: Double = 0, boxWidthFraction: Double = 0, boxHeightFraction: Double = 0,
+        photoFaceGroupId: String = "", contactId: String = "", contactName: String = "", facePictureUrl: String = ""
+    ) {
+        self.id = id
+        self.photoId = photoId
+        self.boxLeftFraction = boxLeftFraction
+        self.boxTopFraction = boxTopFraction
+        self.boxWidthFraction = boxWidthFraction
+        self.boxHeightFraction = boxHeightFraction
+        self.photoFaceGroupId = photoFaceGroupId
+        self.contactId = contactId
+        self.contactName = contactName
+        self.facePictureUrl = facePictureUrl
+    }
+
+    /// Whether the face is in a group, which is a person to open.
+    public var isGrouped: Bool { !photoFaceGroupId.isEmpty }
+}
+
+/// PhotoFaceGroup is the faces the server believes are one person. It is
+/// nobody until the person names it by choosing a contact.
+public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let createdAt: String
+    public let updatedAt: String
+    /// The contact that names the group; empty while it is nobody.
+    public let contactId: String
+    public let contactAddressBookId: String
+    public let contactName: String
+    /// Counted over photos that are not in the Trash.
+    public let faceCount: Int
+    public let photoCount: Int
+    /// The picture of the group's cover face.
+    public let facePictureUrl: String
+    public let coverPhotoFaceId: String
+    public let isHidden: Bool
+
+    public init(
+        id: String, createdAt: String = "", updatedAt: String = "", contactId: String = "", contactAddressBookId: String = "", contactName: String = "",
+        faceCount: Int = 0, photoCount: Int = 0, facePictureUrl: String = "", coverPhotoFaceId: String = "", isHidden: Bool = false
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.contactId = contactId
+        self.contactAddressBookId = contactAddressBookId
+        self.contactName = contactName
+        self.faceCount = faceCount
+        self.photoCount = photoCount
+        self.facePictureUrl = facePictureUrl
+        self.coverPhotoFaceId = coverPhotoFaceId
+        self.isHidden = isHidden
+    }
+
+    /// The name of the contact, without the spaces round it.
+    public var trimmedContactName: String { contactName.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// Whether a contact names the group.
+    public var isNamed: Bool { !trimmedContactName.isEmpty }
+}
+
+/// PhotoDetail is one photo with its files, previews, the albums it is in, its
+/// description and the faces found in it.
 public struct PhotoDetail: Codable, Hashable, Sendable {
     public let photo: Photo
     public let photoFiles: [PhotoFile]
     public let photoPreviews: [PhotoPreview]
     public let albums: [PhotoAlbumReference]
+    public let photoDescription: PhotoDescription
+    public let faces: [PhotoFace]
 
-    public init(photo: Photo, photoFiles: [PhotoFile], photoPreviews: [PhotoPreview], albums: [PhotoAlbumReference] = []) {
+    public init(
+        photo: Photo, photoFiles: [PhotoFile], photoPreviews: [PhotoPreview], albums: [PhotoAlbumReference] = [],
+        photoDescription: PhotoDescription = PhotoDescription(), faces: [PhotoFace] = []
+    ) {
         self.photo = photo
         self.photoFiles = photoFiles
         self.photoPreviews = photoPreviews
         self.albums = albums
+        self.photoDescription = photoDescription
+        self.faces = faces
+    }
+
+    private enum DecodingKeys: String, CodingKey {
+        case photo, photoFiles, photoPreviews, albums, faces
     }
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let container = try decoder.container(keyedBy: DecodingKeys.self)
         photo = try container.decode(Photo.self, forKey: .photo)
         photoFiles = try container.decode([PhotoFile].self, forKey: .photoFiles)
         photoPreviews = try container.decode([PhotoPreview].self, forKey: .photoPreviews)
-        // A server that does not know albums yet says nothing of them.
+        // A server that does not know albums, descriptions or faces yet says
+        // nothing of them.
         albums = try container.decodeIfPresent([PhotoAlbumReference].self, forKey: .albums) ?? []
+        // The description is fields of the photo itself.
+        photoDescription = try container.decode(PhotoDescription.self, forKey: .photo)
+        faces = try container.decodeIfPresent([PhotoFace].self, forKey: .faces) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: DecodingKeys.self)
+        try container.encode(photo, forKey: .photo)
+        try container.encode(photoFiles, forKey: .photoFiles)
+        try container.encode(photoPreviews, forKey: .photoPreviews)
+        try container.encode(albums, forKey: .albums)
+        try container.encode(faces, forKey: .faces)
     }
 
     /// The file Save to Photos and Share hand on: the original.
@@ -132,6 +290,50 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
     public let trashedCount: Int
     public let usedBytes: Int
     public let trashRetentionDays: Int
+    /// Whether this server and this person can have a photo described, and
+    /// when not, why, in the server's words.
+    public let isDescriptionAvailable: Bool
+    public let descriptionUnavailableMessage: String
+    /// Whether this server can find faces, why not when it cannot, and the
+    /// person's own switch for finding them.
+    public let isFaceRecognitionAvailable: Bool
+    public let faceRecognitionUnavailableMessage: String
+    public let isPhotoFaceRecognitionEnabled: Bool
+
+    public init(
+        photoCount: Int, videoCount: Int, favoriteCount: Int, trashedCount: Int, usedBytes: Int, trashRetentionDays: Int,
+        isDescriptionAvailable: Bool = false, descriptionUnavailableMessage: String = "", isFaceRecognitionAvailable: Bool = false,
+        faceRecognitionUnavailableMessage: String = "", isPhotoFaceRecognitionEnabled: Bool = false
+    ) {
+        self.photoCount = photoCount
+        self.videoCount = videoCount
+        self.favoriteCount = favoriteCount
+        self.trashedCount = trashedCount
+        self.usedBytes = usedBytes
+        self.trashRetentionDays = trashRetentionDays
+        self.isDescriptionAvailable = isDescriptionAvailable
+        self.descriptionUnavailableMessage = descriptionUnavailableMessage
+        self.isFaceRecognitionAvailable = isFaceRecognitionAvailable
+        self.faceRecognitionUnavailableMessage = faceRecognitionUnavailableMessage
+        self.isPhotoFaceRecognitionEnabled = isPhotoFaceRecognitionEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        photoCount = try container.decode(Int.self, forKey: .photoCount)
+        videoCount = try container.decode(Int.self, forKey: .videoCount)
+        favoriteCount = try container.decode(Int.self, forKey: .favoriteCount)
+        trashedCount = try container.decode(Int.self, forKey: .trashedCount)
+        usedBytes = try container.decode(Int.self, forKey: .usedBytes)
+        trashRetentionDays = try container.decode(Int.self, forKey: .trashRetentionDays)
+        // A server older than descriptions and faces says nothing of them,
+        // which reads as neither being available.
+        isDescriptionAvailable = try container.decodeIfPresent(Bool.self, forKey: .isDescriptionAvailable) ?? false
+        descriptionUnavailableMessage = try container.decodeIfPresent(String.self, forKey: .descriptionUnavailableMessage) ?? ""
+        isFaceRecognitionAvailable = try container.decodeIfPresent(Bool.self, forKey: .isFaceRecognitionAvailable) ?? false
+        faceRecognitionUnavailableMessage = try container.decodeIfPresent(String.self, forKey: .faceRecognitionUnavailableMessage) ?? ""
+        isPhotoFaceRecognitionEnabled = try container.decodeIfPresent(Bool.self, forKey: .isPhotoFaceRecognitionEnabled) ?? false
+    }
 }
 
 /// PhotoAlbum is a named set of the person's photos. It holds references: a
@@ -275,18 +477,30 @@ extension Documents {
         originalFilename isFavorite isScreenshot photoProcessingState trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $takenAfter: DateTime, $takenBefore: DateTime) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, takenAfter: $takenAfter, takenBefore: $takenBefore) { \(photoFields) }
+        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime) {
+          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore) { \(photoFields) }
         }
+        """
+    static let photoDescriptionFields = """
+        photoDescription descriptionVisibleText describedAt isDescriptionRequested
+        """
+    static let photoFaceFields = """
+        id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName facePictureUrl
         """
     public static let readPhoto = """
         query ($photoId: String!) {
           ReadPhoto(photoId: $photoId) {
-            photo { \(photoFields) }
+            photo { \(photoFields) \(photoDescriptionFields) }
             photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl }
             photoPreviews { photoPreviewSize contentType previewSizeBytes previewUrl }
             albums { id albumTitle }
+            faces { \(photoFaceFields) }
           }
+        }
+        """
+    public static let describePhoto = """
+        mutation ($photoId: String!, $isRedescribed: Boolean) {
+          DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) { \(photoDescriptionFields) }
         }
         """
     public static let photoPlaybackAddress = """
@@ -295,7 +509,13 @@ extension Documents {
         }
         """
     public static let readPhotoLibrary = """
-        query { ReadPhotoLibrary { photoCount videoCount favoriteCount trashedCount usedBytes trashRetentionDays } }
+        query {
+          ReadPhotoLibrary {
+            photoCount videoCount favoriteCount trashedCount usedBytes trashRetentionDays
+            isDescriptionAvailable descriptionUnavailableMessage
+            isFaceRecognitionAvailable faceRecognitionUnavailableMessage isPhotoFaceRecognitionEnabled
+          }
+        }
         """
     public static let updatePhoto = """
         mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { \(photoFields) } }
@@ -339,6 +559,36 @@ extension Documents {
     public static let setPhotoAlbumCover = """
         mutation ($photoAlbumId: String!, $photoId: String!) { SetPhotoAlbumCover(photoAlbumId: $photoAlbumId, photoId: $photoId) { \(photoAlbumFields) } }
         """
+    static let photoFaceGroupFields = """
+        id createdAt updatedAt contactId contactAddressBookId contactName faceCount photoCount facePictureUrl coverPhotoFaceId isHidden
+        """
+    public static let listPhotoFaceGroups = """
+        query ($isHiddenIncluded: Boolean) { ListPhotoFaceGroups(isHiddenIncluded: $isHiddenIncluded) { \(photoFaceGroupFields) } }
+        """
+    public static let readPhotoFaceGroup = """
+        query ($photoFaceGroupId: String!) { ReadPhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { \(photoFaceGroupFields) } }
+        """
+    public static let namePhotoFaceGroup = """
+        mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { \(photoFaceGroupFields) } }
+        """
+    public static let unnamePhotoFaceGroup = """
+        mutation ($photoFaceGroupId: String!) { UnnamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { \(photoFaceGroupFields) } }
+        """
+    public static let mergePhotoFaceGroups = """
+        mutation ($photoFaceGroupIds: [String!]!) { MergePhotoFaceGroups(photoFaceGroupIds: $photoFaceGroupIds) { \(photoFaceGroupFields) } }
+        """
+    public static let removePhotoFaceFromGroup = """
+        mutation ($photoFaceId: String!) { RemovePhotoFaceFromGroup(photoFaceId: $photoFaceId) { \(photoFaceGroupFields) } }
+        """
+    public static let hidePhotoFaceGroup = """
+        mutation ($photoFaceGroupId: String!, $isHidden: Boolean!) { HidePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, isHidden: $isHidden) { \(photoFaceGroupFields) } }
+        """
+    public static let setPhotoFaceRecognition = """
+        mutation ($isEnabled: Boolean!) { SetPhotoFaceRecognition(isEnabled: $isEnabled) }
+        """
+    public static let createNamedContact = """
+        mutation ($addressBookId: String!, $name: String) { SaveContact(addressBookId: $addressBookId, name: $name) { id name } }
+        """
 }
 
 extension Connection {
@@ -360,6 +610,25 @@ extension Connection {
         var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize)), "albumId": .string(photoAlbumId)]
         if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
         return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
+    }
+
+    /// One page of the photos with a face in one group of faces, one person,
+    /// newest first, paged like the library's lists.
+    public func photos(inFaceGroup photoFaceGroupId: String, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
+        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
+        var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize)), "faceGroupId": .string(photoFaceGroupId)]
+        if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
+        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
+    }
+
+    /// Asks for a description of a photo, or a new one when isRedescribed. The
+    /// answer is how the photo's description now stands: isDescriptionRequested
+    /// while it is on its way, and describedAt once it has been written.
+    public func describePhoto(_ photoId: String, isRedescribed: Bool = false) async throws -> PhotoDescription {
+        struct Answer: Decodable, Sendable { let DescribePhoto: PhotoDescription }
+        return try await execute(
+            Documents.describePhoto, variables: ["photoId": .string(photoId), "isRedescribed": .bool(isRedescribed)], as: Answer.self
+        ).DescribePhoto
     }
 
     /// One photo with the files and previews it is made of.
@@ -720,5 +989,132 @@ extension Connection {
             guard page.count >= PhotoBatches.mostPhotoIdsPerCall, let last = page.last else { return photoIds }
             beforePhotoId = last.id
         }
+    }
+}
+
+// MARK: People
+
+extension Connection {
+    /// The groups of faces worth showing: those a contact names first, then the
+    /// biggest of the rest. The ones the person hid come only when asked for.
+    public func photoFaceGroups(isHiddenIncluded: Bool = false) async throws -> [PhotoFaceGroup] {
+        struct Answer: Decodable, Sendable { let ListPhotoFaceGroups: [PhotoFaceGroup] }
+        return try await execute(
+            Documents.listPhotoFaceGroups, variables: ["isHiddenIncluded": .bool(isHiddenIncluded)], as: Answer.self
+        ).ListPhotoFaceGroups
+    }
+
+    public func photoFaceGroup(_ photoFaceGroupId: String) async throws -> PhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let ReadPhotoFaceGroup: PhotoFaceGroup }
+        return try await execute(
+            Documents.readPhotoFaceGroup, variables: ["photoFaceGroupId": .string(photoFaceGroupId)], as: Answer.self
+        ).ReadPhotoFaceGroup
+    }
+
+    /// Names a group by a contact from the person's address books.
+    public func namePhotoFaceGroup(_ photoFaceGroupId: String, contactId: String) async throws -> PhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let NamePhotoFaceGroup: PhotoFaceGroup }
+        return try await execute(
+            Documents.namePhotoFaceGroup, variables: ["photoFaceGroupId": .string(photoFaceGroupId), "contactId": .string(contactId)], as: Answer.self
+        ).NamePhotoFaceGroup
+    }
+
+    public func unnamePhotoFaceGroup(_ photoFaceGroupId: String) async throws -> PhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let UnnamePhotoFaceGroup: PhotoFaceGroup }
+        return try await execute(
+            Documents.unnamePhotoFaceGroup, variables: ["photoFaceGroupId": .string(photoFaceGroupId)], as: Answer.self
+        ).UnnamePhotoFaceGroup
+    }
+
+    /// Puts groups into the first, which stays and takes the faces of the
+    /// others, and their name when it has none.
+    public func mergePhotoFaceGroups(_ photoFaceGroupIds: [String]) async throws -> PhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let MergePhotoFaceGroups: PhotoFaceGroup }
+        return try await execute(
+            Documents.mergePhotoFaceGroups, variables: ["photoFaceGroupIds": .array(photoFaceGroupIds.map { .string($0) })], as: Answer.self
+        ).MergePhotoFaceGroups
+    }
+
+    /// "This is not them": takes a face out of its group, which it is not put
+    /// back into.
+    public func removePhotoFaceFromGroup(_ photoFaceId: String) async throws -> PhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let RemovePhotoFaceFromGroup: PhotoFaceGroup }
+        return try await execute(
+            Documents.removePhotoFaceFromGroup, variables: ["photoFaceId": .string(photoFaceId)], as: Answer.self
+        ).RemovePhotoFaceFromGroup
+    }
+
+    public func hidePhotoFaceGroup(_ photoFaceGroupId: String, isHidden: Bool) async throws -> PhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let HidePhotoFaceGroup: PhotoFaceGroup }
+        return try await execute(
+            Documents.hidePhotoFaceGroup, variables: ["photoFaceGroupId": .string(photoFaceGroupId), "isHidden": .bool(isHidden)], as: Answer.self
+        ).HidePhotoFaceGroup
+    }
+
+    /// Switches the finding of faces in the person's photos on or off. Off
+    /// deletes every face and group found so far, with the names given them.
+    @discardableResult
+    public func setPhotoFaceRecognition(isEnabled: Bool) async throws -> Bool {
+        struct Answer: Decodable, Sendable { let SetPhotoFaceRecognition: Bool }
+        return try await execute(
+            Documents.setPhotoFaceRecognition, variables: ["isEnabled": .bool(isEnabled)], as: Answer.self
+        ).SetPhotoFaceRecognition
+    }
+
+    /// The contacts of the person's address books that match the words, for
+    /// choosing who a group of faces is. A first few of each book.
+    public func photoNamingContacts(matching words: String) async throws -> [ContactSummary] {
+        var contacts: [ContactSummary] = []
+        for book in try await addressBooks() {
+            contacts += try await self.contacts(addressBookId: book.id, matching: words.trimmingCharacters(in: .whitespacesAndNewlines), first: PhotoNaming.contactsPerBook)
+        }
+        return contacts
+    }
+
+    /// Makes a contact that has only a name, in the person's first address
+    /// book, for a person who is not in the address book yet, and returns it.
+    public func createNamedContact(_ name: String) async throws -> ContactSummary {
+        struct Answer: Decodable, Sendable {
+            struct Saved: Decodable, Sendable {
+                let id: String
+                let name: String?
+            }
+            let SaveContact: Saved
+        }
+        guard let book = try await addressBooks().first else {
+            throw TeaNodeError.refused("There is no address book to put a new contact in.")
+        }
+        let saved = try await execute(
+            Documents.createNamedContact, variables: ["addressBookId": .string(book.id), "name": .string(name)], as: Answer.self
+        ).SaveContact
+        return ContactSummary(id: saved.id, name: saved.name, organization: nil, emails: nil, phones: nil, hasPhoto: nil, addresses: nil)
+    }
+}
+
+/// PhotoNaming is the rules of the dialog that names a person from the address
+/// book.
+public enum PhotoNaming {
+    /// How many contacts of each address book are listed: more than fits
+    /// without scrolling, few enough that the search is how one is found.
+    public static let contactsPerBook = 20
+
+    /// The name as it is saved: without the spaces round it.
+    public static func trimmedName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Whether to offer a new contact for what was typed: when something was
+    /// typed and no contact listed has exactly that name, which is chosen from
+    /// the list instead of being made again.
+    public static func offersNewContact(typed: String, contacts: [ContactSummary]) -> Bool {
+        let name = trimmedName(typed)
+        guard !name.isEmpty else { return false }
+        return !contacts.contains { $0.shownName.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+
+    /// What a face's name is shown as, "Not <name>" for taking it out of the
+    /// group: the name, or nil when the group is nobody's.
+    public static func shownName(of group: PhotoFaceGroup) -> String? {
+        group.isNamed ? group.trimmedContactName : nil
     }
 }

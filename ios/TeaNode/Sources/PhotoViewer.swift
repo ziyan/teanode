@@ -18,11 +18,16 @@ struct PhotoViewer: View {
     @State private var isConfirmingTrash = false
     @State private var isConfirmingDelete = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
 
     init(model: PhotosModel, listKey: PhotoListKey, openedPhotoId: String) {
         self.model = model
         self.listKey = listKey
         _currentPhotoId = State(initialValue: openedPhotoId)
+        #if DEBUG
+            // `-TeaNodeScreen photos-viewer-described` opens Info over the viewer.
+            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-described" { _isShowingInfo = State(initialValue: true) }
+        #endif
     }
 
     private var photos: [Photo] { model.photos(in: listKey) }
@@ -37,7 +42,7 @@ struct PhotoViewer: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $isShowingInfo) {
-                    if let current { PhotoInfoView(photo: current, connection: model.connection) }
+                    if let current { PhotoInfoView(photo: current, model: model, onAskTeaNode: askTeaNode) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
@@ -180,6 +185,15 @@ struct PhotoViewer: View {
                 }
             }
         }
+    }
+
+    /// Opens the conversation with a question about the photo in its box, for
+    /// the person to add to and send. There is no way for a message to point
+    /// at a photo yet, so the question names it.
+    private func askTeaNode(about photo: Photo) {
+        app.draftedMessage = String(localized: "Look at photo \(photo.id) and tell me about it.")
+        isShowingInfo = false
+        dismiss()
     }
 
     /// The photo that takes the place of one about to leave the list: the one
@@ -361,12 +375,21 @@ struct PhotoPage: View {
 }
 
 /// PhotoInfoView is what is known of one photo: when and where it was taken,
-/// with what, how large it is and what it is called.
+/// with what, how large it is and what it is called, the albums it is in, the
+/// people in it, and what a model wrote about the picture.
 struct PhotoInfoView: View {
     let photo: Photo
-    let connection: Connection
+    let model: PhotosModel
+    let onAskTeaNode: (Photo) -> Void
     @State private var detail: PhotoDetail?
+    @State private var isAskingToDescribe = false
+    @State private var hasGivenUpWaiting = false
     @Environment(\.dismiss) private var dismiss
+
+    private var connection: Connection { model.connection }
+    private var description: PhotoDescription { detail?.photoDescription ?? PhotoDescription() }
+    private var isDescriptionAvailable: Bool { model.library?.isDescriptionAvailable == true }
+    private var people: [PhotoFace] { (detail?.faces ?? []).filter(\.isGrouped) }
 
     var body: some View {
         NavigationStack {
@@ -393,6 +416,12 @@ struct PhotoInfoView: View {
                         }
                     }
                 }
+                if !people.isEmpty {
+                    peopleSection
+                }
+                if detail != nil {
+                    descriptionSection
+                }
             }
             .navigationTitle("Info")
             .navigationBarTitleDisplayMode(.inline)
@@ -404,7 +433,142 @@ struct PhotoInfoView: View {
         }
         .presentationDetents([.medium, .large])
         .task { detail = try? await connection.photoDetail(photo.id) }
+        .task(id: description.isDescriptionRequested) { await followDescription() }
+        .task { if model.library == nil { await model.loadLibrary() } }
     }
+
+    // MARK: People
+
+    /// The people in the photo, each with their face. A person who is not who
+    /// the server says is taken out of the group with a touch and hold.
+    private var peopleSection: some View {
+        Section {
+            ForEach(people) { face in
+                HStack(spacing: 12) {
+                    FacePictureView(facePictureUrl: face.facePictureUrl, name: shownName(of: face), connection: connection)
+                        .frame(width: 40, height: 40)
+                    Text(shownName(of: face))
+                        .foregroundStyle(face.contactName.isEmpty ? .secondary : .primary)
+                }
+                .accessibilityElement(children: .combine)
+                .contextMenu {
+                    Button(role: .destructive) {
+                        Task {
+                            if await model.removeFace(face) { detail = try? await connection.photoDetail(photo.id) }
+                        }
+                    } label: {
+                        if face.contactName.isEmpty {
+                            Label("Not This Person", systemImage: "person.crop.circle.badge.xmark")
+                        } else {
+                            Label("Not \(face.contactName)", systemImage: "person.crop.circle.badge.xmark")
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("photos.people")
+        } footer: {
+            Text("Touch and hold a person if it is not them.")
+        }
+    }
+
+    private func shownName(of face: PhotoFace) -> String {
+        let name = face.contactName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? String(localized: "Unnamed person") : name
+    }
+
+    // MARK: Description
+
+    /// What a model wrote about the picture, Describe when nothing has, a
+    /// progress view while it is on its way, and the reason when describing is
+    /// not available. The words are the model's, shown and never obeyed.
+    private var descriptionSection: some View {
+        Section {
+            if description.isDescribed {
+                Text(description.photoDescription)
+                if !description.descriptionVisibleText.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Text in the picture")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Text(description.descriptionVisibleText)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if let describedOn = description.describedOnText() {
+                    Text("Described on \(describedOn)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if description.isDescriptionRequested || isAskingToDescribe {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text(waitingText)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
+            } else if description.isDescribed {
+                if isDescriptionAvailable {
+                    Button("Describe Again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
+                }
+            } else if isDescriptionAvailable {
+                Button("Describe", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
+            } else if let library = model.library {
+                Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Ask TeaNode", systemImage: "bubble.left") { onAskTeaNode(photo) }
+        } header: {
+            Text("Description")
+        } footer: {
+            if !description.isDescribed, !description.isDescriptionRequested, isDescriptionAvailable {
+                Text("TeaNode looks at the picture and writes what it shows, so a search can find it.")
+            }
+        }
+    }
+
+    private var waitingText: String {
+        if hasGivenUpWaiting { return String(localized: "This is taking longer than usual. It keeps going in the background, so look again in a few minutes.") }
+        return description.isDescribed ? String(localized: "Describing again…") : String(localized: "Describing…")
+    }
+
+    private func describe(isRedescribed: Bool) async {
+        isAskingToDescribe = true
+        hasGivenUpWaiting = false
+        defer { isAskingToDescribe = false }
+        do {
+            let asked = try await connection.describePhoto(photo.id, isRedescribed: isRedescribed)
+            if let held = detail {
+                detail = PhotoDetail(
+                    photo: held.photo, photoFiles: held.photoFiles, photoPreviews: held.photoPreviews, albums: held.albums, photoDescription: asked, faces: held.faces)
+            } else {
+                detail = try? await connection.photoDetail(photo.id)
+            }
+        } catch {
+            model.problemText = error.localizedDescription
+        }
+    }
+
+    /// While a description is on its way, asks for the photo again every few
+    /// seconds, and not for longer than two minutes: after that the job goes
+    /// on without the screen, and the description is there when the person
+    /// comes back.
+    private func followDescription() async {
+        var waitedSeconds = 0
+        while !Task.isCancelled, description.isDescriptionRequested {
+            guard PhotoDescriptionPolling.shouldAskAgain(afterWaiting: waitedSeconds) else {
+                hasGivenUpWaiting = true
+                return
+            }
+            try? await Task.sleep(for: .seconds(PhotoDescriptionPolling.intervalSeconds))
+            waitedSeconds += PhotoDescriptionPolling.intervalSeconds
+            guard !Task.isCancelled else { return }
+            if let fresh = try? await connection.photoDetail(photo.id) { detail = fresh }
+        }
+    }
+
+    // MARK: Details
 
     private var cameraText: String {
         [photo.cameraMake, photo.cameraModel].filter { !$0.isEmpty }.joined(separator: " ")

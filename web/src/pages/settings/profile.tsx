@@ -7,6 +7,7 @@ import { useToast } from '../../components/toast'
 import { ConfirmDialog } from '../../components/dialog'
 import { useTranslation } from '../../i18n/i18n'
 import { Select } from '../../components/select'
+import { FaceRecognitionPreferences } from '../photos/people'
 
 const CURRENT_USER = `{ GetCurrentUser { id username name email timezone timezoneMode } }`
 
@@ -211,6 +212,9 @@ export function ProfilePage({ onSaved }: { onSaved: () => void }) {
           {t('common.save')}
         </button>
       </form>
+
+      {/* The person's own switch for finding faces in their photos. */}
+      <FaceRecognitionPreferences />
 
       {confirmingRename && (
         <ConfirmDialog

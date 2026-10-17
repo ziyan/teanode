@@ -395,6 +395,11 @@ struct SettingsForm: View {
                         } label: {
                             PhotoBackupSettingsRow()
                         }
+                        NavigationLink {
+                            PhotoFacesSettingsView(connection: connection)
+                        } label: {
+                            Label("People in Photos", systemImage: "person.crop.circle")
+                        }
                     }
                 }
                 if let connection = app.connection {
@@ -531,6 +536,7 @@ struct SettingsForm: View {
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
                 case "photos-backup-off", "photos-backup-on": PhotoBackupView(connection: connection)
+                case "photos-faces": PhotoFacesSettingsView(connection: connection)
                 case "devices": DevicesView(connection: connection)
                 case "rules":
                     if let mail {

@@ -175,3 +175,12 @@ export function formatDateRange(
   const withRange = format as Intl.DateTimeFormat & { formatRange?: (start: Date, end: Date) => string }
   return withRange.formatRange ? withRange.formatRange(first, last) : format.format(first)
 }
+
+// formatDate writes one moment as a date in the reader's language and time
+// zone, "July 12, 2030": when a description was written, for one. Empty for
+// a moment that is not one.
+export function formatDate(moment: string, language: string, timeZone?: string): string {
+  const date = new Date(moment)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(language, { timeZone, year: 'numeric', month: 'long', day: 'numeric' }).format(date)
+}
