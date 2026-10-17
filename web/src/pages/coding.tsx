@@ -779,7 +779,7 @@ function CodingSession({
         </Tooltip>
         <div
           ref={scroller}
-          className="coding-scroll"
+          className={view === 'screen' ? 'coding-scroll showing-screen' : 'coding-scroll'}
           onScroll={(event) => {
             const element = event.currentTarget
             isAtEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < AT_END_PX

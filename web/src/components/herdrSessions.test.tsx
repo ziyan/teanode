@@ -203,3 +203,13 @@ it('opens a tool call to its whole input and what it answered', () => {
     '4 passed',
   ])
 })
+
+it('attaches a pasted picture, and leaves pasted text to the box', () => {
+  render(<HerdrSendForm session={session} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder')
+  const picture = new File(['png bytes'], 'image.png', { type: 'image/png' })
+  fireEvent.paste(box, { clipboardData: { files: [picture], getData: () => '' } })
+  expect(screen.getByText(/^pasted-\d+-1\.png$/)).toBeTruthy()
+  fireEvent.paste(box, { clipboardData: { files: [], getData: () => 'some text' } })
+  expect(screen.getAllByText(/^pasted-/)).toHaveLength(1)
+})
