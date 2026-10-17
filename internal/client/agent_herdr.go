@@ -58,9 +58,11 @@ type AgentHerdrList struct {
 
 // AgentHerdrTurn is one thing said or done in a session.
 type AgentHerdrTurn struct {
-	HerdrTurnRole string     `json:"herdrTurnRole"`
-	TurnText      string     `json:"turnText"`
-	TurnAt        *time.Time `json:"turnAt"`
+	HerdrTurnRole  string     `json:"herdrTurnRole"`
+	TurnText       string     `json:"turnText"`
+	TurnAt         *time.Time `json:"turnAt"`
+	ToolInputText  string     `json:"toolInputText"`
+	ToolResultText string     `json:"toolResultText"`
 }
 
 // AgentHerdrRead is a session's last turns.
@@ -110,9 +112,9 @@ const (
 	DocumentListAgentHerdrSessions = `query ($computer: String) {
 		ListAgentHerdrSessions(computer: $computer) { computerNames failedComputerNames sessions { ` + HerdrSessionFields + ` } }
 	}`
-	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int) {
-		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount) {
-			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt } isTruncated
+	DocumentReadAgentHerdrSession = `query ($computer: String, $paneId: String!, $turnCount: Int, $shouldIncludeToolDetail: Boolean) {
+		ReadAgentHerdrSession(computer: $computer, paneId: $paneId, turnCount: $turnCount, shouldIncludeToolDetail: $shouldIncludeToolDetail) {
+			herdrSession { ` + HerdrSessionFields + ` } turns { herdrTurnRole turnText turnAt toolInputText toolResultText } isTruncated
 		}
 	}`
 	DocumentReadAgentHerdrScreen = `query ($computer: String, $paneId: String!, $lineCount: Int, $shouldKeepColor: Boolean) {
@@ -172,14 +174,18 @@ func ListAgentHerdrSessions(ctx context.Context, connection *Client, computer st
 }
 
 // ReadAgentHerdrSession is a session's last turnCount turns; zero leaves
-// the count to the server.
-func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string, turnCount int) (*AgentHerdrRead, error) {
+// the count to the server. shouldIncludeToolDetail gives each tool turn its
+// whole input and what the tool answered.
+func ReadAgentHerdrSession(ctx context.Context, connection *Client, computer, paneId string, turnCount int, shouldIncludeToolDetail bool) (*AgentHerdrRead, error) {
 	var result struct {
 		ReadAgentHerdrSession *AgentHerdrRead `json:"ReadAgentHerdrSession"`
 	}
 	variables := herdrVariables(computer, map[string]any{"paneId": paneId})
 	if turnCount > 0 {
 		variables["turnCount"] = turnCount
+	}
+	if shouldIncludeToolDetail {
+		variables["shouldIncludeToolDetail"] = true
 	}
 	if err := connection.Execute(ctx, DocumentReadAgentHerdrSession, variables, &result); err != nil {
 		return nil, err

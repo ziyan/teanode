@@ -90,6 +90,9 @@ type ReadAgentHerdrSessionArguments struct {
 	Computer  string `json:"computer" graphapi:"nullable"`
 	PaneID    string `json:"paneId"`
 	TurnCount int    `json:"turnCount" graphapi:"nullable"`
+	// ShouldIncludeToolDetail gives each tool turn its whole input and what
+	// the tool answered, in toolInputText and toolResultText.
+	ShouldIncludeToolDetail bool `json:"shouldIncludeToolDetail" graphapi:"nullable"`
 }
 
 // ReadAgentHerdrScreenArguments name a session, and how many lines.
@@ -242,6 +245,10 @@ type AgentHerdrTurnView struct {
 	HerdrTurnRole string     `json:"herdrTurnRole"`
 	TurnText      string     `json:"turnText"`
 	TurnAt        *time.Time `json:"turnAt" graphapi:"nullable"`
+	// ToolInputText and ToolResultText are a tool turn's whole input and
+	// what the tool answered, when the read asked for them.
+	ToolInputText  string `json:"toolInputText"`
+	ToolResultText string `json:"toolResultText"`
 }
 
 // AgentHerdrReadView is a session's last turns.
@@ -319,13 +326,16 @@ func (self *graph) ReadAgentHerdrSession(ctx context.Context, arguments ReadAgen
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	read, err := worker.ReadHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.TurnCount)
+	read, err := worker.ReadHerdrSession(ctx, found.ID, arguments.Computer, arguments.PaneID, arguments.TurnCount, arguments.ShouldIncludeToolDetail)
 	if err != nil {
 		return nil, err
 	}
 	view := &AgentHerdrReadView{HerdrSession: herdrSessionView(read.ComputerName, read.HerdrSession), Turns: []*AgentHerdrTurnView{}, IsTruncated: read.IsTruncated}
 	for _, turn := range read.Turns {
-		view.Turns = append(view.Turns, &AgentHerdrTurnView{HerdrTurnRole: turn.HerdrTurnRole, TurnText: turn.TurnText, TurnAt: turn.TurnAt})
+		view.Turns = append(view.Turns, &AgentHerdrTurnView{
+			HerdrTurnRole: turn.HerdrTurnRole, TurnText: turn.TurnText, TurnAt: turn.TurnAt,
+			ToolInputText: turn.ToolInputText, ToolResultText: turn.ToolResultText,
+		})
 	}
 	return view, nil
 }

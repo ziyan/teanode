@@ -213,12 +213,12 @@ type HerdrRead struct {
 }
 
 // ReadHerdrSession is the last turns of a session.
-func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, paneId string, turnCount int) (*HerdrRead, error) {
+func (self *Agent) ReadHerdrSession(ctx context.Context, agentId, computerName, paneId string, turnCount int, shouldIncludeToolDetail bool) (*HerdrRead, error) {
 	attached, err := self.herdrComputer(agentId, computerName)
 	if err != nil {
 		return nil, err
 	}
-	result, err := askHerdr[computer.HerdrReadResult](ctx, attached, "herdr_read", &computer.HerdrArguments{PaneID: paneId, TurnCount: turnCount}, herdrActionWait)
+	result, err := askHerdr[computer.HerdrReadResult](ctx, attached, "herdr_read", &computer.HerdrArguments{PaneID: paneId, TurnCount: turnCount, ShouldIncludeToolDetail: shouldIncludeToolDetail}, herdrActionWait)
 	if err != nil {
 		return nil, err
 	}
