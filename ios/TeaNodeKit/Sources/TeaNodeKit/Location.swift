@@ -216,6 +216,7 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
 /// FoundPlace is a named place near a position, from OpenStreetMap, which a
 /// check-in can be made at.
 public struct FoundPlace: Codable, Hashable, Sendable, Identifiable {
+    /// The map name; for the person's own place that they named, their name.
     public let placeName: String
     public let osmType: String
     public let osmId: Int64
@@ -226,9 +227,15 @@ public struct FoundPlace: Codable, Hashable, Sendable, Identifiable {
     public let distanceMeters: Double
     /// The person's own place there, if they have one.
     public let placeId: String?
+    /// "" or one of PlaceLabel's words; set only on the person's own place.
+    public let placeLabel: String
+    /// Whether placeName is the person's own name for their own place.
+    public let isNamedByPerson: Bool
 
     /// OpenStreetMap's own identity for it.
     public var id: String { "\(osmType)/\(osmId)" }
+
+    public var label: PlaceLabel? { PlaceLabel(rawValue: placeLabel) }
 
     /// The kind of place it is, from the OpenStreetMap tag ("amenity=cafe" is
     /// "cafe"); empty when there is none. The screen puts it in words.
@@ -236,7 +243,7 @@ public struct FoundPlace: Codable, Hashable, Sendable, Identifiable {
 
     public init(
         placeName: String, osmType: String, osmId: Int64, osmCategory: String = "", addressText: String = "", latitudeDegrees: Double,
-        longitudeDegrees: Double, distanceMeters: Double, placeId: String? = nil
+        longitudeDegrees: Double, distanceMeters: Double, placeId: String? = nil, placeLabel: String = "", isNamedByPerson: Bool = false
     ) {
         self.placeName = placeName
         self.osmType = osmType
@@ -247,6 +254,24 @@ public struct FoundPlace: Codable, Hashable, Sendable, Identifiable {
         self.longitudeDegrees = longitudeDegrees
         self.distanceMeters = distanceMeters
         self.placeId = placeId
+        self.placeLabel = placeLabel
+        self.isNamedByPerson = isNamedByPerson
+    }
+
+    /// The two fields an older server does not send decode to their defaults.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        placeName = try container.decode(String.self, forKey: .placeName)
+        osmType = try container.decode(String.self, forKey: .osmType)
+        osmId = try container.decode(Int64.self, forKey: .osmId)
+        osmCategory = try container.decode(String.self, forKey: .osmCategory)
+        addressText = try container.decode(String.self, forKey: .addressText)
+        latitudeDegrees = try container.decode(Double.self, forKey: .latitudeDegrees)
+        longitudeDegrees = try container.decode(Double.self, forKey: .longitudeDegrees)
+        distanceMeters = try container.decode(Double.self, forKey: .distanceMeters)
+        placeId = try container.decodeIfPresent(String.self, forKey: .placeId)
+        placeLabel = try container.decodeIfPresent(String.self, forKey: .placeLabel) ?? ""
+        isNamedByPerson = try container.decodeIfPresent(Bool.self, forKey: .isNamedByPerson) ?? false
     }
 }
 
@@ -441,7 +466,7 @@ extension Documents {
         }
         """
     static let foundPlaceFields = """
-        placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId
+        placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
         """
 
     public static let location = """

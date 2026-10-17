@@ -44,6 +44,27 @@ extension LocationPlace {
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitudeDegrees, longitude: longitudeDegrees) }
 }
 
+extension FoundPlace {
+    /// What the check-in sheet calls it, the same way a list of the person's
+    /// places does: their own name, else for a labeled place the label's
+    /// word, else the map name.
+    var shownName: String {
+        if !isNamedByPerson, let label { return label.title }
+        return placeName
+    }
+
+    /// For a place that shows its label's word as its name, the map name or
+    /// the address to say under it; nil for any other.
+    var secondaryName: String? {
+        guard !isNamedByPerson, label != nil else { return nil }
+        if !placeName.isEmpty { return placeName }
+        return addressText.isEmpty ? nil : addressText
+    }
+
+    /// The label's symbol for a labeled place of the person's, else nil.
+    var labelSymbolName: String? { label?.symbolName }
+}
+
 extension LocationShareLevel {
     /// What a share at this level is called: the two plain choices.
     var title: String {

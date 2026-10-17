@@ -110,6 +110,20 @@ final class LocationTests: XCTestCase {
         let found = try await nearbyConnection.nearbyPlaces(latitudeDegrees: 10.5, longitudeDegrees: 20.5)
         XCTAssertEqual(found.first?.categoryValue, "cafe")
         XCTAssertEqual(found.first?.id, "node/42")
+        // An older server sends neither field.
+        XCTAssertEqual(found.first?.placeLabel, "")
+        XCTAssertEqual(found.first?.isNamedByPerson, false)
+        XCTAssertNil(found.first?.label)
+
+        let (labeledConnection, _) = connection(
+            answering: #"""
+                {"data":{"ListNearbyPlaces":[{"placeName":"Fixture Park","osmType":"way","osmId":7,"osmCategory":"leisure=park",
+                 "addressText":"","latitudeDegrees":10.5,"longitudeDegrees":20.5,"distanceMeters":10,"placeId":"place-1",
+                 "placeLabel":"gym","isNamedByPerson":false}]}}
+                """#)
+        let labeled = try await labeledConnection.nearbyPlaces(latitudeDegrees: 10.5, longitudeDegrees: 20.5)
+        XCTAssertEqual(labeled.first?.label, .gym)
+        XCTAssertEqual(labeled.first?.isNamedByPerson, false)
         XCTAssertEqual(
             try sentVariables(fake.sent[0]), ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5)])
     }
