@@ -20,6 +20,9 @@
             refreshToken: "", expiresAt: .distantFuture, username: "robin")
 
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+            if let photoAnswer = Self.photoAnswer(request) {
+                return (photoAnswer, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
             if let recordingAnswer = Self.recordingAnswer(query: query) {
@@ -37,7 +40,7 @@
                     answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":true,"canSetUpCalendar":true,"canSetUpReminders":true,"canSetUpContacts":true,"mailboxes":[{"id":"mailbox-demo","name":"Personal","addresses":[]}]}}}"#
                 }
             } else if query.contains("GetServiceCapabilities") {
-                answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
+                answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isPhotosEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
                 answer = Self.screen?.hasPrefix("conversation-long-message") == true ? Self.longMessageConversation : Self.conversation
             } else if query.contains("ListAgentConversations") {

@@ -308,6 +308,15 @@ jobs:
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
+          # Photos, from invented photos drawn by the demo server: the library by day, the viewer on its
+          # first photo, the Trash, and a library with nothing in it.
+          shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
+          shoot photos-library-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
+          shoot photos-library-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
+          shoot photos-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
+          shoot photos-empty-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-empty
           # Settings, and the screens it pushes, named by -TeaNodeScreen.
           shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
           shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings

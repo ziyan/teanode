@@ -77,6 +77,7 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: YES
         INFOPLIST_KEY_NSCameraUsageDescription: "TeaNode uses the camera to scan the code that connects it to your server, and to take pictures you send."
         INFOPLIST_KEY_NSContactsUsageDescription: "TeaNode reads your iPhone's contacts only when you choose to import them into your address book."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "TeaNode saves the photos you choose to your library."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "TeaNode uses the microphone while you call your agent or explicitly record a meeting."
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Your agent asks where you are when something you asked depends on it, such as the weather or how long a trip takes."
         # The app encrypts nothing beyond the https the system provides, which

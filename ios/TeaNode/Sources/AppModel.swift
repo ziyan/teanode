@@ -778,6 +778,8 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
+        // Hidden until an operator turns Photos on for the server.
+        case .photos: return services.isPhotosEnabled
         case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
         case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .settings: return true

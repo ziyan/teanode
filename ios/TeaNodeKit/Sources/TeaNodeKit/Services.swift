@@ -7,9 +7,40 @@ public struct ServiceCapabilities: Codable, Sendable, Equatable {
     public let isCalendarEnabled: Bool
     public let isRemindersEnabled: Bool
     public let isContactsEnabled: Bool
+    /// Whether the server keeps a photo library. Off until an operator turns
+    /// it on, and false in an answer from a server that predates Photos.
+    public let isPhotosEnabled: Bool
     public let isAssistantEnabled: Bool
     public let hasPendingServiceRestart: Bool
     public let hasCompletedSetup: Bool
+
+    public init(
+        isMailRoutingEnabled: Bool, isMailboxEnabled: Bool, isCalendarEnabled: Bool, isRemindersEnabled: Bool, isContactsEnabled: Bool,
+        isPhotosEnabled: Bool = false, isAssistantEnabled: Bool, hasPendingServiceRestart: Bool, hasCompletedSetup: Bool
+    ) {
+        self.isMailRoutingEnabled = isMailRoutingEnabled
+        self.isMailboxEnabled = isMailboxEnabled
+        self.isCalendarEnabled = isCalendarEnabled
+        self.isRemindersEnabled = isRemindersEnabled
+        self.isContactsEnabled = isContactsEnabled
+        self.isPhotosEnabled = isPhotosEnabled
+        self.isAssistantEnabled = isAssistantEnabled
+        self.hasPendingServiceRestart = hasPendingServiceRestart
+        self.hasCompletedSetup = hasCompletedSetup
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isMailRoutingEnabled = try container.decode(Bool.self, forKey: .isMailRoutingEnabled)
+        isMailboxEnabled = try container.decode(Bool.self, forKey: .isMailboxEnabled)
+        isCalendarEnabled = try container.decode(Bool.self, forKey: .isCalendarEnabled)
+        isRemindersEnabled = try container.decode(Bool.self, forKey: .isRemindersEnabled)
+        isContactsEnabled = try container.decode(Bool.self, forKey: .isContactsEnabled)
+        isPhotosEnabled = try container.decodeIfPresent(Bool.self, forKey: .isPhotosEnabled) ?? false
+        isAssistantEnabled = try container.decode(Bool.self, forKey: .isAssistantEnabled)
+        hasPendingServiceRestart = try container.decode(Bool.self, forKey: .hasPendingServiceRestart)
+        hasCompletedSetup = try container.decode(Bool.self, forKey: .hasCompletedSetup)
+    }
 
     public static let legacy = ServiceCapabilities(isMailRoutingEnabled: true, isMailboxEnabled: true, isCalendarEnabled: true, isRemindersEnabled: true, isContactsEnabled: true, isAssistantEnabled: true, hasPendingServiceRestart: false, hasCompletedSetup: true)
     public static let unavailable = ServiceCapabilities(isMailRoutingEnabled: false, isMailboxEnabled: false, isCalendarEnabled: false, isRemindersEnabled: false, isContactsEnabled: false, isAssistantEnabled: false, hasPendingServiceRestart: false, hasCompletedSetup: false)
@@ -17,6 +48,10 @@ public struct ServiceCapabilities: Codable, Sendable, Equatable {
 
 extension Documents {
     public static let serviceCapabilities = """
+        query { GetServiceCapabilities { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }
+        """
+    /// What a server that predates Photos is asked, since it refuses a field it does not have.
+    public static let serviceCapabilitiesBeforePhotos = """
         query { GetServiceCapabilities { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup } }
         """
 }
@@ -24,8 +59,14 @@ extension Documents {
 extension Connection {
     public func serviceCapabilities() async throws -> ServiceCapabilities {
         struct Answer: Decodable, Sendable { let GetServiceCapabilities: ServiceCapabilities }
-        do { return try await execute(Documents.serviceCapabilities, as: Answer.self).GetServiceCapabilities }
-        catch TeaNodeError.refused(let errorMessage) where errorMessage.contains("Cannot query field") && errorMessage.contains("GetServiceCapabilities") { return .legacy }
+        do {
+            do { return try await execute(Documents.serviceCapabilities, as: Answer.self).GetServiceCapabilities }
+            catch TeaNodeError.refused(let errorMessage) where errorMessage.contains("Cannot query field") && errorMessage.contains("isPhotosEnabled") {
+                return try await execute(Documents.serviceCapabilitiesBeforePhotos, as: Answer.self).GetServiceCapabilities
+            }
+        } catch TeaNodeError.refused(let errorMessage) where errorMessage.contains("Cannot query field") && errorMessage.contains("GetServiceCapabilities") {
+            return .legacy
+        }
     }
 }
 
@@ -35,12 +76,14 @@ public struct ServiceSelection: Codable, Sendable {
     public var isCalendarEnabled: Bool
     public var isRemindersEnabled: Bool
     public var isContactsEnabled: Bool
+    public var isPhotosEnabled: Bool
     public init(capabilities: ServiceCapabilities) {
         isMailRoutingEnabled = capabilities.isMailRoutingEnabled
         isMailboxEnabled = capabilities.isMailboxEnabled
         isCalendarEnabled = capabilities.isCalendarEnabled
         isRemindersEnabled = capabilities.isRemindersEnabled
         isContactsEnabled = capabilities.isContactsEnabled
+        isPhotosEnabled = capabilities.isPhotosEnabled
     }
 }
 
@@ -69,11 +112,11 @@ public struct CreatedSyncProfile: Codable, Sendable {
 
 extension Documents {
     public static let serviceSetup = """
-        query { GetServiceSetup { selectedServices { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled } } }
+        query { GetServiceSetup { selectedServices { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled } } }
         """
     public static let updateServices = """
-        mutation ($isMailRoutingEnabled: Boolean, $isMailboxEnabled: Boolean, $isCalendarEnabled: Boolean, $isRemindersEnabled: Boolean, $isContactsEnabled: Boolean) {
-          UpdateServices(isMailRoutingEnabled: $isMailRoutingEnabled, isMailboxEnabled: $isMailboxEnabled, isCalendarEnabled: $isCalendarEnabled, isRemindersEnabled: $isRemindersEnabled, isContactsEnabled: $isContactsEnabled) { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup }
+        mutation ($isMailRoutingEnabled: Boolean, $isMailboxEnabled: Boolean, $isCalendarEnabled: Boolean, $isRemindersEnabled: Boolean, $isContactsEnabled: Boolean, $isPhotosEnabled: Boolean) {
+          UpdateServices(isMailRoutingEnabled: $isMailRoutingEnabled, isMailboxEnabled: $isMailboxEnabled, isCalendarEnabled: $isCalendarEnabled, isRemindersEnabled: $isRemindersEnabled, isContactsEnabled: $isContactsEnabled, isPhotosEnabled: $isPhotosEnabled) { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup }
         }
         """
     public static let syncCredentials = """
@@ -107,6 +150,7 @@ extension Connection {
         _ = try await execute(Documents.updateServices, variables: [
             "isMailRoutingEnabled": .bool(selection.isMailRoutingEnabled), "isMailboxEnabled": .bool(selection.isMailboxEnabled),
             "isCalendarEnabled": .bool(selection.isCalendarEnabled), "isRemindersEnabled": .bool(selection.isRemindersEnabled), "isContactsEnabled": .bool(selection.isContactsEnabled),
+            "isPhotosEnabled": .bool(selection.isPhotosEnabled),
         ], as: Answer.self)
     }
     public func syncCredentials() async throws -> [SyncCredential] {
