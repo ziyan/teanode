@@ -181,11 +181,11 @@ struct ConversationsSheet: View {
                     }
                 }
                 #if DEBUG
-                    .task {
+                    .task(id: app.canChat) {
                         // `-TeaNodeScreen conversations`: the side menu scrolled to its chats,
-                        // to show the rows that start one.
-                        guard DemoServer.isRequested, DemoServer.screen == "conversations", leading != nil else { return }
-                        try? await Task.sleep(for: .seconds(1))
+                        // to show the rows that start one, once the session says they are there.
+                        guard DemoServer.isRequested, DemoServer.screen == "conversations", leading != nil, app.canChat else { return }
+                        try? await Task.sleep(for: .seconds(2))
                         withAnimation { scroller.scrollTo(Self.messageSomeoneRowId, anchor: .top) }
                     }
                 #endif
