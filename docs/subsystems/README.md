@@ -28,6 +28,7 @@ change with it.
 | `contacts.md` | The address book, CardDAV, and what a phone may do to a card |
 | `calendar.md` | The calendar, CalDAV, free-busy, and invitations by mail |
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
+| `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing

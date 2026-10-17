@@ -261,6 +261,13 @@ own from the address.
   addresses through port 587. A credential — on the domain's settings page,
   optionally restricted to one sender address — is for programs and scripts
   that send as the domain rather than as a person.
+- **Photos.** **Manage → Server → Setup** offers Photos beside Calendar and
+  Contacts; choose it and restart. Each person then has a Photos page in the
+  rail: upload from the dashboard or with `teanode photo upload <folder>`, or
+  turn on **Photo backup** in the iPhone app's settings to send the phone's
+  whole library in the background. Deleting a photo on the phone leaves it
+  here. A library is large: put the storage (`storage.directory`, or the S3
+  bucket) on a disk with room for it, and back it up with the database.
 - **More domains.** Each gets its own signing key by default. If you would
   rather they all shared one, point `<selector>._domainkey` at the primary
   domain with a CNAME and the dashboard will show you the record to publish.

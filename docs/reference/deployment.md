@@ -239,6 +239,16 @@ record. Treat it as a private key.
 configured. Certificates are reissued automatically, so it is worth backing up
 but not urgent.
 
+**The photo library's files, when Photos is on.** The database knows every
+photo, album and face, but the pictures and videos themselves are in the
+storage: `storage.directory` under the data directory, or the S3 bucket
+(MinIO's volume, in the `cluster` profile). A database dump without them
+restores a library of names with nothing behind them. Back the storage up as
+well, with whatever copies a directory or a bucket (`rsync`, `mc mirror`); the
+files are named by their SHA-256 and never rewritten, so an incremental copy
+only ever adds. Give the storage a disk with room for the libraries: a phone's
+library is commonly tens to hundreds of gigabytes.
+
 ## Keeping the server secret out of the database
 
 Every key the server stores (the domains' DKIM keys, the agent's provider
