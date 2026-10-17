@@ -1322,6 +1322,8 @@ export const en = {
   'herdr.noComputer': 'No attached computer watches herdr yet. Run teanode computer start, from a current teanode, on a computer where herdr runs.',
   'herdr.none': 'Herdr runs on {computers}, with no Claude Code or Codex session in it.',
   'herdr.listFailed': 'The herdr sessions could not be read.',
+  'herdr.toolInput': 'Input',
+  'herdr.toolResult': 'Result',
   'herdr.chooseSession': 'Choose a session to read it.',
   'herdr.askingCount': '{count} asking',
   'herdr.workingCount': '{count} working',

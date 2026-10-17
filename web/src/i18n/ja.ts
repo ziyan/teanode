@@ -1316,6 +1316,8 @@ export const ja: Catalog = {
   'herdr.noComputer': 'herdr を見ているコンピューターがまだ接続されていません。herdr が動いているコンピューターで、最新の teanode から teanode computer start を実行してください。',
   'herdr.none': '{computers} で herdr が動いていますが、Claude Code や Codex のセッションはありません。',
   'herdr.listFailed': 'herdr のセッションを読み込めませんでした。',
+  'herdr.toolInput': '入力',
+  'herdr.toolResult': '結果',
   'herdr.chooseSession': 'セッションを選ぶと表示されます。',
   'herdr.askingCount': '{count} 件が質問中',
   'herdr.workingCount': '{count} 件が作業中',

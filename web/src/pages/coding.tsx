@@ -531,7 +531,12 @@ function CodingSession({
       if (view === 'turns') {
         const response = await graphql<{
           ReadAgentHerdrSession: { herdrSession: HerdrSession; turns: HerdrTurn[]; isTruncated: boolean }
-        }>(HERDR_DOCUMENTS.ReadAgentHerdrSession, { computer: session.computer, paneId: session.paneId, turnCount })
+        }>(HERDR_DOCUMENTS.ReadAgentHerdrSession, {
+          computer: session.computer,
+          paneId: session.paneId,
+          turnCount,
+          shouldIncludeToolDetail: true,
+        })
         return { ...response.ReadAgentHerdrSession, screenText: '' }
       }
       const response = await graphql<{ ReadAgentHerdrScreen: { herdrSession: HerdrSession; screenText: string } }>(

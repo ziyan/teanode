@@ -1279,6 +1279,8 @@ export const zh: Catalog = {
   'herdr.noComputer': '还没有接入的电脑在监视 herdr。请在运行 herdr 的电脑上，用最新的 teanode 运行 teanode computer start。',
   'herdr.none': '{computers} 上运行着 herdr，但里面没有 Claude Code 或 Codex 会话。',
   'herdr.listFailed': '无法读取 herdr 会话。',
+  'herdr.toolInput': '输入',
+  'herdr.toolResult': '结果',
   'herdr.chooseSession': '选择一个会话来阅读。',
   'herdr.askingCount': '{count} 个在提问',
   'herdr.workingCount': '{count} 个在工作',

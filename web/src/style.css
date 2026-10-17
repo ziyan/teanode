@@ -14481,6 +14481,49 @@ button.idea-history-title {
   white-space: nowrap;
 }
 
+/* A tool call with its detail: the line is what is clicked, and opens to
+   the input and the answer in the terminal's face. */
+.herdr-tool > summary {
+  display: block;
+  cursor: pointer;
+  list-style: none;
+}
+
+.herdr-tool > summary::-webkit-details-marker {
+  display: none;
+}
+
+.herdr-tool > summary:hover {
+  color: var(--text);
+}
+
+.herdr-tool-detail {
+  margin: var(--space-1) 0 var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--field);
+}
+
+.herdr-tool-detail h5 {
+  margin: 0 0 var(--space-1);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.herdr-tool-detail pre {
+  margin: 0 0 var(--space-2);
+  max-height: 24em;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.herdr-tool-detail pre:last-child {
+  margin-bottom: 0;
+}
+
 .herdr-send {
   display: flex;
   gap: var(--space-2);
