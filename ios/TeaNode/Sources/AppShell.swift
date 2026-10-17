@@ -304,7 +304,7 @@ struct MainView: View {
             // Location link opened at launch waits for it rather than being
             // told it is refused.
             NavigationStack {
-                ServicesLoadingView()
+                ServicesLoadingView(isWaitingForPermissions: true)
                     .toolbar { MenuButton() }
             }
         } else if section == .location, !app.canUseLocation {
@@ -594,8 +594,14 @@ struct ServicesLoadingView: View {
     @Environment(AppModel.self) private var app
     @State private var isRetrying = false
 
+    /// Waiting for the account's permissions rather than the services: the
+    /// failure and the retry are about reading those.
+    var isWaitingForPermissions = false
+
+    private var hasFailed: Bool { isWaitingForPermissions ? app.hasPermissionReadFailed : app.hasServicesFailedToLoad }
+
     var body: some View {
-        if app.hasServicesFailedToLoad {
+        if hasFailed {
             ContentUnavailableView {
                 Label("Cannot reach your server", systemImage: "wifi.exclamationmark")
             } description: {
@@ -604,7 +610,7 @@ struct ServicesLoadingView: View {
                 Button {
                     isRetrying = true
                     Task {
-                        await app.refreshServices()
+                        if isWaitingForPermissions { await app.refreshChats() } else { await app.refreshServices() }
                         isRetrying = false
                     }
                 } label: {

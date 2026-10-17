@@ -33,13 +33,13 @@ final class LocationTests: XCTestCase {
     private let placeAnswer = #"""
         {"id":"place-1","userId":"user-1","placeName":"Fixture Park","isNamedByPerson":false,"placeLabel":"","latitudeDegrees":10.5,
          "longitudeDegrees":20.5,"radiusMeters":75,"osmType":"way","osmId":123456789012,"osmName":"Fixture Park","osmCategory":"leisure=park",
-         "addressText":"","visitCount":3,"lastVisitAt":"2030-01-02T10:00:00.123456789Z","namingErrorMessage":"",
-         "createdAt":"2030-01-01T00:00:00Z","updatedAt":"2030-01-02T10:00:00Z"}
+         "addressText":"","visitCount":3,"lastVisitAt":"2024-01-02T10:00:00.123456789Z","namingErrorMessage":"",
+         "createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-02T10:00:00Z"}
         """#
 
     private var visitAnswer: String {
         #"""
-        {"id":"visit-1","arrivedAt":"2030-01-02T09:00:00Z","departedAt":null,"durationSeconds":null,"latitudeDegrees":10.5,
+        {"id":"visit-1","arrivedAt":"2024-01-02T09:00:00Z","departedAt":null,"durationSeconds":null,"latitudeDegrees":10.5,
          "longitudeDegrees":20.5,"accuracyMeters":30,"visitSource":"visit","place":\#(placeAnswer)}
         """#
     }
@@ -54,7 +54,7 @@ final class LocationTests: XCTestCase {
                 {"data":{"GetLocation":{"userId":"user-1","username":"robin","name":null,"avatarUrl":null,"avatarColorIndex":3,
                  "shareLevel":"owner",
                  "latestPoint":{"latitudeDegrees":10.5,"longitudeDegrees":20.5,"accuracyMeters":12.5,"altitudeMeters":null,
-                  "speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"2030-01-02T09:30:00Z","locationSource":"phone"},
+                  "speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"2024-01-02T09:30:00Z","locationSource":"phone"},
                  "openVisit":\#(visitAnswer)}}}
                 """#)
         let location = try await connection.location()
@@ -73,7 +73,7 @@ final class LocationTests: XCTestCase {
     }
 
     func testAVisitWithBothEndsHasADuration() throws {
-        let text = visitAnswer.replacingOccurrences(of: #""departedAt":null"#, with: #""departedAt":"2030-01-02T10:25:00Z""#)
+        let text = visitAnswer.replacingOccurrences(of: #""departedAt":null"#, with: #""departedAt":"2024-01-02T10:25:00Z""#)
         let visit = try JSONDecoder().decode(PlaceVisit.self, from: Data(text.utf8))
         XCTAssertFalse(visit.isOpen)
         XCTAssertEqual(visit.visitDuration, .seconds(85 * 60))
@@ -86,12 +86,12 @@ final class LocationTests: XCTestCase {
         let first = try await connection.locationVisits()
         XCTAssertEqual(first.nextOffset, 50)
         _ = try await connection.locationVisits(
-            from: date("2030-01-02T00:00:00Z"), until: date("2030-01-03T00:00:00Z"), placeId: "place-1", offset: 50, limitCount: 50)
+            from: date("2024-01-02T00:00:00Z"), until: date("2024-01-03T00:00:00Z"), placeId: "place-1", offset: 50, limitCount: 50)
         XCTAssertEqual(try sentVariables(fake.sent[0]), [:])
         XCTAssertEqual(
             try sentVariables(fake.sent[1]),
             [
-                "from": .string("2030-01-02T00:00:00Z"), "until": .string("2030-01-03T00:00:00Z"), "placeId": .string("place-1"),
+                "from": .string("2024-01-02T00:00:00Z"), "until": .string("2024-01-03T00:00:00Z"), "placeId": .string("place-1"),
                 "offset": .number(50), "limitCount": .number(50),
             ])
     }
@@ -157,8 +157,8 @@ final class LocationTests: XCTestCase {
         let (connection, fake) = connection(answering: #"{"data":{"ReportLocation":{"newPointCount":1,"newVisitCount":1,"updatedVisitCount":0}}}"#)
         var outbox = LocationOutbox(accountKey: "account")
         outbox.addPoint(
-            ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 8, speedMetersPerSecond: 1.5, measuredAt: date("2030-01-02T09:00:00Z")))
-        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: date("2030-01-02T09:00:00Z"))
+            ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 8, speedMetersPerSecond: 1.5, measuredAt: date("2024-01-02T09:00:00Z")))
+        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: date("2024-01-02T09:00:00Z"))
         let result = try await connection.reportLocation(outbox.nextBatch(), agentPhoneId: "phone-1")
         XCTAssertEqual(result.newVisitCount, 1)
         let variables = try sentVariables(fake.sent[0])
@@ -168,15 +168,15 @@ final class LocationTests: XCTestCase {
             .array([
                 .object([
                     "latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5), "accuracyMeters": .number(8),
-                    "speedMetersPerSecond": .number(1.5), "measuredAt": .string("2030-01-02T09:00:00Z"),
+                    "speedMetersPerSecond": .number(1.5), "measuredAt": .string("2024-01-02T09:00:00Z"),
                 ])
             ]))
         XCTAssertEqual(
             variables["visits"],
             .array([
                 .object([
-                    "clientVisitKey": .string("region:place-1:a1893574800"), "latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5),
-                    "accuracyMeters": .number(0), "visitSource": .string("region"), "arrivedAt": .string("2030-01-02T09:00:00Z"),
+                    "clientVisitKey": .string("region:place-1:a1704186000"), "latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5),
+                    "accuracyMeters": .number(0), "visitSource": .string("region"), "arrivedAt": .string("2024-01-02T09:00:00Z"),
                     "placeId": .string("place-1"),
                 ])
             ]))
@@ -192,7 +192,7 @@ final class LocationTests: XCTestCase {
 
     func testKeepsAPositionAfter25MetersOrAMinuteOfMoving() {
         var filter = LocationPointFilter()
-        let start = date("2030-01-02T09:00:00Z")
+        let start = date("2024-01-02T09:00:00Z")
         // About 11 meters per 0.0001 degrees of latitude.
         XCTAssertTrue(filter.shouldKeep(latitudeDegrees: 10.5, longitudeDegrees: 20.5, speedMetersPerSecond: nil, measuredAt: start, isStationary: false))
         XCTAssertFalse(
@@ -231,14 +231,14 @@ final class LocationTests: XCTestCase {
     }
 
     func testAVisitIsNamedFromWhereAndWhenItBegan() {
-        let arrived = date("2030-01-02T09:00:00Z")
-        let departed = date("2030-01-02T10:00:00Z")
+        let arrived = date("2024-01-02T09:00:00Z")
+        let departed = date("2024-01-02T10:00:00Z")
         let arrival = LocationVisitKey.visit(latitudeDegrees: 10.5, longitudeDegrees: 20.5, arrivedAt: arrived, departedAt: nil)
         let departure = LocationVisitKey.visit(latitudeDegrees: 10.5, longitudeDegrees: 20.5, arrivedAt: arrived, departedAt: departed)
         XCTAssertEqual(arrival, departure)
-        XCTAssertEqual(arrival, "visit:10.500:20.500:a1893574800")
+        XCTAssertEqual(arrival, "visit:10.500:20.500:a1704186000")
         let unseen = LocationVisitKey.visit(latitudeDegrees: 10.5, longitudeDegrees: 20.5, arrivedAt: nil, departedAt: departed)
-        XCTAssertEqual(unseen, "visit:10.500:20.500:d1893578400")
+        XCTAssertEqual(unseen, "visit:10.500:20.500:d1704189600")
         XCTAssertNotEqual(unseen, arrival)
     }
 
@@ -246,7 +246,7 @@ final class LocationTests: XCTestCase {
 
     func testTheOutboxHandsOutBatchesOfAtMost500PointsAnd50Visits() {
         var outbox = LocationOutbox(accountKey: "account")
-        let start = date("2030-01-02T00:00:00Z")
+        let start = date("2024-01-02T00:00:00Z")
         for index in 0..<620 {
             outbox.addPoint(
                 ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: start.addingTimeInterval(Double(index))))
@@ -271,7 +271,7 @@ final class LocationTests: XCTestCase {
 
     func testWhatIsAddedWhileABatchIsInFlightStays() {
         var outbox = LocationOutbox(accountKey: "account")
-        let start = date("2030-01-02T00:00:00Z")
+        let start = date("2024-01-02T00:00:00Z")
         outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: start))
         let inFlight = outbox.nextBatch()
         outbox.addPoint(ReportedPoint(latitudeDegrees: 10.6, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: start.addingTimeInterval(30)))
@@ -282,7 +282,7 @@ final class LocationTests: XCTestCase {
 
     func testTheOutboxKeepsTheNewest20000PointsAndEveryVisit() {
         var outbox = LocationOutbox(accountKey: "account")
-        let start = date("2030-01-02T00:00:00Z")
+        let start = date("2024-01-02T00:00:00Z")
         outbox.addVisit(
             ReportedVisit(
                 clientVisitKey: "first", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, arrivedAt: start, departedAt: nil,
@@ -303,9 +303,77 @@ final class LocationTests: XCTestCase {
         XCTAssertTrue(outbox.isEmpty)
     }
 
+    func testWhatTheServerWouldRefuseIsNotQueued() {
+        let now = Date()
+        func visit(
+            key: String = "key", accuracy: Double = 10, arrivedAt: Date? = now.addingTimeInterval(-60), departedAt: Date? = nil, source: String = "visit"
+        ) -> ReportedVisit {
+            ReportedVisit(
+                clientVisitKey: key, latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: accuracy, arrivedAt: arrivedAt,
+                departedAt: departedAt, visitSource: source)
+        }
+        func point(measuredAt: Date) -> ReportedPoint {
+            ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: measuredAt)
+        }
+        XCTAssertTrue(LocationOutbox.isAcceptable(point(measuredAt: now.addingTimeInterval(3600))))
+        XCTAssertFalse(LocationOutbox.isAcceptable(point(measuredAt: now.addingTimeInterval(25 * 3600))))
+        XCTAssertFalse(
+            LocationOutbox.isAcceptable(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: .nan, measuredAt: now)))
+
+        XCTAssertTrue(LocationOutbox.isAcceptable(visit()))
+        XCTAssertTrue(LocationOutbox.isAcceptable(visit(key: String(repeating: "k", count: 128))))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(key: String(repeating: "k", count: 129))))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(key: "  ")))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(accuracy: -1)))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(source: "check_in")))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(arrivedAt: nil, departedAt: nil)))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(arrivedAt: now.addingTimeInterval(25 * 3600))))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(arrivedAt: nil, departedAt: now.addingTimeInterval(25 * 3600))))
+        XCTAssertFalse(LocationOutbox.isAcceptable(visit(arrivedAt: now.addingTimeInterval(-60), departedAt: now.addingTimeInterval(-120))))
+        XCTAssertTrue(LocationOutbox.isAcceptable(visit(arrivedAt: now.addingTimeInterval(-120), departedAt: now.addingTimeInterval(-60))))
+
+        var outbox = LocationOutbox(accountKey: "account")
+        outbox.addPoint(point(measuredAt: now.addingTimeInterval(25 * 3600)))
+        outbox.addVisit(visit(source: "check_in"))
+        XCTAssertTrue(outbox.isEmpty)
+    }
+
+    func testABatchTheServerCallsInvalidIsSplitUntilTheOneEntryIsFound() throws {
+        func point(_ index: Int) -> ReportedPoint {
+            ReportedPoint(sequence: index, latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: Date())
+        }
+        func visit(_ index: Int) -> ReportedVisit {
+            ReportedVisit(
+                sequence: index, clientVisitKey: "key-\(index)", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5,
+                arrivedAt: Date(), departedAt: nil, visitSource: "visit")
+        }
+        let batch = LocationBatch(points: (1...5).map(point), visits: (6...8).map(visit))
+        XCTAssertEqual(batch.entryCount, 8)
+
+        // Positions and visits go apart first.
+        let apart = try XCTUnwrap(batch.split())
+        XCTAssertEqual(apart.first.points.count, 5)
+        XCTAssertTrue(apart.first.visits.isEmpty)
+        XCTAssertEqual(apart.second.visits.count, 3)
+        XCTAssertTrue(apart.second.points.isEmpty)
+
+        // Then each is halved, with nothing lost or repeated.
+        let halves = try XCTUnwrap(apart.first.split())
+        XCTAssertEqual(halves.first.points.map(\.sequence), [1, 2])
+        XCTAssertEqual(halves.second.points.map(\.sequence), [3, 4, 5])
+        let visitHalves = try XCTUnwrap(apart.second.split())
+        XCTAssertEqual(visitHalves.first.visits.map(\.sequence), [6])
+        XCTAssertEqual(visitHalves.second.visits.map(\.sequence), [7, 8])
+
+        // One entry cannot be split: it is the one that is refused.
+        XCTAssertNil(LocationBatch(points: [point(1)], visits: []).split())
+        XCTAssertNil(LocationBatch(points: [], visits: [visit(1)]).split())
+        XCTAssertNil(LocationBatch(points: [], visits: []).split())
+    }
+
     func testADepartureFindsItsArrivalAfterTheOutboxIsReadBack() throws {
         var outbox = LocationOutbox(accountKey: "account")
-        let arrived = date("2030-01-02T09:00:00Z")
+        let arrived = date("2024-01-02T09:00:00Z")
         XCTAssertTrue(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived))
         outbox.remove(outbox.nextBatch())
 
@@ -322,7 +390,7 @@ final class LocationTests: XCTestCase {
 
     func testAnArrivalAtAPlaceWithAnOpenVisitEndsThatVisitFirst() {
         var outbox = LocationOutbox(accountKey: "account")
-        let first = date("2030-01-02T09:00:00Z")
+        let first = date("2024-01-02T09:00:00Z")
         let second = first.addingTimeInterval(3 * 3600)
         outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: first)
         XCTAssertTrue(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: second))
@@ -336,7 +404,7 @@ final class LocationTests: XCTestCase {
 
     func testEndingEveryVisitWhenMonitoringStopsLeavesNoneOpen() {
         var outbox = LocationOutbox(accountKey: "account")
-        let arrived = date("2030-01-02T09:00:00Z")
+        let arrived = date("2024-01-02T09:00:00Z")
         outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived)
         outbox.arrive(placeId: "place-2", latitudeDegrees: 10.6, longitudeDegrees: 20.5, at: arrived)
         outbox.departEverywhere(at: arrived.addingTimeInterval(600))
@@ -370,7 +438,7 @@ final class LocationTests: XCTestCase {
 
     func testDiscardingARangeKeepsWhatWasNoticedOutsideIt() {
         var outbox = LocationOutbox(accountKey: "account")
-        let day = date("2030-01-02T00:00:00Z")
+        let day = date("2024-01-02T00:00:00Z")
         for hour in [1.0, 30.0] {
             outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: day.addingTimeInterval(hour * 3600)))
         }
@@ -407,7 +475,7 @@ final class LocationTests: XCTestCase {
 
     func testEventsWaitHalfAMinuteAfterAFailureButNotAfterASuccess() {
         var gate = LocationRetryGate()
-        let now = date("2030-01-02T09:00:00Z")
+        let now = date("2024-01-02T09:00:00Z")
         XCTAssertTrue(gate.canTry(at: now))
         gate.didFail(at: now)
         XCTAssertFalse(gate.canTry(at: now.addingTimeInterval(10)))
@@ -451,18 +519,18 @@ final class LocationTests: XCTestCase {
         }
         let days = LocationDays.group(
             [
-                visit("early", arrived: "2030-01-02T08:00:00Z", departed: "2030-01-02T09:00:00Z"),
-                visit("yesterday", arrived: "2030-01-01T23:00:00Z", departed: "2030-01-02T07:00:00Z"),
-                visit("late", arrived: "2030-01-02T18:00:00Z", departed: nil),
-                visit("unseen arrival", arrived: nil, departed: "2030-01-01T10:00:00Z"),
+                visit("early", arrived: "2024-01-02T08:00:00Z", departed: "2024-01-02T09:00:00Z"),
+                visit("yesterday", arrived: "2024-01-01T23:00:00Z", departed: "2024-01-02T07:00:00Z"),
+                visit("late", arrived: "2024-01-02T18:00:00Z", departed: nil),
+                visit("unseen arrival", arrived: nil, departed: "2024-01-01T10:00:00Z"),
                 visit("no time", arrived: nil, departed: nil),
             ], calendar: calendar)
         XCTAssertEqual(days.count, 2)
         XCTAssertEqual(days[0].visits.map(\.id), ["late", "early"])
         XCTAssertEqual(days[1].visits.map(\.id), ["yesterday", "unseen arrival"])
-        let window = LocationDays.window(of: date("2030-01-02T18:00:00Z"), calendar: calendar)
-        XCTAssertEqual(window.from, date("2030-01-02T00:00:00Z"))
-        XCTAssertEqual(window.until, date("2030-01-03T00:00:00Z"))
+        let window = LocationDays.window(of: date("2024-01-02T18:00:00Z"), calendar: calendar)
+        XCTAssertEqual(window.from, date("2024-01-02T00:00:00Z"))
+        XCTAssertEqual(window.until, date("2024-01-03T00:00:00Z"))
     }
 
     // MARK: Setting Location up
@@ -472,13 +540,13 @@ final class LocationTests: XCTestCase {
     }
 
     private func fixtureCircle(circleKind: String) -> PeopleCircle {
-        PeopleCircle(id: "circle-1", name: "Fixture Home", circleKind: circleKind, createdAt: "2030-01-01T00:00:00Z", memberRole: "admin", members: [])
+        PeopleCircle(id: "circle-1", name: "Fixture Home", circleKind: circleKind, createdAt: "2024-01-01T00:00:00Z", memberRole: "admin", members: [])
     }
 
     private func fixtureShare(circleId: String) -> LocationShare {
         LocationShare(
             id: "share-1", granteeUserId: nil, granteeUsername: nil, granteeName: nil, granteeCircleId: circleId, granteeCircleName: "Fixture Home",
-            shareLevel: "history", createdAt: "2030-01-01T00:00:00Z")
+            shareLevel: "history", createdAt: "2024-01-01T00:00:00Z")
     }
 
     func testTheSetupIsWorkedOutFromTheServerAndThePermission() {
@@ -512,9 +580,9 @@ final class LocationTests: XCTestCase {
 
     func testTheSetupListsEveryFamilyCircleAndIsDoneOnlyWhenAllAreShared() {
         let second = PeopleCircle(
-            id: "circle-2", name: "Fixture Cousins", circleKind: "family", createdAt: "2030-01-01T00:00:00Z", memberRole: "member", members: [])
+            id: "circle-2", name: "Fixture Cousins", circleKind: "family", createdAt: "2024-01-01T00:00:00Z", memberRole: "member", members: [])
         let friends = PeopleCircle(
-            id: "circle-3", name: "Fixture Friends", circleKind: "friends", createdAt: "2030-01-01T00:00:00Z", memberRole: "member", members: [])
+            id: "circle-3", name: "Fixture Friends", circleKind: "friends", createdAt: "2024-01-01T00:00:00Z", memberRole: "member", members: [])
         let circles = [fixtureCircle(circleKind: "family"), second, friends]
         let half = LocationSetup(
             isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: circles, shares: [fixtureShare(circleId: "circle-1")])

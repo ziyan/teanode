@@ -267,12 +267,10 @@ final class LocationRecorder {
             stopLiveUpdates()
             writeOutbox()
             guard isBackground else { return }
-            // A place named, labeled or resized while the app was open is
-            // watched from here on, not from the next time it is opened.
-            Task {
-                await flush(isForced: true)
-                await refreshPlaceWatch(isForced: true)
-            }
+            // Only the flush: the background task it holds ends with it, and
+            // a place edited in the app was already read again by
+            // placesDidChange.
+            Task { await flush(isForced: true) }
         }
     }
 
@@ -300,6 +298,10 @@ final class LocationRecorder {
         // Told by the model while it is being made, so it does not ask the
         // model which account is in use.
         if outbox.accountKey != accountKey {
+            // At launch there is no account in memory yet, and nothing of a
+            // previous one is watched: only a change from one account to
+            // another leaves its places in the monitor.
+            let hadPreviousAccount = outbox.accountKey != nil
             useOutbox(accountKey: accountKey)
             refusalText = nil
             retryGate = LocationRetryGate()
@@ -308,7 +310,7 @@ final class LocationRecorder {
             // that no arrival at one is reported for this account if its own
             // places cannot be read.
             placeWatchRefreshedAt = .distantPast
-            arePlacesWatchedForPreviousAccount = true
+            if hadPreviousAccount { arePlacesWatchedForPreviousAccount = true }
         }
         applyMonitoring()
         Task { await flush(isForced: true) }
@@ -784,7 +786,7 @@ final class LocationRecorder {
             while outbox.accountKey == accountKey, AppModel.shared.connection === connection, !outbox.isEmpty, !isReportingHeld {
                 let batch = outbox.nextBatch()
                 do {
-                    try await send(batch, over: connection)
+                    try await sendSplittingInvalid(batch, over: connection)
                 } catch {
                     // The account was changed while the call was on its way:
                     // the answer says nothing about the new account's outbox,
@@ -795,8 +797,9 @@ final class LocationRecorder {
                         stopBecauseRefused(reason)
                         return
                     case .batchInvalid:
-                        // Sending it again cannot change the answer: drop it
-                        // and send what follows.
+                        // sendSplittingInvalid drops the entry the server
+                        // refuses and does not throw this; if it ever does,
+                        // sending it again cannot change the answer.
                         outbox.remove(batch)
                         saveOutbox(isUrgent: false)
                         continue
@@ -814,6 +817,21 @@ final class LocationRecorder {
                 saveOutbox(isUrgent: false)
             }
         } while isFlushRequestedAgain
+    }
+
+    /// Sends a batch. If the server calls it invalid without saying which
+    /// entry is wrong, it is sent again in two smaller batches, down to the
+    /// single entry the server refuses on its own, which is dropped: one bad
+    /// entry must not take the visits sent beside it.
+    private func sendSplittingInvalid(_ batch: LocationBatch, over connection: Connection) async throws {
+        do {
+            try await send(batch, over: connection)
+        } catch {
+            guard case .batchInvalid = LocationReportFailure.classify(error) else { throw error }
+            guard let halves = batch.split() else { return }
+            try await sendSplittingInvalid(halves.first, over: connection)
+            try await sendSplittingInvalid(halves.second, over: connection)
+        }
     }
 
     /// Sends one batch. A phone the server does not know (the person deleted

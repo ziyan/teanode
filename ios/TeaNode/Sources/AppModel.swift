@@ -366,6 +366,10 @@ final class AppModel {
     /// then, a screen that needs one of them is not known to be refused.
     private(set) var hasReadPermissions = false
 
+    /// Whether the last try to read the permissions failed, so that a screen
+    /// waiting for them can offer to try again instead of waiting for ever.
+    private(set) var hasPermissionReadFailed = false
+
     /// Reads whether the person can chat, and how much is waiting for them
     /// in their chats.
     func refreshChats() async {
@@ -373,6 +377,7 @@ final class AppModel {
         let session = try? await connection.accessSession()
         guard !Task.isCancelled, self.connection === connection else { return }
         if let userId = session?.userId { ownUserId = userId }
+        hasPermissionReadFailed = session == nil && !hasReadPermissions
         if let session {
             canUseLocation = session.holds("location:use")
             hasReadPermissions = true
@@ -436,6 +441,7 @@ final class AppModel {
         canChat = false
         canUseLocation = false
         hasReadPermissions = false
+        hasPermissionReadFailed = false
         unreadChatCount = 0
         isAgentEnabledByPerson = true
         hasAgent = true

@@ -189,7 +189,34 @@ public struct LocationBatch: Sendable, Equatable {
     public let points: [ReportedPoint]
     public let visits: [ReportedVisit]
 
+    public init(points: [ReportedPoint], visits: [ReportedVisit]) {
+        self.points = points
+        self.visits = visits
+    }
+
     public var isEmpty: Bool { points.isEmpty && visits.isEmpty }
+
+    /// How many positions and visits it carries together.
+    public var entryCount: Int { points.count + visits.count }
+
+    /// The two smaller batches to send when the server calls this one invalid
+    /// without saying which entry is wrong: the positions apart from the
+    /// visits if it holds both, else the first half and the rest of whichever
+    /// it holds. Nil for a single entry, which is the one the server refuses.
+    public func split() -> (first: LocationBatch, second: LocationBatch)? {
+        guard entryCount > 1 else { return nil }
+        if !points.isEmpty, !visits.isEmpty {
+            return (LocationBatch(points: points, visits: []), LocationBatch(points: [], visits: visits))
+        }
+        if points.isEmpty {
+            let middle = visits.count / 2
+            return (
+                LocationBatch(points: [], visits: Array(visits[..<middle])), LocationBatch(points: [], visits: Array(visits[middle...]))
+            )
+        }
+        let middle = points.count / 2
+        return (LocationBatch(points: Array(points[..<middle]), visits: []), LocationBatch(points: Array(points[middle...]), visits: []))
+    }
 
     public var variables: [String: JSONValue] {
         ["points": .array(points.map(\.variables)), "visits": .array(visits.map(\.variables))]
@@ -235,13 +262,47 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
 
     public var isEmpty: Bool { points.isEmpty && visits.isEmpty }
 
-    /// Queues a position. One that is not on the earth, or that the phone
-    /// says it could not measure (a negative accuracy), is dropped: the
-    /// server would refuse the whole batch for it.
+    /// The latest a time may be after now. The server refuses more than a day;
+    /// an hour less leaves room for the phone's clock being ahead of its.
+    public static let futureSecondsMost = 23.0 * 3600
+
+    /// The longest clientVisitKey the server takes.
+    public static let clientVisitKeyLengthMost = 128
+
+    /// The visit sources the server takes from a phone.
+    public static let visitSources: Set<String> = ["visit", "region"]
+
+    /// Whether a time is one the server takes: not more than a day ahead.
+    private static func isNotTooFarAhead(_ date: Date?, now: Date) -> Bool {
+        guard let date else { return true }
+        return date.timeIntervalSince(now) <= futureSecondsMost
+    }
+
+    /// Whether the server would take the position. It refuses a whole batch
+    /// for one that is not, so such a position is never queued.
+    public static func isAcceptable(_ point: ReportedPoint, now: Date = Date()) -> Bool {
+        LocationGeometry.isOnEarth(latitudeDegrees: point.latitudeDegrees, longitudeDegrees: point.longitudeDegrees)
+            && point.accuracyMeters.isFinite && point.accuracyMeters >= 0 && isNotTooFarAhead(point.measuredAt, now: now)
+    }
+
+    /// Whether the server would take the visit, by the same checks it makes.
+    public static func isAcceptable(_ visit: ReportedVisit, now: Date = Date()) -> Bool {
+        let key = visit.clientVisitKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, key.utf8.count <= clientVisitKeyLengthMost, visitSources.contains(visit.visitSource),
+            LocationGeometry.isOnEarth(latitudeDegrees: visit.latitudeDegrees, longitudeDegrees: visit.longitudeDegrees),
+            visit.accuracyMeters.isFinite, visit.accuracyMeters >= 0,
+            visit.arrivedAt != nil || visit.departedAt != nil,
+            isNotTooFarAhead(visit.arrivedAt, now: now), isNotTooFarAhead(visit.departedAt, now: now)
+        else { return false }
+        if let arrivedAt = visit.arrivedAt, let departedAt = visit.departedAt, departedAt < arrivedAt { return false }
+        return true
+    }
+
+    /// Queues a position, unless the server would refuse it (not on the
+    /// earth, a negative accuracy, a time more than a day ahead): it would
+    /// refuse the whole batch for it.
     public mutating func addPoint(_ point: ReportedPoint) {
-        guard LocationGeometry.isOnEarth(latitudeDegrees: point.latitudeDegrees, longitudeDegrees: point.longitudeDegrees),
-            point.accuracyMeters >= 0
-        else { return }
+        guard Self.isAcceptable(point) else { return }
         var queued = point
         queued.sequence = nextSequence
         nextSequence += 1
@@ -249,13 +310,11 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
         if points.count > Self.pointCountMost { points.removeFirst(points.count - Self.pointCountMost) }
     }
 
-    /// Queues an arrival, a departure or a whole visit.
-    /// One with neither an arrival nor a departure (iOS reports a visit with
-    /// both dates unknown) is dropped: the server would refuse the whole batch.
+    /// Queues an arrival, a departure or a whole visit, unless the server
+    /// would refuse it (for example iOS reports a visit with both dates
+    /// unknown): it would refuse the whole batch for it.
     public mutating func addVisit(_ visit: ReportedVisit) {
-        guard LocationGeometry.isOnEarth(latitudeDegrees: visit.latitudeDegrees, longitudeDegrees: visit.longitudeDegrees),
-            visit.arrivedAt != nil || visit.departedAt != nil
-        else { return }
+        guard Self.isAcceptable(visit) else { return }
         var queued = visit
         queued.sequence = nextSequence
         nextSequence += 1
