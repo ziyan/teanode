@@ -127,7 +127,7 @@ final class PhotoBackupPlannerTests: XCTestCase {
         XCTAssertNil(upload.headers["X-Photo-Longitude"])
     }
 
-    func testUploadsComeOldestFirstAndAPhotosOwnFilesOriginalFirst() {
+    func testUploadsComeNewestFirstAndAPhotosOwnFilesOriginalFirst() {
         let items = [
             makeItem("newest", secondsSince2026: 300),
             makeItem("oldest", secondsSince2026: 100, kind: .livePhoto, roles: [.edited, .liveVideo, .original]),
@@ -136,7 +136,7 @@ final class PhotoBackupPlannerTests: XCTestCase {
         ]
         XCTAssertEqual(
             PhotoBackupPlanner.plan(items: items, records: [:]).map(\.key),
-            ["oldest|original", "oldest|liveVideo", "oldest|edited", "middle|original", "newest|original", "undated|original"])
+            ["newest|original", "middle|original", "oldest|original", "oldest|liveVideo", "oldest|edited", "undated|original"])
     }
 
     func testWhatIsOnTheServerIsNotPlannedAgain() {
@@ -781,7 +781,10 @@ final class PhotoBackupServerTests: XCTestCase {
 
 private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private let lock = NSLock()
-    private var allItems: [PhotoBackupItem]
+    private var allItems: [PhotoBackupItem] { didSet { orderedItems = nil; itemsByIdentifier = nil } }
+    /// The items newest first, made once, as a real library keeps its own order.
+    private var orderedItems: [PhotoBackupItem]?
+    private var itemsByIdentifier: [String: PhotoBackupItem]?
     private var exportedBytes: [String: Int64] = [:]
     private var exportedDigests: [String: String] = [:]
     private var unavailableKeys: Set<String> = []
@@ -792,7 +795,10 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private var changedItems: [PhotoBackupItem] = []
     private var listingCount = 0
     private var changesCount = 0
-    private var skippedAtLastListing: Set<String> = []
+    private var builtIdentifiers: [String] = []
+    private var largestRequest = 0
+    private var listedResumePoints: [PhotoBackupResumePoint?] = []
+    private var batchHook: (@Sendable (Int) async -> Void)?
     private var exportedIncludesHidden: [Bool] = []
     private var hungKeys: Set<String> = []
     private var secondsPerExport: TimeInterval = 0
@@ -832,31 +838,91 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     func set(failed key: String) { lock.withLock { _ = failedKeys.insert(key) } }
     func set(tokenIsExpired: Bool) { lock.withLock { self.tokenIsExpired = tokenIsExpired } }
     func set(changes: [PhotoBackupItem]) { lock.withLock { changedItems = changes } }
+    /// How many times the whole library was listed from the start.
     var listings: Int { lock.withLock { listingCount } }
     var changeReads: Int { lock.withLock { changesCount } }
-    var skippedAtLastListingIdentifiers: Set<String> { lock.withLock { skippedAtLastListing } }
+    /// The identifiers items were built for, in the order asked.
+    var identifiersItemsWereBuiltFor: [String] { lock.withLock { builtIdentifiers } }
+    /// The most items asked for in one call.
+    var largestItemRequestCount: Int { lock.withLock { largestRequest } }
+    /// The resume point each batch of a listing was asked after.
+    var batchResumePoints: [PhotoBackupResumePoint?] { lock.withLock { listedResumePoints } }
+    /// Called after each batch is listed with how many batches there have been.
+    func set(afterBatch hook: (@Sendable (Int) async -> Void)?) { lock.withLock { batchHook = hook } }
 
     func access() -> PhotoBackupAccess { lock.withLock { accessLevel } }
 
-    func listItems(skipping known: Set<String>, includesHidden: Bool) async throws -> PhotoBackupListing {
+    func beginListing(includesHidden: Bool) async throws -> PhotoBackupListingStart {
         lock.withLock {
             listingCount += 1
-            skippedAtLastListing = known
-            return PhotoBackupListing(items: allItems.filter { !known.contains($0.localIdentifier) }, totalCount: allItems.count, changeToken: Data("token-\(listingCount)".utf8))
+            return PhotoBackupListingStart(totalCount: allItems.count, changeToken: Data("token-\(listingCount)".utf8))
         }
+    }
+
+    /// Newest first, the same date by identifier, no date last.
+    private static func comesBefore(_ first: PhotoBackupItem, _ second: PhotoBackupItem) -> Bool {
+        switch (first.creationDate, second.creationDate) {
+        case (let firstDate?, let secondDate?):
+            if firstDate != secondDate { return firstDate > secondDate }
+        case (nil, _?): return false
+        case (_?, nil): return true
+        case (nil, nil): break
+        }
+        return first.localIdentifier < second.localIdentifier
+    }
+
+    /// Whether an item comes after the resume point in the library's order.
+    private static func comesAfter(_ item: PhotoBackupItem, _ resumePoint: PhotoBackupResumePoint) -> Bool {
+        guard let date = item.creationDate else { return true }
+        if date != resumePoint.creationDate { return date < resumePoint.creationDate }
+        return item.localIdentifier > resumePoint.localIdentifier
+    }
+
+    func listBatch(after resumePoint: PhotoBackupResumePoint?, limit: Int, includesHidden: Bool) async throws -> PhotoBackupListingBatch {
+        let (batch, hook, batchCount) = lock.withLock { () -> (PhotoBackupListingBatch, (@Sendable (Int) async -> Void)?, Int) in
+            listedResumePoints.append(resumePoint)
+            let ordered = orderedItems ?? allItems.sorted(by: Self.comesBefore)
+            orderedItems = ordered
+            // The first item after the resume point, found by halving: the order
+            // is the library's, so the items after it are all after it.
+            var low = 0
+            var high = ordered.count
+            if let resumePoint {
+                while low < high {
+                    let middle = (low + high) / 2
+                    if Self.comesAfter(ordered[middle], resumePoint) { high = middle } else { low = middle + 1 }
+                }
+            }
+            let entries = ordered[low..<min(low + limit, ordered.count)].map {
+                PhotoBackupLibraryEntry(localIdentifier: $0.localIdentifier, creationDate: $0.creationDate)
+            }
+            return (PhotoBackupListingBatch(entries: entries, isLast: low + limit >= ordered.count), batchHook, listedResumePoints.count)
+        }
+        await hook?(batchCount)
+        return batch
     }
 
     func removeFromLibrary(_ localIdentifier: String) { lock.withLock { allItems.removeAll { $0.localIdentifier == localIdentifier } } }
 
     func items(withLocalIdentifiers localIdentifiers: [String], includesHidden: Bool) async throws -> [PhotoBackupItem] {
-        lock.withLock { allItems.filter { localIdentifiers.contains($0.localIdentifier) } }
+        lock.withLock {
+            builtIdentifiers.append(contentsOf: localIdentifiers)
+            largestRequest = max(largestRequest, localIdentifiers.count)
+            var byIdentifier = itemsByIdentifier ?? Dictionary(allItems.map { ($0.localIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
+            itemsByIdentifier = byIdentifier
+            // What changed is read as it is now, in place of what it was.
+            for item in changedItems { byIdentifier[item.localIdentifier] = item }
+            return localIdentifiers.compactMap { byIdentifier[$0] }
+        }
     }
 
     func changes(since token: Data, includesHidden: Bool) async throws -> PhotoBackupChanges {
         try lock.withLock {
             changesCount += 1
             if tokenIsExpired { throw PhotoBackupLibraryError.changeTokenExpired }
-            return PhotoBackupChanges(items: changedItems, totalCount: allItems.count + changedItems.count, changeToken: Data("changes-\(changesCount)".utf8))
+            return PhotoBackupChanges(
+                localIdentifiers: changedItems.map(\.localIdentifier), totalCount: allItems.count + changedItems.count,
+                changeToken: Data("changes-\(changesCount)".utf8))
         }
     }
 
@@ -966,7 +1032,8 @@ private struct Rig {
 private func makeRig(
     _ test: XCTestCase, items: [PhotoBackupItem], lookup: FakeLookup? = nil, network: FakeNetwork = FakeNetwork(), budget: PhotoBackupBudget = legacyBudget,
     index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
-    exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil
+    exportTimeoutSeconds: TimeInterval = 30 * 60, freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, clock: ManualClock? = nil,
+    batchSize: Int = PhotoBackupCoordinator.standardBatchSize
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -980,7 +1047,7 @@ private func makeRig(
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
         budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, exportTimeoutSeconds: exportTimeoutSeconds, freeSpaceBytes: freeSpaceBytes,
-        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) })
+        now: { clock?.now ?? Date(timeIntervalSince1970: 1_800_000_000) }, batchSize: batchSize)
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, coordinator: coordinator)
 }
 
@@ -996,7 +1063,7 @@ private func waitUntil(_ description: String, timeout: Double = 5, _ condition: 
 private let settings = PhotoBackupCoordinator.Settings(usesMobileData: false, includesHidden: false)
 
 final class PhotoBackupCoordinatorTests: XCTestCase {
-    func testEveryFileGoesUpOldestFirstAndThePassEndsWhenTheServerHasThemAll() async throws {
+    func testEveryFileGoesUpNewestFirstAndThePassEndsWhenTheServerHasThemAll() async throws {
         let items = (0..<6).map { makeItem("item\($0)", secondsSince2026: Double(100 - $0)) }
         let rig = try makeRig(self, items: items)
         let coordinator = rig.coordinator
@@ -1008,7 +1075,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         XCTAssertEqual(result.plannedFileCount, 6)
         XCTAssertEqual(result.uploadedFileCount, 6)
         XCTAssertFalse(result.wasStopped)
-        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["item5", "item4", "item3", "item2", "item1", "item0"])
+        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["item0", "item1", "item2", "item3", "item4", "item5"])
         let summary = await rig.index.summary()
         XCTAssertEqual(summary.backedUpItemCount, 6)
         XCTAssertEqual(summary.libraryItemCount, 6)
@@ -1017,7 +1084,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         XCTAssertEqual(token, Data("token-1".utf8))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: rig.outgoing.path), [], "temporary files are deleted")
         let request = try XCTUnwrap(rig.transfer.startedRequests.first)
-        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Photo-Client-ID"), "local:item5")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Photo-Client-ID"), "local:item0")
     }
 
     func testNoMoreThanFourUploadsAreOutstandingAndMoreFollowAsTheyFinish() async throws {
@@ -1085,7 +1152,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         let result = await coordinator.runPass(settings: settings)
         XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["b"])
         XCTAssertEqual(result.plannedFileCount, 1)
-        XCTAssertEqual(lookup.askedBatches, [["cloud-a", "local:b"]])
+        XCTAssertEqual(lookup.askedBatches, [["local:b", "cloud-a"]], "the newest photo first")
         let summary = await rig.index.summary()
         XCTAssertEqual(summary.backedUpItemCount, 2)
     }
@@ -1093,7 +1160,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
     func testTheServerIsAskedAboutAtMostFiveHundredNamesAtATime() async throws {
         let items = (0..<1200).map { makeItem("item\($0)", secondsSince2026: Double($0), roles: []) }
         let lookup = FakeLookup(known: [])
-        let rig = try makeRig(self, items: items, lookup: lookup)
+        let rig = try makeRig(self, items: items, lookup: lookup, batchSize: 1200)
         _ = await rig.coordinator.runPass(settings: settings)
         XCTAssertEqual(lookup.askedBatches.map(\.count), [500, 500, 200])
     }
@@ -1138,10 +1205,11 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
             Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p")) }
         }
         _ = await coordinator.runPass(settings: settings)
+        let builtBefore = rig.library.identifiersItemsWereBuiltFor.count
         rig.library.set(tokenIsExpired: true)
         let second = await coordinator.runPass(settings: settings)
         XCTAssertEqual(rig.library.listings, 2)
-        XCTAssertEqual(rig.library.skippedAtLastListingIdentifiers, ["a", "b"])
+        XCTAssertEqual(Array(rig.library.identifiersItemsWereBuiltFor.dropFirst(builtBefore)), [], "no item is built for a photo the index has a record of")
         XCTAssertEqual(second.plannedFileCount, 0)
         XCTAssertEqual(rig.transfer.startedJobs.count, 2, "nothing is sent twice")
     }
@@ -1393,14 +1461,14 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
     func testAnUploadThatFinishesDuringAPassIsNotWrittenAtOnceButWhenThePassEnds() async throws {
         let rig = try makeRig(self, items: [makeItem("a", secondsSince2026: 100), makeItem("b", secondsSince2026: 90)])
         let coordinator = rig.coordinator
-        rig.transfer.onStart = { job in
-            // The first file goes up; the second stays with the session, so the pass is still running.
-            guard job.localIdentifier == "a" else { return }
-            rig.transfer.release(job)
-            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-a")) }
-        }
+        // Both files stay with the session, so the pass is still running, waiting for them.
         let pass = Task { await coordinator.runPass(settings: settings) }
-        try await waitUntil("the index holds the upload") { await rig.index.record(forLocalIdentifier: "a")?.serverPhotoId == "p-a" }
+        try await waitUntil("both files queued") { rig.transfer.startedJobs.count == 2 }
+        let first = try XCTUnwrap(rig.transfer.startedJobs.first { $0.localIdentifier == "a" })
+        rig.transfer.release(first)
+        await coordinator.finished(first, outcome: .uploaded(serverPhotoId: "p-a"))
+        let record = await rig.index.record(forLocalIdentifier: "a")
+        XCTAssertEqual(record?.serverPhotoId, "p-a")
         let isRunning = await coordinator.isPassRunning
         XCTAssertTrue(isRunning, "the pass is still running")
         // The clock does not move, so the thirty seconds between writes have not passed: the file is not rewritten for this upload.
@@ -1525,7 +1593,8 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         _ = await coordinator.runPass(settings: settings)
         let statuses = seen.all
         XCTAssertTrue(statuses.contains { $0.phase == .listing })
-        XCTAssertTrue(statuses.contains { $0.phase == .uploading && $0.plannedFileCount == 2 })
+        XCTAssertTrue(statuses.contains { $0.plannedFileCount == 2 })
+        XCTAssertTrue(statuses.contains { $0.listedItemCount == 2 }, "the listing says how far it has got")
         XCTAssertEqual(statuses.last?.phase, .idle)
         XCTAssertEqual(statuses.last?.backedUpItemCount, 2)
         XCTAssertEqual(statuses.last?.finishedFileCount, 2)
@@ -1717,7 +1786,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
 
     func testAFileOfUnknownSizeHeldBackIsExportedOnceNotAtEveryFinish() async throws {
         let rig = try makeRig(
-            self, items: [makeItem("a", secondsSince2026: 1), makeItem("c", secondsSince2026: 2), makeItem("b", secondsSince2026: 3)],
+            self, items: [makeItem("a", secondsSince2026: 3), makeItem("c", secondsSince2026: 2), makeItem("b", secondsSince2026: 1)],
             budget: PhotoBackupBudget(maximumUploadCount: 4, maximumOutstandingBytes: 100))
         rig.library.set(bytes: 60, for: "a|original")
         rig.library.set(bytes: 30, for: "c|original")
@@ -1893,20 +1962,20 @@ final class PhotoBackupContinuityTests: XCTestCase {
     func testAFileThatNeverComesOutOfThePhotoLibraryDoesNotHoldUpTheRest() async throws {
         let rig = try makeRig(
             self, items: (0..<4).map { makeItem("item\($0)", secondsSince2026: Double($0)) }, exportTimeoutSeconds: 0.15)
-        rig.library.set(hung: "item0|original")
+        rig.library.set(hung: "item3|original")
         let coordinator = rig.coordinator
         rig.transfer.onStart = { job in
             rig.transfer.release(job)
             Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p")) }
         }
         let result = await coordinator.runPass(settings: settings)
-        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["item1", "item2", "item3"], "the pass went on past the stuck file")
+        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["item2", "item1", "item0"], "the pass went on past the stuck file")
         XCTAssertEqual(result.deferredFileCount, 1)
         XCTAssertEqual(result.leftForLaterFileCount, 1)
         let summary = await rig.index.summary()
         XCTAssertEqual(summary.lastFailure, .fileTookTooLongToRead)
         let pending = await rig.index.pendingLocalIdentifiers()
-        XCTAssertEqual(pending, ["item0"], "the file is tried again by a later pass")
+        XCTAssertEqual(pending, ["item3"], "the file is tried again by a later pass")
     }
 
     func testStoppingEndsAPassThatIsWaitingForAFileFromThePhotoLibrary() async throws {
@@ -1931,7 +2000,7 @@ final class PhotoBackupContinuityTests: XCTestCase {
         ]
         let rig = try makeRig(self, items: items, idleTimeoutSeconds: 0.1)
         _ = await rig.coordinator.runPass(settings: PhotoBackupCoordinator.Settings(usesMobileData: true, includesHidden: false))
-        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["phoneA", "phoneB", "cloudOld", "cloudNew"])
+        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["phoneB", "phoneA", "cloudNew", "cloudOld"])
     }
 
     func testTheQueueStopsGrowingWhenTheFreeSpaceIsLowAndFreeSpaceIsReadBeforeEachFile() async throws {
@@ -2080,6 +2149,268 @@ final class PhotoBackupContinuityTests: XCTestCase {
         XCTAssertEqual(status.waitingFileCount, 0)
         await coordinator.stop()
         _ = await pass.value
+    }
+}
+
+/// Notes taken by closures the library and the transfer call while a pass runs.
+private final class PassNotes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var firstUploadBatchCountValue: Int?
+    private var isTokenKeptEarlyValue = false
+    private var isListingProgressMissingValue = false
+    func noteFirstUpload(batchCount: Int) { lock.withLock { if firstUploadBatchCountValue == nil { firstUploadBatchCountValue = batchCount } } }
+    func noteTokenKeptEarly() { lock.withLock { isTokenKeptEarlyValue = true } }
+    func noteListingProgressMissing() { lock.withLock { isListingProgressMissingValue = true } }
+    /// How many batches had been listed when the first upload was queued.
+    var firstUploadBatchCount: Int? { lock.withLock { firstUploadBatchCountValue } }
+    var isTokenKeptEarly: Bool { lock.withLock { isTokenKeptEarlyValue } }
+    var isListingProgressMissing: Bool { lock.withLock { isListingProgressMissingValue } }
+}
+
+/// Items made a ten seconds apart, the highest number the newest.
+private func makeLibraryItems(count: Int) -> [PhotoBackupItem] {
+    (0..<count).map { makeItem("item\($0)", secondsSince2026: Double($0) * 10) }
+}
+
+final class PhotoBackupLargeLibraryTests: XCTestCase {
+    /// The most time listing 35,000 fake items through the coordinator and the
+    /// index may take in this (unoptimized) test build. It takes about a second
+    /// here; the bound is fifteen times that, so a slow machine passes, and a
+    /// listing whose cost grows with the library at every batch (writing the
+    /// whole index after each of 117 batches, or building every item at every
+    /// batch) fails it.
+    static let listingTimeBoundSeconds: Double = 15
+
+    func testAThirtyFiveThousandItemLibraryUploadsAfterOneBatchAndTheTokenIsKeptAfterTheLastOne() async throws {
+        let items = makeLibraryItems(count: 35_000)
+        let rig = try makeRig(self, items: items, idleTimeoutSeconds: 0.05)
+        let notes = PassNotes()
+        let library = rig.library
+        let index = rig.index
+        rig.transfer.onStart = { _ in notes.noteFirstUpload(batchCount: library.batchResumePoints.count) }
+        library.set(afterBatch: { batchCount in
+            // Not the last batch: the library's token is not kept yet, and the
+            // listing under way is.
+            guard batchCount < 117 else { return }
+            if await index.changeToken != nil { notes.noteTokenKeptEarly() }
+            if await index.listingProgress == nil { notes.noteListingProgressMissing() }
+        })
+        let start = ContinuousClock.now
+        let result = await rig.coordinator.runPass(settings: settings)
+        let duration = start.duration(to: .now)
+        let seconds = Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+        print("listing 35,000 items: \(seconds) seconds")
+
+        XCTAssertEqual(notes.firstUploadBatchCount, 1, "the first upload is queued after one batch, not after the whole listing")
+        XCTAssertFalse(notes.isTokenKeptEarly, "the change token is kept only after the last batch")
+        XCTAssertFalse(notes.isListingProgressMissing)
+        XCTAssertEqual(library.batchResumePoints.count, 117)
+        XCTAssertEqual(library.listings, 1)
+        let token = await rig.index.changeToken
+        XCTAssertEqual(token, Data("token-1".utf8))
+        let listing = await rig.index.listingProgress
+        XCTAssertNil(listing, "the listing is over")
+        let known = await rig.index.knownLocalIdentifiers()
+        XCTAssertEqual(known.count, 35_000)
+        let pendingCount = await rig.index.pendingFileCount()
+        XCTAssertEqual(pendingCount, 35_000)
+        XCTAssertFalse(result.wasStopped)
+        XCTAssertEqual(rig.transfer.startedJobs.count, 4, "as many as the budget allows")
+        XCTAssertEqual(rig.transfer.startedJobs.map(\.localIdentifier), ["item34999", "item34998", "item34997", "item34996"], "newest first")
+        XCTAssertLessThan(seconds, Self.listingTimeBoundSeconds)
+        XCTAssertLessThanOrEqual(library.largestItemRequestCount, 300, "no more than a batch of items is built at once")
+        XCTAssertLessThanOrEqual(library.identifiersItemsWereBuiltFor.count, 35_000 + 300, "every item is built once for the listing, and one batch more to send")
+    }
+
+    func testAPassStoppedHalfwayIsFollowedByOneThatResumesWithoutListingTheEarlierItemsAgain() async throws {
+        let items = makeLibraryItems(count: 3_000)
+        let lookup = FakeLookup(known: [])
+        let rig = try makeRig(self, items: items, lookup: lookup, idleTimeoutSeconds: 0.05)
+        let coordinator = rig.coordinator
+        rig.library.set(afterBatch: { batchCount in if batchCount == 4 { await coordinator.stop() } })
+        let first = await coordinator.runPass(settings: settings)
+        XCTAssertTrue(first.wasStopped)
+
+        let storedProgress = await rig.index.listingProgress
+        let progress = try XCTUnwrap(storedProgress)
+        XCTAssertEqual(progress.listedItemCount, 1_200)
+        XCTAssertEqual(progress.resumePoint?.localIdentifier, "item1800", "the oldest item of the four batches, newest first")
+        let tokenAfterFirst = await rig.index.changeToken
+        XCTAssertNil(tokenAfterFirst, "the library has not been listed to the end")
+        XCTAssertEqual(progress.changeToken, Data("token-1".utf8))
+        let batchesInFirstPass = rig.library.batchResumePoints.count
+        let askedInFirstPass = lookup.askedBatches.count
+
+        // The phone's app is killed: a new index reads the same file, and a new
+        // pass goes on from where the old one stopped.
+        let reopened = try PhotoBackupIndex(directory: rig.directory)
+        let reopenedProgress = await reopened.listingProgress
+        XCTAssertEqual(reopenedProgress, progress)
+        let second = try makeRig(self, items: items, lookup: lookup, index: reopened, directory: rig.directory, idleTimeoutSeconds: 0.05)
+        second.library.set(afterBatch: nil)
+        _ = await second.coordinator.runPass(settings: settings)
+
+        XCTAssertEqual(second.library.listings, 0, "a listing under way is not begun again, so its token is the one from the start")
+        let resumePoints = second.library.batchResumePoints
+        XCTAssertEqual(resumePoints.count, 6, "the 1,800 items left, 300 at a time")
+        XCTAssertEqual(resumePoints.first ?? nil, progress.resumePoint)
+        XCTAssertTrue(resumePoints.allSatisfy { ($0?.creationDate ?? .distantFuture) <= (progress.resumePoint?.creationDate ?? .distantPast) })
+        let askedInSecondPass = lookup.askedBatches.dropFirst(askedInFirstPass).flatMap { $0 }
+        XCTAssertEqual(Set(askedInSecondPass), Set((0..<1_800).map { "local:item\($0)" }), "the server is asked about the items not listed yet, and no others")
+        XCTAssertEqual(askedInSecondPass.count, 1_800)
+        XCTAssertGreaterThan(batchesInFirstPass, 0)
+        let token = await reopened.changeToken
+        XCTAssertEqual(token, Data("token-1".utf8))
+        let listing = await reopened.listingProgress
+        XCTAssertNil(listing)
+        let known = await reopened.knownLocalIdentifiers()
+        XCTAssertEqual(known.count, 3_000)
+    }
+
+    func testTheTopUpAfterAWakeReadsOneBatchOfTheFilesStillToSendNotAllOfThem() async throws {
+        let rig = try makeRig(self, items: makeLibraryItems(count: 2_000), idleTimeoutSeconds: 0.05)
+        _ = await rig.coordinator.runPass(settings: settings)
+        await rig.transfer.cancelAll()
+        let builtBefore = rig.library.identifiersItemsWereBuiltFor.count
+        let startedBefore = rig.transfer.startedJobs.count
+        let queued = await rig.coordinator.topUp(settings: settings, until: Date(timeIntervalSince1970: 1_800_000_000).addingTimeInterval(60))
+        XCTAssertEqual(queued, 4, "as many as the budget allows")
+        XCTAssertEqual(rig.library.identifiersItemsWereBuiltFor.count - builtBefore, 300, "one batch of the 2,000 pending items was read")
+        XCTAssertEqual(
+            rig.transfer.startedJobs.dropFirst(startedBefore).map(\.localIdentifier), ["item1999", "item1998", "item1997", "item1996"], "the newest first")
+    }
+
+    func testTheStatusSaysHowFarTheListingHasGotAndTheProgressMovesWhileListing() async throws {
+        let rig = try makeRig(self, items: makeLibraryItems(count: 3_000), idleTimeoutSeconds: 0.05)
+        let seen = StatusLog()
+        await rig.coordinator.setStatusHandler { seen.add($0) }
+        _ = await rig.coordinator.runPass(settings: settings)
+        let listing = seen.all.filter { $0.phase == .listing }
+        let listed = listing.compactMap(\.listedItemCount)
+        XCTAssertEqual(listed.first, 0)
+        XCTAssertEqual(listed.last, 3_000)
+        XCTAssertEqual(listed, listed.sorted(), "never goes back")
+        XCTAssertGreaterThanOrEqual(Set(listed).count, 10, "once for each batch")
+        XCTAssertTrue(listing.allSatisfy { $0.libraryItemCount == 3_000 || $0.libraryItemCount == 0 })
+        let fractions = listing.map(\.progressFraction)
+        XCTAssertEqual(fractions, fractions.sorted(), "the progress the system shows never goes back while listing")
+        XCTAssertGreaterThan(fractions.last ?? 0, 0.25)
+        XCTAssertGreaterThanOrEqual(Set(fractions).count, 10)
+    }
+
+    func testAPassThatReadsOnlyChangesDoesNotCountAListing() {
+        let status = PhotoBackupStatus(phase: .uploading, libraryItemCount: 35_000, plannedFileCount: 10, finishedFileCount: 5)
+        XCTAssertNil(status.listedItemCount)
+        XCTAssertEqual(status.progressFraction, 0.5, accuracy: 0.0001)
+    }
+
+    func testAListingIsThirtyPercentOfTheProgressAndTheFilesTheRest() {
+        var status = PhotoBackupStatus(phase: .listing, libraryItemCount: 1_000, listedItemCount: 0)
+        XCTAssertEqual(status.progressFraction, 0, accuracy: 0.0001)
+        status.listedItemCount = 500
+        XCTAssertEqual(status.progressFraction, 0.15, accuracy: 0.0001)
+        status.listedItemCount = 1_000
+        XCTAssertEqual(status.progressFraction, 1, accuracy: 0.0001, "listed with nothing to send is done")
+        status.plannedFileCount = 100
+        XCTAssertEqual(status.progressFraction, 0.3, accuracy: 0.0001)
+        status.finishedFileCount = 50
+        XCTAssertEqual(status.progressFraction, 0.65, accuracy: 0.0001)
+    }
+
+    func testTheIndexIsNotRewrittenForEachBatchOfAListing() async throws {
+        let directory = try temporaryDirectory(self)
+        let clock = ManualClock()
+        let index = try PhotoBackupIndex(directory: directory, now: { clock.now })
+        await index.adopt(accountKey: "photos.example.com|robin")
+        await index.beginListing(changeToken: Data([1]), libraryItemCount: 35_000)
+        let indexFile = directory.appendingPathComponent(PhotoBackupIndex.indexFilename)
+        let sizeAtStart = try FileManager.default.attributesOfItem(atPath: indexFile.path)[.size] as? Int
+        let items = Array(makeLibraryItems(count: 35_000).reversed())
+        let start = ContinuousClock.now
+        for batchStart in stride(from: 0, to: items.count, by: 300) {
+            let batch = Array(items[batchStart..<min(batchStart + 300, items.count)])
+            await index.markPending(PhotoBackupPlanner.plan(items: batch, records: [:]), shouldWriteAtOnce: false)
+            await index.recordListed(batchItemCount: batch.count, resumePoint: batch.last.flatMap { item in item.creationDate.map { PhotoBackupResumePoint(creationDate: $0, localIdentifier: item.localIdentifier) } })
+        }
+        let batchesDuration = start.duration(to: .now)
+        let sizeAfterBatches = try FileManager.default.attributesOfItem(atPath: indexFile.path)[.size] as? Int
+        XCTAssertEqual(sizeAfterBatches, sizeAtStart, "117 batches inside the thirty seconds between writes write nothing")
+        let flushStart = ContinuousClock.now
+        await index.finishListing()
+        let flushDuration = flushStart.duration(to: .now)
+        let sizeAtEnd = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: indexFile.path)[.size] as? Int)
+        print("35,000 records through the index in 117 batches: \(batchesDuration), the one write at the end: \(flushDuration), file \(sizeAtEnd) bytes")
+        XCTAssertGreaterThan(sizeAtEnd, 1_000_000)
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let known = await reopened.knownLocalIdentifiers()
+        XCTAssertEqual(known.count, 35_000)
+        let pending = await reopened.pendingLocalIdentifiers()
+        XCTAssertEqual(pending.first, "item34999", "the line to send is newest first")
+        XCTAssertEqual(pending.last, "item0")
+        let token = await reopened.changeToken
+        XCTAssertEqual(token, Data([1]))
+    }
+
+    func testAListingUnderWayIsKeptAcrossOpeningTheFileAndDroppedByAChangedToken() async throws {
+        let directory = try temporaryDirectory(self)
+        let index = try PhotoBackupIndex(directory: directory)
+        await index.adopt(accountKey: "photos.example.com|robin")
+        await index.beginListing(changeToken: Data([7]), libraryItemCount: 900)
+        let point = PhotoBackupResumePoint(creationDate: Date(timeIntervalSince1970: 1_767_225_600.625), localIdentifier: "x/L0/001")
+        await index.recordListed(batchItemCount: 300, resumePoint: point)
+        await index.flush()
+        let reopened = try PhotoBackupIndex(directory: directory)
+        let progress = await reopened.listingProgress
+        XCTAssertEqual(progress?.resumePoint, point, "the date is kept to the fraction of a second")
+        XCTAssertEqual(progress?.listedItemCount, 300)
+        XCTAssertEqual(progress?.libraryItemCount, 900)
+        let token = await reopened.changeToken
+        XCTAssertNil(token, "the token waits for the end of the listing")
+        await reopened.setChangeToken(nil)
+        let dropped = await reopened.listingProgress
+        XCTAssertNil(dropped, "the Hidden album setting changed: the next pass lists from the start")
+    }
+
+    func testPhotosThatCameInSinceGoBeforeTheRestOfTheLineAndAnEditIsStillToSend() async throws {
+        let index = try PhotoBackupIndex(directory: try temporaryDirectory(self))
+        await index.adopt(accountKey: "photos.example.com|robin")
+        let older = [makeItem("b", secondsSince2026: 20), makeItem("a", secondsSince2026: 10)]
+        await index.markPending(PhotoBackupPlanner.plan(items: older, records: [:]))
+        let newer = [makeItem("d", secondsSince2026: 40), makeItem("c", secondsSince2026: 30)]
+        await index.markPending(PhotoBackupPlanner.plan(items: newer, records: [:]), goesBeforeTheRest: true)
+        var pending = await index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending, ["d", "c", "b", "a"])
+        let pendingFileCount = await index.pendingFileCount()
+        XCTAssertEqual(pendingFileCount, 4)
+
+        await index.markUploaded(localIdentifier: "b", clientPhotoId: "local:b", role: .original, serverPhotoId: "p", assetModificationDate: nil)
+        pending = await index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending, ["d", "c", "a"])
+        let afterUpload = await index.pendingFileCount()
+        XCTAssertEqual(afterUpload, 3)
+
+        // The edit of a photo that is up goes up again.
+        await index.markUploaded(localIdentifier: "b", clientPhotoId: "local:b", role: .edited, serverPhotoId: "p", assetModificationDate: Date(timeIntervalSince1970: 1))
+        let edited = makeItem("b", secondsSince2026: 20, modifiedSecondsSince2026: 90_000, roles: [.original, .edited])
+        let editUploads = await index.plan(items: [edited])
+        XCTAssertEqual(editUploads.map(\.key), ["b|edited"])
+        await index.markPending(editUploads, goesBeforeTheRest: true)
+        pending = await index.pendingLocalIdentifiers()
+        XCTAssertEqual(pending.first, "d", "b keeps its place, which is behind the photos that came in since")
+        XCTAssertTrue(pending.contains("b"))
+        let afterEdit = await index.pendingFileCount()
+        XCTAssertEqual(afterEdit, 4)
+    }
+
+    func testTheScreenReadsTheLibraryWhenItAppearsAndNotMoreOftenThanEveryFifteenSeconds() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        typealias Policy = PhotoBackupScreenReadPolicy
+        XCTAssertTrue(Policy.shouldRead(isReading: false, lastReadAt: nil, now: now, mustRead: true))
+        XCTAssertTrue(Policy.shouldRead(isReading: false, lastReadAt: now, now: now, mustRead: true), "appearing reads, whatever happened before")
+        XCTAssertFalse(Policy.shouldRead(isReading: true, lastReadAt: nil, now: now, mustRead: true), "never twice at once")
+        XCTAssertFalse(Policy.shouldRead(isReading: false, lastReadAt: now.addingTimeInterval(-14), now: now, mustRead: false))
+        XCTAssertTrue(Policy.shouldRead(isReading: false, lastReadAt: now.addingTimeInterval(-15), now: now, mustRead: false))
+        XCTAssertTrue(Policy.shouldRead(isReading: false, lastReadAt: nil, now: now, mustRead: false))
     }
 }
 
