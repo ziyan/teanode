@@ -41,7 +41,7 @@ type LocationAnswer struct {
 func (self *AskRun) Locate(ctx context.Context, callId string) (*tools.BrowserLocation, error) {
 	if self.settings.Headless || !surfaceOf(self.settings.Surface).canLocate {
 		where := strings.TrimSpace(self.settings.Surface)
-		if self.settings.Headless || where == "" || where == backgroundSurface {
+		if self.settings.Headless || where == "" || isWokenSurface(where) {
 			where = "nobody is writing to you now"
 		} else {
 			where = "this turn came through the " + where

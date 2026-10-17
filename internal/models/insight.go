@@ -344,7 +344,7 @@ const ScheduleMarker = "[schedule]"
 // OwnTurnMarkers are the markers of every turn the agent takes on its own
 // in a person's conversation: what anything looking for the person's own
 // last word must pass over.
-var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker}
+var OwnTurnMarkers = []string{GoalCheckInMarker, BackgroundCommandMarker, BackgroundWorkMarker, ScheduleMarker, SpeakFirstMarker, AlertMarker, GoalNeedsYouMarker, HerdrQuestionMarker, HerdrSessionMarker, RestartResumeMarker}
 
 // IsOwnTurn says whether a turn's opening message is one of the agent's own
 // turns rather than something a person wrote.
@@ -382,6 +382,11 @@ const HerdrQuestionMarker = "[herdr question]"
 // HerdrSessionMarker begins the message the agent is woken with when a
 // herdr coding session it watched has finished.
 const HerdrSessionMarker = "[herdr session]"
+
+// RestartResumeMarker begins the message the agent is given when the server
+// restarted in the middle of a turn that answered the person: the turn is
+// carried on in the same conversation. Nobody wrote it.
+const RestartResumeMarker = "[resuming after a restart]"
 
 // GoalRelayMarker begins the message the person's answer is written into a
 // goal's conversation as, when they gave it in the main conversation: their

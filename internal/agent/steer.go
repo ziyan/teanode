@@ -32,7 +32,7 @@ import (
 func isSteerable(settings *AskSettings) bool {
 	// In a chat a message is for the people in it, and one that addresses
 	// the agent again is a turn of its own, after the one running.
-	return !settings.Headless && settings.Surface != backgroundSurface && settings.Chat == nil
+	return !settings.Headless && !isWokenSurface(settings.Surface) && settings.Chat == nil
 }
 
 // steer hands this turn a message the person wrote while it runs, and says
@@ -229,5 +229,5 @@ func keepPersonTurn(tx db.Transaction, settings *AskSettings) (*models.AgentMess
 // a turn with nobody present, and not one an ended command or finished
 // work woke.
 func isPersonWriting(settings *AskSettings) bool {
-	return !settings.Headless && settings.Surface != backgroundSurface
+	return !settings.Headless && !isWokenSurface(settings.Surface)
 }

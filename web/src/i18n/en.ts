@@ -3648,6 +3648,7 @@ export const en = {
   'agentDrawer.goalNeedsYouTurn': 'A goal needs you',
   'agentDrawer.herdrQuestionTurn': 'A coding session asks you',
   'agentDrawer.herdrSessionTurn': 'A coding session finished',
+  'agentDrawer.restartResumeTurn': 'Carrying on after a restart',
   'agentDrawer.openGoal': 'Open the goal',
   'goals.nextScheduled': 'Next run {when}',
   'goals.runsOnSchedule': 'Runs on its schedule',

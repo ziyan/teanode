@@ -3508,6 +3508,7 @@ export const zh: Catalog = {
   'agentDrawer.goalNeedsYouTurn': '有个目标需要你',
   'agentDrawer.herdrQuestionTurn': '有个编程会话在问你',
   'agentDrawer.herdrSessionTurn': '有个编程会话完成了',
+  'agentDrawer.restartResumeTurn': '重启之后，接着继续',
   'agentDrawer.openGoal': '打开目标',
   'goals.nextScheduled': '下次运行 {when}',
   'goals.runsOnSchedule': '按计划运行',

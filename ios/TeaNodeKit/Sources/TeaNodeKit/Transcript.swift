@@ -262,6 +262,7 @@ public enum CheckInOrigin: String, CaseIterable, Sendable {
     case alert = "[alert]"
     case herdrQuestion = "[herdr question]"
     case herdrSession = "[herdr session]"
+    case restartResume = "[resuming after a restart]"
     case approved = "[approved]"
     case declined = "[declined]"
 
