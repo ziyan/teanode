@@ -555,7 +555,7 @@ func parcelNumbers(text string) []string {
 		add(number)
 	}
 	for _, word := range strings.FieldsFunc(text, func(character rune) bool {
-		return !(unicode.IsLetter(character) || unicode.IsDigit(character) || character == '-')
+		return !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != '-'
 	}) {
 		word = strings.Trim(word, "-")
 		digitCount := 0
