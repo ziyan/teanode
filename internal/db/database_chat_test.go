@@ -1039,7 +1039,7 @@ func TestAChatCursorFollowsWhenMessagesWereStoredNotTheirIdentifiers(t *testing.
 		secondId = say(t, tx, chat.ID, alice, "B").ID
 		thirdId = say(t, tx, chat.ID, alice, "C").ID
 	})
-	if !(firstId < secondId && secondId < thirdId) {
+	if firstId >= secondId || secondId >= thirdId {
 		t.Fatalf("the identifiers are not in order: %s %s %s", firstId, secondId, thirdId)
 	}
 	rawExec := database.(interface{ RawExec(string) error }).RawExec
