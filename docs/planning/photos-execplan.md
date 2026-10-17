@@ -94,6 +94,9 @@ To see it working: switch Photos on in the server's services, drop a few picture
 - Decision: an omitted `services.photos` switch means off, unlike the services that came before the switches.
   Rationale: the other services' omitted switches mean on so an upgrade keeps what a server already did; no server had a photo library before, so turning one on by upgrading would hand every member a library and its disk use nobody chose. Setup and the services page turn it on.
   Date/Author: 2026-10-16, Claude.
+- Decision (replaces the one above): Photos is on by default, an omitted switch included, and on for an assistant-only server too; an operator turns it off in setup or on the services page.
+  Rationale: the maintainer's rule is on by default and easy to stop. A library uses no disk until somebody uploads, and a fresh-install check found that a person who came for their photos could not find a service that was off: the welcome page asks only for a model key, and Photos waited behind a checkbox and a restart.
+  Date/Author: 2026-10-17, Claude.
 - Decision: deleting forever only marks a photo, and `photo:cleanup` deletes the rows and the previews' bytes in batches of 100.
   Rationale: emptying a trash of thousands inside the request's one transaction timed out, and a rollback left previews deleted under rows that remained. The mark is `trashed_at` set to the epoch (no photo is trashed before 1970), plus the photo's client name changed to `deleting-<id>` so that sending the same file again makes a new photo; every query that reads a photo treats a marked one as gone, and the quota stops counting its files at once. The bytes go before the rows and outside any transaction, which is safe because a marked photo can no longer be seen or restored.
   Date/Author: 2026-10-16, Claude.

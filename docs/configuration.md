@@ -19,8 +19,8 @@ requires a restart. The dashboard reports selected and running services.
 - **`photos`**: the photo and video library, its uploads and the iPhone app's
   backup. Its limits are in the `photos` section below.
 - **`isEnabled`**: nullable boolean inside each service. Omitted means enabled
-  for compatibility, except for `photos`, which came after the switches and is
-  off until it is turned on; false makes the service unavailable.
+  for compatibility; false makes the service unavailable. `photos` stays on
+  for an assistant-only server too, since it needs no mail.
 - **`hasCompletedSetup`**: whether the operator completed service setup.
   Legacy configurations without switches do not require this step.
 

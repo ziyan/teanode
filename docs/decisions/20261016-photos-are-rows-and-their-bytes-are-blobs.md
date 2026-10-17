@@ -30,9 +30,9 @@ bytes onto somebody else's quota.
 An edit made on a phone arrives as a second file beside the original, never
 in place of it. A Live Photo is one photo with two files.
 
-Photos are a hosted service like the calendar and contacts: an operator
-switches them on, a person needs the `photos:use` permission, and they work
-without the agent. The agent adds finding, describing and organizing.
+Photos are a hosted service like the calendar and contacts: on unless an
+operator switches them off, a person needs the `photos:use` permission, and
+they work without the agent. The agent adds finding, describing and organizing.
 
 ## Consequences
 

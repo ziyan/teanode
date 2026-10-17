@@ -28,9 +28,9 @@ command line `internal/cmd/photo*.go`, the agent's tool
 `internal/agent/tools/photo/`, and the iPhone `ios/TeaNode/Sources/Photo*.swift`
 with `ios/TeaNodeKit/Sources/TeaNodeKit/Photo*.swift`.
 
-Photos are a hosted service: `services.photos` is off until an operator turns
-it on (unlike the services that came before the switches), and a person needs
-`photos:use`, which the built-in roles have. They work without the agent; the
+Photos are a hosted service: `services.photos` is on unless an operator turns
+it off, on an assistant-only server too, and a person needs `photos:use`,
+which the built-in roles have. They work without the agent; the
 agent adds describing and organizing.
 
 ## Rows, and the bytes beside them

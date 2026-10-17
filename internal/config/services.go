@@ -35,10 +35,10 @@ func (self Services) IsEnabled(service models.Service) bool {
 	case models.ServiceContacts:
 		return self.Contacts.Enabled()
 	case models.ServicePhotos:
-		// Photos came after the switches, so no configuration written before
-		// them expects a library: an omitted switch is off, and an operator
-		// turns it on in setup or on the services page.
-		return self.Photos.IsEnabled != nil && *self.Photos.IsEnabled
+		// On unless an operator turned it off, like the services before it,
+		// and on for an assistant-only server too: a library costs nothing
+		// until somebody uploads, and it needs no mail.
+		return self.Photos.Enabled()
 	default:
 		return false
 	}
@@ -47,7 +47,7 @@ func (self Services) IsEnabled(service models.Service) bool {
 // AssistantServices explicitly disables hosted services for a new assistant installation.
 func AssistantServices() Services {
 	return Services{MailRouting: HostedService{IsEnabled: new(false)}, Mailboxes: HostedService{IsEnabled: new(false)},
-		Calendar: HostedService{IsEnabled: new(false)}, Reminders: HostedService{IsEnabled: new(false)}, Contacts: HostedService{IsEnabled: new(false)}, Photos: HostedService{IsEnabled: new(false)}}
+		Calendar: HostedService{IsEnabled: new(false)}, Reminders: HostedService{IsEnabled: new(false)}, Contacts: HostedService{IsEnabled: new(false)}}
 }
 
 // Within limits selected services to those constructed by this process.
