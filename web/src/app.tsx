@@ -100,6 +100,9 @@ const AgentConversationsPage = lazyPage(async () => ({
 const RecordingsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "recordings" */ './pages/recordings')).RecordingsPage,
 }))
+const CodingPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "coding" */ './pages/coding')).CodingPage,
+}))
 const KnowledgePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
 }))
@@ -537,6 +540,7 @@ export function App() {
                       <Route path="/knowledge/*" element={<KnowledgePage />} />
                       <Route path="/recordings" element={<RecordingsPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
+                      <Route path="/coding" element={<CodingPage />} />
                       {/* What the linked institutions report, a page of its own
                       in the account's rail after Knowledge; linking them is
                       the agent page's Finance tab. */}

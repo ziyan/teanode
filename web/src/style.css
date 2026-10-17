@@ -14428,26 +14428,9 @@ button.idea-history-title {
   font-size: var(--text-label);
 }
 
-.herdr-session {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.herdr-session-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
 /* The pane as it stands: kept as drawn, so its forms line up, and scrolled
-   sideways in its own box rather than the dialog's. */
+   sideways in its own box rather than the page's. */
 .herdr-screen {
-  max-height: min(48vh, 420px);
   margin: 0;
   padding: var(--space-2) var(--space-3);
   overflow: auto;
@@ -14459,37 +14442,35 @@ button.idea-history-title {
   white-space: pre;
 }
 
+/* The turns are the conversation's own bubbles (.agent-line), in a column. */
 .herdr-turns {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-height: min(48vh, 420px);
   margin: 0;
   padding: 0;
-  overflow-y: auto;
   list-style: none;
 }
 
 .herdr-turn {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
-.herdr-turn-role {
-  font-size: var(--text-label);
-  font-weight: 600;
+.herdr-turn .agent-line.user {
+  align-self: flex-end;
 }
 
-.herdr-turn-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.herdr-turn .agent-line.assistant {
+  align-self: flex-start;
 }
 
-.herdr-turn.tool .herdr-turn-text {
-  color: var(--muted);
+/* A tool call is one muted line in the terminal's own face. */
+.herdr-tool-line {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .herdr-send {
@@ -14501,7 +14482,8 @@ button.idea-history-title {
 .herdr-send textarea {
   flex: 1;
   min-width: 0;
-  resize: vertical;
+  max-height: 40vh;
+  resize: none;
 }
 
 /* One line a session, the pane first and how it stands beside it: on a
@@ -14511,7 +14493,7 @@ button.idea-history-title {
   vertical-align: middle;
 }
 
-.herdr-sessions td > button.link {
+.herdr-sessions td > a.link {
   padding: 0;
   font: inherit;
 }
@@ -14535,12 +14517,6 @@ button.idea-history-title {
 
 .agent-line.herdr-question-line .herdr-question-card {
   margin-top: 0;
-}
-
-/* A session's dialog holds a terminal's screen, drawn as the terminal drew
-   it: wider than other dialogs, as wide as the window allows. */
-.dialog-wide:has(.herdr-session) {
-  max-width: min(960px, 100%);
 }
 
 /* A coding session's question in the drawer is one box: a head that says
@@ -15018,4 +14994,274 @@ body.has-recording-bar .content {
 .finance-paystub-lines th,
 .finance-paystub-lines td {
   white-space: nowrap;
+}
+
+/* --- the Coding page -------------------------------------------------------
+   The frame takes the height left on the page, as the knowledge and the mail
+   pages do, so the transcript scrolls inside it and the box to type into
+   stays at the foot. A list and the session beside it where there is room,
+   one at a time where there is not: the frame's own width decides, and the
+   address says which. */
+.coding-frame {
+  container-type: inline-size;
+  container-name: coding;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+main.content:has(> .coding-frame) {
+  display: flex;
+  flex-direction: column;
+}
+
+main.content:has(> .coding-frame) > :not(.coding-frame) {
+  flex-shrink: 0;
+}
+
+.coding-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.coding-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+
+.coding-toolbar {
+  justify-content: flex-end;
+}
+
+.coding-list-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2);
+}
+
+.coding-computer h3 {
+  margin: var(--space-3) var(--space-2) var(--space-1);
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.coding-computer:first-child h3 {
+  margin-top: var(--space-1);
+}
+
+.coding-workspace h4 {
+  margin: var(--space-2) var(--space-2) 2px;
+  font-size: var(--text-label);
+}
+
+.coding-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-1);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coding-row:hover,
+.coding-row.active {
+  background: var(--field);
+}
+
+.coding-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.coding-row-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coding-row-text .muted {
+  font-size: var(--text-label);
+}
+
+.coding-question-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.coding-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.coding-nothing,
+.coding-gone {
+  padding: var(--space-4);
+}
+
+.coding-nothing {
+  margin: auto;
+}
+
+.coding-session {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.coding-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.coding-header-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.coding-header h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.coding-header p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-label);
+  overflow-wrap: anywhere;
+}
+
+.coding-header .row-actions {
+  align-items: center;
+}
+
+/* Only a narrow frame needs the way back to the list. */
+.coding-back {
+  display: none;
+}
+
+.coding-tabstrip {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.coding-tabstrip .tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+
+.coding-tabstrip .tabs button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.coding-tabstrip .menu-button {
+  align-self: center;
+}
+
+.herdr-onscreen {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--accent, var(--text));
+}
+
+/* The room is there on every tab, so choosing one moves nothing. */
+.herdr-onscreen.reserved {
+  background: none;
+}
+
+.coding-view-switch {
+  display: flex;
+  padding: var(--space-2) var(--space-3);
+}
+
+.coding-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-2) var(--space-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.coding-earlier {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: var(--space-2);
+}
+
+.coding-question,
+.coding-composer {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.coding-composer .agent-attachments {
+  margin-bottom: var(--space-2);
+}
+
+@container coding (max-width: 720px) {
+  .coding-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .coding-list {
+    border-right: 0;
+  }
+  .coding-split.reading .coding-list {
+    display: none;
+  }
+  .coding-split:not(.reading) .coding-pane {
+    display: none;
+  }
+  .coding-back {
+    display: flex;
+  }
 }

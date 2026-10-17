@@ -7,6 +7,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import {
   CalendarIcon,
   ChevronRightIcon,
+  CodeIcon,
   ComposeIcon,
   DomainsIcon,
   GridIcon,
@@ -31,6 +32,7 @@ import {
 } from './icons'
 import { Logo } from './logo'
 import { useAgentFinancePresence } from '../pages/finance/financePresence'
+import { useHerdrPresence } from './herdrPresence'
 import { useAgentIdentity } from '../agentPreferences'
 import { matchSettingsSurface, surfacesByCategory } from '../pages/settings/nav'
 import { useFreshness } from './freshness'
@@ -50,7 +52,7 @@ type Item = {
   to: string
   icon: React.ReactNode
   anyOf?: string[]
-  shownWhen?: 'finance' | 'mailbox'
+  shownWhen?: 'finance' | 'mailbox' | 'coding'
   rail?: 'mailbox'
 }
 type Group = { label?: Key; items: Item[] }
@@ -71,6 +73,7 @@ export const ACCOUNT_ICONS: Record<string, React.ReactNode> = {
   knowledge: <GridIcon />,
   finance: <WalletIcon />,
   recordings: <RecordIcon />,
+  coding: <CodeIcon />,
   password: <KeyIcon />,
   passkeys: <ShieldIcon />,
   tokens: <TerminalIcon />,
@@ -229,7 +232,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders'].some(
+    ['/agent', '/knowledge', '/recordings', '/coding', '/finance', '/calendar', '/contacts', '/reminders'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||
@@ -244,10 +247,14 @@ export function Sidebar({
   // Finance is a row only for somebody who has finance, asked only while a
   // rail that can hold it is the one shown.
   const finance = useAgentFinancePresence(inAccount || inMailbox)
+  // Coding is a row only where a computer reports herdr, asked under the
+  // same condition.
+  const hasCoding = useHerdrPresence((inAccount || inMailbox) && hasPermission(session.permissions, 'agent:use'))
   const permitted = (item: Item) =>
     isPathAvailable(item.to, session.services) &&
     (item.to !== '/recordings' || hasPermission(session.permissions, 'agent:use')) &&
     (item.shownWhen !== 'finance' || finance.isShown === true) &&
+    (item.shownWhen !== 'coding' || (hasCoding === true && hasPermission(session.permissions, 'agent:use'))) &&
     (item.shownWhen !== 'mailbox' || hasMailbox) &&
     (!item.anyOf ||
       item.anyOf.some((key) => hasPermission(session.permissions, key) || hasAnywhere(session.permissions, key)))
@@ -536,6 +543,12 @@ export function Sidebar({
                 <NavLink to="/contacts">
                   <UserIcon />
                   <span className="sidebar-label">{t('nav.contacts')}</span>
+                </NavLink>
+              )}
+              {hasCoding === true && hasPermission(session.permissions, 'agent:use') && (
+                <NavLink to="/coding">
+                  <CodeIcon />
+                  <span className="sidebar-label">{t('nav.coding')}</span>
                 </NavLink>
               )}
               {finance.isShown && (
