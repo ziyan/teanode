@@ -1671,9 +1671,23 @@ struct NoteLine: View {
         case "goal_cleared": return String(localized: "Goal cleared: \(detail)")
         case "goal_met": return String(localized: "Goal met: \(detail)")
         case "goal_stalled": return String(localized: "Goal stalled: \(detail) turns since you last wrote and it is not met. Write to keep going, or clear or change it.")
+        case "circle_invited":
+            // Two names travel as JSON, since one plain detail cannot hold
+            // both; a detail that is not JSON is shown as the server wrote it.
+            guard let data = detail.data(using: .utf8),
+                let invitation = try? JSONDecoder().decode(CircleInvitationNote.self, from: data), !invitation.circleName.isEmpty
+            else { return detail }
+            return String(localized: "\(invitation.invitedByName) invited you to \(invitation.circleName). Answer it under Circles in Settings.")
         default: return detail
         }
     }
+}
+
+/// CircleInvitationNote is the detail of a circle_invited note: who invited
+/// the person, and to which circle.
+private struct CircleInvitationNote: Decodable {
+    var invitedByName: String = ""
+    var circleName: String = ""
 }
 
 /// CardView is something waiting for the person: a tool call to approve, or

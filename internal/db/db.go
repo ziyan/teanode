@@ -153,6 +153,7 @@ type Transaction interface {
 	UserOperation
 	RoleOperation
 	GroupOperation
+	CircleOperation
 	AuditOperation
 	SyncOperation
 	MailboxOperation

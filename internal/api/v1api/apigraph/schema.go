@@ -29,6 +29,7 @@ type Query interface {
 	MailboxDirectoryQuery
 	AddressBookQuery
 	CalendarQuery
+	CircleQuery
 	ReminderQuery
 	NoteQuery
 	CalendarInvitationQuery
@@ -102,6 +103,7 @@ type Mutation interface {
 	MailboxSetupProfileMutation
 	AddressBookMutation
 	CalendarMutation
+	CircleMutation
 	ReminderMutation
 	NoteMutation
 	CalendarInvitationMutation

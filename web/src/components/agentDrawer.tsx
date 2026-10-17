@@ -1168,6 +1168,7 @@ const NOTE_WORDS: Record<string, { plain: Key; withDetail?: Key }> = {
   goal_cleared: { plain: 'agentDrawer.note.goalCleared', withDetail: 'agentDrawer.note.goalCleared' },
   goal_met: { plain: 'agentDrawer.note.goalMet', withDetail: 'agentDrawer.note.goalMet' },
   goal_stalled: { plain: 'agentDrawer.note.goalStalled', withDetail: 'agentDrawer.note.goalStalled' },
+  circle_invited: { plain: 'agentDrawer.note.circleInvited' },
 }
 
 // LEGACY_NOTES is the English each kind was written in before notes had
@@ -1214,6 +1215,19 @@ function noteWords(
     noteDetail = prose.slice(legacy[0].length + 2)
   }
   const words = NOTE_WORDS[noteKind]
+  if (noteKind === 'circle_invited') {
+    // Two names cannot share one plain string, so the server sends both as
+    // JSON; one it cannot read is shown as the server's own English.
+    try {
+      const invitation = JSON.parse(noteDetail) as { invitedByName?: string; circleName?: string }
+      if (invitation.circleName) {
+        return t(words.plain, { invitedByName: invitation.invitedByName ?? '', circleName: invitation.circleName })
+      }
+    } catch {
+      // Not JSON: fall through to the prose.
+    }
+    return prose
+  }
   if (noteDetail && words.withDetail) {
     return t(words.withDetail, { detail: noteDetail })
   }

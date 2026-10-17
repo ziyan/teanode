@@ -42,7 +42,9 @@ The first segment of a path says whose the page is, and the rail follows it:
 - A feature page is neither, and keeps a path of its own: the mailbox and
   what hangs off it (`/mailbox/...`, its calendar and contacts), the agent's
   conversations (`/agent`), Knowledge (`/knowledge`), Finance (`/finance`).
-  Their rows are in the mailbox's rail.
+  Their rows are in the mailbox's rail. Circles (`/circles`, the people you
+  share the server with) is one too, but has no row: it is reached from the
+  account menu, where a badge counts the invitations waiting for an answer.
 
 A page that moves does not leave a redirect behind: every link to it in the
 code moves with it, and the old path is not found.

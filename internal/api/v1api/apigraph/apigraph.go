@@ -141,6 +141,9 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// A contact's picture, which is inside its card and far too large to
 	// carry through a listing.
 	router.Path(api.PathContactPhoto).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.contactPhotoView)
+	// A person's picture, which is a file in storage and far too large to
+	// carry through a listing.
+	router.Path(api.PathAvatarUser).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.avatarView)
 	// A setup profile, downloaded once by the device that installs it.
 	router.Path(api.PathMailboxSetupProfile).Methods(http.MethodGet).HandlerFunc(self.setupProfileView)
 	return nil

@@ -135,6 +135,12 @@ const SessionsPage = lazyPage(async () => ({
 const CommandLinePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/cli')).CommandLinePage,
 }))
+const CirclesPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/circles')).CirclesPage,
+}))
+const CirclePage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "account" */ './pages/circles')).CirclePage,
+}))
 const FinanceLinkPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/financeLink')).FinanceLinkPage,
 }))
@@ -355,6 +361,8 @@ export function App() {
                   <AccountMenu
                     username={session.username}
                     name={session.name}
+                    avatarUrl={session.avatarUrl}
+                    avatarColorIndex={session.avatarColorIndex}
                     collapsed={desktop && collapsed}
                     onToggleSidebar={desktop ? toggleSidebar : undefined}
                     onLogout={async () => {
@@ -542,6 +550,10 @@ export function App() {
                       the agent page's Finance tab. */}
                       <Route path="/finance" element={<FinancePage />} />
                       <Route path="/finance/:section" element={<FinancePage />} />
+                      {/* The people this person shares the server with, reached
+                      from the account menu rather than the rail. */}
+                      <Route path="/circles" element={<CirclesPage />} />
+                      <Route path="/circles/:circleId" element={<CirclePage />} />
                       <Route path="/settings/password" element={<ChangePasswordPage username={session.username} />} />
                       <Route path="/settings/passkeys" element={<PasskeysPage />} />
                       <Route path="/settings/tokens" element={<TokensPage />} />

@@ -54,10 +54,12 @@ const (
 	// something asked from the app, or asked in the main conversation on
 	// the dashboard.
 	NotificationAnswer = "answer"
+	// NotificationCircle is an invitation to join a circle.
+	NotificationCircle = "circle"
 )
 
 // NotificationKinds is every kind, in the order a person chooses among them.
-var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer}
+var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle}
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {

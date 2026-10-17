@@ -54,6 +54,9 @@ type userModel struct {
 	TimezoneMode   string     `gorm:"column:timezone_mode"`
 	TimezoneSeenAt *time.Time `gorm:"column:timezone_seen_at"`
 	ContactID      *string    `gorm:"column:contact_id"`
+
+	AvatarFileID    *string    `gorm:"column:avatar_file_id"`
+	AvatarUpdatedAt *time.Time `gorm:"column:avatar_updated_at"`
 }
 
 // "user" is a reserved word in PostgreSQL, so it is quoted. Every identifier
@@ -83,6 +86,13 @@ func userFromModel(model *userModel, groupIds []string) *models.User {
 	}
 	if model.ContactID != nil {
 		user.ContactID = *model.ContactID
+	}
+	if model.AvatarFileID != nil {
+		user.AvatarFileID = *model.AvatarFileID
+	}
+	if model.AvatarUpdatedAt != nil {
+		updated := model.AvatarUpdatedAt.In(time.Local)
+		user.AvatarUpdatedAt = &updated
 	}
 	if model.TimezoneSeenAt != nil {
 		seen := model.TimezoneSeenAt.In(time.Local)
@@ -124,6 +134,11 @@ func userToModel(user *models.User) *userModel {
 		contact := user.ContactID
 		model.ContactID = &contact
 	}
+	if user.AvatarFileID != "" {
+		avatarFileId := user.AvatarFileID
+		model.AvatarFileID = &avatarFileId
+	}
+	model.AvatarUpdatedAt = user.AvatarUpdatedAt
 	return model
 }
 
@@ -299,6 +314,9 @@ func (self *transaction) DeleteUser(userId string) error {
 		return ErrNotFound
 	}
 	return self.applyMutation(models.AuditResourceUser, userId, models.AuditActionDelete, before, nil, func(tx *gorm.DB) error {
+		if err := releaseCircles(tx, userId); err != nil {
+			return err
+		}
 		return tx.Where("\"id\" = ?", userId).Delete(&userModel{}).Error
 	})
 }

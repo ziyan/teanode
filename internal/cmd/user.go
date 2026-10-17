@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/urfave/cli/v3"
 
@@ -76,6 +77,25 @@ func NewUserCommand() *cli.Command {
 					},
 				},
 				Action: runUserPassword,
+			},
+			{
+				Name:  "avatar",
+				Usage: "set or remove a person's picture",
+				Commands: []*cli.Command{
+					{
+						Name:      "set",
+						Usage:     "use a PNG or JPEG as the picture of the signed-in account",
+						ArgsUsage: "<file>",
+						Flags:     append([]cli.Flag{avatarUserFlag()}, JSONFlag()),
+						Action:    runUserAvatarSet,
+					},
+					{
+						Name:   "remove",
+						Usage:  "take the picture away, so the account is shown as its initial",
+						Flags:  append([]cli.Flag{avatarUserFlag()}, JSONFlag()),
+						Action: runUserAvatarRemove,
+					},
+				},
 			},
 			{
 				Name:      "delete",
@@ -254,5 +274,52 @@ func runUserUpdate(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(user)
 	}
 	fmt.Printf("changed %s\n", user.Username)
+	return nil
+}
+
+func avatarUserFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:  "user",
+		Usage: "the account to change, by username, when it is not your own; needs user:manage",
+	}
+}
+
+func runUserAvatarSet(ctx context.Context, command *cli.Command) error {
+	path := command.Args().First()
+	if path == "" {
+		return usage("which file? usage: teanode user avatar set <file>")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	user, err := client.SetUserAvatar(ctx, connection, command.String("user"), content)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(user)
+	}
+	fmt.Printf("set the picture of %s\n", user.Username)
+	return nil
+}
+
+func runUserAvatarRemove(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	user, err := client.RemoveUserAvatar(ctx, connection, command.String("user"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(user)
+	}
+	fmt.Printf("removed the picture of %s\n", user.Username)
 	return nil
 }

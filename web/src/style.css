@@ -237,24 +237,131 @@ td a:hover {
   position: relative;
 }
 
+/* The twelve colors a person without a picture gets behind their initial,
+   chosen by the server from a hash of their id so the same person is the same
+   color on every screen and in the iPhone app (the app carries the same
+   twelve). Each holds white text at 4.5 to 1 or better; the dark set is the
+   same hues one step down, so a circle of color does not glare on the dark
+   ground. */
+:root {
+  --avatar-0: #b23a2e;
+  --avatar-1: #b0521a;
+  --avatar-2: #8c6600;
+  --avatar-3: #5c7a1c;
+  --avatar-4: #1d7a45;
+  --avatar-5: #0f7a73;
+  --avatar-6: #0e6e94;
+  --avatar-7: #2f5fb3;
+  --avatar-8: #5b4fc2;
+  --avatar-9: #8a44b3;
+  --avatar-10: #a63a82;
+  --avatar-11: #5f6873;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --avatar-0: #a8392e;
+    --avatar-1: #a4501c;
+    --avatar-2: #7d5c00;
+    --avatar-3: #55711c;
+    --avatar-4: #1b6d3f;
+    --avatar-5: #0e6d67;
+    --avatar-6: #0e6485;
+    --avatar-7: #2c56a3;
+    --avatar-8: #5348b0;
+    --avatar-9: #7c3fa3;
+    --avatar-10: #953676;
+    --avatar-11: #565e69;
+  }
+}
+
+:root[data-theme='dark'] {
+  --avatar-0: #a8392e;
+  --avatar-1: #a4501c;
+  --avatar-2: #7d5c00;
+  --avatar-3: #55711c;
+  --avatar-4: #1b6d3f;
+  --avatar-5: #0e6d67;
+  --avatar-6: #0e6485;
+  --avatar-7: #2c56a3;
+  --avatar-8: #5348b0;
+  --avatar-9: #7c3fa3;
+  --avatar-10: #953676;
+  --avatar-11: #565e69;
+}
+
+/* A person: their picture, or their initial on a color of their own. Sized by
+   the component, which sets width, height and font size inline because the
+   rail, a list row and the settings page each want a different one. */
 .avatar {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font: inherit;
-  font-size: 13px;
+  color: #ffffff;
   font-weight: 600;
   line-height: 1;
-  cursor: pointer;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.avatar-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-color-0 {
+  background: var(--avatar-0);
+}
+
+.avatar-color-1 {
+  background: var(--avatar-1);
+}
+
+.avatar-color-2 {
+  background: var(--avatar-2);
+}
+
+.avatar-color-3 {
+  background: var(--avatar-3);
+}
+
+.avatar-color-4 {
+  background: var(--avatar-4);
+}
+
+.avatar-color-5 {
+  background: var(--avatar-5);
+}
+
+.avatar-color-6 {
+  background: var(--avatar-6);
+}
+
+.avatar-color-7 {
+  background: var(--avatar-7);
+}
+
+.avatar-color-8 {
+  background: var(--avatar-8);
+}
+
+.avatar-color-9 {
+  background: var(--avatar-9);
+}
+
+.avatar-color-10 {
+  background: var(--avatar-10);
+}
+
+.avatar-color-11 {
+  background: var(--avatar-11);
 }
 
 /* Signed in as somebody else: the avatar wears a mark in the warning color,
@@ -8543,24 +8650,6 @@ p.notice.domain-logo-note {
   font-weight: 600;
 }
 
-/* The monogram at the head of a row about a person, so a list of people is
-   found by shape before it is read. Sized to the row rather than to a face:
-   this sits beside one line of text, not above a card. */
-.settings-row-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-}
-
 /* What they sign in with, beside what to call them. Set apart by weight and
    size rather than by a separator, because it is a different kind of fact
    about the same person. */
@@ -15019,3 +15108,105 @@ body.has-recording-bar .content {
 .finance-paystub-lines td {
   white-space: nowrap;
 }
+
+/* The picture row at the head of the profile form: the face, and what can be
+   done to it. */
+.profile-picture {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.profile-picture-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.profile-picture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* The number of invitations waiting, at the end of the account menu's
+   Circles row. The accent says "look here" without a second color for it. */
+.menu-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The circles a person is in, one card each. The card is a link, so the whole
+   of it is the target; its members are a few faces overlapping and a count. */
+.circle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.circle-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: 0;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.circle-card:hover {
+  border-color: var(--accent);
+}
+
+.circle-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.circle-card-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.circle-card-members {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Overlapping faces: a ring in the card's own color separates one from the
+   next. */
+.avatar-stack {
+  display: flex;
+}
+
+.avatar-stack .avatar {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.avatar-stack .avatar + .avatar {
+  margin-left: -8px;
+}
+
+@media (max-width: 600px) {
+  .circle-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

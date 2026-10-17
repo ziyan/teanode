@@ -10,14 +10,31 @@ public struct AccountProfile: Codable, Hashable, Sendable {
     public let timezone: String?
     /// auto or fixed; empty is auto.
     public let timezoneMode: String?
+    /// Where the person's picture is, a path to read with the app's token;
+    /// nil when they have none.
+    public let avatarUrl: String?
+    /// Which of the twelve colors their initial is drawn on without a picture.
+    public let avatarColorIndex: Int?
 
-    public init(id: String, username: String, name: String? = nil, email: String? = nil, timezone: String? = nil, timezoneMode: String? = nil) {
+    public init(
+        id: String, username: String, name: String? = nil, email: String? = nil, timezone: String? = nil, timezoneMode: String? = nil,
+        avatarUrl: String? = nil, avatarColorIndex: Int? = nil
+    ) {
         self.id = id
         self.username = username
         self.name = name
         self.email = email
         self.timezone = timezone
         self.timezoneMode = timezoneMode
+        self.avatarUrl = avatarUrl
+        self.avatarColorIndex = avatarColorIndex
+    }
+
+    /// What the person is called on screen: their name, or the username when
+    /// they have not given one.
+    public var displayName: String {
+        guard let name, !name.isEmpty else { return username }
+        return name
     }
 
     /// TimezoneMode is whether the time zone follows the browser the
@@ -215,13 +232,23 @@ public struct PasskeyPolicy: Codable, Hashable, Sendable {
 }
 
 extension Documents {
+    /// What every read and change of the person's own account answers with.
+    static let accountProfileFields = """
+        id username name email avatarUrl avatarColorIndex timezone timezoneMode
+        """
     public static let accountProfile = """
-        query { GetCurrentUser { id username name email timezone timezoneMode } }
+        query { GetCurrentUser { \(accountProfileFields) } }
+        """
+    public static let setAccountAvatar = """
+        mutation ($content: String!) { SetUserAvatar(content: $content) { \(accountProfileFields) } }
+        """
+    public static let removeAccountAvatar = """
+        mutation { RemoveUserAvatar { \(accountProfileFields) } }
         """
     public static let updateAccountProfile = """
         mutation ($userId: String!, $username: String, $name: String, $email: String, $timezone: String, $timezoneMode: String) {
           UpdateUser(userId: $userId, username: $username, name: $name, email: $email, timezone: $timezone, timezoneMode: $timezoneMode) {
-            id username name email timezone timezoneMode
+            \(accountProfileFields)
           }
         }
         """
@@ -270,6 +297,21 @@ extension Connection {
     public func updateAccountProfile(_ draft: ProfileDraft) async throws -> AccountProfile {
         struct Answer: Decodable, Sendable { let UpdateUser: AccountProfile }
         return try await execute(Documents.updateAccountProfile, variables: draft.variables, as: Answer.self).UpdateUser
+    }
+
+    /// Sets the person's picture. The bytes are a PNG or JPEG the server takes
+    /// at most 8 MiB of; the answer is the account with its new picture address.
+    public func setAccountAvatar(_ content: Data) async throws -> AccountProfile {
+        struct Answer: Decodable, Sendable { let SetUserAvatar: AccountProfile }
+        return try await execute(
+            Documents.setAccountAvatar, variables: ["content": .string(content.base64EncodedString())], as: Answer.self
+        ).SetUserAvatar
+    }
+
+    /// Takes the picture away; the initial on the person's color is shown again.
+    public func removeAccountAvatar() async throws -> AccountProfile {
+        struct Answer: Decodable, Sendable { let RemoveUserAvatar: AccountProfile }
+        return try await execute(Documents.removeAccountAvatar, as: Answer.self).RemoveUserAvatar
     }
 
     /// Replaces the password, after the server checks the current one. The

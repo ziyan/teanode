@@ -126,9 +126,10 @@ so one command serves a person and a script.
 | `alias` | where mail for a domain goes; `alias match` says what an address would hit |
 | `credential` | SMTP credentials for sending through this server |
 | `dkim` | the keys that sign outgoing mail, and the record to publish |
-| `user` | the accounts on this server; `user rescue` on `teanode-server` makes one an administrator |
+| `user` | the accounts on this server, and `user avatar` for a person's picture; `user rescue` on `teanode-server` makes one an administrator |
 | `group` | who may do what, and over which domains: members, roles, domains |
 | `role` | the named sets of permissions a group holds; `role permissions` lists what may be given |
+| `circle` | the circles you are in and the invitations to join one; see below |
 | `audit` | the log of administrative changes, with filters |
 | `mailbox` | a mailbox and everything in it: `folder`, `rule`, `subscription`, `device`, `autoreply`, `programs` |
 | `token` | API tokens: `create`, `list`, `update` (rename, or a new lifetime from now), `revoke`; `token create --user` on the console issues somebody's first |
@@ -231,6 +232,59 @@ effect, most often a DMARC policy of none.
 
 Removing stops serving the file. Take the record down as well, or receivers
 keep fetching an address that answers nothing.
+
+### A person's picture
+
+`teanode user avatar set|remove` is the picture shown beside a person's name
+on the dashboard and in the app, and the initial on a
+color of their own when there is none:
+
+    teanode user avatar set portrait.jpg
+    teanode user avatar remove
+    teanode user avatar set --user personb portrait.jpg    # needs user:manage
+
+It acts on the signed-in account; `--user` names another by username, which
+needs `user:manage`, like changing anybody else's name. The file is a PNG or
+JPEG of at most 8 MiB and 20 megapixels. The server crops it to the center
+square, scales it to 512 pixels and stores it as a PNG, so everything else in
+the file, including where a photo was taken, is dropped. A WebP or HEIC photo
+is refused with the reason; convert it first. Setting a picture replaces the
+one before it. The agent does the same when asked, through the `account` tool's
+`set_avatar` action with a picture from the conversation.
+
+### Circles
+
+`teanode circle` is the family, friends or colleagues on this server that you
+belong to. A circle is named by its identifier, which `circle list` prints;
+people are named by username.
+
+    teanode circle create --kind family "Home"
+    teanode circle invite <circle-id> personb            # --admin to invite one as an admin
+    teanode circle invitations                           # as personb: what is waiting
+    teanode circle accept <invitation-id>                # or: decline <invitation-id>
+    teanode circle show <circle-id>                      # members, roles, and for an admin who is still being waited for
+    teanode circle role <circle-id> personb admin        # or member
+    teanode circle people                                # everybody you share a circle with, once each
+
+`create`, `rename`, `delete`, `invite`, `withdraw`, `role` and `remove` change
+the circle and need you to be one of its admins; a member who is not one is
+told so. `leave` takes you out, and the last person to leave deletes the circle.
+A circle always keeps an admin, so the last admin cannot leave or be made a
+member while others remain; make somebody else an admin first, or delete it.
+
+`invite` answers the same whether or not the username is an account, and
+whether or not that person is in the circle already or may use circles, so it
+is not a way to list who is on the server. An invitation lasts thirty days.
+
+An operator with `user:manage` can put an account in a circle without an
+invitation, for somebody who will not set it up themselves:
+
+    teanode circle add <circle-id> personb               # --admin for an admin
+
+Who sees whom, and what a circle is for, is in `docs/subsystems/circles.md`.
+The agent does the same, bar what is an admin's or an operator's to do by
+hand, through its `circle` tool: `list`, `show`, `people`, `create`, `invite`,
+`answer` and `leave`.
 
 ### Two things that are not in the schema
 

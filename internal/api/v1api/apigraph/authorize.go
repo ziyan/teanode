@@ -246,3 +246,53 @@ func (self *graph) requireReadableMail(ctx context.Context, mailId string) (*mod
 	}
 	return mail, nil
 }
+
+// requireCirclePerson checks that the caller is an account that may use
+// circles, and returns it. The console is not an account and is in no circle.
+func (self *graph) requireCirclePerson(ctx context.Context) (*models.User, error) {
+	principal, err := self.requirePermission(ctx, models.PermissionCircleUse)
+	if err != nil {
+		return nil, err
+	}
+	if principal.User == nil {
+		return nil, api.ErrNotFound
+	}
+	return principal.User, nil
+}
+
+// requireCircleMember checks that the caller may use circles and is in this
+// one, and returns the circle with its members and the caller's own row. A
+// circle the caller is not in reads as not found, which is also what a
+// circle that was deleted since they last looked reads as.
+func (self *graph) requireCircleMember(ctx context.Context, circleId string) (*models.Circle, *models.CircleMember, error) {
+	user, err := self.requireCirclePerson(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	circle, err := self.transaction(ctx).GetCircle(circleId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if circle == nil {
+		return nil, nil, api.ErrNotFound
+	}
+	member := circle.Member(user.ID)
+	if member == nil {
+		return nil, nil, api.ErrNotFound
+	}
+	return circle, member, nil
+}
+
+// requireCircleAdmin is requireCircleMember for something only an admin of
+// the circle may do. A member who is not an admin can see the circle, so they
+// are told in words rather than shown a circle that does not exist.
+func (self *graph) requireCircleAdmin(ctx context.Context, circleId string) (*models.Circle, *models.CircleMember, error) {
+	circle, member, err := self.requireCircleMember(ctx, circleId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if member.MemberRole != models.MemberRoleAdmin {
+		return nil, nil, fmt.Errorf("%w: only an admin of this circle can do that", api.ErrPermissionDenied)
+	}
+	return circle, member, nil
+}

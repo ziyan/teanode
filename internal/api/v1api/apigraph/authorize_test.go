@@ -64,6 +64,14 @@ var authorizing = map[string]bool{
 	// named within a calendar and the calendar is checked first.
 	"requireCalendarPerson": true,
 	"requireOwnCalendar":    true,
+	// requireSignedIn, then the account whose picture it is: the caller's own,
+	// or another's only with user:manage.
+	"requireAvatarOwner": true,
+	// requirePermission(circle:use), plus the caller's account; the circle,
+	// refused unless the caller is in it; and the same for an admin of it.
+	"requireCirclePerson": true,
+	"requireCircleMember": true,
+	"requireCircleAdmin":  true,
 	// requireItems(mail:read), plus the invitation the message carried --
 	// which is nothing at all unless the caller may read that mailbox.
 	"invitationFor": true,

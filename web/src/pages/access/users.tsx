@@ -127,6 +127,8 @@ export function UsersTab() {
           <SettingsRow
             key={user.id}
             avatar={user.name || user.username}
+            avatarUrl={user.avatarUrl}
+            avatarColorIndex={user.avatarColorIndex}
             title={
               <>
                 {/* What to call them, then what they sign in with. A list of

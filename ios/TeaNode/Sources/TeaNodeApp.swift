@@ -329,6 +329,10 @@ struct SettingsForm: View {
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
+    /// Whether the account may use circles, and how many invitations to join
+    /// one are waiting for an answer, as the badge on its row.
+    @State private var canUseCircles = false
+    @State private var openCircleInvitationCount = 0
     #if DEBUG
         /// Whether the screen a screenshot names (`-TeaNodeScreen`) is
         /// pushed, and whether it has been once, so coming back stays here.
@@ -347,6 +351,16 @@ struct SettingsForm: View {
                             PreferencesView(connection: connection)
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
+                        }
+                        // Next to the profile, as on the dashboard's account menu: it is about who
+                        // the person is among other people.
+                        if canUseCircles {
+                            NavigationLink {
+                                CirclesView(connection: connection)
+                            } label: {
+                                Label("Circles", systemImage: "person.2")
+                            }
+                            .badge(openCircleInvitationCount)
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)
@@ -473,6 +487,10 @@ struct SettingsForm: View {
                     isOperator = (try? await connection.isOperator()) ?? false
                 }
             }
+            // Again on coming back from the circles screen, where an invitation may have been answered.
+            .onAppear {
+                Task { await refreshCircles() }
+            }
             #if DEBUG
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
@@ -493,6 +511,12 @@ struct SettingsForm: View {
                 }
             #endif
         }
+    }
+
+    private func refreshCircles() async {
+        guard let connection = app.connection else { return }
+        canUseCircles = (try? await connection.accessSession())?.holds("circle:use") ?? false
+        openCircleInvitationCount = canUseCircles ? ((try? await connection.circleInvitations())?.count ?? 0) : 0
     }
 
     #if DEBUG
@@ -592,6 +616,7 @@ struct NotificationKindToggle: View {
         case "approval": String(localized: "Approvals waiting for you")
         case "question": String(localized: "Questions for you")
         case "answer": String(localized: "Answers that come after you have left")
+        case "circle": String(localized: "Invitations to circles")
         default: notificationKind
         }
     }

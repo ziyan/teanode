@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import TeaNodeKit
 
@@ -13,12 +14,41 @@ struct PreferencesView: View {
     @State private var hasNoAccount = false
     @State private var isSaving = false
     @State private var isConfirmingRename = false
+    /// The profile as the server last had it, for the picture: the form's
+    /// draft keeps what is being typed, and a picture is saved on its own.
+    @State private var pictureProfile: AccountProfile?
+    @State private var pickedItem: PhotosPickerItem?
+    @State private var isChangingPicture = false
     @State private var doneText: String?
     @State private var problemText: String?
 
     var body: some View {
         Form {
             if let draft = Binding($draft) {
+                if let pictureProfile {
+                    Section {
+                        AvatarView(
+                            name: pictureProfile.displayName, avatarUrl: pictureProfile.avatarUrl,
+                            colorIndex: pictureProfile.avatarColorIndex, size: 96
+                        )
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                        PhotosPicker(selection: $pickedItem, matching: .images) {
+                            Label("Choose a picture", systemImage: "photo")
+                        }
+                        .disabled(isChangingPicture)
+                        if pictureProfile.avatarUrl?.isEmpty == false {
+                            Button("Remove picture", systemImage: "trash", role: .destructive) {
+                                Task { await removePicture() }
+                            }
+                            .disabled(isChangingPicture)
+                        }
+                    } header: {
+                        Text("Picture")
+                    } footer: {
+                        Text("Shown beside your name to the people you share a circle with. Without one, your initial is shown.")
+                    }
+                }
                 Section {
                     TextField("Name", text: draft.name, prompt: Text("how you would like to be greeted"))
                         .textContentType(.name)
@@ -107,7 +137,44 @@ struct PreferencesView: View {
             }
         }
         .task { await load() }
+        .onChange(of: pickedItem) { _, item in
+            guard let item else { return }
+            pickedItem = nil
+            Task { await setPicture(item) }
+        }
         .toast(done: $doneText, problem: $problemText)
+    }
+
+    /// Reads the chosen photo, whatever the library kept it as (HEIC among
+    /// them), and sends it as a JPEG.
+    private func setPicture(_ item: PhotosPickerItem) async {
+        isChangingPicture = true
+        defer { isChangingPicture = false }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self), let jpeg = AvatarPicture.jpeg(from: data) else {
+                problemText = String(localized: "That photo could not be read.")
+                return
+            }
+            let saved = try await connection.setAccountAvatar(jpeg)
+            pictureProfile = saved
+            doneText = String(localized: "Picture saved")
+            onSaved?(saved)
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    private func removePicture() async {
+        isChangingPicture = true
+        defer { isChangingPicture = false }
+        do {
+            let saved = try await connection.removeAccountAvatar()
+            pictureProfile = saved
+            doneText = String(localized: "Picture removed")
+            onSaved?(saved)
+        } catch {
+            problemText = error.localizedDescription
+        }
     }
 
     /// The zone the account follows now, or this phone's when the dashboard
@@ -127,6 +194,7 @@ struct PreferencesView: View {
         do {
             let profile = try await connection.accountProfile()
             draft = profile.map { ProfileDraft($0) }
+            pictureProfile = profile
             hasNoAccount = profile == nil
         } catch {
             problemText = error.localizedDescription
@@ -146,6 +214,30 @@ struct PreferencesView: View {
         } catch {
             problemText = error.localizedDescription
         }
+    }
+}
+
+/// AvatarPicture makes the bytes of a chosen photo into what the server takes
+/// as a person's picture.
+enum AvatarPicture {
+    /// The longest side a picture is sent at; the server keeps 512 pixels, so
+    /// this is only to keep the upload small.
+    static let longestSide: CGFloat = 2048
+
+    /// A JPEG at most longestSide on its longest side, whatever the photo was
+    /// taken as. Drawing it again also turns it upright and leaves every
+    /// metadata block, the location included, behind. Nil when the bytes are
+    /// not a picture.
+    static func jpeg(from data: Data) -> Data? {
+        guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0 else { return nil }
+        let scale = min(1, longestSide / max(image.size.width, image.size.height))
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let redrawn = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return redrawn.jpegData(compressionQuality: 0.9)
     }
 }
 

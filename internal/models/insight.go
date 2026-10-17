@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -524,6 +525,7 @@ const (
 	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
 	NoteHerdrAsked      AgentNoteKind = "herdr_asked"      // a coding session's question, for the drawer to draw: JSON
 	NoteHerdrAnswered   AgentNoteKind = "herdr_answered"   // it went, and what it was answered with: JSON
+	NoteCircleInvited   AgentNoteKind = "circle_invited"   // somebody invited the person to a circle: JSON of the inviter's name and the circle's
 	// The goal notes below are written no longer, since goals have their
 	// own conversations and activity; they are kept so that transcripts
 	// written before still read.
@@ -549,6 +551,7 @@ var noteEnglish = map[AgentNoteKind]string{
 	NoteDepth:           "looking into this carefully",
 	NoteHerdrAsked:      "a coding session asked a question",
 	NoteHerdrAnswered:   "a coding session's question was answered",
+	NoteCircleInvited:   "invited you to a circle",
 	NoteGoalSet:         "Goal set",
 	NoteGoalSetAgain:    "Goal set again",
 	NoteGoalChanged:     "Goal changed",
@@ -567,10 +570,42 @@ func NoteText(kind AgentNoteKind, detail string) string {
 	switch {
 	case kind == NoteGoalStalled:
 		return fmt.Sprintf("Goal stalled: %s turns since you last wrote and it is not met. Write to keep going, or clear or change it.", detail)
+	case kind == NoteCircleInvited:
+		if invitation := ParseCircleInvitedNote(detail); invitation != nil {
+			return invitation.InvitedByName + " invited you to " + invitation.CircleName
+		}
+		return english
 	case detail == "" || kind == NoteCompacted:
 		return english
 	}
 	return english + ": " + detail
+}
+
+// CircleInvitedNote is the detail of a circle_invited note: who asked and
+// to what. Two names cannot share one plain string without a separator that
+// a name may contain, so the detail is this as JSON and each client words it.
+type CircleInvitedNote struct {
+	InvitedByName string `json:"invitedByName"`
+	CircleName    string `json:"circleName"`
+}
+
+// CircleInvitedDetail is the detail of a circle_invited note.
+func CircleInvitedDetail(invitedByName, circleName string) string {
+	encoded, err := json.Marshal(CircleInvitedNote{InvitedByName: invitedByName, CircleName: circleName})
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+// ParseCircleInvitedNote reads the detail of a circle_invited note, or
+// returns nil when it is not one.
+func ParseCircleInvitedNote(detail string) *CircleInvitedNote {
+	var note CircleInvitedNote
+	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.CircleName == "" {
+		return nil
+	}
+	return &note
 }
 
 // NewAgentNote is a note of a kind for a conversation.

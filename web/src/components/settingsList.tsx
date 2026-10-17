@@ -1,3 +1,4 @@
+import { Avatar } from './avatar'
 import { CopyIconButton } from './common'
 import { useTranslation } from '../i18n/i18n'
 
@@ -52,6 +53,8 @@ export function SettingsRow({
   badge,
   actions,
   avatar,
+  avatarUrl,
+  avatarColorIndex,
 }: {
   title: React.ReactNode
   subtitle?: React.ReactNode
@@ -61,14 +64,14 @@ export function SettingsRow({
   // face of a list of people, so a row is found by its shape before it is
   // read.
   avatar?: string
+  // Their picture and color, for a row about a person the server knows. Without
+  // them the monogram takes a color from the name.
+  avatarUrl?: string | null
+  avatarColorIndex?: number | null
 }) {
   return (
     <div className="settings-row">
-      {avatar ? (
-        <span className="settings-row-avatar" aria-hidden="true">
-          {(Array.from(avatar.trim())[0] ?? '?').toUpperCase()}
-        </span>
-      ) : null}
+      {avatar ? <Avatar name={avatar} avatarUrl={avatarUrl} colorIndex={avatarColorIndex} size={28} /> : null}
       <div className="settings-row-body">
         <div className="settings-row-title">
           <strong>{title}</strong>
