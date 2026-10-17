@@ -317,6 +317,13 @@ jobs:
           shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-empty-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-empty
+          # Albums: the Albums section with a suggestion, one album, and Select mode with two photos chosen.
+          shoot photos-albums-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-albums
+          shoot photos-albums-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-albums
+          shoot photos-albums-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-albums
+          shoot photos-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
+          shoot photos-album-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
+          shoot photos-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
           # Photo backup, off and part way through a library, with invented counts (opened from Settings).
           shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
           shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off

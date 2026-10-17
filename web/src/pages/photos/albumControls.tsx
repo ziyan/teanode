@@ -1,0 +1,181 @@
+import { useState } from 'react'
+import { FormDialog } from '../../components/dialog'
+import { AlbumAddIcon } from '../../components/icons'
+import { MenuButton } from '../../components/menuButton'
+import { Tooltip } from '../../components/tooltip'
+import { useQuery } from '../../components/useQuery'
+import { useTranslation } from '../../i18n/i18n'
+import { listPhotoAlbums, type PhotoAlbum } from '../../photos/api'
+
+// The pieces the library, the albums page and the viewer share: the choice
+// between the library's views, the question that asks for an album's title,
+// and the menu that puts photos in an album.
+
+export type PhotoSection = 'library' | 'favorites' | 'albums' | 'trash'
+
+const SECTIONS: {
+  section: PhotoSection
+  label: 'photos.listLibrary' | 'photos.listFavorites' | 'photos.listAlbums' | 'photos.listTrash'
+}[] = [
+  { section: 'library', label: 'photos.listLibrary' },
+  { section: 'favorites', label: 'photos.listFavorites' },
+  { section: 'albums', label: 'photos.listAlbums' },
+  { section: 'trash', label: 'photos.listTrash' },
+]
+
+// The segmented choice at the head of Photos. Choosing leaves the page's own
+// state to the caller: the library keeps its search when it changes list,
+// and Albums is a page of its own.
+export function PhotoSections({
+  current,
+  onSelect,
+}: {
+  current: PhotoSection
+  onSelect: (section: PhotoSection) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="segmented" role="group" aria-label={t('photos.show')}>
+      {SECTIONS.map((entry) => (
+        <button
+          key={entry.section}
+          type="button"
+          className={entry.section === current ? 'active' : ''}
+          aria-pressed={entry.section === current}
+          onClick={() => onSelect(entry.section)}
+        >
+          {t(entry.label)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// The most characters an album's title may have, as the server counts them.
+const MOST_ALBUM_TITLE_CHARACTERS = 255
+
+// AlbumTitleDialog asks for an album's title: for a new album, a suggestion
+// made into one, and a rename. The caller says what the button does.
+export function AlbumTitleDialog({
+  title,
+  submitLabel,
+  initialTitle = '',
+  isBusy,
+  error,
+  onSubmit,
+  onClose,
+}: {
+  title: string
+  submitLabel: string
+  initialTitle?: string
+  isBusy?: boolean
+  error?: string | null
+  onSubmit: (albumTitle: string) => void
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const [albumTitle, setAlbumTitle] = useState(initialTitle)
+  const trimmed = albumTitle.trim()
+  return (
+    <FormDialog
+      title={title}
+      submitLabel={submitLabel}
+      busy={isBusy}
+      error={error}
+      canSubmit={trimmed !== ''}
+      onSubmit={() => onSubmit(trimmed)}
+      onClose={onClose}
+    >
+      <label>
+        <span>{t('photos.albumTitleLabel')}</span>
+        <input
+          type="text"
+          value={albumTitle}
+          maxLength={MOST_ALBUM_TITLE_CHARACTERS}
+          autoComplete="off"
+          onChange={(event) => setAlbumTitle(event.target.value)}
+          onFocus={(event) => event.target.select()}
+        />
+      </label>
+    </FormDialog>
+  )
+}
+
+// AddToAlbumMenu is the button that lists the person's albums, most recently
+// changed first, with "New album..." at the head. What choosing does is the
+// caller's, so the menu works the same on a selection and in the viewer.
+export function AddToAlbumMenu({
+  onChooseAlbum,
+  onNewAlbum,
+  hiddenAlbumId,
+}: {
+  onChooseAlbum: (album: PhotoAlbum) => void
+  onNewAlbum: () => void
+  // The album the photos are being looked at in: they are in it already.
+  hiddenAlbumId?: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <Tooltip label={t('photos.addToAlbum')}>
+      <MenuButton
+        label={t('photos.addToAlbum')}
+        className="icon-button"
+        icon={<AlbumAddIcon size={18} />}
+        render={(close) => (
+          <AlbumChoices
+            hiddenAlbumId={hiddenAlbumId}
+            onChooseAlbum={(album) => {
+              close()
+              onChooseAlbum(album)
+            }}
+            onNewAlbum={() => {
+              close()
+              onNewAlbum()
+            }}
+          />
+        )}
+      />
+    </Tooltip>
+  )
+}
+
+// Read when the menu opens, so that an album made a moment ago is in it.
+function AlbumChoices({
+  hiddenAlbumId,
+  onChooseAlbum,
+  onNewAlbum,
+}: {
+  hiddenAlbumId?: string
+  onChooseAlbum: (album: PhotoAlbum) => void
+  onNewAlbum: () => void
+}) {
+  const { t, plural } = useTranslation()
+  const albums = useQuery(() => listPhotoAlbums(), [], { refresh: false })
+  const choices = (albums.data ?? []).filter((album) => album.id !== hiddenAlbumId)
+  return (
+    <>
+      <button type="button" role="menuitem" onClick={onNewAlbum}>
+        {t('photos.newAlbumMenu')}
+      </button>
+      {albums.loading && !albums.data ? (
+        <div className="menu-header">{t('common.loading')}</div>
+      ) : (
+        choices.length > 0 && (
+          <>
+            <div className="menu-separator" />
+            {choices.map((album) => (
+              <button key={album.id} type="button" role="menuitem" onClick={() => onChooseAlbum(album)}>
+                <span className="photo-album-choice">
+                  <span className="photo-album-choice-title">{album.albumTitle}</span>
+                  <span className="muted">
+                    {plural(album.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </>
+        )
+      )}
+    </>
+  )
+}

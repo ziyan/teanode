@@ -2,14 +2,49 @@ import SwiftUI
 import TeaNodeKit
 import UIKit
 
-extension PhotoCollection {
-    /// The name of the list in the segmented control.
+/// PhotoSection is what the segmented control under the title chooses: three
+/// lists of photos, and the albums.
+enum PhotoSection: String, CaseIterable, Identifiable {
+    case library, favorites, albums, trash
+
+    var id: String { rawValue }
+
+    /// The name in the segmented control.
     var title: String {
         switch self {
         case .library: String(localized: "Library")
         case .favorites: String(localized: "Favorites")
+        case .albums: String(localized: "Albums")
         case .trash: String(localized: "Trash")
         }
+    }
+
+    /// The list of photos the section shows; nil for Albums, which shows
+    /// albums and opens each on a list of its own.
+    var collection: PhotoCollection? {
+        switch self {
+        case .library: .library
+        case .favorites: .favorites
+        case .trash: .trash
+        case .albums: nil
+        }
+    }
+}
+
+/// PhotoListKey names one list of photos the model holds: a list of the
+/// library, or the photos of one album.
+enum PhotoListKey: Hashable {
+    case collection(PhotoCollection)
+    case album(String)
+
+    static let library = PhotoListKey.collection(.library)
+    static let favorites = PhotoListKey.collection(.favorites)
+    static let trash = PhotoListKey.collection(.trash)
+
+    /// The album whose photos the list holds, if it is one.
+    var albumId: String? {
+        if case .album(let albumId) = self { return albumId }
+        return nil
     }
 }
 
@@ -56,66 +91,85 @@ struct PhotoListing {
 }
 
 /// PhotosModel is the person's photo library as the phone shows it: the
-/// three lists, read a page at a time, and what can be done to a photo.
+/// lists of photos, read a page at a time, the albums, and what can be done to
+/// a photo.
 @MainActor
 @Observable
 final class PhotosModel {
     let connection: Connection
-    var collection = PhotoCollection.library
-    private(set) var listings: [PhotoCollection: PhotoListing] = [:]
-    private(set) var failureTexts: [PhotoCollection: String] = [:]
+    var section = PhotoSection.library
+    private(set) var listings: [PhotoListKey: PhotoListing] = [:]
+    private(set) var failureTexts: [PhotoListKey: String] = [:]
     private(set) var library: PhotoLibrary?
     private(set) var savingPhotoIds: Set<String> = []
+    /// The albums, the one changed most recently first; nil until read.
+    private(set) var albums: [PhotoAlbum]?
+    private(set) var albumsFailureText: String?
+    /// The trips and events found in photos that are in no album.
+    private(set) var suggestions: [PhotoAlbumSuggestion] = []
+    /// The sample photos of the suggestions, by id, for their pictures.
+    private(set) var suggestionSamples: [String: Photo] = [:]
+    private(set) var hasReadSuggestions = false
     var doneText: String?
     var problemText: String?
+    /// The title being asked for, by an alert on whichever screen raised it.
+    var albumTitleRequest: AlbumTitleRequest?
 
     init(connection: Connection) {
         self.connection = connection
     }
 
-    var listing: PhotoListing? { listings[collection] }
-    var photos: [Photo] { listings[collection]?.photos ?? [] }
-    var failureText: String? { failureTexts[collection] }
-    var hasWaitingPhotos: Bool { photos.contains { $0.isWaiting } }
+    func listing(_ key: PhotoListKey) -> PhotoListing? { listings[key] }
+    func photos(in key: PhotoListKey) -> [Photo] { listings[key]?.photos ?? [] }
+    func failureText(_ key: PhotoListKey) -> String? { failureTexts[key] }
+    func hasWaitingPhotos(in key: PhotoListKey) -> Bool { photos(in: key).contains { $0.isWaiting } }
 
     func loadLibrary() async {
         library = try? await connection.photoLibrary()
     }
 
+    private func fetchPage(_ key: PhotoListKey, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
+        switch key {
+        case .collection(let collection):
+            return try await connection.photos(in: collection, beforePhotoId: beforePhotoId, pageSize: pageSize)
+        case .album(let albumId):
+            return try await connection.photos(inAlbum: albumId, beforePhotoId: beforePhotoId, pageSize: pageSize)
+        }
+    }
+
     /// Reads the first page of a list, unless it has been read.
-    func load(_ collection: PhotoCollection) async {
-        guard listings[collection] == nil else { return }
-        await reload(collection)
+    func load(_ key: PhotoListKey) async {
+        guard listings[key] == nil else { return }
+        await reload(key)
     }
 
     /// Reads the first page of a list again, which drops any further pages read.
-    func reload(_ collection: PhotoCollection) async {
+    func reload(_ key: PhotoListKey) async {
         do {
-            let page = try await connection.photos(in: collection)
-            listings[collection] = PhotoListing(photos: page, hasMore: PhotoPaging.hasMore(afterPageOf: page.count))
-            failureTexts[collection] = nil
+            let page = try await fetchPage(key)
+            listings[key] = PhotoListing(photos: page, hasMore: PhotoPaging.hasMore(afterPageOf: page.count))
+            failureTexts[key] = nil
         } catch {
             guard !Task.isCancelled else { return }
-            if listings[collection] == nil { failureTexts[collection] = error.localizedDescription }
+            if listings[key] == nil { failureTexts[key] = error.localizedDescription }
             problemText = error.localizedDescription
         }
     }
 
     /// Reads the next page when a cell near the end of what is loaded comes
     /// on screen.
-    func loadMoreIfNeeded(showing photoId: String) async {
-        let collection = collection
-        guard let listing = listings[collection], listing.hasMore, !listing.isLoadingPage,
+    func loadMoreIfNeeded(showing photoId: String, in key: PhotoListKey) async {
+        guard let listing = listings[key], listing.hasMore, !listing.isLoadingPage,
             PhotoPaging.shouldLoadMore(whenShowing: photoId, in: listing.photos), let last = listing.photos.last
         else { return }
-        listings[collection]?.isLoadingPage = true
-        defer { listings[collection]?.isLoadingPage = false }
+        listings[key]?.isLoadingPage = true
+        defer { listings[key]?.isLoadingPage = false }
         do {
-            let page = try await connection.photos(in: collection, beforePhotoId: last.id)
+            let page = try await fetchPage(key, beforePhotoId: last.id)
             // The list may have been read again meanwhile; this page then
             // follows something that is no longer its end.
-            guard listings[collection]?.photos.last?.id == last.id else { return }
-            listings[collection]?.append(page)
+            guard listings[key]?.photos.last?.id == last.id else { return }
+            listings[key]?.append(page)
         } catch {
             if !Task.isCancelled { problemText = error.localizedDescription }
         }
@@ -124,32 +178,37 @@ final class PhotosModel {
     /// While a photo of the list is still being made ready, asks for the list
     /// again now and then, a little less often each time, so its picture
     /// appears without the person pulling to refresh.
-    func followWaitingPhotos() async {
+    func followWaitingPhotos(in key: PhotoListKey) async {
         var attempt = 1
-        while !Task.isCancelled, hasWaitingPhotos {
+        while !Task.isCancelled, hasWaitingPhotos(in: key) {
             try? await Task.sleep(for: .seconds(min(30, 5 * attempt)))
             attempt += 1
-            let collection = collection
-            guard !Task.isCancelled, let held = listings[collection] else { return }
-            if let page = try? await connection.photos(in: collection, pageSize: min(max(held.photos.count, 1), 500)) {
-                listings[collection]?.replaceHeld(by: page)
+            guard !Task.isCancelled, let held = listings[key] else { return }
+            if let page = try? await fetchPage(key, pageSize: min(max(held.photos.count, 1), 500)) {
+                listings[key]?.replaceHeld(by: page)
             }
         }
     }
 
     // MARK: Changing photos
 
-    func toggleFavorite(_ photo: Photo) async {
+    /// Marks photos favorites, or not. The Favorites list being looked at
+    /// keeps a photo just un-favorited until it is left (see
+    /// dropPhotosNoLongerFavorite); any other copy of that list is read anew.
+    func setFavorite(_ photos: [Photo], isFavorite: Bool, in key: PhotoListKey) async {
         do {
-            let updated = try await connection.setPhotoFavorite(photo.id, isFavorite: !photo.isFavorite)
-            for key in Array(listings.keys) { listings[key]?.replace(updated) }
-            // Which photos are favorites changed. The Favorites list being
-            // looked at keeps a photo just un-favorited until it is left (see
-            // dropPhotosNoLongerFavorite); any other copy of it is read anew.
-            if collection != .favorites { listings[.favorites] = nil }
+            for photo in photos where photo.isFavorite != isFavorite {
+                let updated = try await connection.setPhotoFavorite(photo.id, isFavorite: isFavorite)
+                for listKey in Array(listings.keys) { listings[listKey]?.replace(updated) }
+            }
+            if key != .favorites { listings[.favorites] = nil }
         } catch {
             problemText = error.localizedDescription
         }
+    }
+
+    func toggleFavorite(_ photo: Photo, in key: PhotoListKey) async {
+        await setFavorite([photo], isFavorite: !photo.isFavorite, in: key)
     }
 
     /// Takes the photos that are no longer favorites out of the Favorites
@@ -160,28 +219,35 @@ final class PhotosModel {
         if !dropped.isEmpty { listings[.favorites]?.remove(dropped) }
     }
 
-    func moveToTrash(_ photo: Photo) async {
+    func moveToTrash(_ photos: [Photo]) async {
+        let photoIds = photos.map(\.id)
         do {
-            try await connection.trashPhotos([photo.id])
-            listings[.library]?.remove([photo.id])
-            listings[.favorites]?.remove([photo.id])
+            try await connection.trashPhotos(photoIds)
+            // A photo in the Trash is in no list but the Trash, and no album
+            // counts it.
+            for key in Array(listings.keys) where key != .trash { listings[key]?.remove(Set(photoIds)) }
             listings[.trash] = nil
             library = nil
             doneText = String(localized: "Moved to Trash")
             await loadLibrary()
+            if albums != nil { await albumsChanged() }
         } catch {
             problemText = error.localizedDescription
         }
+    }
+
+    func moveToTrash(_ photo: Photo) async {
+        await moveToTrash([photo])
     }
 
     func restore(_ photo: Photo) async {
         do {
             try await connection.restorePhotos([photo.id])
             listings[.trash]?.remove([photo.id])
-            listings[.library] = nil
-            listings[.favorites] = nil
+            for key in Array(listings.keys) where key != .trash { listings[key] = nil }
             doneText = String(localized: "Restored to your library")
             await loadLibrary()
+            if albums != nil { await albumsChanged() }
         } catch {
             problemText = error.localizedDescription
         }
@@ -225,6 +291,166 @@ final class PhotosModel {
             problemText = error.localizedDescription
         }
     }
+
+    // MARK: Albums
+
+    /// Reads the albums, unless they have been read.
+    func loadAlbums() async {
+        guard albums == nil else { return }
+        await reloadAlbums()
+    }
+
+    /// Reads the albums again.
+    func reloadAlbums() async {
+        do {
+            albums = try await connection.photoAlbums()
+            albumsFailureText = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            if albums == nil { albumsFailureText = error.localizedDescription }
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Reads the suggestions again. They are a help, not the page: a failure
+    /// to find them leaves the albums as they are.
+    func reloadSuggestions() async {
+        guard let found = try? await connection.photoAlbumSuggestions() else { return }
+        suggestions = found
+        hasReadSuggestions = true
+        await loadSuggestionSamples()
+    }
+
+    /// What the Albums section needs on arriving: the albums and the
+    /// suggestions, each read once.
+    func loadAlbumsSection() async {
+        await loadAlbums()
+        if !hasReadSuggestions { await reloadSuggestions() }
+    }
+
+    /// Reads the albums and the suggestions anew, on a pull to refresh.
+    func refreshAlbumsSection() async {
+        await reloadAlbums()
+        await reloadSuggestions()
+    }
+
+    /// After photos move in or out of albums: the albums, and the suggestions
+    /// if they have been read, since photos in an album are no longer
+    /// suggested.
+    private func albumsChanged() async {
+        await reloadAlbums()
+        if hasReadSuggestions { await reloadSuggestions() }
+    }
+
+    /// The small pictures a suggestion is shown by, read once each.
+    private func loadSuggestionSamples() async {
+        let photoIds = suggestions.flatMap { Array($0.samplePhotoIds.prefix(PhotoAlbumSuggestion.shownSampleCount)) }.filter { suggestionSamples[$0] == nil }
+        let connection = connection
+        await withTaskGroup(of: Photo?.self) { group in
+            for photoId in photoIds {
+                group.addTask { try? await connection.photoDetail(photoId).photo }
+            }
+            for await photo in group {
+                if let photo { suggestionSamples[photo.id] = photo }
+            }
+        }
+    }
+
+    /// Makes an album holding the photos, which may be none, from a title the
+    /// person gave.
+    func createAlbum(title: String, photos: [Photo]) async {
+        do {
+            let created = try await connection.createPhotoAlbum(title: title, photoIds: photos.map(\.id))
+            doneText = String(localized: "Created “\(created.albumTitle)”")
+            await albumsChanged()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Makes an album of the photos a suggestion covers.
+    func createAlbum(title: String, from suggestion: PhotoAlbumSuggestion) async {
+        do {
+            let photoIds = try await connection.photoIds(of: suggestion)
+            let created = try await connection.createPhotoAlbum(title: title, photoIds: photoIds)
+            doneText = String(localized: "Created “\(created.albumTitle)”")
+            await albumsChanged()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    func add(_ photos: [Photo], to album: PhotoAlbum) async {
+        do {
+            let addedCount = try await connection.addPhotos(photos.map(\.id), toAlbum: album.id)
+            listings[.album(album.id)] = nil
+            doneText = addedCount == 0 ? String(localized: "Already in “\(album.albumTitle)”") : String(localized: "Added to “\(album.albumTitle)”")
+            await albumsChanged()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Takes photos out of an album, which leaves them in the library.
+    func remove(_ photos: [Photo], fromAlbum albumId: String) async {
+        do {
+            try await connection.removePhotos(photos.map(\.id), fromAlbum: albumId)
+            listings[.album(albumId)]?.remove(Set(photos.map(\.id)))
+            doneText = String(localized: "Removed from the album")
+            await albumsChanged()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    func rename(_ album: PhotoAlbum, to title: String) async {
+        do {
+            let renamed = try await connection.renamePhotoAlbum(album.id, title: title)
+            albums = albums?.map { $0.id == renamed.id ? renamed : $0 }
+            await reloadAlbums()
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Deletes an album; true when it is gone. Its photos stay in the library.
+    func delete(_ album: PhotoAlbum) async -> Bool {
+        do {
+            try await connection.deletePhotoAlbum(album.id)
+            albums?.removeAll { $0.id == album.id }
+            listings[.album(album.id)] = nil
+            doneText = String(localized: "Deleted the album")
+            return true
+        } catch {
+            problemText = error.localizedDescription
+            return false
+        }
+    }
+
+    func setCover(of album: PhotoAlbum, to photo: Photo) async {
+        do {
+            let changed = try await connection.setPhotoAlbumCover(album.id, photoId: photo.id)
+            albums = albums?.map { $0.id == changed.id ? changed : $0 }
+            doneText = String(localized: "Album cover changed")
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Asks for an album's title on the screen that raised the request.
+    func requestAlbumTitle(_ purpose: AlbumTitleRequest.Purpose, scope: AlbumTitleRequest.Scope) {
+        albumTitleRequest = AlbumTitleRequest(purpose: purpose, scope: scope)
+    }
+
+    /// What the title the person gave is used for.
+    func submit(_ request: AlbumTitleRequest, title: String) async {
+        switch request.purpose {
+        case .new: await createAlbum(title: title, photos: [])
+        case .newWith(let photos): await createAlbum(title: title, photos: photos)
+        case .suggestion(let suggestion): await createAlbum(title: title, from: suggestion)
+        case .rename(let album): await rename(album, to: title)
+        }
+    }
 }
 
 /// OpenedPhoto is the photo the viewer was opened on.
@@ -233,32 +459,52 @@ struct OpenedPhoto: Identifiable {
 }
 
 /// PhotosScreen is the person's photo library: a grid by day with Library,
-/// Favorites and Trash under the title, and a viewer for one photo.
+/// Favorites, Albums and Trash under the title, a Select mode, and a viewer
+/// for one photo.
 struct PhotosScreen: View {
     @State private var model: PhotosModel
     @State private var opened: OpenedPhoto?
     @State private var isConfirmingEmptyTrash = false
+    @State private var isSelecting = false
+    @State private var selectedPhotoIds: Set<String> = []
+    @State private var isConfirmingTrashOfSelection = false
     #if DEBUG
         @State private var isDemoViewerOpened = false
+        @State private var isDemoAlbumOpened = false
     #endif
 
     init(connection: Connection) {
         let model = PhotosModel(connection: connection)
         #if DEBUG
-            // `-TeaNodeScreen photos-trash` opens on the Trash.
-            if DemoServer.isRequested, DemoServer.screen == "photos-trash" { model.collection = .trash }
+            // `-TeaNodeScreen photos-trash` opens on the Trash, and
+            // `photos-albums` on the Albums.
+            if DemoServer.isRequested, DemoServer.screen == "photos-trash" { model.section = .trash }
+            if DemoServer.isRequested, DemoServer.screen == "photos-albums" || DemoServer.screen == "photos-album" { model.section = .albums }
         #endif
         _model = State(initialValue: model)
+        #if DEBUG
+            // `-TeaNodeScreen photos-select` starts in Select mode with two photos chosen.
+            if DemoServer.isRequested, DemoServer.screen == "photos-select" {
+                _isSelecting = State(initialValue: true)
+                _selectedPhotoIds = State(initialValue: ["demo-02", "demo-05"])
+            }
+        #endif
     }
+
+    /// The list of photos on show; nil under Albums.
+    private var key: PhotoListKey? { model.section.collection.map { .collection($0) } }
+    private var photos: [Photo] { key.map { model.photos(in: $0) } ?? [] }
+    private var selectedPhotos: [Photo] { photos.filter { selectedPhotoIds.contains($0.id) } }
+    private var canSelect: Bool { (model.section == .library || model.section == .favorites) && !photos.isEmpty }
 
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Photos")
+                .navigationTitle(isSelecting ? selectionTitle : String(localized: "Photos"))
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Picker("Show", selection: $model.collection) {
-                        ForEach(PhotoCollection.allCases) { collection in
-                            Text(collection.title).tag(collection)
+                    Picker("Show", selection: $model.section) {
+                        ForEach(PhotoSection.allCases) { section in
+                            Text(section.title).tag(section)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -266,48 +512,40 @@ struct PhotosScreen: View {
                     .padding(.horizontal)
                     .padding(.bottom, 8)
                 }
-                .toolbar {
-                    MenuButton()
-                    if model.collection != .trash {
-                        ToolbarItem(placement: .primaryAction) {
-                            NavigationLink {
-                                PhotoBackupView(connection: model.connection)
-                            } label: {
-                                Label("Photo backup", systemImage: "icloud.and.arrow.up")
-                            }
-                        }
-                    }
-                    if model.collection == .trash, !model.photos.isEmpty {
-                        ToolbarItem(placement: .primaryAction) {
-                            Menu {
-                                Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
-                            } label: {
-                                Label("More", systemImage: "ellipsis")
-                            }
-                            .confirmationDialog("Empty Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
-                                Button("Delete All Forever", role: .destructive) { Task { await model.emptyTrash() } }
-                            } message: {
-                                Text("These photos will be deleted for good. This cannot be undone.")
-                            }
-                        }
-                    }
-                }
+                .toolbar { toolbarContent }
                 .withoutSwipeBack()
-                .refreshable { await model.reload(model.collection) }
-                .task(id: model.collection) { await model.load(model.collection) }
-                .task { await model.loadLibrary() }
-                .task(id: model.hasWaitingPhotos) {
-                    if model.hasWaitingPhotos { await model.followWaitingPhotos() }
+                .refreshable {
+                    if let key { await model.reload(key) } else { await model.refreshAlbumsSection() }
                 }
+                .task(id: model.section) {
+                    if let key { await model.load(key) } else { await model.loadAlbumsSection() }
+                }
+                .task { await model.loadLibrary() }
+                // The albums the Add to Album menus list.
+                .task { await model.loadAlbums() }
+                .task(id: key.map { model.hasWaitingPhotos(in: $0) }) {
+                    if let key, model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
+                }
+                .onChange(of: model.section) { _, _ in endSelection() }
+                .albumTitleAlert(model: model, scope: .library, isActive: opened == nil)
+                #if DEBUG
+                    .navigationDestination(isPresented: $isDemoAlbumOpened) {
+                        if let first = model.albums?.first { PhotoAlbumScreen(model: model, albumId: first.id) }
+                    }
+                #endif
         }
         .fullScreenCover(item: $opened) { opened in
-            PhotoViewer(model: model, openedPhotoId: opened.id)
+            PhotoViewer(model: model, listKey: key ?? .library, openedPhotoId: opened.id)
         }
         .toast(done: $model.doneText, problem: $model.problemText)
         #if DEBUG
+            // `-TeaNodeScreen photos-album` opens the first album.
+            .task(id: model.albums?.first?.id) {
+                if DemoServer.isRequested, DemoServer.screen == "photos-album", model.albums?.first != nil { isDemoAlbumOpened = true }
+            }
             // `-TeaNodeScreen photos-viewer` opens the viewer on the first photo.
-            .task(id: model.photos.first?.id) {
-                if DemoServer.isRequested, DemoServer.screen == "photos-viewer", !isDemoViewerOpened, let first = model.photos.first {
+            .task(id: model.photos(in: .library).first?.id) {
+                if DemoServer.isRequested, DemoServer.screen == "photos-viewer", !isDemoViewerOpened, let first = model.photos(in: .library).first {
                     isDemoViewerOpened = true
                     opened = OpenedPhoto(id: first.id)
                 }
@@ -315,56 +553,146 @@ struct PhotosScreen: View {
         #endif
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if let listing = model.listing {
-            if listing.photos.isEmpty {
-                ScrollView {
-                    PhotosEmptyView(
-                        collection: model.collection, trashRetentionDays: model.library?.trashRetentionDays, backupConnection: model.connection)
-                        .containerRelativeFrame(.vertical)
-                }
-            } else {
-                grid(listing)
-            }
-        } else if let failureText = model.failureText {
-            ScrollView {
-                PhotosFailedView(failureText: failureText) {
-                    Task { await model.reload(model.collection) }
-                }
-                .containerRelativeFrame(.vertical)
-            }
-        } else {
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+    private var selectionTitle: String {
+        selectedPhotoIds.isEmpty ? String(localized: "Select Items") : String(localized: "\(selectedPhotoIds.count) Selected")
     }
 
-    private func grid(_ listing: PhotoListing) -> some View {
-        ScrollView {
-            if model.collection == .trash, let retentionDays = model.library?.trashRetentionDays, retentionDays > 0 {
-                Text("Photos in the Trash are deleted for good after \(retentionDays) days.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.bottom, 4)
+    private func endSelection() {
+        isSelecting = false
+        selectedPhotoIds = []
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        MenuButton()
+        if model.section == .albums {
+            ToolbarItem(placement: .primaryAction) {
+                Button("New Album", systemImage: "plus") {
+                    model.requestAlbumTitle(.new, scope: .library)
+                }
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
-                ForEach(listing.days) { day in
-                    Section {
-                        ForEach(day.photos) { photo in
-                            PhotoCell(photo: photo, model: model) { opened = OpenedPhoto(id: photo.id) }
-                        }
-                    } header: {
-                        PhotoDayHeader(day: day)
+        } else if isSelecting {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Done") { endSelection() }
+            }
+            if let key {
+                PhotoSelectionToolbar(
+                    model: model, selectedPhotos: selectedPhotos, listKey: key, scope: .library, isConfirmingTrash: $isConfirmingTrashOfSelection,
+                    onEnd: endSelection)
+            }
+        } else {
+            if model.section != .trash {
+                ToolbarItem(placement: .primaryAction) {
+                    NavigationLink {
+                        PhotoBackupView(connection: model.connection)
+                    } label: {
+                        Label("Photo backup", systemImage: "icloud.and.arrow.up")
                     }
                 }
             }
-            if listing.isLoadingPage {
-                ProgressView()
-                    .padding()
+            if canSelect {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Select") { isSelecting = true }
+                }
             }
+            if model.section == .trash, !photos.isEmpty {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                    .confirmationDialog("Empty Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
+                        Button("Delete All Forever", role: .destructive) { Task { await model.emptyTrash() } }
+                    } message: {
+                        Text("These photos will be deleted for good. This cannot be undone.")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let key {
+            if let listing = model.listing(key) {
+                if listing.photos.isEmpty {
+                    ScrollView {
+                        PhotosEmptyView(
+                            collection: model.section.collection ?? .library, trashRetentionDays: model.library?.trashRetentionDays,
+                            backupConnection: model.connection
+                        )
+                        .containerRelativeFrame(.vertical)
+                    }
+                } else {
+                    ScrollView {
+                        if model.section == .trash, let retentionDays = model.library?.trashRetentionDays, retentionDays > 0 {
+                            Text("Photos in the Trash are deleted for good after \(retentionDays) days.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.bottom, 4)
+                        }
+                        PhotoGrid(
+                            listing: listing, listKey: key, model: model, scope: .library, isSelecting: isSelecting, selectedPhotoIds: $selectedPhotoIds
+                        ) { photo in
+                            opened = OpenedPhoto(id: photo.id)
+                        }
+                    }
+                }
+            } else if let failureText = model.failureText(key) {
+                ScrollView {
+                    PhotosFailedView(failureText: failureText) {
+                        Task { await model.reload(key) }
+                    }
+                    .containerRelativeFrame(.vertical)
+                }
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            PhotoAlbumsView(model: model)
+        }
+    }
+}
+
+/// PhotoGrid is the photos of a list in days, as squares. It is the library's
+/// grid and an album's: both open a photo with a tap, and in Select mode a tap
+/// chooses it instead.
+struct PhotoGrid: View {
+    let listing: PhotoListing
+    let listKey: PhotoListKey
+    let model: PhotosModel
+    let scope: AlbumTitleRequest.Scope
+    let isSelecting: Bool
+    @Binding var selectedPhotoIds: Set<String>
+    let onOpen: (Photo) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
+            ForEach(listing.days) { day in
+                Section {
+                    ForEach(day.photos) { photo in
+                        PhotoCell(
+                            photo: photo, model: model, listKey: listKey, scope: scope, isSelecting: isSelecting, isSelected: selectedPhotoIds.contains(photo.id)
+                        ) {
+                            if isSelecting {
+                                if selectedPhotoIds.contains(photo.id) { selectedPhotoIds.remove(photo.id) } else { selectedPhotoIds.insert(photo.id) }
+                            } else {
+                                onOpen(photo)
+                            }
+                        }
+                    }
+                } header: {
+                    PhotoDayHeader(day: day)
+                }
+            }
+        }
+        if listing.isLoadingPage {
+            ProgressView()
+                .padding()
         }
     }
 }
@@ -395,24 +723,35 @@ struct PhotoDayHeader: View {
 
 /// PhotoCell is one photo in the grid: its small preview in a square, with its
 /// length if it is a video, a heart if it is a favorite, and a mark while it is
-/// being made ready or if that failed.
+/// being made ready or if that failed. In Select mode it has a circle that a
+/// tap fills.
 struct PhotoCell: View {
     let photo: Photo
     let model: PhotosModel
-    let onOpen: () -> Void
+    let listKey: PhotoListKey
+    let scope: AlbumTitleRequest.Scope
+    let isSelecting: Bool
+    let isSelected: Bool
+    let onTap: () -> Void
     @State private var picture: UIImage?
     @State private var isConfirmingTrash = false
     @State private var isConfirmingDelete = false
 
-    init(photo: Photo, model: PhotosModel, onOpen: @escaping () -> Void) {
+    init(
+        photo: Photo, model: PhotosModel, listKey: PhotoListKey, scope: AlbumTitleRequest.Scope, isSelecting: Bool, isSelected: Bool, onTap: @escaping () -> Void
+    ) {
         self.photo = photo
         self.model = model
-        self.onOpen = onOpen
+        self.listKey = listKey
+        self.scope = scope
+        self.isSelecting = isSelecting
+        self.isSelected = isSelected
+        self.onTap = onTap
         _picture = State(initialValue: photo.gridPreviewPath.flatMap { PhotoImages.cachedPicture(path: $0, accountKey: model.connection.accountKey) })
     }
 
     var body: some View {
-        Button(action: onOpen) {
+        Button(action: onTap) {
             // A square that the picture fills and is cut to; the color holds
             // the place until the picture is read.
             Color(.secondarySystemBackground)
@@ -424,11 +763,18 @@ struct PhotoCell: View {
                 .overlay(alignment: .bottomLeading) {
                     if photo.isFavorite { favoriteBadge }
                 }
+                .overlay {
+                    if isSelected { Color.accentColor.opacity(0.25) }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if isSelecting { selectionMark }
+                }
                 .clipped()
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .contextMenu { menu }
         .confirmationDialog("Move this photo to the Trash?", isPresented: $isConfirmingTrash, titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) { Task { await model.moveToTrash(photo) } }
@@ -446,7 +792,7 @@ struct PhotoCell: View {
             if let loaded = await PhotoImages.picture(path: path, connection: model.connection) { picture = loaded }
         }
         .onAppear {
-            Task { await model.loadMoreIfNeeded(showing: photo.id) }
+            Task { await model.loadMoreIfNeeded(showing: photo.id, in: listKey) }
         }
     }
 
@@ -464,6 +810,19 @@ struct PhotoCell: View {
         } else {
             ProgressView()
         }
+    }
+
+    // The circle is white over a dark shadow, whatever the picture under it
+    // is, and filled with the accent once chosen.
+    private var selectionMark: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .symbolRenderingMode(isSelected ? .palette : .monochrome)
+            .foregroundStyle(.white, Color.accentColor)
+            .font(.title3)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .shadow(color: .black.opacity(0.4), radius: 2)
+            .padding(6)
+            .accessibilityHidden(true)
     }
 
     // Light text on a dark pill, whatever the picture under it is.
@@ -507,7 +866,13 @@ struct PhotoCell: View {
             Button("Delete Forever", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
         } else {
             Button(photo.isFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Favorite"), systemImage: photo.isFavorite ? "heart.slash" : "heart") {
-                Task { await model.toggleFavorite(photo) }
+                Task { await model.toggleFavorite(photo, in: listKey) }
+            }
+            AddToAlbumMenu(model: model, photos: [photo], scope: scope, hiddenAlbumId: listKey.albumId)
+            if let albumId = listKey.albumId {
+                Button("Remove from Album", systemImage: "rectangle.stack.badge.minus") {
+                    Task { await model.remove([photo], fromAlbum: albumId) }
+                }
             }
             Button("Save to Photos", systemImage: "square.and.arrow.down") { Task { await model.saveToPhotos(photo) } }
             PhotoShareLink(photo: photo, connection: model.connection)

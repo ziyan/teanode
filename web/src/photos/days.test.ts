@@ -3,6 +3,7 @@ import {
   dayHeading,
   dayKey,
   formatByteSize,
+  formatDateRange,
   formatDuration,
   formatOffset,
   groupByDay,
@@ -123,5 +124,13 @@ describe('days', () => {
     expect(indexRange(2, 5)).toEqual([2, 3, 4, 5])
     expect(indexRange(5, 2)).toEqual([2, 3, 4, 5])
     expect(indexRange(3, 3)).toEqual([3])
+  })
+
+  it('writes the dates an album spans as a range, or one date for one day', () => {
+    // Newer ICU puts thin spaces round the dash; they read the same.
+    const range = formatDateRange('2030-07-12T09:00:00Z', '2030-07-14T18:00:00Z', 'en', 'UTC')
+    expect(range.replace(/[\u2009\u202f]/g, ' ')).toBe('Jul 12 – 14, 2030')
+    expect(formatDateRange('2030-07-12T09:00:00Z', '2030-07-12T18:00:00Z', 'en', 'UTC')).toBe('Jul 12, 2030')
+    expect(formatDateRange(null, null, 'en', 'UTC')).toBe('')
   })
 })

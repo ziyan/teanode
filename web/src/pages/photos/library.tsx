@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { PageHeadingActions } from '../../components/breadcrumb'
+import { PageHeadingActions, useBreadcrumbDetail } from '../../components/breadcrumb'
 import { ErrorMessage, Loading } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
-import { CloseIcon, DownloadIcon, HeartIcon, RestoreIcon, TrashIcon, UploadIcon } from '../../components/icons'
+import {
+  AlbumRemoveIcon,
+  CloseIcon,
+  DownloadIcon,
+  HeartIcon,
+  MoreIcon,
+  RestoreIcon,
+  TrashIcon,
+  UploadIcon,
+} from '../../components/icons'
+import { MenuButton } from '../../components/menuButton'
 import { Pager, useKeepPageInRange, usePageInAddress } from '../../components/pager'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
@@ -12,22 +22,32 @@ import { useQuery } from '../../components/useQuery'
 import { useTranslation, type Translation } from '../../i18n/i18n'
 import {
   PHOTOS_PER_PAGE,
+  addPhotosToAlbum,
   countPhotos,
+  createPhotoAlbum,
+  deletePhotoAlbum,
   deletePhotosForever,
   emptyPhotoTrash,
   listPhotos,
   photoFilePath,
   readPhoto,
+  readPhotoAlbum,
   readPhotoLibrary,
+  removePhotosFromAlbum,
+  renamePhotoAlbum,
   restorePhotos,
+  setPhotoAlbumCover,
   setPhotoFavorite,
   trashPhotos,
   type Photo,
+  type PhotoAlbum,
   type PhotoListKind,
 } from '../../photos/api'
 import { formatByteSize, indexRange } from '../../photos/days'
 import { photoUploads, useUploadItems } from '../../photos/uploadQueue'
 import { useSession } from '../../session'
+import { albumAddress } from './albums'
+import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, type PhotoSection } from './albumControls'
 import { PhotoGrid } from './grid'
 import { UploadTray } from './uploadTray'
 import { PhotoViewer } from './viewer'
@@ -48,14 +68,11 @@ const FAVORITE_CONCURRENCY = 6
 // otherwise take for a flood and block.
 const DOWNLOAD_GAP_MS = 300
 
-const LIST_KINDS: { kind: PhotoListKind; label: 'photos.listLibrary' | 'photos.listFavorites' | 'photos.listTrash' }[] =
-  [
-    { kind: 'library', label: 'photos.listLibrary' },
-    { kind: 'favorites', label: 'photos.listFavorites' },
-    { kind: 'trash', label: 'photos.listTrash' },
-  ]
-
-type Confirmation = { kind: 'trash'; photos: Photo[] } | { kind: 'delete'; photos: Photo[] } | { kind: 'emptyTrash' }
+type Confirmation =
+  | { kind: 'trash'; photos: Photo[] }
+  | { kind: 'delete'; photos: Photo[] }
+  | { kind: 'emptyTrash' }
+  | { kind: 'deleteAlbum' }
 
 export function PhotosPage() {
   const session = useSession()
@@ -68,7 +85,9 @@ function AccountPhotosPage() {
   const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const { photoId } = useParams()
+  // The album being looked into, when the address is an album's: the same
+  // page then shows that album's photos, in the same grid and viewer.
+  const { photoId, photoAlbumId } = useParams()
   const [parameters, setParameters] = useSearchParams()
   const fileInput = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -80,13 +99,22 @@ function AccountPhotosPage() {
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const anchorIndex = useRef<number | null>(null)
   const [favoriteOverrides, setFavoriteOverrides] = useState<ReadonlyMap<string, boolean>>(new Map())
+  // The photos a new album is being named for, from a selection or the viewer.
+  const [newAlbumPhotos, setNewAlbumPhotos] = useState<Photo[] | null>(null)
+  const [isRenamingAlbum, setIsRenamingAlbum] = useState(false)
+  const basePath = photoAlbumId ? albumAddress(photoAlbumId) : '/photos'
 
-  const listKind: PhotoListKind =
-    parameters.get('view') === 'favorites' ? 'favorites' : parameters.get('view') === 'trash' ? 'trash' : 'library'
+  const listKind: PhotoListKind = photoAlbumId
+    ? 'library'
+    : parameters.get('view') === 'favorites'
+      ? 'favorites'
+      : parameters.get('view') === 'trash'
+        ? 'trash'
+        : 'library'
   const searchText = parameters.get('search') ?? ''
   const [searchInput, setSearchInput] = useState(searchText)
   const { pageIndex, pageSize, offset, setPageIndex } = usePageInAddress({ defaultPageSize: PHOTOS_PER_PAGE })
-  const filter = useMemo(() => ({ listKind, searchText }), [listKind, searchText])
+  const filter = useMemo(() => ({ listKind, searchText, photoAlbumId }), [listKind, searchText, photoAlbumId])
   const userId = session.userId ?? ''
 
   // The search is sent once typing pauses, and starts again at the first
@@ -111,6 +139,9 @@ function AccountPhotosPage() {
   const library = useQuery(() => listPhotos(filter, offset, pageSize), [filter, offset, pageSize, userId])
   const count = useQuery(() => countPhotos(filter), [filter, userId])
   const info = useQuery(() => readPhotoLibrary(), [userId])
+  const album = useQuery(async () => (photoAlbumId ? await readPhotoAlbum(photoAlbumId) : null), [photoAlbumId, userId])
+  // The trail and the heading read the album's title, not its id.
+  useBreadcrumbDetail(album.data?.albumTitle ?? null)
   useKeepPageInRange(pageIndex, pageSize, count.data ?? null, setPageIndex)
 
   const photos = useMemo(
@@ -131,14 +162,15 @@ function AccountPhotosPage() {
     setSelectedIds(new Set())
     setIsSelectionMode(false)
     anchorIndex.current = null
-  }, [listKind, searchText, offset])
+  }, [listKind, searchText, offset, photoAlbumId])
 
   const refresh = useCallback(() => {
     void library.reload(true)
     void count.reload(true)
     void info.reload(true)
+    void album.reload(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [library.reload, count.reload, info.reload])
+  }, [library.reload, count.reload, info.reload, album.reload])
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
 
@@ -210,11 +242,14 @@ function AccountPhotosPage() {
     }
   }, [])
 
+  // Files go into the library; an album is filled from the photos in it.
+  const canUpload = !photoAlbumId
   const addFiles = (files: File[]) => {
+    if (!canUpload) return
     const { addedCount, ignoredCount } = photoUploads.add(files)
     if (ignoredCount > 0 && addedCount >= 0) toast.failed(t('photos.uploadIgnored'))
   }
-  const hasFiles = (event: React.DragEvent) => Array.from(event.dataTransfer.types).includes('Files')
+  const hasFiles = (event: React.DragEvent) => canUpload && Array.from(event.dataTransfer.types).includes('Files')
 
   // ---- The viewer and its address ----
 
@@ -230,20 +265,20 @@ function AccountPhotosPage() {
 
   const openPhoto = (photo: Photo) =>
     navigate(
-      { pathname: `/photos/${encodeURIComponent(photo.id)}`, search: location.search },
+      { pathname: `${basePath}/${encodeURIComponent(photo.id)}`, search: location.search },
       { state: { isFromGrid: true } },
     )
   const showPhoto = (photo: Photo) =>
     navigate(
-      { pathname: `/photos/${encodeURIComponent(photo.id)}`, search: location.search },
+      { pathname: `${basePath}/${encodeURIComponent(photo.id)}`, search: location.search },
       { replace: true, state: location.state },
     )
   const closeViewer = useCallback(() => {
     // Opened from the grid, the viewer is one step on the way back; opened
     // from a link, there is no step to go back to.
     if ((location.state as { isFromGrid?: boolean } | null)?.isFromGrid) navigate(-1)
-    else navigate({ pathname: '/photos', search: location.search }, { replace: true })
-  }, [location.state, location.search, navigate])
+    else navigate({ pathname: basePath, search: location.search }, { replace: true })
+  }, [location.state, location.search, navigate, basePath])
   // After the photo in the viewer leaves the list, the viewer moves on to the
   // one beside it, or closes when it was the only one.
   const moveViewerOn = () => {
@@ -348,6 +383,117 @@ function AccountPhotosPage() {
     }
   }
 
+  // ---- Albums ----
+
+  async function addToAlbum(targets: Photo[], target: PhotoAlbum) {
+    try {
+      const addedCount = await addPhotosToAlbum(
+        target.id,
+        targets.map((photo) => photo.id),
+      )
+      const viewAlbum = { label: t('photos.viewAlbum'), run: () => navigate(albumAddress(target.id)) }
+      if (addedCount === 0) toast.done(t('photos.alreadyInAlbum', { title: target.albumTitle }), viewAlbum)
+      else
+        toast.done(
+          plural(
+            addedCount,
+            { one: 'photos.addedToAlbumOne', other: 'photos.addedToAlbumOther' },
+            { title: target.albumTitle },
+          ),
+          viewAlbum,
+        )
+      clearSelection()
+      refresh()
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  async function createAlbumWith(targets: Photo[], albumTitle: string) {
+    setIsBusy(true)
+    try {
+      const created = await createPhotoAlbum(
+        albumTitle,
+        targets.map((photo) => photo.id),
+      )
+      toast.done(t('photos.albumCreated', { title: created.albumTitle }), {
+        label: t('photos.viewAlbum'),
+        run: () => navigate(albumAddress(created.id)),
+      })
+      setNewAlbumPhotos(null)
+      clearSelection()
+      refresh()
+    } catch (caught) {
+      failedWith(caught)
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function removeFromAlbum(targets: Photo[]) {
+    if (!photoAlbumId) return
+    const removedIds = targets.map((photo) => photo.id)
+    try {
+      const removedCount = await removePhotosFromAlbum(photoAlbumId, removedIds)
+      toast.done(plural(removedCount, { one: 'photos.removedFromAlbumOne', other: 'photos.removedFromAlbumOther' }), {
+        label: t('common.undo'),
+        run: async () => {
+          try {
+            await addPhotosToAlbum(photoAlbumId, removedIds)
+            refreshRef.current()
+          } catch (caught) {
+            failedWith(caught)
+          }
+        },
+      })
+      if (removedIds.includes(photoId ?? '')) moveViewerOn()
+      clearSelection()
+      refresh()
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  async function makeCover(photo: Photo) {
+    if (!photoAlbumId) return
+    try {
+      await setPhotoAlbumCover(photoAlbumId, photo.id)
+      toast.done(t('photos.coverSet'))
+      refresh()
+    } catch (caught) {
+      failedWith(caught)
+    }
+  }
+
+  async function renameAlbum(albumTitle: string) {
+    if (!photoAlbumId) return
+    setIsBusy(true)
+    try {
+      await renamePhotoAlbum(photoAlbumId, albumTitle)
+      setIsRenamingAlbum(false)
+      await album.reload(true)
+    } catch (caught) {
+      failedWith(caught)
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  async function confirmDeleteAlbum() {
+    if (!photoAlbumId) return
+    setIsBusy(true)
+    try {
+      await deletePhotoAlbum(photoAlbumId)
+      toast.done(t('photos.albumDeleted', { title: album.data?.albumTitle ?? '' }))
+      setConfirmation(null)
+      navigate('/photos/albums', { replace: true })
+    } catch (caught) {
+      failedWith(caught)
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
   // One file each; several are several downloads, a moment apart.
   async function downloadOriginals(targets: Photo[]) {
     for (const photo of targets) {
@@ -386,6 +532,10 @@ function AccountPhotosPage() {
   const selectedPhotos = photos.filter((photo) => selectedIds.has(photo.id))
   const areAllSelectedFavorites = selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.isFavorite)
 
+  const selectSection = (section: PhotoSection) => {
+    if (section === 'albums') navigate('/photos/albums')
+    else setListKind(section)
+  }
   const setListKind = (kind: PhotoListKind) =>
     setParameters((previous) => {
       const written = new URLSearchParams(previous)
@@ -402,11 +552,13 @@ function AccountPhotosPage() {
   const emptyText =
     searchText !== ''
       ? t('photos.emptySearch')
-      : listKind === 'favorites'
-        ? t('photos.emptyFavorites')
-        : isTrash
-          ? t('photos.emptyTrash')
-          : t('photos.emptyLibrary')
+      : photoAlbumId
+        ? t('photos.emptyAlbum')
+        : listKind === 'favorites'
+          ? t('photos.emptyFavorites')
+          : isTrash
+            ? t('photos.emptyTrash')
+            : t('photos.emptyLibrary')
   const trashedCount = info.data?.trashedCount ?? 0
   const trashDays = info.data?.trashRetentionDays ?? 0
 
@@ -435,9 +587,11 @@ function AccountPhotosPage() {
     >
       <ErrorMessage error={library.error} />
       <PageHeadingActions>
-        <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
-          <UploadIcon size={16} /> {t('photos.upload')}
-        </button>
+        {canUpload && (
+          <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
+            <UploadIcon size={16} /> {t('photos.upload')}
+          </button>
+        )}
         {photos.length > 0 && (
           <button
             type="button"
@@ -446,6 +600,37 @@ function AccountPhotosPage() {
           >
             {isSelectionMode || selectedIds.size > 0 ? t('common.cancel') : t('photos.select')}
           </button>
+        )}
+        {photoAlbumId && (
+          <MenuButton
+            label={t('photos.albumMenu')}
+            className="icon-button"
+            icon={<MoreIcon size={18} />}
+            render={(close) => (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    setIsRenamingAlbum(true)
+                  }}
+                >
+                  {t('photos.renameAlbum')}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    close()
+                    setConfirmation({ kind: 'deleteAlbum' })
+                  }}
+                >
+                  {t('photos.deleteAlbum')}
+                </button>
+              </>
+            )}
+          />
         )}
       </PageHeadingActions>
       <input
@@ -518,6 +703,23 @@ function AccountPhotosPage() {
                   <HeartIcon size={18} />
                 </button>
               </Tooltip>
+              <AddToAlbumMenu
+                hiddenAlbumId={photoAlbumId}
+                onChooseAlbum={(target) => void addToAlbum(selectedPhotos, target)}
+                onNewAlbum={() => setNewAlbumPhotos(selectedPhotos)}
+              />
+              {photoAlbumId && (
+                <Tooltip label={t('photos.removeFromAlbum')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.removeFromAlbum')}
+                    onClick={() => void removeFromAlbum(selectedPhotos)}
+                  >
+                    <AlbumRemoveIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
               <Tooltip label={t('photos.download')}>
                 <button
                   type="button"
@@ -551,19 +753,7 @@ function AccountPhotosPage() {
             aria-label={t('photos.search')}
             onChange={(event) => setSearchInput(event.target.value)}
           />
-          <div className="segmented" role="group" aria-label={t('photos.show')}>
-            {LIST_KINDS.map((entry) => (
-              <button
-                key={entry.kind}
-                type="button"
-                className={entry.kind === listKind ? 'active' : ''}
-                aria-pressed={entry.kind === listKind}
-                onClick={() => setListKind(entry.kind)}
-              >
-                {t(entry.label)}
-              </button>
-            ))}
-          </div>
+          {!photoAlbumId && <PhotoSections current={listKind} onSelect={selectSection} />}
           {isTrash && trashedCount > 0 && (
             <button type="button" className="danger" onClick={() => setConfirmation({ kind: 'emptyTrash' })}>
               {t('photos.emptyTrashButton')}
@@ -606,7 +796,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {info.data && !searchText && listKind === 'library' && (
+      {info.data && !searchText && !photoAlbumId && listKind === 'library' && (
         <SettingsSection card title={t('photos.libraryTitle')} description={t('photos.libraryHint')}>
           <SettingsRow
             title={t('photos.libraryContents')}
@@ -640,13 +830,18 @@ function AccountPhotosPage() {
           previousPhoto={viewerPrevious}
           nextPhoto={viewerNext}
           isTrashed={Boolean(viewerPhoto.trashedAt) || isTrash}
-          isPaused={confirmation !== null}
+          isPaused={confirmation !== null || newAlbumPhotos !== null || isRenamingAlbum}
+          photoAlbumId={photoAlbumId}
           onNavigate={showPhoto}
           onClose={closeViewer}
           onToggleFavorite={(photo) => void setFavorites([photo], !photo.isFavorite)}
           onTrash={(photo) => setConfirmation({ kind: 'trash', photos: [photo] })}
           onRestore={(photo) => void restore([photo])}
           onDeleteForever={(photo) => setConfirmation({ kind: 'delete', photos: [photo] })}
+          onAddToAlbum={(photo, target) => addToAlbum([photo], target)}
+          onNewAlbum={(photo) => setNewAlbumPhotos([photo])}
+          onRemoveFromAlbum={photoAlbumId ? (photo) => removeFromAlbum([photo]) : undefined}
+          onSetCover={photoAlbumId ? (photo) => makeCover(photo) : undefined}
         />
       )}
       {photoId && !viewerPhoto && !library.loading && !lookup.loading && (
@@ -691,6 +886,36 @@ function AccountPhotosPage() {
           busy={isBusy}
           onConfirm={() => void confirmEmptyTrash()}
           onClose={() => setConfirmation(null)}
+        />
+      )}
+
+      {confirmation?.kind === 'deleteAlbum' && (
+        <ConfirmDialog
+          title={t('photos.deleteAlbumTitle', { title: album.data?.albumTitle ?? '' })}
+          body={t('photos.deleteAlbumBody')}
+          confirmLabel={t('photos.deleteAlbum')}
+          busy={isBusy}
+          onConfirm={() => void confirmDeleteAlbum()}
+          onClose={() => setConfirmation(null)}
+        />
+      )}
+      {newAlbumPhotos && (
+        <AlbumTitleDialog
+          title={t('photos.newAlbum')}
+          submitLabel={t('common.create')}
+          isBusy={isBusy}
+          onSubmit={(albumTitle) => void createAlbumWith(newAlbumPhotos, albumTitle)}
+          onClose={() => setNewAlbumPhotos(null)}
+        />
+      )}
+      {isRenamingAlbum && (
+        <AlbumTitleDialog
+          title={t('photos.renameAlbum')}
+          submitLabel={t('common.save')}
+          initialTitle={album.data?.albumTitle ?? ''}
+          isBusy={isBusy}
+          onSubmit={(albumTitle) => void renameAlbum(albumTitle)}
+          onClose={() => setIsRenamingAlbum(false)}
         />
       )}
 

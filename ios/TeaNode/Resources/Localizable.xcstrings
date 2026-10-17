@@ -2405,6 +2405,64 @@
         }
       }
     },
+    "%lld photos": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld photo"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld photos"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 枚の写真"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 枚の写真"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 张照片"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 张照片"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld question": {
       "localizations": {
         "ja": {
@@ -2603,6 +2661,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "合并了 %lld 条重复内容"
+          }
+        }
+      }
+    },
+    "%lld Selected": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件を選択中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选择 %lld 项"
           }
         }
       }
@@ -3989,6 +4063,38 @@
         }
       }
     },
+    "Added to “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」に追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加到“%@”"
+          }
+        }
+      }
+    },
+    "Add to Album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムに追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到相簿"
+          }
+        }
+      }
+    },
     "Address copied": {
       "localizations": {
         "ja": {
@@ -4005,6 +4111,38 @@
         }
       }
     },
+    "Albums": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相簿"
+          }
+        }
+      }
+    },
+    "Album cover changed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムのカバーを変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相簿封面已更改"
+          }
+        }
+      }
+    },
     "all follow-ups": {
       "localizations": {
         "ja": {
@@ -4017,6 +4155,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有跟进"
+          }
+        }
+      }
+    },
+    "Already in “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すでに「%@」に入っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在“%@”中"
           }
         }
       }
@@ -4085,6 +4239,38 @@
         }
       }
     },
+    "Choose photos in your library and add them to a new album, or make an empty one.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリで写真を選んで新しいアルバムに追加するか、空のアルバムを作成してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在图库中选择照片并添加到新相簿，或者先建一个空相簿。"
+          }
+        }
+      }
+    },
+    "Choose photos in your library and add them here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブラリで写真を選んで、ここに追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在图库中选择照片，再添加到这里。"
+          }
+        }
+      }
+    },
     "Could not be made ready": {
       "localizations": {
         "ja": {
@@ -4101,6 +4287,38 @@
         }
       }
     },
+    "Created “%@”": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を作成しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已创建“%@”"
+          }
+        }
+      }
+    },
+    "Create Album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムを作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建相簿"
+          }
+        }
+      }
+    },
     "Date": {
       "localizations": {
         "ja": {
@@ -4113,6 +4331,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日期"
+          }
+        }
+      }
+    },
+    "Delete Album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除相簿"
           }
         }
       }
@@ -4149,6 +4383,22 @@
         }
       }
     },
+    "Delete this album?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアルバムを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这个相簿？"
+          }
+        }
+      }
+    },
     "Delete this photo for good?": {
       "localizations": {
         "ja": {
@@ -4161,6 +4411,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "要永久删除这张照片吗？"
+          }
+        }
+      }
+    },
+    "Deleted the album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除相簿"
           }
         }
       }
@@ -4293,6 +4559,22 @@
         }
       }
     },
+    "Move these photos to the Trash?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらの写真をゴミ箱に移動しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将这些照片移到废纸篓？"
+          }
+        }
+      }
+    },
     "Move this photo to the Trash?": {
       "localizations": {
         "ja": {
@@ -4325,6 +4607,54 @@
         }
       }
     },
+    "No albums yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムはまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有相簿"
+          }
+        }
+      }
+    },
+    "New Album…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規アルバム…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建相簿…"
+          }
+        }
+      }
+    },
+    "New Album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新規アルバム"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建相簿"
+          }
+        }
+      }
+    },
     "No favorites": {
       "localizations": {
         "ja": {
@@ -4337,6 +4667,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有收藏"
+          }
+        }
+      }
+    },
+    "No photos in this album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアルバムに写真はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个相簿里没有照片"
           }
         }
       }
@@ -4553,6 +4899,22 @@
         }
       }
     },
+    "Remove from Album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムから削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从相簿中移除"
+          }
+        }
+      }
+    },
     "Remove from Favorites": {
       "localizations": {
         "ja": {
@@ -4565,6 +4927,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消收藏"
+          }
+        }
+      }
+    },
+    "Rename Album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバム名を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名相簿"
+          }
+        }
+      }
+    },
+    "Removed from the album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムから削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从相簿中移除"
           }
         }
       }
@@ -4649,6 +5043,38 @@
         }
       }
     },
+    "Suggested": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "おすすめ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推荐"
+          }
+        }
+      }
+    },
+    "Select Items": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目を選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择项目"
+          }
+        }
+      }
+    },
     "TeaNode could not make a picture of it.": {
       "localizations": {
         "ja": {
@@ -4677,6 +5103,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TeaNode 无权向“照片”添加内容。请在“设置”的“照片”中允许。"
+          }
+        }
+      }
+    },
+    "The photos stay in your library.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真はライブラリに残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片仍会保留在你的图库中。"
           }
         }
       }
@@ -4741,6 +5183,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "日期未知"
+          }
+        }
+      }
+    },
+    "Use as Album Cover": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アルバムのカバーにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为相簿封面"
           }
         }
       }

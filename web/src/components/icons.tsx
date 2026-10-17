@@ -1012,3 +1012,36 @@ export function RestoreIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// An album: a photo with another behind it, as albums are stacked in every
+// photo app.
+export function AlbumIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+    </Icon>
+  )
+}
+
+// Add to an album: the album with a plus in its front photo.
+export function AlbumAddIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+      <path d="M10 11.5v6M7 14.5h6" />
+    </Icon>
+  )
+}
+
+// Take out of an album: the album with a minus in its front photo.
+export function AlbumRemoveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+      <path d="M7 14.5h6" />
+    </Icon>
+  )
+}

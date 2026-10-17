@@ -85,11 +85,40 @@ public struct PhotoPreview: Codable, Hashable, Sendable {
     public let previewUrl: String
 }
 
-/// PhotoDetail is one photo with its files and previews.
+/// PhotoAlbumReference is an album a photo is in, as the photo says it: enough
+/// to name it and to open it.
+public struct PhotoAlbumReference: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let albumTitle: String
+
+    public init(id: String, albumTitle: String) {
+        self.id = id
+        self.albumTitle = albumTitle
+    }
+}
+
+/// PhotoDetail is one photo with its files, previews and the albums it is in.
 public struct PhotoDetail: Codable, Hashable, Sendable {
     public let photo: Photo
     public let photoFiles: [PhotoFile]
     public let photoPreviews: [PhotoPreview]
+    public let albums: [PhotoAlbumReference]
+
+    public init(photo: Photo, photoFiles: [PhotoFile], photoPreviews: [PhotoPreview], albums: [PhotoAlbumReference] = []) {
+        self.photo = photo
+        self.photoFiles = photoFiles
+        self.photoPreviews = photoPreviews
+        self.albums = albums
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        photo = try container.decode(Photo.self, forKey: .photo)
+        photoFiles = try container.decode([PhotoFile].self, forKey: .photoFiles)
+        photoPreviews = try container.decode([PhotoPreview].self, forKey: .photoPreviews)
+        // A server that does not know albums yet says nothing of them.
+        albums = try container.decodeIfPresent([PhotoAlbumReference].self, forKey: .albums) ?? []
+    }
 
     /// The file Save to Photos and Share hand on: the original.
     public var originalFile: PhotoFile? { photoFiles.first { $0.photoFileRole == "original" } }
@@ -103,6 +132,114 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
     public let trashedCount: Int
     public let usedBytes: Int
     public let trashRetentionDays: Int
+}
+
+/// PhotoAlbum is a named set of the person's photos. It holds references: a
+/// photo can be in several albums, and deleting the album leaves the photos.
+public struct PhotoAlbum: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let albumTitle: String
+    public let createdAt: String
+    public let updatedAt: String
+    /// The photo the person chose to stand for the album; nil until they do,
+    /// and the album then shows its newest photo.
+    public let coverPhotoId: String?
+    public let photoCount: Int
+    /// The dates the album's photos are placed at; nil for an empty album.
+    public let firstTakenAt: String?
+    public let lastTakenAt: String?
+    /// Where the cover picture is read from; empty until a photo of the album
+    /// has a small preview.
+    public let coverPreviewUrl: String
+
+    public init(
+        id: String, albumTitle: String, createdAt: String = "", updatedAt: String = "", coverPhotoId: String? = nil, photoCount: Int = 0,
+        firstTakenAt: String? = nil, lastTakenAt: String? = nil, coverPreviewUrl: String = ""
+    ) {
+        self.id = id
+        self.albumTitle = albumTitle
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.coverPhotoId = coverPhotoId
+        self.photoCount = photoCount
+        self.firstTakenAt = firstTakenAt
+        self.lastTakenAt = lastTakenAt
+        self.coverPreviewUrl = coverPreviewUrl
+    }
+
+    /// The dates the album's photos span, as one date or a range, in the
+    /// phone's time zone. Nil for an album with no photos.
+    public func dateRangeText(timeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
+        PhotoAlbumText.dateRange(from: firstTakenAt, to: lastTakenAt, timeZone: timeZone, locale: locale)
+    }
+}
+
+/// PhotoAlbumSuggestion is a run of photos that are in no album and belong
+/// together: a trip or an event. The server makes nothing from it until the
+/// person asks, and the person names the album.
+public struct PhotoAlbumSuggestion: Codable, Identifiable, Hashable, Sendable {
+    /// The run's first and last moments, as the server wrote them. They are
+    /// handed back unchanged to list the run's photos.
+    public let takenAfter: String
+    public let takenBefore: String
+    public let placeNames: [String]
+    /// A proposal for the album's title, which the person may change.
+    public let albumTitle: String
+    public let photoCount: Int
+    /// A few photos spread across the run, to show it by.
+    public let samplePhotoIds: [String]
+
+    public var id: String { "\(takenAfter)/\(takenBefore)" }
+
+    /// How many of the sample photos a suggestion is shown by on a phone.
+    public static let shownSampleCount = 4
+
+    public init(takenAfter: String, takenBefore: String, placeNames: [String], albumTitle: String, photoCount: Int, samplePhotoIds: [String]) {
+        self.takenAfter = takenAfter
+        self.takenBefore = takenBefore
+        self.placeNames = placeNames
+        self.albumTitle = albumTitle
+        self.photoCount = photoCount
+        self.samplePhotoIds = samplePhotoIds
+    }
+
+    /// The dates of the run, as one date or a range.
+    public func dateRangeText(timeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
+        PhotoAlbumText.dateRange(from: takenAfter, to: takenBefore, timeZone: timeZone, locale: locale)
+    }
+}
+
+/// PhotoAlbumText writes what an album screen says in muted text.
+public enum PhotoAlbumText {
+    /// A date, or two dates joined as the reader's language joins them
+    /// ("Jul 12 to 14, 2025"), for the moments the server wrote. Nil unless
+    /// both are moments.
+    public static func dateRange(from first: String?, to last: String?, timeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
+        guard let firstDate = ServerTime.date(first), let lastDate = ServerTime.date(last) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        if calendar.isDate(firstDate, inSameDayAs: lastDate) {
+            return firstDate.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, timeZone: timeZone))
+        }
+        let range = firstDate..<max(lastDate, firstDate)
+        return range.formatted(Date.IntervalFormatStyle(date: .abbreviated, time: .omitted, locale: locale, timeZone: timeZone))
+    }
+
+    /// The album's title as it is saved: without the spaces round it.
+    public static func trimmedTitle(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// PhotoBatches splits photo ids into the batches the server takes in one call.
+public enum PhotoBatches {
+    /// The most photo ids one call may name.
+    public static let mostPhotoIdsPerCall = 500
+
+    public static func batches(of photoIds: [String], size: Int = PhotoBatches.mostPhotoIdsPerCall) -> [[String]] {
+        guard size > 0 else { return [] }
+        return stride(from: 0, to: photoIds.count, by: size).map { Array(photoIds[$0..<min($0 + size, photoIds.count)]) }
+    }
 }
 
 /// PhotoCollection is which of the library's lists is shown.
@@ -122,8 +259,8 @@ extension Documents {
         originalFilename isFavorite isScreenshot photoProcessingState trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed) { \(photoFields) }
+        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $takenAfter: DateTime, $takenBefore: DateTime) {
+          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, takenAfter: $takenAfter, takenBefore: $takenBefore) { \(photoFields) }
         }
         """
     public static let readPhoto = """
@@ -132,6 +269,7 @@ extension Documents {
             photo { \(photoFields) }
             photoFiles { photoFileRole contentType fileSizeBytes originalFilename fileUrl }
             photoPreviews { photoPreviewSize contentType previewSizeBytes previewUrl }
+            albums { id albumTitle }
           }
         }
         """
@@ -153,6 +291,31 @@ extension Documents {
     public static let emptyPhotoTrash = """
         mutation { EmptyPhotoTrash }
         """
+    static let photoAlbumFields = "id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl"
+    public static let listPhotoAlbums = """
+        query { ListPhotoAlbums { \(photoAlbumFields) } }
+        """
+    public static let suggestPhotoAlbums = """
+        query { SuggestPhotoAlbums { takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds } }
+        """
+    public static let createPhotoAlbum = """
+        mutation ($albumTitle: String!, $photoIds: [String!]) { CreatePhotoAlbum(albumTitle: $albumTitle, photoIds: $photoIds) { \(photoAlbumFields) } }
+        """
+    public static let renamePhotoAlbum = """
+        mutation ($photoAlbumId: String!, $albumTitle: String!) { RenamePhotoAlbum(photoAlbumId: $photoAlbumId, albumTitle: $albumTitle) { \(photoAlbumFields) } }
+        """
+    public static let deletePhotoAlbum = """
+        mutation ($photoAlbumId: String!) { DeletePhotoAlbum(photoAlbumId: $photoAlbumId) }
+        """
+    public static let addPhotosToAlbum = """
+        mutation ($photoAlbumId: String!, $photoIds: [String!]!) { AddPhotosToAlbum(photoAlbumId: $photoAlbumId, photoIds: $photoIds) }
+        """
+    public static let removePhotosFromAlbum = """
+        mutation ($photoAlbumId: String!, $photoIds: [String!]!) { RemovePhotosFromAlbum(photoAlbumId: $photoAlbumId, photoIds: $photoIds) }
+        """
+    public static let setPhotoAlbumCover = """
+        mutation ($photoAlbumId: String!, $photoId: String!) { SetPhotoAlbumCover(photoAlbumId: $photoAlbumId, photoId: $photoId) { \(photoAlbumFields) } }
+        """
 }
 
 extension Connection {
@@ -164,6 +327,15 @@ extension Connection {
         if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
         if let isFavorite = collection.isFavoriteFilter { variables["isFavorite"] = .bool(isFavorite) }
         if let isTrashed = collection.isTrashedFilter { variables["isTrashed"] = .bool(isTrashed) }
+        return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
+    }
+
+    /// One page of the photos of an album, newest first, paged like the
+    /// library's lists.
+    public func photos(inAlbum photoAlbumId: String, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
+        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
+        var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize)), "albumId": .string(photoAlbumId)]
+        if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
         return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
     }
 
@@ -390,5 +562,105 @@ extension Connection {
         let fileExtension = preview.flatMap { PhotoDownload.fileExtension(forContentType: $0.contentType) } ?? (photo.isVideo ? "mp4" : "jpg")
         let baseName = (photo.fileName as NSString).deletingPathExtension
         return PhotoDownload(data: data, fileName: "\(baseName).\(fileExtension)", isOriginal: false)
+    }
+}
+
+// MARK: Albums
+
+extension Connection {
+    /// The person's albums, the one changed most recently first.
+    public func photoAlbums() async throws -> [PhotoAlbum] {
+        struct Answer: Decodable, Sendable { let ListPhotoAlbums: [PhotoAlbum] }
+        return try await execute(Documents.listPhotoAlbums, as: Answer.self).ListPhotoAlbums
+    }
+
+    /// The trips and events found in photos that are in no album.
+    public func photoAlbumSuggestions() async throws -> [PhotoAlbumSuggestion] {
+        struct Answer: Decodable, Sendable { let SuggestPhotoAlbums: [PhotoAlbumSuggestion] }
+        return try await execute(Documents.suggestPhotoAlbums, as: Answer.self).SuggestPhotoAlbums
+    }
+
+    /// Makes an album holding the photos, which may be none. The photos go in
+    /// batches the server accepts: the first batch makes the album and the
+    /// rest are added to it.
+    public func createPhotoAlbum(title: String, photoIds: [String] = []) async throws -> PhotoAlbum {
+        struct Answer: Decodable, Sendable { let CreatePhotoAlbum: PhotoAlbum }
+        let batches = PhotoBatches.batches(of: photoIds)
+        let first = batches.first ?? []
+        let created = try await execute(
+            Documents.createPhotoAlbum, variables: ["albumTitle": .string(PhotoAlbumText.trimmedTitle(title)), "photoIds": .array(first.map { .string($0) })],
+            as: Answer.self
+        ).CreatePhotoAlbum
+        for batch in batches.dropFirst() { try await addPhotos(batch, toAlbum: created.id) }
+        return created
+    }
+
+    /// Gives an album another title and returns it as it now is.
+    public func renamePhotoAlbum(_ photoAlbumId: String, title: String) async throws -> PhotoAlbum {
+        struct Answer: Decodable, Sendable { let RenamePhotoAlbum: PhotoAlbum }
+        return try await execute(
+            Documents.renamePhotoAlbum, variables: ["photoAlbumId": .string(photoAlbumId), "albumTitle": .string(PhotoAlbumText.trimmedTitle(title))], as: Answer.self
+        ).RenamePhotoAlbum
+    }
+
+    /// Deletes an album. Its photos stay in the library.
+    public func deletePhotoAlbum(_ photoAlbumId: String) async throws {
+        struct Answer: Decodable, Sendable { let DeletePhotoAlbum: Bool }
+        _ = try await execute(Documents.deletePhotoAlbum, variables: ["photoAlbumId": .string(photoAlbumId)], as: Answer.self)
+    }
+
+    /// Puts photos in an album; says how many went in, leaving out those that
+    /// were in it already.
+    @discardableResult
+    public func addPhotos(_ photoIds: [String], toAlbum photoAlbumId: String) async throws -> Int {
+        struct Answer: Decodable, Sendable { let AddPhotosToAlbum: Int }
+        var addedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            addedCount += try await execute(
+                Documents.addPhotosToAlbum, variables: ["photoAlbumId": .string(photoAlbumId), "photoIds": .array(batch.map { .string($0) })], as: Answer.self
+            ).AddPhotosToAlbum
+        }
+        return addedCount
+    }
+
+    /// Takes photos out of an album, which leaves them in the library; says
+    /// how many were taken out.
+    @discardableResult
+    public func removePhotos(_ photoIds: [String], fromAlbum photoAlbumId: String) async throws -> Int {
+        struct Answer: Decodable, Sendable { let RemovePhotosFromAlbum: Int }
+        var removedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            removedCount += try await execute(
+                Documents.removePhotosFromAlbum, variables: ["photoAlbumId": .string(photoAlbumId), "photoIds": .array(batch.map { .string($0) })], as: Answer.self
+            ).RemovePhotosFromAlbum
+        }
+        return removedCount
+    }
+
+    /// Chooses the photo an album is shown by, which must be one of its photos.
+    public func setPhotoAlbumCover(_ photoAlbumId: String, photoId: String) async throws -> PhotoAlbum {
+        struct Answer: Decodable, Sendable { let SetPhotoAlbumCover: PhotoAlbum }
+        return try await execute(
+            Documents.setPhotoAlbumCover, variables: ["photoAlbumId": .string(photoAlbumId), "photoId": .string(photoId)], as: Answer.self
+        ).SetPhotoAlbumCover
+    }
+
+    /// Every photo a suggestion covers, found the way the server found the
+    /// run: by its dates. A photo of the range that is in another album comes
+    /// with them, which does no harm, an album holds references.
+    public func photoIds(of suggestion: PhotoAlbumSuggestion) async throws -> [String] {
+        struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
+        var photoIds: [String] = []
+        var beforePhotoId: String?
+        while true {
+            var variables: [String: JSONValue] = [
+                "pageSize": .number(Double(PhotoBatches.mostPhotoIdsPerCall)), "takenAfter": .string(suggestion.takenAfter), "takenBefore": .string(suggestion.takenBefore),
+            ]
+            if let beforePhotoId { variables["beforePhotoId"] = .string(beforePhotoId) }
+            let page = try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
+            photoIds += page.map(\.id)
+            guard page.count >= PhotoBatches.mostPhotoIdsPerCall, let last = page.last else { return photoIds }
+            beforePhotoId = last.id
+        }
     }
 }

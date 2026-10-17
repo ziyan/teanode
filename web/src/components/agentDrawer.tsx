@@ -2777,13 +2777,13 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [headMenu, showingList])
 
-  // Escape toggles the drawer from anywhere on the page — unless a dialog
-  // or a list is open, which Escape closes first.
+  // Escape toggles the drawer from anywhere on the page — unless a dialog,
+  // a menu or a list is open, which Escape closes first.
   useEffect(() => {
     if (!available || standalone) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list')) return
+      if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list, .menu[role="menu"]')) return
       event.preventDefault()
       toggle()
       if (!open) setTimeout(() => input.current?.focus(), 50)

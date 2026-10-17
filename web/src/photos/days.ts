@@ -154,3 +154,24 @@ export function formatByteSize(sizeBytes: number): string {
   const text = unitIndex === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '')
   return `${text} ${units[unitIndex]}`
 }
+
+// formatDateRange writes the dates an album's photos span as the reader's
+// language writes a range, "Jul 12 – 14, 2025", or a single date when they
+// fall on one day. Empty when the album has no photos. The dates are read in
+// the person's own time zone, as the days of the timeline are.
+export function formatDateRange(
+  firstMoment: string | null,
+  lastMoment: string | null,
+  language: string,
+  timeZone?: string,
+): string {
+  if (!firstMoment || !lastMoment) return ''
+  const first = new Date(firstMoment)
+  const last = new Date(lastMoment)
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime())) return ''
+  const format = new Intl.DateTimeFormat(language, { timeZone, year: 'numeric', month: 'short', day: 'numeric' })
+  // formatRange is in every browser the dashboard supports but not yet in the
+  // TypeScript library's types.
+  const withRange = format as Intl.DateTimeFormat & { formatRange?: (start: Date, end: Date) => string }
+  return withRange.formatRange ? withRange.formatRange(first, last) : format.format(first)
+}

@@ -158,6 +158,12 @@ function useTrail(): { label: string; to?: string }[] {
     const sectionPage = SECTION_PAGES.find(
       (candidate) => candidate.path === location.pathname || location.pathname.startsWith(candidate.path + '/'),
     )
+    // An album is a step below the list of albums, and the photo being
+    // looked at in it is the same page. Until its title arrives the heading
+    // is blank, not "Photos".
+    if (sectionPage?.path === '/photos' && location.pathname.startsWith('/photos/albums/')) {
+      return [{ label: t(sectionPage.label), to: '/photos/albums' }, { label: detail ?? '' }]
+    }
     // A row of the mailbox's rail is the whole trail, and so is a path
     // under it: one list open on Subscriptions is still that page.
     if (sectionPage?.isRailItem) {

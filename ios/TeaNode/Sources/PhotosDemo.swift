@@ -4,8 +4,8 @@
     import UIKit
 
     /// What the demo server answers for Photos, for `-TeaNodeTab photos` with
-    /// `-TeaNodeScreen photos-library`, `photos-viewer`, `photos-trash` or
-    /// `photos-empty`. The photos are invented, and their pictures are drawn
+    /// `-TeaNodeScreen photos-library`, `photos-viewer`, `photos-trash`,
+    /// `photos-empty`, `photos-select`, `photos-albums` or `photos-album`. The photos are invented, and their pictures are drawn
     /// here: a gradient and a few shapes in a color taken from the photo's id.
     extension DemoServer {
         private struct DemoPhoto {
@@ -47,6 +47,33 @@
             DemoPhoto(id: "demo-t3", kind: "video", takenAt: "2026-10-08T17:00:00Z", offsetMinutes: -240, durationMS: 9_000, isTrashed: true),
         ]
 
+        private struct DemoAlbum {
+            let id: String
+            let title: String
+            let photoIds: [String]
+            let coverPhotoId: String
+        }
+
+        private static let demoAlbums: [DemoAlbum] = [
+            DemoAlbum(id: "demo-album-1", title: "Riverside weekend", photoIds: ["demo-01", "demo-02", "demo-03", "demo-04"], coverPhotoId: "demo-01"),
+            DemoAlbum(id: "demo-album-2", title: "Harbor Market", photoIds: ["demo-09", "demo-10", "demo-11"], coverPhotoId: "demo-10"),
+            DemoAlbum(id: "demo-album-3", title: "Autumn", photoIds: ["demo-05", "demo-06"], coverPhotoId: "demo-06"),
+        ]
+
+        private static func albumJSON(_ album: DemoAlbum) -> String {
+            let members = album.photoIds.compactMap { photoId in demoPhotos.first { $0.id == photoId } }.filter { !$0.isTrashed }
+            let dates = members.map(\.takenAt).sorted()
+            let first = dates.first.map { #""\#($0)""# } ?? "null"
+            let last = dates.last.map { #""\#($0)""# } ?? "null"
+            let cover = members.first { $0.id == album.coverPhotoId } ?? members.first
+            let coverPreviewUrl = cover.map { "/api/v1/photos/\($0.id)/previews/small?v=1" } ?? ""
+            return #"{"id":"\#(album.id)","albumTitle":"\#(album.title)","createdAt":"2026-10-10T10:00:00Z","updatedAt":"2026-10-14T10:00:00Z","coverPhotoId":null,"photoCount":\#(members.count),"firstTakenAt":\#(first),"lastTakenAt":\#(last),"coverPreviewUrl":"\#(coverPreviewUrl)"}"#
+        }
+
+        /// The trips and events the demo server offers as albums.
+        private static let demoSuggestionJSON =
+            #"{"takenAfter":"2026-10-02T09:00:00Z","takenBefore":"2026-10-02T17:00:01Z","placeNames":["Fixture Lake"],"albumTitle":"Fixture Lake","photoCount":12,"samplePhotoIds":["demo-13","demo-14","demo-15","demo-16"]}"#
+
         private static func photoJSON(_ photo: DemoPhoto) -> String {
             let isVideo = photo.kind == "video"
             let isReady = photo.processingState == "ready"
@@ -72,11 +99,37 @@
                 let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed }.count
                 let trashed = isEmpty ? 0 : demoPhotos.filter(\.isTrashed).count
                 json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"trashRetentionDays":30}}}"#
+            } else if body.contains("ListPhotoAlbums") {
+                json = #"{"data":{"ListPhotoAlbums":["# + (isEmpty ? [] : demoAlbums).map(albumJSON).joined(separator: ",") + "]}}"
+            } else if body.contains("SuggestPhotoAlbums") {
+                json = #"{"data":{"SuggestPhotoAlbums":["# + (isEmpty ? "" : demoSuggestionJSON) + "]}}"
+            } else if body.contains("CreatePhotoAlbum") {
+                let title = variables["albumTitle"] as? String ?? "New album"
+                json = #"{"data":{"CreatePhotoAlbum":\#(albumJSON(DemoAlbum(id: "demo-album-new", title: title, photoIds: [], coverPhotoId: "")))}}"#
+            } else if body.contains("RenamePhotoAlbum") {
+                let album = demoAlbums.first { $0.id == (variables["photoAlbumId"] as? String) } ?? demoAlbums[0]
+                json = #"{"data":{"RenamePhotoAlbum":\#(albumJSON(DemoAlbum(id: album.id, title: variables["albumTitle"] as? String ?? album.title, photoIds: album.photoIds, coverPhotoId: album.coverPhotoId)))}}"#
+            } else if body.contains("DeletePhotoAlbum") {
+                json = #"{"data":{"DeletePhotoAlbum":true}}"#
+            } else if body.contains("AddPhotosToAlbum") {
+                json = #"{"data":{"AddPhotosToAlbum":\#((variables["photoIds"] as? [Any])?.count ?? 0)}}"#
+            } else if body.contains("RemovePhotosFromAlbum") {
+                json = #"{"data":{"RemovePhotosFromAlbum":\#((variables["photoIds"] as? [Any])?.count ?? 0)}}"#
+            } else if body.contains("SetPhotoAlbumCover") {
+                let album = demoAlbums.first { $0.id == (variables["photoAlbumId"] as? String) } ?? demoAlbums[0]
+                json = #"{"data":{"SetPhotoAlbumCover":\#(albumJSON(album))}}"#
             } else if body.contains("ListPhotos") {
                 let isTrashed = variables["isTrashed"] as? Bool == true
                 let isFavorite = variables["isFavorite"] as? Bool == true
                 var chosen = demoPhotos.filter { $0.isTrashed == isTrashed }
                 if isFavorite { chosen = chosen.filter(\.isFavorite) }
+                if let albumId = variables["albumId"] as? String {
+                    let members = demoAlbums.first { $0.id == albumId }?.photoIds ?? []
+                    chosen = chosen.filter { members.contains($0.id) }
+                }
+                if let after = variables["takenAfter"] as? String, let before = variables["takenBefore"] as? String {
+                    chosen = chosen.filter { $0.takenAt >= after && $0.takenAt < before }
+                }
                 // Everything fits in one page, so a page after it is empty.
                 if isEmpty || variables["beforePhotoId"] is String { chosen = [] }
                 json = #"{"data":{"ListPhotos":["# + chosen.map(photoJSON).joined(separator: ",") + "]}}"
@@ -86,7 +139,8 @@
                 let isVideo = photo.kind == "video"
                 let file =
                     #"{"photoFileRole":"original","contentType":"\#(isVideo ? "video/quicktime" : "image/heic")","fileSizeBytes":\#(isVideo ? 48_200_000 : 2_345_678),"originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","fileUrl":"/api/v1/photos/\#(photo.id)/files/original"}"#
-                json = #"{"data":{"ReadPhoto":{"photo":\#(photoJSON(photo)),"photoFiles":[\#(file)],"photoPreviews":[]}}}"#
+                let albums = demoAlbums.filter { $0.photoIds.contains(photo.id) }.map { #"{"id":"\#($0.id)","albumTitle":"\#($0.title)"}"# }.joined(separator: ",")
+                json = #"{"data":{"ReadPhoto":{"photo":\#(photoJSON(photo)),"photoFiles":[\#(file)],"photoPreviews":[],"albums":[\#(albums)]}}}"#
             } else if body.contains("UpdatePhoto") {
                 var photo = demoPhotos.first { $0.id == (variables["photoId"] as? String) } ?? demoPhotos[0]
                 photo.isFavorite = variables["isFavorite"] as? Bool ?? photo.isFavorite

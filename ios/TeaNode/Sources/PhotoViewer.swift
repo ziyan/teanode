@@ -9,6 +9,9 @@ import UniformTypeIdentifiers
 /// The bar under it has what can be done to the photo on screen.
 struct PhotoViewer: View {
     let model: PhotosModel
+    /// The list the photos paged through come from: a list of the library, or
+    /// an album.
+    let listKey: PhotoListKey
     @State private var currentPhotoId: String?
     @State private var isZoomed = false
     @State private var isShowingInfo = false
@@ -16,12 +19,14 @@ struct PhotoViewer: View {
     @State private var isConfirmingDelete = false
     @Environment(\.dismiss) private var dismiss
 
-    init(model: PhotosModel, openedPhotoId: String) {
+    init(model: PhotosModel, listKey: PhotoListKey, openedPhotoId: String) {
         self.model = model
+        self.listKey = listKey
         _currentPhotoId = State(initialValue: openedPhotoId)
     }
 
-    private var current: Photo? { model.photos.first { $0.id == currentPhotoId } }
+    private var photos: [Photo] { model.photos(in: listKey) }
+    private var current: Photo? { photos.first { $0.id == currentPhotoId } }
 
     var body: some View {
         NavigationStack {
@@ -34,12 +39,13 @@ struct PhotoViewer: View {
                 .sheet(isPresented: $isShowingInfo) {
                     if let current { PhotoInfoView(photo: current, connection: model.connection) }
                 }
+                .albumTitleAlert(model: model, scope: .viewer)
         }
         .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
         .onChange(of: currentPhotoId) { _, photoId in
             isZoomed = false
             guard let photoId else { return }
-            Task { await model.loadMoreIfNeeded(showing: photoId) }
+            Task { await model.loadMoreIfNeeded(showing: photoId, in: listKey) }
         }
         .onDisappear { model.dropPhotosNoLongerFavorite() }
     }
@@ -47,7 +53,7 @@ struct PhotoViewer: View {
     private var pager: some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
-                ForEach(model.photos) { photo in
+                ForEach(photos) { photo in
                     PhotoPage(photo: photo, model: model, isCurrent: photo.id == currentPhotoId, isZoomed: $isZoomed)
                         .containerRelativeFrame([.horizontal, .vertical])
                         .id(photo.id)
@@ -77,6 +83,27 @@ struct PhotoViewer: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button("Close", systemImage: "xmark") { dismiss() }
+        }
+        if let current, !current.isTrashed {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
+                    if let albumId = listKey.albumId, let album = model.albums?.first(where: { $0.id == albumId }) {
+                        Button("Use as Album Cover", systemImage: "rectangle.stack.badge.person.crop") {
+                            Task { await model.setCover(of: album, to: current) }
+                        }
+                        Button("Remove from Album", systemImage: "rectangle.stack.badge.minus") {
+                            let next = neighbor(of: current)
+                            Task {
+                                await model.remove([current], fromAlbum: albumId)
+                                leave(movingTo: next)
+                            }
+                        }
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis")
+                }
+            }
         }
         if let current {
             if current.isTrashed {
@@ -114,7 +141,7 @@ struct PhotoViewer: View {
                         current.isFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Favorite"),
                         systemImage: current.isFavorite ? "heart.fill" : "heart"
                     ) {
-                        Task { await model.toggleFavorite(current) }
+                        Task { await model.toggleFavorite(current, in: listKey) }
                     }
                     .sensoryFeedback(.selection, trigger: current.isFavorite)
                 }
@@ -158,16 +185,16 @@ struct PhotoViewer: View {
     /// The photo that takes the place of one about to leave the list: the one
     /// after it, or else the one before.
     private func neighbor(of photo: Photo) -> String? {
-        let photos = model.photos
-        guard let index = photos.firstIndex(where: { $0.id == photo.id }) else { return nil }
-        if index + 1 < photos.count { return photos[index + 1].id }
-        return index > 0 ? photos[index - 1].id : nil
+        let listed = photos
+        guard let index = listed.firstIndex(where: { $0.id == photo.id }) else { return nil }
+        if index + 1 < listed.count { return listed[index + 1].id }
+        return index > 0 ? listed[index - 1].id : nil
     }
 
     /// Goes on to the photo that took the place of the one that left, or
     /// closes the viewer when it was the last.
     private func leave(movingTo photoId: String?) {
-        if let photoId, model.photos.contains(where: { $0.id == photoId }) {
+        if let photoId, photos.contains(where: { $0.id == photoId }) {
             currentPhotoId = photoId
         } else {
             dismiss()
@@ -315,6 +342,13 @@ struct PhotoInfoView: View {
                 if !fileName.isEmpty {
                     LabeledContent("File name") { Text(fileName).monospaced() }
                 }
+                if let albums = detail?.albums, !albums.isEmpty {
+                    Section("Albums") {
+                        ForEach(albums) { album in
+                            Label(album.albumTitle, systemImage: "rectangle.stack")
+                        }
+                    }
+                }
             }
             .navigationTitle("Info")
             .navigationBarTitleDisplayMode(.inline)
@@ -367,6 +401,36 @@ struct PhotoShareLink: View {
             ShareLink(item: PhotoShareImage(connection: connection, photo: photo), preview: SharePreview(photo.fileName)) {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
+        }
+    }
+}
+
+/// PhotosShareLink shares the files of several photos at once. Pictures and
+/// videos go together, so each is handed on as a file of any kind.
+struct PhotosShareLink: View {
+    let photos: [Photo]
+    let connection: Connection
+
+    var body: some View {
+        ShareLink(
+            items: photos.map { PhotoShareFile(connection: connection, photo: $0) },
+            preview: { SharePreview($0.photo.fileName) }
+        ) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+    }
+}
+
+/// PhotoShareFile is one photo's file, of whatever kind, handed to the share
+/// sheet.
+struct PhotoShareFile: Transferable, Sendable {
+    let connection: Connection
+    let photo: Photo
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .item) { item in
+            let download = try await item.connection.downloadPhotoFile(item.photo)
+            return SentTransferredFile(try PhotoTemporaryFile.write(download))
         }
     }
 }

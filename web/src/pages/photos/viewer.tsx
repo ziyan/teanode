@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import {
+  AlbumRemoveIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CloseIcon,
   DownloadIcon,
   HeartIcon,
   InfoIcon,
+  PictureIcon,
   RestoreIcon,
   TrashIcon,
   ZoomInIcon,
@@ -14,8 +17,10 @@ import {
 import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
-import { photoFilePath, readPhoto, type Photo, type PhotoFile } from '../../photos/api'
+import { photoFilePath, readPhoto, type Photo, type PhotoAlbum, type PhotoFile } from '../../photos/api'
 import { formatByteSize, formatDuration, personTimeZone, photoDateTime } from '../../photos/days'
+import { albumAddress } from './albums'
+import { AddToAlbumMenu } from './albumControls'
 
 // The viewer: one photo over the grid, with its details beside it (under it
 // on a phone). It has an address of its own, so Back closes it and a link
@@ -35,12 +40,17 @@ export function PhotoViewer({
   nextPhoto,
   isTrashed,
   isPaused,
+  photoAlbumId,
   onNavigate,
   onClose,
   onToggleFavorite,
   onTrash,
   onRestore,
   onDeleteForever,
+  onAddToAlbum,
+  onNewAlbum,
+  onRemoveFromAlbum,
+  onSetCover,
 }: {
   photo: Photo
   previousPhoto: Photo | null
@@ -49,16 +59,25 @@ export function PhotoViewer({
   // Set while a dialog is open over the viewer, so that its keys are the
   // dialog's.
   isPaused: boolean
+  // The album the photo is being looked at in, if any.
+  photoAlbumId?: string
   onNavigate: (photo: Photo) => void
   onClose: () => void
   onToggleFavorite: (photo: Photo) => void
   onTrash: (photo: Photo) => void
   onRestore: (photo: Photo) => void
   onDeleteForever: (photo: Photo) => void
+  onAddToAlbum: (photo: Photo, album: PhotoAlbum) => Promise<void>
+  onNewAlbum: (photo: Photo) => void
+  // Only inside an album: take the photo out of it, or make it the cover.
+  onRemoveFromAlbum?: (photo: Photo) => Promise<void>
+  onSetCover?: (photo: Photo) => Promise<void>
 }) {
   const { t, language } = useTranslation()
   const files = useQuery(() => readPhoto(photo.id), [photo.id], { refresh: false })
-  const photoFiles: PhotoFile[] = files.data && files.data.photo.id === photo.id ? files.data.photoFiles : []
+  const isRead = files.data !== null && files.data.photo.id === photo.id
+  const photoFiles: PhotoFile[] = isRead ? files.data!.photoFiles : []
+  const albums = isRead ? (files.data!.albums ?? []) : []
   const [isZoomed, setIsZoomed] = useState(false)
   const [isLive, setIsLive] = useState(false)
   const [isShowingDetails, setIsShowingDetails] = useState(() => window.matchMedia('(min-width: 761px)').matches)
@@ -101,6 +120,9 @@ export function PhotoViewer({
     if (isPaused) return
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
+      // An open menu takes the key first: Escape closes the menu, not the
+      // viewer behind it.
+      if (document.querySelector('.menu[role="menu"]')) return
       if (event.key === 'Escape') {
         event.preventDefault()
         onClose()
@@ -122,8 +144,12 @@ export function PhotoViewer({
         goTo(nextPhoto)
       }
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    // Listened for while the key goes down to the page, and marked taken: the
+    // agent drawer listens on the document from before the viewer was there
+    // and toggles on Escape, so it heard the key first and opened itself
+    // over a viewer that stayed open.
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [isPaused, onClose, goTo, previousPhoto, nextPhoto])
 
   // The photos either side are fetched ahead, so that an arrow key shows
@@ -234,6 +260,35 @@ export function PhotoViewer({
                   <HeartIcon size={18} />
                 </button>
               </Tooltip>
+              <AddToAlbumMenu
+                hiddenAlbumId={photoAlbumId}
+                onChooseAlbum={(target) => void onAddToAlbum(photo, target).then(() => files.reload(true))}
+                onNewAlbum={() => onNewAlbum(photo)}
+              />
+              {onSetCover && (
+                <Tooltip label={t('photos.useAsCover')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.useAsCover')}
+                    onClick={() => void onSetCover(photo)}
+                  >
+                    <PictureIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
+              {onRemoveFromAlbum && (
+                <Tooltip label={t('photos.removeFromAlbum')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.removeFromAlbum')}
+                    onClick={() => void onRemoveFromAlbum(photo)}
+                  >
+                    <AlbumRemoveIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
               <Tooltip label={t('photos.downloadOriginal')}>
                 <a
                   className="icon-button"
@@ -372,6 +427,20 @@ export function PhotoViewer({
                   <dd>{value}</dd>
                 </div>
               ))}
+            {albums.length > 0 && (
+              <div>
+                <dt>{t('photos.detailAlbums')}</dt>
+                <dd>
+                  <ul className="photo-viewer-albums">
+                    {albums.map((album) => (
+                      <li key={album.id}>
+                        <Link to={albumAddress(album.id)}>{album.albumTitle}</Link>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            )}
           </dl>
         </aside>
       )}
