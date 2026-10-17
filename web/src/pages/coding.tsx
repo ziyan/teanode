@@ -72,9 +72,14 @@ function useVisiblePolling<Answer>(
   const [reloadCount, setReloadCount] = useState(0)
   const loadRef = useRef(load)
   loadRef.current = load
+  // What failed for the last key says nothing of this one; a reload or a
+  // refresh of the same key keeps it, so a failure is said once.
+  const errorKey = useRef(resetKey)
   useEffect(() => {
-    // What failed for the last key says nothing of this one.
-    setError(null)
+    if (errorKey.current !== resetKey) {
+      errorKey.current = resetKey
+      setError(null)
+    }
     let isStopped = false
     let isRunning = false
     // The first read is made even in a tab in the background, so the page
@@ -219,6 +224,24 @@ export function CodingPage() {
   // answer, so one failed poll does not close the view.
   const lastSelected = useRef<HerdrSession | null>(null)
   const list = useVisiblePolling(() => listHerdrSessions(true), LIST_EVERY_MS, 'list')
+  // A draft goes with its session: once the session's computer answers
+  // without it, the pane is closed, and a new session herdr puts in a pane
+  // of the same id starts with an empty box.
+  const listedNow = list.data
+  useEffect(() => {
+    if (!listedNow) return
+    setDrafts((previous) => {
+      const kept = Object.fromEntries(
+        Object.entries(previous).filter(([draftKey]) => {
+          const computer = draftKey.slice(0, draftKey.indexOf('/'))
+          if (listedNow.failedComputerNames.includes(computer)) return true
+          if (justOpened && `${justOpened.computer}/${justOpened.paneId}` === draftKey) return true
+          return listedNow.sessions.some((session) => `${session.computer}/${session.paneId}` === draftKey)
+        }),
+      )
+      return Object.keys(kept).length === Object.keys(previous).length ? previous : kept
+    })
+  }, [listedNow, justOpened])
   useEffect(() => {
     if (list.error) toast.failure(list.error, t('herdr.listFailed'))
   }, [list.error, toast, t])

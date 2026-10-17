@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { graphql } from '../api'
 import { useQuery } from './useQuery'
@@ -42,7 +42,11 @@ export function useHerdrPresence(isAsked: boolean): boolean | null {
     [isAsked, askCount],
     { refresh: false },
   )
-  if (!isAsked || error) return false
-  if (!data?.isAsked) return null
-  return data.ListAgentHerdrSessions.computerNames.length > 0
+  // The last answer stands through a failed recheck, so a row the person
+  // already had does not vanish for one lost request.
+  const lastKnown = useRef<boolean | null>(null)
+  if (!isAsked) return false
+  if (data?.isAsked && !error) lastKnown.current = data.ListAgentHerdrSessions.computerNames.length > 0
+  if (lastKnown.current !== null) return lastKnown.current
+  return error ? false : null
 }
