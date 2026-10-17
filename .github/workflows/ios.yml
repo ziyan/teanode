@@ -92,6 +92,69 @@ jobs:
           CODE_SIGNING_ALLOWED=NO
           -quiet
 
+  # The screens, in a job of their own beside the build, so that TestFlight
+  # waits only for the build and the tests. The screenshot checks compile
+  # while the app builds; the simulators boot after it, since a booting
+  # simulator's first-run setup took the CPU and made the build four times
+  # slower (23 minutes against 5).
+  #
+  # They are split across four machines, since a hundred and sixty screens
+  # one after another took most of an hour: three take every third screen
+  # of the list, and the fourth takes the App Store's set, which needs a
+  # simulator of its own to boot.
+  screenshots:
+    name: Screenshots (${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      SHARD: ${{ matrix.shard }}
+      SHARD_COUNT: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Pick the simulators and compile the checks
+        working-directory: ios
+        run: |
+          pick() {
+            xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
+                    if device["name"].startswith("iPhone") and device["name"].endswith(sys.argv[1])]
+          print(phones[-1]["udid"])' "$1"
+          }
+          phone=$(pick " Pro")
+          largest=$(pick " Pro Max")
+          echo "PHONE=$phone" >> "$GITHUB_ENV"
+          echo "LARGEST_PHONE=$largest" >> "$GITHUB_ENV"
+          mkdir -p build
+          for check in recording device-setup knowledge conversation; do
+            swiftc "scripts/assert-$check-screenshot.swift" -o "build/assert-$check-screenshot" &
+          done
+          wait
+
+      - name: Generate the project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build for the simulator
+        working-directory: ios
+        run: >
+          xcodebuild build
+          -project TeaNode.xcodeproj
+          -scheme TeaNode
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          -quiet
+
       # What the screens look like, for the review ios/DESIGN.md asks for:
       # the connect screen, and a conversation of invented data from the
       # debug build's demo server, in light, dark and the largest text size.
@@ -100,29 +163,58 @@ jobs:
         run: |
           app=build/Build/Products/Debug-iphonesimulator/TeaNode.app
           bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
-          device=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          runtimes = json.load(sys.stdin)["devices"]
-          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
-                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro")]
-          print(phones[-1]["udid"])')
+          # The machine for the App Store's set boots only the largest phone,
+          # and takes none of the screens of the list (its shard matches no
+          # third of it).
+          device=$PHONE
+          if [ "$SHARD" = 3 ]; then
+            device=$LARGEST_PHONE
+          fi
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
           mkdir -p screenshots
-          swiftc scripts/assert-recording-screenshot.swift -o build/assert-recording-screenshot
-          swiftc scripts/assert-device-setup-screenshot.swift -o build/assert-device-setup-screenshot
-          swiftc scripts/assert-knowledge-screenshot.swift -o build/assert-knowledge-screenshot
-          swiftc scripts/assert-conversation-screenshot.swift -o build/assert-conversation-screenshot
+          # A screen is taken once it has stopped changing: two looks a
+          # second apart that are the same, after six seconds at least and
+          # twelve at most. Not sooner: the launch screen is blank and holds
+          # still, and two seconds took it for the app's.
+          settle() {
+            target=$1
+            previous="$RUNNER_TEMP/settle-previous.png"
+            sleep 5
+            xcrun simctl io "$device" screenshot "$previous" >/dev/null 2>&1
+            for look in {1..7}; do
+              sleep 1
+              xcrun simctl io "$device" screenshot "$target" >/dev/null 2>&1
+              if cmp -s "$previous" "$target"; then
+                return
+              fi
+              cp "$target" "$previous"
+            done
+          }
+          # The appearance and the text size are set only when they change:
+          # each change redraws the whole simulator.
+          shown_appearance="" shown_size=""
+          shot_index=0
           shoot() {
             name=$1 appearance=$2 size=$3
             shift 3
-            xcrun simctl ui "$device" appearance "$appearance"
-            xcrun simctl ui "$device" content_size "$size"
+            # Every third screen is this machine's.
+            shot_index=$((shot_index + 1))
+            if [ $(((shot_index - 1) % SHARD_COUNT)) != "$SHARD" ]; then
+              return 0
+            fi
+            if [ "$appearance" != "$shown_appearance" ]; then
+              xcrun simctl ui "$device" appearance "$appearance"
+              shown_appearance=$appearance
+            fi
+            if [ "$size" != "$shown_size" ]; then
+              xcrun simctl ui "$device" content_size "$size"
+              shown_size=$size
+            fi
             xcrun simctl terminate "$device" "$bundle" 2>/dev/null || true
             xcrun simctl launch "$device" "$bundle" "$@"
-            sleep 8
-            xcrun simctl io "$device" screenshot "screenshots/$name.png"
+            settle "screenshots/$name.png"
             case "$name" in
               recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*)
                 # The screen may still be loading its demo answers: look
@@ -154,11 +246,11 @@ jobs:
           shoot connect-dark dark large
           shoot connect-largest-text light accessibility-extra-extra-extra-large
           shoot conversation-light light large -TeaNodeDemo
-          if build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
+          if [ -f screenshots/conversation-light.png ] && build/assert-recording-screenshot recordings-light screenshots/conversation-light.png; then
             echo "Recording content assertion accepted the conversation screen."
             exit 1
           fi
-          if build/assert-device-setup-screenshot device-setup-light screenshots/conversation-light.png; then
+          if [ -f screenshots/conversation-light.png ] && build/assert-device-setup-screenshot device-setup-light screenshots/conversation-light.png; then
             echo "Device setup assertion accepted the conversation screen."
             exit 1
           fi
@@ -260,17 +352,12 @@ jobs:
           shoot activity-run-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen activity-run
 
           # The App Store's set: the largest iPhone, which its listing needs,
-          # with the status bar Apple's own screenshots show.
-          xcrun simctl shutdown "$device"
-          device=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          runtimes = json.load(sys.stdin)["devices"]
-          phones = [device for runtime in sorted(runtimes) if "iOS" in runtime for device in runtimes[runtime]
-                    if device["name"].startswith("iPhone") and device["name"].endswith("Pro Max")]
-          print(phones[-1]["udid"])')
-          xcrun simctl boot "$device"
-          xcrun simctl bootstatus "$device" -b
-          xcrun simctl install "$device" "$app"
+          # with the status bar Apple's own screenshots show. The fourth
+          # machine's, every screen of it.
+          if [ "$SHARD" != 3 ]; then
+            exit 0
+          fi
+          SHARD_COUNT=1 SHARD=0
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store
           shoot store/1-conversation light large -TeaNodeDemo
@@ -284,7 +371,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: screenshots
+          name: screenshots-${{ matrix.shard }}
           path: ios/screenshots
 
   # Signs the app and uploads it to App Store Connect, where it appears in
