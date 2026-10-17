@@ -257,6 +257,26 @@ func (self *AgentConversation) IsChat() bool {
 	return self != nil && self.Kind == AgentConversationChat
 }
 
+// HasChatWords says whether a chat's title or one of its members' names or
+// usernames holds the words, in any case: how a chat is found by a search,
+// since what was said in it is not searched. It is false for anything that is
+// not a chat, or a chat whose title and members have not been described.
+func (self *AgentConversation) HasChatWords(words string) bool {
+	if !self.IsChat() || self.Chat == nil {
+		return false
+	}
+	words = strings.ToLower(words)
+	if strings.Contains(strings.ToLower(self.Chat.Title), words) {
+		return true
+	}
+	for _, member := range self.Chat.Members {
+		if strings.Contains(strings.ToLower(member.Name), words) || strings.Contains(strings.ToLower(member.Username), words) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsGoal says whether a conversation is a goal's own.
 func (self *AgentConversation) IsGoal() bool {
 	return self != nil && self.Kind == AgentConversationGoal

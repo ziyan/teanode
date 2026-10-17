@@ -520,15 +520,21 @@ for pages and skills: `endPageSharesOutsideCircles` and
 the owner's picture, and a check to show or hide it (remembered in the browser
 only); busy blocks are gray and cannot be opened; events in a calendar shared
 below `edit` open to be read; the Share button opens the panel for the person's
-own calendar; the circle page offers "Make a family calendar" (any kind may have
+own calendar, and Find a time asks for the people who shared with them, a run of
+days and the hours to offer, and lists when all of them are free from
+`ListCalendarFreeBusy` (the same sum as `calendar free --with`, in `freeTime.ts`); the circle page offers "Make a family calendar" (any kind may have
 one; it says "shared calendar" for friends and colleagues). The app has the same
-list, sharing screen and read-only events. The command line: `teanode calendar
+list, sharing screen, Find a time screen (in the calendars sheet, beside Share my
+calendar) and read-only events, and offers once, as an invitation to a family or
+colleagues is accepted, to share the calendar with them, as the Circles page
+does. The command line: `teanode calendar
 share|shares|unshare|circle`, `list --owner`, `free --with`. The agent's
 `calendar` tool has the actions `agenda`, `free`, `free_together`, `shares`,
 `share`, `unshare`, `add`, `edit` and `remove`: `agenda` takes `owner` (a
 username, or `everyone`) to read what others shared, `free_together` takes
-`with` (usernames), `share` takes `with` (a username, or the id of a circle)
-and `share_level`, and `unshare` takes `share_id`. `share` is a grant, asked
+`with` (usernames), `share` takes `with` (a username, or a circle by its id or name; a name
+more than one circle has, or that is also a username, is refused with the ids and
+sizes of the circles, the same words on the command line) and `share_level`, and `unshare` takes `share_id`. `share` is a grant, asked
 about first; adding to a circle's calendar is the person's own change, and to another person's calendar shared at
 `edit` it is outward. What the agent reads of other people's calendars it reads
 as the person, at the level each was shared at, and only when the person has

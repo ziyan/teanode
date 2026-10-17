@@ -194,3 +194,20 @@ func TestTheAgentListsTheCallsOfSharesThatEnded(t *testing.T) {
 		t.Errorf("neither a share nor the ended ones: %v", err)
 	}
 }
+
+// The card for lending a skill says exactly what is granted: the tools, the
+// limit for one payment, the monthly limit with its currency, and whether
+// every call waits.
+func TestTheCardForSharingASkillSaysWhatIsGranted(t *testing.T) {
+	skill := theSkillTool(t)
+	for arguments, want := range map[string]string{
+		`{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice","check_status"],"payment_limit":"100","monthly_limit":"400","currency":"usd"}`: `Let "ben" use pay_invoice and check_status of your "payments" skill on your computer, as you: up to 100.00 USD a payment and 400.00 USD a month, anything above waits for you`,
+		`{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"],"monthly_limit":"400","currency":"jpy"}`:                                      `Let "ben" use pay_invoice of your "payments" skill on your computer, as you: up to 400 JPY a month, anything above waits for you`,
+		`{"action":"share","name":"payments","with":"ben","tool_names":["a","b","c"],"is_approval_required":true}`:                                                   `Let "ben" use a, b and c of your "payments" skill on your computer, as you: every call waits for you`,
+		`{"action":"share","name":"payments","with":"ben"}`:                                                                                                          `Let "ben" use some of its tools of your "payments" skill on your computer, as you: no limits, so any call whose cost the skill does not state waits for you`,
+	} {
+		if got := skill.PreviewLine(context.Background(), []byte(arguments)); got != want {
+			t.Errorf("%s\n got %q\nwant %q", arguments, got, want)
+		}
+	}
+}

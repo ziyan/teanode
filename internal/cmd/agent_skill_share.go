@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -68,7 +70,8 @@ func newAgentSkillShareCommands() []*cli.Command {
 				"keeps its calls as your record. --ended lists them, with no share named.",
 			Flags: []cli.Flag{
 				JSONFlag(),
-				&cli.BoolFlag{Name: "waiting", Usage: "only the calls waiting for approval"},
+				&cli.BoolFlag{Name: "waiting", Usage: "only the calls waiting for approval; the same as --state waiting"},
+				&cli.StringSliceFlag{Name: "state", Usage: "only the calls in this state: ran, failed, refused, waiting, declined or expired; repeat it for more than one"},
 				&cli.BoolFlag{Name: "ended", Usage: "the calls of shares that have ended, instead of one share's"},
 			},
 			Action: runAgentSkillCalls,
@@ -238,22 +241,31 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 	if (isEnded && command.Args().Len() != 0) || (!isEnded && command.Args().Len() != 1) {
 		return usage("usage: teanode agent skill calls <share-id> [--waiting], or teanode agent skill calls --ended [--waiting]")
 	}
-	callState := ""
-	if command.Bool("waiting") {
-		callState = string(models.SkillShareCallWaitingForApproval)
+	callStates, err := callStatesAsked(command)
+	if err != nil {
+		return err
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
+	// The operation takes one state or none, so several are asked for one at
+	// a time and put together, the newest first.
 	var calls []*client.SkillShareCall
-	if isEnded {
-		calls, err = client.ListEndedSkillShareCalls(ctx, connection, callState)
-	} else {
-		calls, err = client.ListSkillShareCalls(ctx, connection, command.Args().First(), callState)
+	for _, callState := range callStates {
+		var found []*client.SkillShareCall
+		if isEnded {
+			found, err = client.ListEndedSkillShareCalls(ctx, connection, callState)
+		} else {
+			found, err = client.ListSkillShareCalls(ctx, connection, command.Args().First(), callState)
+		}
+		if err != nil {
+			return describeNotFound(command, err, "that share")
+		}
+		calls = append(calls, found...)
 	}
-	if err != nil {
-		return describeNotFound(command, err, "that share")
+	if len(callStates) > 1 {
+		sort.SliceStable(calls, func(first, second int) bool { return calls[first].CreatedAt.After(calls[second].CreatedAt) })
 	}
 	// A call that waits is approved on the dashboard or in the iPhone app, so
 	// each is listed with where.
@@ -289,6 +301,33 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 		rows = append(rows, []string{call.ID, call.CreatedAt.Local().Format("2006-01-02 15:04"), call.GranteeUsername, tool, amount, call.CallState, quotedReason, call.ApproveAddress})
 	}
 	return printTable([]string{"call", "asked", "by", "tool", "amount", "state", "their agent said", "approve it at"}, rows)
+}
+
+// callStatesAsked are the states --state and --waiting ask for, as the
+// operation names them: one entry for each, or a single empty one for every
+// state. "waiting" is how a person says waiting_for_approval.
+func callStatesAsked(command *cli.Command) ([]string, error) {
+	callStates := []string{}
+	asked := command.StringSlice("state")
+	if command.Bool("waiting") {
+		asked = append(asked, "waiting")
+	}
+	for _, state := range asked {
+		state = strings.ToLower(strings.TrimSpace(state))
+		if state == "waiting" {
+			state = string(models.SkillShareCallWaitingForApproval)
+		}
+		if !models.SkillShareCallState(state).IsValid() {
+			return nil, usage("--state is ran, failed, refused, waiting, declined or expired")
+		}
+		if !slices.Contains(callStates, state) {
+			callStates = append(callStates, state)
+		}
+	}
+	if len(callStates) == 0 {
+		return []string{""}, nil
+	}
+	return callStates, nil
 }
 
 func runAgentSkillDecline(ctx context.Context, command *cli.Command) error {

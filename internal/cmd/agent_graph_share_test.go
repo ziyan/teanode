@@ -35,12 +35,13 @@ func TestPageSharingParity(test *testing.T) {
 		subcommand string
 		action     string
 	}{
-		"ListAgentPageShares":   {"shares", "shares"},
-		"ShareAgentPage":        {"share", "share"},
-		"UnshareAgentPage":      {"unshare", "unshare"},
-		"ListSharedAgentPages":  {"shared", "shared"},
-		"PreviewAgentPageShare": {"share", ""},
-		"ReadSharedAgentPage":   {"get", "get"},
+		"ListAgentPageShares":    {"shares", "shares"},
+		"ShareAgentPage":         {"share", "share"},
+		"UnshareAgentPage":       {"unshare", "unshare"},
+		"ListSharedAgentPages":   {"shared", "shared"},
+		"PreviewAgentPageShare":  {"share", "preview"},
+		"SearchSharedAgentPages": {"shared", "search"},
+		"ReadSharedAgentPage":    {"get", "get"},
 	}
 	for operation := range operations {
 		if _, listed := table[operation]; !listed {
@@ -127,6 +128,8 @@ func pageSharingServer(test *testing.T) (*httptest.Server, func(string) map[stri
 		"PreviewAgentPageShare": `{"page":` + sharedPage + `,"reachedPageCount":4,"isReachedPageCountCut":false}`,
 		"ListSharedAgentPages":  `[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea."}]`,
 		"ReadSharedAgentPage":   sharedPage,
+		"SearchSharedAgentPages": `[{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea.","factNumber":0,"text":""},
+			{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"","factNumber":3,"text":"Next appointment is Tuesday at three."}]`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var document struct {
@@ -275,5 +278,27 @@ func TestGettingASharedPage(test *testing.T) {
 		if _, err := runMemoryCommand(test, server, "get", "people/a-grandparent", "--owner", owner); err == nil || !strings.Contains(err.Error(), `nobody called "`+owner+`" has shared pages with you`) {
 			test.Errorf("%s shared nothing: %v", owner, err)
 		}
+	}
+}
+
+// shared --query finds words in what others shared, through the search the
+// agent's memory tool makes, and says for each hit whose it is and which fact.
+func TestSearchingWhatOthersSharedFindsPagesAndFacts(test *testing.T) {
+	server, called := pageSharingServer(test)
+	output, err := runMemoryCommand(test, server, "shared", "--query", "appointment", "--first", "5")
+	if err != nil {
+		test.Fatal(err)
+	}
+	variables := called("SearchSharedAgentPages")
+	if variables["query"] != "appointment" || variables["first"] != float64(5) {
+		test.Errorf("what was sent: %v", variables)
+	}
+	for _, wanted := range []string{"ada", "A Grandparent: Lives by the sea.", "people/a-grandparent#3", "Next appointment is Tuesday at three."} {
+		if !strings.Contains(output, wanted) {
+			test.Errorf("the hits lack %q:\n%s", wanted, output)
+		}
+	}
+	if listed, err := runMemoryCommand(test, server, "shared"); err != nil || !strings.Contains(listed, "name           about") {
+		test.Errorf("without --query it lists what was shared: %q %v", listed, err)
 	}
 }

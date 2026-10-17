@@ -48,9 +48,13 @@ func newAgentPageShareCommands() []*cli.Command {
 			Action:    runAgentMemoryUnshare,
 		},
 		{
-			Name:   "shared",
-			Usage:  "the pages other people shared with you, by who shared them",
-			Flags:  []cli.Flag{JSONFlag()},
+			Name:  "shared",
+			Usage: "the pages other people shared with you, by who shared them; with --query, find words in them",
+			Flags: []cli.Flag{
+				JSONFlag(),
+				&cli.StringFlag{Name: "query", Usage: "find these words in the names, openings and facts of what was shared with you, instead of listing it"},
+				&cli.IntFlag{Name: "first", Usage: "with --query, the most hits to show; 20 by default and at most 50"},
+			},
 			Action: runAgentMemoryShared,
 		},
 	}
@@ -156,6 +160,9 @@ func runAgentMemoryShared(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if query := strings.TrimSpace(command.String("query")); query != "" {
+		return runAgentMemorySharedSearch(ctx, command, connection, query)
+	}
 	roots, err := client.ListSharedAgentPages(ctx, connection)
 	if err != nil {
 		return describeError(command, err)
@@ -172,6 +179,34 @@ func runAgentMemoryShared(ctx context.Context, command *cli.Command) error {
 		rows = append(rows, []string{root.OwnerUsername, root.Path, root.Name, root.Opening})
 	}
 	return printTable([]string{"shared by", "page", "name", "about"}, rows)
+}
+
+// runAgentMemorySharedSearch finds words in the pages other people shared, and
+// says for each hit whose it is: a page by its name and opening, a fact by its
+// number on the page, as 'teanode agent memory get --owner' numbers them.
+func runAgentMemorySharedSearch(ctx context.Context, command *cli.Command, connection *client.Client, query string) error {
+	hits, err := client.SearchSharedAgentPages(ctx, connection, query, command.Int("first"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(hits)
+	}
+	if len(hits) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "nothing shared with you has those words")
+		return nil
+	}
+	rows := make([][]string, 0, len(hits))
+	for _, hit := range hits {
+		where, said := hit.Path, hit.Name
+		if hit.FactNumber > 0 {
+			where, said = fmt.Sprintf("%s#%d", hit.Path, hit.FactNumber), hit.Text
+		} else if hit.Opening != "" {
+			said = hit.Name + ": " + hit.Opening
+		}
+		rows = append(rows, []string{hit.OwnerUsername, where, said})
+	}
+	return printTable([]string{"shared by", "page", "about"}, rows)
 }
 
 // runAgentMemoryGetShared reads a page another person shared, for

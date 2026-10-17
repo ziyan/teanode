@@ -1038,6 +1038,51 @@ func TestAnAgentSpeaksInAChatUnderItsNameForItsOwner(t *testing.T) {
 	world.refused(t, world.alice, fmt.Sprintf(`mutation { SayInChatAsAgent(conversationId: %q, message: "hello") { id } }`, frankChat))
 }
 
+// An agent that is on reacts to what was said in its owner's chat, as itself:
+// the others are told, the reaction is read back as the agent's, it can be
+// taken away, and an agent does not react to its own words or when it is off.
+func TestAnAgentReactsInAChatForItsOwner(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.frank)
+	aliceChat := world.openDirect(t, world.alice, world.frank)
+	frankChat := world.openDirect(t, world.frank, world.alice)
+	world.say(t, world.alice, aliceChat, "dinner at seven?")
+	said := world.read(t, world.frank, frankChat)[0]["id"].(string)
+	feed := world.follow(aliceChat)
+	defer feed.stop()
+
+	world.call(t, world.frank, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "❤️") }`, said))
+	reacted := feed.next(agent.EventReacted)
+	if reacted == nil || reacted.MessageID != said || reacted.Emoji != "❤️" || reacted.ReactorKind != "agent" || reacted.ReactorName != models.AgentDefaultName {
+		t.Fatalf("Alice's chat was told %+v", reacted)
+	}
+	reactions := world.read(t, world.alice, aliceChat)[0]["reactions"].([]any)
+	if len(reactions) != 1 || reactions[0].(map[string]any)["reactorKind"] != "agent" || reactions[0].(map[string]any)["emoji"] != "❤️" {
+		t.Errorf("Alice reads the reactions %v", reactions)
+	}
+	// Replacing it, then taking it away.
+	world.call(t, world.frank, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "👍") }`, said))
+	if reactions = world.read(t, world.alice, aliceChat)[0]["reactions"].([]any); len(reactions) != 1 || reactions[0].(map[string]any)["emoji"] != "👍" {
+		t.Errorf("one reaction for the agent, replaced: %v", reactions)
+	}
+	world.call(t, world.frank, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "") }`, said))
+	if reactions, _ = world.read(t, world.alice, aliceChat)[0]["reactions"].([]any); len(reactions) != 0 {
+		t.Errorf("taken away: %v", reactions)
+	}
+
+	// Not to its own words, not an agent that is off, not a word that is no emoji.
+	agentsOwn := world.call(t, world.frank, fmt.Sprintf(`mutation { SayInChatAsAgent(conversationId: %q, message: "Frank will be late.") { id } }`, frankChat))["SayInChatAsAgent"].(map[string]any)["id"].(string)
+	world.refused(t, world.frank, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "👍") }`, agentsOwn))
+	world.refused(t, world.frank, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "ok") }`, said))
+	world.refused(t, world.alice, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "👍") }`, said))
+	// Nobody outside the chat reacts in it.
+	for _, outsider := range []*models.User{world.erin, world.dave} {
+		if message := world.refused(t, outsider, fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "👍") }`, said)); !strings.Contains(message, "not found") {
+			t.Errorf("%s was told %q", outsider.Username, message)
+		}
+	}
+}
+
 func TestAFileSentInAChatIsReadableByTheOthersInIt(t *testing.T) {
 	world := newChatWorld(t)
 	world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
@@ -1241,6 +1286,7 @@ func TestEveryChatOperationAnswersNotFoundToAnOutsider(t *testing.T) {
 		fmt.Sprintf(`mutation { MuteChat(conversationId: %q) { id } }`, aliceChat),
 		fmt.Sprintf(`mutation { SetChatTyping(conversationId: %q) }`, aliceChat),
 		fmt.Sprintf(`mutation { SayInChatAsAgent(conversationId: %q, message: "x") { id } }`, aliceChat),
+		fmt.Sprintf(`mutation { ReactInChatAsAgent(messageId: %q, emoji: "👍") }`, messageId),
 		fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: "👍") }`, messageId),
 		fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "x") { runId } }`, aliceChat),
 		fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { total } }`, aliceChat),

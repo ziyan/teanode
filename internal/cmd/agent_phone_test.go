@@ -5,11 +5,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	_ "github.com/ziyan/teanode/internal/agent/tools/all"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // Everything a person does with their phones is on every surface they use:
@@ -129,6 +131,50 @@ func TestPhoneParity(test *testing.T) {
 	for subcommand := range subcommands {
 		if !listedSubcommands[subcommand] {
 			test.Errorf("teanode agent phone %s is on no other surface", subcommand)
+		}
+	}
+}
+
+// Every kind of notification a phone can choose is named where a person
+// chooses: the dashboard's Devices page in all three languages, the help of
+// teanode agent phone, and the iPhone app's settings. A kind added to the
+// server's list without a label there shows up as its raw name, or is not
+// offered at all.
+func TestEveryNotificationKindIsNamedOnEverySurface(test *testing.T) {
+	test.Parallel()
+
+	read := func(parts ...string) string {
+		content, err := os.ReadFile(filepath.Join(append([]string{"..", ".."}, parts...)...))
+		if err != nil {
+			test.Fatal(err)
+		}
+		return string(content)
+	}
+	page := read("web", "src", "pages", "settings", "phones.tsx")
+	catalogs := map[string]string{
+		"en": read("web", "src", "i18n", "en.ts"), "ja": read("web", "src", "i18n", "ja.ts"), "zh": read("web", "src", "i18n", "zh.ts"),
+	}
+	swift := read("ios", "TeaNode", "Sources", "TeaNodeApp.swift")
+	help := newAgentPhoneCommand().Description
+	for _, kind := range models.NotificationKinds {
+		words := strings.Split(kind, "_")
+		for index := 1; index < len(words); index++ {
+			words[index] = strings.ToUpper(words[index][:1]) + words[index][1:]
+		}
+		key := "phones.kind." + strings.Join(words, "")
+		if !strings.Contains(page, "case '"+kind+"':\n        return t('"+key+"')") {
+			test.Errorf("the Devices page does not name the kind %q with %s", kind, key)
+		}
+		for language, catalog := range catalogs {
+			if !strings.Contains(catalog, "'"+key+"':") {
+				test.Errorf("the %s catalog has no %s", language, key)
+			}
+		}
+		if !regexp.MustCompile(`\b` + kind + `\b`).MatchString(help) {
+			test.Errorf("the help of teanode agent phone does not list the kind %q", kind)
+		}
+		if !strings.Contains(swift, `case "`+kind+`": String(localized:`) {
+			test.Errorf("the iPhone app does not name the kind %q in TeaNodeApp.swift", kind)
 		}
 	}
 }

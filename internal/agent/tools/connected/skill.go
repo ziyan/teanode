@@ -50,7 +50,7 @@ func init() {
 					case "disable":
 						return fmt.Sprintf("Stop offering the %s skill's tools", call.Name)
 					case "share":
-						return fmt.Sprintf("Let %s ask to use %s of your %s skill, on your computer, as you, each use waiting for your approval", tools.Named(call.With, "someone"), sharedToolsPhrase(call.ToolNames), tools.Named(call.Name, "a"))
+						return skillShareCard(&call)
 					case "unshare":
 						return "Take back a skill you shared"
 					case "shares":

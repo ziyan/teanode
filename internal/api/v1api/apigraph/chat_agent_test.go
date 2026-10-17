@@ -708,3 +708,52 @@ func TestAWordThatIsNotAnEffortIsRefusedBeforeAChatMessageIsStored(t *testing.T)
 		t.Errorf("with a real effort: %v", messages)
 	}
 }
+
+// A reply to an agent's message addresses that agent, whichever client sent
+// it: the dashboard and the app name the agent themselves, and a client that
+// names only the message (the command line) means the same. A reply to a
+// person addresses nobody.
+func TestAReplyToAnAgentsMessageAddressesThatAgent(t *testing.T) {
+	world := newChatWorld(t)
+	requests := world.withModel(t, []string{dentistRound})
+	world.shareCircle(t, world.frank, "Home", world.grace)
+	frankChat := world.openDirect(t, world.frank, world.grace)
+	graceChat := world.conversationOf(t, world.grace, world.chatIdOf(t, world.frank, frankChat))
+	frankAgent := world.agentOf(t, world.frank)
+	world.call(t, world.frank, fmt.Sprintf(`mutation { SetChatAgentAskableByOthers(conversationId: %q, isAgentAskableByOthers: true) %s }`, frankChat, chatAgentFields))
+
+	world.askAgentIn(t, world.frank, frankChat, "what time is the dentist on Thursday?", frankAgent.ID)
+	answer := world.answerIn(t, world.grace, graceChat)
+	if answer["authorAgentId"] != frankAgent.ID {
+		t.Fatalf("Grace reads %v", answer)
+	}
+	waitForRequests := func(want int) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for len(requests()) < want && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if got := len(requests()); got != want {
+			t.Fatalf("the model was asked %d times, want %d", got, want)
+		}
+	}
+	waitForRequests(1)
+
+	// Grace replies to the agent's answer and names no agent.
+	world.call(t, world.grace, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "and Friday?", references: [{agentMessageId: %q}]) { runId } }`, graceChat, answer["id"]))
+	waitForRequests(2)
+
+	// A reply to a person's message names nobody and starts nothing.
+	var question any
+	for _, message := range world.read(t, world.grace, graceChat) {
+		if message["authorKind"] == "person" && message["isMine"] == false {
+			question = message["id"]
+		}
+	}
+	if question == nil {
+		t.Fatal("Grace sees no message of Frank's")
+	}
+	world.call(t, world.grace, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "thanks", references: [{agentMessageId: %q}]) { runId } }`, graceChat, question))
+	waitForRequests(2)
+}

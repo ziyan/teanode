@@ -40,6 +40,11 @@ type AgentPageShareQuery interface {
 	// of a shared subtree, by who shared it. Needs circle:use.
 	ListSharedAgentPages(ctx context.Context) ([]*SharedAgentPageRootView, error)
 
+	// Find, by words, pages and facts in the pages other people shared with
+	// the caller: the same search the agent's memory tool makes of them, and
+	// only within what is shared. Each hit says whose it is. Needs circle:use.
+	SearchSharedAgentPages(ctx context.Context, arguments SearchSharedAgentPagesArguments) ([]*SharedAgentPageHitView, error)
+
 	// One page another person shared with the caller, or a page under one:
 	// its name, opening and facts, the links to other shared
 	// pages, and the pages under it. Anything not shared with the caller,
@@ -98,6 +103,28 @@ type SharedAgentPageRootView struct {
 	// The first sentence of what the page says
 	Opening       string `json:"opening"`
 	IsQuoteShared bool   `json:"isQuoteShared"`
+}
+
+// SharedAgentPageHitView is a page or a fact of a shared page that a search
+// found.
+type SharedAgentPageHitView struct {
+	// The person who shared it
+	OwnerUserID   string `json:"ownerUserId"`
+	OwnerUsername string `json:"ownerUsername"`
+	OwnerName     string `json:"ownerName"`
+
+	Path string `json:"path"`
+	Name string `json:"name"`
+
+	// The page's first sentence for a page, and empty for a fact
+	Opening string `json:"opening"`
+
+	// Which fact of the page it is, as its owner numbers them; zero for a
+	// page
+	FactNumber int `json:"factNumber"`
+
+	// What the fact says; empty for a page
+	Text string `json:"text"`
 }
 
 // SharedAgentPageView is a page another person shared, as the caller is
@@ -293,6 +320,52 @@ func (self *graph) ListSharedAgentPages(ctx context.Context) ([]*SharedAgentPage
 	views := make([]*SharedAgentPageRootView, 0, len(roots))
 	for _, root := range roots {
 		views = append(views, describeSharedRoot(root))
+	}
+	return views, nil
+}
+
+type SearchSharedAgentPagesArguments struct {
+	// The words to look for, in the names, openings and facts of the shared
+	// pages
+	Query string `json:"query"`
+
+	// The most hits to give back; 20 by default and at most 50
+	First *int `json:"first" graphapi:"nullable"`
+}
+
+// sharedSearchFirstMost is the most hits one search of shared pages gives
+// back, and sharedSearchFirstDefault how many when none is asked for.
+const (
+	sharedSearchFirstMost    = 50
+	sharedSearchFirstDefault = 20
+)
+
+func (self *graph) SearchSharedAgentPages(ctx context.Context, arguments SearchSharedAgentPagesArguments) ([]*SharedAgentPageHitView, error) {
+	user, err := self.requireCirclePerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := strings.TrimSpace(arguments.Query)
+	if query == "" {
+		return nil, fmt.Errorf("%w: say what to look for", api.ErrInvalidArguments)
+	}
+	first := sharedSearchFirstDefault
+	if arguments.First != nil {
+		first = min(max(*arguments.First, 1), sharedSearchFirstMost)
+	}
+	hits, err := agent.SearchSharedPages(self.transaction(ctx), user.ID, query, first)
+	if err != nil {
+		return nil, err
+	}
+	if len(hits) > first {
+		hits = hits[:first]
+	}
+	views := make([]*SharedAgentPageHitView, 0, len(hits))
+	for _, hit := range hits {
+		views = append(views, &SharedAgentPageHitView{
+			OwnerUserID: hit.OwnerUserID, OwnerUsername: hit.OwnerUsername, OwnerName: hit.OwnerName,
+			Path: hit.Path, Name: hit.Name, Opening: hit.Opening, FactNumber: hit.FactNumber, Text: hit.Text,
+		})
 	}
 	return views, nil
 }

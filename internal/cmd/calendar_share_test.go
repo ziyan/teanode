@@ -32,18 +32,32 @@ func TestCalendarSharingParity(test *testing.T) {
 		}
 	}
 
-	// The operations added with sharing, then the subcommand of teanode
-	// calendar that does each and, where the agent can, the action of its
-	// calendar tool.
+	// Every operation on calendars, then the subcommand of teanode calendar
+	// that does it and, where the agent can, the action of its calendar tool.
+	// An operation missing from here fails the test, so a new one is on every
+	// surface or its absence is written down.
 	table := map[string]struct {
 		subcommand string
 		action     string
 	}{
-		"ListCalendarShares":   {"shares", "shares"},
-		"ShareCalendar":        {"share", "share"},
-		"UnshareCalendar":      {"unshare", "unshare"},
-		"CreateCircleCalendar": {"circle", ""},
-		"ListCalendarFreeBusy": {"free", "free_together"},
+		"ListCalendars":         {"calendars", ""},
+		"ListCalendarEvents":    {"list", "agenda"},
+		"GetCalendarEvent":      {"show", ""},
+		"GetCalendarRequest":    {"request", ""},
+		"CancelCalendarRequest": {"stop", ""},
+		"SaveCalendarEvent":     {"add", "add"},
+		"DeleteCalendarEvent":   {"remove", "remove"},
+		"SaveCalendar":          {"set", ""},
+		"ListCalendarShares":    {"shares", "shares"},
+		"ShareCalendar":         {"share", "share"},
+		"UnshareCalendar":       {"unshare", "unshare"},
+		"CreateCircleCalendar":  {"circle", ""},
+		"ListCalendarFreeBusy":  {"free", "free_together"},
+	}
+	for operation := range operations {
+		if _, isListed := table[operation]; !isListed {
+			test.Errorf("the table does not list the operation %s", operation)
+		}
 	}
 
 	commands := map[string]*cli.Command{}
@@ -235,6 +249,53 @@ func TestShareResolvesWhoItIsFor(test *testing.T) {
 	}
 	if _, err = runCalendarCommand(test, server, "share", "ben", "--level", "everything"); err == nil {
 		test.Errorf("a level there is not")
+	}
+}
+
+// Circle names are not unique: a name two circles have, or that is also a
+// username, is refused with the ids and sizes of the circles, and nothing is
+// shared; an id still names one circle.
+func TestShareRefusesACircleNameThatIsNotUnique(test *testing.T) {
+	var lock sync.Mutex
+	shared := false
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		response.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(string(body), "ShareCalendar"):
+			lock.Lock()
+			shared = true
+			lock.Unlock()
+			_, _ = response.Write([]byte(`{"data":{"ShareCalendar":{"id":"s1","shareLevel":"busy"}}}`))
+		case strings.Contains(string(body), "ListCirclePeople"):
+			_, _ = response.Write([]byte(`{"data":{"ListCirclePeople":[{"userId":"u-ben","username":"ben","name":"Ben"}]}}`))
+		case strings.Contains(string(body), "ListCircles"):
+			_, _ = response.Write([]byte(`{"data":{"ListCircles":[
+				{"id":"c1","name":"Family","circleKind":"family","members":[{"userId":"a"},{"userId":"b"}],"pendingInvitations":[]},
+				{"id":"c2","name":"Family","circleKind":"family","members":[{"userId":"a"}],"pendingInvitations":[]},
+				{"id":"c3","name":"Ben","circleKind":"friends","members":[{"userId":"a"},{"userId":"b"},{"userId":"c"}],"pendingInvitations":[]}]}}`))
+		default:
+			_, _ = response.Write([]byte(`{"data":{"ListCalendars":[{"id":"own","name":"Calendar","calendarKind":"events","shareLevel":"owner","ownerUserId":"u-ada"}]}}`))
+		}
+	}))
+	defer server.Close()
+
+	_, err := runCalendarCommand(test, server, "share", "family", "--level", "busy")
+	if err == nil || !strings.Contains(err.Error(), "c1 (2 people)") || !strings.Contains(err.Error(), "c2 (1 person)") {
+		test.Errorf("two circles with one name are listed with their sizes: %v", err)
+	}
+	_, err = runCalendarCommand(test, server, "share", "ben", "--level", "busy")
+	if err == nil || !strings.Contains(err.Error(), "c3 (3 people)") {
+		test.Errorf("a name that is a username and a circle is refused: %v", err)
+	}
+	lock.Lock()
+	wasShared := shared
+	lock.Unlock()
+	if wasShared {
+		test.Fatal("nothing was shared while the name was ambiguous")
+	}
+	if _, err = runCalendarCommand(test, server, "share", "c2", "--level", "busy"); err != nil {
+		test.Errorf("an id names one circle: %v", err)
 	}
 }
 

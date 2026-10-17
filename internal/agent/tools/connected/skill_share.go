@@ -36,15 +36,44 @@ const (
 		id skillName toolName toolArguments requestReason amountMinor currencyCode callState answeredAt answerNote expiresAt createdAt granteeName ownerName } }`
 )
 
-// sharedToolsPhrase names the tools of a share for a card.
+// sharedToolsPhrase names the tools of a share for a card, "a, b and c".
 func sharedToolsPhrase(toolNames []string) string {
 	switch len(toolNames) {
 	case 0:
-		return "its tools"
+		return "some of its tools"
 	case 1:
 		return toolNames[0]
 	}
-	return strings.Join(toolNames, ", ")
+	return strings.Join(toolNames[:len(toolNames)-1], ", ") + " and " + toolNames[len(toolNames)-1]
+}
+
+// skillShareCard is the card the person answers before a skill is shared: who
+// may use which tools, and exactly what lets a call through without asking.
+// It is built from the arguments, so what the person approves is what they
+// read here, limits included, and not a summary that leaves them out.
+func skillShareCard(call *skillRequest) string {
+	card := fmt.Sprintf("Let %s use %s of your %s skill on your computer, as you: ",
+		tools.Named(call.With, "someone"), sharedToolsPhrase(call.ToolNames), tools.Named(call.Name, "a"))
+	if call.IsApprovalRequired {
+		return card + "every call waits for you"
+	}
+	currencyCode, _ := models.NormalizeCurrencyCode(call.Currency)
+	var limits []string
+	for _, limit := range []struct{ text, period string }{{call.PaymentLimit, "a payment"}, {call.MonthlyLimit, "a month"}} {
+		text := strings.TrimSpace(limit.text)
+		if text == "" {
+			continue
+		}
+		words := text + " " + strings.ToUpper(call.Currency)
+		if minor, err := models.ParseMinor(text, currencyCode); err == nil {
+			words = models.FormatMinor(minor, currencyCode)
+		}
+		limits = append(limits, strings.TrimSpace(words)+" "+limit.period)
+	}
+	if len(limits) == 0 {
+		return card + "no limits, so any call whose cost the skill does not state waits for you"
+	}
+	return card + "up to " + strings.Join(limits, " and ") + ", anything above waits for you"
 }
 
 // minorLimit reads a limit the person gave in the currency's own units.

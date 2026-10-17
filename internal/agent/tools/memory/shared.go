@@ -46,7 +46,7 @@ func otherOwner(run tools.Run, item *memoryItem) (string, bool) {
 // read of shared pages when it names an owner who is not the person.
 func refuseWritingToAnotherOwner(run tools.Run, item *memoryItem) error {
 	switch item.Action {
-	case "share", "unshare", "shares", "shared":
+	case "share", "preview", "unshare", "shares", "shared":
 		// These are about the person's own shares and what is shared with
 		// them, and have no use for an owner.
 		return nil
@@ -507,6 +507,94 @@ func shareAction(ctx context.Context, run tools.Run, item *memoryItem) (*tools.R
 	}
 	answer.Note = "shared " + path + " with " + grantee.Description
 	return answer, nil
+}
+
+// shareCard is the card the person answers before a page is shared. It says
+// the page goes with everything under it, and whether the words each fact was
+// read in go too, since those are quoted from their mail, chat and documents.
+func shareCard(page, with string, isQuoteShared bool) string {
+	quotes := "without the quotes each fact was read from"
+	if isQuoteShared {
+		quotes = "with the quotes each fact was read from"
+	}
+	return "Share " + page + " and everything under it with " + with + ", read only, " + quotes
+}
+
+// previewFactsShown is the most facts a preview lists.
+const previewFactsShown = 20
+
+// previewShareAction shows the person what sharing a page would show, through
+// the operation the dashboard and the command line use for it, so that the
+// person decides knowing how far the share reaches. Nothing is shared.
+func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*tools.Result, error) {
+	path := models.NormalizePath(item.Path)
+	if path == "" {
+		return nil, fmt.Errorf("which page? give a path, like people/alice-chen")
+	}
+	grantee, err := tools.ResolveGrantee(ctx, run.Operations(), item.With)
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{"path": path, "isQuoteShared": item.IsQuoteShared, "granteeUserId": nil, "granteeCircleId": nil}
+	if grantee.UserID != "" {
+		variables["granteeUserId"] = grantee.UserID
+	} else {
+		variables["granteeCircleId"] = grantee.CircleID
+	}
+	var result struct {
+		PreviewAgentPageShare struct {
+			Page struct {
+				Path     string `json:"path"`
+				Name     string `json:"name"`
+				Opening  string `json:"opening"`
+				NodeKind string `json:"nodeKind"`
+				Facts    []struct {
+					Number        int    `json:"number"`
+					Text          string `json:"text"`
+					EvidenceQuote string `json:"evidenceQuote"`
+				} `json:"facts"`
+				Edges    []struct{} `json:"edges"`
+				Children []struct {
+					Path string `json:"path"`
+				} `json:"children"`
+			} `json:"page"`
+			ReachedPageCount      int  `json:"reachedPageCount"`
+			IsReachedPageCountCut bool `json:"isReachedPageCountCut"`
+		} `json:"PreviewAgentPageShare"`
+	}
+	if err := run.Operations().Execute(ctx,
+		`query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
+		   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
+		     page { path name nodeKind opening facts { number text evidenceQuote } edges { relation } children { path } }
+		     reachedPageCount isReachedPageCountCut
+		   }
+		 }`, variables, &result); err != nil {
+		return nil, err
+	}
+	preview := result.PreviewAgentPageShare
+	facts := make([]map[string]any, 0, previewFactsShown)
+	for _, fact := range preview.Page.Facts {
+		if len(facts) == previewFactsShown {
+			break
+		}
+		row := map[string]any{"number": fact.Number, "text": fact.Text}
+		if fact.EvidenceQuote != "" {
+			row["quote"] = fact.EvidenceQuote
+		}
+		facts = append(facts, row)
+	}
+	answer := map[string]any{
+		"path": path, "with": grantee.ApprovalDescription, "is_quote_shared": item.IsQuoteShared,
+		"reached_page_count": preview.ReachedPageCount, "is_reached_page_count_cut": preview.IsReachedPageCountCut,
+		"page": map[string]any{
+			"name": preview.Page.Name, "opening": preview.Page.Opening, "fact_count": len(preview.Page.Facts), "facts": facts,
+			"link_count": len(preview.Page.Edges), "pages_directly_under_it": len(preview.Page.Children),
+		},
+	}
+	if len(preview.Page.Facts) > previewFactsShown {
+		answer["more_facts"] = fmt.Sprintf("%d more facts on the page are shown too", len(preview.Page.Facts)-previewFactsShown)
+	}
+	return tools.JSONResult(answer)
 }
 
 // sharesAction lists the shares the person made, each with who it is for.

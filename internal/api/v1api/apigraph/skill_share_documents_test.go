@@ -58,20 +58,37 @@ var (
 	backtickString = regexp.MustCompile("(?s)`([^`]*)`")
 	constantNamed  = regexp.MustCompile("(?s)(?:const|var)?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*`([^`]*)`")
 	interpolation  = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+	// A field list a TypeScript file writes in plain quotes, possibly on the
+	// line after its name.
+	quotedConstant = regexp.MustCompile(`(?m)(?:const|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*'([^'\n]*)'`)
+
+	// A Go string joined to a field list by name, "`+circleFields+`", which a
+	// template literal writes as ${circleFields}.
+	goJoinedConstant = regexp.MustCompile("`\\s*\\+\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\+\\s*`")
 )
 
 // backtickDocuments are the GraphQL operations written as template literals in
 // a Go or TypeScript file, with the field lists they interpolate filled in.
-func backtickDocuments(t *testing.T, path string) map[string]string {
+func backtickDocuments(t *testing.T, path string, alsoConstantsOf ...string) map[string]string {
 	t.Helper()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile %s: %s", path, err)
+	read := func(path string) string {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile %s: %s", path, err)
+		}
+		return goJoinedConstant.ReplaceAllString(string(raw), "$${$1}")
 	}
-	text := string(raw)
+	text := read(path)
 	constants := map[string]string{}
-	for _, match := range constantNamed.FindAllStringSubmatch(text, -1) {
-		constants[match[1]] = match[2]
+	// The field lists a page imports from another file are read from it.
+	for _, other := range append(alsoConstantsOf, path) {
+		for _, match := range quotedConstant.FindAllStringSubmatch(read(other), -1) {
+			constants[match[1]] = match[2]
+		}
+		for _, match := range constantNamed.FindAllStringSubmatch(read(other), -1) {
+			constants[match[1]] = match[2]
+		}
 	}
 	// Field lists written in another file the page imports.
 	constants["SKILL_SHARE_FIELDS"] = `id skillName toolNames ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
@@ -128,4 +145,52 @@ func swiftDocuments(t *testing.T, path string) map[string]string {
 		found[name] = literal
 	}
 	return found
+}
+
+// The same check for the documents the rest of the circles work writes by
+// hand: the dashboard's pages and components and the agent's tools (the
+// iPhone Kit's are all checked by TestTheAppDocumentsMatchTheSchema). A
+// document that is not in a file listed here is not checked, so a new screen
+// or tool is added to the list.
+func TestEveryCircleDocumentIsValidAgainstTheSchema(t *testing.T) {
+	world := newAvatarWorld(t)
+
+	documents := map[string]string{}
+	for _, file := range []string{
+		"../../../agent/tools/grantee.go",
+		"../../../agent/tools/circle/circle.go",
+		"../../../agent/tools/calendar/calendar.go",
+		"../../../agent/tools/calendar/sharing.go",
+		"../../../agent/tools/memory/shared.go",
+		"../../../agent/tools/conversation/conversation.go",
+		"../../../../web/src/components/calendarShare.tsx",
+		"../../../../web/src/components/calendarFindTime.tsx",
+		"../../../../web/src/components/circleInvitations.ts",
+		"../../../../web/src/components/agentChat.tsx",
+		"../../../../web/src/pages/agentConversations.tsx",
+		"../../../../web/src/pages/calendar.tsx",
+		"../../../../web/src/pages/circles.tsx",
+		"../../../../web/src/pages/knowledgeShared.tsx",
+		"../../../../web/src/pages/settings/phones.tsx",
+		"../../../../web/src/pages/settings/profile.tsx",
+		"../../../../web/src/pages/access/users.tsx",
+		"../../../../web/src/components/agentDrawer.tsx",
+		"../../../../web/src/components/accountMenu.tsx",
+		"../../../../web/src/session.tsx",
+	} {
+		for name, document := range backtickDocuments(t, file, "../../../../web/src/components/agentChat.tsx", "../../../../web/src/pages/access/common.tsx") {
+			documents[file+" "+name] = document
+		}
+	}
+	checked := 0
+	for name, document := range documents {
+		checked++
+		if _, rejected := world.graph.prepareGraphRequest(&graphRequest{Query: document}); rejected != nil {
+			t.Errorf("%s is refused by the schema: %v\n%s", name, rejected.Errors[0].Message, document)
+		}
+	}
+	if checked < 25 {
+		t.Errorf("only %d documents were found; the test is not looking where it thinks", checked)
+	}
+	t.Logf("checked %d documents", checked)
 }

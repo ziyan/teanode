@@ -328,7 +328,13 @@ func TestSharingAndUnsharingSendWhatWasAskedFor(t *testing.T) {
 	if sent := operations.sent["ShareCalendar"]; sent["granteeCircleId"] != "c1" || sent["granteeUserId"] != nil {
 		t.Errorf("a circle by id: %v", sent)
 	}
-	for _, arguments := range []string{`{"share_level":"busy"}`, `{"with":"stranger","share_level":"busy"}`, `{"with":"Home","share_level":"busy"}`, `{"with":"c9","share_level":"busy"}`} {
+	if _, err := call(t, "calendar_share", ctx, `{"with":"home","share_level":"busy"}`); err != nil {
+		t.Fatalf("a circle by its name: %v", err)
+	}
+	if sent := operations.sent["ShareCalendar"]; sent["granteeCircleId"] != "c1" || sent["granteeUserId"] != nil {
+		t.Errorf("a circle by name: %v", sent)
+	}
+	for _, arguments := range []string{`{"share_level":"busy"}`, `{"with":"stranger","share_level":"busy"}`, `{"with":"c9","share_level":"busy"}`} {
 		if _, err := call(t, "calendar_share", ctx, arguments); err == nil {
 			t.Errorf("%s is refused", arguments)
 		}
@@ -447,13 +453,13 @@ func TestTheAgendaRowsGiveWhatEditAndRemoveTake(t *testing.T) {
 	}
 }
 
-// The card for sharing names who, by their username or their circle's name,
-// and never the circle's identifier the model gave.
+// The card for sharing names who, by their username or their circle's name
+// and how many people it is, and never the circle's identifier the model gave.
 func TestTheCardForSharingNamesWhoItIsFor(t *testing.T) {
 	operations := &routing{answers: map[string]string{
 		"ListCalendars":    sharedCalendars,
 		"ListCirclePeople": `[{"userId":"u-ben","username":"ben","name":"Ben"}]`,
-		"ListCircles":      `[{"id":"c1","name":"Home"}]`,
+		"ListCircles":      `[{"id":"c1","name":"Home","members":[{"userId":"u-ada"},{"userId":"u-ben"},{"userId":"u-cora"},{"userId":"u-dave"}]}]`,
 	}}
 	ctx := runWith(operations)
 	calendar := tools.Build().Get("calendar")
@@ -461,11 +467,39 @@ func TestTheCardForSharingNamesWhoItIsFor(t *testing.T) {
 		t.Fatal("calendar is registered")
 	}
 	for arguments, want := range map[string]string{
-		`{"action":"share","with":"c1","share_level":"busy"}`:    `Share your calendar with everyone in Home, at "busy"`,
+		`{"action":"share","with":"c1","share_level":"busy"}`:    `Share your calendar with everyone in Home (4 people), at "busy"`,
 		`{"action":"share","with":"Ben","share_level":"titles"}`: `Share your calendar with ben, at "titles"`,
 	} {
 		if line := calendar.PreviewLine(ctx, []byte(arguments)); line != want {
 			t.Errorf("%s is previewed as %q, want %q", arguments, line, want)
 		}
+	}
+}
+
+// Two of the person's circles can be called the same: a write to a circle
+// calendar by that name is refused with their ids and sizes instead of going
+// to whichever is listed first, and the id still names one.
+func TestACircleCalendarNameTwoCirclesHaveIsRefused(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars": `[
+			{"id":"own","name":"Calendar","timezone":"UTC","agentGranted":true,"calendarKind":"events","shareLevel":"owner","ownerUserId":"u-ada","ownerUsername":"ada"},
+			{"id":"family-one","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c1","circleName":"Family","isCircleCalendar":true},
+			{"id":"family-two","name":"Family","timezone":"UTC","calendarKind":"events","shareLevel":"edit","circleId":"c2","circleName":"Family","isCircleCalendar":true}]`,
+		"ListCircles":       `[{"id":"c1","members":[{"userId":"a"},{"userId":"b"}]},{"id":"c2","members":[{"userId":"a"}]}]`,
+		"SaveCalendarEvent": `{"id":"new","summary":"Picnic"}`,
+	}}
+	ctx := runWith(operations)
+	_, err := call(t, "calendar_add", ctx, `{"summary":"Picnic","starts":"2030-01-05T12:00","circle":"family"}`)
+	if err == nil || !strings.Contains(err.Error(), "c1 (2 people)") || !strings.Contains(err.Error(), "c2 (1 person)") {
+		t.Fatalf("two circles with one name: %v", err)
+	}
+	if operations.sent["SaveCalendarEvent"] != nil {
+		t.Errorf("nothing was written: %v", operations.sent["SaveCalendarEvent"])
+	}
+	if _, err := call(t, "calendar_add", ctx, `{"summary":"Picnic","starts":"2030-01-05T12:00","circle":"c2"}`); err != nil {
+		t.Fatal(err)
+	}
+	if operations.sent["SaveCalendarEvent"]["calendarId"] != "family-two" {
+		t.Errorf("an id names one: %v", operations.sent["SaveCalendarEvent"])
 	}
 }

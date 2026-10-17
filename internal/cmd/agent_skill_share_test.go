@@ -303,3 +303,66 @@ func TestTheCallsOfSharesThatEndedAreListedWithoutAShare(test *testing.T) {
 		}
 	}
 }
+
+// --state asks for the calls in a state, the operation's callState, and more
+// than one is asked for one at a time and put together, newest first; a state
+// there is not is refused before anything is sent.
+func TestTheCallsOfAShareAreListedByState(test *testing.T) {
+	var lock sync.Mutex
+	asked := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var document struct {
+			Variables map[string]any `json:"variables"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&document)
+		callState, _ := document.Variables["callState"].(string)
+		lock.Lock()
+		asked = append(asked, callState)
+		lock.Unlock()
+		created := map[string]string{"ran": "2026-10-17T09:00:00Z", "declined": "2026-10-17T11:00:00Z"}[callState]
+		if created == "" {
+			created = "2026-10-17T10:00:00Z"
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"data":{"ListSkillShareCalls":[{"id":"call-` + callState + `","skillName":"payments","granteeUsername":"ben","toolName":"pay","callState":"` + callState + `","createdAt":"` + created + `"}]}}`))
+	}))
+	defer server.Close()
+
+	output, err := runSkillCommand(test, server, "calls", "s1", "--state", "ran", "--state", "declined")
+	if err != nil {
+		test.Fatal(err)
+	}
+	lock.Lock()
+	got := strings.Join(asked, ",")
+	lock.Unlock()
+	if got != "ran,declined" {
+		test.Errorf("the states asked for were %q", got)
+	}
+	if !strings.Contains(output, "call-declined") || !strings.Contains(output, "call-ran") || strings.Index(output, "call-declined") > strings.Index(output, "call-ran") {
+		test.Errorf("both, the newest first:\n%s", output)
+	}
+
+	lock.Lock()
+	asked = asked[:0]
+	lock.Unlock()
+	if _, err := runSkillCommand(test, server, "calls", "s1", "--state", "waiting"); err != nil {
+		test.Fatal(err)
+	}
+	lock.Lock()
+	got = strings.Join(asked, ",")
+	lock.Unlock()
+	if got != "waiting_for_approval" {
+		test.Errorf("waiting is waiting_for_approval to the operation: %q", got)
+	}
+	lock.Lock()
+	asked = asked[:0]
+	lock.Unlock()
+	if _, err := runSkillCommand(test, server, "calls", "s1", "--state", "stuck"); err == nil || !strings.Contains(err.Error(), "--state") {
+		test.Errorf("a state there is not: %v", err)
+	}
+	lock.Lock()
+	defer lock.Unlock()
+	if len(asked) != 0 {
+		test.Errorf("something was asked for a state there is not: %v", asked)
+	}
+}

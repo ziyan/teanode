@@ -81,7 +81,7 @@ func init() {
 					"or 'edit' (details, and they may add, change and remove events that have no guests). Sharing again changes the level. " +
 					"Events marked private are only ever shown as busy.",
 				Parameters: tools.Object(map[string]any{
-					"with":        tools.StringProperty("who to share with: the username of somebody the person shares a circle with, from circle_people, or the id of a circle they are in, from circle list"),
+					"with":        tools.StringProperty("who to share with: the username of somebody the person shares a circle with, from circle_people, or a circle they are in by its name or id, from circle list; a name that more than one circle has is refused with their ids"),
 					"share_level": tools.EnumProperty("how much to show", "busy", "titles", "details", "edit"),
 				}, "with", "share_level"),
 				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
@@ -354,11 +354,18 @@ func targetCalendar(ctx context.Context, operations tools.Operations, circle, pe
 	if err != nil {
 		return "", "", err
 	}
+	if circle != "" {
+		found, err := circleCalendarNamed(ctx, operations, calendars, circle)
+		if err != nil {
+			return "", "", err
+		}
+		if found != nil {
+			return found.ID, found.Timezone, nil
+		}
+	}
 	for _, each := range calendars {
 		switch {
 		case each.isOwn():
-		case circle != "" && each.IsCircleCalendar && (each.CircleID == circle || strings.EqualFold(each.CircleName, circle)):
-			return each.ID, each.Timezone, nil
 		case person != "" && !each.IsCircleCalendar && strings.EqualFold(each.OwnerUsername, person):
 			if each.ShareLevel != string(models.ShareLevelEdit) {
 				return "", "", fmt.Errorf("%s has shared their calendar with the person at %s, and it can only be changed when it is shared at edit",
@@ -371,6 +378,53 @@ func targetCalendar(ctx context.Context, operations tools.Operations, circle, pe
 		return "", "", fmt.Errorf("none of the person's circles called %q has a calendar; a circle admin can make one", circle)
 	}
 	return "", "", fmt.Errorf("%s has not shared their calendar with the person", person)
+}
+
+// circleCalendarNamed is the calendar of the circle with this id or name, or
+// nil when there is none. Circle names are not unique, so a name that two of
+// the person's circles with a calendar have is refused with their ids and
+// sizes, in the words every other surface uses.
+func circleCalendarNamed(ctx context.Context, operations tools.Operations, calendars []*calendarEntry, circle string) (*calendarEntry, error) {
+	var named []*calendarEntry
+	for _, each := range calendars {
+		if !each.IsCircleCalendar || each.isOwn() {
+			continue
+		}
+		if each.CircleID == circle {
+			return each, nil
+		}
+		if strings.EqualFold(each.CircleName, circle) {
+			named = append(named, each)
+		}
+	}
+	if len(named) <= 1 {
+		if len(named) == 1 {
+			return named[0], nil
+		}
+		return nil, nil
+	}
+	var circles struct {
+		ListCircles []struct {
+			ID      string `json:"id"`
+			Members []struct {
+				UserID string `json:"userId"`
+			} `json:"members"`
+		} `json:"ListCircles"`
+	}
+	if err := operations.Execute(ctx, `query { ListCircles { id members { userId } } }`, nil, &circles); err != nil {
+		return nil, err
+	}
+	choices := make([]models.ShareableCircle, 0, len(named))
+	for _, each := range named {
+		choice := models.ShareableCircle{ID: each.CircleID, Name: each.CircleName}
+		for _, listed := range circles.ListCircles {
+			if listed.ID == each.CircleID {
+				choice.MemberCount = len(listed.Members)
+			}
+		}
+		choices = append(choices, choice)
+	}
+	return nil, models.AmbiguousCircleNameError(circle, choices)
 }
 
 type windowArguments struct {

@@ -624,7 +624,7 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 			}
 		}
 		for _, chat := range chats {
-			if chatMatches(chat, query) {
+			if chat.HasChatWords(query) {
 				matched = append(matched, chat)
 			}
 		}
@@ -661,24 +661,6 @@ func sortByLastMessage(conversations []*models.AgentConversation) {
 	sort.SliceStable(conversations, func(left, right int) bool {
 		return conversations[left].LastAt.After(conversations[right].LastAt)
 	})
-}
-
-// chatMatches says whether a chat's title or one of its members' names holds
-// the words.
-func chatMatches(conversation *models.AgentConversation, query string) bool {
-	if conversation.Chat == nil {
-		return false
-	}
-	query = strings.ToLower(query)
-	if strings.Contains(strings.ToLower(conversation.Chat.Title), query) {
-		return true
-	}
-	for _, member := range conversation.Chat.Members {
-		if strings.Contains(strings.ToLower(member.Name), query) || strings.Contains(strings.ToLower(member.Username), query) {
-			return true
-		}
-	}
-	return false
 }
 
 func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error) {

@@ -269,3 +269,86 @@ func TestAChatMessageReachesAPhoneOnAServerWithNoAgentWorker(t *testing.T) {
 		t.Errorf("%d notifications in all after the app went to the background, want 3", len(sent))
 	}
 }
+
+// An invitation to a circle reaches the phones of a person whose agent is
+// switched off, on a server with no worker, and leaves no note in a
+// conversation that person is not using.
+func TestACircleInvitationReachesAPhoneWhenTheAgentIsOffAndThereIsNoWorker(t *testing.T) {
+	world := newChatWorldWithoutWorker(t)
+	configuration := config.Default()
+	configuration.Server.Secret = "a secret for sealing in this test"
+	relay := &chatRelay{}
+	world.hub = chat.New(&chat.Settings{
+		Database: world.database, Configuration: func() *config.Configuration { return configuration }, Instance: "chat-test",
+		Phones: agent.NewPhoneNotifier(&agent.PhoneNotifierSettings{
+			Database: world.database, Configuration: func() *config.Configuration { return configuration },
+			Context: context.Background(), WaitGroup: &sync.WaitGroup{}, Sender: relay,
+		}),
+	})
+	world.graph.settings.Chat = world.hub
+	if world.graph.agentWorker() != nil {
+		t.Fatal("the world has a worker")
+	}
+
+	key := make([]byte, push.PhoneKeyBytes)
+	_, _ = rand.Read(key)
+	sealedKey, err := agent.SealConnectionSecret(configuration, base64.StdEncoding.EncodeToString(key))
+	if err != nil {
+		t.Fatalf("SealConnectionSecret: %s", err)
+	}
+	var agentId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		invited, err := tx.CreateUser(&models.User{Username: "invited-with-agent-off", Name: "Invited"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		role, err := tx.CreateRole(&models.Role{Name: "invited role", Permissions: []models.Permission{models.PermissionCircleUse}})
+		if err != nil {
+			t.Fatalf("CreateRole: %s", err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "invited group", UserIDs: []string{invited.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			t.Fatalf("CreateGroup: %s", err)
+		}
+		off, err := tx.CreateAgent(&models.Agent{UserID: invited.ID, Enabled: false})
+		if err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+		agentId = off.ID
+		if _, err := tx.PutAgentPhone(&models.AgentPhone{
+			AgentID: off.ID, ClientID: "a-phone-client", PhoneName: "A test phone", PushRegistration: "sealed:a-registration", PayloadKey: sealedKey,
+		}); err != nil {
+			t.Fatalf("PutAgentPhone: %s", err)
+		}
+		world.erin = invited
+	})
+	if _, err := world.database.CreateAuthorizedToken(&models.Token{
+		ID: "an-invited-token", UserID: world.erin.ID, Name: "A test phone", ClientID: "a-phone-client", ExpiresAt: time.Now().Add(time.Hour),
+	}, "a-key-hash", "a-refresh-hash"); err != nil {
+		t.Fatalf("CreateAuthorizedToken: %s", err)
+	}
+
+	circleId := world.makeCircle(t, world.alice, "Home", "family")
+	world.invite(t, world.alice, circleId, world.erin, "member")
+
+	sent := relay.settled(1)
+	if len(sent) != 1 {
+		t.Fatalf("%d notifications reached the phone, want 1", len(sent))
+	}
+	content, err := push.DecryptContent(key, sent[0].Sealed)
+	if err != nil {
+		t.Fatalf("the phone cannot read its notification: %s", err)
+	}
+	if content.NotificationKind != models.NotificationCircle || content.Body != world.alice.DisplayName()+" invited you to Home" {
+		t.Errorf("the notification says %+v", content)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		main, err := tx.MainAgentConversation(agentId, "drawer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages, err := tx.ListAgentMessages(main.ID, nil)
+		if err != nil || len(messages) != 0 {
+			t.Errorf("a note was written into the conversation of an agent that is off: %+v %v", messages, err)
+		}
+	})
+}

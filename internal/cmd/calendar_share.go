@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -52,29 +53,36 @@ func ownCalendarNamed(ctx context.Context, command *cli.Command, connection *cli
 // shareTarget is who a share is for, resolved from what was typed: the
 // username of somebody who shares a circle with the caller, or a circle by
 // identifier or name. The same answer for an account that does not exist and
-// one that shares no circle, since the server answers that way too.
+// one that shares no circle, since the server answers that way too. A circle
+// name more than one circle has, or that is also a username, is refused with
+// the ids and sizes to choose from, in the words the agent's tools use.
 func shareTarget(ctx context.Context, connection *client.Client, typed string) (granteeUserId, granteeCircleId, described string, err error) {
 	typed = strings.TrimSpace(typed)
 	people, err := client.ListCirclePeople(ctx, connection)
 	if err != nil {
 		return "", "", "", err
 	}
-	for _, person := range people {
-		if strings.EqualFold(person.Username, typed) {
-			return person.UserID, "", person.Username, nil
-		}
-	}
 	circles, err := client.ListCircles(ctx, connection)
 	if err != nil {
 		return "", "", "", err
 	}
-	for _, circle := range circles {
-		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
-			return "", circle.ID, "everyone in " + circle.Name, nil
-		}
+	shareablePeople := make([]models.ShareablePerson, 0, len(people))
+	for _, person := range people {
+		shareablePeople = append(shareablePeople, models.ShareablePerson{UserID: person.UserID, Username: person.Username})
 	}
-	return "", "", "", fmt.Errorf("%q is neither somebody you share a circle with nor a circle you are in; "+
-		"'teanode circle people' and 'teanode circle list' say who and which", typed)
+	shareableCircles := make([]models.ShareableCircle, 0, len(circles))
+	for _, circle := range circles {
+		shareableCircles = append(shareableCircles, models.ShareableCircle{ID: circle.ID, Name: circle.Name, MemberCount: len(circle.Members)})
+	}
+	target, err := models.ResolveShareTarget(typed, shareablePeople, shareableCircles)
+	if errors.Is(err, models.ErrNoShareTarget) {
+		return "", "", "", fmt.Errorf("%q is neither somebody you share a circle with nor a circle you are in; "+
+			"'teanode circle people' and 'teanode circle list' say who and which", typed)
+	}
+	if err != nil {
+		return "", "", "", err
+	}
+	return target.UserID, target.CircleID, target.Description, nil
 }
 
 func runCalendarShare(ctx context.Context, command *cli.Command) error {
