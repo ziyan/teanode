@@ -787,7 +787,7 @@ struct SettingsForm: View {
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
                 case "circles": CirclesView(connection: connection)
-                case "circle-detail": CircleDetailDemoScreen(connection: connection)
+                case "circle-detail", "circle-detail-operator": CircleDetailDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
                 case "settings-picture": PreferencesView(connection: connection)
