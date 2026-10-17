@@ -28,6 +28,9 @@ public enum PhotoBackupFailure: Codable, Equatable, Sendable {
     case fileIsNotInLibrary
     /// The file is in iCloud and the network costs data.
     case fileIsInICloudOnMobileData
+    /// The photo library did not give the file in time (a download from iCloud
+    /// that does not finish): backup went on without it and tries again later.
+    case fileTookTooLongToRead
     /// The operating system's own words, already in the person's language.
     case systemDescription(String)
 }
@@ -252,6 +255,14 @@ public enum PhotoBackupPlanner {
             }
         }
         return uploads
+    }
+
+    /// The uploads with the files that are on the phone first, the ones that
+    /// have to come down from iCloud after them, each group in the order it came
+    /// in: the queue fills fast with what needs no download, and a file that is
+    /// slow or stuck in iCloud does not stand in front of the rest.
+    public static func preferringLocalFiles(_ uploads: [PhotoBackupUpload]) -> [PhotoBackupUpload] {
+        uploads.filter(\.isLocallyAvailable) + uploads.filter { !$0.isLocallyAvailable }
     }
 
     /// Whether one role of an item has to go up: it is not on the server, or it
@@ -514,6 +525,14 @@ public actor PhotoBackupIndex {
     }
 
     public var changeToken: Data? { contents.changeToken }
+
+    /// How many files are still to send: those planned and not on the server,
+    /// leaving out the ones the server refused often enough to be left alone.
+    public func pendingFileCount() -> Int {
+        contents.records.values.reduce(0) { total, record in
+            total + record.roles.values.filter { !$0.isOnServer && $0.refusalCount < PhotoBackupPlanner.maximumRefusalCount }.count
+        }
+    }
 
     public func summary() -> PhotoBackupSummary {
         PhotoBackupSummary(

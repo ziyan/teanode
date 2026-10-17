@@ -11,7 +11,7 @@
     /// `photos-filter`, `photos-filter-dates`, `photos-near`, `photos-change-date`,
     /// `photos-shared-info` (Info over a photo another person shared), `photos-share-stop` (the question
     /// before a share is stopped) or `photos-new-circle-album` (the question for the title of a circle's album)
-    /// (and `photos-faces`, `photos-conversation-card`, `photos-backup-other-account` and
+    /// (and `photos-faces`, `photos-conversation-card`, `photos-backup-background`, `photos-backup-other-account` and
     /// `settings-photo-backup-other-account`, in Settings). The photos are invented, and their pictures are drawn
     /// here: a gradient and a few shapes in a color taken from the photo's id.
     extension DemoServer {

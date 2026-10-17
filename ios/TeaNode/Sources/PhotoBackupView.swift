@@ -231,6 +231,17 @@ struct PhotoBackupContent: View {
                 Label("\(status.leftForLaterFileCount) files will be sent when the network is back.", systemImage: "clock.arrow.circlepath")
                     .foregroundStyle(.secondary)
             }
+            if status.isUploadingInBackground {
+                Label("Uploading in the background: \(status.queuedFileCount) files queued", systemImage: "arrow.up.circle")
+                    .foregroundStyle(.secondary)
+            }
+            if status.hasFilesWaitingForTheApp {
+                Label(
+                    "\(status.waitingFileCount) files wait until you open TeaNode or the phone charges overnight. Photos kept in iCloud and large videos wait this way.",
+                    systemImage: "moon.zzz"
+                )
+                .foregroundStyle(.secondary)
+            }
             if status.phase == .uploading, let filename = status.currentFilename {
                 LabeledContent("Sending") {
                     Text(filename).monospaced()
@@ -273,7 +284,9 @@ struct PhotoBackupContent: View {
         case .idle:
             isEverythingBackedUp
                 ? String(localized: "Everything is backed up")
-                : (status.libraryItemCount == 0 ? String(localized: "Ready to back up") : String(localized: "Waiting to continue"))
+                : (status.libraryItemCount == 0
+                    ? String(localized: "Ready to back up")
+                    : (status.isUploadingInBackground ? String(localized: "Backing up") : String(localized: "Waiting to continue")))
         case .listing: String(localized: "Reading your photo library")
         case .uploading: String(localized: "Backing up")
         case .waitingForNetwork: usesMobileData ? String(localized: "Waiting for the network") : String(localized: "Waiting for Wi-Fi")
@@ -285,7 +298,7 @@ struct PhotoBackupContent: View {
     private var stateSymbol: String {
         switch status.phase {
         case .off: "icloud.slash"
-        case .idle: isEverythingBackedUp ? "checkmark.icloud" : "icloud"
+        case .idle: isEverythingBackedUp ? "checkmark.icloud" : (status.isUploadingInBackground ? "icloud.and.arrow.up" : "icloud")
         case .listing: "photo.stack"
         case .uploading: "icloud.and.arrow.up"
         case .waitingForNetwork: "wifi"
@@ -315,10 +328,16 @@ private let previewUploading = PhotoBackupStatus(
     phase: .uploading, backedUpItemCount: 1284, libraryItemCount: 3912, plannedFileCount: 2891, finishedFileCount: 1284, queuedFileCount: 4,
     currentFilename: "IMG_2041.MOV", lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400))
 
+private let previewBackground = PhotoBackupStatus(
+    phase: .idle, backedUpItemCount: 1284, libraryItemCount: 3912, queuedFileCount: 200,
+    lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600), waitingFileCount: 1_407)
+
 #Preview("Off, light") { previewContent(PhotoBackupStatus(phase: .off), credentialName: nil) }
 #Preview("Off, dark") { previewContent(PhotoBackupStatus(phase: .off), credentialName: nil).preferredColorScheme(.dark) }
 #Preview("Backing up, light") { previewContent(previewUploading) }
 #Preview("Backing up, dark") { previewContent(previewUploading).preferredColorScheme(.dark) }
+#Preview("Uploading in the background, light") { previewContent(previewBackground) }
+#Preview("Uploading in the background, dark") { previewContent(previewBackground).preferredColorScheme(.dark) }
 #Preview("Up to date, light") {
     previewContent(PhotoBackupStatus(phase: .idle, backedUpItemCount: 3912, libraryItemCount: 3912, lastPassFinishedAt: Date(timeIntervalSinceNow: -600)))
 }

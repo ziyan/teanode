@@ -367,6 +367,48 @@ photo on the phone never deletes it on the server. Photos' own background
 upload extension is not used yet: it needs a fixed server address in the
 app's build, which a self-hosted server does not have.
 
+### How the backup keeps going
+
+A pass (`PhotoBackupCoordinator.runPass`) reads the library, notes every file
+still to send in the index, and hands files to the background URLSession. The
+queue it hands over is long, up to 200 files and 10 GB, because iOS goes on
+sending whatever is queued after the person has left the app, and a short queue
+runs dry within minutes. Every queued file is an exported copy in the app's
+outgoing folder, so the bytes queued may not pass a quarter of the free space
+on the phone, and the free space is read again before each file is exported.
+The session sends four at a time (`httpMaximumConnectionsPerHost`), so the
+server is not flooded however many are queued. Files that are on the phone are
+queued first; files that have to come down from iCloud come after them, so
+that the queue fills fast and one slow download does not stand in front of the
+rest.
+
+What continues and what waits:
+
+- Files already queued continue with the app closed. The backup screen says
+  "Uploading in the background: N files queued".
+- When an upload finishes and the app is open, the app starts the next pass
+  (`finished` says whether to), so the library is worked through as uploads
+  finish and not only when the app is next opened. Only an upload that went up
+  starts a pass. A file the server refused, or one it asked to wait for, does
+  not, so a file that always fails cannot start passes in a loop. Refusals are
+  counted per file and stop at three. After three server failures in a row a
+  pass stops and the app tries again after a minute, then two, then four, up to
+  a quarter of an hour; a longer `Retry-After` from the server stands.
+- When iOS wakes the app because uploads finished, it has about 30 seconds. In
+  the first 18 the app queues more files that are on the phone already,
+  smallest first (`PhotoBackupCoordinator.topUp`), writes the index, and only
+  then calls the completion handler. It lists no library and never reads from
+  iCloud in that time.
+- Files in iCloud, files that did not fit in the queue, and the rest of the
+  library wait for the app to be opened, a network that comes back, or the
+  overnight processing task (on power and a network). The backup screen says
+  how many wait.
+- A file the photo library does not hand over within 30 minutes (a download
+  from iCloud that never finishes) is left for a later pass, and the pass goes
+  on with the next file. Before this, one such file held up the pass and every
+  later attempt to start one, because a pass already running is joined, not
+  started twice.
+
 Players cannot send a sign-in, so `PhotoPlaybackAddress` answers a signed
 address, valid for six hours, that streams one preview or file with ranges.
 

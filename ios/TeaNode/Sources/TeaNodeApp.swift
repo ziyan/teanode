@@ -737,7 +737,8 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
-                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-other-account": PhotoBackupView(connection: connection)
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-other-account":
+                    PhotoBackupView(connection: connection)
                 case "photos-faces": PhotoFacesSettingsView(connection: connection)
                 case "photos-conversation-card": PhotoConversationCardDemo()
                 case "devices": DevicesView(connection: connection)

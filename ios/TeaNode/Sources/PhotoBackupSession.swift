@@ -20,11 +20,15 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     typealias FinishHandler = @Sendable (PhotoBackupJob, PhotoBackupOutcome) async -> Void
     /// Writes the backup's index to disk.
     typealias FlushHandler = @Sendable () async -> Void
+    /// Queues more files in the short time the system gives the app when it was
+    /// woken because uploads finished. It ends by a deadline of its own.
+    typealias TopUpHandler = @Sendable () async -> Void
 
     private let lock = NSLock()
     private var bodies: [Int: Data] = [:]
     private var finishHandler: FinishHandler?
     private var flushHandler: FlushHandler?
+    private var topUpHandler: TopUpHandler?
     /// The tasks reporting finished uploads that have not finished, by an id of
     /// their own; each removes itself when it is done, so a long run with the
     /// app open does not collect one for every file ever sent.
@@ -37,6 +41,8 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
         configuration.sessionSendsLaunchEvents = true
         // Whether mobile data may be used is said by each request.
         configuration.allowsCellularAccess = true
+        // The queue holds hundreds of files, and the system sends them four at a
+        // time: the server is not flooded however many are waiting.
         configuration.httpMaximumConnectionsPerHost = 4
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
@@ -44,10 +50,11 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     /// Says who hears of a finished upload and who writes the index, and wakes
     /// the session so that it reports the ones that finished while the app was
     /// closed.
-    func attach(finishHandler: @escaping FinishHandler, flushHandler: @escaping FlushHandler) {
+    func attach(finishHandler: @escaping FinishHandler, flushHandler: @escaping FlushHandler, topUpHandler: @escaping TopUpHandler) {
         lock.withLock {
             self.finishHandler = finishHandler
             self.flushHandler = flushHandler
+            self.topUpHandler = topUpHandler
         }
         _ = session
     }
@@ -126,22 +133,25 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
         lock.withLock { _ = handlerTasks.removeValue(forKey: handlerId) }
     }
 
-    /// The system has delivered every event it started the app for. Its
-    /// completion handler is called once they have been dealt with and the
-    /// index is written: the system takes the app's snapshot and suspends it
-    /// at that call, and an index not yet written would be lost with it.
+    /// The system has delivered every event it started the app for. Once they
+    /// have been dealt with the app queues more files for the time it is
+    /// awake (the handler ends by its own deadline, well inside what the
+    /// system allows), and its completion handler is called when the index is
+    /// written: the system takes the app's snapshot and suspends it at that
+    /// call, and an index not yet written would be lost with it.
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        let (tasks, completion, flush) = lock.withLock {
+        let (tasks, completion, flush, topUp) = lock.withLock {
             let tasks = Array(handlerTasks.values)
             handlerTasks = [:]
             let completion = backgroundCompletion
             backgroundCompletion = nil
-            return (tasks, completion, flushHandler)
+            return (tasks, completion, flushHandler, topUpHandler)
         }
         guard let completion else { return }
         nonisolated(unsafe) let finish = completion
         Task { @MainActor in
             for task in tasks { await task.value }
+            await topUp?()
             await flush?()
             finish()
         }

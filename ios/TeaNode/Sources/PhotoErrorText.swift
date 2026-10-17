@@ -38,6 +38,8 @@ extension PhotoBackupFailure {
             String(localized: "This photo is no longer in your photo library.")
         case .fileIsInICloudOnMobileData:
             String(localized: "The file is in iCloud and this network costs data.")
+        case .fileTookTooLongToRead:
+            String(localized: "A file took too long to come from your photo library or iCloud. Backup went on without it and tries it again later.")
         case .systemDescription(let systemText):
             systemText
         }

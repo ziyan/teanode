@@ -387,6 +387,10 @@ jobs:
           shoot photos-backup-waiting-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-waiting
           shoot photos-backup-waiting-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-waiting
           shoot photos-backup-waiting-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-waiting
+          # Uploads that continue in the background, and files that wait for the app or the night.
+          shoot photos-backup-background-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-background
+          shoot photos-backup-background-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-background
+          shoot photos-backup-background-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-background
           # Backup on for another account: the row in Settings, and the screen it opens.
           shoot settings-photo-backup-other-account-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings-photo-backup-other-account
           shoot photos-backup-other-account-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-other-account

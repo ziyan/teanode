@@ -38,5 +38,15 @@ joins that photo under the phone's name, so the photo is in the timeline once
 and counted against the quota once; a file the phone has changed, such as a
 re-encoded copy, is a photo of its own.
 
+Backup goes on after the person leaves the app, as far as iOS allows. The app
+hands the background session a long queue (up to 200 files and 10 GB, never
+more than a quarter of the phone's free space), and iOS sends it with the app
+closed. When iOS wakes the app because uploads finished, the app queues more
+files that are on the phone already, in the few seconds it has. What waits for
+the app to be opened or for the night, while the phone charges, is the rest of
+the library, files that are in iCloud (they must be downloaded first), and
+files that did not fit in the queue. The backup screen says how many are queued
+and how many wait.
+
 Keeping an album on the phone automatically, and mirroring the phone's own
 albums, are left out of this design.
