@@ -648,7 +648,17 @@ final class LocationModel {
     func markHome() async {
         guard let position = await currentPosition() else { return }
         let here = CLLocation(latitude: position.latitudeDegrees, longitude: position.longitudeDegrees)
-        let holding = places.filter { CLLocation(latitude: $0.latitudeDegrees, longitude: $0.longitudeDegrees).distance(from: here) <= $0.radiusMeters }
+        // The person's places are read here, up to 200 with no filter, not
+        // taken from the screen's list, which is a page narrowed by the label
+        // filter and the search words and may not hold the place at hand.
+        let allPlaces: [LocationPlace]
+        do {
+            allPlaces = try await connection.locationPlaces(limitCount: 200).places
+        } catch {
+            problemText = error.localizedDescription
+            return
+        }
+        let holding = allPlaces.filter { CLLocation(latitude: $0.latitudeDegrees, longitude: $0.longitudeDegrees).distance(from: here) <= $0.radiusMeters }
         let nearest = holding.min {
             CLLocation(latitude: $0.latitudeDegrees, longitude: $0.longitudeDegrees).distance(from: here)
                 < CLLocation(latitude: $1.latitudeDegrees, longitude: $1.longitudeDegrees).distance(from: here)

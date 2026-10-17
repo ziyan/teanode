@@ -1313,6 +1313,22 @@
         }
       }
     },
+    "All labels": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのラベル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部标签"
+          }
+        }
+      }
+    },
     "Also show the words each fact was read in": {
       "localizations": {
         "ja": {
@@ -3873,6 +3889,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开菜单，即可与和你同在一个圈子的人聊天。"
+          }
+        }
+      }
+    },
+    "Places near you stay listed until you search.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索するまで、近くの場所が表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索之前，会一直列出您附近的地点。"
+          }
+        }
+      }
+    },
+    "Press Search to find places by name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「検索」を押して名前で場所を探す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按“搜索”按名称查找地点"
+          }
+        }
+      }
+    },
+    "Search places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索地点"
+          }
+        }
+      }
+    },
+    "Share where I am and where I have been with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に今いる場所と訪れた場所を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@共享我的位置和去过的地方"
+          }
+        }
+      }
+    },
+    "Share where I am now with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に今いる場所を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与%@共享我现在的位置"
           }
         }
       }
@@ -59424,38 +59520,6 @@
         }
       }
     },
-    "Search your places": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自分の場所を検索"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "搜索您的地点"
-          }
-        }
-      }
-    },
-    "All places": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべての場所"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "全部地点"
-          }
-        }
-      }
-    },
     "Erase this day": {
       "localizations": {
         "ja": {
@@ -59788,22 +59852,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和到访的地点。"
-          }
-        }
-      }
-    },
-    "Only where I am now, with %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@には今いる場所だけ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只与%@共享我现在的位置"
           }
         }
       }

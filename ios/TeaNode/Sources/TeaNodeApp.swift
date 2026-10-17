@@ -36,7 +36,7 @@ struct TeaNodeApp: App {
             .onAppear { appearance.apply() }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active { appearance.apply() }
-                LocationRecorder.shared.sceneDidChange(isActive: phase == .active)
+                LocationRecorder.shared.sceneDidChange(isActive: phase == .active, isBackground: phase == .background)
             }
         }
     }

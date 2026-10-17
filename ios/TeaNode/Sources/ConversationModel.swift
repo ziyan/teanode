@@ -928,6 +928,13 @@ enum LocationReader {
 
     @MainActor
     static func current() async -> Reading {
+        #if DEBUG
+            // The screenshots run without asking anything of the system: the
+            // phone is at the demo park, where the demo's nearby places are.
+            if DemoServer.isRequested {
+                return Reading(latitudeDegrees: 10.5040, longitudeDegrees: 20.5060, accuracyMeters: 10, measuredAt: Date())
+            }
+        #endif
         // The recorder follows the person while the app is open: a reading
         // under a minute old answers without asking Core Location again.
         if let live = LocationRecorder.shared.livePosition, Date().timeIntervalSince(live.measuredAt) < 60 {

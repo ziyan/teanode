@@ -33,8 +33,10 @@ struct LocationSetupList: View {
                 ForEach(setup.familyCircles) { circle in
                     let isShared = setup.isShared(with: circle)
                     LocationSetupRow(
-                        title: isShared ? String(localized: "Shared with \(circle.name)") : String(localized: "Share with \(circle.name)"),
-                        detail: LocationShareLevel.history.title, symbolName: "person.2", isDone: isShared, isEnabled: !isWorking
+                        title: isShared
+                            ? String(localized: "Shared with \(circle.name)")
+                            : String(localized: "Share where I am and where I have been with \(circle.name)"),
+                        detail: isShared ? LocationShareLevel.history.title : LocationShareLevel.history.explanation, symbolName: "person.2", isDone: isShared, isEnabled: !isWorking
                     ) {
                         run { await model.shareWithFamily(circle, at: .history) }
                     }
@@ -42,7 +44,7 @@ struct LocationSetupList: View {
                         Button {
                             run { await model.shareWithFamily(circle, at: .current) }
                         } label: {
-                            Label("Only where I am now, with \(circle.name)", systemImage: "location.circle")
+                            Label("Share where I am now with \(circle.name)", systemImage: "location.circle")
                         }
                         .disabled(isWorking)
                         .frame(minHeight: 44)

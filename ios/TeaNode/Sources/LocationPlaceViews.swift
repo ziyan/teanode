@@ -221,6 +221,11 @@ struct CheckInSheet: View {
                 } else if !trimmedSearchText.isEmpty {
                     if isSearching, searchedPlaces == nil {
                         ProgressView()
+                    } else if searchedPlaces == nil {
+                        // Words typed and not yet searched for.
+                        ContentUnavailableView(
+                            "Press Search to find places by name", systemImage: "magnifyingglass",
+                            description: Text("Places near you stay listed until you search."))
                     } else if searchedPlaces?.isEmpty == true, searchedWords == trimmedSearchText {
                         ContentUnavailableView.search(text: trimmedSearchText)
                     }

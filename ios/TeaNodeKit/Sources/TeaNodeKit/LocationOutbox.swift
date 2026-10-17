@@ -250,8 +250,12 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     }
 
     /// Queues an arrival, a departure or a whole visit.
+    /// One with neither an arrival nor a departure (iOS reports a visit with
+    /// both dates unknown) is dropped: the server would refuse the whole batch.
     public mutating func addVisit(_ visit: ReportedVisit) {
-        guard LocationGeometry.isOnEarth(latitudeDegrees: visit.latitudeDegrees, longitudeDegrees: visit.longitudeDegrees) else { return }
+        guard LocationGeometry.isOnEarth(latitudeDegrees: visit.latitudeDegrees, longitudeDegrees: visit.longitudeDegrees),
+            visit.arrivedAt != nil || visit.departedAt != nil
+        else { return }
         var queued = visit
         queued.sequence = nextSequence
         nextSequence += 1
@@ -366,15 +370,20 @@ public enum LocationReportFailure: Equatable, Sendable {
     /// The server named no phone of the person's with the identifier given:
     /// send the batch again without it.
     case phoneNotFound
-    /// The server refused the batch itself (not allowed to use Location, or
-    /// the batch is not valid): retrying cannot change the answer. Carries
-    /// the server's reason.
+    /// The server will not take anything from this person (not allowed to
+    /// use Location): retrying cannot change the answer. Carries the server's
+    /// reason.
     case refused(String)
+    /// The server called this batch invalid: sending it again cannot change
+    /// the answer, but later batches may be fine, so it is dropped and
+    /// recording goes on. Carries the server's reason.
+    case batchInvalid(String)
 
     public static func classify(_ error: Error) -> LocationReportFailure {
         guard let known = error as? TeaNodeError, case .refused(let reason) = known else { return .retryLater }
         if known.isNotFound { return .phoneNotFound }
-        if reason.contains("permission denied") || reason.contains("invalid arguments") { return .refused(reason) }
+        if reason.contains("permission denied") { return .refused(reason) }
+        if reason.contains("invalid arguments") { return .batchInvalid(reason) }
         return .retryLater
     }
 }

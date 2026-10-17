@@ -30,6 +30,14 @@ extension LocationPlace {
         return String(localized: "A place")
     }
 
+    /// For a place that shows its label's word as its name, the name
+    /// OpenStreetMap or the address gave, to say under it; nil for any other.
+    var secondaryName: String? {
+        guard !isNamedByPerson, label != nil else { return nil }
+        if !placeName.isEmpty { return placeName }
+        return addressText.isEmpty ? nil : addressText
+    }
+
     /// The symbol that stands for it: its label's, else a map marker.
     var symbolName: String { label?.symbolName ?? "mappin" }
 

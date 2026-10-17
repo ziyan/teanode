@@ -344,6 +344,20 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(outbox.visits.filter { $0.departedAt != nil }.count, 2)
     }
 
+    func testAVisitWithNeitherAnArrivalNorADepartureIsNotQueued() {
+        var outbox = LocationOutbox(accountKey: "mail.example.com/robin")
+        outbox.addVisit(
+            ReportedVisit(
+                clientVisitKey: "undated", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 20, arrivedAt: nil, departedAt: nil,
+                visitSource: "visit"))
+        XCTAssertTrue(outbox.isEmpty)
+        outbox.addVisit(
+            ReportedVisit(
+                clientVisitKey: "dated", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 20, arrivedAt: Date(timeIntervalSince1970: 1_000),
+                departedAt: nil, visitSource: "visit"))
+        XCTAssertEqual(outbox.visits.count, 1)
+    }
+
     func testDiscardingWhatIsUnsentKeepsTheVisitsBegun() {
         var outbox = LocationOutbox(accountKey: "account")
         outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: Date()))
@@ -384,7 +398,8 @@ final class LocationTests: XCTestCase {
 
     func testAFailedBatchIsRetriedOnlyForACallThatDidNotGetThrough() {
         XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.refused("api: permission denied")), .refused("api: permission denied"))
-        XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.refused("api: invalid arguments: bad point")), .refused("api: invalid arguments: bad point"))
+        XCTAssertEqual(
+            LocationReportFailure.classify(TeaNodeError.refused("api: invalid arguments: bad point")), .batchInvalid("api: invalid arguments: bad point"))
         XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.refused("api: not found")), .phoneNotFound)
         XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.signedOut), .retryLater)
         XCTAssertEqual(LocationReportFailure.classify(URLError(.notConnectedToInternet)), .retryLater)

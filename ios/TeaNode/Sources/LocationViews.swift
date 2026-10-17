@@ -540,7 +540,7 @@ struct LocationPlacesList: View {
             }
         }
         .refreshable { await model.load() }
-        .searchable(text: $model.placeSearchText, prompt: Text("Search your places"))
+        .searchable(text: $model.placeSearchText, prompt: Text("Search places"))
         // Read a moment after the last key, not at every key.
         .task(id: model.placeSearchText) {
             guard model.isPlaceSearchPending else { return }
@@ -567,7 +567,7 @@ struct PlaceLabelFilterPicker: View {
 
     var body: some View {
         Picker("Label", selection: $selection) {
-            Text("All places").tag(PlaceLabel?.none)
+            Text("All labels").tag(PlaceLabel?.none)
             ForEach(PlaceLabel.allCases, id: \.rawValue) { label in
                 Label(label.title, systemImage: label.symbolName).tag(Optional(label))
             }
@@ -588,6 +588,11 @@ struct LocationPlaceRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: place.shownName)
+                if let secondaryName = place.secondaryName {
+                    Text(verbatim: secondaryName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
                 Text(verbatim: LocationText.visits(of: place))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)

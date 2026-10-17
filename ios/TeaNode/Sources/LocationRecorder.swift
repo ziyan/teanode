@@ -184,6 +184,13 @@ final class LocationRecorder {
     @ObservationIgnored private var placeMonitorTask: Task<Void, Never>?
     @ObservationIgnored private var watchedPlaces: [String: WatchedPlace] = [:]
     @ObservationIgnored private var placeWatchRefreshedAt = Date.distantPast
+    /// Set when the account changes, until the places watched are replaced by
+    /// the new account's.
+    @ObservationIgnored private var arePlacesWatchedForPreviousAccount = false
+    /// When each place was last given to iOS again with a changed center or
+    /// radius: iOS then says at once that the person is inside it, which is
+    /// not a new arrival for a visit already in progress.
+    @ObservationIgnored private var placeAddedAt: [String: Date] = [:]
     private let defaults: UserDefaults
     private let outboxDirectory: URL?
 
@@ -193,6 +200,9 @@ final class LocationRecorder {
     /// How often the watched places are read again from the server because
     /// the person moved a long way: no more than this.
     private static let placeWatchRefreshSeconds = 60.0
+    /// How soon after a place was watched again an arrival at it is taken to
+    /// be iOS saying where the person already is.
+    private static let placeAddedEchoSeconds = 30.0
     /// How long the outbox may go unwritten while positions keep coming: a
     /// full one is megabytes of JSON, and a write for every position would
     /// cost the battery. Visits are written at once.
@@ -235,8 +245,10 @@ final class LocationRecorder {
         Task { await flush() }
     }
 
-    /// The app came to the foreground or went to the background.
-    func sceneDidChange(isActive: Bool) {
+    /// The app came to the foreground, or left it. Leaving it for the
+    /// background sends what waits and reads the places again; becoming
+    /// inactive (Control Center, a system alert, the app switcher) does not.
+    func sceneDidChange(isActive: Bool, isBackground: Bool) {
         isAppActive = isActive
         guard manager != nil else { return }
         if isActive {
@@ -254,6 +266,7 @@ final class LocationRecorder {
         } else {
             stopLiveUpdates()
             writeOutbox()
+            guard isBackground else { return }
             // A place named, labeled or resized while the app was open is
             // watched from here on, not from the next time it is opened.
             Task {
@@ -290,6 +303,12 @@ final class LocationRecorder {
             useOutbox(accountKey: accountKey)
             refusalText = nil
             retryGate = LocationRetryGate()
+            // The places watched are the previous account's: they are
+            // dropped by the next refresh before it reads this account's, so
+            // that no arrival at one is reported for this account if its own
+            // places cannot be read.
+            placeWatchRefreshedAt = .distantPast
+            arePlacesWatchedForPreviousAccount = true
         }
         applyMonitoring()
         Task { await flush(isForced: true) }
@@ -447,7 +466,7 @@ final class LocationRecorder {
     // Never without the manager: the screenshots run with no manager and must
     // not make Core Location ask the person anything.
     private var isLiveWanted: Bool {
-        manager != nil && isAppActive && isAuthorizedToLocate && AppModel.shared.account != nil && (isRecordingOn || viewerCount > 0)
+        manager != nil && isAppActive && isAuthorizedToLocate && AppModel.shared.account != nil && ((isRecordingOn && refusalText == nil) || viewerCount > 0)
     }
 
     private func startLiveUpdates() {
@@ -520,7 +539,9 @@ final class LocationRecorder {
     /// last were: iOS allows twenty at a time. Entering one becomes a visit
     /// reported with its place, and leaving it the same visit with its end.
     private func refreshPlaceWatch(isForced: Bool = false) async {
-        guard manager != nil, isMonitoringWanted, let connection = AppModel.shared.connection else { return }
+        guard manager != nil, isMonitoringWanted else { return }
+        if arePlacesWatchedForPreviousAccount { await stopWatchingPlaces() }
+        guard let connection = AppModel.shared.connection else { return }
         if !isForced, Date().timeIntervalSince(placeWatchRefreshedAt) < Self.placeWatchRefreshSeconds { return }
         placeWatchRefreshedAt = Date()
         var places: [LocationPlace] = []
@@ -542,6 +563,7 @@ final class LocationRecorder {
         let chosen = LocationPlaceWatch.choose(
             from: places, nearLatitudeDegrees: anchor?.latitude, nearLongitudeDegrees: anchor?.longitude)
         await watch(chosen)
+        arePlacesWatchedForPreviousAccount = false
     }
 
     /// The one monitor of the person's places. It is made as soon as the app
@@ -595,6 +617,7 @@ final class LocationRecorder {
             let condition = CLMonitor.CircularGeographicCondition(
                 center: CLLocationCoordinate2D(latitude: place.latitudeDegrees, longitude: place.longitudeDegrees), radius: place.radiusMeters)
             await monitor.add(condition, identifier: place.placeId, assuming: .unsatisfied)
+            placeAddedAt[place.placeId] = Date()
             watchedPlaces[place.placeId] = place
         }
     }
@@ -619,6 +642,13 @@ final class LocationRecorder {
                     radiusMeters: condition.radius)
             }
             guard let place else { return }
+            // Told at once about a place just watched again while the visit
+            // to it goes on: not an arrival.
+            if outbox.openRegionVisits[identifier] != nil, let addedAt = placeAddedAt[identifier],
+                abs(date.timeIntervalSince(addedAt)) < Self.placeAddedEchoSeconds
+            {
+                return
+            }
             enqueue(isUrgent: true) {
                 $0.arrive(placeId: place.placeId, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, at: date)
             }
@@ -666,6 +696,9 @@ final class LocationRecorder {
     private func useOutbox(accountKey: String?) {
         if outbox.accountKey != nil {
             outbox.departEverywhere(at: Date())
+            // The departures are new: the file must get them even if the
+            // outbox was written after its last change.
+            isOutboxUnwritten = true
             writeOutbox()
         }
         var next = LocationOutbox()
@@ -753,13 +786,24 @@ final class LocationRecorder {
                 do {
                     try await send(batch, over: connection)
                 } catch {
+                    // The account was changed while the call was on its way:
+                    // the answer says nothing about the new account's outbox,
+                    // and the request that change queued is still wanted.
+                    guard outbox.accountKey == accountKey else { break }
                     switch LocationReportFailure.classify(error) {
                     case .refused(let reason):
-                        if outbox.accountKey == accountKey { stopBecauseRefused(reason) }
+                        stopBecauseRefused(reason)
+                        return
+                    case .batchInvalid:
+                        // Sending it again cannot change the answer: drop it
+                        // and send what follows.
+                        outbox.remove(batch)
+                        saveOutbox(isUrgent: false)
+                        continue
                     case .retryLater, .phoneNotFound:
                         retryGate.didFail(at: Date())
+                        return
                     }
-                    return
                 }
                 retryGate.didSucceed()
                 // The account was changed while the call was on its way: the
