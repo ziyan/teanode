@@ -201,6 +201,7 @@ func TestSettingsMutationNamesRealTypes(t *testing.T) {
 		"agent":        "AgentParametersInput",
 		"geoip":        "GeoIPParametersInput",
 		"places":       "PlacesParametersInput",
+		"photos":       "PhotosParametersInput",
 		"upgrade":      "UpgradeParametersInput",
 		"sso":          "SSOParametersInput",
 	}

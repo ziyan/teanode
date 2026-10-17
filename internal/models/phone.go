@@ -63,6 +63,10 @@ const (
 	// opens the app and never answers from the notification: a lock screen
 	// tap must not spend money.
 	NotificationSkillShareCall = "skill_share_call"
+	// NotificationPhoto is photos another person added to an album the
+	// person reads.
+	NotificationPhoto = "photo"
+
 	// NotificationLocation is a person who shares their location arriving at
 	// or leaving a place they named or labeled. It opens the app on Location
 	// with that person.
@@ -70,7 +74,7 @@ const (
 )
 
 // NotificationKinds is every kind, in the order a person chooses among them.
-var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationSkillShareCall, NotificationLocation}
+var NotificationKinds = []string{NotificationMessage, NotificationApproval, NotificationQuestion, NotificationAnswer, NotificationCircle, NotificationChat, NotificationSkillShareCall, NotificationPhoto, NotificationLocation}
 
 // Wants reports whether the phone takes a kind of notification.
 func (self *AgentPhone) Wants(notificationKind string) bool {

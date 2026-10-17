@@ -19,6 +19,7 @@ struct ServerServicesView: View {
                     Toggle("Calendar", isOn: binding(\.isCalendarEnabled))
                     Toggle("Reminders", isOn: binding(\.isRemindersEnabled))
                     Toggle("Contacts", isOn: binding(\.isContactsEnabled))
+                    Toggle("Photos", isOn: binding(\.isPhotosEnabled))
                 }
                 Section {
                     Button("Review changes") { isReviewing = true }.disabled(isSaving)

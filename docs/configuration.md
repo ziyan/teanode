@@ -3,7 +3,8 @@
 ### `services`
 
 Deployment-wide hosted services. Omitted switches preserve existing installations;
-new assistant seeds write explicit false values. Disabling preserves data, roles,
+new assistant seeds write explicit false values for mail routing, mailboxes,
+calendar, reminders and contacts, and leave Photos on. Disabling preserves data, roles,
 agent grants and credentials, and refuses new operations immediately. Enabling
 requires a restart. The dashboard reports selected and running services.
 
@@ -16,8 +17,11 @@ requires a restart. The dashboard reports selected and running services.
 - **`reminders`**: reminders and their CalDAV collections, independently of
   event calendars. Assistant schedules are independent of this choice.
 - **`contacts`**: address books and CardDAV collections.
+- **`photos`**: the photo and video library, its uploads and the iPhone app's
+  backup. Its limits are in the `photos` section below.
 - **`isEnabled`**: nullable boolean inside each service. Omitted means enabled
-  for compatibility; false makes the service unavailable.
+  for compatibility; false makes the service unavailable. `photos` stays on
+  for an assistant-only server too, since it needs no mail.
 - **`hasCompletedSetup`**: whether the operator completed service setup.
   Legacy configurations without switches do not require this step.
 
@@ -25,8 +29,9 @@ The existing `agent.enabled` setting controls the assistant independently.
 Authenticated clients use `GetServiceCapabilities`. `teanode services get`
 reports availability; `teanode services set --contacts=true` changes a choice.
 
-`TEANODE_SERVICE_PRESET` seeds only an empty database: `assistant` disables all
-hosted services, `mail` enables routing and mailboxes, and `legacy` retains
+`TEANODE_SERVICE_PRESET` seeds only an empty database: `assistant` disables mail
+routing, mailboxes, calendar, reminders and contacts, and leaves Photos on,
+`mail` enables routing and mailboxes, and `legacy` retains
 historical defaults. Without a preset, seeds with a mail hostname or domain
 retain historical behavior. Change a configured installation in the dashboard
 or through configuration import, rather than changing its seed environment.
@@ -259,8 +264,10 @@ its reverse DNS should match, or receiving servers will distrust mail from
 here.
 
 **`dataDirectory`** — DataDirectory holds everything the server writes that is
-not in the database: keys, certificates, the message spool and the secret.
-Relative paths elsewhere in this file resolve against it.
+not in the database: keys, certificates, the message spool and the secret, and,
+in photo-work, the temporary copies of videos while previews are made of them,
+which are emptied when the server starts. Relative paths elsewhere in this file
+resolve against it.
 
 **`logLevel`** — LogLevel is one of DEBUG, INFO, NOTICE, WARNING, ERROR,
 CRITICAL.
@@ -1038,6 +1045,36 @@ leak.
 
 **`credentialsFile`** — CredentialsFile is an AWS shared credentials file, as
 an alternative to the two fields above.
+
+### `photos`
+
+The photo library's limits. The library itself is switched on in `services`.
+A photo's bytes are kept in the storage above, named by their SHA-256, and
+everything known about it is in the database; a backup of the database alone
+is not a backup of the library.
+
+**`maxFileBytes`**: MaxFileBytes bounds one uploaded file: a picture, a video,
+or the video of a Live Photo. The upload endpoint tells a phone this before it
+sends anything, so a file over it is never started. A few minutes of video at
+high quality runs to gigabytes, which is why the default, 8 GiB, is large.
+
+**`maxAccountBytes`**: MaxAccountBytes bounds everything one person's library
+holds, counting each file of each photo including those in the trash, and the
+bytes of uploads that have not finished. Zero, the default, is no limit beyond
+the disk; set it when several people share a disk.
+
+**`trashRetention`**: TrashRetention is how long a photo stays in the trash
+before it is deleted for good, 30 days by default. Its bytes go a little later,
+in the periodic cleanup, once nothing else refers to them.
+
+**`isFaceRecognitionEnabled`**: IsFaceRecognitionEnabled is the operator's
+switch for finding faces in photos, on by default. A person can turn faces off
+for themselves; this turns them off for everybody. Faces need the
+`teanode-faces` program and its models, which the container image carries.
+
+Places are named from a table of cities bundled with the server, made from
+GeoNames data (https://www.geonames.org), licensed CC BY 4.0. No place is ever
+looked up online.
 
 ### `passkey`
 

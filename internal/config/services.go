@@ -17,6 +17,7 @@ type Services struct {
 	Calendar          HostedService `yaml:"calendar" json:"calendar"`
 	Reminders         HostedService `yaml:"reminders" json:"reminders"`
 	Contacts          HostedService `yaml:"contacts" json:"contacts"`
+	Photos            HostedService `yaml:"photos" json:"photos"`
 	HasCompletedSetup bool          `yaml:"hasCompletedSetup,omitempty" json:"hasCompletedSetup"`
 }
 
@@ -33,6 +34,11 @@ func (self Services) IsEnabled(service models.Service) bool {
 		return self.Reminders.Enabled()
 	case models.ServiceContacts:
 		return self.Contacts.Enabled()
+	case models.ServicePhotos:
+		// On unless an operator turned it off, like the services before it,
+		// and on for an assistant-only server too: a library costs nothing
+		// until somebody uploads, and it needs no mail.
+		return self.Photos.Enabled()
 	default:
 		return false
 	}
@@ -51,6 +57,7 @@ func (self Services) Within(running Services) Services {
 	self.Calendar.IsEnabled = new(self.IsEnabled(models.ServiceCalendar) && running.IsEnabled(models.ServiceCalendar))
 	self.Reminders.IsEnabled = new(self.IsEnabled(models.ServiceReminders) && running.IsEnabled(models.ServiceReminders))
 	self.Contacts.IsEnabled = new(self.IsEnabled(models.ServiceContacts) && running.IsEnabled(models.ServiceContacts))
+	self.Photos.IsEnabled = new(self.IsEnabled(models.ServicePhotos) && running.IsEnabled(models.ServicePhotos))
 	return self
 }
 

@@ -445,6 +445,21 @@ func (self *graph) DeleteUser(ctx context.Context, arguments DeleteUserArguments
 	if user == nil {
 		return api.ErrNotFound
 	}
+	// The previews and upload parts of the account's photos are objects in the
+	// store that no row will name once the account's rows go. They are listed
+	// now, while the rows say what they are, and deleted after the account is,
+	// best effort: an account whose deletion fails or is rolled back keeps
+	// them. The photos' files are blobs, which the cleanup of unreferenced
+	// blobs deletes.
+	if self.config != nil && self.storage != nil {
+		if photoStore, err := self.photoStore(); err == nil {
+			objectIds, err := photoStore.AccountObjects(ctx, user.ID)
+			if err != nil {
+				log.Warningf("cannot list the photo objects of the account %q to delete them: %s", user.Username, err)
+			}
+			tx.AfterCommit(func() { photoStore.DeleteObjects(context.WithoutCancel(ctx), objectIds) })
+		}
+	}
 	if err := tx.DeleteUser(user.ID); err != nil {
 		return translateError(err)
 	}

@@ -35,6 +35,8 @@ export const RUN_KINDS = [
   'statement_import',
   // A receipt read out of a message or an upload, recorded and matched.
   'read_receipt',
+  // What a photo shows, written by the model when somebody looks at it.
+  'describe_photo',
   'tax_document',
   // Paystubs and W-2s mailed to the tax document address, copied to be read.
   'tax_mail',

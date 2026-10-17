@@ -67,6 +67,7 @@ import {
   TrashIcon,
   WarningIcon,
   ExternalIcon,
+  PhotoSaveIcon,
 } from './icons'
 import { BackgroundCommand, BackgroundPanel, useBackgroundCommands } from './backgroundCommands'
 import { HerdrQuestionAnswer, HerdrQuestionCard, codingAgentName, paneNameOf, type HerdrSession } from './herdrSessions'
@@ -87,7 +88,8 @@ import {
 } from './agentReactions'
 import { AGENT_TURNED_EVENT, announceAgentAvailable, useAgentPreferences } from '../agentPreferences'
 import { useToast } from './toast'
-import { useSession } from '../session'
+import { savePhotoFromAttachment } from '../photos/api'
+import { hasPermission, useSession } from '../session'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
 import {
   CHAT_FIELDS,
@@ -410,6 +412,9 @@ interface SharedFile {
   size: number
   url: string
   caption?: string
+  // The photo this is a preview of, where the photo tool showed it. The
+  // card links to that photo in Photos.
+  photo_id?: string
 }
 
 // sharedFilesOf reads the files a tool line handed the person.
@@ -419,19 +424,33 @@ interface SharedFile {
 // fetched pictures or a clip answers with a list of them under files. Both
 // end up drawn the same way, because from the reader's side they are the
 // same thing -- something the agent put in the conversation for them.
-function sharedFilesOf(line: { tool: string; result?: string }): SharedFile[] {
+export function sharedFilesOf(line: { tool: string; result?: string }): SharedFile[] {
   if (!line.result) return []
   try {
     const parsed = JSON.parse(unfenced(line.result)) as Partial<SharedFile> & { files?: Partial<SharedFile>[] }
-    if (drawable(parsed)) return [parsed]
+    if (drawable(parsed)) return [photoLinked(line.tool, parsed)]
     // A file a skill fetched but could not keep has no address to draw it
     // from, and is left out rather than drawn as a broken one.
-    if (Array.isArray(parsed.files)) return parsed.files.filter(drawable)
+    if (Array.isArray(parsed.files)) return parsed.files.filter(drawable).map((file) => photoLinked(line.tool, file))
   } catch {
     // An error, most likely.
   }
   return []
 }
+
+// photoLinked keeps the photo_id of a file only where the photo tool
+// handed it over and it is shaped like an id of ours. Any other tool's
+// answer is somebody else's text, and the card turns the id into a link
+// inside this app, so it is not taken from there.
+function photoLinked(tool: string, file: SharedFile): SharedFile {
+  const { photo_id: photoId, ...rest } = file
+  if (tool === 'photo' && typeof photoId === 'string' && PHOTO_ID_PATTERN.test(photoId)) {
+    return { ...rest, photo_id: photoId }
+  }
+  return rest
+}
+
+const PHOTO_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
 
 // drawable says whether this is a file of the conversation, addressed the
 // way this server addresses one.
@@ -704,7 +723,7 @@ const CONVERSATION = `
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
         attachments { id name contentType size isRemoved }
-        references { itemId threadId subject from path name recordingId recordingTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
+        references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
       }
@@ -1181,6 +1200,13 @@ function clockTime(at?: string): string {
   const moment = new Date(at)
   if (Number.isNaN(moment.getTime())) return ''
   return moment.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+}
+
+// What goes in the box when a page asks for a draft: after what is already
+// written there, on a line of its own.
+function withAskedDraft(kept: string, asked: string): string {
+  if (asked === '') return kept
+  return kept.trim() === '' ? asked : `${kept.trimEnd()}\n${asked}`
 }
 
 function draftKey(conversationId: string): string {
@@ -1786,14 +1812,51 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
 // FileCard is a file the agent handed over, under the tool line: a
 // picture shown, a video or a sound playing, anything else to open.
-function FileCard({ file }: { file: SharedFile }) {
+export function FileCard({ file }: { file: SharedFile }) {
   const { t } = useTranslation()
+  const toast = useToast()
+  const navigate = useNavigate()
+  const session = useSession()
   const signed = useFileHref(file.url)
+  // The photo the file was kept as, once the person kept it here.
+  const [savedPhotoId, setSavedPhotoId] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
   // Nothing is drawn until there is an address to draw it from.
   const href = signed ?? undefined
   const type = file.content_type.toLowerCase()
+  const photoAddress = file.photo_id || savedPhotoId ? `/photos/${file.photo_id || savedPhotoId}` : null
+  // A picture or a video can be kept in Photos, unless it is a photo already
+  // or Photos is off for this person.
+  const canSaveToPhotos =
+    !photoAddress &&
+    (isImage(type) || type.startsWith('video/')) &&
+    session.services?.isPhotosEnabled === true &&
+    hasPermission(session.permissions, 'photos:use')
+
+  async function saveToPhotos() {
+    setIsSaving(true)
+    try {
+      const saved = await savePhotoFromAttachment(file.attachment_id)
+      setSavedPhotoId(saved.id)
+      toast.done(t('agentDrawer.savedToPhotos'), {
+        label: t('agentDrawer.openPhoto'),
+        run: () => navigate(`/photos/${encodeURIComponent(saved.id)}`),
+      })
+    } catch (caught) {
+      toast.failure(caught, t('agentDrawer.saveToPhotosFailed'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+  const picture = signed ? <img src={signed} alt={file.name} className="agent-file-media" /> : null
   const media = !signed ? null : isImage(type) ? (
-    <img src={signed} alt={file.name} className="agent-file-media" />
+    photoAddress ? (
+      <Link to={photoAddress} aria-label={t('agentDrawer.openPhoto')}>
+        {picture}
+      </Link>
+    ) : (
+      picture
+    )
   ) : type.startsWith('video/') ? (
     <video src={signed} controls preload="metadata" className="agent-file-media" />
   ) : type.startsWith('audio/') ? (
@@ -1803,8 +1866,27 @@ function FileCard({ file }: { file: SharedFile }) {
     <div className="agent-artifact agent-file">
       <div className="agent-artifact-head">
         <PaperclipIcon size={11} />
-        <span className="agent-artifact-title">{file.name}</span>
+        {photoAddress ? (
+          <Link className="agent-artifact-title" to={photoAddress}>
+            {file.name}
+          </Link>
+        ) : (
+          <span className="agent-artifact-title">{file.name}</span>
+        )}
         <span className="muted">{formatBytes(file.size)}</span>
+        {canSaveToPhotos && (
+          <Tooltip label={t('agentDrawer.saveToPhotos')}>
+            <button
+              type="button"
+              className="icon-button agent-artifact-open"
+              aria-label={t('agentDrawer.saveToPhotos')}
+              disabled={isSaving}
+              onClick={() => void saveToPhotos()}
+            >
+              <PhotoSaveIcon size={14} />
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label={t('agentDrawer.openArtifact')}>
           <a
             className="icon-button agent-artifact-open"
@@ -2794,6 +2876,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const movedAt = useRef(0)
   const input = useRef<HTMLTextAreaElement>(null)
   const draftLoadedFor = useRef('')
+  // A draft another page asked for before the conversation it belongs in was
+  // read: put in the box, after what is kept, once it has been.
+  const askedDraft = useRef('')
   // The conversation whose draft is sent as soon as it is open and its
   // draft read back: an idea or a goal started from a page, or from the
   // suggestions here.
@@ -2944,7 +3029,9 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       // reaches the list.
       setTodos(snapshot.todos ?? [])
       if (draftLoadedFor.current !== snapshot.conversation.id) {
-        setDraft(remembered(draftKey(snapshot.conversation.id)))
+        const kept = remembered(draftKey(snapshot.conversation.id))
+        setDraft(withAskedDraft(kept, askedDraft.current))
+        askedDraft.current = ''
         draftLoadedFor.current = snapshot.conversation.id
       }
     },
@@ -3250,13 +3337,18 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [headMenu, showingList])
 
-  // Escape toggles the drawer from anywhere on the page — unless a dialog
-  // or a list is open, which Escape closes first.
+  // Escape toggles the drawer from anywhere on the page — unless a dialog,
+  // a menu or a list is open, which Escape closes first.
   useEffect(() => {
     if (!isReachable || standalone) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (document.querySelector('.dialog-scrim, .select-list, .agent-drawer-list')) return
+      if (
+        document.querySelector(
+          '.dialog-scrim, .select-list, .agent-drawer-list, .menu[role="menu"], .menu[role="dialog"]',
+        )
+      )
+        return
       event.preventDefault()
       toggle()
       if (!open) setTimeout(() => input.current?.focus(), 50)
@@ -3276,8 +3368,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       const detail = (event as CustomEvent<AgentOpenDetail>).detail
       if (!isReachable || !detail) return
       detail.handled = true
-      // Asked to open with no conversation named: open on the one it shows.
+      // Asked to open with no conversation named: open on the one it shows,
+      // with the draft, if there is one, put in its box after what is there.
       if (!detail.conversationId) {
+        const asked = detail.draft
+        if (asked) {
+          // Read already: into the box at once. Not yet: when it is read.
+          if (draftLoadedFor.current !== '') setDraft((previous) => withAskedDraft(previous, asked))
+          else askedDraft.current = asked
+        }
         setOpen(true)
         remember(OPEN_KEY, '1')
         setTimeout(() => input.current?.focus(), 50)
@@ -3513,7 +3612,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             (reference.path && reference.path === detail.reference.path) ||
             (reference.financeTransactionId &&
               reference.financeTransactionId === detail.reference.financeTransactionId) ||
-            (reference.recordingId && reference.recordingId === detail.reference.recordingId),
+            (reference.recordingId && reference.recordingId === detail.reference.recordingId) ||
+            (reference.photoId && reference.photoId === detail.reference.photoId),
         )
           ? previous
           : [...previous, detail.reference],

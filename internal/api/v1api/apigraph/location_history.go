@@ -863,7 +863,7 @@ func (self *graph) ListPlaces(ctx context.Context, arguments ListPlacesArguments
 }
 
 // ListNearbyPlaces waits on the place provider, so it reads in two short
-// phases of its own (isNetworkWaitingQuery) with the call outside both, and a
+// phases of its own (isModelBackedQuery) with the call outside both, and a
 // slow provider holds no database connection while it takes its time.
 func (self *graph) ListNearbyPlaces(ctx context.Context, arguments ListNearbyPlacesArguments) ([]*FoundPlaceView, error) {
 	var userId string

@@ -15,6 +15,9 @@ struct TeaNodeApp: App {
 
     init() {
         DisplayLanguage.chosen.apply()
+        // Files that photo downloads left in the temporary folder before the
+        // app was last closed.
+        Task.detached(priority: .utility) { PhotoTemporaryFiles.sweep() }
     }
 
     var body: some Scene {
@@ -33,9 +36,16 @@ struct TeaNodeApp: App {
             .environment(\.locale, language.locale)
             .environment(app)
             .onOpenURL { url in app.open(url) }
-            .onAppear { appearance.apply() }
+            .onAppear {
+                appearance.apply()
+                PhotoBackupEngine.shared.sceneBecameActive()
+            }
             .onChange(of: scenePhase, initial: true) { _, phase in
-                if phase == .active { appearance.apply() }
+                if phase == .active {
+                    appearance.apply()
+                    // Photos taken since are backed up when the app comes back.
+                    PhotoBackupEngine.shared.sceneBecameActive()
+                }
                 LocationRecorder.shared.sceneDidChange(isActive: phase == .active, isBackground: phase == .background)
             }
         }
@@ -499,6 +509,7 @@ struct SettingsForm: View {
     @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
     private static let signOutRowId = "sign-out"
+    private static let photoBackupRowId = "photo-backup"
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
@@ -567,6 +578,21 @@ struct SettingsForm: View {
                             SessionsView(connection: connection)
                         } label: {
                             Label("Sessions", systemImage: "macbook.and.iphone")
+                        }
+                    }
+                }
+                if let connection = app.connection, app.isPhotosOffered {
+                    Section {
+                        NavigationLink {
+                            PhotoBackupView(connection: connection)
+                        } label: {
+                            PhotoBackupSettingsRow()
+                        }
+                        .id(Self.photoBackupRowId)
+                        NavigationLink {
+                            PhotoFacesSettingsView(connection: connection)
+                        } label: {
+                            Label("People in Photos", systemImage: "person.crop.circle")
                         }
                     }
                 }
@@ -662,6 +688,7 @@ struct SettingsForm: View {
                     isOperator = (try? await connection.isOperator()) ?? false
                 }
             }
+            .task { await PhotoBackupEngine.shared.refresh() }
             // Again on coming back from the circles screen, where an invitation may have been answered.
             .onAppear {
                 Task { await refreshCircles() }
@@ -678,6 +705,15 @@ struct SettingsForm: View {
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
                     // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
+                    // `settings-photo-backup-other-account`: the Photo backup row as it reads when backup is on for another account.
+                    if DemoServer.screen == "settings-photo-backup-other-account", !hasShownDemoScreen {
+                        hasShownDemoScreen = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1))
+                            withAnimation { scroller.scrollTo(Self.photoBackupRowId, anchor: .center) }
+                        }
+                        return
+                    }
                     if DemoServer.screen == "settings-sign-out", !hasShownDemoScreen {
                         hasShownDemoScreen = true
                         Task {
@@ -720,6 +756,10 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-other-account":
+                    PhotoBackupView(connection: connection)
+                case "photos-faces": PhotoFacesSettingsView(connection: connection)
+                case "photos-conversation-card": PhotoConversationCardDemo()
                 case "devices": DevicesView(connection: connection)
                 case "rules":
                     if let mail {
@@ -749,6 +789,31 @@ struct SettingsForm: View {
         let marketing = info?["CFBundleShortVersionString"] as? String ?? ""
         let build = info?["CFBundleVersion"] as? String ?? ""
         return "\(marketing) (\(build))"
+    }
+}
+
+/// PhotoBackupSettingsRow is the row in Settings that opens the Photo Backup
+/// screen, saying whether backup is on.
+struct PhotoBackupSettingsRow: View {
+    private let engine = PhotoBackupEngine.shared
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack {
+            Label("Photo backup", systemImage: "icloud.and.arrow.up")
+            Spacer()
+            statusText
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// On only for the account backup is on for; for another account it says
+    /// which one, since this account's backup is off.
+    private var statusText: Text {
+        guard let enabledAccountKey = engine.enabledAccountKey else { return Text("Off") }
+        if enabledAccountKey == app.connection?.accountKey { return Text("On") }
+        return Text("On for \(PhotoBackupEngine.name(ofAccountKey: enabledAccountKey))")
     }
 }
 
@@ -809,6 +874,7 @@ struct NotificationKindToggle: View {
         case "chat": String(localized: "Messages from people in your chats")
         case "skill_share_call": String(localized: "Skill calls waiting for your approval")
         case "location": String(localized: "People who share their location arriving at and leaving places")
+        case "photo": String(localized: "Photos added to albums shared with you")
         default: notificationKind
         }
     }

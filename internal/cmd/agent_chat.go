@@ -37,6 +37,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.BoolFlag{Name: "quiet", Usage: "print the answer only, not what the agent did on the way"},
 			&cli.StringSliceFlag{Name: "attach", Usage: "a file to hand the agent with the message; a picture is shown to it, a text file read to it, anything else named"},
 			&cli.StringSliceFlag{Name: "recording", Usage: "the id of a recording to ask about, as recording list shows them; repeat it for more than one"},
+			&cli.StringSliceFlag{Name: "photo", Usage: "the id of a photo to ask about, as photo list shows them; repeat it for more than one"},
 			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
 			&cli.StringSliceFlag{Name: "address", Usage: "in a chat (--conversation), ask this agent with the message: an agent id, or the username of the person it belongs to, from 'teanode agent conversation members <id>'; repeat it for more than one. Another person's agent answers only if its owner let the chat ask it. Replying to an agent's message (--reply-to) asks that agent as well"},
 			&cli.BoolFlag{Name: "ask-agent", Usage: "in a chat (--conversation), ask your own agent with it: the message goes to the people there and your agent answers them, for everybody to read; its work stays yours. Without it a message in a chat starts no agent"},
@@ -251,6 +252,11 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 	for _, recordingId := range command.StringSlice("recording") {
 		if recordingId = strings.TrimSpace(recordingId); recordingId != "" {
 			references = append(references, client.AgentReference{RecordingID: recordingId})
+		}
+	}
+	for _, photoId := range command.StringSlice("photo") {
+		if photoId = strings.TrimSpace(photoId); photoId != "" {
+			references = append(references, client.AgentReference{PhotoID: photoId})
 		}
 	}
 	if command.Bool("ask-agent") && conversationId == "" {

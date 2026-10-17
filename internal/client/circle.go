@@ -54,7 +54,7 @@ const circleInvitationFields = `{ id circleId circleName circleKind invitedByNam
 const circleFields = `{ id name circleKind createdAt memberRole members ` + circleMemberFields + ` pendingInvitations ` + circleInvitationFields + ` }`
 
 // ListCircles returns the circles the signed-in account is in.
-func ListCircles(ctx context.Context, connection *Client) ([]*Circle, error) {
+func ListCircles(ctx context.Context, connection Executor) ([]*Circle, error) {
 	var result struct {
 		ListCircles []*Circle `json:"ListCircles"`
 	}
@@ -90,7 +90,7 @@ func ListCircleInvitations(ctx context.Context, connection *Client) ([]*CircleIn
 
 // ListCirclePeople returns everybody the signed-in account shares a circle
 // with, once each.
-func ListCirclePeople(ctx context.Context, connection *Client) ([]*CircleMember, error) {
+func ListCirclePeople(ctx context.Context, connection Executor) ([]*CircleMember, error) {
 	var result struct {
 		ListCirclePeople []*CircleMember `json:"ListCirclePeople"`
 	}

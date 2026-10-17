@@ -78,6 +78,9 @@ type Configuration struct {
 	// Optional off-box copies of stored messages
 	Storage Storage `yaml:"storage"`
 
+	// How big a photo library may get, and how long a deleted photo waits
+	Photos Photos `yaml:"photos"`
+
 	// Signing in with a passkey, and where the half-finished ceremonies wait
 	Passkey Passkey `yaml:"passkey"`
 
@@ -163,8 +166,10 @@ type Server struct {
 	Name string `yaml:"name"`
 
 	// DataDirectory holds everything the server writes that is not in the
-	// database: keys, certificates, the message spool and the secret.
-	// Relative paths elsewhere in this file resolve against it.
+	// database: keys, certificates, the message spool and the secret, and, in
+	// photo-work, the temporary copies of videos while previews are made of
+	// them, which are emptied when the server starts. Relative paths elsewhere
+	// in this file resolve against it.
 	DataDirectory string `yaml:"dataDirectory"`
 
 	// MailServers are the hosts to publish in every domain's MX records, in
@@ -889,6 +894,35 @@ type Storage struct {
 	SpoolRetention Duration `yaml:"spoolRetention"`
 
 	S3 S3 `yaml:"s3"`
+}
+
+// Photos bounds the photo library and says how long a deleted photo can be
+// brought back. Whether the library is offered at all is the photos switch
+// in the services section.
+type Photos struct {
+	// MaxFileBytes bounds one uploaded file: a picture, a video, or the video
+	// of a Live Photo. It is what the upload endpoint tells a phone before it
+	// sends anything, so a file over it is never started. A video shot at
+	// high quality for a few minutes runs to gigabytes, which is why the
+	// default is large.
+	MaxFileBytes ByteSize `yaml:"maxFileBytes"`
+
+	// MaxAccountBytes bounds everything one person's library holds, counting
+	// each file of each photo including those in the trash, and the bytes of
+	// uploads that have not finished. Zero is no limit beyond the disk, which
+	// is the right default for a server run for a family; set it when several
+	// people share a disk.
+	MaxAccountBytes ByteSize `yaml:"maxAccountBytes"`
+
+	// TrashRetention is how long a photo stays in the trash before it is
+	// deleted for good. The deleted photo's bytes go a little later still, in
+	// the periodic cleanup, once nothing else refers to them.
+	TrashRetention Duration `yaml:"trashRetention"`
+
+	// IsFaceRecognitionEnabled is the operator's switch for finding faces in
+	// photos. A person can still turn it off for themselves; this turns it
+	// off for everybody.
+	IsFaceRecognitionEnabled bool `yaml:"isFaceRecognitionEnabled"`
 }
 
 // S3 configures optional off-box message copies, in AWS S3 or anything that

@@ -8,6 +8,22 @@ import Foundation
 /// uses URLSession; tests stand in a server of their own.
 public protocol HTTPTransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+
+    /// Reads the answer to a request into a file and returns where it is. The
+    /// caller owns the file and moves or removes it. For an answer that may be
+    /// hundreds of megabytes, which send would hold whole in memory.
+    func download(_ request: URLRequest) async throws -> (URL, HTTPURLResponse)
+}
+
+extension HTTPTransport {
+    /// A transport that has no download task of its own, such as a test's,
+    /// writes what send answered.
+    public func download(_ request: URLRequest) async throws -> (URL, HTTPURLResponse) {
+        let (data, response) = try await send(request)
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try data.write(to: fileURL, options: .atomic)
+        return (fileURL, response)
+    }
 }
 
 #if canImport(Darwin)
@@ -25,6 +41,32 @@ public protocol HTTPTransport: Sendable {
                 throw TeaNodeError.unreadableAnswer
             }
             return (data, http)
+        }
+
+        /// A download task, which writes to a file as the bytes arrive. The
+        /// file is moved out of the system's reach before the completion
+        /// handler returns, since the system removes it then.
+        public func download(_ request: URLRequest) async throws -> (URL, HTTPURLResponse) {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = session.downloadTask(with: request) { temporaryURL, response, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    guard let temporaryURL, let http = response as? HTTPURLResponse else {
+                        continuation.resume(throwing: TeaNodeError.unreadableAnswer)
+                        return
+                    }
+                    let keptURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    do {
+                        try FileManager.default.moveItem(at: temporaryURL, to: keptURL)
+                        continuation.resume(returning: (keptURL, http))
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+                task.resume()
+            }
         }
     }
 #endif

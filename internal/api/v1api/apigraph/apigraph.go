@@ -24,6 +24,7 @@ import (
 	"github.com/ziyan/teanode/internal/dns"
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/mcpserve"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/storage"
 	"github.com/ziyan/teanode/internal/upgrade"
 	"github.com/ziyan/teanode/internal/util/ceremony"
@@ -74,6 +75,20 @@ type graph struct {
 	// built the graph by hand, where each request holds its own.
 	mcpResults *mcpserve.ResultStore
 
+	// photoStoreValue is the photo library's store, made by photoStore the
+	// first time a photo is touched; nil when the blob store cannot stream.
+	photoStoreOnce  sync.Once
+	photoStoreValue *photo.Store
+
+	// photoSearchMeanings keeps the words of a photo search read as a vector
+	// for a few seconds, so that the listing and the count a page asks for
+	// together call the embedding model once.
+	photoSearchMeanings photoSearchMeaningCache
+
+	// photoAddNotices remembers when each reader was last told that photos
+	// were added to an album, so that one person adding photos one after
+	// another is one notification (photo_album_share.go).
+	photoAddNotices photoAddNoticeCache
 	// chatLimits are what one person may do in chats a minute on this
 	// instance; made the first time they are wanted (chat.go).
 	chatLimitsOnce  sync.Once
@@ -127,6 +142,7 @@ func New(database db.Database, configuration config.Store, messages storage.Stor
 	self.schema = schema
 	self.wrapServiceOperations()
 	self.wrapQueryTransactions()
+	self.wrapTransactionFreeMutations()
 	return self, nil
 }
 
@@ -149,6 +165,15 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	router.Path(api.PathRecordingMedia).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.recordingMediaView)
 	router.Path(api.PathRecordingPlayback).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.recordingPlaybackView)
 	router.Path(api.PathRecordingLive).Methods(http.MethodGet).HandlerFunc(self.recordingLiveView)
+	// Photos and videos for the library go up over the resumable upload
+	// protocol, and come back as previews and files for their owner.
+	router.Path(api.PathPhotoUploads).Methods(http.MethodOptions, http.MethodPost).HandlerFunc(self.photoUploadCollectionView)
+	router.Path(api.PathPhotoUpload).Methods(http.MethodOptions, http.MethodHead, http.MethodPatch, http.MethodDelete).HandlerFunc(self.photoUploadView)
+	router.Path(api.PathPhotoPreview).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPreviewView)
+	router.Path(api.PathPhotoFile).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoFileView)
+	router.Path(api.PathPhotoFacePicture).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoFacePictureView)
+	router.Path(api.PathPhotoPlaybackPreview).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPlaybackPreviewView)
+	router.Path(api.PathPhotoPlaybackFile).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.photoPlaybackFileView)
 	router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(self.agentAttachmentsView)
 	router.Path(api.PathAgentAttachment).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.agentAttachmentView)
 	// And the file behind a document a knowledge source indexed, so that

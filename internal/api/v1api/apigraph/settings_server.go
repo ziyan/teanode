@@ -153,6 +153,25 @@ type GeoIPSettings struct {
 	DatabaseFile string `json:"databaseFile,omitempty"`
 }
 
+// PhotosSettings are the limits on the photo library, read when a file is
+// uploaded or a photo is deleted, so a change takes effect with no restart.
+type PhotosSettings struct {
+	// The largest single file an upload may carry, as text: "8GB".
+	MaxFileBytes string `json:"maxFileBytes"`
+
+	// The most one person's library may hold, as text: "500GB". "0" is no
+	// limit beyond the disk.
+	MaxAccountBytes string `json:"maxAccountBytes"`
+
+	// How long a deleted photo can be brought back before it is deleted for
+	// good, as text: "30d".
+	TrashRetention string `json:"trashRetention"`
+
+	// Whether faces are found in photos at all. A person can still turn it
+	// off for themselves.
+	IsFaceRecognitionEnabled bool `json:"isFaceRecognitionEnabled"`
+}
+
 // PlacesSettings is where the names of the places people go to come from, and
 // the map they are drawn on. Place names come from OpenStreetMap: your server
 // sends the position of each new place to the place provider to look up its
@@ -230,6 +249,14 @@ type StorageParameters struct {
 	SpoolRetention *string `json:"spoolRetention"`
 }
 
+// PhotosParameters are the photo library limits an operator can change.
+type PhotosParameters struct {
+	MaxFileBytes             *string `json:"maxFileBytes"`
+	MaxAccountBytes          *string `json:"maxAccountBytes"`
+	TrashRetention           *string `json:"trashRetention"`
+	IsFaceRecognitionEnabled *bool   `json:"isFaceRecognitionEnabled"`
+}
+
 // GeoIPParameters are the geolocation settings an operator can change.
 type GeoIPParameters struct {
 	Enabled      *bool   `json:"enabled"`
@@ -291,6 +318,12 @@ func describeServerSettings(configuration *config.Configuration, settings *Setti
 	settings.Storage = &StorageSettings{
 		Directory:      configuration.Storage.Directory,
 		SpoolRetention: configuration.Storage.SpoolRetention.String(),
+	}
+	settings.Photos = &PhotosSettings{
+		MaxFileBytes:             configuration.Photos.MaxFileBytes.String(),
+		MaxAccountBytes:          configuration.Photos.MaxAccountBytes.String(),
+		TrashRetention:           configuration.Photos.TrashRetention.String(),
+		IsFaceRecognitionEnabled: configuration.Photos.IsFaceRecognitionEnabled,
 	}
 	settings.GeoIP = &GeoIPSettings{
 		Enabled:      configuration.GeoIP.Enabled,
@@ -368,6 +401,20 @@ func applyServerSettings(configuration *config.Configuration, arguments UpdateSe
 		if err := applyDuration(&configuration.Storage.SpoolRetention, parameters.SpoolRetention, "storage.spoolRetention"); err != nil {
 			return err
 		}
+	}
+
+	if parameters := arguments.Photos; parameters != nil {
+		photos := &configuration.Photos
+		if err := applyByteSize(&photos.MaxFileBytes, parameters.MaxFileBytes, "photos.maxFileBytes"); err != nil {
+			return err
+		}
+		if err := applyByteSize(&photos.MaxAccountBytes, parameters.MaxAccountBytes, "photos.maxAccountBytes"); err != nil {
+			return err
+		}
+		if err := applyDuration(&photos.TrashRetention, parameters.TrashRetention, "photos.trashRetention"); err != nil {
+			return err
+		}
+		applyBool(&photos.IsFaceRecognitionEnabled, parameters.IsFaceRecognitionEnabled)
 	}
 
 	if parameters := arguments.GeoIP; parameters != nil {

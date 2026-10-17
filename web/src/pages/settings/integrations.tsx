@@ -13,6 +13,7 @@ import {
   IdentityForm,
   ListenForm,
   PasskeyForm,
+  PhotosForm,
   ResolverForm,
   SessionForm,
   SmtpForm,
@@ -40,6 +41,7 @@ const SETTINGS = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
+      photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
       places { providerKind providerUrl mapStyleUrl }
       ${AGENT_SELECTION}
     }
@@ -63,6 +65,7 @@ export const UPDATE = `
     $identity: IdentityParametersInput
     $storage: StorageParametersInput
     $geoip: GeoIPParametersInput
+    $photos: PhotosParametersInput
     $places: PlacesParametersInput
     $agent: AgentParametersInput
   ) {
@@ -83,6 +86,7 @@ export const UPDATE = `
       identity: $identity
       storage: $storage
       geoip: $geoip
+      photos: $photos
       places: $places
       agent: $agent
     ) {
@@ -101,6 +105,7 @@ export const UPDATE = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
+      photos { maxFileBytes maxAccountBytes trashRetention isFaceRecognitionEnabled }
       places { providerKind providerUrl mapStyleUrl }
       ${AGENT_SELECTION}
     }
@@ -187,6 +192,12 @@ export type Identity = {
 }
 export type StorageSettings = { directory: string; spoolRetention: string }
 export type GeoIP = { enabled: boolean; databaseFile?: string }
+export type PhotosSettings = {
+  maxFileBytes: string
+  maxAccountBytes: string
+  trashRetention: string
+  isFaceRecognitionEnabled: boolean
+}
 export type Places = { providerKind: string; providerUrl: string; mapStyleUrl: string }
 
 // Spam scoring has two engines and the built-in one has parts, so it is not
@@ -224,6 +235,7 @@ type Settings = {
   identity: Identity
   storage: StorageSettings
   geoip: GeoIP
+  photos: PhotosSettings
   places: Places
 }
 
@@ -306,6 +318,7 @@ export function IntegrationsSection({ section, part }: { section: Section; part?
       {section === 'storage' && (
         <>
           <StorageForm settings={settings.storage} onSaved={reload} />
+          <PhotosForm settings={settings.photos} onSaved={reload} />
           <ObjectStoreForm settings={settings.s3} onSaved={reload} />
           <GeoIPForm settings={settings.geoip} onSaved={reload} />
           <PlacesForm settings={settings.places} onSaved={reload} />

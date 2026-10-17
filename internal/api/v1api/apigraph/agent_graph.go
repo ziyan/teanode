@@ -1312,7 +1312,7 @@ func (self *graph) RecallAgentMemory(ctx context.Context, arguments RecallAgentM
 // deliberately. A mutation runs inside one database transaction for the
 // whole request (graphView), which a quarter of an hour of model calls
 // must not hold open; a query is left out of the per-resolver transaction
-// (isNetworkWaitingQuery) and reads in short phases around the work. What a
+// (isModelBackedQuery) and reads in short phases around the work. What a
 // query usually promises, that asking twice costs nothing, it does not
 // keep: a client must not retry it, or run it to prefetch.
 func (self *graph) SurveyAgentMemory(ctx context.Context, arguments SurveyAgentMemoryArguments) (*AgentSurveyView, error) {

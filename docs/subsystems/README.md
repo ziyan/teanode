@@ -30,6 +30,7 @@ change with it.
 | `circles.md` | Circles of people on one server, their admins and members, invitations, and who sees whom |
 | `location.md` | Where a person goes: positions, visits and places, how places are named, who a location is shared with and at what level, and what erasing deletes |
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
+| `photos.md` | The photo library: uploads, processing, descriptions, faces, albums, the iPhone's backup |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
 
 Two conventions hold throughout. *Rules* are the mailbox's rules and nothing

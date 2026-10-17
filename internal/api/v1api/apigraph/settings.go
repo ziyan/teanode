@@ -66,6 +66,7 @@ type Settings struct {
 	Storage  *StorageSettings  `json:"storage"`
 	GeoIP    *GeoIPSettings    `json:"geoip"`
 	Places   *PlacesSettings   `json:"places"`
+	Photos   *PhotosSettings   `json:"photos"`
 
 	// The personal agent: providers, models, features, limits. See
 	// settings_agent.go.
@@ -519,6 +520,7 @@ type UpdateSettingsArguments struct {
 	Storage  *StorageParameters  `json:"storage"`
 	GeoIP    *GeoIPParameters    `json:"geoip"`
 	Places   *PlacesParameters   `json:"places"`
+	Photos   *PhotosParameters   `json:"photos"`
 	Agent    *AgentParameters    `json:"agent"`
 }
 

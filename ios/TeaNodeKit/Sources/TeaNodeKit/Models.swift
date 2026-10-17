@@ -77,6 +77,8 @@ public struct AgentReference: Codable, Hashable, Sendable {
     public var name: String? = nil
     public var recordingId: String? = nil
     public var recordingTitle: String? = nil
+    public var photoId: String? = nil
+    public var photoTitle: String? = nil
     public var financeTransactionId: String? = nil
     public var postedOn: String? = nil
     public var amount: String? = nil
@@ -105,6 +107,13 @@ public struct AgentReference: Codable, Hashable, Sendable {
         self.recordingTitle = recordingTitle
     }
 
+    /// A photo the message asks about. The server words the title again, the
+    /// place and the day it was taken or the file name, from the stored photo.
+    public init(photoId: String, photoTitle: String) {
+        self.photoId = photoId
+        self.photoTitle = photoTitle
+    }
+
     /// A page of the agent's knowledge the message asks about.
     public init(path: String, name: String) {
         self.path = path
@@ -131,6 +140,7 @@ public struct AgentReference: Codable, Hashable, Sendable {
     /// What the reference's chip says.
     public var label: String {
         if let recordingTitle, !recordingTitle.isEmpty { return recordingTitle }
+        if let photoTitle, !photoTitle.isEmpty { return photoTitle }
         if let subject, !subject.isEmpty { return subject }
         if let name, !name.isEmpty { return name }
         if let path, !path.isEmpty { return path }
@@ -360,7 +370,7 @@ public struct AgentPhone: Codable, Hashable, Sendable {
     public let canBeNotified: Bool
 
     /// Every kind, in the order a person chooses among them.
-    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "skill_share_call", "location"]
+    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "skill_share_call", "photo", "location"]
 }
 
 /// ServerTime reads the server's times.

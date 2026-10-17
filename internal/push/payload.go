@@ -32,7 +32,7 @@ const PhoneKeyBytes = 32
 type Content struct {
 	// NotificationKind is what this is: alert, herdr_question,
 	// goal_needs_you, speak_first, approval, question, answer, circle, chat,
-	// skill_share_call, location or test.
+	// skill_share_call, photo, location or test.
 	NotificationKind string `json:"notificationKind"`
 
 	ConversationID string `json:"conversationId,omitempty"`

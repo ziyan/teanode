@@ -85,6 +85,7 @@ it('lists the newest password first with its created time and last use', async (
     hasCalendarAccess: true,
     hasRemindersAccess: false,
     hasContactsAccess: false,
+    hasPhotosAccess: false,
     createdAt,
     lastUsedAt,
   })

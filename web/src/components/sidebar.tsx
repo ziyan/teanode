@@ -6,6 +6,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Key, useTranslation } from '../i18n/i18n'
 import {
   CalendarIcon,
+  PictureIcon,
   ChevronRightIcon,
   ComposeIcon,
   DomainsIcon,
@@ -230,7 +231,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders', '/location', '/circles'].some(
+    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders', '/photos', '/location', '/circles'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||
@@ -483,6 +484,14 @@ export function Sidebar({
                   <span className="sidebar-label">{t('nav.calendar')}</span>
                 </NavLink>
               )}
+              {session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use') && (
+                <NavLink to="/photos" title={collapsed ? t('nav.photos') : undefined}>
+                  <span className="sidebar-icon">
+                    <PictureIcon />
+                  </span>
+                  <span className="sidebar-label">{t('nav.photos')}</span>
+                </NavLink>
+              )}
               {hasPermission(session.permissions, 'location:use') && (
                 <NavLink to="/location" title={collapsed ? t('location.title') : undefined}>
                   <span className="sidebar-icon">
@@ -551,6 +560,12 @@ export function Sidebar({
                 <NavLink to="/contacts">
                   <UserIcon />
                   <span className="sidebar-label">{t('nav.contacts')}</span>
+                </NavLink>
+              )}
+              {session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use') && (
+                <NavLink to="/photos">
+                  <PictureIcon />
+                  <span className="sidebar-label">{t('nav.photos')}</span>
                 </NavLink>
               )}
               {finance.isShown && (

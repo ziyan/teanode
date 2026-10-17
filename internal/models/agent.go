@@ -730,6 +730,12 @@ const (
 	// to, when there is one.
 	AgentJobReadReceipt AgentJobKind = "read_receipt"
 
+	// AgentJobDescribePhoto writes what is in a photo, with the words that
+	// can be read in it, and keeps it on the photo and searchable. Its
+	// subject is the photo. The kind's name is at most 16 characters, which
+	// is what a run's job kind column holds.
+	AgentJobDescribePhoto AgentJobKind = "describe_photo"
+
 	// AgentJobTaxDocument reads a paystub or a tax form (a W-2) out of
 	// a file handed in as one and records it. Its subject is the uploaded
 	// file.

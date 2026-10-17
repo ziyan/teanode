@@ -78,6 +78,8 @@ export function PhonesPage() {
         return t('phones.kind.chat')
       case 'skill_share_call':
         return t('phones.kind.skillShareCall')
+      case 'photo':
+        return t('phones.kind.photo')
       case 'location':
         return t('phones.kind.location')
     }

@@ -69,6 +69,21 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			path: api.Prefix + "/recordings/fixture-recording/extra/live", wantStatusCode: http.StatusUnauthorized, wantHandler: false,
 		},
 		{
+			// A player fetches a photo's signed address itself and cannot
+			// send a header; the handler checks the signature.
+			name: "a photo's signed playback address is reachable without logging in",
+			path: api.PhotoPlaybackPreviewPath("fixture-photo", "video"), wantStatusCode: http.StatusOK, wantHandler: true,
+		},
+		{
+			// Only the signed addresses: a photo's own paths keep the session check.
+			name: "a photo's preview is refused without a session",
+			path: api.PhotoPreviewPath("fixture-photo", "video"), wantStatusCode: http.StatusUnauthorized, wantHandler: false,
+		},
+		{
+			name: "a photo's file is refused without a session",
+			path: api.PhotoFilePath("fixture-photo", "original"), wantStatusCode: http.StatusUnauthorized, wantHandler: false,
+		},
+		{
 			name: "the api is refused without a session",
 			path: api.Prefix + "/nonsense", wantStatusCode: http.StatusUnauthorized, wantHandler: false,
 		},
