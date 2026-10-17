@@ -230,6 +230,13 @@ func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotal
 		} else {
 			weighing.WaitReason = "the skill does not say what this tool costs, so only you can say whether it is within what you meant to allow"
 		}
+	case limits.PaymentLimitMinor == nil && limits.MonthlyLimitMinor == nil:
+		// Reaching here with an amount that was read and no limit of any kind
+		// would let the call go ahead as though a limit had passed it. A share
+		// of a tool that pays is made with a limit or with asking every time
+		// (CheckShareable), but a skill updated since may declare an amount
+		// the tool did not have when it was shared.
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "this share has no limit for a payment, so only you can say whether it is within what you meant to allow"
 	case limits.CurrencyCode != "" && amount.CurrencyCode != limits.CurrencyCode:
 		weighing.IsApprovalNeeded = true
 		if amount.CurrencyCode == "" {

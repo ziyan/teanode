@@ -285,6 +285,12 @@ func (self *graph) OpenDirectChat(ctx context.Context, arguments OpenDirectChatA
 	if err != nil {
 		return nil, translateError(err)
 	}
+	// The other person has a new chat in their list.
+	if existing == nil {
+		if err := self.publishChatMembersChanged(ctx, chat.ID); err != nil {
+			return nil, err
+		}
+	}
 	return self.chatConversationOf(ctx, user.ID, conversation)
 }
 
@@ -316,6 +322,9 @@ func (self *graph) CreateGroupChat(ctx context.Context, arguments CreateGroupCha
 		return nil, translateError(err)
 	}
 	log.Noticef("%s made a group chat with %d others", user.Username, len(userIds))
+	if err := self.publishChatMembersChanged(ctx, chat.ID); err != nil {
+		return nil, err
+	}
 	return self.chatConversationOf(ctx, user.ID, conversation)
 }
 
@@ -376,6 +385,9 @@ func (self *graph) AddChatMembers(ctx context.Context, arguments AddChatMembersA
 	if _, err := tx.AddChatMembers(session.Chat.ID, userIds); err != nil {
 		return nil, translateError(err)
 	}
+	if err := self.publishChatMembersChanged(ctx, session.Chat.ID); err != nil {
+		return nil, err
+	}
 	return self.chatConversationOf(ctx, session.User.ID, session.Conversation)
 }
 
@@ -398,6 +410,9 @@ func (self *graph) RemoveChatMember(ctx context.Context, arguments RemoveChatMem
 	if remaining == nil {
 		return nil, api.ErrNotFound
 	}
+	if err := self.publishChatMembersChanged(ctx, session.Chat.ID, userId); err != nil {
+		return nil, err
+	}
 	return self.chatConversationOf(ctx, session.User.ID, session.Conversation)
 }
 
@@ -416,6 +431,9 @@ func (self *graph) LeaveChat(ctx context.Context, arguments LeaveChatArguments) 
 	}
 	if _, err := self.transaction(ctx).RemoveChatMember(session.Chat.ID, session.User.ID); err != nil {
 		return false, translateError(err)
+	}
+	if err := self.publishChatMembersChanged(ctx, session.Chat.ID, session.User.ID); err != nil {
+		return false, err
 	}
 	return true, nil
 }

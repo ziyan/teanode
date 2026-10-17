@@ -185,39 +185,173 @@ func TestACallIsAnsweredOnce(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
+	var share *models.SkillShare
+	var waitingId, lateId string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		world := newShareWorld(t, tx)
-		share := shareWithBen(t, tx, world)
+		share = shareWithBen(t, tx, world)
 		waiting, err := tx.CreateSkillShareCall(callOf(share, models.SkillShareCallWaitingForApproval, 20000))
 		if err != nil {
 			t.Fatalf("CreateSkillShareCall: %s", err)
 		}
-		now := time.Now()
-		first, isChanged, err := tx.AnswerSkillShareCall(waiting.ID, models.SkillShareCallRan, "go ahead", now)
-		if err != nil || !isChanged || first.CallState != models.SkillShareCallRan || first.DecidedAt == nil || first.DecisionNote != "go ahead" {
-			t.Fatalf("the first answer: %+v %v %v", first, isChanged, err)
-		}
-		second, isChanged, err := tx.AnswerSkillShareCall(waiting.ID, models.SkillShareCallRan, "again", now)
-		if err != nil || isChanged || second.DecisionNote != "go ahead" {
-			t.Fatalf("the second answer changed the call: %+v %v %v", second, isChanged, err)
-		}
-		if _, isChanged, _ := tx.AnswerSkillShareCall(waiting.ID, models.SkillShareCallDeclined, "no", now); isChanged {
-			t.Fatal("a declined answer changed a call already approved")
-		}
-		if _, _, err := tx.AnswerSkillShareCall(waiting.ID, models.SkillShareCallFailed, "", now); !errors.Is(err, db.ErrInvalidArguments) {
-			t.Fatalf("an answer that is neither yes nor no: %v", err)
-		}
-
+		waitingId = waiting.ID
 		late, err := tx.CreateSkillShareCall(callOf(share, models.SkillShareCallWaitingForApproval, 20000))
 		if err != nil {
 			t.Fatalf("CreateSkillShareCall: %s", err)
 		}
+		lateId = late.ID
+	})
+
+	// Two answers, from the phone and the drawer, in two transactions at once.
+	// The first has answered and not committed when the second starts; the
+	// second must wait for it, and then find nothing waiting to answer.
+	now := time.Now()
+	firstHasAnswered := make(chan struct{})
+	mayCommit := make(chan struct{})
+	type answered struct {
+		call      *models.SkillShareCall
+		isChanged bool
+		err       error
+	}
+	firstDone := make(chan answered, 1)
+	go func() {
+		var result answered
+		result.err = database.Transaction(func(tx db.Transaction) error {
+			var err error
+			result.call, result.isChanged, err = tx.AnswerSkillShareCall(waitingId, models.SkillShareCallRan, "go ahead", now)
+			close(firstHasAnswered)
+			<-mayCommit
+			return err
+		})
+		firstDone <- result
+	}()
+	<-firstHasAnswered
+	secondDone := make(chan answered, 1)
+	go func() {
+		var result answered
+		result.err = database.Transaction(func(tx db.Transaction) error {
+			var err error
+			result.call, result.isChanged, err = tx.AnswerSkillShareCall(waitingId, models.SkillShareCallDeclined, "no", now)
+			return err
+		})
+		secondDone <- result
+	}()
+	select {
+	case <-secondDone:
+		t.Fatal("the second answer did not wait for the first, which has not committed")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(mayCommit)
+	first, second := <-firstDone, <-secondDone
+	if first.err != nil || !first.isChanged || first.call.CallState != models.SkillShareCallRan || first.call.DecidedAt == nil || first.call.DecisionNote != "go ahead" {
+		t.Fatalf("the first answer: %+v", first)
+	}
+	if second.err != nil || second.isChanged || second.call.CallState != models.SkillShareCallRan || second.call.DecisionNote != "go ahead" {
+		t.Fatalf("the second answer changed the call, or did not see the first: %+v", second)
+	}
+
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		again, isChanged, err := tx.AnswerSkillShareCall(waitingId, models.SkillShareCallRan, "again", now)
+		if err != nil || isChanged || again.DecisionNote != "go ahead" {
+			t.Fatalf("a later answer changed the call: %+v %v %v", again, isChanged, err)
+		}
+		if _, _, err := tx.AnswerSkillShareCall(waitingId, models.SkillShareCallFailed, "", now); !errors.Is(err, db.ErrInvalidArguments) {
+			t.Fatalf("an answer that is neither yes nor no: %v", err)
+		}
 		afterTheDay := now.Add(models.SkillShareCallWaitFor + time.Minute)
-		if _, isChanged, _ := tx.AnswerSkillShareCall(late.ID, models.SkillShareCallRan, "", afterTheDay); isChanged {
+		if _, isChanged, _ := tx.AnswerSkillShareCall(lateId, models.SkillShareCallRan, "", afterTheDay); isChanged {
 			t.Fatal("a call was approved after its day")
 		}
-		if declined, isChanged, _ := tx.AnswerSkillShareCall(late.ID, models.SkillShareCallDeclined, "", afterTheDay); !isChanged || declined.CallState != models.SkillShareCallDeclined {
+		if declined, isChanged, _ := tx.AnswerSkillShareCall(lateId, models.SkillShareCallDeclined, "", afterTheDay); !isChanged || declined.CallState != models.SkillShareCallDeclined {
 			t.Fatalf("a late no: %+v %v", declined, isChanged)
+		}
+	})
+}
+
+// Two calls deciding against the month's limit at once take turns on the
+// share's row (LockSkillShare), so the second reads the total with the first
+// counted and is turned back; without it both read the same total and both
+// run, and the owner's limit is passed.
+func TestTwoCallsRacingTheMonthlyLimitOnlyOneRuns(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	var share *models.SkillShare
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		share = shareWithBen(t, tx, world)
+	})
+	// The month's limit is 40000 and each call asks for 25000.
+	const amount = int64(25000)
+	start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
+	decide := func(tx db.Transaction, hasLocked chan<- struct{}, mayContinue <-chan struct{}) (models.SkillShareCallState, error) {
+		locked, err := tx.LockSkillShare(share.ID)
+		if err != nil {
+			return "", err
+		}
+		if hasLocked != nil {
+			close(hasLocked)
+			<-mayContinue
+		}
+		total, err := tx.SkillShareMonthTotal(locked.ID, locked.CurrencyCode, start, end)
+		if err != nil {
+			return "", err
+		}
+		callState := models.SkillShareCallRan
+		if total+amount > *locked.MonthlyLimitMinor {
+			callState = models.SkillShareCallWaitingForApproval
+		}
+		call, err := tx.CreateSkillShareCall(callOf(locked, callState, amount))
+		if err != nil {
+			return "", err
+		}
+		return call.CallState, nil
+	}
+
+	firstHasLocked := make(chan struct{})
+	mayContinue := make(chan struct{})
+	type decision struct {
+		callState models.SkillShareCallState
+		err       error
+	}
+	firstDone := make(chan decision, 1)
+	go func() {
+		var result decision
+		result.err = database.Transaction(func(tx db.Transaction) error {
+			var err error
+			result.callState, err = decide(tx, firstHasLocked, mayContinue)
+			return err
+		})
+		firstDone <- result
+	}()
+	<-firstHasLocked
+	secondDone := make(chan decision, 1)
+	go func() {
+		var result decision
+		result.err = database.Transaction(func(tx db.Transaction) error {
+			var err error
+			result.callState, err = decide(tx, nil, nil)
+			return err
+		})
+		secondDone <- result
+	}()
+	select {
+	case <-secondDone:
+		t.Fatal("the second call did not wait for the first to finish deciding")
+	case <-time.After(300 * time.Millisecond):
+	}
+	close(mayContinue)
+	first, second := <-firstDone, <-secondDone
+	if first.err != nil || second.err != nil {
+		t.Fatalf("the decisions: %+v %+v", first, second)
+	}
+	if first.callState != models.SkillShareCallRan || second.callState != models.SkillShareCallWaitingForApproval {
+		t.Fatalf("the first call is %s and the second %s; want the first to run and the second to wait", first.callState, second.callState)
+	}
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		total, err := tx.SkillShareMonthTotal(share.ID, "usd", start, end)
+		if err != nil || total != amount {
+			t.Errorf("the month's total is %d (%v); want %d, one call", total, err, amount)
 		}
 	})
 }

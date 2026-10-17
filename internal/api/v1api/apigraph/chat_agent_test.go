@@ -68,6 +68,13 @@ const (
 func (self *chatWorld) withModel(t *testing.T, script []string) func() []map[string]any {
 	t.Helper()
 	model, requests := scriptedModel(t, script)
+	self.withModelServer(t, model)
+	return requests
+}
+
+// withModelServer gives the world's worker a model served by the server.
+func (self *chatWorld) withModelServer(t *testing.T, model *httptest.Server) {
+	t.Helper()
 	configuration := config.Default()
 	configuration.Agent.Enabled = true
 	configuration.Agent.Features.Dreaming = new(bool)
@@ -91,7 +98,6 @@ func (self *chatWorld) withModel(t *testing.T, script []string) func() []map[str
 		return &agentOperations{graph: self.graph, user: owner, permissions: permissions}, nil
 	})
 	self.graph.settings.Agent = self.worker
-	return requests
 }
 
 const chatAgentFields = `{ id kind chat { chatId members { userId username isAgentReading isAgentAskableByOthers agentId agentName isAgentActive } } }`
@@ -208,9 +214,20 @@ func TestAnOwnerAsksTheirAgentInAChatAndEveryoneReadsTheAnswer(t *testing.T) {
 	for _, message := range world.read(t, world.frank, frankChat) {
 		roles = append(roles, fmt.Sprint(message["role"]))
 	}
-	if strings.Join(roles, " ") != "user assistant tool assistant" {
-		t.Errorf("Frank reads %v; want his question, the call, its result, the answer", roles)
+	if strings.Join(roles, " ") != "user assistant tool assistant assistant" {
+		t.Errorf("Frank reads %v; want his question, the call, its result, the answer, and the answering round's cost as a row of his own with nothing to read", roles)
 	}
+	// Both rounds are paid for on his rows: the one that called and the one
+	// that answered, whose words are the chat's message.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		totals, err := tx.SumAgentRunUsage([]string{frankChat})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := totals[frankChat]; got.PromptTokens != 220 || got.CompletionTokens != 18 {
+			t.Errorf("the turn is recorded as %d prompt and %d completion tokens; want 220 and 18, both rounds", got.PromptTokens, got.CompletionTokens)
+		}
+	})
 	// Which of the rows are what was said and which are the agent's work, and
 	// the run that wrote the answer.
 	data := world.call(t, world.frank, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { messages { role content isAgentWork agentRunId authorKind } } }`, frankChat))
@@ -548,5 +565,108 @@ func TestAskingSomebodyElsesAgentNeedsBothAccountsToUseAgents(t *testing.T) {
 	world.askAgentIn(t, world.grace, graceChat, "what time is the dentist on Thursday?", frankAgent.ID)
 	if answer := world.answerIn(t, world.grace, graceChat); answer["content"] != "Thursday at 3." {
 		t.Errorf("Grace reads %v", answer)
+	}
+}
+
+// Every typing event and every piece of streamed text of one turn reaches
+// the people following a chat through the subscription's resolver, the owner
+// included. The chat hub's events carry the run's identifier on each and no
+// sequence, so a count of sequences per run, meant for the worker's feed that
+// replays, would have dropped all but the first.
+func TestAChatTurnStreamsToEveryFollowerThroughTheResolver(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.frank, "Home", world.grace)
+	frankChat := world.openDirect(t, world.frank, world.grace)
+	graceChat := world.conversationOf(t, world.grace, world.chatIdOf(t, world.frank, frankChat))
+	frankFeed, stopFrank, err := world.subscribe(world.frank, frankChat)
+	if err != nil {
+		t.Fatalf("Frank follows his chat: %s", err)
+	}
+	defer stopFrank()
+	graceFeed, stopGrace, err := world.subscribe(world.grace, graceChat)
+	if err != nil {
+		t.Fatalf("Grace follows her chat: %s", err)
+	}
+	defer stopGrace()
+
+	const runId = "run-streaming-through-the-resolver"
+	published := []agent.Event{}
+	for range 2 {
+		published = append(published, agent.Event{Kind: agent.EventTyping, RunID: runId, ConversationID: graceChat, Name: "Leaf"})
+	}
+	words := []string{"Thurs", "day at", " 3", "."}
+	for _, word := range words {
+		for _, conversationId := range []string{frankChat, graceChat} {
+			published = append(published, agent.Event{Kind: agent.EventText, RunID: runId, ConversationID: conversationId, Text: word, Name: "Leaf"})
+		}
+	}
+	world.hub.PublishChatEvents(published)
+
+	collect := func(feed <-chan *agent.Event, kind agent.EventKind, want int) []string {
+		got := []string{}
+		deadline := time.After(2 * time.Second)
+		for len(got) < want {
+			select {
+			case event, ok := <-feed:
+				if !ok {
+					return got
+				}
+				if event.Kind == kind {
+					got = append(got, event.Text)
+				}
+			case <-deadline:
+				return got
+			}
+		}
+		return got
+	}
+	if got := collect(graceFeed, agent.EventTyping, 2); len(got) != 2 {
+		t.Errorf("Grace was told of the typing %d times; want 2", len(got))
+	}
+	if got := collect(frankFeed, agent.EventText, len(words)); strings.Join(got, "") != strings.Join(words, "") {
+		t.Errorf("the owner was streamed %q; want %q", got, words)
+	}
+}
+
+// A turn that fails after some of its words were streamed to the room takes
+// the provisional line off every screen: no message will ever replace it.
+func TestAFailedChatTurnRetractsTheWordsItStreamed(t *testing.T) {
+	world := newChatWorld(t)
+	// The model says the beginning of an answer, then the connection drops.
+	model := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		raw, _ := io.ReadAll(request.Body)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		if strings.Contains(string(raw), "Choose the one emoji") {
+			_, _ = writer.Write([]byte("data: {\"id\":\"r1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"\U0001F440\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+			return
+		}
+		_, _ = writer.Write([]byte("data: {\"id\":\"s1\",\"model\":\"m\",\"choices\":[{\"delta\":{\"content\":\"Thursday at\"}}]}\n\n"))
+		writer.(http.Flusher).Flush()
+		time.Sleep(100 * time.Millisecond)
+		panic(http.ErrAbortHandler)
+	}))
+	t.Cleanup(model.Close)
+	world.withModelServer(t, model)
+	world.shareCircle(t, world.frank, "Home", world.grace)
+	frankChat := world.openDirect(t, world.frank, world.grace)
+	graceChat := world.conversationOf(t, world.grace, world.chatIdOf(t, world.frank, frankChat))
+	frankAgent := world.agentOf(t, world.frank)
+	graceFeed, stopGrace, err := world.subscribe(world.grace, graceChat)
+	if err != nil {
+		t.Fatalf("Grace follows her chat: %s", err)
+	}
+	defer stopGrace()
+
+	runId := world.askAgentIn(t, world.frank, frankChat, "what time is the dentist on Thursday?", frankAgent.ID)
+	if runId == "" {
+		t.Fatal("asking your own agent answers the run to follow")
+	}
+	streamed := nextFeedEvent(graceFeed, agent.EventText)
+	if streamed == nil || streamed.RunID != runId || streamed.Text != "Thursday at" {
+		t.Fatalf("Grace was streamed %+v; want the first words of the run %s", streamed, runId)
+	}
+	retracted := nextFeedEvent(graceFeed, agent.EventUnsaid)
+	if retracted == nil || retracted.MessageID != agent.ChatStreamingKey(runId) || retracted.ConversationID != graceChat {
+		t.Fatalf("Grace was told %+v; want the provisional line of the run %s taken back", retracted, runId)
 	}
 }

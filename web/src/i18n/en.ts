@@ -5225,6 +5225,7 @@ export const en = {
   'chat.placeholder': 'Message {title}…',
   'chat.empty': 'Nothing has been said here yet. Say hello.',
   'chat.deleted': 'Message deleted',
+  'chat.fileRemoved': 'A file that was removed with the account',
   'chat.deleteTitle': 'Delete this message?',
   'chat.deleteBody': 'Everybody in the chat will see “Message deleted” in its place.',
   'chat.edited': 'edited',

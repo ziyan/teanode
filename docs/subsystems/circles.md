@@ -37,7 +37,13 @@ removed, or be made a member while others remain; the refusal says to make
 somebody else an admin first, or delete the circle. A circle whose last member
 leaves is deleted. Both rules are kept in `internal/db/database_circle.go`, in
 the one transaction that changes who is in a circle, which takes the circle's
-row `FOR UPDATE` first so that two changes at once take turns. Deleting an
+row `FOR UPDATE` first so that two changes at once take turns. Every such change,
+and the creation of a share between two people, first takes one PostgreSQL
+advisory lock for the rest of the transaction (`circleMembershipLockKey`):
+changes are rare, and a total order is what lets the cleanup of one see the
+other. Leaving two circles at once used to keep a share and a group chat between
+two people who then shared no circle, because each looked at the circle the
+other was just leaving. Deleting an
 account applies the same rules: it leaves each circle, and if it was the only
 admin the member who joined first becomes one.
 

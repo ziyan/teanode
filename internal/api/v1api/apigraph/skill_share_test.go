@@ -16,6 +16,7 @@ import (
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/skills"
 )
 
 // skillShareWorld is the page-sharing world (ada and ben in one circle, cora in
@@ -322,6 +323,93 @@ func TestLeavingTheCircleEndsASkillShare(t *testing.T) {
 		ben, _ := tx.GetAgentByUser(world.ben.ID)
 		if offered := world.worker.SharedSkillTools(context.Background(), ben); len(offered) != 0 {
 			t.Errorf("ben is still offered %d tools", len(offered))
+		}
+	})
+}
+
+// An update of an installed skill is checked against the shares made of the
+// old version: a tool that now declares an amount, shared with no limit and no
+// asking, would let the other person spend without bound, so that share asks
+// every time from then on. Shares that still qualify are left as they are.
+func TestSavingASkillMakesSharesThatNoLongerQualifyAskEveryTime(t *testing.T) {
+	world := newSkillShareWorld(t)
+	content, err := os.ReadFile("../../../skills/testdata/payments.md")
+	if err != nil {
+		t.Fatalf("ReadFile: %s", err)
+	}
+	// The balance tool pays nothing in this version, so it is shared with no
+	// limit; pay is shared with a limit.
+	world.call(t, world.ada, world.shareQuery(`["balance"]`, world.ben.ID, ``))
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		circle, err := tx.CreateCircle(&models.Circle{Name: "Club", CircleKind: models.CircleKindFriends}, world.ada.ID)
+		if err != nil {
+			t.Fatalf("CreateCircle: %s", err)
+		}
+		if _, err := tx.AddCircleMember(circle.ID, world.cora.ID, models.MemberRoleMember, world.ada.ID); err != nil {
+			t.Fatalf("AddCircleMember: %s", err)
+		}
+		if _, err := tx.ShareSkill(world.ada.ID, &models.SkillShare{
+			SkillName: "payments", ToolNames: []string{"pay"}, GranteeUserID: world.cora.ID,
+			PaymentLimitMinor: new(int64(500)), CurrencyCode: "usd",
+		}); err != nil {
+			t.Fatalf("ShareSkill: %s", err)
+		}
+	})
+	// A new version in which balance takes an amount.
+	updated := strings.Replace(string(content), `    description: What is left to spend. Declares no amount.
+    type: shell
+    command: ["paycli", "balance"]
+    parameters:
+      type: object
+      properties: {}`, `    description: What is left to spend, and a top up.
+    type: shell
+    amountField: amount_minor
+    command: ["paycli", "balance"]
+    parameters:
+      type: object
+      properties:
+        amount_minor:
+          type: integer
+          description: A top up
+`, 1)
+	if updated == string(content) {
+		t.Fatalf("the test skill changed shape; the replacement matched nothing")
+	}
+	parsed, err := skills.Parse([]byte(updated))
+	if err != nil {
+		t.Fatalf("Parse: %s", err)
+	}
+	var changed []*models.SkillShare
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if changed, err = holdSharesToSkill(tx, parsed); err != nil {
+			t.Fatalf("holdSharesToSkill: %s", err)
+		}
+	})
+	if len(changed) != 1 || len(changed[0].ToolNames) != 1 || changed[0].ToolNames[0] != "balance" || !changed[0].IsApprovalRequired {
+		t.Fatalf("the share of balance now asks every time: %+v", changed)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		shares, err := tx.ListSkillSharesOf("payments")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, share := range shares {
+			switch share.ToolNames[0] {
+			case "balance":
+				if !share.IsApprovalRequired {
+					t.Errorf("the balance share was stored as asking every time")
+				}
+			default:
+				if share.IsApprovalRequired {
+					t.Errorf("a share that still qualifies is left alone: %+v", share)
+				}
+			}
+		}
+		// Saved again, nothing more changes and nobody is told twice.
+		again, err := holdSharesToSkill(tx, parsed)
+		if err != nil || len(again) != 0 {
+			t.Errorf("a second save changes nothing: %v %v", again, err)
 		}
 	})
 }

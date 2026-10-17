@@ -166,8 +166,23 @@ func TestAnEventReachesTheOtherInstancesAndNotItselfTwice(t *testing.T) {
 	defer stopElsewhere()
 	unrelated, stopUnrelated := there.Subscribe("conversation-2")
 	defer stopUnrelated()
-	// The LISTEN takes a moment to be in place.
-	time.Sleep(300 * time.Millisecond)
+	// The other instance's LISTEN is in place when an event published here
+	// reaches it, which is found out by sending one until it does rather than
+	// by waiting an amount of time that is long enough on a quick machine.
+	probe, stopProbe := there.Subscribe("conversation-probe")
+	defer stopProbe()
+	isListening := false
+	for deadline := time.Now().Add(10 * time.Second); !isListening && time.Now().Before(deadline); {
+		here.PublishChatEvents([]agent.Event{{Kind: agent.EventTyping, ConversationID: "conversation-probe", UserID: "user-probe"}})
+		select {
+		case <-probe:
+			isListening = true
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	if !isListening {
+		t.Fatal("the other instance never heard an event published here")
+	}
 
 	long := strings.Repeat("é", 6000)
 	here.PublishChatEvents([]agent.Event{

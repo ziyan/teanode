@@ -5076,6 +5076,7 @@ export const zh: Catalog = {
   'chat.placeholder': '发消息给 {title}…',
   'chat.empty': '这里还没有消息，打个招呼吧。',
   'chat.deleted': '消息已删除',
+  'chat.fileRemoved': '随账号一起删除的文件',
   'chat.deleteTitle': '删除这条消息？',
   'chat.deleteBody': '聊天里的所有人都会看到“消息已删除”。',
   'chat.edited': '已编辑',

@@ -298,6 +298,17 @@ final class ChatTests: XCTestCase {
         XCTAssertTrue(transcript.lines.first?.reactions.isEmpty ?? false)
     }
 
+    func testWordsStreamedByATurnThatStoppedAreTakenOffTheScreen() throws {
+        var transcript = Transcript(messages: [], isChat: true)
+        transcript.apply(
+            try event(
+                #"{"kind":"text","runId":"run-1","sequence":0,"text":"Thursday at","name":"Leaf","authorOwnerName":"Person A","authorAgentId":"agent-a"}"#
+            ))
+        XCTAssertEqual(transcript.lines.count, 1)
+        transcript.apply(try event(#"{"kind":"unsaid","runId":"","sequence":0,"messageId":"streaming-run-1"}"#))
+        XCTAssertTrue(transcript.lines.isEmpty)
+    }
+
     func testEachPersonsReactionInAChatStaysAndReplacesOnlyTheirOwn() throws {
         var transcript = Transcript(
             messages: try messages([message("01J0000000000000000000001", "Dinner?", authorUserId: "user-b", authorName: "Person B", isMine: false)]),

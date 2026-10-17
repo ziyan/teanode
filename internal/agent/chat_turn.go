@@ -358,9 +358,11 @@ type chatRunState struct {
 	mutex sync.Mutex
 
 	// pending is the streamed words not yet told, and flushedAt when words
-	// last went out.
-	pending   strings.Builder
-	flushedAt time.Time
+	// last went out. hasStreamed says words went out that no stored message
+	// has replaced yet, which a screen draws as a provisional line.
+	pending     strings.Builder
+	flushedAt   time.Time
+	hasStreamed bool
 
 	// members are who is in the chat, as of readAt.
 	members []*models.ChatMember
@@ -429,6 +431,7 @@ func (self *AskRun) streamChatText(delta string) {
 		text = state.pending.String()
 		state.pending.Reset()
 		state.flushedAt = time.Now()
+		state.hasStreamed = state.hasStreamed || text != ""
 	}
 	state.mutex.Unlock()
 	if text == "" {
@@ -440,13 +443,47 @@ func (self *AskRun) streamChatText(delta string) {
 	})
 }
 
+// ChatStreamingKey is the identifier of the provisional line a screen draws
+// the words of a run as while they come, before the stored message replaces
+// it. The dashboard and the iPhone app build the same name from the run's
+// identifier (streamingKeyOf, streamingId).
+func ChatStreamingKey(runId string) string {
+	return "streaming-" + runId
+}
+
 // forgetChatText drops the words not yet told: the message they were part of
-// is stored and told whole.
+// is stored and told whole, which replaces the provisional line on a screen.
 func (self *AskRun) forgetChatText() {
 	state := &self.chatState
 	state.mutex.Lock()
 	state.pending.Reset()
+	state.hasStreamed = false
 	state.mutex.Unlock()
+}
+
+// retractChatText takes the provisional line off every member's screen when
+// the words that were streamed will not be stored as a message: the turn was
+// stopped, it failed, or what it said came to nothing once the hidden markers
+// were taken out. Without it the words stay on screens as a line no message
+// ever replaces, until each person reloads. It is an unsaid event naming the
+// provisional line, which the clients take off rather than mark deleted.
+func (self *AskRun) retractChatText() {
+	if self.settings.Chat == nil {
+		return
+	}
+	state := &self.chatState
+	state.mutex.Lock()
+	hasStreamed := state.hasStreamed
+	state.pending.Reset()
+	state.hasStreamed = false
+	state.mutex.Unlock()
+	if !hasStreamed {
+		return
+	}
+	key := ChatStreamingKey(self.ID)
+	self.tellChat(func(*models.ChatMember) Event {
+		return Event{Kind: EventUnsaid, MessageID: key}
+	})
 }
 
 // startThinkingInChat tells every member but the owner, whose own screen
@@ -532,10 +569,13 @@ func (self *AskRun) postChatAnswer(tx db.Transaction, content string) (*postedCh
 // stored, and the phones of those who are not looking. A message an agent
 // wrote starts no turn of any agent.
 func (self *AskRun) announceChatAnswer(posted *postedChatMessage) {
-	self.forgetChatText()
 	if posted == nil {
+		// A round that said nothing storable: words already streamed for it
+		// have no message to be replaced by.
+		self.retractChatText()
 		return
 	}
+	self.forgetChatText()
 	settings := self.settings
 	shown := db.ChatMessageAsAgentMessage(posted.message, "", nil)
 	shown.AuthorAvatarColorIndex = avatar.InitialColorIndex(settings.Owner.ID)

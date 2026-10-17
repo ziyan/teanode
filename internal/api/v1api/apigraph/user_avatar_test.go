@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -462,5 +463,27 @@ func TestAPhotographLargerThanAStrangersRequestGoesUp(t *testing.T) {
 	world.graph.graphView(response, request)
 	if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "errors") {
 		t.Fatalf("SetUserAvatar: %d %s", response.Code, response.Body.String())
+	}
+}
+
+// Deleting an account deletes the file its picture was kept in: no row names
+// it any more, and nothing else would.
+func TestDeletingAnAccountDeletesItsPictureFile(t *testing.T) {
+	world := newAvatarWorld(t)
+	if _, errors := world.ask(t, world.other, setAvatar("", picture(t, color.RGBA{R: 200, A: 255}))); len(errors) > 0 {
+		t.Fatalf("SetUserAvatar: %v", errors)
+	}
+	stored, err := world.database.GetUser(world.other.ID)
+	if err != nil || stored.AvatarFileID == "" {
+		t.Fatalf("the stored account has no picture: %v", err)
+	}
+	if _, err := world.files.GetFile(t.Context(), stored.AvatarFileID); err != nil {
+		t.Fatalf("the picture's file is not there to begin with: %s", err)
+	}
+	if _, errors := world.ask(t, world.manager, fmt.Sprintf(`mutation { DeleteUser(userId: %q) }`, world.other.ID)); len(errors) > 0 {
+		t.Fatalf("DeleteUser: %v", errors)
+	}
+	if _, err := world.files.GetFile(t.Context(), stored.AvatarFileID); err == nil {
+		t.Error("the deleted account's picture file is still there")
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/graphql-go/graphql"
@@ -1534,7 +1533,7 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 	}); err != nil {
 		return nil, err
 	}
-	events, unsubscribe, err := self.followConversation(ctx, conversation)
+	workerEvents, hubEvents, unsubscribe, err := self.followConversation(conversation)
 	if err != nil {
 		return nil, err
 	}
@@ -1542,16 +1541,32 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 	go func() {
 		defer close(channel)
 		defer unsubscribe()
-		// An event replayed and then published again is told by its
-		// sequence: the feed delivers each of a run's events once. One of
-		// no run -- the conversation's title, written after its first turn
-		// ended -- is never replayed, and is delivered as it comes.
+		// An event of the worker's feed replayed and then published again is
+		// told by its sequence: that feed delivers each of a run's events
+		// once. One of no run -- the conversation's title, written after its
+		// first turn ended -- is never replayed, and is delivered as it comes.
+		//
+		// The chat hub's events are not held to it. A chat turn tells the
+		// room its words and that it is thinking with the run's identifier on
+		// every one and no sequence, so counting them would drop every one
+		// after the first: the words stopped streaming and the typing line
+		// came once.
 		delivered := map[string]int{}
-		for {
+		send := func(event agent.Event) bool {
+			copied := event
 			select {
-			case event, ok := <-events:
+			case channel <- &copied:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+		for workerEvents != nil || hubEvents != nil {
+			select {
+			case event, ok := <-workerEvents:
 				if !ok {
-					return
+					workerEvents = nil
+					continue
 				}
 				if event.RunID != "" {
 					if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
@@ -1559,10 +1574,15 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 					}
 					delivered[event.RunID] = event.Sequence
 				}
-				copied := event
-				select {
-				case channel <- &copied:
-				case <-ctx.Done():
+				if !send(event) {
+					return
+				}
+			case event, ok := <-hubEvents:
+				if !ok {
+					hubEvents = nil
+					continue
+				}
+				if !send(event) {
 					return
 				}
 			case <-ctx.Done():
@@ -1573,67 +1593,36 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 	return channel, nil
 }
 
-// followConversation is the feed of a conversation and the function that ends
-// it. A chat's events are the chat hub's, which exists whether or not the
+// followConversation is the feeds of a conversation and the function that ends
+// them. A chat's events are the chat hub's, which exists whether or not the
 // server has an agent: its people do not need one to hear each other. The
 // agent's own turns in a chat conversation are on the worker's feed, followed
 // as well when there is a worker. Any other conversation is the worker's
-// alone, and refused as unavailable without one.
-func (self *graph) followConversation(ctx context.Context, conversation *models.AgentConversation) (<-chan agent.Event, func(), error) {
+// alone, and refused as unavailable without one. The two are returned apart
+// because only the worker's feed replays events (see AgentConversationEvents);
+// a feed that is not followed is nil.
+func (self *graph) followConversation(conversation *models.AgentConversation) (workerEvents, hubEvents <-chan agent.Event, unsubscribe func(), err error) {
 	worker := self.agentWorker()
 	if !conversation.IsChat() {
 		if worker == nil {
-			return nil, nil, agent.ErrUnavailable
+			return nil, nil, nil, agent.ErrUnavailable
 		}
-		events, unsubscribe := worker.SubscribeConversation(conversation.ID)
-		return events, unsubscribe, nil
+		events, unsubscribeWorker := worker.SubscribeConversation(conversation.ID)
+		return events, nil, unsubscribeWorker, nil
 	}
 	hub := self.chatHub()
 	if hub == nil {
-		return nil, nil, agent.ErrUnavailable
+		return nil, nil, nil, agent.ErrUnavailable
 	}
-	events, unsubscribeHub := hub.Subscribe(conversation.ID)
+	hubEvents, unsubscribeHub := hub.Subscribe(conversation.ID)
 	if worker == nil {
-		return events, unsubscribeHub, nil
+		return nil, hubEvents, unsubscribeHub, nil
 	}
-	turnEvents, unsubscribeWorker := worker.SubscribeConversation(conversation.ID)
-	return mergeEvents(ctx, events, turnEvents), func() {
+	workerEvents, unsubscribeWorker := worker.SubscribeConversation(conversation.ID)
+	return workerEvents, hubEvents, func() {
 		unsubscribeHub()
 		unsubscribeWorker()
 	}, nil
-}
-
-// mergeEvents is the events of both feeds in one, closed when both have
-// closed or the context ends.
-func mergeEvents(ctx context.Context, first, second <-chan agent.Event) <-chan agent.Event {
-	merged := make(chan agent.Event)
-	var group sync.WaitGroup
-	for _, source := range []<-chan agent.Event{first, second} {
-		group.Add(1)
-		go func(source <-chan agent.Event) {
-			defer group.Done()
-			for {
-				select {
-				case event, ok := <-source:
-					if !ok {
-						return
-					}
-					select {
-					case merged <- event:
-					case <-ctx.Done():
-						return
-					}
-				case <-ctx.Done():
-					return
-				}
-			}
-		}(source)
-	}
-	go func() {
-		group.Wait()
-		close(merged)
-	}()
-	return merged
 }
 
 // agentWorker is the worker as the API reaches it, or nil when agents are

@@ -327,7 +327,9 @@ takes them from the next turn; and every call is checked again when it is made.
    that failed, in the share's currency, counted from when they ran, and nothing
    else. A failed call counts because a failure after the command acted cannot be
    told from one before it, and the limit is the owner's bound on what could have
-   been spent.
+   been spent. A tool that declares an amount waits too on a share with no limit
+   of either kind that is not set to ask every time: there is nothing a call
+   could be within.
 3. A tool with a scoped identifier is never priced. Its call is turned back
    unless it names an identifier that appears, as a whole word, in the output
    of an earlier call of the same share that ran (and has at least six
@@ -393,8 +395,19 @@ how it came out (approved and ran, approved and failed, declined, expired), the
 owner's note and what it answered fenced as data, through the same waker finished
 background work uses and under the same bounds. The row says when it was told,
 and the telling is claimed first, so the instance that decided the call and the
-sweep never both wake it. Their phone is told too, unless they are looking at a
+sweep never both wake it. A call made while the agent was answering in a chat
+wakes the person's main conversation instead, whose turns are not posted to the
+room, and the woken turn is told which chat it came from. Their phone is told too, unless they are looking at a
 screen.
+
+**Saving a skill again.** Installing a newer version of a skill checks the
+shares of it against the rule that applied when they were made
+(`Skill.CheckShareable`, in `holdSharesToSkill`): a tool that now declares an
+amount, shared with no limit and without asking every time, or one the skill no
+longer declares, would otherwise let the other person spend without bound. Each
+share that no longer qualifies is set to ask every time, in the same
+transaction, and its owner is told in their main conversation which shares and
+why (`Agent.TellSkillSharesNowAsk`). Nothing else about the share changes.
 
 **Leaving a circle** deletes the skill shares between two people who no longer
 share any circle, in the same transaction, beside the calendar and page shares.

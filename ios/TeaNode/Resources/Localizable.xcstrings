@@ -55224,6 +55224,22 @@
         }
       }
     },
+    "A file that was removed with the account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントとともに削除されたファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随账号一起删除的文件"
+          }
+        }
+      }
+    },
     "Edited": {
       "localizations": {
         "ja": {

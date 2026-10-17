@@ -491,7 +491,11 @@ public struct Transcript: Sendable {
     /// The id of the line an agent's answer in a chat is drawn as while it is
     /// being written: one for each run, since a run answers in rounds that
     /// the stored message replaces one after another.
-    static func streamingId(runId: String) -> String { "streaming-\(runId)" }
+    static func streamingId(runId: String) -> String { "\(streamingPrefix)\(runId)" }
+
+    /// What every streaming line's id begins with, and so what an unsaid event
+    /// that names one begins with.
+    static let streamingPrefix = "streaming-"
 
     /// Words of an agent's answer in a chat that are still being written,
     /// told to every member: added to the line for its run, or a new one.
@@ -518,7 +522,14 @@ public struct Transcript: Sendable {
     }
 
     /// A message of a chat that was taken back: a mark that it was, not a gap.
+    /// The line an agent's words were drawn as while they came is taken off
+    /// instead, when the turn was stopped or failed: no message was stored for
+    /// it, so there is nothing to mark.
     public mutating func apply(unsaid messageId: String) {
+        if messageId.hasPrefix(Self.streamingPrefix) {
+            lines.removeAll { $0.id == messageId && $0.isStreaming }
+            return
+        }
         guard let index = lines.firstIndex(where: { $0.messageId == messageId }) else { return }
         lines[index].text = ""
         lines[index].isDeleted = true

@@ -3,6 +3,7 @@ package avatar
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -10,6 +11,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"testing"
+	"time"
 )
 
 // The same three ids are in the iPhone app's tests, with the same indexes:
@@ -85,7 +87,7 @@ func TestNormalizeDropsMetadataAndTurnsThePictureUpright(t *testing.T) {
 	if !bytes.Contains(original, []byte("GPSLatitude")) {
 		t.Fatalf("the test picture does not carry the block it is about")
 	}
-	normalized, err := Normalize(original)
+	normalized, err := Normalize(t.Context(), original)
 	if err != nil {
 		t.Fatalf("Normalize: %s", err)
 	}
@@ -119,7 +121,7 @@ func TestNormalizeCropsTheCenterSquare(t *testing.T) {
 	if err := png.Encode(&encoded, wide); err != nil {
 		t.Fatal(err)
 	}
-	normalized, err := Normalize(encoded.Bytes())
+	normalized, err := Normalize(t.Context(), encoded.Bytes())
 	if err != nil {
 		t.Fatalf("Normalize: %s", err)
 	}
@@ -160,7 +162,7 @@ func TestNormalizeRefusesWhatItCannotUse(t *testing.T) {
 		"text":                 []byte("not a picture"),
 		"too many bytes":       bytes.Repeat([]byte{0}, MaxInputBytes+1),
 	} {
-		if _, err := Normalize(content); err != ErrUnusable {
+		if _, err := Normalize(t.Context(), content); err != ErrUnusable {
 			t.Errorf("%s: err = %v, want ErrUnusable", name, err)
 		}
 	}
@@ -199,12 +201,49 @@ func TestEnlargingKeepsASolidColorSolid(t *testing.T) {
 	if err := png.Encode(&encoded, solid); err != nil {
 		t.Fatal(err)
 	}
-	normalized, err := Normalize(encoded.Bytes())
+	normalized, err := Normalize(t.Context(), encoded.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
 	decoded, _ := png.Decode(bytes.NewReader(normalized))
 	if got := color.RGBAModel.Convert(decoded.At(0, 0)).(color.RGBA); got != (color.RGBA{R: 10, G: 200, B: 30, A: 255}) {
 		t.Errorf("a corner of the enlarged picture is %v", got)
+	}
+}
+
+// Only a few pictures are decoded at once: with every turn taken, another
+// waits its time and is then turned away as busy, and takes its turn as soon as
+// one is free. A file that is not a picture is refused without waiting.
+func TestOnlyAFewPicturesAreDecodedAtOnce(t *testing.T) {
+	// Not parallel: the turns are the package's.
+	original := image.NewRGBA(image.Rect(0, 0, 64, 32))
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, original); err != nil {
+		t.Fatalf("Encode: %s", err)
+	}
+	previousWait := normalizeWait
+	normalizeWait = 100 * time.Millisecond
+	defer func() { normalizeWait = previousWait }()
+
+	for range ConcurrentNormalizations {
+		normalizeSlots <- struct{}{}
+	}
+	if _, err := Normalize(t.Context(), encoded.Bytes()); !errors.Is(err, ErrBusy) {
+		t.Errorf("with every turn taken a picture got %v; want busy", err)
+	}
+	if _, err := Normalize(t.Context(), []byte("not a picture")); err != ErrUnusable {
+		t.Errorf("a file that is not a picture waited for a turn: %v", err)
+	}
+	// A turn freed while one waits is the waiter's.
+	normalizeWait = 5 * time.Second
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		<-normalizeSlots
+	}()
+	if _, err := Normalize(t.Context(), encoded.Bytes()); err != nil {
+		t.Errorf("a picture that waited for a turn got %v", err)
+	}
+	for len(normalizeSlots) > 0 {
+		<-normalizeSlots
 	}
 }

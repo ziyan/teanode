@@ -5180,6 +5180,7 @@ export const ja: Catalog = {
   'chat.placeholder': '{title}にメッセージ…',
   'chat.empty': 'まだ何も書かれていません。声をかけてみましょう。',
   'chat.deleted': 'メッセージは削除されました',
+  'chat.fileRemoved': 'アカウントとともに削除されたファイル',
   'chat.deleteTitle': 'このメッセージを削除しますか？',
   'chat.deleteBody': 'チャットの全員に「メッセージは削除されました」と表示されます。',
   'chat.edited': '編集済み',

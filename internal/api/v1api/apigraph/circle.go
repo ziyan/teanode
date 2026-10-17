@@ -356,8 +356,18 @@ func (self *graph) DeleteCircle(ctx context.Context, arguments DeleteCircleArgum
 	if err != nil {
 		return false, err
 	}
-	if err := self.transaction(ctx).DeleteCircle(arguments.CircleID); err != nil {
+	tx := self.transaction(ctx)
+	// Everybody in the circle leaves its chat, and the group chats that were
+	// held together only by it: told who was in them, after.
+	snapshot, err := self.snapshotChatsOf(tx, circleMemberIds(circle)...)
+	if err != nil {
+		return false, err
+	}
+	if err := tx.DeleteCircle(arguments.CircleID); err != nil {
 		return false, translateError(err)
+	}
+	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
+		return false, err
 	}
 	log.Noticef("%s deleted the circle %q", member.User.Username, circle.Name)
 	return true, nil
@@ -465,6 +475,9 @@ func (self *graph) AnswerCircleInvitation(ctx context.Context, arguments AnswerC
 	if joined == nil {
 		return nil, nil
 	}
+	if err := self.publishCircleChatMembersChanged(ctx, joined.ID); err != nil {
+		return nil, err
+	}
 	log.Noticef("%s joined the circle %q", user.Username, joined.Name)
 	return self.circleFor(ctx, joined, user.ID)
 }
@@ -516,6 +529,9 @@ func (self *graph) SetCircleMemberRole(ctx context.Context, arguments SetCircleM
 	if err != nil {
 		return nil, translateCircleError(err)
 	}
+	if err := self.publishCircleChatMembersChanged(ctx, arguments.CircleID); err != nil {
+		return nil, err
+	}
 	return self.circleFor(ctx, changed, member.UserID)
 }
 
@@ -533,9 +549,17 @@ func (self *graph) RemoveCircleMember(ctx context.Context, arguments RemoveCircl
 	if err != nil {
 		return nil, err
 	}
-	remaining, err := self.transaction(ctx).RemoveCircleMember(arguments.CircleID, arguments.UserID)
+	tx := self.transaction(ctx)
+	snapshot, err := self.snapshotChatsOf(tx, arguments.UserID)
+	if err != nil {
+		return nil, err
+	}
+	remaining, err := tx.RemoveCircleMember(arguments.CircleID, arguments.UserID)
 	if err != nil {
 		return nil, translateCircleError(err)
+	}
+	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
+		return nil, err
 	}
 	if remaining == nil || remaining.Member(member.UserID) == nil {
 		return nil, nil
@@ -552,8 +576,16 @@ func (self *graph) LeaveCircle(ctx context.Context, arguments LeaveCircleArgumen
 	if err != nil {
 		return false, err
 	}
-	if _, err := self.transaction(ctx).RemoveCircleMember(arguments.CircleID, member.UserID); err != nil {
+	tx := self.transaction(ctx)
+	snapshot, err := self.snapshotChatsOf(tx, member.UserID)
+	if err != nil {
+		return false, err
+	}
+	if _, err := tx.RemoveCircleMember(arguments.CircleID, member.UserID); err != nil {
 		return false, translateCircleError(err)
+	}
+	if err := self.publishMembersChangedSince(ctx, snapshot); err != nil {
+		return false, err
 	}
 	return true, nil
 }
@@ -589,6 +621,18 @@ func (self *graph) AddCircleMember(ctx context.Context, arguments AddCircleMembe
 	if err != nil {
 		return nil, translateError(err)
 	}
+	if err := self.publishCircleChatMembersChanged(ctx, added.ID); err != nil {
+		return nil, err
+	}
 	log.Noticef("%s put the account %q in the circle %q", operatorName(ctx), user.Username, added.Name)
 	return self.circleFor(ctx, added, principal.UserID())
+}
+
+// circleMemberIds are the accounts in a circle.
+func circleMemberIds(circle *models.Circle) []string {
+	userIds := make([]string, 0, len(circle.Members))
+	for _, member := range circle.Members {
+		userIds = append(userIds, member.UserID)
+	}
+	return userIds
 }

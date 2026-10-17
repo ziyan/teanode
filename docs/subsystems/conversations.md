@@ -267,8 +267,17 @@ and it needs words or a file. `SayInChatAsAgent`, which the `conversation`
 tool's `send` action calls, writes the same message as the agent: its name, and
 `author_agent_id` set. Unread counts come from the member's read mark, which
 only moves forward (`MarkChatRead`) and which writing a message also moves.
+"Forward" and "newer" are by when a message was stored and then its identifier,
+the order a chat is read in, for the read mark, the unread counts and the
+cursor a chat source reads from: identifiers made by different server instances
+are not in the order of their clocks, so comparing the identifiers alone could
+skip or repeat a message.
 
-**Told.** The events are in `streaming-and-instances.md`: a chat's events and
+**Told.** Who is in a chat is told as well: adding, taking out, leaving, a
+circle's change to its chat and a circle ending send a `members` event to the
+conversation of everybody in the chat now and of those the change took out, once
+it commits, and a screen that has the chat open reads its members again. The
+events are in `streaming-and-instances.md`: a chat's events and
 its phone notifications belong to the chat hub (`internal/chat`), which a server
 builds whether or not it has a language model, so chats are live, typing and
 read marks show, and phones are told on a server that runs no agent. A phone is
@@ -339,7 +348,11 @@ phones are told too, the owner's included, whose answer it is. Its calls, their
 results, its notes and its cards stay rows of the owner's conversation: a round
 that called a tool leaves an assistant row with the calls and no words. No tool
 result can reach a chat message, because the only text posted is the model's own
-answer. The agent's message does not move its owner's read mark, so the answer
+answer. The final round of a turn, which has no calls to leave a row behind, leaves an
+assistant row of the owner's own with no words and the round's cost (and the
+cost of the judgements carried to it), so that what a chat turn cost is summed
+from the owner's rows like any turn's and never from the chat's message, which
+everybody reads; the history leaves such a row out. The agent's message does not move its owner's read mark, so the answer
 counts as unread for an owner who was not looking. While the turn runs every
 member but the owner gets a `typing` event carrying the agent's name,
 `authorAgentId` and `authorOwnerName` when it starts and every four seconds until it ends, which the

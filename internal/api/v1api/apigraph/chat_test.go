@@ -1247,3 +1247,100 @@ func TestAFileSentInAChatIsReadForTheModelOnlyWhenTheUploadersAgentIsOn(t *testi
 		t.Errorf("text for a person whose agent is on: %q", stored[0].Text)
 	}
 }
+
+// conversationWhere is the id of the person's chat conversation the test
+// picks out of their list.
+func (self *chatWorld) conversationWhere(t *testing.T, user *models.User, picks func(chat map[string]any) bool) string {
+	t.Helper()
+	for _, each := range self.call(t, user, `query { ListAgentConversations(kind: "chat") `+chatTestFields+` }`)["ListAgentConversations"].([]any) {
+		conversation := each.(map[string]any)
+		if picks(conversation["chat"].(map[string]any)) {
+			return conversation["id"].(string)
+		}
+	}
+	t.Fatalf("%s has no such chat", user.Username)
+	return ""
+}
+
+// Whoever a change to the people of a chat concerns is told, those it takes
+// out included, so that an open chat reads its members again instead of
+// staying as it was until a reload.
+func TestAChangeOfPeopleIsToldToEveryoneItConcerns(t *testing.T) {
+	world := newChatWorld(t)
+	circleId := world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q]) { id } }`, world.bob.ID))
+	isTrip := func(chat map[string]any) bool { return chat["title"] == "Trip" }
+	isCircle := func(chat map[string]any) bool { return chat["isCircleChat"] == true }
+	aliceTrip := world.conversationWhere(t, world.alice, isTrip)
+	bobTrip := world.conversationWhere(t, world.bob, isTrip)
+	bobCircle := world.conversationWhere(t, world.bob, isCircle)
+	aliceCircle := world.conversationWhere(t, world.alice, isCircle)
+	carolCircle := world.conversationWhere(t, world.carol, isCircle)
+	bobTripFeed, aliceCircleFeed, carolCircleFeed, bobCircleFeed := world.follow(bobTrip), world.follow(aliceCircle), world.follow(carolCircle), world.follow(bobCircle)
+	defer bobTripFeed.stop()
+	defer aliceCircleFeed.stop()
+	defer carolCircleFeed.stop()
+	defer bobCircleFeed.stop()
+	// Events are published as the change commits, before the call returns, so
+	// emptying a feed before a step leaves only what the step told.
+	drain := func(feeds ...*chatEvents) {
+		for _, feed := range feeds {
+			for len(feed.channel) > 0 {
+				<-feed.channel
+			}
+		}
+	}
+
+	// Adding Carol to the group tells Bob, who has it open.
+	drain(bobTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, aliceTrip, world.carol.ID))
+	if bobTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that Carol joined the group")
+	}
+	// Carol is in it now, with a conversation of her own to follow.
+	carolTrip := world.conversationWhere(t, world.carol, isTrip)
+	carolTripFeed := world.follow(carolTrip)
+	defer carolTripFeed.stop()
+
+	// Taking her out tells her and the others.
+	drain(bobTripFeed, carolTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { RemoveChatMember(conversationId: %q, userId: %q) { id } }`, aliceTrip, world.carol.ID))
+	if carolTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that she was taken out of the group")
+	}
+	if bobTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that Carol was taken out")
+	}
+	// Carol is put back in, and leaves: the one who leaves hears it.
+	drain(carolTripFeed, bobTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, aliceTrip, world.carol.ID))
+	if carolTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that she was added again")
+	}
+	drain(carolTripFeed)
+	world.call(t, world.carol, fmt.Sprintf(`mutation { LeaveChat(conversationId: %q) }`, carolTrip))
+	if carolTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that she left")
+	}
+
+	// Taking Bob out of the circle takes him out of its chat and out of the
+	// group, where he shares no circle with Alice any more; he, and the others,
+	// are told of both.
+	drain(bobCircleFeed, aliceCircleFeed, carolCircleFeed, bobTripFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { RemoveCircleMember(circleId: %q, userId: %q) { id } }`, circleId, world.bob.ID))
+	if bobCircleFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that he left the circle's chat")
+	}
+	if aliceCircleFeed.next(agent.EventMembers) == nil || carolCircleFeed.next(agent.EventMembers) == nil {
+		t.Error("the rest of the circle were not told that Bob left its chat")
+	}
+	if bobTripFeed.next(agent.EventMembers) == nil {
+		t.Error("Bob was not told that he left the group")
+	}
+	// Deleting the circle ends its chat for the two who are left in it.
+	drain(carolCircleFeed)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteCircle(circleId: %q) }`, circleId))
+	if carolCircleFeed.next(agent.EventMembers) == nil {
+		t.Error("Carol was not told that the circle's chat ended")
+	}
+}

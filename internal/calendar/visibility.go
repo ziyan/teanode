@@ -76,19 +76,34 @@ var calendarProperties = map[string]bool{
 // back everything it was given.
 //
 // An event its owner marked private (CLASS:PRIVATE or CLASS:CONFIDENTIAL) is
-// busy whatever the level, and so is a file this server cannot read: what
-// cannot be read cannot be shown safely.
+// busy to everybody but the owner, an editor included, and so is a file this
+// server cannot read at any level below edit: what cannot be read cannot be
+// shown safely. An editor is not the owner, so an editor is shown a private
+// event as busy and the write path refuses to change or delete it (see
+// IsPrivateFile). A calendar a circle owns has no owner to keep an event
+// private from, so the database does not call Redact for it at all.
 //
 // The columns beside the file are redacted with it, because they are what a
 // listing reads, and the ETag is taken over what is given, because it names a
 // version of the bytes the reader holds.
 func Redact(object models.CalendarObject, shareLevel models.ShareLevel) models.CalendarObject {
-	if shareLevel == models.ShareLevelOwner || shareLevel == models.ShareLevelEdit {
+	if shareLevel == models.ShareLevelOwner {
 		return object
 	}
 	decoded, err := ical.NewDecoder(strings.NewReader(object.Data)).Decode()
 	if err != nil {
+		if shareLevel == models.ShareLevelEdit {
+			// An editor of a file nobody can read is let write it back,
+			// which is how it gets repaired.
+			return object
+		}
 		return busyOnly(object, nil)
+	}
+	if shareLevel == models.ShareLevelEdit {
+		if fileIsPrivate(decoded) {
+			return busyOnly(object, decoded)
+		}
+		return object
 	}
 	if fileIsPrivate(decoded) || shareLevel.Rank() < models.ShareLevelTitles.Rank() {
 		return busyOnly(object, decoded)
@@ -98,6 +113,16 @@ func Redact(object models.CalendarObject, shareLevel models.ShareLevel) models.C
 	}
 	// details: the whole of it, less the alarms.
 	return rewritten(object, decoded, nil, false)
+}
+
+// IsPrivateFile reports whether any event in an iCalendar file is marked
+// private. The write path asks it of the stored file before a person who is
+// not the owner changes or deletes the event: what they may see only as busy
+// they may not change, since a change would be made blind and would write
+// back the busy copy over the real event.
+func IsPrivateFile(data string) bool {
+	decoded, err := ical.NewDecoder(strings.NewReader(data)).Decode()
+	return err == nil && fileIsPrivate(decoded)
 }
 
 // fileIsPrivate reports whether any event in the file is marked private. One

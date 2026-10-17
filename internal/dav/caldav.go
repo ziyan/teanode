@@ -326,6 +326,9 @@ func (self *calendarBackend) PutCalendarObject(ctx context.Context, address stri
 		if err != nil {
 			return unexpectedCalendar(err)
 		}
+		if existing != nil && isPrivateToOwner(found, existing.Data) {
+			return davError(refuse(http.StatusForbidden, "this event is private to its owner"))
+		}
 		// An event with guests is its owner's: the invitations go out from,
 		// and the answers come back to, their address.
 		if !found.isOwner() && (hasGuests(kept.Data) || (existing != nil && hasGuests(existing.Data))) {
@@ -422,6 +425,9 @@ func (self *calendarBackend) DeleteCalendarObject(ctx context.Context, address s
 		if existing == nil {
 			return davError(refuse(http.StatusNotFound, "no such event"))
 		}
+		if isPrivateToOwner(found, existing.Data) {
+			return davError(refuse(http.StatusForbidden, "this event is private to its owner"))
+		}
 		if !found.isOwner() && hasGuests(existing.Data) {
 			return davError(refuse(http.StatusForbidden, "%s", guestsRefusal(found)))
 		}
@@ -449,6 +455,14 @@ func mayWrite(found *reachedCalendar) error {
 	}
 	return refuse(http.StatusForbidden,
 		"this calendar is shared with you at the level %q, and you can only change it when it is shared at edit", found.shareLevel)
+}
+
+// isPrivateToOwner reports whether a stored event is one its owner marked
+// private and the person writing is not the owner. The editor is shown it only
+// as busy, so a change from them would be made blind. A circle's calendar has
+// no owner.
+func isPrivateToOwner(found *reachedCalendar, data string) bool {
+	return !found.isOwner() && found.CircleID == "" && calendar.IsPrivateFile(data)
 }
 
 // hasGuests reports whether an event names people it asks.

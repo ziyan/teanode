@@ -108,12 +108,12 @@ func TestRedactShowsWhatTheLevelAllows(t *testing.T) {
 }
 
 // An event its owner marked private is busy to everybody else at every level,
-// and is left alone for the owner and for an editor of the owner's own.
+// an editor included, and is left alone for the owner.
 func TestAPrivateEventIsBusyAtEveryLevel(t *testing.T) {
 	t.Parallel()
 	for _, class := range []string{"PRIVATE", "CONFIDENTIAL", "private"} {
 		stored := eventObject(class)
-		for _, level := range []models.ShareLevel{models.ShareLevelBusy, models.ShareLevelTitles, models.ShareLevelDetails} {
+		for _, level := range []models.ShareLevel{models.ShareLevelBusy, models.ShareLevelTitles, models.ShareLevelDetails, models.ShareLevelEdit} {
 			redacted := Redact(stored, level)
 			if redacted.Summary != "Busy" || strings.Contains(redacted.Data, "Dentist") ||
 				strings.Contains(redacted.Data, "Elm Street") || strings.Contains(redacted.Data, "guest@example.com") ||
@@ -124,15 +124,32 @@ func TestAPrivateEventIsBusyAtEveryLevel(t *testing.T) {
 				t.Errorf("%s at %s still says when", class, level)
 			}
 		}
-		for _, level := range []models.ShareLevel{models.ShareLevelOwner, models.ShareLevelEdit} {
-			if redacted := Redact(stored, level); redacted.Data != stored.Data {
-				t.Errorf("%s at %s is the event as it is", class, level)
-			}
+		if redacted := Redact(stored, models.ShareLevelOwner); redacted.Data != stored.Data {
+			t.Errorf("%s at owner is the event as it is", class)
 		}
+	}
+	// An editor of an event that is not private still gets it as it is, so
+	// that a phone that edits it writes back everything it was given.
+	if redacted := Redact(eventObject(""), models.ShareLevelEdit); redacted.Data != eventObject("").Data {
+		t.Errorf("an editor is given an ordinary event as it is")
 	}
 	// And a public one is not made private by the rule.
 	if redacted := Redact(eventObject("PUBLIC"), models.ShareLevelTitles); redacted.Summary != "Dentist" {
 		t.Errorf("a public event keeps its title: %q", redacted.Summary)
+	}
+}
+
+// The write path asks the stored file, not the busy copy, whether an event is
+// private.
+func TestIsPrivateFile(t *testing.T) {
+	t.Parallel()
+	for class, want := range map[string]bool{"": false, "PUBLIC": false, "PRIVATE": true, "CONFIDENTIAL": true} {
+		if got := IsPrivateFile(eventObject(class).Data); got != want {
+			t.Errorf("class %q: IsPrivateFile is %v, want %v", class, got, want)
+		}
+	}
+	if IsPrivateFile("not a calendar") {
+		t.Errorf("a file that cannot be read is not called private")
 	}
 }
 

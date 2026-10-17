@@ -16,6 +16,24 @@ import (
 // The circle has to name another admin first.
 var ErrCircleNeedsAdmin = errors.New("db: a circle needs at least one admin")
 
+// circleMembershipLockKey is the key of the PostgreSQL advisory lock every
+// change to who is in a circle, and every cleanup of what that change ends,
+// takes first (lockCircleMembership). Circle membership changes are rare, and
+// a total order between them is what makes the cleanup of one see the other
+// change: leaving two circles at once, each person's cleanup used to look for
+// the circle the two still shared, which the other's uncommitted leaving was
+// about to end, and kept a share or a group chat between two people who then
+// had no circle in common. Holding it for the rest of the transaction is what
+// lets the second look at the committed result of the first.
+const circleMembershipLockKey int64 = 7164951213004801
+
+// lockCircleMembership takes the lock above for the rest of the transaction.
+// It is taken before any row lock the change needs, so that every change
+// takes its locks in the one order.
+func lockCircleMembership(tx *gorm.DB) error {
+	return tx.Exec(`SELECT pg_advisory_xact_lock(?)`, circleMembershipLockKey).Error
+}
+
 // CircleOperation is circles, who is in them and who has been invited.
 //
 // Every change to who is in a circle takes the circle's row for update first,
@@ -370,6 +388,9 @@ func (self *transaction) RenameCircle(circleId, name string) (*models.Circle, er
 }
 
 func (self *transaction) DeleteCircle(circleId string) error {
+	if err := lockCircleMembership(self.tx); err != nil {
+		return err
+	}
 	var locked circleModel
 	if err := lockRow(self.tx, &locked, circleId); err != nil {
 		return err
@@ -433,6 +454,9 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 // member rows as they stand, which is the state every membership rule is
 // decided on.
 func (self *transaction) lockedCircleMembers(circleId string) ([]circleMemberModel, error) {
+	if err := lockCircleMembership(self.tx); err != nil {
+		return nil, err
+	}
 	var locked circleModel
 	if err := lockRow(self.tx, &locked, circleId); err != nil {
 		return nil, err
@@ -583,6 +607,9 @@ func (self *transaction) RemoveCircleMember(circleId, userId string) (*models.Ci
 // only admin went would have nobody to manage it. So the earliest-joined
 // member of such a circle becomes its admin.
 func releaseCircles(tx *gorm.DB, userId string) error {
+	if err := lockCircleMembership(tx); err != nil {
+		return err
+	}
 	var circleIds []string
 	if err := tx.Model(&circleMemberModel{}).Where("\"user_id\" = ?", userId).Order("\"circle_id\" ASC").Pluck("circle_id", &circleIds).Error; err != nil {
 		return err

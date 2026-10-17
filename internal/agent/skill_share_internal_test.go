@@ -1016,3 +1016,70 @@ func TestSharedToolsStopWhileEitherAccountIsDisabledOrTheOwnerMayNotUseAgents(t 
 		t.Errorf("declining once both can take part again: %v", err)
 	}
 }
+
+// When an update of a skill makes a share ask every time, its owner is told in
+// their main conversation, naming who it is shared with and the tools, and
+// nothing is paid meanwhile.
+func TestTheOwnerIsToldWhenAShareNowAsksEveryTime(t *testing.T) {
+	fixture := newSkillShareFixture(t)
+	share := fixture.share(t, &models.SkillShare{ToolNames: []string{"balance"}})
+	if err := fixture.worker.tellSkillSharesNowAsk(t.Context(), fixture.adaAgent.ID, "payments", []*models.SkillShare{share}); err != nil {
+		t.Fatalf("tellSkillSharesNowAsk: %s", err)
+	}
+	var messages []*models.AgentMessage
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		mains, err := tx.ListAgentConversations(fixture.adaAgent.ID, []models.AgentConversationKind{models.AgentConversationMain}, nil)
+		if err != nil || len(mains) != 1 {
+			t.Fatalf("ListAgentConversations: %d, %v", len(mains), err)
+		}
+		messages, _ = tx.ListAgentMessages(mains[0].ID, nil)
+	})
+	if len(messages) != 2 || !strings.HasPrefix(messages[0].Content, models.AlertMarker) ||
+		!strings.Contains(messages[1].Content, "payments") || !strings.Contains(messages[1].Content, "Ben") ||
+		!strings.Contains(messages[1].Content, "balance") || !strings.Contains(messages[1].Content, "asks you before every call") {
+		t.Fatalf("the owner's main conversation says which share now asks: %+v", messages)
+	}
+}
+
+// A call made while the grantee's agent was answering in a chat wakes the
+// grantee's main conversation, not the chat: a turn in a chat posts to the
+// room, and the others in it would read what came of somebody's payment. The
+// wake says which chat the call came from.
+func TestTheOutcomeOfACallMadeInAChatIsToldInTheMainConversation(t *testing.T) {
+	fixture := newSkillShareFixture(t)
+	share := fixture.share(t, &models.SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: dollars(10000), CurrencyCode: "usd"})
+	var chatConversation *models.AgentConversation
+	var call *models.SkillShareCall
+	dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+		chat, err := tx.OpenDirectChat(fixture.ben.ID, fixture.ada.ID)
+		if err != nil {
+			t.Fatalf("OpenDirectChat: %s", err)
+		}
+		if chatConversation, err = tx.EnsureChatConversation(fixture.benAgent.ID, chat.ID); err != nil {
+			t.Fatalf("EnsureChatConversation: %s", err)
+		}
+		amount := int64(14000)
+		decided := time.Now()
+		if call, err = tx.CreateSkillShareCall(&models.SkillShareCall{
+			SkillShareID: share.ID, GranteeConversationID: chatConversation.ID, ToolName: "pay", CallState: models.SkillShareCallDeclined,
+			AmountMinor: &amount, CurrencyCode: "usd", ToolArguments: map[string]any{}, DecidedAt: &decided,
+		}); err != nil {
+			t.Fatalf("CreateSkillShareCall: %s", err)
+		}
+	})
+	answer := &skillShareAnswer{call: call, ownerName: "Ada", skillName: "payments"}
+	fixture.worker.wakeForSkillShareCall(answer)
+
+	fixture.worker.backgroundMutex.Lock()
+	_, isWokenInChat := fixture.worker.backgroundWakes[chatConversation.ID]
+	_, isWokenInMain := fixture.worker.backgroundWakes[fixture.benConversation.ID]
+	fixture.worker.backgroundMutex.Unlock()
+	if isWokenInChat || !isWokenInMain {
+		t.Fatalf("the chat is woken: %v; the main conversation is woken: %v", isWokenInChat, isWokenInMain)
+	}
+	message := skillShareWakeMessage([]*skillShareAnswer{answer})
+	if !strings.Contains(message, "made while answering in the chat with Ada") {
+		t.Fatalf("the wake says which chat the call came from:\n%s", message)
+	}
+	fixture.waitUntilTold(t, call.ID)
+}

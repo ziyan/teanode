@@ -1030,3 +1030,60 @@ func (self *Agent) sharedRunner(shareId, toolName string) func(context.Context, 
 		return result, nil
 	}
 }
+
+// skillShareNoteRetryEvery and skillShareNoteTries bound how long the note that
+// a share now asks every time waits for a turn in the owner's main conversation
+// to end.
+var (
+	skillShareNoteRetryEvery = 10 * time.Second
+	skillShareNoteTries      = 6
+)
+
+// TellSkillSharesNowAsk says, in each owner's main conversation, that an
+// update of a skill made the shares listed ask them before every call, and why.
+// It returns at once; the note is written while no turn runs there, so it waits
+// for a running one to end, a bounded number of times, and gives up with a
+// warning. The shares are already changed; the note only tells the owner.
+func (self *Agent) TellSkillSharesNowAsk(skillName string, shares []*models.SkillShare) {
+	byAgent := map[string][]*models.SkillShare{}
+	for _, share := range shares {
+		byAgent[share.OwnerAgentID] = append(byAgent[share.OwnerAgentID], share)
+	}
+	for agentId, held := range byAgent {
+		go func() {
+			for attempt := 0; attempt < skillShareNoteTries; attempt++ {
+				err := self.tellSkillSharesNowAsk(self.ctx, agentId, skillName, held)
+				if err == nil {
+					return
+				}
+				if !errors.Is(err, errTurnRunning) {
+					log.Warningf("cannot tell agent %s that its shares of the %s skill now ask every time: %s", agentId, skillName, err)
+					return
+				}
+				select {
+				case <-self.ctx.Done():
+					return
+				case <-time.After(skillShareNoteRetryEvery):
+				}
+			}
+			log.Warningf("agent %s was not told that its shares of the %s skill now ask every time: a turn kept running in its conversation", agentId, skillName)
+		}()
+	}
+}
+
+// tellSkillSharesNowAsk writes the note once. errTurnRunning when a turn runs
+// in the owner's main conversation.
+func (self *Agent) tellSkillSharesNowAsk(ctx context.Context, agentId, skillName string, shares []*models.SkillShare) error {
+	lines := make([]string, 0, len(shares))
+	for _, share := range shares {
+		grantee := share.GranteeName
+		if grantee == "" {
+			grantee = share.GranteeUsername
+		}
+		lines = append(lines, fmt.Sprintf("- %s, tools %s", grantee, strings.Join(share.ToolNames, ", ")))
+	}
+	checkIn := models.AlertMarker + " The " + skillName + " skill was updated, and some of the shares you made of it no longer meet the rule for sharing a tool that pays; you told the person. This is not the person speaking. What you said follows."
+	summary := "The " + skillName + " skill was updated, and the update changed what its tools do with money. These shares of it no longer have a limit that fits, so each now asks you before every call:\n\n" +
+		strings.Join(lines, "\n") + "\n\nNothing is paid on any of them until you approve a call. You can set a limit on a share, or take it back, in the sharing settings."
+	return self.tellAgent(ctx, self.settings.Database, agentId, checkIn, summary)
+}

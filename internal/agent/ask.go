@@ -277,7 +277,7 @@ const (
 	// published to the conversation of every member who is in the chat.
 	EventSaid   EventKind = "said"   // a new message: Message, whole unless IsMessageCut
 	EventEdited EventKind = "edited" // a message was changed: Message
-	EventUnsaid EventKind = "unsaid" // a message was taken back: MessageID
+	EventUnsaid EventKind = "unsaid" // a message was taken back: MessageID; or, named ChatStreamingKey(run), words that were streamed and will not be stored
 	EventRead   EventKind = "read"   // a member's read mark moved: UserID, MessageID
 	EventTyping EventKind = "typing" // a member is writing: UserID, Name; an agent is thinking: AuthorAgentID, Name
 
@@ -1024,6 +1024,9 @@ func (self *AskRun) loop() {
 	err := self.turn()
 	stopThinking()
 	if err != nil {
+		// Words streamed to the chat before it stopped or failed are not
+		// stored as a message; every screen drops the line they were drawn as.
+		self.retractChatText()
 		if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
 			// read as cut short after a reload.
@@ -1521,7 +1524,18 @@ func (self *AskRun) turn() error {
 					if posted != nil {
 						history[len(history)-1].SourceID = posted.message.ID
 					}
-					return nil
+					// What the answering round cost, and the judgements
+					// carried to it, are the owner's own row, as in any
+					// turn: a row with no words and no calls, which is
+					// nothing to read, and which the history leaves out. The
+					// words are the chat's message, and the chat's message
+					// carries no cost, since the others in the chat read it.
+					_, err := tx.AppendAgentMessage(&models.AgentMessage{
+						ConversationID: settings.Conversation.ID,
+						Role:           string(llm.RoleAssistant),
+						Usage:          answerUsage,
+					})
+					return err
 				}
 			}
 			content := answer.Content

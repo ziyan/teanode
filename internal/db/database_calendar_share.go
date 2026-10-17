@@ -307,6 +307,13 @@ func (self *transaction) CreateCircleCalendar(circleId, name, timezone string) (
 // for this one to finish and then deletes the share made meanwhile. It
 // reports whether the two are in a circle together.
 func (self *transaction) holdMutualCircle(userId, otherUserId string) (bool, error) {
+	// In the order of the circle changes themselves (see
+	// circleMembershipLockKey): a share made while somebody leaves the last
+	// circle the two had in common is made before the leaving, and cleaned up
+	// by it, or after, and refused.
+	if err := lockCircleMembership(self.tx); err != nil {
+		return false, err
+	}
 	var rows []struct {
 		UserID string `gorm:"column:user_id"`
 	}
@@ -507,6 +514,15 @@ func (self *transaction) ReadCalendarObject(calendarId, objectId string, shareLe
 	if err != nil {
 		return nil, err
 	}
+	if object != nil && shareLevel == models.ShareLevelEdit {
+		isCircleCalendar, err := self.isCircleCalendar(calendarId)
+		if err != nil {
+			return nil, err
+		}
+		if isCircleCalendar {
+			return object, nil
+		}
+	}
 	return redactedFor(object, shareLevel), nil
 }
 
@@ -515,8 +531,30 @@ func (self *transaction) ReadCalendarObjects(calendarId string, shareLevel model
 	if err != nil {
 		return nil, err
 	}
+	if shareLevel == models.ShareLevelEdit {
+		isCircleCalendar, err := self.isCircleCalendar(calendarId)
+		if err != nil {
+			return nil, err
+		}
+		if isCircleCalendar {
+			return objects, nil
+		}
+	}
 	for index, object := range objects {
 		objects[index] = redactedFor(object, shareLevel)
 	}
 	return objects, nil
+}
+
+// isCircleCalendar reports whether a calendar belongs to a circle. Its events
+// are every member's to read and write, so there is no owner to keep a private
+// event from: calendar.Redact would otherwise make an event marked private
+// busy to every member, the one who wrote it included.
+func (self *transaction) isCircleCalendar(calendarId string) (bool, error) {
+	var count int64
+	if err := self.tx.Model(&calendarModel{}).
+		Where("\"id\" = ? AND \"circle_id\" IS NOT NULL", calendarId).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }

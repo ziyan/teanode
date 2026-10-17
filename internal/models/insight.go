@@ -469,6 +469,11 @@ type AgentAttachment struct {
 	// form: it is kept while it waits to be read, and its text, which
 	// holds the person's taxpayer number, is never kept in Text.
 	IsTaxDocument bool `json:"isTaxDocument,omitempty"`
+
+	// IsRemoved says the file went with the account that held it: the chat
+	// message it came with is kept, the file is not, and a screen says so
+	// where the file was.
+	IsRemoved bool `json:"isRemoved,omitempty"`
 }
 
 // AgentReference is a thread or message the person pointed the agent at

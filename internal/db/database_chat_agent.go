@@ -168,7 +168,7 @@ func (self *transaction) SetChatAgentAskableByOthers(chatId, userId string, isAs
 
 func (self *transaction) NewestChatMessageID(chatId string) (string, error) {
 	var ids []string
-	if err := self.tx.Model(&chatMessageModel{}).Where(`"chat_id" = ?`, chatId).Order(`"id" DESC`).Limit(1).Pluck("id", &ids).Error; err != nil {
+	if err := self.tx.Model(&chatMessageModel{}).Where(`"chat_id" = ?`, chatId).Order(`"created_at" DESC, "id" DESC`).Limit(1).Pluck("id", &ids).Error; err != nil {
 		return "", err
 	}
 	if len(ids) == 0 {
@@ -177,13 +177,27 @@ func (self *transaction) NewestChatMessageID(chatId string) (string, error) {
 	return ids[0], nil
 }
 
+// ListChatMessagesAfter reads in the order a chat is read in, when stored and
+// then by identifier. Identifiers made by different server instances are not in
+// the order of their clocks, so a cursor compared by identifier alone could
+// pass over a message stored after it, or read one twice.
 func (self *transaction) ListChatMessagesAfter(chatId, afterMessageId string, limit int) ([]*models.ChatMessage, error) {
 	query := self.tx.Where(`"chat_id" = ? AND "deleted_at" IS NULL`, chatId)
 	if afterMessageId != "" {
-		query = query.Where(`"id" > ?`, afterMessageId)
+		var cursors []chatMessageModel
+		if err := self.tx.Select("id", "created_at").Where(`"id" = ? AND "chat_id" = ?`, afterMessageId, chatId).Limit(1).Find(&cursors).Error; err != nil {
+			return nil, err
+		}
+		if len(cursors) == 1 {
+			query = query.Where(`("created_at", "id") > (?, ?)`, cursors[0].CreatedAt, cursors[0].ID)
+		} else {
+			// A cursor on a message that is gone has no time to be compared
+			// by: its identifier is all that is left of it.
+			query = query.Where(`"id" > ?`, afterMessageId)
+		}
 	}
 	var rows []chatMessageModel
-	if err := query.Order(`"id" ASC`).Limit(limit).Find(&rows).Error; err != nil {
+	if err := query.Order(`"created_at" ASC, "id" ASC`).Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	messages := make([]*models.ChatMessage, 0, len(rows))

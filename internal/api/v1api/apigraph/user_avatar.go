@@ -110,10 +110,15 @@ func (self *graph) SetUserAvatar(ctx context.Context, arguments SetUserAvatarArg
 	if err != nil {
 		return nil, fmt.Errorf("%w: the picture must be base64 text", api.ErrInvalidArguments)
 	}
-	normalized, err := avatar.Normalize(content)
+	normalized, err := avatar.Normalize(ctx, content)
 	if err != nil {
 		if errors.Is(err, avatar.ErrUnusable) {
 			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
+		}
+		// Others' pictures are being processed: the same picture sent again
+		// in a moment is accepted.
+		if errors.Is(err, avatar.ErrBusy) {
+			return nil, api.ErrTooManyRequests
 		}
 		return nil, err
 	}
