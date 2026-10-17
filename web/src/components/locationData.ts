@@ -2,7 +2,7 @@ import type { Key } from '../i18n/i18n'
 
 // What the server says about where people are and have been, and the words for
 // it that the Location page and its dialogs share. The names are the server's
-// (internal/api/v1api/apigraph/location.go).
+// (internal/api/v1api/apigraph/location_history.go and location_share.go).
 
 export type LocationPoint = {
   latitudeDegrees: number
@@ -41,7 +41,7 @@ export type LocationView = {
   avatarUrl: string | null
   avatarColorIndex: number
   // "owner" for the person signed in, else what they share: current or history.
-  locationShareLevel: string
+  shareLevel: string
   latestPoint: LocationPoint | null
   openVisit: Pick<PlaceVisit, 'id' | 'place' | 'arrivedAt'> | null
 }
@@ -62,7 +62,7 @@ export const POINT_FIELDS = 'latitudeDegrees longitudeDegrees accuracyMeters mea
 export const PLACE_FIELDS =
   'id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText visitCount lastVisitAt'
 export const VISIT_FIELDS = `id arrivedAt departedAt durationSeconds place { ${PLACE_FIELDS} }`
-export const PERSON_FIELDS = `userId username name avatarUrl avatarColorIndex locationShareLevel
+export const PERSON_FIELDS = `userId username name avatarUrl avatarColorIndex shareLevel
   latestPoint { ${POINT_FIELDS} } openVisit { id arrivedAt place { ${PLACE_FIELDS} } }`
 
 export const LABEL_KEYS: Record<string, Key> = {
@@ -108,4 +108,40 @@ export function parseDayKey(value: string | null): Date | null {
 export function dayRange(dayStart: Date): { from: string; until: string } {
   const next = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1)
   return { from: dayStart.toISOString(), until: next.toISOString() }
+}
+
+const EARTH_RADIUS_METERS = 6371000
+
+// distanceMeters is how far apart two positions are on the ground, along the
+// great circle between them.
+export function distanceMeters(
+  first: { latitudeDegrees: number; longitudeDegrees: number },
+  second: { latitudeDegrees: number; longitudeDegrees: number },
+): number {
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180
+  const latitudeDelta = toRadians(second.latitudeDegrees - first.latitudeDegrees)
+  const longitudeDelta = toRadians(second.longitudeDegrees - first.longitudeDegrees)
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(first.latitudeDegrees)) *
+      Math.cos(toRadians(second.latitudeDegrees)) *
+      Math.sin(longitudeDelta / 2) ** 2
+  return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(haversine)))
+}
+
+// nearestPlaceHolding is the place whose circle holds the position, the
+// nearest when several do, or null when none does.
+export function nearestPlaceHolding<
+  Held extends { latitudeDegrees: number; longitudeDegrees: number; radiusMeters: number },
+>(places: Held[], position: { latitudeDegrees: number; longitudeDegrees: number }): Held | null {
+  let nearest: Held | null = null
+  let nearestDistanceMeters = Infinity
+  for (const place of places) {
+    const placeDistanceMeters = distanceMeters(place, position)
+    if (placeDistanceMeters <= place.radiusMeters && placeDistanceMeters < nearestDistanceMeters) {
+      nearest = place
+      nearestDistanceMeters = placeDistanceMeters
+    }
+  }
+  return nearest
 }

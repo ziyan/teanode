@@ -197,3 +197,44 @@ it('asks about location alone when calendars are not available, and not for coll
   await waitFor(() => expect(calls('AnswerCircleInvitation')).toHaveLength(1))
   expect(screen.queryByRole('dialog')).toBeNull()
 })
+
+it('lets a person share only where they are, with Not now for the calendar, and Share waits for one choice', async () => {
+  answer({ invitations: [anInvitation()], calendars: [{ id: 'own', calendarKind: 'events', shareLevel: 'owner' }] })
+  renderAt('/circles', ['circle:use', 'calendar:use', 'location:use'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar with Fixture Home?' })
+  const share = within(dialog).getByRole('button', { name: 'Share' }) as HTMLButtonElement
+
+  // The calendar says Not now and the location is not chosen: nothing to share.
+  fireEvent.change(within(dialog).getByLabelText(/^How much/), { target: { value: 'none' } })
+  expect(share.disabled).toBe(true)
+
+  fireEvent.change(within(dialog).getByLabelText(/^Share where I am/), { target: { value: 'current' } })
+  expect(share.disabled).toBe(false)
+  fireEvent.click(share)
+  await waitFor(() => expect(calls('ShareLocation(')).toHaveLength(1))
+  expect(calls('ShareLocation(')[0][1]).toEqual({ granteeCircleId: 'circle-one', shareLevel: 'current' })
+  // The calendar was not shared, nor looked up.
+  expect(calls('$granteeCircleId: String!')).toHaveLength(0)
+  expect(calls('ListCalendars')).toHaveLength(0)
+})
+
+it('shares the location before the calendar, so a retry after a calendar failure does not share the calendar twice', async () => {
+  answer({ invitations: [anInvitation()], calendars: [{ id: 'own', calendarKind: 'events', shareLevel: 'owner' }] })
+  renderAt('/circles', ['circle:use', 'calendar:use', 'location:use'])
+  fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Share your calendar with Fixture Home?' })
+  fireEvent.change(within(dialog).getByLabelText(/^Share where I am/), { target: { value: 'history' } })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Share' }))
+  await waitFor(() => expect(calls('mutation ($calendarId: String!, $granteeCircleId: String!')).toHaveLength(1))
+
+  const locationOrder =
+    vi.mocked(graphql).mock.invocationCallOrder[
+      vi.mocked(graphql).mock.calls.findIndex(([document]) => document.includes('ShareLocation('))
+    ]
+  const calendarOrder =
+    vi.mocked(graphql).mock.invocationCallOrder[
+      vi.mocked(graphql).mock.calls.findIndex(([document]) => document.includes('ShareCalendar('))
+    ]
+  expect(locationOrder).toBeLessThan(calendarOrder)
+})

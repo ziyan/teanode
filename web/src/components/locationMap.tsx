@@ -7,6 +7,7 @@ import { authorization } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { Avatar } from './avatar'
 import { PlaceLabelIcon } from './placeLabelIcon'
+import { useToast } from './toast'
 
 // The map under the Location page: the people it shows as their pictures, the
 // places as a small marker with the mark of their label, how sure a position is
@@ -21,9 +22,10 @@ import { PlaceLabelIcon } from './placeLabelIcon'
 // its worker from a blob: address. And the markers are ordinary elements, not
 // drawn by the map.
 
-// Where the server gives the map's style, and where the dashboard serves the
-// worker (webpack.config.js copies it there).
-const MAP_STYLE_PATH = '/api/v1/map/styles/liberty'
+// Where the server gives the map's style, whichever style the operator has
+// set (it is the same path for every style), and where the dashboard serves
+// the worker (webpack.config.js copies it there).
+const MAP_STYLE_PATH = '/api/v1/map/style'
 const MAP_WORKER_PATH = '/assets/maplibre-gl-csp-worker.js'
 
 maplibregl.setWorkerUrl(MAP_WORKER_PATH)
@@ -54,6 +56,18 @@ export type MapPathPoint = { latitudeDegrees: number; longitudeDegrees: number }
 
 const SOURCE_CIRCLES = 'location-circles'
 const SOURCE_PATH = 'location-path'
+
+// The colors of the circles and the path, read from the theme's tokens when
+// the map is made (the map draws them itself, so CSS cannot): the leaf for the
+// radius of a place, a blue of the avatar colors for how sure a position is
+// and for the path. The fallbacks are the light theme's values.
+function readThemeColor(name: string, fallback: string): string {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+  } catch {
+    return fallback
+  }
+}
 
 // Past this a position's accuracy is a statement that the position is not
 // known, and a circle across a country says nothing a person can use.
@@ -137,6 +151,7 @@ export function LocationMap({
   onSelectPlace?: (placeId: string) => void
 }) {
   const { t } = useTranslation()
+  const toast = useToast()
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const markersRef = useRef(new Map<string, { marker: maplibregl.Marker; element: HTMLButtonElement }>())
@@ -147,6 +162,11 @@ export function LocationMap({
   // outlives the render that made it.
   const callbacks = useRef({ onSelectPerson, onSelectPlace })
   callbacks.current = { onSelectPerson, onSelectPlace }
+  // Said once whatever the map fails to load, so a host that is down does not
+  // make a toast of every tile.
+  const failure = useRef({ toast, message: t('location.mapFailed'), isSaid: false })
+  failure.current.toast = toast
+  failure.current.message = t('location.mapFailed')
 
   useEffect(() => {
     if (!container.current) {
@@ -165,14 +185,22 @@ export function LocationMap({
     map.addControl(
       new maplibregl.AttributionControl({
         compact: true,
+        // The credit of whoever draws the tiles comes from the style's own
+        // sources, so it is right for whichever map host is set.
         customAttribution: [
           '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>',
-          '<a href="https://openfreemap.org" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>',
         ],
       }),
     )
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
-    map.on('load', () => {
+    const leafColor = readThemeColor('--leaf', '#729d39')
+    const blueColor = readThemeColor('--avatar-7', '#2f5fb3')
+    // The layers go on as soon as the style is read, not when the first tiles
+    // have drawn, and only once however often the style reports a change.
+    const addLayers = () => {
+      if (map.getSource(SOURCE_CIRCLES)) {
+        return
+      }
       map.addSource(SOURCE_CIRCLES, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addSource(SOURCE_PATH, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
       map.addLayer({
@@ -180,7 +208,7 @@ export function LocationMap({
         type: 'fill',
         source: SOURCE_CIRCLES,
         paint: {
-          'fill-color': ['match', ['get', 'circleKind'], 'radius', '#729d39', '#2f80ed'],
+          'fill-color': ['match', ['get', 'circleKind'], 'radius', leafColor, blueColor],
           'fill-opacity': 0.18,
         },
       })
@@ -189,7 +217,7 @@ export function LocationMap({
         type: 'line',
         source: SOURCE_CIRCLES,
         paint: {
-          'line-color': ['match', ['get', 'circleKind'], 'radius', '#729d39', '#2f80ed'],
+          'line-color': ['match', ['get', 'circleKind'], 'radius', leafColor, blueColor],
           'line-width': 1.5,
           'line-opacity': 0.7,
         },
@@ -199,9 +227,17 @@ export function LocationMap({
         type: 'line',
         source: SOURCE_PATH,
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: { 'line-color': '#2f80ed', 'line-width': 4, 'line-opacity': 0.85 },
+        paint: { 'line-color': blueColor, 'line-width': 4, 'line-opacity': 0.85 },
       })
       setStyleReady(true)
+    }
+    map.on('style.load', addLayers)
+    map.on('error', () => {
+      if (failure.current.isSaid) {
+        return
+      }
+      failure.current.isSaid = true
+      failure.current.toast.failed(failure.current.message)
     })
     mapRef.current = map
     const markers = markersRef.current
@@ -304,16 +340,17 @@ export function LocationMap({
     }
   }, [people, places, slots])
 
-  // Fit the view to what is shown when that changes, not when only a radius or
-  // a choice does: moving a slider must not move the map under it.
+  // Fit the view to what is shown when the set of what is shown changes: a
+  // person or place that comes or goes, or a different day's path. Not when a
+  // person moves, a radius changes or a choice is made: the viewer's own pan
+  // and zoom stay, and a moved person's marker just moves.
   const fitKey = useMemo(
     () =>
       [
-        ...people.map((person) => `${person.userId}@${person.latitudeDegrees},${person.longitudeDegrees}`),
-        ...places.map((place) => `${place.id}@${place.latitudeDegrees},${place.longitudeDegrees}`),
-        path.length > 0
-          ? `path:${path.length}@${path[0].latitudeDegrees},${path[0].longitudeDegrees}..${path[path.length - 1].latitudeDegrees},${path[path.length - 1].longitudeDegrees}`
-          : '',
+        ...people.map((person) => `person:${person.userId}`),
+        ...places.map((place) => `place:${place.id}`),
+        // A day's path starts where it starts; later points join its end.
+        path.length > 0 ? `path:${path[0].latitudeDegrees},${path[0].longitudeDegrees}` : '',
       ].join('|'),
     [people, places, path],
   )

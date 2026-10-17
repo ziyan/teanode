@@ -111,7 +111,7 @@ export function LocationSharing() {
           granteeCircleId: kind === 'circle' ? id : null,
           shareLevel,
         }),
-      t('location.shareSaid', { name }),
+      t('location.shareSaved', { name }),
     ).then((isDone) => isDone && setChoice(''))
   }
 

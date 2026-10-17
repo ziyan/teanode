@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { graphql, subscribe } from '../api'
 import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
-import { ErrorMessage, Tag } from '../components/common'
+import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { MoreIcon } from '../components/icons'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
@@ -26,7 +26,7 @@ import { LocationMap, MapPerson, MapPlace } from '../components/locationMap'
 import { LocationSetup } from '../components/locationSetup'
 import { LocationSharing } from '../components/locationShare'
 import { MenuButton } from '../components/menuButton'
-import { Pager, usePageInAddress } from '../components/pager'
+import { Pager, useKeepPageInRange, usePageInAddress } from '../components/pager'
 import { PLACE_LABELS, PlaceLabelIcon } from '../components/placeLabelIcon'
 import { personName } from '../components/personLabel'
 import { RelativeTime } from '../components/relativeTime'
@@ -72,25 +72,78 @@ const MAXIMUM_RADIUS_METERS = 2000
 const GET_LOCATION = `query ($userId: String) { GetLocation(userId: $userId) { ${PERSON_FIELDS} } }`
 const LOCATION_EVENTS = `subscription { LocationEvents { userId } }`
 const LIST_SHARED_LOCATIONS = `query { ListSharedLocations { ${PERSON_FIELDS} } }`
-const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $offset: Int, $limitCount: Int) {
-  ListLocationVisits(userId: $userId, from: $from, until: $until, offset: $offset, limitCount: $limitCount) {
+const LIST_VISITS = `query ($userId: String, $from: DateTime, $until: DateTime, $placeId: String, $placeLabel: String,
+  $offset: Int, $limitCount: Int) {
+  ListLocationVisits(userId: $userId, from: $from, until: $until, placeId: $placeId, placeLabel: $placeLabel,
+    offset: $offset, limitCount: $limitCount) {
     placeVisits { ${VISIT_FIELDS} } nextOffset
   }
 }`
 const LIST_POINTS = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { latitudeDegrees longitudeDegrees accuracyMeters measuredAt }
 }`
-const LIST_PLACES = `query ($userId: String, $offset: Int, $limitCount: Int) {
-  ListPlaces(userId: $userId, offset: $offset, limitCount: $limitCount) { places { ${PLACE_FIELDS} } nextOffset }
+const LIST_PLACES = `query ($userId: String, $placeLabel: String, $query: String, $offset: Int, $limitCount: Int) {
+  ListPlaces(userId: $userId, placeLabel: $placeLabel, query: $query, offset: $offset, limitCount: $limitCount) {
+    places { ${PLACE_FIELDS} } nextOffset
+  }
 }`
 const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $radiusMeters: Float) {
   SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, radiusMeters: $radiusMeters) { id }
 }`
 const FORGET_PLACE = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
-const FORGET_LOCATION_HISTORY = `mutation { ForgetLocationHistory { pointCount visitCount placeCount } }`
+const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
+  EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
+}`
 
 type VisitPage = { placeVisits: PlaceVisit[]; nextOffset: number | null }
 type PlacePage = { places: Place[]; nextOffset: number | null }
+type DayRange = { from: string; until: string }
+
+// How long after the last keystroke the words typed to find a place are asked
+// about, so the server is not asked for every letter.
+const SEARCH_PATIENCE_MS = 300
+
+// How many of a place's visits its editor lists.
+const PLACE_VISITS_SHOWN_COUNT = 10
+
+// What a query was asked, kept with its answer: a query keeps the previous
+// answer while the next is on its way, and rows of another person, day or page
+// must not stand under the new heading.
+type Answered<Answer> = { requestKey: string; answer: Answer }
+function answeredFor<Answer>(data: Answered<Answer> | null, requestKey: string): Answer | null {
+  return data && data.requestKey === requestKey ? data.answer : null
+}
+
+type Translate = ReturnType<typeof useTranslation>['t']
+
+// visitDurationText is how long a visit lasted, or that it is going on.
+function visitDurationText(visit: PlaceVisit, t: Translate): string {
+  if (visit.durationSeconds === null || visit.durationSeconds === undefined) {
+    return visit.departedAt ? '' : t('location.hereNow')
+  }
+  const minutes = Math.max(1, Math.round(visit.durationSeconds / 60))
+  return minutes >= 60
+    ? t('location.durationHours', { hours: Math.floor(minutes / 60), minutes: minutes % 60 })
+    : t('location.durationMinutes', { minutes })
+}
+
+// LabelFilter is the choice of one label, or all of them.
+function LabelFilter({ value, onChange }: { value: string; onChange: (placeLabel: string) => void }) {
+  const { t } = useTranslation()
+  return (
+    <label>
+      {t('location.placeLabel')}
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">{t('location.filterAllLabels')}</option>
+        {PLACE_LABELS.map((each) => (
+          <option key={each} value={each}>
+            {t(LABEL_KEYS[each] as Key)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
 
 // LocationPage is /location.
 export function LocationPage() {
@@ -116,6 +169,12 @@ function LocationContent({ userId }: { userId: string }) {
   const dayKey = dayStart ? dayKeyOf(dayStart) : null
   const visitsPaging = usePageInAddress()
   const placesPaging = usePageInAddress({ pageParameter: 'placesPage', pageSizeParameter: 'placesRows' })
+  // The filters of the two lists, in the address with the page: a label for
+  // the visits, a label and some words for the places.
+  const isKnownLabel = (value: string | null) => PLACE_LABELS.some((each) => each === value)
+  const visitsLabel = isKnownLabel(parameters.get('visitsLabel')) ? (parameters.get('visitsLabel') ?? '') : ''
+  const placesLabel = isKnownLabel(parameters.get('placesLabel')) ? (parameters.get('placesLabel') ?? '') : ''
+  const placesQuery = parameters.get('placesQuery') ?? ''
 
   // The person whose visits and places are shown, in the address, when it is
   // somebody sharing with this person. The person themselves is not in it.
@@ -129,7 +188,9 @@ function LocationContent({ userId }: { userId: string }) {
   const [isCheckingIn, setIsCheckingIn] = useState(false)
   const [editingPlace, setEditingPlace] = useState<Place | null>(null)
   const [forgettingPlace, setForgettingPlace] = useState<Place | null>(null)
-  const [isErasing, setIsErasing] = useState(false)
+  // What the person is asked to erase: one day, or everything.
+  const [erasing, setErasing] = useState<{ range: DayRange | null } | null>(null)
+  const [placesSearchText, setPlacesSearchText] = useState(placesQuery)
   const [isBusy, setIsBusy] = useState(false)
 
   function changeParameters(changes: Record<string, string | null>) {
@@ -153,19 +214,11 @@ function LocationContent({ userId }: { userId: string }) {
   const me = useQuery(() => graphql<{ GetLocation: LocationView | null }>(GET_LOCATION), [userId], {
     refresh: false,
   })
-  // The people sharing with this person arrive with milestone 4 of the
-  // location plan. On a server that does not have the operation yet this
-  // call fails, and that is the same as nobody sharing: the page works with
-  // only the person's own position, without a word about it.
+  // The people sharing with this person. A failed first reading is a toast,
+  // and a failed quiet one keeps what is on the map.
   const shared = useQuery(
-    async () => {
-      try {
-        const answer = await graphql<{ ListSharedLocations: LocationView[] | null }>(LIST_SHARED_LOCATIONS)
-        return answer.ListSharedLocations ?? []
-      } catch {
-        return [] as LocationView[]
-      }
-    },
+    async () =>
+      (await graphql<{ ListSharedLocations: LocationView[] | null }>(LIST_SHARED_LOCATIONS)).ListSharedLocations ?? [],
     [userId],
     { refresh: false },
   )
@@ -181,58 +234,124 @@ function LocationContent({ userId }: { userId: string }) {
   )
   const isPersonPending = requestedPersonId !== null && shared.data === null
   const viewedPerson = useMemo(
-    () => views.find((view) => view.userId === requestedPersonId && view.locationShareLevel !== 'owner') ?? null,
+    () => views.find((view) => view.userId === requestedPersonId && view.shareLevel !== 'owner') ?? null,
     [views, requestedPersonId],
   )
   const viewedUserId = viewedPerson?.userId ?? null
   const isReadOnly = viewedPerson !== null
-  const canReadHistory = !isPersonPending && (viewedPerson === null || viewedPerson.locationShareLevel === 'history')
+  const canReadHistory = !isPersonPending && (viewedPerson === null || viewedPerson.shareLevel === 'history')
 
+  // Each answer carries what it was asked (the person, the day, the filters and
+  // the page), so the rows of a different person, day or page are not shown
+  // under the heading of the new one while its answer is on the way.
+  const visitsRequestKey = JSON.stringify([
+    viewedUserId,
+    range?.from ?? null,
+    visitsLabel,
+    visitsPaging.offset,
+    visitsPaging.pageSize,
+  ])
   const visits = useQuery(
-    async () =>
+    async (): Promise<Answered<VisitPage> | null> =>
       tab === 'visits' && canReadHistory
-        ? (
-            await graphql<{ ListLocationVisits: VisitPage }>(LIST_VISITS, {
-              userId: viewedUserId,
-              from: range?.from ?? null,
-              until: range?.until ?? null,
-              offset: visitsPaging.offset,
-              limitCount: visitsPaging.pageSize,
-            })
-          ).ListLocationVisits
+        ? {
+            requestKey: visitsRequestKey,
+            answer: (
+              await graphql<{ ListLocationVisits: VisitPage }>(LIST_VISITS, {
+                userId: viewedUserId,
+                from: range?.from ?? null,
+                until: range?.until ?? null,
+                placeLabel: visitsLabel || null,
+                offset: visitsPaging.offset,
+                limitCount: visitsPaging.pageSize,
+              })
+            ).ListLocationVisits,
+          }
         : null,
-    [tab, range?.from, visitsPaging.offset, visitsPaging.pageSize, userId, viewedUserId, canReadHistory],
+    [tab, visitsRequestKey, userId, canReadHistory],
   )
+  // The day's path is read when the day, the person or the page is, and again
+  // when the live feed says the viewed person moved; not on a timer, since a
+  // day holds thousands of positions and a day in the past does not change.
+  const pointsRequestKey = JSON.stringify([viewedUserId, range?.from ?? null])
   const points = useQuery(
-    async () =>
-      range && canReadHistory
-        ? (await graphql<{ ListLocationPoints: LocationPoint[] }>(LIST_POINTS, { userId: viewedUserId, ...range }))
-            .ListLocationPoints
-        : [],
-    [range?.from, userId, viewedUserId, canReadHistory],
+    async (): Promise<Answered<LocationPoint[]>> => ({
+      requestKey: pointsRequestKey,
+      answer:
+        range && canReadHistory
+          ? (await graphql<{ ListLocationPoints: LocationPoint[] }>(LIST_POINTS, { userId: viewedUserId, ...range }))
+              .ListLocationPoints
+          : [],
+    }),
+    [pointsRequestKey, userId, canReadHistory],
+    { refresh: false },
   )
+  const placesRequestKey = JSON.stringify([
+    viewedUserId,
+    placesLabel,
+    placesQuery,
+    placesPaging.offset,
+    placesPaging.pageSize,
+  ])
   const places = useQuery(
-    async () =>
+    async (): Promise<Answered<PlacePage> | null> =>
       tab === 'places' && canReadHistory
-        ? (
-            await graphql<{ ListPlaces: PlacePage }>(LIST_PLACES, {
-              userId: viewedUserId,
-              offset: placesPaging.offset,
-              limitCount: placesPaging.pageSize,
-            })
-          ).ListPlaces
+        ? {
+            requestKey: placesRequestKey,
+            answer: (
+              await graphql<{ ListPlaces: PlacePage }>(LIST_PLACES, {
+                userId: viewedUserId,
+                placeLabel: placesLabel || null,
+                query: placesQuery || null,
+                offset: placesPaging.offset,
+                limitCount: placesPaging.pageSize,
+              })
+            ).ListPlaces,
+          }
         : null,
-    [tab, placesPaging.offset, placesPaging.pageSize, userId, viewedUserId, canReadHistory],
+    [tab, placesRequestKey, userId, canReadHistory],
+  )
+  const visitPage = answeredFor(visits.data, visitsRequestKey)
+  const placePage = answeredFor(places.data, placesRequestKey)
+  const pointList = answeredFor(points.data, pointsRequestKey)
+
+  // A page past the end, from a copied link or from the last row of the last
+  // page having gone, steps back to the page before: an empty page is known
+  // to be past the end, so the list holds no more than the rows before it.
+  useKeepPageInRange(
+    visitsPaging.pageIndex,
+    visitsPaging.pageSize,
+    visitPage && visitPage.placeVisits.length === 0 ? visitsPaging.offset : null,
+    visitsPaging.setPageIndex,
+  )
+  useKeepPageInRange(
+    placesPaging.pageIndex,
+    placesPaging.pageSize,
+    placePage && placePage.places.length === 0 ? placesPaging.offset : null,
+    placesPaging.setPageIndex,
   )
 
-  const visitRows = useMemo(() => visits.data?.placeVisits ?? [], [visits.data])
+  // The words typed to find a place are written to the address a moment after
+  // the last keystroke, and start that list again from its first page.
+  useEffect(() => {
+    if (placesSearchText.trim() === placesQuery) return
+    const timer = window.setTimeout(
+      () => changeParameters({ placesQuery: placesSearchText.trim() || null, placesPage: null }),
+      SEARCH_PATIENCE_MS,
+    )
+    return () => window.clearTimeout(timer)
+    // changeParameters is new at every render and only writes the address.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placesSearchText, placesQuery])
+
+  const visitRows = useMemo(() => visitPage?.placeVisits ?? [], [visitPage])
   // The places a person named or labeled come first, then the ones the map
   // named; within each the server's order stands. A page is sorted as it
   // comes, so a labeled place on a later page waits for its page.
   const placeRows = useMemo(() => {
     const rank = (place: Place) => (place.placeLabel ? 0 : place.isNamedByPerson ? 1 : 2)
-    return [...(places.data?.places ?? [])].sort((first, second) => rank(first) - rank(second))
-  }, [places.data])
+    return [...(placePage?.places ?? [])].sort((first, second) => rank(first) - rank(second))
+  }, [placePage])
 
   const mapPeople: MapPerson[] = useMemo(
     () =>
@@ -272,8 +391,8 @@ function LocationContent({ userId }: { userId: string }) {
     }))
   }, [tab, placeRows, visitRows, selectedPlaceId, t])
   const path = useMemo(
-    () => (points.data ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
-    [points.data],
+    () => (pointList ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
+    [pointList],
   )
 
   const timeFormat = useMemo(
@@ -290,7 +409,7 @@ function LocationContent({ userId }: { userId: string }) {
   // address, with their visits and places; the person themselves is not.
   function selectPerson(view: LocationView) {
     setSelectedPlaceId(null)
-    if (view.locationShareLevel === 'owner') {
+    if (view.shareLevel === 'owner') {
       setSelectedUserId(view.userId)
       changeParameters({ person: null, page: null, placesPage: null })
     } else {
@@ -313,19 +432,28 @@ function LocationContent({ userId }: { userId: string }) {
   }
 
   // Everybody on the map is read again: the person and the people sharing with
-  // them. Quietly, so the page does not go back to loading.
-  function refreshPeople() {
+  // them. Quietly, so the page does not go back to loading. What the live feed
+  // read is dropped only once both answers are in, or every person would step
+  // back to the older position for as long as the requests take.
+  async function refreshPeople() {
+    await Promise.all([me.reload(true), shared.reload(true)])
     setMovedViews({})
-    return Promise.all([me.reload(true), shared.reload(true)])
   }
 
   // A person the live feed says moved is read again by themselves, and the
-  // person (the viewer) with the page's own reading. A person who can no
-  // longer be read, because they stopped sharing, is a reason to read
-  // everybody again.
+  // person (the viewer) with the page's own reading. Somebody the page does not
+  // know yet, who started sharing after the last full reading, and a person who
+  // can no longer be read, because they stopped sharing, are each a reason to
+  // read everybody again. The day's path is read again when it is the moved
+  // person's.
   async function refreshMovedPerson(movedUserId: string) {
+    if (movedUserId === (viewedUserId ?? userId)) void points.reload(true)
     if (movedUserId === userId) {
       await me.reload(true)
+      return
+    }
+    if (!(shared.data ?? []).some((view) => view.userId === movedUserId)) {
+      await refreshPeople()
       return
     }
     try {
@@ -381,14 +509,15 @@ function LocationContent({ userId }: { userId: string }) {
     }
   }
 
-  async function erase() {
+  // Erases everything, or the day when a range is given.
+  async function erase(erasedRange: DayRange | null) {
     setIsBusy(true)
     try {
       const answer = await graphql<{
-        ForgetLocationHistory: { pointCount: number; visitCount: number; placeCount: number }
-      }>(FORGET_LOCATION_HISTORY)
-      toast.done(t('location.erased', answer.ForgetLocationHistory))
-      setIsErasing(false)
+        EraseLocationHistory: { pointCount: number; visitCount: number; placeCount: number }
+      }>(ERASE_LOCATION_HISTORY, erasedRange ?? {})
+      toast.done(t('location.erased', answer.EraseLocationHistory))
+      setErasing(null)
       setSelectedPlaceId(null)
       reloadAll()
       void points.reload()
@@ -397,16 +526,6 @@ function LocationContent({ userId }: { userId: string }) {
     } finally {
       setIsBusy(false)
     }
-  }
-
-  function durationText(visit: PlaceVisit): string {
-    if (visit.durationSeconds === null || visit.durationSeconds === undefined) {
-      return visit.departedAt ? '' : t('location.hereNow')
-    }
-    const minutes = Math.max(1, Math.round(visit.durationSeconds / 60))
-    return minutes >= 60
-      ? t('location.durationHours', { hours: Math.floor(minutes / 60), minutes: minutes % 60 })
-      : t('location.durationMinutes', { minutes })
   }
 
   function rangeText(visit: PlaceVisit): string {
@@ -438,6 +557,7 @@ function LocationContent({ userId }: { userId: string }) {
       </PageHeadingActions>
 
       <ErrorMessage error={me.error} />
+      <ErrorMessage error={shared.error} />
 
       {isSetupShown && (
         <LocationSetup
@@ -467,7 +587,7 @@ function LocationContent({ userId }: { userId: string }) {
           <div className="location-people">
             {views.map((view) => {
               const name = personName(view)
-              const isOwner = view.locationShareLevel === 'owner'
+              const isOwner = view.shareLevel === 'owner'
               return (
                 <button
                   key={view.userId}
@@ -475,7 +595,6 @@ function LocationContent({ userId }: { userId: string }) {
                   className={
                     view.userId === (viewedUserId ?? selectedUserId) ? 'location-row is-selected' : 'location-row'
                   }
-                  disabled={!view.latestPoint}
                   onClick={() => selectPerson(view)}
                 >
                   <span className="location-row-icon">
@@ -523,16 +642,30 @@ function LocationContent({ userId }: { userId: string }) {
                 label={t('location.moreMenu')}
                 icon={<MoreIcon size={16} />}
                 render={(close) => (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      close()
-                      setIsErasing(true)
-                    }}
-                  >
-                    {t('location.eraseHistory')}
-                  </button>
+                  <>
+                    {range && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          close()
+                          setErasing({ range })
+                        }}
+                      >
+                        {t('location.eraseDay')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        close()
+                        setErasing({ range: null })
+                      }}
+                    >
+                      {t('location.eraseHistory')}
+                    </button>
+                  </>
                 )}
               />
             )
@@ -552,14 +685,21 @@ function LocationContent({ userId }: { userId: string }) {
                 {t('location.allDays')}
               </button>
             )}
+            <LabelFilter
+              value={visitsLabel}
+              onChange={(placeLabel) => changeParameters({ visitsLabel: placeLabel || null, page: null })}
+            />
           </div>
           <ErrorMessage error={visits.error} />
           {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
-          {visits.data && visitRows.length === 0 && (
+          {canReadHistory && !visitPage && visits.loading && <Loading />}
+          {visitPage && visitRows.length === 0 && (
             <SettingsEmpty>
-              {dayKey
-                ? t('location.visitsEmptyDay')
-                : t(isReadOnly ? 'location.personVisitsEmpty' : 'location.visitsEmpty')}
+              {visitsLabel
+                ? t('location.visitsNoMatch')
+                : dayKey
+                  ? t('location.visitsEmptyDay')
+                  : t(isReadOnly ? 'location.personVisitsEmpty' : 'location.visitsEmpty')}
             </SettingsEmpty>
           )}
           {visitRows.map((visit, index) => {
@@ -599,21 +739,21 @@ function LocationContent({ userId }: { userId: string }) {
                     <strong>{title}</strong>
                     <span className="muted">{rangeText(visit)}</span>
                   </span>
-                  <span className="muted location-row-meta">{durationText(visit)}</span>
+                  <span className="muted location-row-meta">{visitDurationText(visit, t)}</span>
                 </button>
               </Fragment>
             )
           })}
-          {(visitsPaging.pageIndex > 0 || visits.data?.nextOffset != null) && (
+          {(visitsPaging.pageIndex > 0 || visitPage?.nextOffset != null) && (
             <div className="list-foot">
               <Pager
                 pageIndex={visitsPaging.pageIndex}
                 pageSize={visitsPaging.pageSize}
                 shownCount={visitRows.length}
-                totalCount={visitsPaging.offset + visitRows.length + (visits.data?.nextOffset != null ? 1 : 0)}
-                isTotalCountLowerBound={visits.data?.nextOffset != null}
-                hasNextPage={visits.data?.nextOffset != null}
-                isLoading={visits.loading && !visits.data}
+                totalCount={visitsPaging.offset + visitRows.length + (visitPage?.nextOffset != null ? 1 : 0)}
+                isTotalCountLowerBound={visitPage?.nextOffset != null}
+                hasNextPage={visitPage?.nextOffset != null}
+                isLoading={visits.loading && !visitPage}
                 onPageIndex={visitsPaging.setPageIndex}
                 onPageSize={visitsPaging.setPageSize}
               />
@@ -628,10 +768,30 @@ function LocationContent({ userId }: { userId: string }) {
           card
           title={viewedPerson ? t('location.personPlaces', { name: viewedName }) : t('location.places')}
         >
+          <div className="location-day-picker">
+            <label>
+              {t('location.searchPlaces')}
+              <input
+                type="search"
+                value={placesSearchText}
+                placeholder={t('location.searchPlaces')}
+                onChange={(event) => setPlacesSearchText(event.target.value)}
+              />
+            </label>
+            <LabelFilter
+              value={placesLabel}
+              onChange={(placeLabel) => changeParameters({ placesLabel: placeLabel || null, placesPage: null })}
+            />
+          </div>
           <ErrorMessage error={places.error} />
           {viewedPerson && !canReadHistory && <SettingsEmpty>{notSharedHistoryText}</SettingsEmpty>}
-          {places.data && placeRows.length === 0 && (
-            <SettingsEmpty>{t(isReadOnly ? 'location.personPlacesEmpty' : 'location.placesEmpty')}</SettingsEmpty>
+          {canReadHistory && !placePage && places.loading && <Loading />}
+          {placePage && placeRows.length === 0 && (
+            <SettingsEmpty>
+              {placesLabel || placesQuery
+                ? t('location.placesNoMatch')
+                : t(isReadOnly ? 'location.personPlacesEmpty' : 'location.placesEmpty')}
+            </SettingsEmpty>
           )}
           {placeRows.map((place) => (
             <button
@@ -668,16 +828,16 @@ function LocationContent({ userId }: { userId: string }) {
               </span>
             </button>
           ))}
-          {(placesPaging.pageIndex > 0 || places.data?.nextOffset != null) && (
+          {(placesPaging.pageIndex > 0 || placePage?.nextOffset != null) && (
             <div className="list-foot">
               <Pager
                 pageIndex={placesPaging.pageIndex}
                 pageSize={placesPaging.pageSize}
                 shownCount={placeRows.length}
-                totalCount={placesPaging.offset + placeRows.length + (places.data?.nextOffset != null ? 1 : 0)}
-                isTotalCountLowerBound={places.data?.nextOffset != null}
-                hasNextPage={places.data?.nextOffset != null}
-                isLoading={places.loading && !places.data}
+                totalCount={placesPaging.offset + placeRows.length + (placePage?.nextOffset != null ? 1 : 0)}
+                isTotalCountLowerBound={placePage?.nextOffset != null}
+                hasNextPage={placePage?.nextOffset != null}
+                isLoading={places.loading && !placePage}
                 onPageIndex={placesPaging.setPageIndex}
                 onPageSize={placesPaging.setPageSize}
               />
@@ -735,14 +895,18 @@ function LocationContent({ userId }: { userId: string }) {
         />
       )}
 
-      {isErasing && (
+      {erasing && (
         <ConfirmDialog
-          title={t('location.eraseTitle')}
-          body={t('location.eraseBody')}
+          title={t(erasing.range ? 'location.eraseDayTitle' : 'location.eraseTitle')}
+          body={
+            erasing.range
+              ? t('location.eraseDayBody', { day: dayFormat.format(dayStart ?? new Date()) })
+              : t('location.eraseBody')
+          }
           confirmLabel={t('location.eraseConfirm')}
           busy={isBusy}
-          onClose={() => setIsErasing(false)}
-          onConfirm={() => void erase()}
+          onClose={() => setErasing(null)}
+          onConfirm={() => void erase(erasing.range)}
         />
       )}
     </>
@@ -835,6 +999,52 @@ function PlaceEditor({
         aria-label={t('location.placeRadius')}
         onChange={(event) => setRadiusText(event.target.value)}
       />
+      <PlaceVisits placeId={place.id} />
     </FormDialog>
+  )
+}
+
+// PlaceVisits lists the latest visits to one place, in the editor of the place.
+function PlaceVisits({ placeId }: { placeId: string }) {
+  const { t, language } = useTranslation()
+  const visits = useQuery(
+    async () =>
+      (
+        await graphql<{ ListLocationVisits: VisitPage }>(LIST_VISITS, {
+          placeId,
+          limitCount: PLACE_VISITS_SHOWN_COUNT,
+        })
+      ).ListLocationVisits,
+    [placeId],
+    { refresh: false },
+  )
+  const momentFormat = useMemo(
+    () => new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' }),
+    [language],
+  )
+  const visitRows = visits.data?.placeVisits ?? []
+  return (
+    <section>
+      <ErrorMessage error={visits.error} />
+      <h4>{t('location.placeVisits')}</h4>
+      {visits.data && visitRows.length === 0 && <p className="muted">{t('location.personVisitsEmpty')}</p>}
+      {visitRows.length > 0 && (
+        <ul className="location-place-visits">
+          {visitRows.map((visit) => {
+            const moment = visit.arrivedAt ?? visit.departedAt
+            const duration = visitDurationText(visit, t)
+            return (
+              <li key={visit.id}>
+                {moment ? momentFormat.format(new Date(moment)) : ''}
+                {duration && <span className="muted"> · {duration}</span>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {visits.data?.nextOffset != null && (
+        <p className="muted">{t('location.placeVisitsLatest', { count: PLACE_VISITS_SHOWN_COUNT })}</p>
+      )}
+    </section>
   )
 }

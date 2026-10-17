@@ -6,25 +6,31 @@ import { useTranslation } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
 import { readBrowserLocation } from './browserLocation'
 import { Tag } from './common'
+import { nearestPlaceHolding } from './locationData'
 import { SettingsRow, SettingsSection } from './settingsList'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 
 // The first time a person opens Location with no position recorded, this
 // stands where the empty map would be: install the phone app (only a phone
-// records in the background), mark where home is (from the browser's
-// position), and, for a family circle the person is in, share where they are.
-// Each row says whether it is done, worked out from the server and not stored;
-// "Not now" puts the setup away for good.
+// records in the background; that row is a pointer to Devices and has no
+// done state), mark where home is (from the browser's position), and, for each
+// family circle the person is in, share where they are. Each row that can be
+// done says whether it is, worked out from the server and not stored; "Not
+// now" puts the setup away for good.
 
 type FamilyCircle = { id: string; name: string; circleKind: string }
 type SharedWith = { granteeCircleId: string | null }
+type OwnPlace = { id: string; latitudeDegrees: number; longitudeDegrees: number; radiusMeters: number }
 
 const LIST_HOME_PLACES = `query { ListPlaces(placeLabel: "home", limitCount: 1) { places { id } } }`
 const LIST_SHARES = `query { ListLocationShares { id granteeCircleId } }`
 const LIST_CIRCLES = `query { ListCircles { id name circleKind } }`
-const SAVE_HOME = `mutation ($latitudeDegrees: Float, $longitudeDegrees: Float, $placeLabel: String) {
-  SavePlace(latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeLabel: $placeLabel) { id }
+const LIST_OWN_PLACES = `query {
+  ListPlaces(limitCount: 200) { places { id latitudeDegrees longitudeDegrees radiusMeters } }
+}`
+const SAVE_HOME = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeLabel: String) {
+  SavePlace(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeLabel: $placeLabel) { id }
 }`
 const SHARE = `mutation ($granteeCircleId: String, $shareLevel: String!) {
   ShareLocation(granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
@@ -78,12 +84,24 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         toast.failed(t('location.checkInNoPosition'))
         return
       }
-      await graphql(SAVE_HOME, {
+      // A place of the person's that already holds the position (a visit may
+      // have made it) is the one labeled; only otherwise is a new one made.
+      const own = await graphql<{ ListPlaces: { places: OwnPlace[] } }>(LIST_OWN_PLACES)
+      const holding = nearestPlaceHolding(own.ListPlaces.places, {
         latitudeDegrees: position.latitudeDegrees,
         longitudeDegrees: position.longitudeDegrees,
-        placeLabel: 'home',
       })
-      toast.done(t('location.setupHomeSaid'))
+      await graphql(
+        SAVE_HOME,
+        holding
+          ? { placeId: holding.id, placeLabel: 'home' }
+          : {
+              latitudeDegrees: position.latitudeDegrees,
+              longitudeDegrees: position.longitudeDegrees,
+              placeLabel: 'home',
+            },
+      )
+      toast.done(t('location.setupHomeSaved'))
       await home.reload(true)
     } catch (failure) {
       toast.failure(failure, t('location.placeFailed'))
@@ -109,7 +127,6 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
       <SettingsRow
         title={<Link to="/settings/devices">{t('location.setupInstall')}</Link>}
         subtitle={t('location.setupInstallNote')}
-        badge={badge(false)}
       />
       <SettingsRow
         title={t('location.setupHome')}
@@ -128,7 +145,7 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
         const share = (shareLevel: 'history' | 'current') =>
           void run(
             () => graphql(SHARE, { granteeCircleId: circle.id, shareLevel }),
-            t('location.shareSaid', { name: t('location.shareEveryoneIn', { name: circle.name }) }),
+            t('location.shareSaved', { name: t('location.shareEveryoneIn', { name: circle.name }) }),
             t('location.shareFailed'),
             () => shares.reload(true),
           )
@@ -141,14 +158,19 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
             actions={
               !isShared && (
                 <>
-                  <button type="button" disabled={isBusy} onClick={() => share('current')}>
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    aria-label={t('location.setupShareCurrentLabel', { name: circle.name })}
+                    onClick={() => share('current')}
+                  >
                     {t('location.setupShareNow')}
                   </button>
                   <button
                     type="button"
                     className="primary"
                     disabled={isBusy}
-                    aria-label={t('location.setupShare', { name: circle.name })}
+                    aria-label={t('location.setupShareHistoryLabel', { name: circle.name })}
                     onClick={() => share('history')}
                   >
                     {t('location.shareAdd')}
@@ -159,6 +181,7 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
           />
         )
       })}
+      <p className="muted">{t('location.placeNamesNote')}</p>
     </SettingsSection>
   )
 }

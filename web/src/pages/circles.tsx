@@ -112,13 +112,15 @@ const ADD_CIRCLE_MEMBER = `
     AddCircleMember(circleId: $circleId, username: $username, memberRole: $memberRole) { id }
   }`
 
-// The calendars the person reaches, to know whether a circle has one of its
-// own and which is the person's calendar to share.
+// Sharing where the person is with a whole circle: offered, with the calendar,
+// as they join a family.
 const SHARE_LOCATION = `
   mutation ($granteeCircleId: String, $shareLevel: String!) {
     ShareLocation(granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
   }`
 
+// The calendars the person reaches, to know whether a circle has one of its
+// own and which is the person's calendar to share.
 const LIST_CALENDARS = `query { ListCalendars { id calendarKind shareLevel circleId isCircleCalendar } }`
 const CREATE_CIRCLE_CALENDAR = `
   mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }`
@@ -229,7 +231,7 @@ function CirclesList() {
     isCalendarOffered: boolean
     isLocationOffered: boolean
   } | null>(null)
-  const [suggestedLevel, setSuggestedLevel] = useState<GrantableLevel>('busy')
+  const [suggestedLevel, setSuggestedLevel] = useState<'none' | GrantableLevel>('busy')
   const [suggestedLocationLevel, setSuggestedLocationLevel] = useState<'none' | LocationShareLevel>('none')
 
   const circles = data?.circles ?? []
@@ -352,12 +354,25 @@ function CirclesList() {
           closeLabel={t('circles.shareSuggestion.notNow')}
           busy={isBusy}
           error={problem}
-          canSubmit={suggestion.isCalendarOffered || suggestedLocationLevel !== 'none'}
+          canSubmit={
+            (suggestion.isCalendarOffered && suggestedLevel !== 'none') ||
+            (suggestion.isLocationOffered && suggestedLocationLevel !== 'none')
+          }
           onClose={() => setSuggestion(null)}
           onSubmit={async () => {
+            const isCalendarShared = suggestion.isCalendarOffered && suggestedLevel !== 'none'
             const isShared = await act(
               async () => {
-                if (suggestion.isCalendarOffered) {
+                // The location first: if the calendar then fails, trying again
+                // shares the location once more, which changes nothing, and
+                // not the calendar twice.
+                if (suggestion.isLocationOffered && suggestedLocationLevel !== 'none') {
+                  await graphql(SHARE_LOCATION, {
+                    granteeCircleId: suggestion.circleId,
+                    shareLevel: suggestedLocationLevel,
+                  })
+                }
+                if (isCalendarShared) {
                   const calendars = await graphql<{ ListCalendars: CalendarOfCircle[] }>(LIST_CALENDARS)
                   const own = calendars.ListCalendars.find(
                     (found) => found.calendarKind === 'events' && (!found.shareLevel || found.shareLevel === 'owner'),
@@ -369,16 +384,10 @@ function CirclesList() {
                     shareLevel: suggestedLevel,
                   })
                 }
-                if (suggestion.isLocationOffered && suggestedLocationLevel !== 'none') {
-                  await graphql(SHARE_LOCATION, {
-                    granteeCircleId: suggestion.circleId,
-                    shareLevel: suggestedLocationLevel,
-                  })
-                }
               },
-              suggestion.isCalendarOffered
+              isCalendarShared
                 ? t('calendar.shareSaid', { name: t('calendar.shareEveryoneIn', { name: suggestion.name }) })
-                : t('location.shareSaid', { name: t('location.shareEveryoneIn', { name: suggestion.name }) }),
+                : t('location.shareSaved', { name: t('location.shareEveryoneIn', { name: suggestion.name }) }),
               true,
             )
             if (isShared) setSuggestion(null)
@@ -394,15 +403,18 @@ function CirclesList() {
               {t('calendar.shareLevelLabel')}
               <select
                 value={suggestedLevel}
-                onChange={(event) => setSuggestedLevel(event.target.value as GrantableLevel)}
+                onChange={(event) => setSuggestedLevel(event.target.value as 'none' | GrantableLevel)}
               >
                 {SHARE_LEVELS.filter((level) => level !== 'edit').map((level) => (
                   <option key={level} value={level}>
                     {t(`calendar.shareLevelName.${level}` as Key)}
                   </option>
                 ))}
+                {suggestion.isLocationOffered && <option value="none">{t('circles.shareSuggestion.notNow')}</option>}
               </select>
-              <span className="muted">{t(`calendar.shareLevelHint.${suggestedLevel}` as Key)}</span>
+              {suggestedLevel !== 'none' && (
+                <span className="muted">{t(`calendar.shareLevelHint.${suggestedLevel}` as Key)}</span>
+              )}
             </label>
           )}
           {suggestion.isLocationOffered && (

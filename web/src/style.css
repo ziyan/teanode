@@ -16264,8 +16264,27 @@ body.has-recording-bar .content {
   height: 28px;
 }
 
+/* A marker is drawn small and pressed at 44px: the pseudo-element is part of
+   the button, so a press on it counts, and a finger finds a place marker that
+   is 28px across. The map positions the button itself (absolute), which is
+   what the pseudo-element is placed against. */
+.location-marker::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.location-marker-person::after {
+  inset: -2px;
+}
+
 .location-marker.is-selected {
   border-color: var(--leaf);
+}
+
+.location-place-visits {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
 }
 
 .location-people {
@@ -16357,6 +16376,17 @@ body.has-recording-bar .content {
 .location-credit {
   margin: var(--space-3) 0 0;
   font-size: var(--text-label);
+}
+
+.location-find {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.location-find input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .location-nearby {
