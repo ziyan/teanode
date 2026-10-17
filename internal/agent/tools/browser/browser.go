@@ -28,6 +28,7 @@ func init() {
 					"tab":            tools.IntegerProperty("for switch and close: the tab, by the number tabs gives; or name a piece of its address in url; switch with neither goes back to the person's own tab, close with neither closes the current one you opened"),
 					"mode":           tools.EnumProperty("for snapshot: interactive with refs, or the page's text", "interactive", "text"),
 					"max_characters": tools.IntegerProperty("for snapshot and evaluate: a bound, 20000 by default"),
+					"offset":         tools.IntegerProperty("for snapshot: where in the page's text to start, the next_offset of the part before; a long page comes a part at a time"),
 					"full_page":      tools.BooleanProperty("for screenshot: the whole page rather than the viewport"),
 					"show":           tools.BooleanProperty("for screenshot: also hand the picture to the person, in the conversation, when they would want to see it; you see it either way"),
 					"ref":            tools.IntegerProperty("the element, from the last snapshot"),
@@ -118,6 +119,7 @@ type browserArguments struct {
 	URL           string            `json:"url"`
 	Mode          string            `json:"mode"`
 	MaxCharacters int               `json:"max_characters"`
+	Offset        int               `json:"offset"`
 	FullPage      bool              `json:"full_page"`
 	Show          bool              `json:"show"`
 	Ref           int               `json:"ref"`
@@ -218,11 +220,13 @@ func runBrowser(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		return untrusted(location, "opened "+location.URL)
 	case "snapshot":
-		snapshot, err := page.Snapshot(ctx, arguments.Mode, arguments.MaxCharacters)
+		part := snapshotPartOf(arguments.Offset, arguments.MaxCharacters)
+		snapshot, err := page.Snapshot(ctx, arguments.Mode, part.readCharacters())
 		if err != nil {
 			return nil, err
 		}
-		return untrusted(snapshot, "read "+snapshot.URL)
+		text, nextOffset := part.cut(snapshot.Text, snapshot.Truncated)
+		return untrusted(map[string]any{"title": snapshot.Title, "url": snapshot.URL, "text": text, "next_offset": nextOffset}, "read "+snapshot.URL)
 	case "screenshot":
 		image, err := page.Screenshot(ctx, arguments.FullPage)
 		if err != nil {
@@ -347,9 +351,19 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	default:
 		return nil, fmt.Errorf("%q is not an action a tab does", arguments.Action)
 	}
+	part := snapshotPartOf(arguments.Offset, arguments.MaxCharacters)
+	if arguments.Action == "snapshot" {
+		arguments.MaxCharacters = part.readCharacters()
+	}
 	data, err := askTab(ctx, run, tab, arguments.Action, arguments)
 	if err != nil {
 		return nil, err
+	}
+	switch arguments.Action {
+	case "snapshot":
+		data = part.cutTabAnswer(data)
+	case "tabs":
+		data = tabsSaidWhose(data)
 	}
 	// The extension answers a screenshot as a data address; it is a
 	// picture, and is handed over as one.
@@ -362,4 +376,100 @@ func runBrowserOnTab(ctx context.Context, run tools.Run, arguments *browserArgum
 	// its text left something that was not, without its later fields.
 	text := tools.FitJSON(data, tools.ResultCharactersOf(run))
 	return &tools.Result{Content: text, Untrusted: true, Note: "in their browser: " + arguments.Action}, nil
+}
+
+// snapshotPart is the part of a page's text a snapshot hands over: from an
+// offset, so many characters. A long page was cut at the bound with no way
+// on, and the agent read its first screen over and over, opening the page
+// again to see more; now it asks for the next part.
+type snapshotPart struct {
+	offset  int
+	maximum int
+}
+
+// snapshotMost is how far into a page a snapshot reads, however far on the
+// parts go: a page that long is not one to read through.
+const snapshotMost = 400000
+
+func snapshotPartOf(offset, maximum int) snapshotPart {
+	if maximum <= 0 {
+		maximum = 20000
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return snapshotPart{offset: offset, maximum: maximum}
+}
+
+// readCharacters is how much of the page to read: up to the end of this
+// part and a little past it, so that whether there is more is known.
+func (self snapshotPart) readCharacters() int {
+	return min(self.offset+self.maximum+1, snapshotMost)
+}
+
+// cut is this part of the text, and where the next one starts, zero at
+// the end. Counted in characters, so a part never ends inside one.
+func (self snapshotPart) cut(text string, isTruncated bool) (string, int) {
+	characters := []rune(text)
+	if self.offset >= len(characters) {
+		return "", 0
+	}
+	end := self.offset + self.maximum
+	if end >= len(characters) {
+		if isTruncated && len(characters) < snapshotMost {
+			return string(characters[self.offset:]), len(characters)
+		}
+		return string(characters[self.offset:]), 0
+	}
+	return string(characters[self.offset:end]), end
+}
+
+// cutTabAnswer cuts the text of a snapshot the person's browser answered,
+// leaving its other fields, and says where the next part starts.
+func (self snapshotPart) cutTabAnswer(data json.RawMessage) json.RawMessage {
+	var answer map[string]any
+	if json.Unmarshal(data, &answer) != nil {
+		return data
+	}
+	text, _ := answer["text"].(string)
+	isTruncated, _ := answer["truncated"].(bool)
+	if _, hasCutNote := answer["cutNote"]; hasCutNote {
+		isTruncated = true
+	}
+	part, nextOffset := self.cut(text, isTruncated)
+	delete(answer, "truncated")
+	delete(answer, "cutNote")
+	answer["text"] = part
+	answer["next_offset"] = nextOffset
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return data
+	}
+	return encoded
+}
+
+// tabsSaidWhose says of each tab the person's browser listed whose it is,
+// in words. It answered own true or false, meaning the person's own, and a
+// tab the agent had opened, marked own false, read as not the agent's: it
+// closed the tab and opened the page again, three times over.
+func tabsSaidWhose(data json.RawMessage) json.RawMessage {
+	var answer struct {
+		Tabs []map[string]any `json:"tabs"`
+	}
+	if json.Unmarshal(data, &answer) != nil {
+		return data
+	}
+	for _, listed := range answer.Tabs {
+		if isOwn, _ := listed["own"].(bool); isOwn {
+			listed["whose"] = "the person's own tab; never close it"
+		} else {
+			listed["whose"] = "yours, opened by you; switch to it by its tab number"
+		}
+		delete(listed, "own")
+	}
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return data
+	}
+	return encoded
 }
