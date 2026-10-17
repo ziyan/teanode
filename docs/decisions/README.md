@@ -178,7 +178,5 @@ the circle. `20261016-a-payment-skill-is-shared-call-by-call.md` says why a
 payment skill is shared as named tools with limits, run on the owner's
 computer, why a call above them, or on a share set to ask every time,
 waits for the owner's approval, and why the whole skill is never handed over.
-`20261016-the-agents-face-is-drawn-and-moves-with-its-run.md` says why the
-agent's face is a drawn description that moves with its activity state
-rather than a generated picture. All six are proposed; their plan is
+All five are proposed; their plan is
 `docs/planning/circles-and-chats-execplan.md`.

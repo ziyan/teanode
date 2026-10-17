@@ -1,4 +1,4 @@
-# Circles: chats with people in the drawer, shared calendars, memory and payments, and faces
+# Circles: chats with people in the drawer, shared calendars, memory and payments, and pictures of people
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds. It is maintained in accordance with the ExecPlan rules the maintainer keeps outside this repository; everything a contributor needs is written here.
 
@@ -11,11 +11,11 @@ Today every account on a TeaNode server is alone. A household, a few friends or 
 - A person can let the people in a circle see their calendar at a level they choose (just busy, titles, details, or edit), and a family can keep one calendar everybody writes. The agent can answer "when are we all free on Saturday".
 - A person can share part of their memory (a page and everything under it, such as the children's school or a grandparent's care) with a circle or a person. The other person's agent reads it live, read only, and it disappears from them the moment it is taken back.
 - A person who holds the household's payment skill can share its paying tool with somebody in their circle, with limits: a spouse pays within them without asking, and anything above them becomes an approval the owner answers. A share can also ask the owner every time, which is what a parent sets for a child; approving runs exactly the payment that was asked, on the owner's computer.
-- People have a picture, and every agent has a drawn face that moves with what the agent is doing: thinking, speaking, using a tool, waiting for an answer, dreaming.
+- People have a picture, shown beside their name wherever another person sees them.
 
-To see it working at the end: three accounts in one family circle, two adults (one holding the Link skill on their computer) and a teenager. The holder shares `link_pay` with the other adult with a limit of 100.00 a payment, and with the teenager set to ask every time. The other adult asks their agent in the drawer to pay for a 40.00 order: it runs on the holder's computer and Link asks in its app. The teenager writes in the family chat, in the drawer, "can I get the paperback of the book for school?", then asks their agent "@<agent> please buy it, 12.99"; their agent shows the purchase on a card, they approve it, and it reaches the holder as a card in their drawer and a phone notification. The holder approves; the payment runs on the holder's computer; the teenager's drawer says it went through. Along the way each agent's face shows it thinking, then working, then waiting.
+To see it working at the end: three accounts in one family circle, two adults (one holding the Link skill on their computer) and a teenager. The holder shares `link_pay` with the other adult with a limit of 100.00 a payment, and with the teenager set to ask every time. The other adult asks their agent in the drawer to pay for a 40.00 order: it runs on the holder's computer and Link asks in its app. The teenager writes in the family chat, in the drawer, "can I get the paperback of the book for school?", then asks their agent "@<agent> please buy it, 12.99"; their agent shows the purchase on a card, they approve it, and it reaches the holder as a card in their drawer and a phone notification. The holder approves; the payment runs on the holder's computer; the teenager's drawer says it went through. 
 
-The design reasons are in six decision records, all dated 2026-10-16 under `docs/decisions/`: `people-on-one-server-meet-in-circles`, `a-chat-is-a-conversation-with-people-in-it`, `shared-knowledge-is-read-where-it-lives`, `a-calendar-is-shared-at-a-level`, `a-payment-skill-is-shared-call-by-call`, and `the-agents-face-is-drawn-and-moves-with-its-run`. They are proposed, not accepted, until the maintainer agrees with them; the first implementation pull request marks them accepted or records what changed.
+The design reasons are in five decision records, all dated 2026-10-16 under `docs/decisions/`: `people-on-one-server-meet-in-circles`, `a-chat-is-a-conversation-with-people-in-it`, `shared-knowledge-is-read-where-it-lives`, `a-calendar-is-shared-at-a-level` and `a-payment-skill-is-shared-call-by-call`. They are proposed, not accepted, until the maintainer agrees with them.
 
 ## Progress
 
@@ -26,7 +26,7 @@ The design reasons are in six decision records, all dated 2026-10-16 under `docs
 - [ ] Milestone 1: pictures for people.
 - [ ] Milestone 2: circles and invitations.
 - [ ] Milestone 3: chats in the drawer.
-- [ ] Milestone 4: the agent's face and its activity state.
+- [x] (2026-10-16) Milestone 4 (the agent's face) dropped at the maintainer's word after seeing the drawings; only people have pictures.
 - [ ] Milestone 5: agents in chats.
 - [ ] Milestone 6: shared calendars and the circle calendar.
 - [ ] Milestone 7: shared memory.
@@ -44,8 +44,6 @@ The design reasons are in six decision records, all dated 2026-10-16 under `docs
   Evidence: `internal/api/v1api/apigraph/agent_ask.go`, `conversationFor`; `internal/models/permission.go`, `PermissionAgentAct`.
 
 - Observation: payments run on the person's own computer as the person. The `link` skill (in the separate skills registry, `skills/link/skill.md`) calls `link-cli`, never asks for card numbers, never passes `--approve`, and every spend request waits in the Link app. `link_pay` has three actions: `card` (a one-time card for a merchant, with `amount_cents` and `currency` in its arguments), `url` (pays an address answering HTTP 402, whose amount is not in the arguments) and `report`. So a limit can be checked before a `card` payment and cannot be before a `url` one.
-
-- Observation: the run events already reduce to an activity state. `activityStateOf` in `internal/agent/live_activity.go` maps `confirmation`, `question` and `locate` to waiting and `text`, `message`, `tool_call` and `tool_result` to working, for the iPhone's Live Activity. The face's states extend this one function rather than inventing a second mapping.
 
 - Observation: phone notifications target an agent, not a person (`notifyPhones(agentId, ...)` in `internal/agent/phone_push.go`, phones in `agent_phone` keyed by agent). Since every person who chats gets an `agent` row (switched off if they never turned it on), phones keep hanging from it and nothing about phones moves.
 
@@ -81,9 +79,9 @@ The design reasons are in six decision records, all dated 2026-10-16 under `docs
   Rationale: the three things people ask of each other's calendars are different, and free-busy already exists as one piece of code. See `20261016-a-calendar-is-shared-at-a-level.md`.
   Date/Author: 2026-10-16, design.
 
-- Decision: the agent's face is a drawn, parametric description, not a generated image; a person's avatar is an uploaded picture with an initial as the fallback.
-  Rationale: it can move with the run, it is the same on every surface, and it needs no image model. See `20261016-the-agents-face-is-drawn-and-moves-with-its-run.md`.
-  Date/Author: 2026-10-16, design.
+- Decision: no face for the agent. A person's avatar is an uploaded picture with an initial as the fallback; an agent is shown by its name, and in a chat as "<name> is thinking" while a turn runs, the way a person is shown typing.
+  Rationale: a drawn, animated face was built and the maintainer found the drawings not good enough, and asked for people's pictures only. The decision record for it was withdrawn before it was merged.
+  Date/Author: 2026-10-16, maintainer.
 
 - Decision: no circle agent. A circle has no agent of its own and no graph its members write together.
   Rationale: the maintainer agreed to drop it for now; it would need `agent.user_id` to become optional, which every agent code path assumes.
@@ -97,8 +95,8 @@ The design reasons are in six decision records, all dated 2026-10-16 under `docs
   Rationale: the maintainer's answer. Reaching them stays mail.
   Date/Author: 2026-10-16, maintainer.
 
-- Decision: the milestones ship in the order of this plan, each as its own pull request, each on every surface (dashboard, agent tools, command line, iPhone app) before the next starts.
-  Rationale: `CONTRIBUTING.md` requires parity per capability. Pictures come first because every later screen shows people; circles come before chats because a chat's members are drawn from circles; faces come before agents in chats because a chat with two agents needs them told apart.
+- Decision: the milestones ship in the order of this plan, all in one pull request (#528) at the maintainer's word, each as its own commits and on every surface (dashboard, agent tools, command line, iPhone app) before the next starts.
+  Rationale: `CONTRIBUTING.md` requires parity per capability. Pictures come first because every later screen shows people; circles come before chats because a chat's members are drawn from circles.
   Date/Author: 2026-10-16, design.
 
 ## Outcomes & Retrospective
@@ -135,14 +133,13 @@ Terms this plan introduces, each used with one meaning everywhere (tables, Go, G
 
 - **circle**, **circle kind**, **member role**, **invitation**: see the first decision record.
 - **chat**: a conversation with people in it. **direct chat** (two people) and **group chat**; the **circle chat** is the group chat every circle has. A **chat message** is written by a person or by an agent and is seen by every member. A member's **chat conversation** is their own `agent_conversation` of kind `chat` for that chat, which also holds what their own agent did there.
-- **face**: the agent's drawn picture. **activity state**: what the agent is doing, which the face shows.
 - **avatar**: a person's picture.
 - **share**: a row that lets a circle or a person use something of somebody else's. A **calendar share** has a **share level**; a **page share** covers a path and everything under it; a **skill share** names tools of a skill and has limits.
 - **approval**: the owner's answer to a call of a skill share that waits for it: above its limits, with no amount the server can read, or on a share set to ask every time. Only the owner, a person, gives it.
 
 ## Plan of Work
 
-Each milestone is one pull request. Each lands on all four surfaces, follows the closest existing feature (named in the milestone), and ends with the screens walked at phone and desktop widths in light and dark and the `ux-review` checklist run. The migration numbers are written as `NNNN` because they are taken when the pull request opens.
+All milestones land in one pull request, #528, each as its own commits. Each lands on all four surfaces, follows the closest existing feature (named in the milestone), and ends with the screens walked at phone and desktop widths in light and dark and the `ux-review` checklist run. The migration numbers are written as `NNNN` because each is taken from the next free number when its milestone starts: 0192 avatars, 0193 circles, and onward.
 
 ### Milestone 1: pictures for people
 
@@ -236,37 +233,13 @@ Command line: the conversation commands work on chats: `teanode agent conversati
 
 Acceptance: A and B share a circle. A runs `teanode agent conversation direct personb` and `teanode agent ask --conversation <id> "dinner at 7?"`; B's drawer shows the chat at the top of the picker with one unread, live, without a reload, and B's button shows 1; B's phone, with the app in the background, shows "A: dinner at 7?"; B opens it, and A's `teanode agent conversation show <id> --json` shows B's read mark. C, who has never turned on their agent, can open the drawer, sees the circle chat and writes in it. D, who shares no circle with A, gets not found for `OpenDirectChat` with A's id. Removing B from the circle removes them from the circle chat and from any group chat whose other members no longer share a circle with them, in the same transaction; their direct chat with A stays readable to both and refuses new messages with "you no longer share a circle". Deleting B's account leaves B's messages shown as "B (deleted account)". Tests cover each of these in `internal/api/v1api/apigraph/chat_test.go`, the interleaved reading (a member never sees another member's chat conversation rows) in `internal/db/database_chat_test.go`, and the feed's removal on membership change in `internal/chat/feed_test.go`.
 
-### Milestone 4: the agent's face and its activity state
+### Milestone 4: dropped
 
-At the end of this milestone every agent has a drawn face, shown in the drawer's header and conversation list, beside the agent's messages, on the iPhone's conversation screen and Live Activity, and it moves with what the agent is doing. The closest existing feature is the Live Activity's state (`internal/agent/live_activity.go`, `ios/TeaNodeWidgets/TeaNodeWidgets.swift`).
-
-The face description, `models.AgentFace`, stored as `agent.face jsonb null` (migration `NNNN_agent_face.sql`):
-
-    type AgentFace struct {
-        FaceCreature   string `json:"faceCreature"`   // one of AgentFaceCreatures
-        BodyColor      string `json:"bodyColor"`      // one of the palette tokens
-        AccentColor    string `json:"accentColor"`
-        FaceAccessory  string `json:"faceAccessory"`  // none, glasses, hat, headphones, bow, scarf, sprout
-        EyeStyle       string `json:"eyeStyle"`       // dot, round, sleepy, bright
-        Expression     string `json:"expression"`     // calm, cheerful, curious, serious
-        Version        int    `json:"version"`        // of the drawings it was made for
-    }
-
-The creatures are a fixed set drawn for this program: teacup, leaf, cat, fox, owl, bear, rabbit, robot, cloud, and plain round. Each drawing is an SVG built on a shared rig: the same named groups (`body`, `eye-left`, `eye-right`, `brow-left`, `brow-right`, `mouth`, `accessory`, `badge`) at the same anchors, so every animation works on every creature. The drawings live in `web/src/agentFace/drawings.json` (path data and anchors, no styling) and are copied into `ios/TeaNode/Resources/AgentFaceDrawings.json`; `make check-face-drawings` (run by `make lint-ci`) fails when the two differ. Drawing the creatures is real design work; the plan expects a first set to be drawn by hand in SVG, reviewed as screenshots, and iterated before the milestone ships.
-
-Generating a face: `internal/agent/face.go`, `Agent.DescribeFace(ctx, words string) (models.AgentFace, error)`, one structured-output call on the compact model (`internal/llm` structured output, as `acknowledge.go` makes its small call) with the schema of `AgentFace` and the enumerations as the only allowed values, given the agent's name, its instructions' first lines and the person's words if any. Anything outside the enumerations is replaced by the default for that field, never stored. `FaceFromID(agentId string) models.AgentFace` picks one deterministically for an agent with no model or before the first call. A face is made when the agent is turned on, and the welcome (`docs/planning/assistant-welcome-execplan.md`) shows it.
-
-The activity state: `models.AgentActivityState` with `idle`, `thinking`, `speaking`, `working`, `waiting`, `failed`, `dreaming`, `away`. Extend `activityStateOf` into `internal/agent/activity.go`, used by the Live Activity and by a new per-agent fan-out: `asked` becomes `thinking`, the first `text` `speaking`, `tool_call` `working` (with the tool's family: mail, calendar, memory, web, computer, money, other, from a map beside the tool registry), `confirmation`, `question` and `locate` `waiting`, `error` `failed`, `done` `idle`; a dream's start and end (`internal/agent/dream.go`) set `dreaming` and `idle`; a disabled agent is `away`. Subscription `AgentActivityEvents(agentId)`: the owner receives the tool family; anybody else allowed to see the agent (from Milestone 5, members of a chat the agent is in) receives the state only. The state is carried on `NOTIFY` across instances as `{agentId, activityState, toolFamily}`.
-
-Rendering: `web/src/components/agentFace.tsx` draws the SVG and animates with CSS keyframes per state (idle: a blink every few seconds and a slow breath; thinking: eyes up and three dots circling; speaking: the mouth opening with each `text` event, throttled; working: the badge shows the tool family's icon from `icons.tsx` and the eyes follow it; waiting: a raised hand or a question mark that pulses; failed: brows down, once; dreaming: eyes closed and a slow "z"; away: grey), with `prefers-reduced-motion` turning motion off and showing the state as a short word beside the face. The iPhone app's `AgentFaceView.swift` draws the same paths with SwiftUI `Path` and `TimelineView`, honoring Reduce Motion. The Live Activity shows a still frame per state.
-
-Changing it: GraphQL `ReadAgentFace`, `DescribeAgentFace(words)` (returns a new face without saving), `SetAgentFace(face)`. Dashboard: the agent page's profile section shows the face, a "Describe it" box, and pickers for each part; command line `teanode agent face show|describe <words>|set --creature owl --accessory glasses ...`; agent tool: `agent_profile` gains `face` (show), `describe_face` and `set_face` (the person's own change, no card); iPhone: the agent settings screen gets the same.
-
-Acceptance: turn an agent on; the drawer shows a face within a second (the deterministic one) and the described one after the model answers. Ask something that reads mail: the face thinks, then works with the mail badge, then speaks, then rests. With reduced motion on, the face is still and a word says "working". `go test ./internal/agent/ -run Face` covers the enumeration clamp and `FaceFromID` stability; `web/src/components/agentFace.test.tsx` covers the state classes; a screenshot test renders every creature in every state in light and dark for review.
+The agent's face (a drawn, animated picture of the agent) was built and removed at the maintainer's word. The numbering of the later milestones is kept so references to them stay right.
 
 ### Milestone 5: agents in chats
 
-At the end of this milestone a person can ask their agent in any chat they are in, the agent answers in the chat with its face and name, and the people in the chat see it thinking. The person can let their agent remember the chat, and can let the others in it ask their agent too. The closest existing feature is a turn in a named conversation (`internal/agent/ask.go`) and the way a background wake posts into a conversation (`docs/decisions/20260929-background-work-wakes-the-conversation-that-started-it.md`).
+At the end of this milestone a person can ask their agent in any chat they are in, the agent answers in the chat under its name, and the people in the chat see that it is thinking. The person can let their agent remember the chat, and can let the others in it ask their agent too. The closest existing feature is a turn in a named conversation (`internal/agent/ask.go`) and the way a background wake posts into a conversation (`docs/decisions/20260929-background-work-wakes-the-conversation-that-started-it.md`).
 
 Starting a turn. `AskAgent` on a chat conversation takes `addressedAgentIds`: the drawer and the app fill it from an `@` mention chosen in the composer's completion, or from replying to an agent's message, so an agent's name in ordinary prose never starts a turn; the command line has `--ask-agent` for the sender's own. `internal/chat/agents.go` decides, by these rules and no others. The message's author is a person. For each addressed agent: if the agent's owner is the author, start an **owner turn**; if the owner is a member of the chat and set `is_agent_askable_by_others` for it, start a **member turn**; otherwise start nothing and tell the author, in a note only they see, that only the owner can ask that agent here. An agent's own message never starts anything.
 
@@ -274,13 +247,13 @@ Both turns call `Agent.Ask` with the new surface `chat` (in `internal/agent/surf
 
 An owner turn has the agent's usual tools and cards. Its cards are rows in the owner's chat conversation, so only the owner sees them, inline in the chat on the owner's screens and on the owner's phone. A **member turn** is held: the run gets the read-only tool set of research on mail from strangers, minus mail, memory, files, calendar, finance and every device, plus the conversation tool's `read` for this chat, the shared views of Milestones 6 and 7 restricted to what is shared with every member of the chat, and web search and fetch. It can raise no card; a call that would need one is refused. This reuses the existing "held to reading or to a few named tools" run shape, which already never uses the unattended allowance. Its tool rows are written to the owner's chat conversation, where the owner can see what somebody else's question made their agent do.
 
-Posting. The assistant's answer of each round is written as a `chat_message` with `author_agent_id` and `agent_run_id` instead of an `agent_message`, and published as `said`; tool calls, tool results and notes stay `agent_message` rows in the owner's chat conversation. The streaming `text` deltas go to every member as a provisional message that the stored one replaces, the same replace-not-append rule the drawer already follows. The agent's face in the chat shows its activity state from `AgentActivityEvents` (Milestone 4), the tool's kind only for its owner.
+Posting. The assistant's answer of each round is written as a `chat_message` with `author_agent_id` and `agent_run_id` instead of an `agent_message`, and published as `said`; tool calls, tool results and notes stay `agent_message` rows in the owner's chat conversation. The streaming `text` deltas go to every member as a provisional message that the stored one replaces, the same replace-not-append rule the drawer already follows. While the turn runs, every member's view shows "<agent name> is thinking", from a `typing` event the turn publishes with the agent's name when it starts and again every few seconds until its answer is posted; nobody but the owner learns which tool it is using.
 
 Memory. `is_agent_reading`, set by a member for their own agent, makes the chat a source of that agent, kind `chat`, read by the dream like the other chat sources (`internal/agent/ingest_document.go`), from the time it was set. The chat's members panel shows, for every member, whether their agent remembers the chat. Turning it off stops reading at once; what was already learned stays, as with any source, and the Knowledge page shows the chat as those facts' evidence.
 
 Operations: `SetChatAgentReading(conversationId, isAgentReading)` and `SetChatAgentAskableByOthers(conversationId, isAgentAskableByOthers)`, each for the caller's own membership. Dashboard and app: the composer's `@` completion offers the person's own agent and the agents of members who allowed it; the members panel has the two switches; in the owner's view, the agent's answer is preceded by its tool rows folded into one "what it did" line, as a turn in the main conversation already shows them. Command line: `teanode agent ask --conversation <id> --ask-agent "..."`, `teanode agent conversation remember <id> on|off`, `teanode agent conversation askable <id> on|off`.
 
-Acceptance: in the family chat, A writes "@<A's agent> what time is the dentist on Thursday?"; B and C see A's agent's face thinking, then an answer from it; A's view has "what it did", listing the calendar read; B's view of the same chat has the answer and no tool rows, and reading A's chat conversation as B is not found. B writes "@<A's agent> what is in A's inbox?": no turn starts, and B alone sees the note that only A can ask. A turns on "others may ask my agent here"; B asks the same: the turn starts held, answers that it cannot read A's mail, and A's usage shows the turn. A message from A's agent naming B's agent starts nothing. Tests: `internal/chat/agents_test.go` for every branch of the decision above; `internal/agent/ask_chat_test.go` that a member turn's tool list contains no mail, memory, calendar, finance or device tool, that other members' messages are inside `<untrusted-data>`, and that no tool result of an owner turn appears in any `chat_message`.
+Acceptance: in the family chat, A writes "@<A's agent> what time is the dentist on Thursday?"; B and C see "<A's agent> is thinking", then an answer from it; A's view has "what it did", listing the calendar read; B's view of the same chat has the answer and no tool rows, and reading A's chat conversation as B is not found. B writes "@<A's agent> what is in A's inbox?": no turn starts, and B alone sees the note that only A can ask. A turns on "others may ask my agent here"; B asks the same: the turn starts held, answers that it cannot read A's mail, and A's usage shows the turn. A message from A's agent naming B's agent starts nothing. Tests: `internal/chat/agents_test.go` for every branch of the decision above; `internal/agent/ask_chat_test.go` that a member turn's tool list contains no mail, memory, calendar, finance or device tool, that other members' messages are inside `<untrusted-data>`, and that no tool result of an owner turn appears in any `chat_message`.
 
 ### Milestone 6: shared calendars and the circle calendar
 
@@ -403,7 +376,7 @@ Sharing operations are idempotent by their unique keys: sharing the same thing w
 
 ## Artifacts and Notes
 
-The six decision records under `docs/decisions/` dated 2026-10-16 are the design's reasons, one per decision. The face's drawings and their screenshots become an artifact of Milestone 4 and are attached to its pull request.
+The five decision records under `docs/decisions/` dated 2026-10-16 are the design's reasons, one per decision.
 
 ## Interfaces and Dependencies
 
@@ -419,8 +392,6 @@ Types, in `internal/models`:
     type ChatEventKind string      // "said", "edited", "unsaid", "reacted", "read", "typing"
     type ShareLevel string         // "busy", "titles", "details", "edit"
     type SkillShareCallState string // "ran", "failed", "refused", "waiting_for_approval", "declined", "expired"
-    type AgentActivityState string // "idle", "thinking", "speaking", "working", "waiting", "failed", "dreaming", "away"
-    type AgentFace struct { ... }   // Milestone 4
     const AgentConversationChat AgentConversationKind = "chat"
 
 Functions other milestones depend on, with these signatures:
@@ -432,9 +403,6 @@ Functions other milestones depend on, with these signatures:
     // internal/db/database_chat.go
     func (self *Transaction) EnsureChatConversation(agentId string, chatId string) (*models.AgentConversation, error)
     func (self *Transaction) ReadChatConversation(conversationId string, before string, count int) ([]models.ConversationRow, error)
-
-    // internal/agent/activity.go
-    func ActivityStateOf(event Event) (models.AgentActivityState, string /* tool family */, bool)
 
     // internal/calendar/visibility.go
     func Redact(object models.CalendarObject, shareLevel models.ShareLevel) models.CalendarObject
@@ -451,3 +419,5 @@ Revision note (2026-10-16): first version, written from a survey of the code bef
 Revision note (2026-10-16, later): revised after the maintainer's answers. Chats are conversations in the drawer and the app through the existing conversation operations, with no chat page and no new navigation; guardians are a flag separate from circle admins and may read their children's conversations; payments are shared as a skill's tools with limits, covering an adult member as well as a child, and approving runs the asked call instead of a turn of the approver's agent; the circle agent is dropped; the kinds are family, friends and colleagues; a deleted account's chat messages are kept under the name it had.
 
 Revision note (2026-10-16, last): simplified at the maintainer's word. A circle has admins and members only; the guardian flag, the child role, guardians reading a child's conversations and the approvals for a child's joining, leaving and sharing are gone. Approvals remain only for shared payment calls, answered by the share's owner, and live on `skill_share_call` rather than a table of their own.
+
+Revision note (2026-10-16, later still): the agent's face was built, shown and dropped at the maintainer's word; Milestone 4 is kept as a dropped entry so the numbers of the others do not move, its decision record was removed before merging, and agents in chats are shown thinking by name.
