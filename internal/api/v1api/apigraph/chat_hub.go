@@ -52,7 +52,7 @@ func recipientsOf(members []*models.ChatMember) []chat.Recipient {
 		}
 		recipients = append(recipients, chat.Recipient{
 			UserID: member.UserID, AgentID: member.AgentID, ConversationID: member.ConversationID, MutedUntil: member.MutedUntil,
-			IsArchived: member.IsConversationArchived,
+			IsConversationArchived: member.IsConversationArchived,
 		})
 	}
 	return recipients

@@ -1556,8 +1556,8 @@ func TestAChatIsPutAwayAndBroughtBackByEachPersonAlone(t *testing.T) {
 			t.Fatalf("GetChatOfConversation: %s", err)
 		}
 		for _, recipient := range recipientsOf(stored.Members) {
-			if recipient.IsArchived != (recipient.UserID == world.bob.ID) {
-				t.Errorf("the phone notification of %s has IsArchived %t after Bob put the chat away", recipient.UserID, recipient.IsArchived)
+			if recipient.IsConversationArchived != (recipient.UserID == world.bob.ID) {
+				t.Errorf("the phone notification of %s has IsConversationArchived %t after Bob put the chat away", recipient.UserID, recipient.IsConversationArchived)
 			}
 		}
 	})
