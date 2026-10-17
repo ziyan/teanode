@@ -189,7 +189,9 @@ function tabWordsOf(tabLabel: string): string {
 // tabLabelOf is a session's tab in the tab strip: herdr's label for the tab,
 // then what the session is about.
 function tabLabelOf(session: HerdrSession): string {
-  return [session.tabLabel, sessionTitleOf(session)].filter(Boolean).join(' ') || codingAgentName(session.codingAgentKind)
+  return (
+    [session.tabLabel, sessionTitleOf(session)].filter(Boolean).join(' ') || codingAgentName(session.codingAgentKind)
+  )
 }
 
 function isSameSession(left: { computer: string; paneId: string }, right: { computer: string; paneId: string }) {
