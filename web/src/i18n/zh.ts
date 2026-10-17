@@ -4888,6 +4888,7 @@ export const zh: Catalog = {
   'photos.selectedOne': '已选择 1 张照片',
   'photos.selectedOther': '已选择 {count} 张照片',
   'photos.selectPhoto': '选择 {name}',
+  'photos.select': '选择',
   'photos.clearSelection': '取消选择',
   'photos.favorite': '加入收藏',
   'photos.unfavorite': '取消收藏',

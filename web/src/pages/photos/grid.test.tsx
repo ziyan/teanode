@@ -22,15 +22,21 @@ const photoFixture = (overrides: Partial<Photo>): Photo =>
     ...overrides,
   }) as Photo
 
-const show = (photos: Photo[], selectedIds: string[] = []) => {
+const show = (photos: Photo[], selectedIds: string[] = [], isSelectionMode = false) => {
   const onOpen = vi.fn()
   const onToggle = vi.fn()
-  render(
+  const { container } = render(
     <TranslationProvider>
-      <PhotoGrid photos={photos} selectedIds={new Set(selectedIds)} onOpen={onOpen} onToggle={onToggle} />
+      <PhotoGrid
+        photos={photos}
+        selectedIds={new Set(selectedIds)}
+        isSelectionMode={isSelectionMode}
+        onOpen={onOpen}
+        onToggle={onToggle}
+      />
     </TranslationProvider>,
   )
-  return { onOpen, onToggle }
+  return { onOpen, onToggle, container }
 }
 
 it('puts a heading over each day and the photos of that day under it', () => {
@@ -88,4 +94,21 @@ it('selects with the checkbox, and extends a range with shift', () => {
   expect(onToggle).toHaveBeenLastCalledWith(0, false)
   fireEvent.click(screen.getByRole('checkbox', { name: 'Select b.jpg' }), { shiftKey: true })
   expect(onToggle).toHaveBeenLastCalledWith(1, true)
+})
+
+it('selects instead of opening in selection mode even while nothing is chosen yet', () => {
+  const { onOpen, onToggle, container } = show(
+    [photoFixture({ id: 'a', originalFilename: 'a.jpg' }), photoFixture({ id: 'b', originalFilename: 'b.jpg' })],
+    [],
+    true,
+  )
+  expect(container.querySelector('.photo-timeline')?.classList.contains('is-selecting')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: 'Open b.jpg' }))
+  expect(onOpen).not.toHaveBeenCalled()
+  expect(onToggle).toHaveBeenCalledWith(1, false)
+})
+
+it('shows no selection state when nothing is chosen and the page is not in selection mode', () => {
+  const { container } = show([photoFixture({ id: 'a', originalFilename: 'a.jpg' })])
+  expect(container.querySelector('.photo-timeline')?.classList.contains('is-selecting')).toBe(false)
 })

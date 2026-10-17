@@ -4982,6 +4982,7 @@ export const ja: Catalog = {
   'photos.selectedOne': '1 件の写真を選択中',
   'photos.selectedOther': '{count} 件の写真を選択中',
   'photos.selectPhoto': '{name} を選択',
+  'photos.select': '選択',
   'photos.clearSelection': '選択を解除',
   'photos.favorite': 'お気に入りに追加',
   'photos.unfavorite': 'お気に入りから削除',

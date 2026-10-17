@@ -15,8 +15,6 @@ private func temporaryDirectory(_ test: XCTestCase) throws -> URL {
     return directory
 }
 
-private let eastern = TimeZone(secondsFromGMT: -4 * 3600)!
-
 private func makeItem(
     _ localIdentifier: String, cloudIdentifier: String? = nil, secondsSince2026 seconds: Double? = 0, modifiedSecondsSince2026: Double? = nil,
     kind: PhotoBackupMediaKind = .picture, location: PhotoBackupLocation? = nil, roles: [PhotoBackupFileRole] = [.original]
@@ -24,7 +22,7 @@ private func makeItem(
     let start = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01T00:00:00Z
     return PhotoBackupItem(
         localIdentifier: localIdentifier, cloudIdentifier: cloudIdentifier, creationDate: seconds.map { start.addingTimeInterval($0) },
-        modificationDate: (modifiedSecondsSince2026 ?? seconds).map { start.addingTimeInterval($0) }, timeZone: eastern, location: location,
+        modificationDate: (modifiedSecondsSince2026 ?? seconds).map { start.addingTimeInterval($0) }, location: location,
         isFavorite: false, isScreenshot: false, mediaKind: kind,
         resources: roles.map {
             PhotoBackupResource(
@@ -43,7 +41,7 @@ final class PhotoBackupPlannerTests: XCTestCase {
     func testTheHeadersDescribeTheFile() throws {
         let item = PhotoBackupItem(
             localIdentifier: "L1", cloudIdentifier: "cloud-1", creationDate: Date(timeIntervalSince1970: 1_767_225_600 + 3600 * 18 + 42 * 60),
-            modificationDate: nil, timeZone: eastern, location: PhotoBackupLocation(latitude: 12.3456789, longitude: -98.7654321),
+            modificationDate: nil, location: PhotoBackupLocation(latitude: 12.3456789, longitude: -98.7654321),
             isFavorite: true, isScreenshot: false, mediaKind: .livePhoto,
             resources: [PhotoBackupResource(role: .liveVideo, originalFilename: "IMG_0001.MOV", contentType: "video/quicktime", isLocallyAvailable: false)])
         let upload = try XCTUnwrap(PhotoBackupPlanner.plan(items: [item], records: [:]).first)
@@ -55,7 +53,7 @@ final class PhotoBackupPlannerTests: XCTestCase {
                 "X-Photo-Kind": "livePhoto",
                 "X-Photo-Filename": "IMG_0001.MOV",
                 "Content-Type": "video/quicktime",
-                "X-Photo-Taken-At": "2026-01-01T14:42:00-04:00",
+                "X-Photo-Taken-At": "2026-01-01T18:42:00Z",
                 "X-Photo-Latitude": "12.345679",
                 "X-Photo-Longitude": "-98.765432",
                 "X-Photo-Is-Favorite": "true",
@@ -74,12 +72,21 @@ final class PhotoBackupPlannerTests: XCTestCase {
         XCTAssertEqual(upload.headers["X-Photo-Client-ID"], "local:L1")
     }
 
-    func testRFC3339CarriesTheOffsetOfTheZone() {
-        let date = Date(timeIntervalSince1970: 1_767_225_600)
-        XCTAssertEqual(PhotoBackupPlanner.rfc3339(date, in: TimeZone(secondsFromGMT: 0)!), "2026-01-01T00:00:00+00:00")
-        XCTAssertEqual(PhotoBackupPlanner.rfc3339(date, in: TimeZone(secondsFromGMT: 9 * 3600)!), "2026-01-01T09:00:00+09:00")
-        XCTAssertEqual(PhotoBackupPlanner.rfc3339(date, in: TimeZone(secondsFromGMT: -(5 * 3600 + 30 * 60))!), "2025-12-31T18:30:00-05:30")
-        XCTAssertEqual(PhotoBackupPlanner.rfc3339(date, in: TimeZone(secondsFromGMT: 5 * 3600 + 45 * 60)!), "2026-01-01T05:45:00+05:45")
+    func testRFC3339IsUTCWithAZAndNoOffset() {
+        XCTAssertEqual(PhotoBackupPlanner.rfc3339(Date(timeIntervalSince1970: 1_767_225_600)), "2026-01-01T00:00:00Z")
+        XCTAssertEqual(PhotoBackupPlanner.rfc3339(Date(timeIntervalSince1970: 1_752_308_100)), "2025-07-12T08:15:00Z")
+        XCTAssertEqual(PhotoBackupPlanner.rfc3339(Date(timeIntervalSince1970: 1_767_225_599)), "2025-12-31T23:59:59Z")
+    }
+
+    func testTheTakenAtHeaderDoesNotDependOnThePhonesZone() throws {
+        let item = makeItem("L1", secondsSince2026: 3600 * 18 + 42 * 60)
+        let original = NSTimeZone.default
+        defer { NSTimeZone.default = original }
+        for identifier in ["Asia/Tokyo", "America/New_York"] {
+            NSTimeZone.default = TimeZone(identifier: identifier)!
+            let upload = try XCTUnwrap(PhotoBackupPlanner.plan(items: [item], records: [:]).first)
+            XCTAssertEqual(upload.headers["X-Photo-Taken-At"], "2026-01-01T18:42:00Z")
+        }
     }
 
     func testACoordinateHasSixDecimalsAndAPointWhateverTheLocale() {
@@ -768,7 +775,7 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
 
     func testAFileOutsideTheDeviceWaitsOnANetworkThatCostsUnlessAllowed() async throws {
         let cloudOnly = PhotoBackupItem(
-            localIdentifier: "cloud", creationDate: Date(timeIntervalSince1970: 1), timeZone: eastern, mediaKind: .picture,
+            localIdentifier: "cloud", creationDate: Date(timeIntervalSince1970: 1), mediaKind: .picture,
             resources: [PhotoBackupResource(role: .original, originalFilename: "IMG.HEIC", contentType: "image/heic", isLocallyAvailable: false)])
         let rig = try makeRig(self, items: [cloudOnly, makeItem("here", secondsSince2026: 5)], network: FakeNetwork(isExpensiveNetwork: true))
         let coordinator = rig.coordinator

@@ -112,7 +112,7 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
             let isLivePhoto = asset.mediaSubtypes.contains(.photoLive) && resources.contains { $0.role == .liveVideo }
             return PhotoBackupItem(
                 localIdentifier: asset.localIdentifier, cloudIdentifier: cloudIdentifiers[asset.localIdentifier], creationDate: asset.creationDate,
-                modificationDate: asset.modificationDate, timeZone: .current,
+                modificationDate: asset.modificationDate,
                 location: coordinate.map { PhotoBackupLocation(latitude: $0.latitude, longitude: $0.longitude) }, isFavorite: asset.isFavorite,
                 isScreenshot: asset.mediaSubtypes.contains(.photoScreenshot),
                 mediaKind: isLivePhoto ? .livePhoto : (asset.mediaType == .video ? .video : .picture), resources: resources)

@@ -5030,6 +5030,7 @@ export const en = {
   'photos.selectedOne': '1 photo selected',
   'photos.selectedOther': '{count} photos selected',
   'photos.selectPhoto': 'Select {name}',
+  'photos.select': 'Select',
   'photos.clearSelection': 'Clear selection',
   'photos.favorite': 'Add to Favorites',
   'photos.unfavorite': 'Remove from Favorites',

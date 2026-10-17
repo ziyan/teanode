@@ -4,24 +4,28 @@ import type { Photo } from '../../photos/api'
 import { formatDuration, groupByDay, personTimeZone } from '../../photos/days'
 
 // The timeline's grid: day headings, and under each the day's photos as
-// square cells. A cell opens the photo; its checkbox, shown on hover and
-// always once anything is selected, selects it.
+// square cells. A cell opens the photo; its checkbox selects it. The checkbox
+// shows on hover, and on every cell once anything is selected or the page is in
+// selection mode (the way a touch screen, which has no hover, selects).
 
 export function PhotoGrid({
   photos,
   selectedIds,
+  isSelectionMode,
   onOpen,
   onToggle,
 }: {
   photos: Photo[]
   selectedIds: ReadonlySet<string>
+  // True from the Select button until Cancel, even while nothing is chosen yet.
+  isSelectionMode: boolean
   onOpen: (photo: Photo) => void
   // The index is into photos, for the range a shift-click selects.
   onToggle: (index: number, isRange: boolean) => void
 }) {
   const { language } = useTranslation()
   const days = groupByDay(photos, language, personTimeZone())
-  const isSelecting = selectedIds.size > 0
+  const isSelecting = isSelectionMode || selectedIds.size > 0
   let index = 0
   return (
     <div className={isSelecting ? 'photo-timeline is-selecting' : 'photo-timeline'}>

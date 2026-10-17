@@ -15276,11 +15276,12 @@ body.has-recording-bar .content {
   }
 }
 
-/* A touch screen has no hover to reveal the tick, and without it nothing
-   could be selected. */
+/* A touch screen has no hover to reveal the tick, and ticks on every cell all
+   the time crowd the grid. They appear in selection mode (the Select button),
+   and until then the invisible tick must not catch a tap meant to open. */
 @media (hover: none) {
-  .photo-check {
-    opacity: 0.85;
+  .photo-timeline:not(.is-selecting) .photo-check {
+    visibility: hidden;
   }
 }
 

@@ -79,10 +79,6 @@ public struct PhotoBackupItem: Equatable, Sendable {
     public let creationDate: Date?
     /// When the library last changed the item, an edit included.
     public let modificationDate: Date?
-    /// The zone to write the creation date in. The library does not say where a
-    /// photo was taken, so this is the phone's zone unless something better is
-    /// known.
-    public let timeZone: TimeZone
     public let location: PhotoBackupLocation?
     public let isFavorite: Bool
     public let isScreenshot: Bool
@@ -91,14 +87,13 @@ public struct PhotoBackupItem: Equatable, Sendable {
 
     public init(
         localIdentifier: String, cloudIdentifier: String? = nil, creationDate: Date? = nil, modificationDate: Date? = nil,
-        timeZone: TimeZone = .current, location: PhotoBackupLocation? = nil, isFavorite: Bool = false, isScreenshot: Bool = false,
+        location: PhotoBackupLocation? = nil, isFavorite: Bool = false, isScreenshot: Bool = false,
         mediaKind: PhotoBackupMediaKind = .picture, resources: [PhotoBackupResource]
     ) {
         self.localIdentifier = localIdentifier
         self.cloudIdentifier = cloudIdentifier
         self.creationDate = creationDate
         self.modificationDate = modificationDate
-        self.timeZone = timeZone
         self.location = location
         self.isFavorite = isFavorite
         self.isScreenshot = isScreenshot
@@ -240,7 +235,7 @@ public enum PhotoBackupPlanner {
         if !filename.isEmpty { headers[PhotoBackupHeader.filename] = filename }
         if !resource.contentType.isEmpty { headers[PhotoBackupHeader.contentType] = resource.contentType }
         if let creationDate = item.creationDate {
-            headers[PhotoBackupHeader.takenAt] = rfc3339(creationDate, in: item.timeZone)
+            headers[PhotoBackupHeader.takenAt] = rfc3339(creationDate)
         }
         if let location = item.location, abs(location.latitude) <= 90, abs(location.longitude) <= 180 {
             headers[PhotoBackupHeader.latitude] = coordinateText(location.latitude)
@@ -249,19 +244,19 @@ public enum PhotoBackupPlanner {
         return headers
     }
 
-    /// A date as RFC 3339 with the offset of the zone, such as
-    /// 2026-10-15T18:42:00-04:00. Written by hand so that it reads the same on
+    /// A date as RFC 3339 in UTC, such as 2026-10-15T22:42:00Z. The library's
+    /// creation date is an instant and does not say in which zone the photo was
+    /// taken, so no offset is claimed: the trailing Z tells the server that the
+    /// instant is known and the offset is not, and the server keeps the offset
+    /// the file's own EXIF says. Written by hand so that it reads the same on
     /// every platform and in every locale.
-    public static func rfc3339(_ date: Date, in timeZone: TimeZone) -> String {
+    public static func rfc3339(_ date: Date) -> String {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
         let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-        let offsetMinutes = timeZone.secondsFromGMT(for: date) / 60
-        let sign = offsetMinutes < 0 ? "-" : "+"
-        let clock = String(
-            format: "%04d-%02d-%02dT%02d:%02d:%02d", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1, parts.hour ?? 0,
-            parts.minute ?? 0, parts.second ?? 0)
-        return clock + sign + String(format: "%02d:%02d", abs(offsetMinutes) / 60, abs(offsetMinutes) % 60)
+        return String(
+            format: "%04d-%02d-%02dT%02d:%02d:%02dZ", parts.year ?? 1970, parts.month ?? 1, parts.day ?? 1, parts.hour ?? 0, parts.minute ?? 0,
+            parts.second ?? 0)
     }
 
     /// Six decimals, with a point whatever the phone's language.

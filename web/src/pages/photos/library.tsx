@@ -75,6 +75,9 @@ function AccountPhotosPage() {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
+  // Entered with the Select button, so that a touch screen, which has no hover
+  // to reveal the checkboxes, can choose photos; left with Cancel.
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
   const anchorIndex = useRef<number | null>(null)
   const [favoriteOverrides, setFavoriteOverrides] = useState<ReadonlyMap<string, boolean>>(new Map())
 
@@ -119,9 +122,14 @@ function AccountPhotosPage() {
   )
   // What the server says wins again once it has been asked.
   useEffect(() => setFavoriteOverrides(new Map()), [library.data])
+  function clearSelection() {
+    setSelectedIds(new Set())
+    setIsSelectionMode(false)
+  }
   // A different list, search or page is a different set of cells.
   useEffect(() => {
     setSelectedIds(new Set())
+    setIsSelectionMode(false)
     anchorIndex.current = null
   }, [listKind, searchText, offset])
 
@@ -272,7 +280,7 @@ function AccountPhotosPage() {
       const restoredCount = await restorePhotos(targets.map((photo) => photo.id))
       toast.done(plural(restoredCount, { one: 'photos.restoredOne', other: 'photos.restoredOther' }))
       if (targets.some((photo) => photo.id === photoId)) moveViewerOn()
-      setSelectedIds(new Set())
+      clearSelection()
       refresh()
     } catch (caught) {
       failedWith(caught)
@@ -299,7 +307,7 @@ function AccountPhotosPage() {
       })
       setConfirmation(null)
       if (trashedIds.includes(photoId ?? '')) moveViewerOn()
-      setSelectedIds(new Set())
+      clearSelection()
       refresh()
     } catch (caught) {
       failedWith(caught)
@@ -315,7 +323,7 @@ function AccountPhotosPage() {
       toast.done(plural(deletedCount, { one: 'photos.deletedOne', other: 'photos.deletedOther' }))
       setConfirmation(null)
       if (targets.some((photo) => photo.id === photoId)) moveViewerOn()
-      setSelectedIds(new Set())
+      clearSelection()
       refresh()
     } catch (caught) {
       failedWith(caught)
@@ -330,7 +338,7 @@ function AccountPhotosPage() {
       const deletedCount = await emptyPhotoTrash()
       toast.done(plural(deletedCount, { one: 'photos.deletedOne', other: 'photos.deletedOther' }))
       setConfirmation(null)
-      setSelectedIds(new Set())
+      clearSelection()
       if (photoId) closeViewer()
       refresh()
     } catch (caught) {
@@ -430,6 +438,15 @@ function AccountPhotosPage() {
         <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
           <UploadIcon size={16} /> {t('photos.upload')}
         </button>
+        {photos.length > 0 && (
+          <button
+            type="button"
+            aria-pressed={isSelectionMode || selectedIds.size > 0}
+            onClick={() => (isSelectionMode || selectedIds.size > 0 ? clearSelection() : setIsSelectionMode(true))}
+          >
+            {isSelectionMode || selectedIds.size > 0 ? t('common.cancel') : t('photos.select')}
+          </button>
+        )}
       </PageHeadingActions>
       <input
         ref={fileInput}
@@ -457,7 +474,7 @@ function AccountPhotosPage() {
               type="button"
               className="icon-button"
               aria-label={t('photos.clearSelection')}
-              onClick={() => setSelectedIds(new Set())}
+              onClick={() => clearSelection()}
             >
               <CloseIcon size={18} />
             </button>
@@ -566,7 +583,13 @@ function AccountPhotosPage() {
       ) : photos.length === 0 ? (
         <SettingsEmpty>{emptyText}</SettingsEmpty>
       ) : (
-        <PhotoGrid photos={photos} selectedIds={selectedIds} onOpen={openPhoto} onToggle={toggleSelection} />
+        <PhotoGrid
+          photos={photos}
+          selectedIds={selectedIds}
+          isSelectionMode={isSelectionMode}
+          onOpen={openPhoto}
+          onToggle={toggleSelection}
+        />
       )}
 
       {(totalCount > pageSize || pageIndex > 0) && (
