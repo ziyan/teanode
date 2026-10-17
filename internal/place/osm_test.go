@@ -91,6 +91,8 @@ func nominatimServer(t *testing.T, requests *[]string) *httptest.Server {
 				say(writer, `{"osm_type":"way","osm_id":99,"lat":"14.000000","lon":"24.000000","category":"highway","type":"residential","name":"","display_name":"6, Rue Example, Old Quarter, Exampleton, Testland","address":{"house_number":"6","road":"Rue Example","suburb":"Old Quarter","city":"Exampleton"}}`)
 			case query.Get("lat") == "15.000000" && query.Get("layer") == "address":
 				say(writer, `{"osm_type":"node","osm_id":55,"lat":"15.000000","lon":"25.000000","category":"place","type":"house","name":"","display_name":"7, Exampleton, Testland","address":{"suburb":"Old Quarter","city":"Exampleton"}}`)
+			case query.Get("lat") == "16.000000" && query.Get("layer") == "address":
+				say(writer, `{"osm_type":"node","osm_id":56,"lat":"16.000000","lon":"26.000000","category":"place","type":"house","name":"","display_name":"1-2-3, Elm Quarter, Exampleville, Testland","address":{"house_number":"1-2-3","suburb":"Elm Quarter","city":"Exampleville"}}`)
 			case query.Get("lat") == "12.000000" && query.Get("layer") == "address":
 				say(writer, `{"error":"Unable to geocode"}`)
 			case query.Get("lat") == "13.000000":
@@ -188,6 +190,12 @@ func TestNominatimDoesNotNameAPointAfterAnElevatorOrAHouseNumber(t *testing.T) {
 	found, err = provider.Name(context.Background(), 15, 25)
 	if err != nil || found == nil || found.PlaceName != "Old Quarter" {
 		t.Errorf("no number and no road: %+v, %v", found, err)
+	}
+
+	// A number with no road is not a name: the neighborhood is.
+	found, err = provider.Name(context.Background(), 16, 26)
+	if err != nil || found == nil || found.PlaceName != "Elm Quarter" {
+		t.Errorf("a number and no road: %+v, %v", found, err)
 	}
 }
 
@@ -298,6 +306,11 @@ func photonServer(t *testing.T, requests *[]string) *httptest.Server {
 					{"type":"Feature","geometry":{"type":"Point","coordinates":[24,14]},"properties":{"osm_type":"N","osm_id":88,"osm_key":"highway","osm_value":"elevator","name":"Example Avenue","street":"Rue Example","housenumber":"6","city":"Exampleton"}}]}`)
 				return
 			}
+			if request.URL.Query().Get("lat") == "16.000000" {
+				say(writer, `{"type":"FeatureCollection","features":[
+					{"type":"Feature","geometry":{"type":"Point","coordinates":[26,16]},"properties":{"osm_type":"N","osm_id":56,"osm_key":"place","osm_value":"house","housenumber":"1-2-3","district":"Elm Quarter","city":"Exampleville"}}]}`)
+				return
+			}
 			if request.URL.Query().Get("lat") == "12.000000" {
 				say(writer, `{"type":"FeatureCollection","features":[]}`)
 				return
@@ -340,6 +353,12 @@ func TestPhotonNamesAPoint(t *testing.T) {
 	found, err = provider.Name(context.Background(), 14, 24)
 	if err != nil || found == nil || found.PlaceName != "6 Rue Example" {
 		t.Errorf("an elevator is the address: %+v, %v", found, err)
+	}
+
+	// A number with no street is not a name: the district is.
+	found, err = provider.Name(context.Background(), 16, 26)
+	if err != nil || found == nil || found.PlaceName != "Elm Quarter" {
+		t.Errorf("a number and no street: %+v, %v", found, err)
 	}
 }
 

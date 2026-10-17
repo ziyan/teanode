@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -33,6 +34,10 @@ type LocationOperation interface {
 	// GetLatestLocationPoint is the most recently measured position, or nil
 	// when there is none.
 	GetLatestLocationPoint(userId string) (*models.LocationPoint, error)
+
+	// GetLatestLocationPoints is GetLatestLocationPoint for many people in one
+	// query. A person with no position is not in the answer.
+	GetLatestLocationPoints(userIds []string) (map[string]*models.LocationPoint, error)
 
 	// ListLocationPoints reads the positions measured in a range, oldest
 	// first, at most limitCount of them. A caller that must refuse a range
@@ -107,6 +112,21 @@ type LocationOperation interface {
 	// departure, with its place; nil when there is none.
 	GetOpenPlaceVisit(userId string) (*models.PlaceVisit, error)
 
+	// GetOpenPlaceVisits is GetOpenPlaceVisit for many people in two queries.
+	// A person with no visit in progress is not in the answer.
+	GetOpenPlaceVisits(userIds []string) (map[string]*models.PlaceVisit, error)
+
+	// NormalizePlaceVisits makes the person's visits that touch the range, and
+	// the ten minutes round it, a sequence that does not overlap, whatever
+	// order the reports of them arrived in: ordered by arrival, a visit still
+	// open ends at the arrival of the next visit, a visit whose departure runs
+	// past the arrival of the next visit at another place ends at that
+	// arrival, a joined visit that has a visit at another place begin inside
+	// it is split in two there, and visits to one place less than ten minutes
+	// apart with nothing between them are joined. Call it once the visits of a
+	// report are stored.
+	NormalizePlaceVisits(userId string, from, until time.Time) error
+
 	// EndOpenPlaceVisit sets the departure of the visit in progress and answers
 	// it, or answers nil when there is none.
 	EndOpenPlaceVisit(userId string, at time.Time) (*models.PlaceVisit, error)
@@ -148,6 +168,14 @@ type LocationOperation interface {
 	// if the place has been moved, and so lost that claim, since it is about
 	// where the place used to be. Nil skips that check.
 	SetPlaceNamed(placeId string, claimedAt *time.Time, found *NamedPlace, errorMessage string, now time.Time) error
+
+	// ReleasePlaceClaim gives back the claim on a place that was claimed to be
+	// named but that nothing was asked about (the provider was busy), so that
+	// the next run takes it at once instead of when the claim is old. The
+	// errorMessage is kept on the place for the Location page. The claim is
+	// kept if the place was claimed again since, and a place that is gone is
+	// not an error.
+	ReleasePlaceClaim(placeId string, claimedAt *time.Time, errorMessage string, now time.Time) error
 }
 
 // PlaceChanges is what a person may change about a place. A nil field is left
@@ -222,6 +250,11 @@ type PlaceVisitSummary struct {
 	VisitCount  int
 	LastVisitAt *time.Time
 }
+
+// ErrPlaceCountMost is the answer to making a place for a person who has
+// PlaceCountMost of them. It is an ErrInvalidArguments, and one a caller that
+// has other things to store can tell apart and go on without.
+var ErrPlaceCountMost = fmt.Errorf("%w: a person may have at most %d places; forget some first", ErrInvalidArguments, PlaceCountMost)
 
 // NamedPlace is what a provider knows about a position, for SetPlaceNamed.
 type NamedPlace struct {
@@ -494,6 +527,24 @@ func (self *transaction) GetLatestLocationPoint(userId string) (*models.Location
 	return found[0].toModel(), nil
 }
 
+func (self *transaction) GetLatestLocationPoints(userIds []string) (map[string]*models.LocationPoint, error) {
+	latest := map[string]*models.LocationPoint{}
+	userIds = uniqueStrings(userIds)
+	if len(userIds) == 0 {
+		return latest, nil
+	}
+	var rows []locationPointModel
+	if err := self.tx.Raw(`SELECT DISTINCT ON (point.user_id) point.* FROM "location_point" point
+		WHERE point.user_id IN ?
+		ORDER BY point.user_id, point.measured_at DESC, point.id DESC`, userIds).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		latest[rows[index].UserID] = rows[index].toModel()
+	}
+	return latest, nil
+}
+
 func (self *transaction) FindPlaceAt(userId string, latitudeDegrees, longitudeDegrees float64) (*models.Place, error) {
 	if !isOnEarth(latitudeDegrees, longitudeDegrees) {
 		return nil, nil
@@ -548,7 +599,7 @@ func (self *transaction) CreatePlace(userId string, place *models.Place) (*model
 		return nil, err
 	}
 	if placeCount >= PlaceCountMost {
-		return nil, fmt.Errorf("%w: a person may have at most %d places; forget some first", ErrInvalidArguments, PlaceCountMost)
+		return nil, ErrPlaceCountMost
 	}
 	now := time.Now()
 	row := &placeModel{
@@ -904,17 +955,41 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 		// makes the two one visit again, open if this one is: of two visits
 		// that end at the same moment, the one still going is the later.
 		if kept.ArrivedAt != nil {
-			if err := self.tx.Model(&placeVisitModel{}).
-				Where("\"user_id\" = ? AND \"id\" <> ? AND \"departed_at\" IS NULL AND \"arrived_at\" <= ?",
-					userId, kept.ID, *kept.ArrivedAt).
-				Updates(map[string]any{"departed_at": *kept.ArrivedAt, "updated_at": now}).Error; err != nil {
+			var opened []placeVisitModel
+			if err := self.tx.Where("\"user_id\" = ? AND \"id\" <> ? AND \"departed_at\" IS NULL AND \"arrived_at\" <= ?",
+				userId, kept.ID, *kept.ArrivedAt).Find(&opened).Error; err != nil {
 				return false, err
+			}
+			for index := range opened {
+				// A visit joined from several, the later of which came before
+				// this arrival was heard of, ends here and the later parts go
+				// on as a visit of their own.
+				if isSplit, err := self.splitVisitAt(&opened[index], *kept.ArrivedAt); err != nil {
+					return false, err
+				} else if isSplit {
+					continue
+				}
+				if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", opened[index].ID).
+					Updates(map[string]any{"departed_at": *kept.ArrivedAt, "updated_at": now}).Error; err != nil {
+					return false, err
+				}
 			}
 		}
 	} else {
 		// A later report of the same visit completes it. The place, the
 		// position and the source are what the first report said.
 		kept = *existing
+		isEarlierPartEnded := false
+		// A report under the key of a visit that was joined into this one
+		// gives that part its arrival, which is what a later split at another
+		// place's arrival needs to find the part again.
+		if existing.ClientVisitKey != key && visit.ArrivedAt != nil {
+			if err := self.tx.Model(&placeVisitKeyModel{}).
+				Where("\"user_id\" = ? AND \"client_visit_key\" = ? AND \"arrived_at\" IS NULL", userId, key).
+				Update("arrived_at", *visit.ArrivedAt).Error; err != nil {
+				return false, err
+			}
+		}
 		var absorbed struct {
 			KeyCount        int        `gorm:"column:key_count"`
 			LatestArrivedAt *time.Time `gorm:"column:latest_arrived_at"`
@@ -944,7 +1019,9 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 				kept.DepartedAt = latestArrivedAt
 			default:
 				// The earlier part of a joined visit ended here, and the
-				// visit it was joined into is still going, or ended later.
+				// visit it was joined into is still going, or ended later:
+				// the joined visit is split where the earlier part ended.
+				isEarlierPartEnded = true
 			}
 		}
 		kept.UpdatedAt = now
@@ -952,6 +1029,11 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 			"arrived_at": kept.ArrivedAt, "departed_at": kept.DepartedAt, "updated_at": now,
 		}).Error; err != nil {
 			return false, err
+		}
+		if isEarlierPartEnded {
+			if err := self.splitPlaceVisit(&kept, *visit.DepartedAt); err != nil {
+				return false, err
+			}
 		}
 	}
 
@@ -994,11 +1076,41 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 	// it ends plus the gap and end after it begins minus the gap (a visit with
 	// no departure ends where it begins). A home or a workplace has thousands
 	// of visits after a year, and the rest cannot take part.
+	// A visit known only by its departure is not joined to anything: it may be
+	// the end of a visit that began long before, or of one the person left and
+	// came back to, and joining it would lose which. It joins once its arrival
+	// is reported.
+	if visit.ArrivedAt == nil {
+		return visit, nil
+	}
 	var group []placeVisitModel
-	if err := self.tx.Where("\"user_id\" = ? AND \"place_id\" = ? AND COALESCE(\"arrived_at\", \"departed_at\") < ? AND COALESCE(\"departed_at\", \"arrived_at\") > ?",
+	if err := self.tx.Where("\"user_id\" = ? AND \"place_id\" = ? AND \"arrived_at\" IS NOT NULL AND COALESCE(\"arrived_at\", \"departed_at\") < ? AND COALESCE(\"departed_at\", \"arrived_at\") > ?",
 		visit.UserID, visit.PlaceID, visitEnd(visit).Add(placeVisitJoinGap), visitStart(visit).Add(-placeVisitJoinGap)).
 		Order("COALESCE(\"arrived_at\", \"departed_at\") ASC, \"id\" ASC").Find(&group).Error; err != nil {
 		return nil, err
+	}
+	if len(group) == 0 {
+		return visit, nil
+	}
+	// The person was somewhere else in between when a visit at another place
+	// began after one of these began and before the next did: they came back,
+	// and the two are not one visit however close they are.
+	var otherStarts []time.Time
+	if len(group) > 1 {
+		if err := self.tx.Model(&placeVisitModel{}).
+			Where("\"user_id\" = ? AND \"place_id\" <> ? AND COALESCE(\"arrived_at\", \"departed_at\") > ? AND COALESCE(\"arrived_at\", \"departed_at\") < ?",
+				visit.UserID, visit.PlaceID, visitStart(&group[0]), visitStart(&group[len(group)-1])).
+			Pluck("COALESCE(\"arrived_at\", \"departed_at\")", &otherStarts).Error; err != nil {
+			return nil, err
+		}
+	}
+	isSomewhereElseBetween := func(earlier, later time.Time) bool {
+		for _, otherStart := range otherStarts {
+			if otherStart.After(earlier) && otherStart.Before(later) {
+				return true
+			}
+		}
+		return false
 	}
 	// Walk the visits in the order they began, growing a run: each visit joins
 	// the run if it begins before the run's end plus the gap, and starts a new
@@ -1007,7 +1119,8 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 	runStart := 0
 	runEnd := visitEnd(&group[0])
 	for index := 1; index <= len(group); index++ {
-		if index < len(group) && visitStart(&group[index]).Before(runEnd.Add(placeVisitJoinGap)) {
+		if index < len(group) && visitStart(&group[index]).Before(runEnd.Add(placeVisitJoinGap)) &&
+			!isSomewhereElseBetween(visitStart(&group[index-1]), visitStart(&group[index])) {
 			if end := visitEnd(&group[index]); end.After(runEnd) {
 				runEnd = end
 			}
@@ -1107,6 +1220,34 @@ func (self *transaction) GetOpenPlaceVisit(userId string) (*models.PlaceVisit, e
 	}
 	visit.Place = places[visit.PlaceID]
 	return visit, nil
+}
+
+func (self *transaction) GetOpenPlaceVisits(userIds []string) (map[string]*models.PlaceVisit, error) {
+	open := map[string]*models.PlaceVisit{}
+	userIds = uniqueStrings(userIds)
+	if len(userIds) == 0 {
+		return open, nil
+	}
+	var rows []placeVisitModel
+	if err := self.tx.Raw(`SELECT DISTINCT ON (visit.user_id) visit.* FROM "place_visit" visit
+		WHERE visit.user_id IN ? AND visit.departed_at IS NULL
+		ORDER BY visit.user_id, visit.arrived_at DESC NULLS LAST, visit.id DESC`, userIds).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	placeIds := make([]string, 0, len(rows))
+	for index := range rows {
+		placeIds = append(placeIds, rows[index].PlaceID)
+	}
+	places, err := self.loadPlacesById(placeIds)
+	if err != nil {
+		return nil, err
+	}
+	for index := range rows {
+		visit := rows[index].toModel()
+		visit.Place = places[visit.PlaceID]
+		open[visit.UserID] = visit
+	}
+	return open, nil
 }
 
 func (self *transaction) EndOpenPlaceVisit(userId string, at time.Time) (*models.PlaceVisit, error) {
@@ -1343,6 +1484,24 @@ func (self *transaction) SetPlaceNamed(placeId string, claimedAt *time.Time, fou
 		}
 	}
 	return self.tx.Model(&placeModel{}).Where("\"id\" = ?", placeId).Updates(updates).Error
+}
+
+func (self *transaction) ReleasePlaceClaim(placeId string, claimedAt *time.Time, errorMessage string, now time.Time) error {
+	var locked placeModel
+	if err := lockRow(self.tx, &locked, placeId); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if claimedAt != nil && (locked.NamingClaimedAt == nil || !locked.NamingClaimedAt.Equal(*claimedAt)) {
+		return nil
+	}
+	return self.tx.Model(&placeModel{}).Where("\"id\" = ?", placeId).Updates(map[string]any{
+		"naming_claimed_at":    nil,
+		"naming_error_message": cleanPlaceText(errorMessage, placeNamingErrorMaximumLength),
+		"updated_at":           now,
+	}).Error
 }
 
 func (self *transaction) ListLocationPoints(userId string, from, until time.Time, limitCount int) ([]*models.LocationPoint, error) {

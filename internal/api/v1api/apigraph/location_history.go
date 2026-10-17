@@ -258,6 +258,11 @@ type ReportLocationView struct {
 	NewPointCount     int `json:"newPointCount"`
 	NewVisitCount     int `json:"newVisitCount"`
 	UpdatedVisitCount int `json:"updatedVisitCount"`
+
+	// RefusedVisitCount is how many visits were left out because each needed a
+	// new place and the person has as many places as they may have. Their
+	// positions, and the visits at places they have, are stored all the same.
+	RefusedVisitCount int `json:"refusedVisitCount"`
 }
 
 // EraseLocationHistoryView says what was erased.
@@ -741,26 +746,31 @@ func (self *graph) GetLocation(ctx context.Context, arguments GetLocationArgumen
 
 // describeLocation is where a person is, for a viewer who reaches it.
 func describeLocation(tx db.Transaction, reach *locationReach) (*LocationView, error) {
-	view := &LocationView{
-		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
-		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
-		ShareLevel: string(reach.ShareLevel),
-	}
 	latest, err := tx.GetLatestLocationPoint(reach.User.ID)
 	if err != nil {
 		return nil, err
-	}
-	if latest != nil {
-		view.LatestPoint = describeLocationPoint(latest)
 	}
 	visit, err := openVisitOf(tx, reach.User.ID, latest)
 	if err != nil {
 		return nil, err
 	}
-	if visit != nil {
+	return locationViewOf(reach, latest, visit), nil
+}
+
+// locationViewOf is where a person is, from what was read about them.
+func locationViewOf(reach *locationReach, latest *models.LocationPoint, visit *models.PlaceVisit) *LocationView {
+	view := &LocationView{
+		UserID: reach.User.ID, Username: reach.User.Username, Name: reach.User.Name,
+		AvatarURL: avatarUrl(reach.User), AvatarColorIndex: avatar.InitialColorIndex(reach.User.ID),
+		ShareLevel: string(reach.ShareLevel),
+	}
+	if latest != nil {
+		view.LatestPoint = describeLocationPoint(latest)
+	}
+	if visit != nil && place.IsStillThere(visit, latest) {
 		view.OpenVisit = describePlaceVisit(visit, reach.ShareLevel == models.LocationShareLevelOwner)
 	}
-	return view, nil
+	return view
 }
 
 func (self *graph) ListLocationVisits(ctx context.Context, arguments ListLocationVisitsArguments) (*PlaceVisitPageView, error) {
@@ -1207,6 +1217,10 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 		if err != nil {
 			return nil, err
 		}
+		if stored.IsRefused {
+			view.RefusedVisitCount++
+			continue
+		}
 		if stored.IsNew {
 			view.NewVisitCount++
 		} else if stored.IsChanged {
@@ -1221,12 +1235,45 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 			madePlaces = append(madePlaces, stored.MadePlace)
 		}
 	}
+	if view.RefusedVisitCount > 0 {
+		log.Warningf("user %s is at %d places, the most there can be: %d visits of a report were left out for needing a new place",
+			user.ID, db.PlaceCountMost, view.RefusedVisitCount)
+	}
+	// Visits delivered in any order end up as the sequence they would have
+	// been in order.
+	if len(arguments.Visits) > 0 {
+		from, until := reportedVisitRange(arguments.Visits)
+		if err := tx.NormalizePlaceVisits(user.ID, from, until); err != nil {
+			return nil, locationFailure(err)
+		}
+	}
+	self.takeNewPlacesAfterCommit(tx, user.ID, len(madePlaces))
 	// A batch the server already had changes nothing, so the people watching
 	// the map are not told to read the same position again.
 	if isChanged {
 		self.afterLocationChange(ctx, tx, user.ID, notices, madePlaces)
 	}
 	return view, nil
+}
+
+// reportedVisitRange is the earliest and the latest time the visits of a
+// report give.
+func reportedVisitRange(reported []ReportedVisit) (time.Time, time.Time) {
+	var from, until time.Time
+	for _, visit := range reported {
+		for _, at := range []*time.Time{visit.ArrivedAt, visit.DepartedAt} {
+			if at == nil {
+				continue
+			}
+			if from.IsZero() || at.Before(from) {
+				from = *at
+			}
+			if until.IsZero() || at.After(until) {
+				until = *at
+			}
+		}
+	}
+	return from, until
 }
 
 // visitNotice is an arrival or a departure the people a location is shared
@@ -1274,6 +1321,10 @@ type storedVisit struct {
 	// shared with, nil for none.
 	Notice *visitNotice
 
+	// IsRefused is true for a visit that was not stored because it needed a new
+	// place and the person has the most places they may have.
+	IsRefused bool
+
 	// MadePlace is the place the visit made because the person had none there,
 	// nil when it was at a place they had.
 	MadePlace *models.Place
@@ -1302,6 +1353,11 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 		visit.PlaceID = known.PlaceID
 	default:
 		matched, isMade, err := self.placeForReportedVisit(tx, userId, reported)
+		if errors.Is(err, db.ErrPlaceCountMost) {
+			// The rest of the batch is stored: the person's positions and
+			// their visits at places they have are not lost for this one.
+			return &storedVisit{IsRefused: true}, nil
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -1321,7 +1377,11 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	stored.IsChanged = !isNew && (known == nil || addsATime(known.ArrivedAt, visit.ArrivedAt) || addsATime(known.DepartedAt, visit.DepartedAt))
 	// An arrival is told when it is first heard of, and a departure when it
 	// is added to a visit that had none.
+	// A new visit that comes with its departure (the arrival report was lost)
+	// is told by its latest event: the person has left.
 	switch {
+	case isNew && reported.DepartedAt != nil && reported.ArrivedAt != nil:
+		stored.Notice = &visitNotice{Visit: visit, IsArrival: false, HappenedAt: *reported.DepartedAt}
 	case isNew && reported.ArrivedAt != nil:
 		stored.Notice = &visitNotice{Visit: visit, IsArrival: true, HappenedAt: *reported.ArrivedAt}
 	case !isNew && known != nil && known.DepartedAt == nil && reported.DepartedAt != nil && visit.DepartedAt != nil:
@@ -1357,13 +1417,16 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 	if err != nil || found != nil {
 		return found, false, err
 	}
-	if err := self.allowNewPlace(userId); err != nil {
+	if err := self.requireNewPlaceAllowance(userId); err != nil {
 		return nil, false, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
 		PlaceName: placeNameFor(reported.LatitudeDegrees, reported.LongitudeDegrees), LatitudeDegrees: reported.LatitudeDegrees,
 		LongitudeDegrees: reported.LongitudeDegrees,
 	})
+	if errors.Is(err, db.ErrPlaceCountMost) {
+		return nil, false, err
+	}
 	if err != nil {
 		return nil, false, locationFailure(err)
 	}
@@ -1414,12 +1477,13 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 		} else {
 			made.PlaceName = placeNameFor(made.LatitudeDegrees, made.LongitudeDegrees)
 		}
-		if err := self.allowNewPlace(userId); err != nil {
+		if err := self.requireNewPlaceAllowance(userId); err != nil {
 			return nil, err
 		}
 		if saved, err = tx.CreatePlace(userId, made); err != nil {
 			return nil, locationFailure(err)
 		}
+		self.takeNewPlacesAfterCommit(tx, userId, 1)
 		if !saved.IsNamedByPerson {
 			detached := context.WithoutCancel(ctx)
 			tx.AfterCommit(func() { self.namePlacesNow(detached, []*models.Place{saved}) })
@@ -1566,7 +1630,7 @@ func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments Ch
 	if placeName == "" {
 		placeName = placeNameFor(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
 	}
-	if err := self.allowNewPlace(userId); err != nil {
+	if err := self.requireNewPlaceAllowance(userId); err != nil {
 		return nil, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
@@ -1578,6 +1642,7 @@ func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments Ch
 	if err != nil {
 		return nil, locationFailure(err)
 	}
+	self.takeNewPlacesAfterCommit(tx, userId, 1)
 	return made, nil
 }
 

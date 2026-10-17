@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/ratelimit"
 )
 
@@ -50,10 +51,23 @@ func (self *graph) allowPlaceLookup(userId string) error {
 	return nil
 }
 
-// allowNewPlace refuses an account that makes places too fast.
-func (self *graph) allowNewPlace(userId string) error {
-	if !self.locationLimits().newPlaces.Allow(userId) {
+// requireNewPlaceAllowance refuses an account that has used up what it may make
+// of places. It takes nothing: the places are counted once what makes them is
+// committed (takeNewPlacesAfterCommit), so that a batch that is rolled back
+// costs nothing and a batch that needs many places is not refused halfway.
+func (self *graph) requireNewPlaceAllowance(userId string) error {
+	if self.locationLimits().newPlaces.For(userId).Available() < 1 {
 		return api.ErrTooManyRequests
 	}
 	return nil
+}
+
+// takeNewPlacesAfterCommit takes the places a change made from the account's
+// allowance once the change is committed, as many as are left: an account that
+// made more than it had waits for the allowance to fill again.
+func (self *graph) takeNewPlacesAfterCommit(tx db.Transaction, userId string, placeCount int) {
+	if placeCount <= 0 {
+		return
+	}
+	tx.AfterCommit(func() { self.locationLimits().newPlaces.For(userId).TakeAvailable(int64(placeCount)) })
 }

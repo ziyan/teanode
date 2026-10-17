@@ -117,12 +117,15 @@ func placeTextForModel(text string) string {
 }
 
 // openVisitEnds says when each visit with an arrival and no departure was
-// over, for the visits that a later visit followed: the moment the next visit
-// began. A phone that never delivered a departure would otherwise leave the
-// person at the first place for ever, in the day documents and in the digest's
-// hours, next to the places they really went on to. The visit that is last is
-// not in the answer: it may be going on. The key is the visit's ID.
-func openVisitEnds(visits []*models.PlaceVisit) map[string]time.Time {
+// over: the moment the next visit began. A phone that never delivered a
+// departure would otherwise leave the person at the first place for ever, in
+// the day documents and in the digest's hours, next to the places they really
+// went on to. A visit that nothing followed ends at the latest position the
+// person reported, or at its arrival when that is later or there is none, so
+// that a phone that stopped reporting (the app removed, the location switched
+// off) does not add a day to the place every day after. The key is the visit's
+// ID.
+func openVisitEnds(visits []*models.PlaceVisit, latestPositionAt time.Time) map[string]time.Time {
 	starts := make([]time.Time, 0, len(visits))
 	for _, visit := range visits {
 		switch {
@@ -139,17 +142,21 @@ func openVisitEnds(visits []*models.PlaceVisit) map[string]time.Time {
 			continue
 		}
 		next := sort.Search(len(starts), func(index int) bool { return starts[index].After(*visit.ArrivedAt) })
-		if next < len(starts) {
+		switch {
+		case next < len(starts):
 			ends[visit.ID] = starts[next]
+		case latestPositionAt.After(*visit.ArrivedAt):
+			ends[visit.ID] = latestPositionAt
+		default:
+			ends[visit.ID] = *visit.ArrivedAt
 		}
 	}
 	return ends
 }
 
 // locationVisitSpan is when a visit began and ended within one day, cut to the
-// day. A visit with no departure is taken to last to the end of the day: a
-// finished day ended with the person still there, as far as anyone reported,
-// unless a later visit began, which ended it.
+// day. A visit with no departure lasts until a later visit began, or until the
+// latest position the person reported (openVisitEnds).
 // A visit with no arrival (iOS reported only the departure) is a moment.
 type locationVisitSpan struct {
 	visit               *models.PlaceVisit
@@ -161,9 +168,9 @@ type locationVisitSpan struct {
 
 // locationVisitSpans cuts the visits to the day [dayStart, dayEnd), in order
 // of when they began, leaving out those that do not touch it.
-func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time) []locationVisitSpan {
+func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd, latestPositionAt time.Time) []locationVisitSpan {
 	spans := []locationVisitSpan{}
-	laterVisitStarts := openVisitEnds(visits)
+	laterVisitStarts := openVisitEnds(visits, latestPositionAt)
 	for _, visit := range visits {
 		span := locationVisitSpan{visit: visit}
 		switch {
@@ -196,7 +203,7 @@ func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time)
 		if span.start.Before(dayStart) {
 			span.start, span.doesBeginEarlier = dayStart, true
 		}
-		if span.end.After(dayEnd) || (visit.DepartedAt == nil && !isFollowed) {
+		if span.end.After(dayEnd) {
 			span.end, span.doesContinueNextDay = dayEnd, true
 		}
 		spans = append(spans, span)
@@ -217,9 +224,9 @@ func locationClock(moment, dayEnd time.Time) string {
 // order, and, when they have a place labeled home, how long they were at
 // places other than home. dayStart is the first moment of the day in the
 // person's zone. It is empty when no visit touches the day.
-func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, hasHomePlace bool) string {
+func locationDayText(visits []*models.PlaceVisit, dayStart, latestPositionAt time.Time, hasHomePlace bool) string {
 	dayEnd := dayStart.AddDate(0, 0, 1)
-	spans := locationVisitSpans(visits, dayStart, dayEnd)
+	spans := locationVisitSpans(visits, dayStart, dayEnd, latestPositionAt)
 	if len(spans) == 0 {
 		return ""
 	}
@@ -332,8 +339,14 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		if err != nil {
 			return err
 		}
+		var latestPositionAt time.Time
+		if latest, err := tx.GetLatestLocationPoint(owner.ID); err != nil {
+			return err
+		} else if latest != nil {
+			latestPositionAt = latest.MeasuredAt
+		}
 		for dayStart := from; dayStart.Before(today); dayStart = dayStart.AddDate(0, 0, 1) {
-			text := locationDayText(visits, dayStart, len(homes) > 0)
+			text := locationDayText(visits, dayStart, latestPositionAt, len(homes) > 0)
 			if text == "" {
 				// A day filed before its visits were erased or its places
 				// forgotten has nothing left to say.

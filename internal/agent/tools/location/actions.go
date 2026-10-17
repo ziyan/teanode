@@ -165,10 +165,10 @@ var errOthersInChat = errors.New("another person's location is not repeated into
 	"the person can ask in a private conversation with you instead")
 
 // personId is the account of somebody who shares their location with the
-// person, by username; empty is the person's own. With needsHistory, somebody
+// person, by username; empty is the person's own. With doesNeedHistory, somebody
 // who shares only where they are now is refused in those words. In a chat
 // turn nobody else's location is read.
-func (self *scope) personId(ctx context.Context, username string, needsHistory bool) (*string, error) {
+func (self *scope) personId(ctx context.Context, username string, doesNeedHistory bool) (*string, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, nil
@@ -184,7 +184,7 @@ func (self *scope) personId(ctx context.Context, username string, needsHistory b
 	}
 	for _, each := range result.ListSharedLocations {
 		if strings.EqualFold(each.Username, username) {
-			if needsHistory && each.ShareLevel != "history" {
+			if doesNeedHistory && each.ShareLevel != "history" {
 				return nil, fmt.Errorf("%s shares only where they are now", each.Username)
 			}
 			return &each.UserID, nil

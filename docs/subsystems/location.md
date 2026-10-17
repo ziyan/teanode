@@ -53,6 +53,23 @@ loses the signal at the front door and finds it again does not make two. Which
 visit the surviving row carries does not matter to the phone, because every key
 that was sent for either still finds it.
 
+Visits can arrive in any order (a phone that was offline sends a day at once, a
+batch is sent again after the next one). After the visits of a report are
+stored, the server puts the person's visits around those times in order: a visit
+with no departure ends at the arrival of the next visit, a visit whose departure
+runs past the arrival of the next visit at another place ends at that arrival,
+visits to one place with a visit at another place between them are not joined,
+and a visit that was joined before the visit between its parts was heard of is
+split again where that visit began. A visit known only by its departure is not
+joined to anything until its arrival is reported. The result is the same as if
+the events had come in order.
+
+At the most places a person may have (5000), a visit that would need a new place
+is left out, the rest of the batch is stored, and the answer's
+`refusedVisitCount` says how many were left out. The allowance of 60 new places
+a minute is taken once the report is committed, for the places it made, so a
+report that is rolled back takes nothing and a full report of new places passes.
+
 Storing a visit takes the person's lock, so two reports at the same moment (a
 phone that resends while the first send is still being stored) take turns and
 make one visit at one place. An arrival, or a check-in, ends every other visit
@@ -83,7 +100,10 @@ three waiting places of each person in a run and none of a person who may not
 use Location. A road, a rail line, a stop, a barrier, a pole or a man-made
 structure such as an elevator is not a point of interest, so the address names
 the place instead (house number and road, then road, then neighborhood, then
-city). The
+city). A
+provider that is too busy to be asked gives the place's claim back, so the next
+run takes it at once, and only the first three places of a report are named right
+away. The
 agent's periodic job is the sweeper for places whose first try failed; it takes a
 place again once its claim is old. A failed try is stored as a fixed sentence
 ("could not reach the place provider"), never the provider's address or the
@@ -187,7 +207,10 @@ answers carry the untrusted mark.
   hours were spent at which places. Every run looks at the last 14 days again, so
   a day written again after an erase of part of it, a forgotten place or a new
   name or label says what is left. A day whose visits are all erased has no
-  document.
+  document. A visit with no departure that no later visit followed lasts only
+  until the latest position the person reported (or its arrival, if none), in the
+  days and in the digest, so a phone that stopped reporting does not add hours
+  every day after.
 - **Only where a turn can ask a browser or phone** does `now` ask for a fresh
   position, once; elsewhere it answers the last one kept, with its age.
 

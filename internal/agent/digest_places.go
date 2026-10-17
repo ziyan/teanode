@@ -60,13 +60,14 @@ type digestPlaceTotals struct {
 // placesTheyWent is the lines of the section, fenced as record text is because
 // the place names in them were written by strangers, or empty when the stretch
 // has no visits. A visit is counted in the stretch it began in, and its hours
-// are cut to the stretch. A visit still in progress lasts until now, unless a
-// later visit began, which ended it. Places with a label come first, one line
+// are cut to the stretch. A visit with no departure lasts until a later visit
+// began or the latest position the person reported (openVisitEnds), and not
+// after now. Places with a label come first, one line
 // for each label, then the places with no label that took the most hours.
-func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zone *time.Location) string {
+func placesTheyWent(visits []*models.PlaceVisit, from, until, now, latestPositionAt time.Time, zone *time.Location) string {
 	byLabel := map[models.PlaceLabel]*digestPlaceTotals{}
 	byPlace := map[string]*digestPlaceTotals{}
-	laterVisitStarts := openVisitEnds(visits)
+	laterVisitStarts := openVisitEnds(visits, latestPositionAt)
 	for _, visit := range visits {
 		place := visit.Place
 		if place == nil {
@@ -89,8 +90,11 @@ func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, zon
 			endedAt = *visit.DepartedAt
 		case isFollowed && laterVisitStart.Before(now):
 			endedAt = laterVisitStart
-		case now.After(startedAt):
+		case isFollowed:
 			endedAt = now
+		}
+		if endedAt.Before(startedAt) {
+			endedAt = startedAt
 		}
 		clippedStart, clippedEnd := startedAt, endedAt
 		if clippedStart.Before(from) {

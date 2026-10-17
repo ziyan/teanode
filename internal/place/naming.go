@@ -63,6 +63,14 @@ func NameClaimed(ctx context.Context, database db.Database, provider Provider, c
 	if askErr != nil && ctx.Err() != nil {
 		return ctx.Err()
 	}
+	if errors.Is(askErr, ErrProviderBusy) {
+		// Nothing was asked, so the place is not waiting out a failure: its
+		// claim is given back and the next run of the naming job takes it.
+		log.Infof("the place provider was busy, place %s is left for the next run", claimed.ID)
+		return database.TransactionContext(ctx, func(tx db.Transaction) error {
+			return tx.ReleasePlaceClaim(claimed.ID, claimed.NamingClaimedAt, FailureSentence(askErr), time.Now())
+		})
+	}
 	var named *db.NamedPlace
 	errorMessage := ""
 	switch {

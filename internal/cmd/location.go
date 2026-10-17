@@ -292,9 +292,9 @@ func noteNextPage(nextOffset *int, first int) {
 
 // locationPerson is the account of the person named with --person: somebody
 // who shares their location with the caller. Empty without the flag. With
-// needsHistory, somebody who shares only where they are now is refused in
+// doesNeedHistory, somebody who shares only where they are now is refused in
 // those words, since the server answers not found for what they did not share.
-func locationPerson(ctx context.Context, command *cli.Command, connection *client.Client, needsHistory bool) (string, error) {
+func locationPerson(ctx context.Context, command *cli.Command, connection *client.Client, doesNeedHistory bool) (string, error) {
 	username := strings.TrimSpace(command.String("person"))
 	if username == "" {
 		return "", nil
@@ -305,7 +305,7 @@ func locationPerson(ctx context.Context, command *cli.Command, connection *clien
 	}
 	for _, each := range people {
 		if strings.EqualFold(each.Username, username) {
-			if needsHistory && each.ShareLevel != string(models.LocationShareLevelHistory) {
+			if doesNeedHistory && each.ShareLevel != string(models.LocationShareLevelHistory) {
 				return "", fmt.Errorf("%s shares only where they are now", each.Username)
 			}
 			return each.UserID, nil

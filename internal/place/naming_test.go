@@ -167,3 +167,28 @@ func TestNameClaimedDropsTheAnswerForAPlaceMovedMeanwhile(t *testing.T) {
 		t.Errorf("the old position's answer was kept: %+v", waiting)
 	}
 }
+
+// A provider that is too busy to be asked gives the claim back, so the next
+// run of the naming job takes the place at once and not ten minutes later.
+func TestNameNowReleasesTheClaimWhenTheProviderIsBusy(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+
+	userId, placeId := newWaitingPlace(t, database, "name-now-busy")
+	busy := &scriptedProvider{err: ErrProviderBusy}
+	if err := NameNow(context.Background(), database, busy, placeId); err != nil {
+		t.Fatalf("NameNow: %s", err)
+	}
+	waiting := readPlace(t, database, userId, placeId)
+	if waiting.NamedAt != nil || waiting.NamingClaimedAt != nil || waiting.NamingErrorMessage == "" {
+		t.Errorf("waiting, with no claim and the reason: %+v", waiting)
+	}
+	// The next try is asked, not left alone for the length of a claim.
+	provider := &scriptedProvider{found: &Found{PlaceName: "Birch Cafe", OSMType: models.OSMTypeNode, OSMID: 21, LatitudeDegrees: 10.5, LongitudeDegrees: 20.5}}
+	if err := NameNow(context.Background(), database, provider, placeId); err != nil || provider.askedCount != 1 {
+		t.Fatalf("taken again at once: %v, asked %d times", err, provider.askedCount)
+	}
+	if named := readPlace(t, database, userId, placeId); named.PlaceName != "Birch Cafe" || named.NamingErrorMessage != "" {
+		t.Errorf("named: %+v", named)
+	}
+}

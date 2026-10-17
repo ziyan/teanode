@@ -8,6 +8,10 @@ import (
 	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
+// placesNamedAtOnceMost is how many of the places a change made are named right
+// after it; the provider answers one request a second.
+const placesNamedAtOnceMost = 3
+
 // namePlacesNow names the places a change has just made, once it is
 // committed, so that a place has its name within seconds on a server where the
 // agent is off as well as one where it is on. It does not wait: the provider
@@ -25,6 +29,12 @@ func (self *graph) namePlacesNow(ctx context.Context, madePlaces []*models.Place
 	}
 	if provider == nil {
 		return
+	}
+	// A batch that makes dozens of places would have most of them wait their
+	// turn behind the provider's limiter and give up; the first few are named
+	// now and the naming job takes the rest, a few of each person's per run.
+	if len(madePlaces) > placesNamedAtOnceMost {
+		madePlaces = madePlaces[:placesNamedAtOnceMost]
 	}
 	for _, made := range madePlaces {
 		placeId := made.ID
