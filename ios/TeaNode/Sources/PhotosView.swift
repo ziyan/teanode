@@ -268,6 +268,15 @@ struct PhotosScreen: View {
                 }
                 .toolbar {
                     MenuButton()
+                    if model.collection != .trash {
+                        ToolbarItem(placement: .primaryAction) {
+                            NavigationLink {
+                                PhotoBackupView(connection: model.connection)
+                            } label: {
+                                Label("Photo backup", systemImage: "icloud.and.arrow.up")
+                            }
+                        }
+                    }
                     if model.collection == .trash, !model.photos.isEmpty {
                         ToolbarItem(placement: .primaryAction) {
                             Menu {
@@ -311,7 +320,8 @@ struct PhotosScreen: View {
         if let listing = model.listing {
             if listing.photos.isEmpty {
                 ScrollView {
-                    PhotosEmptyView(collection: model.collection, trashRetentionDays: model.library?.trashRetentionDays)
+                    PhotosEmptyView(
+                        collection: model.collection, trashRetentionDays: model.library?.trashRetentionDays, backupConnection: model.connection)
                         .containerRelativeFrame(.vertical)
                 }
             } else {
@@ -510,6 +520,8 @@ struct PhotoCell: View {
 struct PhotosEmptyView: View {
     let collection: PhotoCollection
     var trashRetentionDays: Int?
+    /// Where the empty library offers to back this iPhone up; nil leaves the offer out.
+    var backupConnection: Connection?
 
     var body: some View {
         switch collection {
@@ -518,6 +530,13 @@ struct PhotosEmptyView: View {
                 Label("No photos yet", systemImage: "photo.on.rectangle")
             } description: {
                 Text("Back up this iPhone's photos in Settings, or add photos on the dashboard.")
+            } actions: {
+                if let backupConnection {
+                    NavigationLink("Back up this iPhone") {
+                        PhotoBackupView(connection: backupConnection)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
         case .favorites:
             ContentUnavailableView {

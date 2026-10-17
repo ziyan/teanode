@@ -629,6 +629,9 @@ final class AppModel {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey)
         }
         if let account { await RecordingUploads.shared.cancel(accountKey: account.accountKey) }
+        // Backup goes with the sign-in, and its password is revoked while the
+        // sign-in can still do it.
+        if let account { await PhotoBackupEngine.shared.accountRemoved(accountKey: account.accountKey, connection: connection) }
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
@@ -674,6 +677,7 @@ final class AppModel {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: other.accountKey)
         }
         await RecordingUploads.shared.cancel(accountKey: other.accountKey)
+        await PhotoBackupEngine.shared.accountRemoved(accountKey: other.accountKey, connection: otherConnections[other.accountKey])
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)

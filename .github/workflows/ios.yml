@@ -317,6 +317,12 @@ jobs:
           shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-empty-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-empty
+          # Photo backup, off and part way through a library, with invented counts (opened from Settings).
+          shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
+          shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
+          shoot photos-backup-on-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-on
+          shoot photos-backup-on-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-on
+          shoot photos-backup-on-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-on
           # Settings, and the screens it pushes, named by -TeaNodeScreen.
           shoot settings-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings
           shoot settings-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen settings

@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         center.delegate = self
         center.setNotificationCategories(NotificationCategories.fixed)
         HomeScreenActions.offer()
+        // The photo backup's two background tasks have to be registered before
+        // the app has finished launching.
+        PhotoBackupEngine.registerBackgroundTasks()
         return true
     }
 
@@ -64,6 +67,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
 
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandler: @escaping () -> Void) {
+        if identifier == PhotoBackupSession.identifier {
+            PhotoBackupEngine.shared.handleBackgroundEvents(identifier: identifier, completion: completionHandler)
+            return
+        }
         RecordingUploads.shared.handleBackgroundEvents(identifier: identifier, completion: completionHandler)
     }
 

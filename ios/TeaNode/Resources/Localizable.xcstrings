@@ -53771,6 +53771,656 @@
           }
         }
       }
+    },
+    "Back up this iPhone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone をバックアップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份这部 iPhone"
+          }
+        }
+      }
+    },
+    "Turn off photo backup?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真のバックアップをオフにしますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭照片备份？"
+          }
+        }
+      }
+    },
+    "This iPhone stops backing up and its backup password is revoked. Photos already on TeaNode stay there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone はバックアップを停止し、バックアップ用パスワードは取り消されます。すでに TeaNode にある写真はそのまま残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 将停止备份，其备份密码会被撤销。已经在 TeaNode 上的照片会保留。"
+          }
+        }
+      }
+    },
+    "Photos and videos on this iPhone are copied to your TeaNode server. Deleting a photo on this iPhone does not delete it from TeaNode.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この iPhone の写真とビデオは TeaNode サーバーにコピーされます。この iPhone で写真を削除しても、TeaNode からは削除されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这部 iPhone 上的照片和视频会复制到你的 TeaNode 服务器。在这部 iPhone 上删除照片不会把它从 TeaNode 中删除。"
+          }
+        }
+      }
+    },
+    "Use mobile data": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モバイルデータ通信を使用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用移动数据"
+          }
+        }
+      }
+    },
+    "Include the Hidden album": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「非表示」アルバムを含める"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含“已隐藏”相簿"
+          }
+        }
+      }
+    },
+    "Photos and videos go up over Wi-Fi unless you allow mobile data. The Hidden album is left out unless you include it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モバイルデータ通信を許可しない限り、写真とビデオは Wi-Fi でのみアップロードされます。「非表示」アルバムは、含める設定にしない限りバックアップされません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "除非你允许使用移动数据，否则照片和视频只通过 Wi-Fi 上传。“已隐藏”相簿默认不备份，除非你选择包含。"
+          }
+        }
+      }
+    },
+    "Back up now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今すぐバックアップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即备份"
+          }
+        }
+      }
+    },
+    "Device password": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイスのパスワード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备密码"
+          }
+        }
+      }
+    },
+    "This password can only add photos to your library. Turning backup off revokes it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このパスワードでは写真ライブラリへの追加だけができます。バックアップをオフにすると取り消されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此密码只能向你的照片库添加照片。关闭备份会撤销它。"
+          }
+        }
+      }
+    },
+    "Backup reads your whole library, so TeaNode needs Full Access. Open Settings, choose Photos, then Full Access.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップはライブラリ全体を読み取るため、TeaNode には「フルアクセス」が必要です。「設定」を開き、「写真」から「フルアクセス」を選んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份需要读取你的整个照片库，因此 TeaNode 需要“完全访问”。请打开“设置”，选择“照片”，然后选择“完全访问”。"
+          }
+        }
+      }
+    },
+    "TeaNode can only see some of your photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode には写真の一部しか見えません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 只能看到你的部分照片。"
+          }
+        }
+      }
+    },
+    "TeaNode cannot see your photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode は写真を見ることができません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法查看你的照片。"
+          }
+        }
+      }
+    },
+    "TeaNode needs access to your photos.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode には写真へのアクセスが必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 需要访问你的照片。"
+          }
+        }
+      }
+    },
+    "%lld of %lld backed up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld 件中 %1$lld 件をバックアップ済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已备份 %1$lld / %2$lld"
+          }
+        }
+      }
+    },
+    "Last finished": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の完了"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次完成"
+          }
+        }
+      }
+    },
+    "%lld files could not be backed up. Back up now tries them again.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file could not be backed up. Back up now tries it again."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files could not be backed up. Back up now tries them again."
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 個のファイルをバックアップできませんでした。「今すぐバックアップ」で再試行します。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld 個のファイルをバックアップできませんでした。「今すぐバックアップ」で再試行します。"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个文件无法备份。点按“立即备份”会再次尝试。"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "有 %lld 个文件无法备份。点按“立即备份”会再次尝试。"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The last problem": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近の問題"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近的问题"
+          }
+        }
+      }
+    },
+    "Backup tries again the next time it runs.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次回のバックアップ時に再試行します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份下次运行时会再次尝试。"
+          }
+        }
+      }
+    },
+    "The server did not accept this iPhone's backup password.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーがこの iPhone のバックアップ用パスワードを受け付けませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器不接受这部 iPhone 的备份密码。"
+          }
+        }
+      }
+    },
+    "This makes a new backup password. Photos already backed up are not sent again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいバックアップ用パスワードを作成します。バックアップ済みの写真は再送信されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这会创建新的备份密码。已备份的照片不会再次上传。"
+          }
+        }
+      }
+    },
+    "Everything is backed up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてバックアップ済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部已备份"
+          }
+        }
+      }
+    },
+    "Ready to back up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップの準備ができました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以开始备份"
+          }
+        }
+      }
+    },
+    "Waiting for the next pass": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次のバックアップを待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待下一次备份"
+          }
+        }
+      }
+    },
+    "Reading your photo library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真ライブラリを読み込んでいます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取你的照片库"
+          }
+        }
+      }
+    },
+    "Backing up": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップ中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在备份"
+          }
+        }
+      }
+    },
+    "Waiting for Wi-Fi or iCloud": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wi-Fi または iCloud を待っています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待 Wi-Fi 或 iCloud"
+          }
+        }
+      }
+    },
+    "Needs access to all your photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての写真へのアクセスが必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要访问你的全部照片"
+          }
+        }
+      }
+    },
+    "Needs you to sign in again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再度のサインインが必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要你重新登录"
+          }
+        }
+      }
+    },
+    "Photo backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真のバックアップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片备份"
+          }
+        }
+      }
+    },
+    "%@ photo backup": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の写真バックアップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的照片备份"
+          }
+        }
+      }
+    },
+    "Backup is off. Revoke its password under Devices, then Sync passwords.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップはオフになりました。「デバイス」の「同期パスワード」でそのパスワードを取り消してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份已关闭。请在“设备”的“同步密码”中撤销其密码。"
+          }
+        }
+      }
+    },
+    "Backup is off and its password is revoked.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップをオフにし、そのパスワードを取り消しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份已关闭，其密码已撤销。"
+          }
+        }
+      }
+    },
+    "Backup is off, but its password could not be revoked. Revoke it under Devices, then Sync passwords.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップはオフになりましたが、パスワードを取り消せませんでした。「デバイス」の「同期パスワード」で取り消してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "备份已关闭，但无法撤销其密码。请在“设备”的“同步密码”中撤销。"
+          }
+        }
+      }
+    },
+    "Backing up photos": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真をバックアップ中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在备份照片"
+          }
+        }
+      }
+    },
+    "Starting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始しています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在开始"
+          }
+        }
+      }
+    },
+    "%lld of %lld files": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$lld 個中 %1$lld 個のファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld / %2$lld 个文件"
+          }
+        }
+      }
+    },
+    "Password name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "パスワード名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密码名称"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

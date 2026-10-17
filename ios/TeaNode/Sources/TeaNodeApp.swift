@@ -33,9 +33,16 @@ struct TeaNodeApp: App {
             .environment(\.locale, language.locale)
             .environment(app)
             .onOpenURL { url in app.open(url) }
-            .onAppear { appearance.apply() }
+            .onAppear {
+                appearance.apply()
+                PhotoBackupEngine.shared.sceneBecameActive()
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { appearance.apply() }
+                if phase == .active {
+                    appearance.apply()
+                    // Photos taken since are backed up when the app comes back.
+                    PhotoBackupEngine.shared.sceneBecameActive()
+                }
             }
         }
     }
@@ -381,6 +388,15 @@ struct SettingsForm: View {
                         }
                     }
                 }
+                if let connection = app.connection, app.services?.isPhotosEnabled == true {
+                    Section {
+                        NavigationLink {
+                            PhotoBackupView(connection: connection)
+                        } label: {
+                            PhotoBackupSettingsRow()
+                        }
+                    }
+                }
                 if let connection = app.connection {
                     Section("Your agent") {
                         NavigationLink {
@@ -473,6 +489,7 @@ struct SettingsForm: View {
                     isOperator = (try? await connection.isOperator()) ?? false
                 }
             }
+            .task { await PhotoBackupEngine.shared.refresh() }
             #if DEBUG
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
@@ -513,6 +530,7 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
+                case "photos-backup-off", "photos-backup-on": PhotoBackupView(connection: connection)
                 case "devices": DevicesView(connection: connection)
                 case "rules":
                     if let mail {
@@ -536,6 +554,22 @@ struct SettingsForm: View {
         let marketing = info?["CFBundleShortVersionString"] as? String ?? ""
         let build = info?["CFBundleVersion"] as? String ?? ""
         return "\(marketing) (\(build))"
+    }
+}
+
+/// PhotoBackupSettingsRow is the row in Settings that opens the Photo Backup
+/// screen, saying whether backup is on.
+struct PhotoBackupSettingsRow: View {
+    private let engine = PhotoBackupEngine.shared
+
+    var body: some View {
+        HStack {
+            Label("Photo backup", systemImage: "icloud.and.arrow.up")
+            Spacer()
+            (engine.isEnabled ? Text("On") : Text("Off"))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

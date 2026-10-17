@@ -285,6 +285,9 @@
         }
 
         /// The screen Settings opens for a screenshot: `-TeaNodeScreen people`.
+        /// `photos-backup-off` and `photos-backup-on` open Photo Backup off, and
+        /// part way through a library; the engine takes its invented counts from
+        /// this name (PhotoBackupEngine.applyDemo), so no server is asked.
         static var screen: String? {
             let arguments = ProcessInfo.processInfo.arguments
             guard let index = arguments.firstIndex(of: "-TeaNodeScreen"), index + 1 < arguments.count else { return nil }
