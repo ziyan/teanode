@@ -92,7 +92,7 @@ final class HerdrTests: XCTestCase {
             answering: #"{"data":{"ReadAgentHerdrScreen":{"herdrSession":\#(sessionJSON),"screenText":"$ ready"}}}"#)
         let screen = try await connection.readHerdrScreen(computer: "laptop", paneId: "w1-2")
         XCTAssertEqual(screen.screenText, "$ ready")
-        XCTAssertEqual(try sentVariables(fake), ["computer": .string("laptop"), "paneId": .string("w1-2")])
+        XCTAssertEqual(try sentVariables(fake), ["computer": .string("laptop"), "paneId": .string("w1-2"), "shouldKeepColor": .bool(true)])
     }
 
     func testSendCarriesTheTextAndOnlyTheAttachmentsThereAre() async throws {

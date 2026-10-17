@@ -180,8 +180,10 @@ extension Documents {
         }
         """
     public static let readHerdrScreen = """
-        query ($computer: String, $paneId: String!) {
-          ReadAgentHerdrScreen(computer: $computer, paneId: $paneId) { herdrSession { \(herdrSessionFields) } screenText }
+        query ($computer: String, $paneId: String!, $shouldKeepColor: Boolean) {
+          ReadAgentHerdrScreen(computer: $computer, paneId: $paneId, shouldKeepColor: $shouldKeepColor) {
+            herdrSession { \(herdrSessionFields) } screenText
+          }
         }
         """
     public static let sendHerdrSession = """
@@ -234,7 +236,8 @@ extension Connection {
     public func readHerdrScreen(computer: String, paneId: String) async throws -> HerdrScreen {
         struct Answer: Decodable, Sendable { let ReadAgentHerdrScreen: HerdrScreen }
         return try await execute(
-            Documents.readHerdrScreen, variables: ["computer": .string(computer), "paneId": .string(paneId)], as: Answer.self
+            Documents.readHerdrScreen, variables: ["computer": .string(computer), "paneId": .string(paneId), "shouldKeepColor": .bool(true)],
+            as: Answer.self
         ).ReadAgentHerdrScreen
     }
 

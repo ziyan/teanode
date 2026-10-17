@@ -463,20 +463,30 @@ struct CodingSessionView: View {
     /// largest text size does not cut any off; the plus stays in place.
     private func tabStrip(_ session: HerdrSession) -> some View {
         HStack(spacing: 4) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(model.siblings(of: session)) { tab in
-                        Button {
-                            selectedId = tab.id
-                        } label: {
-                            CodingTabChip(session: tab, isSelected: tab.id == selectedId)
+            // The chosen tab is kept in view: when the session opens, and
+            // whenever another is chosen or the tabs change.
+            ScrollViewReader { reader in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(model.siblings(of: session)) { tab in
+                            Button {
+                                selectedId = tab.id
+                            } label: {
+                                CodingTabChip(session: tab, isSelected: tab.id == selectedId)
+                            }
+                            .buttonStyle(.plain)
+                            .id(tab.id)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
+                .scrollIndicators(.hidden)
+                .onAppear { reader.scrollTo(selectedId) }
+                .onChange(of: selectedId) {
+                    withAnimation { reader.scrollTo(selectedId) }
+                }
+                .onChange(of: model.siblings(of: session).count) { reader.scrollTo(selectedId) }
             }
-            .scrollIndicators(.hidden)
             Menu {
                 Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
                 Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
@@ -555,13 +565,37 @@ struct CodingSessionView: View {
         }
     }
 
+    /// The screen as the program in the pane colored it, on a terminal's
+    /// dark ground whatever the app's appearance, since its colors were
+    /// chosen against one.
+    private var coloredScreen: AttributedString {
+        var screen = AttributedString()
+        for run in terminalRuns(screenText) {
+            var part = AttributedString(run.text)
+            var foreground = run.foreground.map(Color.init(terminal:)) ?? .terminalText
+            var background = run.background.map(Color.init(terminal:))
+            if run.isInverse {
+                (foreground, background) = (background ?? .terminalBackground, foreground)
+            }
+            part.foregroundColor = run.isDim ? foreground.opacity(0.6) : foreground
+            if let background { part.backgroundColor = background }
+            if run.isBold { part.inlinePresentationIntent = .stronglyEmphasized }
+            if run.isItalic { part.inlinePresentationIntent = (part.inlinePresentationIntent ?? []).union(.emphasized) }
+            if run.isUnderlined { part.underlineStyle = .single }
+            screen += part
+        }
+        return screen
+    }
+
     private func screen(_ session: HerdrSession) -> some View {
         ScrollView([.vertical, .horizontal]) {
             VStack(alignment: .leading, spacing: 12) {
-                Text(verbatim: screenText)
+                Text(coloredScreen)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                     .fixedSize()
+                    .padding(10)
+                    .background(Color.terminalBackground, in: .rect(cornerRadius: 8))
                 questionCard(session)
             }
             .padding()
@@ -1229,3 +1263,13 @@ struct CodingOpenSheet: View {
         .padding()
     }
 #endif
+
+extension Color {
+    /// A terminal's ground and its text before any color is chosen.
+    static let terminalBackground = Color(red: 30 / 255, green: 30 / 255, blue: 30 / 255)
+    static let terminalText = Color(red: 212 / 255, green: 212 / 255, blue: 212 / 255)
+
+    init(terminal color: TerminalColor) {
+        self.init(red: Double(color.red) / 255, green: Double(color.green) / 255, blue: Double(color.blue) / 255)
+    }
+}
