@@ -337,13 +337,6 @@ enum CodingPart: String, CaseIterable, Identifiable {
     case turns, screen
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .turns: String(localized: "Turns")
-        case .screen: String(localized: "Screen")
-        }
-    }
 }
 
 /// CodingSessionView is one coding session: its workspace's tabs, what was
@@ -440,17 +433,28 @@ struct CodingSessionView: View {
     private func content(_ session: HerdrSession) -> some View {
         VStack(spacing: 0) {
             tabStrip(session)
-            Picker("Show", selection: $part) {
-                ForEach(CodingPart.allCases) { part in
-                    Text(part.title).tag(part)
+            // Turns or the screen, by one round button floating over the
+            // top right of what is shown, rather than a row of its own.
+            Group {
+                switch part {
+                case .turns: transcript(session)
+                case .screen: screen(session)
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-            switch part {
-            case .turns: transcript(session)
-            case .screen: screen(session)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    part = part == .turns ? .screen : .turns
+                } label: {
+                    Image(systemName: part == .turns ? "terminal" : "text.bubble")
+                        .font(.body.weight(.medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .accessibilityLabel(part == .turns ? Text("Show the screen") : Text("Show the turns"))
+                .padding(.trailing)
+                .padding(.top, 4)
             }
         }
         // Nothing can be sent while the session asks, and its question takes
