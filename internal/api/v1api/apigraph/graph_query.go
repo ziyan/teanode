@@ -37,7 +37,7 @@ var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgent
 // inShortTransaction. Everything such a mutation changes it changes in
 // transactions it commits itself, so a failure late in it does not undo what it
 // did before.
-var isTransactionFreeMutation = map[string]bool{"SavePhotoFromAttachment": true}
+var isTransactionFreeMutation = map[string]bool{"SavePhotoFromAttachment": true, "SavePhotoToLibrary": true}
 
 // Queries materialize their results within each root resolver. Keeping the
 // transaction there lets model-backed resolvers use separate read phases.

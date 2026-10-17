@@ -206,6 +206,7 @@ type Transaction interface {
 	RecordingMetadataOperation
 	PhotoOperation
 	PhotoAlbumOperation
+	PhotoAlbumShareOperation
 	PhotoFaceOperation
 	PhotoUploadOperation
 	RecordingRetryOperation

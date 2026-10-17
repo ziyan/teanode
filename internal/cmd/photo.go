@@ -74,6 +74,7 @@ func NewPhotoCommand() *cli.Command {
 				},
 				Action: runPhotoDownload,
 			},
+			{Name: "save", Usage: "keep a photo from a shared album, or a circle's, in your own library", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoSave},
 			{Name: "favorite", Usage: "make a photo a favorite", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "off", Usage: "take it out of the favorites"}}, Action: runPhotoFavorite},
 			{Name: "trash", Usage: "move photos to the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
 			{Name: "restore", Usage: "take photos out of the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
@@ -222,11 +223,29 @@ func runPhotoList(ctx context.Context, command *cli.Command) error {
 
 // printPhotoTable writes a page of photos, one a row.
 func printPhotoTable(photos []*models.Photo) error {
+	// A listing of an album holds other people's photos too; then each row
+	// says whose it is.
+	hasOthers := false
+	for _, photo := range photos {
+		hasOthers = hasOthers || photo.OwnerName != ""
+	}
 	rows := make([][]string, 0, len(photos))
 	for _, photo := range photos {
-		rows = append(rows, []string{photo.ID, photoTakenText(photo), string(photo.PhotoKind), photo.PlaceName, photoSizeText(photo), photoDurationText(photo), photoStateText(photo), photo.OriginalFilename})
+		row := []string{photo.ID, photoTakenText(photo), string(photo.PhotoKind), photo.PlaceName, photoSizeText(photo), photoDurationText(photo), photoStateText(photo), photo.OriginalFilename}
+		if hasOthers {
+			owner := "you"
+			if photo.OwnerName != "" {
+				owner = forTerminal(photo.OwnerName)
+			}
+			row = append(row, owner)
+		}
+		rows = append(rows, row)
 	}
-	return printTable([]string{"id", "date", "kind", "place", "size", "length", "state", "file"}, rows)
+	headers := []string{"id", "date", "kind", "place", "size", "length", "state", "file"}
+	if hasOthers {
+		headers = append(headers, "owner")
+	}
+	return printTable(headers, rows)
 }
 
 func runPhotoShow(ctx context.Context, command *cli.Command) error {
@@ -251,6 +270,9 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 		{"size", photoSizeText(photo)}, {"length", photoDurationText(photo)}, {"camera", strings.TrimSpace(photo.CameraMake + " " + photo.CameraModel)},
 		{"file name", photo.OriginalFilename}, {"favorite", yesNo(photo.IsFavorite)}, {"from", string(photo.PhotoSource)},
 		{"added", photo.CreatedAt.Local().Format("2006-01-02 15:04")}, {"processing", string(photo.PhotoProcessingState)},
+	}
+	if photo.OwnerName != "" {
+		fields = append(fields, [2]string{"owner", forTerminal(photo.OwnerName)})
 	}
 	if photo.Latitude != nil && photo.Longitude != nil {
 		fields = append(fields, [2]string{"coordinates", fmt.Sprintf("%.5f, %.5f", *photo.Latitude, *photo.Longitude)})
@@ -717,6 +739,26 @@ func savePhotoFile(ctx context.Context, connection *client.Client, file *models.
 		return err
 	}
 	isSaved = true
+	return nil
+}
+
+func runPhotoSave(ctx context.Context, command *cli.Command) error {
+	photoId := command.Args().First()
+	if photoId == "" || command.Args().Len() != 1 {
+		return usage("usage: teanode photo save <id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	saved, err := client.SavePhotoToLibrary(ctx, connection, photoId)
+	if err != nil {
+		return describeNotFound(command, err, "photo "+photoId)
+	}
+	if command.Bool("json") {
+		return PrintJSON(saved)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "saved to your library as %s\n", saved.ID)
 	return nil
 }
 

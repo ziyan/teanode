@@ -239,7 +239,7 @@ func (self *graph) SetPhotoFaceRecognition(ctx context.Context, arguments SetPho
 // maximumFacePreviewBytes bounds the large preview read to cut a face from.
 const maximumFacePreviewBytes = 64 << 20
 
-// photoFacePictureView serves the picture of one face to the owner of its
+// photoFacePictureView serves the picture of one face to whoever may read its
 // photo: a square cut from the photo's large preview. It is cut when asked
 // for, and cached by the browser; the ETag changes when the preview is made
 // again.
@@ -250,11 +250,21 @@ func (self *graph) photoFacePictureView(response http.ResponseWriter, request *h
 	}
 	var face *models.PhotoFace
 	var preview *models.PhotoPreview
-	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-		if face, err = transaction.GetPhotoFace(user.ID, mux.Vars(request)["photoFaceId"]); err != nil {
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		// The face is read through the owner of its photo once the person is
+		// let in to the photo: a face in a photo of a shared album is shown
+		// to whoever reads the album.
+		ownerUserId, err := transaction.GetPhotoFaceOwnerUserID(mux.Vars(request)["photoFaceId"])
+		if err != nil {
 			return err
 		}
-		preview, err = transaction.GetPhotoPreview(user.ID, face.PhotoID, models.PhotoPreviewLarge)
+		if face, err = transaction.GetPhotoFace(ownerUserId, mux.Vars(request)["photoFaceId"]); err != nil {
+			return err
+		}
+		if _, err = transaction.GetPhotoAccess(user.ID, face.PhotoID); err != nil {
+			return err
+		}
+		preview, err = transaction.GetPhotoPreview(ownerUserId, face.PhotoID, models.PhotoPreviewLarge)
 		return err
 	}); err != nil {
 		photoHttpError(response, err)

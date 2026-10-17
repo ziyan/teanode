@@ -797,7 +797,7 @@ func TestPhotoPreviewsBelongToTheOwner(test *testing.T) {
 func TestPhotoMigrationReverses(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
-	var migration, albumMigration, descriptionMigration, faceMigration migrations.Migration
+	var migration, albumMigration, descriptionMigration, faceMigration, shareMigration migrations.Migration
 	for _, candidate := range migrations.Migrations() {
 		switch candidate.ID {
 		case "0220_photo":
@@ -808,9 +808,11 @@ func TestPhotoMigrationReverses(test *testing.T) {
 			descriptionMigration = candidate
 		case "0223_photo_face":
 			faceMigration = candidate
+		case "0224_photo_album_share":
+			shareMigration = candidate
 		}
 	}
-	if migration.ID == "" || albumMigration.ID == "" || descriptionMigration.ID == "" || faceMigration.ID == "" {
+	if migration.ID == "" || albumMigration.ID == "" || descriptionMigration.ID == "" || faceMigration.ID == "" || shareMigration.ID == "" {
 		test.Fatal("the photo migrations are missing")
 	}
 	// The built-in roles exist once a server has started; a made-up one stands
@@ -819,7 +821,11 @@ func TestPhotoMigrationReverses(test *testing.T) {
 		dbtest.Exec(test, database, fmt.Sprintf(`INSERT INTO role (id, created_at, modified_at, name) VALUES ('role-%s', now(), now(), '%s')`, strings.ToLower(name), name))
 	}
 	// The faces, the descriptions and the albums refer to the photos, so they
-	// go first and come back last.
+	// go first and come back last; the shares refer to the albums.
+	dbtest.Exec(test, database, shareMigration.ReverseSQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name = 'photo_album_share'"); tables != "0" {
+		test.Fatal("the album share table survives the reverse")
+	}
 	dbtest.Exec(test, database, faceMigration.ReverseSQL)
 	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_face%'"); tables != "0" {
 		test.Fatalf("%s face tables survive the reverse", tables)
@@ -863,6 +869,10 @@ func TestPhotoMigrationReverses(test *testing.T) {
 	dbtest.Exec(test, database, faceMigration.SQL)
 	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo_face%'"); tables != "2" {
 		test.Fatalf("%s face tables after running it again", tables)
+	}
+	dbtest.Exec(test, database, shareMigration.SQL)
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name = 'photo_album_share'"); tables != "1" {
+		test.Fatal("the album share table is missing after running it again")
 	}
 }
 

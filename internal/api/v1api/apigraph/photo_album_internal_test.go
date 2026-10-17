@@ -31,7 +31,7 @@ func TestPhotoAlbumOperationsMakeFillRenameAndDeleteAnAlbum(test *testing.T) {
 			test.Fatalf("no albums should be an empty list: %v %v", albums, err)
 		}
 		album, err := world.graph.CreatePhotoAlbum(ctx, CreatePhotoAlbumArguments{AlbumTitle: " Picnic ", PhotoIDs: []string{first.ID, second.ID}})
-		if err != nil || album.AlbumTitle != "Picnic" || album.PhotoCount != 2 || album.UserID != ownerId {
+		if err != nil || album.AlbumTitle != "Picnic" || album.PhotoCount != 2 || album.OwnerUserID == nil || *album.OwnerUserID != ownerId {
 			test.Fatalf("created %+v %v", album, err)
 		}
 		// The cover is the one photo that has a small preview, addressed the
@@ -316,6 +316,11 @@ func TestPhotoAlbumClientDocumentsMatchTheBuiltSchema(test *testing.T) {
 		"AddPhotosToAlbum":      client.DocumentAddPhotosToAlbum,
 		"RemovePhotosFromAlbum": client.DocumentRemovePhotosFromAlbum,
 		"SetPhotoAlbumCover":    client.DocumentSetPhotoAlbumCover,
+		"ListPhotoAlbumShares":  client.DocumentListPhotoAlbumShares,
+		"SharePhotoAlbum":       client.DocumentSharePhotoAlbum,
+		"UpdatePhotoAlbumShare": client.DocumentUpdatePhotoAlbumShare,
+		"RemovePhotoAlbumShare": client.DocumentRemovePhotoAlbumShare,
+		"SavePhotoToLibrary":    client.DocumentSavePhotoToLibrary,
 		"ListPhotos":            client.DocumentListPhotos,
 		"CountPhotos":           client.DocumentCountPhotos,
 		"ReadPhoto":             client.DocumentReadPhoto,

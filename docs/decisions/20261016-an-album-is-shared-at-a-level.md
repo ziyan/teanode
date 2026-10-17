@@ -44,3 +44,14 @@ One table, `photo_album_share`, with `grantee_user_id` or
 `photo_album.user_id`, exactly one of which is set. The places that list "the
 person's albums" add the ones shared with them, each marked with its owner
 and level.
+
+A reader keeps a photo by saving it. Where the share includes where the
+photos were taken, the saved photo is made over the same blob and stores
+nothing. Otherwise it is the large preview the reader could see, stored as a
+file of their own, because the original's bytes carry the place and a copy of
+them would hand it over.
+
+A circle's album is not shared further. A person who does not reach an album
+has no photos in it: taking a share back, or leaving the circle it depended
+on, takes their photos out of the albums they no longer reach, in the same
+transaction.

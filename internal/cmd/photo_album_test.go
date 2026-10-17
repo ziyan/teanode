@@ -170,3 +170,127 @@ func TestAlbumSuggestPrintsDatesPlacesTitleAndCount(test *testing.T) {
 		test.Fatal("a date that is not one was accepted")
 	}
 }
+
+func TestAlbumListSaysWhoseEachAlbumIsAndWhatYouMayDoWithIt(test *testing.T) {
+	server := newPhotoServer(test)
+	server.albumsWithOthers = true
+	_, table, err := server.run(test, "album", "list")
+	if err != nil {
+		test.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(table), "\n")
+	if len(lines) != 4 {
+		test.Fatalf("a table of three albums:\n%s", table)
+	}
+	for index, want := range [][]string{{"owner", "level"}, {"album-1", "you", "owner"}, {"album-3", "Ben Example", "view"}, {"album-4", "circle Home", "contribute"}} {
+		fields := strings.Join(strings.Fields(lines[index]), " ")
+		for _, text := range want {
+			if !strings.Contains(fields, text) {
+				test.Errorf("line %d lacks %q:\n%s", index, text, table)
+			}
+		}
+	}
+}
+
+func TestAlbumShareSharesWithAPersonOrACircleAtALevel(test *testing.T) {
+	server := newPhotoServer(test)
+	output, _, err := server.run(test, "album", "share", "album-1", "--person", "Ben", "--contribute", "--with-location")
+	if err != nil || !strings.Contains(output, "shared with ben at contribute, with where the photos were taken (share share-person)") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	variables := server.variables[len(server.variables)-1]
+	if variables["photoAlbumId"] != "album-1" || variables["granteeUserId"] != "user-ben" || variables["granteeCircleId"] != nil || variables["shareLevel"] != "contribute" || variables["isLocationIncluded"] != true {
+		test.Fatalf("%v", variables)
+	}
+	// A circle by its name or its identifier, to view, without places.
+	output, _, err = server.run(test, "album", "share", "album-1", "--circle", "home")
+	if err != nil || !strings.Contains(output, "shared with everyone in Home at view, without where the photos were taken") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	variables = server.variables[len(server.variables)-1]
+	if variables["granteeCircleId"] != "circle-home" || variables["granteeUserId"] != nil || variables["shareLevel"] != "view" || variables["isLocationIncluded"] != false {
+		test.Fatalf("%v", variables)
+	}
+	if _, output, err := server.run(test, "album", "share", "album-1", "--circle", "circle-home", "--json"); err != nil || !strings.Contains(output, `"id": "share-circle"`) && !strings.Contains(output, `"id":"share-circle"`) {
+		test.Fatalf("%v: %s", err, output)
+	}
+
+	before := len(server.documents)
+	for name, arguments := range map[string][]string{
+		"no album":         {"album", "share", "--person", "ben"},
+		"neither":          {"album", "share", "album-1"},
+		"both":             {"album", "share", "album-1", "--person", "ben", "--circle", "home"},
+		"somebody unknown": {"album", "share", "album-1", "--person", "nobody"},
+		"a circle unknown": {"album", "share", "album-1", "--circle", "Nowhere"},
+	} {
+		if _, _, err := server.run(test, arguments...); err == nil {
+			test.Errorf("sharing with %s was accepted", name)
+		}
+	}
+	for _, document := range server.documents[before:] {
+		if strings.Contains(document, "SharePhotoAlbum(") {
+			test.Fatal("a share that was refused was sent")
+		}
+	}
+}
+
+func TestAlbumSharesListsAndUnshareTakesOneBack(test *testing.T) {
+	server := newPhotoServer(test)
+	_, table, err := server.run(test, "album", "shares", "album-1")
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, want := range []string{"ben", "view", "no", "share-person", "everyone in Home", "contribute", "yes", "share-circle"} {
+		if !strings.Contains(table, want) {
+			test.Fatalf("the table lacks %q:\n%s", want, table)
+		}
+	}
+	if variables := server.variables[len(server.variables)-1]; variables["photoAlbumId"] != "album-1" {
+		test.Fatalf("%v", variables)
+	}
+	output, _, err := server.run(test, "album", "unshare", "share-person")
+	if err != nil || !strings.Contains(output, "no longer shared") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	if variables := server.variables[len(server.variables)-1]; variables["photoAlbumShareId"] != "share-person" {
+		test.Fatalf("%v", variables)
+	}
+	for _, arguments := range [][]string{{"album", "shares"}, {"album", "unshare"}, {"album", "unshare", "a", "b"}} {
+		if _, _, err := server.run(test, arguments...); err == nil {
+			test.Fatalf("%v was accepted", arguments)
+		}
+	}
+}
+
+func TestAlbumCreateForACircleAndSaveASharedPhoto(test *testing.T) {
+	server := newPhotoServer(test)
+	if output, _, err := server.run(test, "album", "create", "Ours", "--circle", "Home", "photo-1"); err != nil || !strings.Contains(output, "created Ours (album-new)") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	if variables := server.variables[len(server.variables)-1]; variables["circleId"] != "circle-home" || variables["albumTitle"] != "Ours" {
+		test.Fatalf("%v", variables)
+	}
+	if _, _, err := server.run(test, "album", "create", "Ours", "--circle", "Nowhere"); err == nil {
+		test.Fatal("an album was made for a circle the person is not in")
+	}
+	// An album with no circle sends none.
+	if _, _, err := server.run(test, "album", "create", "Mine"); err != nil {
+		test.Fatal(err)
+	}
+	if variables := server.variables[len(server.variables)-1]; variables["circleId"] != nil {
+		test.Fatalf("%v", variables)
+	}
+
+	output, _, err := server.run(test, "save", "photo-shared")
+	if err != nil || !strings.Contains(output, "saved to your library as photo-mine") {
+		test.Fatalf("%v: %s", err, output)
+	}
+	if variables := server.variables[len(server.variables)-1]; variables["photoId"] != "photo-shared" {
+		test.Fatalf("%v", variables)
+	}
+	for _, arguments := range [][]string{{"save"}, {"save", "a", "b"}} {
+		if _, _, err := server.run(test, arguments...); err == nil {
+			test.Fatalf("%v was accepted", arguments)
+		}
+	}
+}

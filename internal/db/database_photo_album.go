@@ -9,41 +9,60 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// PhotoAlbumOperation owns the albums: named sets of a person's photos. Every
-// query is scoped by the owner, so an album or a photo that is somebody
-// else's is not found.
+// PhotoAlbumOperation owns the albums: named sets of photos that belong to a
+// person or to a circle. Who may do what with an album is decided here, in
+// GetPhotoAlbumAccess: the owner, a member of the circle that owns it, and
+// the people it is shared with each have their own part, and an album nobody
+// reaches is not found.
 //
 // An album holds references. A photo in the trash stays in its albums but is
 // not counted or listed there until it is restored.
 type PhotoAlbumOperation interface {
-	// ListPhotoAlbums lists the person's albums, the most recently changed
-	// first, each with its photo count, its cover and the dates of its photos.
+	// ListPhotoAlbums lists the albums the person reaches, the most recently
+	// changed first: their own, their circles', and those shared with them,
+	// each with its photo count, its cover, the dates of its photos and what
+	// the person may do with it.
 	ListPhotoAlbums(userId string) ([]*models.PhotoAlbum, error)
+
+	// GetPhotoAlbum is one album the person reaches at any level.
 	GetPhotoAlbum(userId, photoAlbumId string) (*models.PhotoAlbum, error)
 
-	// CreatePhotoAlbum makes an album holding the named photos, which must all
-	// be the person's.
+	// CreatePhotoAlbum makes an album of the person's holding the named
+	// photos, which must all be the person's.
 	CreatePhotoAlbum(userId, albumTitle string, photoIds []string) (*models.PhotoAlbum, error)
+
+	// CreateCirclePhotoAlbum makes an album that belongs to a circle the
+	// person is in, holding the named photos, which must all be the
+	// person's own: they stay theirs. ErrNotFound for a circle they are not
+	// in.
+	CreateCirclePhotoAlbum(userId, circleId, albumTitle string, photoIds []string) (*models.PhotoAlbum, error)
+
+	// RenamePhotoAlbum, DeletePhotoAlbum and SetPhotoAlbumCover are for the
+	// album's manager: its owner, or an admin of the circle that owns it.
 	RenamePhotoAlbum(userId, photoAlbumId, albumTitle string) (*models.PhotoAlbum, error)
 
 	// DeletePhotoAlbum deletes the album and nothing else: its photos stay in
-	// the library.
+	// their owners' libraries.
 	DeletePhotoAlbum(userId, photoAlbumId string) error
 
-	// AddPhotosToAlbum puts the named photos, which must all be the person's,
-	// in the album, leaving alone those already in it, and says how many were
-	// added.
+	// AddPhotosToAlbum puts the named photos, which must all be the person's
+	// own, in an album they may contribute to, leaving alone those already in
+	// it, and says how many were added.
 	AddPhotosToAlbum(userId, photoAlbumId string, photoIds []string) (int, error)
 
 	// RemovePhotosFromAlbum takes photos out of the album and says how many
-	// were in it. The photos stay in the library. If the cover goes, the album
-	// is left with no chosen cover.
+	// were in it. The photos stay in their owners' libraries. The album's
+	// manager may take out any photo, and somebody who contributes only the
+	// photos they added; those that are not the person's to take out are left
+	// where they are and not counted. If the cover goes, the album is left
+	// with no chosen cover.
 	RemovePhotosFromAlbum(userId, photoAlbumId string, photoIds []string) (int, error)
 
 	// SetPhotoAlbumCover chooses the album's cover from among its photos.
 	SetPhotoAlbumCover(userId, photoAlbumId, photoId string) (*models.PhotoAlbum, error)
 
-	// ListPhotoAlbumsOfPhoto lists the albums a photo is in, by title.
+	// ListPhotoAlbumsOfPhoto lists, by title, the albums a photo is in that
+	// the person reaches. ErrNotFound unless the person may read the photo.
 	ListPhotoAlbumsOfPhoto(userId, photoId string) ([]*models.PhotoAlbumReference, error)
 
 	// ListPhotosInNoAlbum lists, in time order, the person's photos that are
@@ -57,7 +76,17 @@ type PhotoAlbumOperation interface {
 // maximumPhotosInNoAlbum bounds how many photos a suggestion reads at once.
 const maximumPhotosInNoAlbum = 100000
 
-type photoAlbumModel models.PhotoAlbum
+// photoAlbumModel is the album's row. Exactly one of UserID and CircleID is
+// set.
+type photoAlbumModel struct {
+	ID           string    `gorm:"column:id;primaryKey"`
+	UserID       *string   `gorm:"column:user_id"`
+	CircleID     *string   `gorm:"column:circle_id"`
+	AlbumTitle   string    `gorm:"column:album_title"`
+	CoverPhotoID *string   `gorm:"column:cover_photo_id"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
+}
 
 func (photoAlbumModel) TableName() string { return "photo_album" }
 
@@ -68,7 +97,8 @@ func (photoAlbumItemModel) TableName() string { return "photo_album_item" }
 // photoAlbumRow is an album with what is worked out about its photos.
 type photoAlbumRow struct {
 	ID                         string
-	UserID                     string
+	UserID                     *string
+	CircleID                   *string
 	AlbumTitle                 string
 	CoverPhotoID               *string
 	CreatedAt                  time.Time
@@ -82,7 +112,7 @@ type photoAlbumRow struct {
 
 func photoAlbumFromRow(row *photoAlbumRow) *models.PhotoAlbum {
 	album := &models.PhotoAlbum{
-		ID: row.ID, UserID: row.UserID, AlbumTitle: row.AlbumTitle, CoverPhotoID: row.CoverPhotoID,
+		ID: row.ID, OwnerUserID: row.UserID, CircleID: row.CircleID, AlbumTitle: row.AlbumTitle, CoverPhotoID: row.CoverPhotoID,
 		CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(),
 		PhotoCount: row.PhotoCount, FirstTakenAt: utcTime(row.FirstTakenAt), LastTakenAt: utcTime(row.LastTakenAt),
 		CoverPreviewPhotoUpdatedAt: utcTime(row.CoverPreviewPhotoUpdatedAt),
@@ -93,13 +123,13 @@ func photoAlbumFromRow(row *photoAlbumRow) *models.PhotoAlbum {
 	return album
 }
 
-// photoAlbumsQuery selects the person's albums with what is worked out about
+// photoAlbumsQuery selects the named albums with what is worked out about
 // their photos: those not in the trash (a photo being deleted is in the trash
 // as far as this is concerned). The cover is the chosen photo while it can be
 // shown, else the newest photo that can be, and only a photo with a small
 // preview can be shown.
 const photoAlbumsQuery = `
-	SELECT photo_album.id, photo_album.user_id, photo_album.album_title, photo_album.cover_photo_id, photo_album.created_at, photo_album.updated_at,
+	SELECT photo_album.id, photo_album.user_id, photo_album.circle_id, photo_album.album_title, photo_album.cover_photo_id, photo_album.created_at, photo_album.updated_at,
 		COALESCE(counts.photo_count, 0) AS photo_count, counts.first_taken_at, counts.last_taken_at,
 		cover.id AS cover_preview_photo_id, cover.updated_at AS cover_preview_photo_updated_at
 	FROM photo_album
@@ -120,52 +150,142 @@ const photoAlbumsQuery = `
 		ORDER BY COALESCE(photo.id = photo_album.cover_photo_id, false) DESC, ` + photoTimelineExpression + ` DESC, photo.id DESC
 		LIMIT 1
 	) cover ON true
-	WHERE photo_album.user_id = ?`
+	WHERE photo_album.id IN ?`
+
+// listReachablePhotoAlbums reads the albums the person reaches, or the one
+// they name, newest change first, each marked with whose it is and what the
+// person may do with it.
+func (self *transaction) listReachablePhotoAlbums(userId, photoAlbumId string) ([]*models.PhotoAlbum, error) {
+	reach, err := self.photoAlbumReach(userId, photoAlbumId)
+	if err != nil {
+		return nil, err
+	}
+	photoAlbumIds := make([]string, 0, len(reach))
+	for reachedId := range reach {
+		photoAlbumIds = append(photoAlbumIds, reachedId)
+	}
+	if len(photoAlbumIds) == 0 {
+		return []*models.PhotoAlbum{}, nil
+	}
+	var rows []photoAlbumRow
+	if err := self.tx.Raw(photoAlbumsQuery+` ORDER BY photo_album.updated_at DESC, photo_album.id DESC`, photoAlbumIds).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	albums := make([]*models.PhotoAlbum, 0, len(rows))
+	ownerIds, circleIds := []string{}, []string{}
+	for index := range rows {
+		album := photoAlbumFromRow(&rows[index])
+		access := reach[album.ID].access(album.ID, rows[index].UserID, rows[index].CircleID)
+		album.IsOwnedByCaller = access.IsOwner
+		album.ShareLevel, album.CanCallerContribute = access.ShareLevel, access.CanContribute()
+		album.CanCallerManage, album.IsLocationIncluded = access.IsManager, access.IsLocationIncluded
+		albums = append(albums, album)
+		if rows[index].UserID != nil {
+			ownerIds = append(ownerIds, *rows[index].UserID)
+		}
+		if rows[index].CircleID != nil {
+			circleIds = append(circleIds, *rows[index].CircleID)
+		}
+	}
+	owners, err := loadUsersByID(self.tx, ownerIds)
+	if err != nil {
+		return nil, err
+	}
+	circleNames := map[string]string{}
+	if len(circleIds) > 0 {
+		var circles []circleModel
+		if err := self.tx.Where("\"id\" IN ?", uniqueStrings(circleIds)).Find(&circles).Error; err != nil {
+			return nil, err
+		}
+		for _, circle := range circles {
+			circleNames[circle.ID] = circle.Name
+		}
+	}
+	for _, album := range albums {
+		if album.OwnerUserID != nil {
+			album.OwnerUser = owners[*album.OwnerUserID]
+			if album.OwnerUser != nil {
+				album.OwnerUsername, album.OwnerName = album.OwnerUser.Username, album.OwnerUser.DisplayName()
+			}
+		}
+		if album.CircleID != nil {
+			album.CircleName = circleNames[*album.CircleID]
+		}
+	}
+	return albums, nil
+}
 
 func (self *transaction) ListPhotoAlbums(userId string) ([]*models.PhotoAlbum, error) {
 	if userId == "" {
 		return nil, ErrNotFound
 	}
-	var rows []photoAlbumRow
-	if err := self.tx.Raw(photoAlbumsQuery+` ORDER BY photo_album.updated_at DESC, photo_album.id DESC`, userId).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	albums := make([]*models.PhotoAlbum, 0, len(rows))
-	for index := range rows {
-		albums = append(albums, photoAlbumFromRow(&rows[index]))
-	}
-	return albums, nil
+	return self.listReachablePhotoAlbums(userId, "")
 }
 
 func (self *transaction) GetPhotoAlbum(userId, photoAlbumId string) (*models.PhotoAlbum, error) {
 	if userId == "" || photoAlbumId == "" {
 		return nil, ErrNotFound
 	}
-	var rows []photoAlbumRow
-	if err := self.tx.Raw(photoAlbumsQuery+` AND photo_album.id = ?`, userId, photoAlbumId).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, ErrNotFound
-	}
-	return photoAlbumFromRow(&rows[0]), nil
-}
-
-// lockPhotoAlbum finds an album of the person's and locks it, so that two
-// changes to one album are made one after the other.
-func (self *transaction) lockPhotoAlbum(userId, photoAlbumId string) (*photoAlbumModel, error) {
-	if userId == "" || photoAlbumId == "" {
-		return nil, ErrNotFound
-	}
-	var row photoAlbumModel
-	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND user_id = ?", photoAlbumId, userId), &row)
+	albums, err := self.listReachablePhotoAlbums(userId, photoAlbumId)
 	if err != nil {
 		return nil, err
 	}
-	if !isFound {
+	if len(albums) == 0 {
 		return nil, ErrNotFound
 	}
-	return &row, nil
+	return albums[0], nil
+}
+
+// photoAlbumNeed is how much of an album a change asks for.
+type photoAlbumNeed int
+
+const (
+	photoAlbumNeedManage photoAlbumNeed = iota
+	photoAlbumNeedContribute
+)
+
+// lockPhotoAlbum locks an album and checks that the person may do what the
+// change needs, so that two changes to one album are made one after the other
+// on the access as it stands. An album the person does not reach, and one they
+// reach but not that far, is not found: which of the two it is is not theirs
+// to learn. A change that adds to somebody else's album first takes the circle
+// membership lock, as every change to who may reach an album does, so that
+// somebody leaving at the same moment is seen by the cleanup that follows them.
+func (self *transaction) lockPhotoAlbum(userId, photoAlbumId string, need photoAlbumNeed) (*photoAlbumModel, *models.PhotoAlbumAccess, error) {
+	if userId == "" || photoAlbumId == "" {
+		return nil, nil, ErrNotFound
+	}
+	if need == photoAlbumNeedContribute {
+		var peeked photoAlbumModel
+		isFound, err := findOneRow(self.tx.Where("id = ?", photoAlbumId), &peeked)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !isFound {
+			return nil, nil, ErrNotFound
+		}
+		if peeked.UserID == nil || *peeked.UserID != userId {
+			if err := lockCircleMembership(self.tx); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	var row photoAlbumModel
+	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", photoAlbumId), &row)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !isFound {
+		return nil, nil, ErrNotFound
+	}
+	access, err := self.GetPhotoAlbumAccess(userId, photoAlbumId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if (need == photoAlbumNeedManage && !access.IsManager) || (need == photoAlbumNeedContribute && !access.CanContribute()) {
+		return nil, nil, ErrNotFound
+	}
+	return &row, access, nil
 }
 
 // distinctPhotoIds is the photos named, each once, in the order named. The
@@ -223,6 +343,17 @@ func (self *transaction) touchPhotoAlbum(photoAlbumId string) error {
 }
 
 func (self *transaction) CreatePhotoAlbum(userId, albumTitle string, photoIds []string) (*models.PhotoAlbum, error) {
+	return self.createPhotoAlbum(userId, "", albumTitle, photoIds)
+}
+
+func (self *transaction) CreateCirclePhotoAlbum(userId, circleId, albumTitle string, photoIds []string) (*models.PhotoAlbum, error) {
+	if circleId == "" {
+		return nil, ErrNotFound
+	}
+	return self.createPhotoAlbum(userId, circleId, albumTitle, photoIds)
+}
+
+func (self *transaction) createPhotoAlbum(userId, circleId, albumTitle string, photoIds []string) (*models.PhotoAlbum, error) {
 	if userId == "" {
 		return nil, ErrNotFound
 	}
@@ -238,7 +369,26 @@ func (self *transaction) CreatePhotoAlbum(userId, albumTitle string, photoIds []
 		return nil, err
 	}
 	created := photoNow()
-	row := photoAlbumModel{ID: newID(), UserID: userId, AlbumTitle: albumTitle, CreatedAt: created, UpdatedAt: created}
+	row := photoAlbumModel{ID: newID(), AlbumTitle: albumTitle, CreatedAt: created, UpdatedAt: created}
+	if circleId == "" {
+		row.UserID = &userId
+	} else {
+		// The membership is held for the rest of the transaction, so that a
+		// person leaving the circle at this moment is seen by the cleanup, or
+		// refused here.
+		if err := lockCircleMembership(self.tx); err != nil {
+			return nil, err
+		}
+		var members []circleMemberModel
+		if err := self.tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("\"circle_id\" = ? AND \"user_id\" = ?", circleId, userId).Find(&members).Error; err != nil {
+			return nil, err
+		}
+		if len(members) == 0 {
+			return nil, ErrNotFound
+		}
+		row.CircleID = &circleId
+	}
 	if err := self.tx.Create(&row).Error; err != nil {
 		return nil, err
 	}
@@ -256,7 +406,7 @@ func (self *transaction) RenamePhotoAlbum(userId, photoAlbumId, albumTitle strin
 	if err != nil {
 		return nil, err
 	}
-	if _, err := self.lockPhotoAlbum(userId, photoAlbumId); err != nil {
+	if _, _, err := self.lockPhotoAlbum(userId, photoAlbumId, photoAlbumNeedManage); err != nil {
 		return nil, err
 	}
 	if err := self.tx.Model(&photoAlbumModel{}).Where("id = ?", photoAlbumId).Updates(map[string]any{"album_title": albumTitle, "updated_at": photoNow()}).Error; err != nil {
@@ -270,7 +420,7 @@ func (self *transaction) RenamePhotoAlbum(userId, photoAlbumId, albumTitle strin
 }
 
 func (self *transaction) DeletePhotoAlbum(userId, photoAlbumId string) error {
-	if _, err := self.lockPhotoAlbum(userId, photoAlbumId); err != nil {
+	if _, _, err := self.lockPhotoAlbum(userId, photoAlbumId, photoAlbumNeedManage); err != nil {
 		return err
 	}
 	// The photos are named before the album goes, since its items go with it.
@@ -289,7 +439,7 @@ func (self *transaction) AddPhotosToAlbum(userId, photoAlbumId string, photoIds 
 	if err != nil {
 		return 0, err
 	}
-	if _, err := self.lockPhotoAlbum(userId, photoAlbumId); err != nil {
+	if _, _, err := self.lockPhotoAlbum(userId, photoAlbumId, photoAlbumNeedContribute); err != nil {
 		return 0, err
 	}
 	if err := self.requireOwnedPhotos(userId, photoIds); err != nil {
@@ -315,34 +465,45 @@ func (self *transaction) RemovePhotosFromAlbum(userId, photoAlbumId string, phot
 	if err != nil {
 		return 0, err
 	}
-	if _, err := self.lockPhotoAlbum(userId, photoAlbumId); err != nil {
+	_, access, err := self.lockPhotoAlbum(userId, photoAlbumId, photoAlbumNeedContribute)
+	if err != nil {
 		return 0, err
 	}
 	if len(photoIds) == 0 {
 		return 0, nil
 	}
-	removed := self.tx.Where("photo_album_id = ? AND photo_id IN ?", photoAlbumId, photoIds).Delete(&photoAlbumItemModel{})
+	removal := self.tx.Where("photo_album_id = ? AND photo_id IN ?", photoAlbumId, photoIds)
+	if !access.IsManager {
+		removal = removal.Where("added_by_user_id = ?", userId)
+	}
+	removed := removal.Delete(&photoAlbumItemModel{})
 	if removed.Error != nil {
 		return 0, removed.Error
 	}
 	if removed.RowsAffected > 0 {
-		// A cover must be in the album.
-		changes := map[string]any{"updated_at": photoNow(), "cover_photo_id": gorm.Expr("CASE WHEN cover_photo_id IN ? THEN NULL ELSE cover_photo_id END", photoIds)}
-		if err := self.tx.Model(&photoAlbumModel{}).Where("id = ?", photoAlbumId).Updates(changes).Error; err != nil {
-			return 0, err
-		}
-		if err := self.refreshPhotoSearchDocumentsOf(photoIds); err != nil {
+		if err := self.afterPhotosLeaveAlbum(photoAlbumId, photoIds); err != nil {
 			return 0, err
 		}
 	}
 	return int(removed.RowsAffected), nil
 }
 
+// afterPhotosLeaveAlbum keeps what depends on an album's photos true once
+// some have been taken out: a cover must be in the album, and the search
+// document of a photo names the albums it is in.
+func (self *transaction) afterPhotosLeaveAlbum(photoAlbumId string, photoIds []string) error {
+	changes := map[string]any{"updated_at": photoNow(), "cover_photo_id": gorm.Expr("CASE WHEN cover_photo_id IN ? THEN NULL ELSE cover_photo_id END", photoIds)}
+	if err := self.tx.Model(&photoAlbumModel{}).Where("id = ?", photoAlbumId).Updates(changes).Error; err != nil {
+		return err
+	}
+	return self.refreshPhotoSearchDocumentsOf(photoIds)
+}
+
 func (self *transaction) SetPhotoAlbumCover(userId, photoAlbumId, photoId string) (*models.PhotoAlbum, error) {
 	if photoId == "" {
 		return nil, ErrNotFound
 	}
-	if _, err := self.lockPhotoAlbum(userId, photoAlbumId); err != nil {
+	if _, _, err := self.lockPhotoAlbum(userId, photoAlbumId, photoAlbumNeedManage); err != nil {
 		return nil, err
 	}
 	// A photo in the trash is not shown in the album, so it cannot stand for it.
@@ -363,16 +524,27 @@ func (self *transaction) SetPhotoAlbumCover(userId, photoAlbumId, photoId string
 }
 
 func (self *transaction) ListPhotoAlbumsOfPhoto(userId, photoId string) ([]*models.PhotoAlbumReference, error) {
-	if _, err := self.GetPhoto(userId, photoId); err != nil {
+	if _, err := self.GetPhotoAccess(userId, photoId); err != nil {
 		return nil, err
+	}
+	reach, err := self.photoAlbumReach(userId, "")
+	if err != nil {
+		return nil, err
+	}
+	reachedIds := make([]string, 0, len(reach))
+	for reachedId := range reach {
+		reachedIds = append(reachedIds, reachedId)
+	}
+	references := []*models.PhotoAlbumReference{}
+	if len(reachedIds) == 0 {
+		return references, nil
 	}
 	var rows []photoAlbumModel
 	if err := self.tx.Joins("JOIN photo_album_item ON photo_album_item.photo_album_id = photo_album.id").
-		Where("photo_album_item.photo_id = ? AND photo_album.user_id = ?", photoId, userId).
+		Where("photo_album_item.photo_id = ? AND photo_album.id IN ?", photoId, reachedIds).
 		Order("photo_album.album_title, photo_album.id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	references := make([]*models.PhotoAlbumReference, 0, len(rows))
 	for _, row := range rows {
 		references = append(references, &models.PhotoAlbumReference{ID: row.ID, AlbumTitle: row.AlbumTitle})
 	}

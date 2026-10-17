@@ -197,7 +197,7 @@ func (self *PhotoFilter) variables() map[string]any {
 }
 
 const (
-	photoSelection = `{ id createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt photoDescription descriptionVisibleText describedAt isDescriptionRequested smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
+	photoSelection = `{ id userId isOwnedByCaller ownerName createdAt updatedAt clientPhotoId photoKind photoSource takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel originalFilename isFavorite isScreenshot photoProcessingState processingAttemptCount processingErrorMessage trashedAt photoDescription descriptionVisibleText describedAt isDescriptionRequested smallPreviewUrl largePreviewUrl videoPreviewUrl photoFileRoles }`
 
 	photoFilterDeclarations = `$beforePhotoId: String, $offset: Int, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float, $albumId: String, $faceGroupId: String, $contactId: String`
 	photoFilterArguments    = `beforePhotoId: $beforePhotoId, offset: $offset, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers, albumId: $albumId, faceGroupId: $faceGroupId, contactId: $contactId`
@@ -241,6 +241,8 @@ const (
 	DocumentDescribePhoto = `mutation ($photoId: String!, $isRedescribed: Boolean) { DescribePhoto(photoId: $photoId, isRedescribed: $isRedescribed) ` + photoSelection + ` }`
 
 	DocumentSavePhotoFromAttachment = `mutation ($agentAttachmentId: String!) { SavePhotoFromAttachment(agentAttachmentId: $agentAttachmentId) ` + photoSelection + ` }`
+
+	DocumentSavePhotoToLibrary = `mutation ($photoId: String!) { SavePhotoToLibrary(photoId: $photoId) ` + photoSelection + ` }`
 )
 
 // MaximumPhotoIDs is how many photos one call to the operations that take a
@@ -435,6 +437,19 @@ func SavePhotoFromAttachment(ctx context.Context, executor Executor, agentAttach
 		return nil, err
 	}
 	return result.SavePhotoFromAttachment, nil
+}
+
+// SavePhotoToLibrary makes a photo of the caller's own from a photo in an album
+// that was shared with them or belongs to a circle they are in. Saving the same
+// photo twice finds the copy that is there.
+func SavePhotoToLibrary(ctx context.Context, executor Executor, photoId string) (*models.Photo, error) {
+	var result struct {
+		SavePhotoToLibrary *models.Photo `json:"SavePhotoToLibrary"`
+	}
+	if err := executor.Execute(ctx, DocumentSavePhotoToLibrary, map[string]any{"photoId": photoId}, &result); err != nil {
+		return nil, err
+	}
+	return result.SavePhotoToLibrary, nil
 }
 
 // PhotoUpload is one file to send to the library.

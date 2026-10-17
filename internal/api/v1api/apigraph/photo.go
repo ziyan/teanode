@@ -17,7 +17,8 @@ import (
 	"github.com/ziyan/teanode/internal/photo"
 )
 
-// PhotoQuery reads the person's photo library.
+// PhotoQuery reads the person's photo library, and the photos of the albums
+// that others shared with them.
 type PhotoQuery interface {
 	ListPhotos(context.Context, ListPhotosArguments) ([]*models.Photo, error)
 	CountPhotos(context.Context, ListPhotosArguments) (int, error)
@@ -33,8 +34,10 @@ type PhotoQuery interface {
 
 	// An address for one preview or one file of a photo that a player can
 	// fetch by itself, with ranges, because it carries a signature instead
-	// of the person's sign-in. Good for a few hours; the caller must own the
-	// photo for now.
+	// of the person's sign-in. Good for a few hours; the caller must be able to
+	// read the photo, and a file the caller may not have (the original of a
+	// photo whose place is held back from them) is addressed as the preview
+	// that stands for it.
 	PhotoPlaybackAddress(context.Context, PhotoPlaybackAddressArguments) (string, error)
 }
 
@@ -53,6 +56,15 @@ type PhotoMutation interface {
 	// waiting already are left alone.
 	RetryPhotoProcessing(context.Context, PhotoIDsArguments) (int, error)
 	SavePhotoFromAttachment(context.Context, SavePhotoFromAttachmentArguments) (*models.Photo, error)
+
+	// SavePhotoToLibrary makes a photo of the caller's own from a photo in an
+	// album that was shared with them or belongs to a circle they are in. The
+	// copy is processed like any new photo and counts against the caller's
+	// space. Where the share includes where photos were taken it is made over
+	// the same blobs and stores nothing new; otherwise it is the large preview
+	// (or the video preview), which is all the caller is let to have. Saving
+	// the same photo twice finds the copy that is there.
+	SavePhotoToLibrary(context.Context, PhotoArguments) (*models.Photo, error)
 
 	// DescribePhoto asks the person's assistant to look at the picture and
 	// write what is in it, and answers at once with the photo as it is now:
@@ -228,32 +240,67 @@ func (self *graph) requirePhotosPerson(ctx context.Context) (*api.Principal, err
 // from, and which files the server holds for it. An address carries the time
 // the photo last changed, so that a preview made again is a new address and
 // the old one can be cached for good.
-func (self *graph) withFilesAndPreviews(ctx context.Context, userId string, photos []*models.Photo) error {
-	photoIds := make([]string, 0, len(photos))
+//
+// The photos may belong to several people when they were listed out of an
+// album, so each is read through its owner's rows. What is read here has been
+// let through already: the photos came from a query that reaches only what the
+// caller may read. Whatever is not the caller's own is shown as the caller may
+// have it: no favorite mark, no uploader's name for it, and, unless the share
+// that lets the caller in includes where photos were taken
+// (isPlaceShownOfOthers), no place, and the original files stand for by the
+// preview that carries none.
+func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string, photos []*models.Photo, isPlaceShownOfOthers bool) error {
+	photoIdsOfOwner := map[string][]string{}
 	for _, found := range photos {
-		photoIds = append(photoIds, found.ID)
+		photoIdsOfOwner[found.UserID] = append(photoIdsOfOwner[found.UserID], found.ID)
 	}
-	files, err := self.transaction(ctx).ListPhotoFiles(userId, photoIds)
-	if err != nil {
-		return err
-	}
+	transaction := self.transaction(ctx)
 	fileRoles := map[string][]models.PhotoFileRole{}
-	for _, file := range files {
-		fileRoles[file.PhotoID] = append(fileRoles[file.PhotoID], file.PhotoFileRole)
-	}
-	previews, err := self.transaction(ctx).ListPhotoPreviews(userId, photoIds)
-	if err != nil {
-		return err
-	}
 	madeSizes := map[string]map[models.PhotoPreviewSize]bool{}
-	for _, preview := range previews {
-		if madeSizes[preview.PhotoID] == nil {
-			madeSizes[preview.PhotoID] = map[models.PhotoPreviewSize]bool{}
+	for ownerUserId, photoIds := range photoIdsOfOwner {
+		files, err := transaction.ListPhotoFiles(ownerUserId, photoIds)
+		if err != nil {
+			return err
 		}
-		madeSizes[preview.PhotoID][preview.PhotoPreviewSize] = true
+		for _, file := range files {
+			fileRoles[file.PhotoID] = append(fileRoles[file.PhotoID], file.PhotoFileRole)
+		}
+		previews, err := transaction.ListPhotoPreviews(ownerUserId, photoIds)
+		if err != nil {
+			return err
+		}
+		for _, preview := range previews {
+			if madeSizes[preview.PhotoID] == nil {
+				madeSizes[preview.PhotoID] = map[models.PhotoPreviewSize]bool{}
+			}
+			madeSizes[preview.PhotoID][preview.PhotoPreviewSize] = true
+		}
+	}
+	ownerNames := map[string]string{}
+	for ownerUserId := range photoIdsOfOwner {
+		if ownerUserId == callerUserId {
+			continue
+		}
+		owner, err := transaction.GetUser(ownerUserId)
+		if err != nil {
+			return err
+		}
+		ownerNames[ownerUserId] = owner.DisplayName()
 	}
 	for _, found := range photos {
+		found.IsOwnedByCaller = found.UserID == callerUserId
 		found.PhotoFileRoles = fileRoles[found.ID]
+		if !found.IsOwnedByCaller {
+			found.OwnerName, found.IsFavorite, found.ClientPhotoID = ownerNames[found.UserID], false, ""
+			if !isPlaceShownOfOthers {
+				found.Latitude, found.Longitude, found.PlaceName = nil, nil, ""
+				found.PhotoFileRoles = nil
+				hasPreview := func(photoPreviewSize models.PhotoPreviewSize) bool { return madeSizes[found.ID][photoPreviewSize] }
+				if _, isAvailable := photo.SharedCopyPreviewSize(found.PhotoKind, hasPreview); isAvailable {
+					found.PhotoFileRoles = []models.PhotoFileRole{models.PhotoFileRoleOriginal}
+				}
+			}
+		}
 		if found.PhotoFileRoles == nil {
 			found.PhotoFileRoles = []models.PhotoFileRole{}
 		}
@@ -297,14 +344,33 @@ func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments
 	}
 	filter := photoFilter(arguments)
 	filter.SearchMeaning = self.photoSearchMeaning(ctx, principal.User.ID, filter.SearchText)
-	photos, err := self.transaction(ctx).ListPhotos(principal.User.ID, filter)
+	transaction := self.transaction(ctx)
+	photos, err := transaction.ListPhotos(principal.User.ID, filter)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos); err != nil {
+	isPlaceShown, err := self.isPlaceShownInAlbum(ctx, principal.User.ID, arguments.AlbumID)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, isPlaceShown); err != nil {
 		return nil, translateError(err)
 	}
 	return photos, nil
+}
+
+// isPlaceShownInAlbum says whether the share that lets the person into the
+// album includes where its photos were taken; false for a listing of no album,
+// which holds only their own photos.
+func (self *graph) isPlaceShownInAlbum(ctx context.Context, userId, photoAlbumId string) (bool, error) {
+	if photoAlbumId == "" {
+		return false, nil
+	}
+	access, err := self.transaction(ctx).GetPhotoAlbumAccess(userId, photoAlbumId)
+	if err != nil {
+		return false, err
+	}
+	return access.IsLocationIncluded, nil
 }
 
 // photoSearchMeaning is the words of a search as a vector, for finding
@@ -410,43 +476,74 @@ func (self *graph) CountUndescribedPhotos(ctx context.Context, arguments ListPho
 	return count, translateError(err)
 }
 
+// ReadPhoto is one photo the caller may read: their own, or one in an album
+// that was shared with them or belongs to a circle they are in. It is read
+// through its owner's rows. Whatever is not the caller's own comes as the
+// caller may have it: no place and no original file unless the share includes
+// them, and in the place of the original a file that is the large preview, so
+// that what the caller is offered to download is what they are allowed to
+// keep. The faces are the owner's, with the names the owner gave them.
 func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*PhotoView, error) {
-	principal, err := self.requirePhotosPerson(ctx)
+	principal, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
 	if err != nil {
 		return nil, err
 	}
 	transaction := self.transaction(ctx)
-	found, err := transaction.GetPhoto(principal.User.ID, arguments.PhotoID)
+	found, err := transaction.GetPhoto(access.OwnerUserID, access.PhotoID)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	files, err := transaction.ListPhotoFiles(principal.User.ID, []string{found.ID})
+	files, err := transaction.ListPhotoFiles(access.OwnerUserID, []string{found.ID})
 	if err != nil {
 		return nil, translateError(err)
 	}
-	for _, file := range files {
-		file.FileURL = api.PhotoFilePath(file.PhotoID, string(file.PhotoFileRole))
-	}
-	previews, err := transaction.ListPhotoPreviews(principal.User.ID, []string{found.ID})
+	previews, err := transaction.ListPhotoPreviews(access.OwnerUserID, []string{found.ID})
 	if err != nil {
 		return nil, translateError(err)
 	}
 	for _, preview := range previews {
 		preview.PreviewURL = photoPreviewAddress(found, preview.PhotoPreviewSize)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}); err != nil {
+	if access.IsOwner || access.IsLocationIncluded {
+		for _, file := range files {
+			file.FileURL = api.PhotoFilePath(file.PhotoID, string(file.PhotoFileRole))
+		}
+	} else {
+		files = sharedCopyFiles(found, files, previews)
+	}
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, access.IsLocationIncluded); err != nil {
 		return nil, translateError(err)
 	}
 	albums, err := transaction.ListPhotoAlbumsOfPhoto(principal.User.ID, found.ID)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	faces, err := transaction.ListPhotoFaces(principal.User.ID, []string{found.ID})
+	faces, err := transaction.ListPhotoFaces(access.OwnerUserID, []string{found.ID})
 	if err != nil {
 		return nil, translateError(err)
 	}
 	withFacePictureAddresses(faces...)
 	return &PhotoView{Photo: found, PhotoFiles: files, PhotoPreviews: previews, Albums: albums, Faces: faces}, nil
+}
+
+// sharedCopyFiles is the one file a reader who may not have the originals is
+// offered: the preview that stands for the original, under the name of a
+// picture or a video, with none of the original's bytes or digest.
+func sharedCopyFiles(found *models.Photo, files []*models.PhotoFile, previews []*models.PhotoPreview) []*models.PhotoFile {
+	photoPreviewSize, isAvailable := photo.SharedCopyPreviewSize(found.PhotoKind, photo.HasPreviewIn(previews))
+	if !isAvailable {
+		return []*models.PhotoFile{}
+	}
+	for _, preview := range previews {
+		if preview.PhotoPreviewSize == photoPreviewSize {
+			return []*models.PhotoFile{{
+				PhotoID: found.ID, PhotoFileRole: models.PhotoFileRoleOriginal, ContentType: preview.ContentType,
+				FileSizeBytes: preview.PreviewSizeBytes, OriginalFilename: photo.SharedCopyFilename(found, files, photoPreviewSize),
+				CreatedAt: preview.CreatedAt, FileURL: api.PhotoFilePath(found.ID, string(models.PhotoFileRoleOriginal)),
+			}}
+		}
+	}
+	return []*models.PhotoFile{}
 }
 
 func (self *graph) ReadPhotoLibrary(ctx context.Context) (*PhotoLibraryView, error) {
@@ -523,14 +620,14 @@ func (self *graph) FindPhotos(ctx context.Context, arguments FindPhotosArguments
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, false); err != nil {
 		return nil, translateError(err)
 	}
 	return photos, nil
 }
 
 func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlaybackAddressArguments) (string, error) {
-	principal, err := self.requirePhotosPerson(ctx)
+	_, access, err := self.requirePhotoReader(ctx, arguments.PhotoID)
 	if err != nil {
 		return "", err
 	}
@@ -545,27 +642,64 @@ func (self *graph) PhotoPlaybackAddress(ctx context.Context, arguments PhotoPlay
 		return "", errors.New("the server has no secret to sign an address with")
 	}
 	transaction := self.transaction(ctx)
+	// A photo is read through its owner's rows, so the address is signed with
+	// the owner: it opens that one preview or file of that one photo for
+	// whoever holds it, and the caller's reach was checked here, once.
+	ownerUserId := access.OwnerUserID
 	var path, playbackKind, name string
 	until := time.Now().Add(photo.PlaybackFor)
 	if arguments.PhotoPreviewSize != nil {
 		if !arguments.PhotoPreviewSize.IsValid() {
 			return "", fmt.Errorf("%w: photoPreviewSize is small, large or video", api.ErrInvalidArguments)
 		}
-		if _, err := transaction.GetPhotoPreview(principal.User.ID, arguments.PhotoID, *arguments.PhotoPreviewSize); err != nil {
+		if _, err := transaction.GetPhotoPreview(ownerUserId, access.PhotoID, *arguments.PhotoPreviewSize); err != nil {
 			return "", translateError(err)
 		}
-		path, playbackKind, name = api.PhotoPlaybackPreviewPath(arguments.PhotoID, string(*arguments.PhotoPreviewSize)), photo.PlaybackKindPreview, string(*arguments.PhotoPreviewSize)
+		path, playbackKind, name = api.PhotoPlaybackPreviewPath(access.PhotoID, string(*arguments.PhotoPreviewSize)), photo.PlaybackKindPreview, string(*arguments.PhotoPreviewSize)
 	} else {
 		if !arguments.PhotoFileRole.IsValid() {
 			return "", fmt.Errorf("%w: photoFileRole is original, edited or liveVideo", api.ErrInvalidArguments)
 		}
-		if _, err := transaction.GetPhotoFile(principal.User.ID, arguments.PhotoID, *arguments.PhotoFileRole); err != nil {
-			return "", translateError(err)
+		if access.IsOwner || access.IsLocationIncluded {
+			if _, err := transaction.GetPhotoFile(ownerUserId, access.PhotoID, *arguments.PhotoFileRole); err != nil {
+				return "", translateError(err)
+			}
+			path, playbackKind, name = api.PhotoPlaybackFilePath(access.PhotoID, string(*arguments.PhotoFileRole)), photo.PlaybackKindFile, string(*arguments.PhotoFileRole)
+		} else {
+			// The file would carry the place; the preview that stands for it
+			// does not.
+			photoPreviewSize, err := self.sharedCopyPreviewSize(ctx, ownerUserId, access.PhotoID, *arguments.PhotoFileRole)
+			if err != nil {
+				return "", translateError(err)
+			}
+			path, playbackKind, name = api.PhotoPlaybackPreviewPath(access.PhotoID, string(photoPreviewSize)), photo.PlaybackKindPreview, string(photoPreviewSize)
 		}
-		path, playbackKind, name = api.PhotoPlaybackFilePath(arguments.PhotoID, string(*arguments.PhotoFileRole)), photo.PlaybackKindFile, string(*arguments.PhotoFileRole)
 	}
-	signature := photo.SignPlayback(secret, principal.User.ID, arguments.PhotoID, playbackKind, name, until)
-	return path + "?owner=" + url.QueryEscape(principal.User.ID) + "&signature=" + url.QueryEscape(signature), nil
+	signature := photo.SignPlayback(secret, ownerUserId, access.PhotoID, playbackKind, name, until)
+	return path + "?owner=" + url.QueryEscape(ownerUserId) + "&signature=" + url.QueryEscape(signature), nil
+}
+
+// sharedCopyPreviewSize is the preview a reader who may not have a photo's
+// files is given for one of them, or not found: the Live Photo's video has no
+// preview that stands for it.
+func (self *graph) sharedCopyPreviewSize(ctx context.Context, ownerUserId, photoId string, photoFileRole models.PhotoFileRole) (models.PhotoPreviewSize, error) {
+	if photoFileRole == models.PhotoFileRoleLiveVideo {
+		return "", db.ErrNotFound
+	}
+	transaction := self.transaction(ctx)
+	found, err := transaction.GetPhoto(ownerUserId, photoId)
+	if err != nil {
+		return "", err
+	}
+	previews, err := transaction.ListPhotoPreviews(ownerUserId, []string{photoId})
+	if err != nil {
+		return "", err
+	}
+	photoPreviewSize, isAvailable := photo.SharedCopyPreviewSize(found.PhotoKind, photo.HasPreviewIn(previews))
+	if !isAvailable {
+		return "", db.ErrNotFound
+	}
+	return photoPreviewSize, nil
 }
 
 func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArguments) (*models.Photo, error) {
@@ -588,7 +722,7 @@ func (self *graph) UpdatePhoto(ctx context.Context, arguments UpdatePhotoArgumen
 	if err != nil {
 		return nil, translateError(err)
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{updated}); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{updated}, false); err != nil {
 		return nil, translateError(err)
 	}
 	return updated, nil
@@ -677,7 +811,7 @@ func (self *graph) DescribePhoto(ctx context.Context, arguments DescribePhotoArg
 			return nil, translateError(err)
 		}
 	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}); err != nil {
+	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, false); err != nil {
 		return nil, translateError(err)
 	}
 	return found, nil

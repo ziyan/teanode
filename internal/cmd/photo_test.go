@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -83,6 +84,17 @@ func TestPhotoParity(test *testing.T) {
 		"RemovePhotosFromAlbum": {client.DocumentRemovePhotosFromAlbum, []string{"album remove"}, []string{"album-remove"}},
 		"SuggestPhotoAlbums":    {client.DocumentSuggestPhotoAlbums, []string{"album suggest"}, []string{"album-suggest"}},
 		"SetPhotoAlbumCover":    {client.DocumentSetPhotoAlbumCover, []string{"album cover"}, []string{"album-cover"}},
+
+		// Sharing an album with a person or a circle. Sharing again with the
+		// same grantee changes the level, which is how the command line and
+		// the agent change one; the dashboard and the phone edit a row of the
+		// sheet by its identifier, which is UpdatePhotoAlbumShare.
+		"SharePhotoAlbum":       {client.DocumentSharePhotoAlbum, []string{"album share"}, []string{"album-share"}},
+		"UpdatePhotoAlbumShare": {client.DocumentUpdatePhotoAlbumShare, nil, nil},
+		"RemovePhotoAlbumShare": {client.DocumentRemovePhotoAlbumShare, []string{"album unshare"}, []string{"album-unshare"}},
+		"ListPhotoAlbumShares":  {client.DocumentListPhotoAlbumShares, []string{"album shares"}, []string{"album-shares"}},
+		// Keeping a photo of a shared album in one's own library.
+		"SavePhotoToLibrary": {client.DocumentSavePhotoToLibrary, []string{"save"}, []string{"save-shared"}},
 	}
 
 	// What the command line does without a GraphQL operation: the upload
@@ -253,6 +265,10 @@ type photoServer struct {
 	files map[string][]byte
 	// photoView is what ReadPhoto answers, by photo identifier.
 	photoViews map[string]string
+	// albumsWithOthers makes the album listing hold an album shared with the
+	// person and one that belongs to a circle.
+	albumsWithOthers bool
+
 	// documents are the GraphQL documents received.
 	documents []string
 	variables []map[string]any
@@ -297,6 +313,25 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"TrashPhotos":2}}`))
 			case strings.Contains(asked.Query, "RetryPhotoProcessing("):
 				_, _ = response.Write([]byte(`{"data":{"RetryPhotoProcessing":1}}`))
+			case strings.Contains(asked.Query, "ListCirclePeople"):
+				_, _ = response.Write([]byte(`{"data":{"ListCirclePeople":[{"userId":"user-ben","username":"ben","name":"Ben Example"}]}}`))
+			case strings.Contains(asked.Query, "ListCircles"):
+				_, _ = response.Write([]byte(`{"data":{"ListCircles":[{"id":"circle-home","name":"Home","circleKind":"family","members":[]}]}}`))
+			case strings.Contains(asked.Query, "SharePhotoAlbum("):
+				granteeCircleId, _ := asked.Variables["granteeCircleId"].(string)
+				if granteeCircleId != "" {
+					_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"` + granteeCircleId + `","granteeCircleName":"Home","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
+					return
+				}
+				_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"` + asked.Variables["granteeUserId"].(string) + `","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
+			case strings.Contains(asked.Query, "ListPhotoAlbumShares("):
+				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbumShares":[{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"view","isLocationIncluded":false},{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true}]}}`))
+			case strings.Contains(asked.Query, "RemovePhotoAlbumShare("):
+				_, _ = response.Write([]byte(`{"data":{"RemovePhotoAlbumShare":true}}`))
+			case strings.Contains(asked.Query, "SavePhotoToLibrary("):
+				_, _ = response.Write([]byte(`{"data":{"SavePhotoToLibrary":{"id":"photo-mine","photoKind":"picture","isOwnedByCaller":true}}}`))
+			case strings.Contains(asked.Query, "ListPhotoAlbums") && self.albumsWithOthers:
+				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbums":[{"id":"album-1","ownerUserId":"user-me","albumTitle":"Picnic","photoCount":3,"isOwnedByCaller":true},{"id":"album-3","ownerUserId":"user-ben","albumTitle":"Hers","photoCount":4,"ownerName":"Ben Example","shareLevel":"view"},{"id":"album-4","circleId":"circle-home","albumTitle":"Ours","photoCount":9,"circleName":"Home","shareLevel":"contribute"}]}}`))
 			case strings.Contains(asked.Query, "ListPhotoAlbums"):
 				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbums":[` + fixtureAlbum + `,{"id":"album-2","userId":"u","albumTitle":"Empty one","photoCount":0,"coverPreviewUrl":""}]}}`))
 			case strings.Contains(asked.Query, "ReadPhotoAlbum("):

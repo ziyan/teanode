@@ -13,15 +13,16 @@ import (
 	"github.com/ziyan/teanode/internal/models"
 )
 
-// Albums: named sets of the library's photos. The same operations as the
-// dashboard's Albums page and the agent's photo tool.
+// Albums: named sets of photos, the person's own, their circles' and the ones
+// shared with them. The same operations as the dashboard's Albums page and the
+// agent's photo tool.
 
 func newPhotoAlbumCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "album",
 		Usage: "named sets of your photos",
 		Commands: []*cli.Command{
-			{Name: "list", Usage: "your albums, the most recently changed first", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumList},
+			{Name: "list", Usage: "the albums you reach, the most recently changed first: yours, your circles' and those shared with you", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumList},
 			{
 				Name: "show", Usage: "an album and its photos", ArgsUsage: "<album id>",
 				Flags: []cli.Flag{
@@ -31,12 +32,32 @@ func newPhotoAlbumCommand() *cli.Command {
 				},
 				Action: runPhotoAlbumShow,
 			},
-			{Name: "create", Usage: "make an album, empty or with photos in it", ArgsUsage: "<title> [photo id]...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumCreate},
+			{
+				Name: "create", Usage: "make an album, empty or with photos in it", ArgsUsage: "<title> [photo id]...",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "circle", Usage: "make it the album of a circle you are in, which every member adds photos to (a circle's id or name, from teanode circle list)"},
+				},
+				Action: runPhotoAlbumCreate,
+			},
 			{Name: "rename", Usage: "give an album another title", ArgsUsage: "<album id> <title>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumRename},
 			{Name: "delete", Usage: "delete an album; its photos stay in your library", ArgsUsage: "<album id>", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoAlbumDelete},
 			{Name: "add", Usage: "put photos in an album", ArgsUsage: "<album id> <photo id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumAdd},
 			{Name: "remove", Usage: "take photos out of an album; they stay in your library", ArgsUsage: "<album id> <photo id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumRemove},
 			{Name: "cover", Usage: "choose which photo of an album stands for it", ArgsUsage: "<album id> <photo id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumCover},
+			{
+				Name: "share", Usage: "share an album with a person or a circle you share, to view it or to add photos to it; sharing again changes what they have", ArgsUsage: "<album id>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "person", Usage: "the username of somebody who shares a circle with you (teanode circle people lists them)"},
+					&cli.StringFlag{Name: "circle", Usage: "a circle you are in, by id or name; everyone in it"},
+					&cli.BoolFlag{Name: "contribute", Usage: "let them add photos of their own and take out the ones they added (otherwise they view and save)"},
+					&cli.BoolFlag{Name: "with-location", Usage: "let them see where the photos were taken and download the original files (otherwise they get a picture that carries no place)"},
+				},
+				Action: runPhotoAlbumShare,
+			},
+			{Name: "unshare", Usage: "take back one share of an album, with the photos its people put in it", ArgsUsage: "<share id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumUnshare},
+			{Name: "shares", Usage: "who an album is shared with, and at what level", ArgsUsage: "<album id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoAlbumShares},
 			{
 				Name: "suggest", Usage: "trips and events among the photos that are in no album, newest first",
 				Flags: []cli.Flag{
@@ -86,9 +107,34 @@ func runPhotoAlbumList(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(albums))
 	for _, album := range albums {
-		rows = append(rows, []string{album.ID, album.AlbumTitle, fmt.Sprint(album.PhotoCount), photoAlbumDatesText(album)})
+		rows = append(rows, []string{album.ID, album.AlbumTitle, fmt.Sprint(album.PhotoCount), photoAlbumDatesText(album), photoAlbumOwnerText(album), photoAlbumLevelText(album)})
 	}
-	return printTable([]string{"id", "title", "photos", "dates"}, rows)
+	return printTable([]string{"id", "title", "photos", "dates", "owner", "level"}, rows)
+}
+
+// photoAlbumOwnerText is whose an album is, in words: "you", the person who
+// shared it, or the circle it belongs to.
+func photoAlbumOwnerText(album *models.PhotoAlbum) string {
+	switch {
+	case album.IsOwnedByCaller:
+		return "you"
+	case album.CircleID != nil:
+		return forTerminal("circle " + album.CircleName)
+	case album.OwnerName != "":
+		return forTerminal(album.OwnerName)
+	}
+	return forTerminal(album.OwnerUsername)
+}
+
+// photoAlbumLevelText is what the caller may do with an album, in words.
+func photoAlbumLevelText(album *models.PhotoAlbum) string {
+	switch {
+	case album.IsOwnedByCaller:
+		return "owner"
+	case album.ShareLevel != "":
+		return string(album.ShareLevel)
+	}
+	return "view"
 }
 
 func runPhotoAlbumShow(ctx context.Context, command *cli.Command) error {
@@ -115,7 +161,7 @@ func runPhotoAlbumShow(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(map[string]any{"album": album, "photos": photos})
 	}
-	if err := printFields([][2]string{{"id", album.ID}, {"title", album.AlbumTitle}, {"photos", fmt.Sprint(album.PhotoCount)}, {"dates", photoAlbumDatesText(album)}}); err != nil {
+	if err := printFields([][2]string{{"id", album.ID}, {"title", album.AlbumTitle}, {"photos", fmt.Sprint(album.PhotoCount)}, {"dates", photoAlbumDatesText(album)}, {"owner", photoAlbumOwnerText(album)}, {"level", photoAlbumLevelText(album)}}); err != nil {
 		return err
 	}
 	if len(photos) == 0 {
@@ -163,11 +209,146 @@ func runPhotoAlbumCreate(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	album, err := client.CreatePhotoAlbum(ctx, connection, albumTitle, photoIds)
+	circleId := ""
+	if circleNamed := strings.TrimSpace(command.String("circle")); circleNamed != "" {
+		if circleId, _, err = photoCircleNamed(ctx, connection, circleNamed); err != nil {
+			return describeError(command, err)
+		}
+	}
+	album, err := client.CreateCirclePhotoAlbum(ctx, connection, circleId, albumTitle, photoIds)
 	if err != nil {
 		return describeError(command, err)
 	}
 	return printPhotoAlbum(command, album, "created")
+}
+
+// photoCircleNamed is the circle the person typed: by identifier or by name,
+// among the circles they are in.
+func photoCircleNamed(ctx context.Context, connection *client.Client, typed string) (string, string, error) {
+	circles, err := client.ListCircles(ctx, connection)
+	if err != nil {
+		return "", "", err
+	}
+	for _, circle := range circles {
+		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
+			return circle.ID, circle.Name, nil
+		}
+	}
+	return "", "", fmt.Errorf("%q is not a circle you are in; 'teanode circle list' lists them", typed)
+}
+
+// photoPersonNamed is the person the person typed: the username of somebody
+// who shares a circle with them.
+func photoPersonNamed(ctx context.Context, connection *client.Client, typed string) (string, string, error) {
+	people, err := client.ListCirclePeople(ctx, connection)
+	if err != nil {
+		return "", "", err
+	}
+	for _, person := range people {
+		if strings.EqualFold(person.Username, typed) {
+			return person.UserID, person.Username, nil
+		}
+	}
+	return "", "", fmt.Errorf("%q is not somebody you share a circle with; 'teanode circle people' lists them", typed)
+}
+
+func runPhotoAlbumShare(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode photo album share <album id> (--person <username> | --circle <circle>) [--contribute] [--with-location]")
+	}
+	personTyped, circleTyped := strings.TrimSpace(command.String("person")), strings.TrimSpace(command.String("circle"))
+	if (personTyped == "") == (circleTyped == "") {
+		return usage("share with one person (--person) or one circle (--circle)")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	var granteeUserId, granteeCircleId, described string
+	if personTyped != "" {
+		granteeUserId, described, err = photoPersonNamed(ctx, connection, personTyped)
+	} else {
+		var circleName string
+		granteeCircleId, circleName, err = photoCircleNamed(ctx, connection, circleTyped)
+		described = "everyone in " + circleName
+	}
+	if err != nil {
+		return describeError(command, err)
+	}
+	shareLevel := string(models.PhotoAlbumShareLevelView)
+	if command.Bool("contribute") {
+		shareLevel = string(models.PhotoAlbumShareLevelContribute)
+	}
+	share, err := client.SharePhotoAlbum(ctx, connection, command.Args().First(), granteeUserId, granteeCircleId, shareLevel, command.Bool("with-location"))
+	if err != nil {
+		return describeNotFound(command, err, "that album or "+described)
+	}
+	if command.Bool("json") {
+		return PrintJSON(share)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "shared with %s at %s%s (share %s)\n", forTerminal(described), share.ShareLevel, photoShareLocationText(share), share.ID)
+	return nil
+}
+
+// photoShareLocationText says what a share does about where photos were
+// taken.
+func photoShareLocationText(share *client.PhotoAlbumShare) string {
+	if share.IsLocationIncluded {
+		return ", with where the photos were taken"
+	}
+	return ", without where the photos were taken"
+}
+
+func runPhotoAlbumShares(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode photo album shares <album id>")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	shares, err := client.ListPhotoAlbumShares(ctx, connection, command.Args().First())
+	if err != nil {
+		return describeNotFound(command, err, "that album")
+	}
+	if command.Bool("json") {
+		return PrintJSON(shares)
+	}
+	if len(shares) == 0 {
+		_, _ = fmt.Fprintln(command.Writer, "the album is not shared with anybody")
+		return nil
+	}
+	rows := make([][]string, 0, len(shares))
+	for _, share := range shares {
+		with := share.GranteeUsername
+		if share.GranteeCircleID != nil {
+			with = "everyone in " + share.GranteeCircleName
+		}
+		location := "no"
+		if share.IsLocationIncluded {
+			location = "yes"
+		}
+		rows = append(rows, []string{forTerminal(with), share.ShareLevel, location, share.ID})
+	}
+	return printTable([]string{"with", "level", "places", "id"}, rows)
+}
+
+func runPhotoAlbumUnshare(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 1 {
+		return usage("usage: teanode photo album unshare <share id>; 'teanode photo album shares' lists them")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	if err := client.RemovePhotoAlbumShare(ctx, connection, command.Args().First()); err != nil {
+		return describeNotFound(command, err, "the share "+command.Args().First())
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"photoAlbumShareId": command.Args().First(), "isRemoved": true})
+	}
+	_, _ = fmt.Fprintln(command.Writer, "no longer shared")
+	return nil
 }
 
 func runPhotoAlbumRename(ctx context.Context, command *cli.Command) error {

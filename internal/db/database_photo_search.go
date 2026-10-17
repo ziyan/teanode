@@ -18,6 +18,14 @@ import (
 // whose search document matches the words and the described photos whose
 // description means something like them, and ranks the two together.
 
+// photoSearchPlaceTerm is the part of a search document that is the place.
+const photoSearchPlaceTerm = `setweight(to_tsvector('simple', photo.place_name), 'A') ||`
+
+// photoSearchDocumentWithoutPlaceExpression is the search document as a
+// reader sees it who may not know where a photo was taken: a search for the
+// words of a place must not find a photo whose place is held back.
+var photoSearchDocumentWithoutPlaceExpression = strings.Replace(photoSearchDocumentExpression, photoSearchPlaceTerm, "", 1)
+
 // photoSearchDocumentExpression is the search document of the photo the
 // statement it is put in is about. The place and the albums' titles weigh
 // most, the description and the words read in the picture next, the camera
@@ -27,7 +35,7 @@ import (
 // expression, less the names of the people in the photo (they weigh with the
 // place), which no photo had then.
 const photoSearchDocumentExpression = `
-	setweight(to_tsvector('simple', photo.place_name), 'A') ||
+	` + photoSearchPlaceTerm + `
 	setweight(to_tsvector('simple', COALESCE((
 		SELECT string_agg(photo_album.album_title, ' ')
 		FROM photo_album_item JOIN photo_album ON photo_album.id = photo_album_item.photo_album_id
@@ -66,24 +74,35 @@ func photoSearchWords(searchText string) ([]string, error) {
 	return words, nil
 }
 
-// photoSearchDocumentCondition keeps the photos whose search document has the
-// words. It is the search an index can serve.
-const photoSearchDocumentCondition = "photo.search_document @@ websearch_to_tsquery('simple', ?)"
-
 // photoSearchPartCondition keeps the photos where every word is part of the
 // place, the file name or the camera: a document matches whole words only, and
 // "harb" or "IMG_12" are still ways to look for a place or a file. It reads
 // every photo the filters keep, so it is asked only when the document search
 // leaves room.
-func photoSearchPartCondition(words []string) (string, []any) {
+func photoSearchPartCondition(words []string, scope photoScope) (string, []any) {
 	arguments := []any{}
 	parts := make([]string, 0, len(words))
 	for _, word := range words {
 		pattern := "%" + escapeLike(word) + "%"
-		parts = append(parts, "(photo.place_name ILIKE ? OR photo.original_filename ILIKE ? OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)")
+		placeCondition := "photo.place_name ILIKE ?"
+		if scope.isPlaceHeldBack {
+			placeCondition = "(photo.user_id = ? AND photo.place_name ILIKE ?)"
+			arguments = append(arguments, scope.readerUserId)
+		}
+		parts = append(parts, "("+placeCondition+" OR photo.original_filename ILIKE ? OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)")
 		arguments = append(arguments, pattern, pattern, pattern, pattern)
 	}
 	return "(" + strings.Join(parts, " AND ") + ")", arguments
+}
+
+// searchDocument is the column a search reads, with the arguments it takes:
+// the stored document, or for a listing that holds places back the document
+// without the place for the photos that are not the reader's.
+func (self photoScope) searchDocument() (string, []any) {
+	if !self.isPlaceHeldBack {
+		return "photo.search_document", nil
+	}
+	return "(CASE WHEN photo.user_id = ? THEN photo.search_document ELSE (" + photoSearchDocumentWithoutPlaceExpression + ") END)", []any{self.readerUserId}
 }
 
 // rankPhotos is the identifiers of the photos a search finds, best first, at
@@ -104,15 +123,16 @@ func (self *transaction) rankPhotos(userId string, filter *PhotoFilter, neededCo
 		return nil, err
 	}
 	searchText := strings.Join(words, " ")
-	query, err := self.photosMatching(userId, filter)
+	query, scope, err := self.photosMatchingInScope(userId, filter)
 	if err != nil {
 		return nil, err
 	}
+	documentSQL, documentArguments := scope.searchDocument()
 	var keywordIds []string
-	if err := query.Where(photoSearchDocumentCondition, searchText).
+	if err := query.Where(documentSQL+" @@ websearch_to_tsquery('simple', ?)", append(slices.Clone(documentArguments), searchText)...).
 		Clauses(clause.OrderBy{Expression: clause.Expr{
-			SQL:  "ts_rank_cd(photo.search_document, websearch_to_tsquery('simple', ?)) DESC, " + photoTimelineExpression + " DESC, photo.id DESC",
-			Vars: []any{searchText},
+			SQL:  "ts_rank_cd(" + documentSQL + ", websearch_to_tsquery('simple', ?)) DESC, " + photoTimelineExpression + " DESC, photo.id DESC",
+			Vars: append(slices.Clone(documentArguments), searchText),
 		}}).
 		Limit(MaximumRankedPhotos).Pluck("photo.id", &keywordIds).Error; err != nil {
 		return nil, err
@@ -122,7 +142,7 @@ func (self *transaction) rankPhotos(userId string, filter *PhotoFilter, neededCo
 		neededCount = MaximumRankedPhotos
 	}
 	if len(keywordIds) < min(neededCount, MaximumRankedPhotos) && len(words) > 0 {
-		partCondition, partArguments := photoSearchPartCondition(words)
+		partCondition, partArguments := photoSearchPartCondition(words, scope)
 		partQuery, err := self.photosMatching(userId, filter)
 		if err != nil {
 			return nil, err

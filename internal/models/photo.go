@@ -192,6 +192,13 @@ type Photo struct {
 	// version or the Live Photo's video that is missing. Worked out when the
 	// photo is read.
 	PhotoFileRoles []PhotoFileRole `json:"photoFileRoles" gorm:"-"`
+
+	// IsOwnedByCaller says the photo is in the caller's own library; OwnerName
+	// is whose it is when it is not, for a photo read through an album that
+	// was shared with the caller. A photo that is not the caller's has no
+	// place or favorite mark in it: those are the owner's.
+	IsOwnedByCaller bool   `json:"isOwnedByCaller" gorm:"-"`
+	OwnerName       string `json:"ownerName" gorm:"-"`
 }
 
 // TakenAtOnClock is when the photo was taken on the clock where it was taken:
@@ -323,11 +330,17 @@ func NormalizePhotoAlbumTitle(albumTitle string) (string, error) {
 	return albumTitle, nil
 }
 
-// PhotoAlbum is a named set of a person's photos. It holds references: a photo
-// can be in several albums, and deleting the album leaves the photos.
+// PhotoAlbum is a named set of photos. It holds references: a photo can be in
+// several albums, and deleting the album leaves the photos. An album belongs
+// to a person or to a circle; the photos in it belong to whoever added them.
 type PhotoAlbum struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"userId"`
+	ID string `json:"id"`
+
+	// OwnerUserID is the person the album belongs to, null for a circle's
+	// album, and CircleID the circle it belongs to, null for a person's.
+	OwnerUserID *string `json:"ownerUserId" graphapi:"nullable"`
+	CircleID    *string `json:"circleId" graphapi:"nullable"`
+
 	AlbumTitle string    `json:"albumTitle"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
@@ -357,6 +370,32 @@ type PhotoAlbum struct {
 	// its preview the way it addresses any other.
 	CoverPreviewPhotoID        string     `json:"-" gorm:"-"`
 	CoverPreviewPhotoUpdatedAt *time.Time `json:"-" gorm:"-"`
+
+	// Whose the album is and what the caller may do with it, worked out for
+	// the caller when it is read. OwnerUser is the person who owns it, nil for
+	// a circle's album, and CircleName the circle's name for one.
+	OwnerUser             *User   `json:"-" gorm:"-"`
+	OwnerUsername         string  `json:"ownerUsername" gorm:"-"`
+	OwnerName             string  `json:"ownerName" gorm:"-"`
+	OwnerAvatarURL        *string `json:"ownerAvatarUrl" gorm:"-"`
+	OwnerAvatarColorIndex int     `json:"ownerAvatarColorIndex" gorm:"-"`
+	CircleName            string  `json:"circleName" gorm:"-"`
+	IsOwnedByCaller       bool    `json:"isOwnedByCaller" gorm:"-"`
+
+	// ShareLevel is the level the caller has: empty for the owner, contribute
+	// for a member of the circle that owns the album, and the level it is
+	// shared at for anybody else.
+	ShareLevel PhotoAlbumShareLevel `json:"shareLevel" gorm:"-"`
+
+	// CanCallerContribute says the caller may add their own photos, and
+	// CanCallerManage that they may rename, delete and share the album: its
+	// owner, or an admin of the circle that owns it.
+	CanCallerContribute bool `json:"canCallerContribute" gorm:"-"`
+	CanCallerManage     bool `json:"canCallerManage" gorm:"-"`
+
+	// IsLocationIncluded says the share that reaches the caller lets them see
+	// where the album's photos were taken.
+	IsLocationIncluded bool `json:"isLocationIncluded" gorm:"-"`
 }
 
 // PhotoAlbumItem puts a photo in an album.

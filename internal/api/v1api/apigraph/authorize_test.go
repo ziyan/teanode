@@ -67,6 +67,13 @@ var authorizing = map[string]bool{
 	// The photo service is on, requirePermission(photos:use), and the
 	// caller's account. Every photo is read through the owner's id.
 	"requirePhotosPerson": true,
+	// requirePhotosPerson, then the photo or the album the caller reaches
+	// (their own, a circle's they are in, or shared with them), at the level
+	// the operation needs; anything else is not found.
+	"requirePhotoReader":           true,
+	"requirePhotoAlbumReader":      true,
+	"requirePhotoAlbumContributor": true,
+	"requirePhotoAlbumManager":     true,
 	// requireSignedIn, then the account whose picture it is: the caller's own,
 	// or another's only with user:manage.
 	"requireAvatarOwner": true,

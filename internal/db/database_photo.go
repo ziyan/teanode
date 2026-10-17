@@ -235,8 +235,10 @@ type PhotoFilter struct {
 	NearLongitude          *float64
 	NearDistanceKilometers *float64
 
-	// AlbumID keeps the photos of one album. An album that is not the
-	// person's is not found.
+	// AlbumID keeps the photos of one album, whoever added them. An album the
+	// person does not reach is not found. In an album the photos that are not
+	// the person's come without their places, unless the share that reaches the
+	// person includes them, and the trash and the favorites are the person's own.
 	AlbumID string
 
 	// FaceGroupID keeps the photos with a face in one group of faces; a group
@@ -487,42 +489,98 @@ func findOneRow(query *gorm.DB, row any) (bool, error) {
 // skipping, because skipping reads every photo it skips.
 const maximumPhotoOffset = 100000
 
+// photoScope is which photos a listing reads and what it may reveal of them.
+// A listing without an album reads the person's own library. A listing of an
+// album reads the photos in it, whoever added them, and the person who asks
+// sees the place of only those that are theirs, unless the share that reaches
+// them includes places. A listing must not give a place away by other means
+// either: a filter by distance and a search by the words of a place would each
+// tell a reader where a photo was taken, so for the photos whose place is
+// held back they leave the place out.
+type photoScope struct {
+	readerUserId string
+
+	// isInAlbum says the listing is of one album.
+	isInAlbum bool
+
+	// isPlaceHeldBack says the place of the photos that are not the reader's
+	// own is not the reader's to learn.
+	isPlaceHeldBack bool
+}
+
+// ownPhotoCondition keeps the reader's own photos.
+func (self photoScope) ownPhotoCondition() (string, []any) {
+	return "photo.user_id = ?", []any{self.readerUserId}
+}
+
+// scopeOfPhotoListing works out what a listing reads. An album the person does
+// not reach is not found.
+func (self *transaction) scopeOfPhotoListing(userId string, filter *PhotoFilter) (photoScope, error) {
+	scope := photoScope{readerUserId: userId}
+	if filter.AlbumID == "" {
+		return scope, nil
+	}
+	access, err := self.GetPhotoAlbumAccess(userId, filter.AlbumID)
+	if err != nil {
+		return scope, err
+	}
+	scope.isInAlbum, scope.isPlaceHeldBack = true, !access.IsLocationIncluded
+	return scope, nil
+}
+
 // photosMatching is the photos the filter keeps, before any paging. Listing
 // and counting both start here, so that they cannot disagree about what a
 // filter means.
 func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*gorm.DB, error) {
+	query, _, err := self.photosMatchingInScope(userId, filter)
+	return query, err
+}
+
+func (self *transaction) photosMatchingInScope(userId string, filter *PhotoFilter) (*gorm.DB, photoScope, error) {
 	if userId == "" {
-		return nil, ErrNotFound
+		return nil, photoScope{}, ErrNotFound
 	}
 	if filter == nil {
-		return nil, ErrInvalidArguments
+		return nil, photoScope{}, ErrInvalidArguments
 	}
-	query := self.tx.Model(&photoModel{}).Where("photo.user_id = ?", userId)
-	if filter.AlbumID != "" {
-		var albumCount int64
-		if err := self.tx.Model(&photoAlbumModel{}).Where("id = ? AND user_id = ?", filter.AlbumID, userId).Count(&albumCount).Error; err != nil {
-			return nil, err
-		}
-		if albumCount == 0 {
-			return nil, ErrNotFound
-		}
-		query = query.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
-	}
-	query, err := self.photoFaceConditions(query, userId, filter)
+	scope, err := self.scopeOfPhotoListing(userId, filter)
 	if err != nil {
-		return nil, err
+		return nil, scope, err
+	}
+	query := self.tx.Model(&photoModel{})
+	if scope.isInAlbum {
+		query = query.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
+	} else {
+		query = query.Where("photo.user_id = ?", userId)
+	}
+	query, err = self.photoFaceConditions(query, userId, filter)
+	if err != nil {
+		return nil, scope, err
 	}
 	if filter.IsTrashed {
+		// The trash is the owner's alone, in an album as in the library.
 		query = query.Where("photo.trashed_at > ?", photoMarkedForDeletion)
+		if scope.isInAlbum {
+			query = query.Where("photo.user_id = ?", userId)
+		}
 	} else {
 		query = query.Where("photo.trashed_at IS NULL")
 	}
 	if filter.IsFavorite != nil {
-		query = query.Where("photo.is_favorite = ?", *filter.IsFavorite)
+		// A favorite is a mark in the owner's library; on somebody else's
+		// photo it is not shown and not asked about.
+		switch {
+		case !scope.isInAlbum:
+			query = query.Where("photo.is_favorite = ?", *filter.IsFavorite)
+		case *filter.IsFavorite:
+			query = query.Where("photo.user_id = ? AND photo.is_favorite", userId)
+		default:
+			query = query.Where("(photo.user_id <> ? OR NOT photo.is_favorite)", userId)
+		}
 	}
 	if filter.PhotoKind != "" {
 		if !filter.PhotoKind.IsValid() {
-			return nil, ErrInvalidArguments
+			return nil, scope, ErrInvalidArguments
 		}
 		query = query.Where("photo.photo_kind = ?", filter.PhotoKind)
 	}
@@ -536,7 +594,7 @@ func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*go
 	if hasNear {
 		if filter.NearLatitude == nil || filter.NearLongitude == nil || filter.NearDistanceKilometers == nil || *filter.NearDistanceKilometers <= 0 ||
 			*filter.NearLatitude < -90 || *filter.NearLatitude > 90 || *filter.NearLongitude < -180 || *filter.NearLongitude > 180 {
-			return nil, ErrInvalidArguments
+			return nil, scope, ErrInvalidArguments
 		}
 		// The great-circle distance by the haversine formula, on a sphere of
 		// the earth's mean radius: good to a fraction of a percent, which is
@@ -545,8 +603,12 @@ func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*go
 			12742 * asin(sqrt(least(1, power(sin(radians(photo.latitude - ?) / 2), 2) +
 				cos(radians(?)) * cos(radians(photo.latitude)) * power(sin(radians(photo.longitude - ?) / 2), 2)))) <= ?`,
 			*filter.NearLatitude, *filter.NearLatitude, *filter.NearLongitude, *filter.NearDistanceKilometers)
+		if scope.isPlaceHeldBack {
+			condition, arguments := scope.ownPhotoCondition()
+			query = query.Where(condition, arguments...)
+		}
 	}
-	return query, nil
+	return query, scope, nil
 }
 
 func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*models.Photo, error) {
@@ -565,7 +627,13 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 			PlacedAt time.Time
 			ID       string
 		}
-		isFound, err := findOneRow(self.tx.Model(&photoModel{}).Select(photoTimelineExpression+" AS placed_at, photo.id").Where("photo.id = ? AND photo.user_id = ?", filter.BeforePhotoID, userId), &cursor)
+		cursorQuery := self.tx.Model(&photoModel{}).Select(photoTimelineExpression+" AS placed_at, photo.id").Where("photo.id = ?", filter.BeforePhotoID)
+		if filter.AlbumID == "" {
+			cursorQuery = cursorQuery.Where("photo.user_id = ?", userId)
+		} else {
+			cursorQuery = cursorQuery.Where("EXISTS (SELECT 1 FROM photo_album_item WHERE photo_album_item.photo_id = photo.id AND photo_album_item.photo_album_id = ?)", filter.AlbumID)
+		}
+		isFound, err := findOneRow(cursorQuery, &cursor)
 		if err != nil {
 			return nil, err
 		}

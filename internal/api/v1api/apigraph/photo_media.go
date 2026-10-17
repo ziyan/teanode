@@ -69,7 +69,66 @@ func (self *graph) photoFileBytes(ctx context.Context, ownerId, photoId string, 
 	}, nil
 }
 
-// photoPreviewView serves a smaller copy of a photo to its owner.
+// photoAccessOf is why the person may read the photo, or db.ErrNotFound. The
+// routes below serve a photo through its owner's rows once this has let the
+// person in.
+func (self *graph) photoAccessOf(ctx context.Context, userId, photoId string) (*models.PhotoAccess, error) {
+	var access *models.PhotoAccess
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		access, err = transaction.GetPhotoAccess(userId, photoId)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return access, nil
+}
+
+// photoFileBytesFor is one file of a photo as the person may have it: the file
+// itself for its owner and for a reader whose share includes where photos were
+// taken, and for any other reader the preview that stands for it, under the
+// name of a picture or a video, because the original's bytes carry the place.
+// A Live Photo's video has no such preview and is not found.
+func (self *graph) photoFileBytesFor(ctx context.Context, access *models.PhotoAccess, photoFileRole models.PhotoFileRole, disposition string) (*photoBytes, error) {
+	if access.IsOwner || access.IsLocationIncluded {
+		return self.photoFileBytes(ctx, access.OwnerUserID, access.PhotoID, photoFileRole, disposition)
+	}
+	var photoPreviewSize models.PhotoPreviewSize
+	var found *models.Photo
+	var files []*models.PhotoFile
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		if photoFileRole == models.PhotoFileRoleLiveVideo {
+			return db.ErrNotFound
+		}
+		var err error
+		if found, err = transaction.GetPhoto(access.OwnerUserID, access.PhotoID); err != nil {
+			return err
+		}
+		if files, err = transaction.ListPhotoFiles(access.OwnerUserID, []string{access.PhotoID}); err != nil {
+			return err
+		}
+		previews, err := transaction.ListPhotoPreviews(access.OwnerUserID, []string{access.PhotoID})
+		if err != nil {
+			return err
+		}
+		var isAvailable bool
+		if photoPreviewSize, isAvailable = photo.SharedCopyPreviewSize(found.PhotoKind, photo.HasPreviewIn(previews)); !isAvailable {
+			return db.ErrNotFound
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	content, err := self.photoPreviewBytes(ctx, access.OwnerUserID, access.PhotoID, photoPreviewSize)
+	if err != nil {
+		return nil, err
+	}
+	content.disposition = mime.FormatMediaType(disposition, map[string]string{"filename": photo.SharedCopyFilename(found, files, photoPreviewSize)})
+	content.cacheControl, content.isRangeServed = "private, no-cache", true
+	return content, nil
+}
+
+// photoPreviewView serves a smaller copy of a photo to whoever may read the
+// photo. A preview is made afresh and carries no place, so every reader has it.
 func (self *graph) photoPreviewView(response http.ResponseWriter, request *http.Request) {
 	user, ctx, isAuthorized := self.photoPerson(response, request, false)
 	if !isAuthorized {
@@ -80,7 +139,12 @@ func (self *graph) photoPreviewView(response http.ResponseWriter, request *http.
 		http.Error(response, "no such preview", http.StatusNotFound)
 		return
 	}
-	content, err := self.photoPreviewBytes(ctx, user.ID, mux.Vars(request)["photoId"], photoPreviewSize)
+	access, err := self.photoAccessOf(ctx, user.ID, mux.Vars(request)["photoId"])
+	if err != nil {
+		photoHttpError(response, err)
+		return
+	}
+	content, err := self.photoPreviewBytes(ctx, access.OwnerUserID, access.PhotoID, photoPreviewSize)
 	if err != nil {
 		photoHttpError(response, err)
 		return
@@ -88,7 +152,9 @@ func (self *graph) photoPreviewView(response http.ResponseWriter, request *http.
 	self.servePhotoBytes(response, request, ctx, content)
 }
 
-// photoFileView serves one file of a photo to its owner, to save.
+// photoFileView serves one file of a photo to whoever may read the photo, to
+// save: the file itself where the person may have it, else the preview that
+// stands for it (see photoFileBytesFor).
 func (self *graph) photoFileView(response http.ResponseWriter, request *http.Request) {
 	user, ctx, isAuthorized := self.photoPerson(response, request, false)
 	if !isAuthorized {
@@ -99,7 +165,12 @@ func (self *graph) photoFileView(response http.ResponseWriter, request *http.Req
 		http.Error(response, "no such file", http.StatusNotFound)
 		return
 	}
-	content, err := self.photoFileBytes(ctx, user.ID, mux.Vars(request)["photoId"], photoFileRole, "attachment")
+	access, err := self.photoAccessOf(ctx, user.ID, mux.Vars(request)["photoId"])
+	if err != nil {
+		photoHttpError(response, err)
+		return
+	}
+	content, err := self.photoFileBytesFor(ctx, access, photoFileRole, "attachment")
 	if err != nil {
 		photoHttpError(response, err)
 		return

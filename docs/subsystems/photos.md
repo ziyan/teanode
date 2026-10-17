@@ -21,7 +21,7 @@ through `ffprobe` and `ffmpeg`. `internal/place` names the city a photo was
 taken in from a table bundled with the server. `internal/faces` runs
 `teanode-faces`, the C++ face reader in `tools/faces/`.
 
-`internal/db/database_photo*.go` keeps the rows, migrations 0220 to 0223 make
+`internal/db/database_photo*.go` keeps the rows, migrations 0220 to 0224 make
 them, and `internal/api/v1api/apigraph/photo*.go` is what every client talks
 to. The dashboard is `web/src/pages/photos/` and `web/src/photos/`, the
 command line `internal/cmd/photo*.go`, the agent's tool
@@ -53,8 +53,9 @@ Everything known about a photo is a row; the bytes are blobs in the store
   the long side), `large` (2048) and, for a video, `video` (H.264, 1280).
   Previews can always be made again; nothing depends on them being kept.
 - `photo_upload` and `photo_upload_part` are a file on its way in.
-- `photo_album` and `photo_album_item`; `photo_vector` (a description's
-  embedding); `photo_face` and `photo_face_group`.
+- `photo_album` and `photo_album_item`; `photo_album_share` (who an album is
+  shared with); `photo_vector` (a description's embedding); `photo_face` and
+  `photo_face_group`.
 
 A backup of the database is not a backup of the library: the blob store has
 to be backed up too.
@@ -150,6 +151,83 @@ face is not that person (`person-remove-face`, with the `photo_face_id` that
 that does not ask first, since the person can undo it. Faces are on for
 everybody by default; switching them off deletes every face and group the
 person has.
+
+## Sharing
+
+An album belongs to a person (`photo_album.user_id`) or to a circle
+(`photo_album.circle_id`), exactly one of the two. A person shares an album
+with one person they share a circle with, or with a circle they are in, at a
+**share level** (`view`, to see and save its photos, or `contribute`, to also
+add photos of their own and take out the ones they added), and says whether the
+share includes where the photos were taken (`is_location_included`). A circle's
+album is read and added to by every member and managed (renamed, covered,
+deleted) by the circle's admins; it is not shared further, since every member
+has it. A photo in somebody else's album is still the photo of whoever added
+it (`photo_album_item.added_by_user_id`), on their space, in their library.
+
+Who may do what is one answer, asked of the database: `GetPhotoAlbumAccess`
+(owner, member of the owning circle, direct share, share to a circle both the
+reader and the owner are in) and `GetPhotoAccess` (the owner, or any album that
+holds the photo and reaches the reader; the trash is the owner's alone). The
+dashboard, the phone, the command line and the agent all go through
+`requirePhotoReader`, `requirePhotoAlbumReader`, `requirePhotoAlbumContributor`
+and `requirePhotoAlbumManager` in `apigraph/photo_authorize.go`, and every
+refusal is "not found". A shared photo is read through its owner's rows: its
+files, previews and faces are fetched with the owner's identifier once the
+caller was let in.
+
+What a reader who is not the photo's owner is given:
+
+- no latitude, longitude or place name, no favorite mark and no uploader name
+  for it, unless the share includes places (a circle's album has no share, so
+  its members see only their own photos' places, and the owner of an album
+  sees the places of others' photos in it only if a share gave them);
+- the preview in place of the original: the `files` route, a file in
+  `ReadPhoto` and a signed playback address for a file all answer with the
+  `large` preview (or a video's `video` preview), named as a picture or a
+  video, because the original's bytes carry the place. A Live Photo's video has
+  no such preview and is not found. Previews are made afresh and carry none;
+- the same listing, search and count as the owner, but a listing of an album
+  gives a place away by no other means either: the distance filter and the
+  words of a place find only the reader's own photos in it;
+- the faces as the owner's, with the names the owner gave them;
+- the description, which is words about the picture.
+
+`SavePhotoToLibrary` makes a reader a photo of their own. Where the share
+includes places it is made over the same blob (the owner's `photo_file` rows
+are copied to a new `photo` of the reader's with source `shared` and client
+photo id `shared:` and the original's SHA-256, so saving twice is saving once),
+nothing new is stored, and the quota counts the files. Without places it stores
+the preview the reader could see as the new photo's original, one new blob,
+because the original's bytes would hand the place over. Either way the new
+photo is processed like any other.
+
+Leaving a circle ends what the circle made possible. The circles code calls
+`releasePhotoAlbumsOutsideCircles` (in `endSharesOutsideCircles`, inside the
+membership lock) for each person who left, deleting direct shares between
+people who no longer share any circle and the person's shares to circles they
+left, and then taking out of every album the person owns or added to the
+photos of people who no longer reach it at all, by asking
+`GetPhotoAlbumAccess` of each. The same sweep runs when a share is taken back.
+Making a share, or adding to somebody else's album, takes the membership lock
+first, so a change made as somebody leaves is either cleaned up by the leaving
+or refused.
+
+Photos added to an album other people read are announced to their phones:
+"Ana added 6 photos to Family", at most once per album per reader every ten
+minutes, to the readers who may keep photos and have a phone registered. The
+notification kind is `photo`, which a phone that chose its kinds before it
+existed does not receive until it is switched on. The ten minutes are kept in
+memory by each server instance.
+
+The agent's tool shows the albums that are not the person's with their owner
+and level (`album-list`), and reads them where they are: `list` and `look`
+with the album's `album_id`, each photo marked with its owner. It copies
+nothing into the person's library unless they ask (`save-shared`).
+`album-share` and `album-unshare` are of the risk class granting, as the
+calendar's share is, so they ask the person unless they allowed it, and the
+card names the album and the people. `look` does not queue a description of
+somebody else's photo: a description belongs to the library of its owner.
 
 ## The iPhone
 

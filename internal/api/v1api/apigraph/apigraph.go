@@ -83,6 +83,11 @@ type graph struct {
 	// for a few seconds, so that the listing and the count a page asks for
 	// together call the embedding model once.
 	photoSearchMeanings photoSearchMeaningCache
+
+	// photoAddNotices remembers when each reader was last told that photos
+	// were added to an album, so that one person adding photos one after
+	// another is one notification (photo_album_share.go).
+	photoAddNotices photoAddNoticeCache
 	// chatLimits are what one person may do in chats a minute on this
 	// instance; made the first time they are wanted (chat.go).
 	chatLimitsOnce  sync.Once

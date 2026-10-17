@@ -21,19 +21,27 @@ const (
 )
 
 // resolvePhotoReference is a photo the person pointed at, read with the
-// agent's owner: nil when it is not theirs or has been deleted, else the
-// reference with its chip filled in from the stored row rather than from what
-// the dashboard sent, and what the model is told about it written beside it.
-// A photo in the Trash is still the person's, so it is kept and said to be in
-// the Trash.
+// agent's owner: nil when they may not read it or it has been deleted, else
+// the reference with its chip filled in from the stored row rather than from
+// what the dashboard sent, and what the model is told about it written beside
+// it. A photo in the Trash is still the person's, so it is kept and said to be
+// in the Trash. A photo in an album somebody shared with the person is read
+// as the person may read it: without its place unless the share includes it.
 func resolvePhotoReference(tx db.Transaction, agentId, userId string, reference models.AgentReference) (*models.AgentReference, error) {
-	photo, err := tx.GetPhoto(userId, reference.PhotoID)
+	access, err := tx.GetPhotoAccess(userId, reference.PhotoID)
+	var photo *models.Photo
+	if err == nil {
+		photo, err = tx.GetPhoto(access.OwnerUserID, reference.PhotoID)
+	}
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			log.Warningf("agent %s was pointed at photo %q, which is not its owner's or is deleted; left out", agentId, reference.PhotoID)
+			log.Warningf("agent %s was pointed at photo %q, which its owner may not read or is deleted; left out", agentId, reference.PhotoID)
 			return nil, nil
 		}
 		return nil, err
+	}
+	if !access.IsOwner && !access.IsLocationIncluded {
+		photo.PlaceName, photo.Latitude, photo.Longitude = "", nil, nil
 	}
 	reference.PhotoTitle = photoReferenceTitle(photo)
 	reference.PhotoContext = photoContext(photo)

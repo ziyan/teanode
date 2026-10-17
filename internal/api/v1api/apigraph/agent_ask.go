@@ -1057,13 +1057,13 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 			return nil, err
 		}
 	}
-	// A photo pointed at must be the person's own and not deleted, refused
-	// the same way.
+	// A photo pointed at must be one the person may read and not deleted,
+	// refused the same way.
 	for _, reference := range arguments.References {
 		if reference.PhotoID == "" {
 			continue
 		}
-		if _, err := tx.GetPhoto(asking.UserID, reference.PhotoID); err != nil {
+		if _, err := tx.GetPhotoAccess(asking.UserID, reference.PhotoID); err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				return nil, api.ErrNotFound
 			}
