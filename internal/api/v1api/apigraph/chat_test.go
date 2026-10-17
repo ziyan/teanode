@@ -1549,6 +1549,18 @@ func TestAChatIsPutAwayAndBroughtBackByEachPersonAlone(t *testing.T) {
 	if contains(listed(world.bob, false), bobChat) || !contains(listed(world.bob, true), bobChat) {
 		t.Errorf("Bob lists live %v and archived %v after putting the chat away", listed(world.bob, false), listed(world.bob, true))
 	}
+	// A message to the chat is told to the phone of everyone but him.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		stored, err := tx.GetChatOfConversation(bobChat)
+		if err != nil {
+			t.Fatalf("GetChatOfConversation: %s", err)
+		}
+		for _, recipient := range recipientsOf(stored.Members) {
+			if recipient.IsArchived != (recipient.UserID == world.bob.ID) {
+				t.Errorf("the phone notification of %s has IsArchived %t after Bob put the chat away", recipient.UserID, recipient.IsArchived)
+			}
+		}
+	})
 	// It is Bob's row of the chat: Alice still has hers.
 	if !contains(listed(world.alice, false), aliceChat) || contains(listed(world.alice, true), aliceChat) {
 		t.Error("putting the chat away took it out of Alice's list")

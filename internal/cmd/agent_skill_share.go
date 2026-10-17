@@ -301,10 +301,7 @@ func runAgentSkillCalls(ctx context.Context, command *cli.Command) error {
 			tool = call.SkillName + " " + call.ToolName
 		}
 		// The state is printed as --state takes it.
-		callState := call.CallState
-		if callState == string(models.SkillShareCallWaitingForApproval) {
-			callState = "waiting"
-		}
+		callState := models.SkillShareCallState(call.CallState).AskedWord()
 		rows = append(rows, []string{call.ID, call.CreatedAt.Local().Format("2006-01-02 15:04"), call.GranteeUsername, tool, amount, callState, quotedReason, call.ApproveAddress})
 	}
 	return printTable([]string{"call", "asked", "by", "tool", "amount", "state", "their agent said", "approve it at"}, rows)

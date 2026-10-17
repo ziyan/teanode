@@ -75,20 +75,30 @@ const SkillShareNoLimitsWords = "No limits: every call waits for approval, excep
 // state was asked, which is every call. The command line and the agent's
 // tool both read them this way.
 func SkillShareCallStatesAsked(words []string) ([]SkillShareCallState, error) {
-	var states []SkillShareCallState
+	var askedCallStates []SkillShareCallState
 	for _, word := range words {
-		state := SkillShareCallState(strings.ToLower(strings.TrimSpace(word)))
-		if state == "waiting" {
-			state = SkillShareCallWaitingForApproval
+		callState := SkillShareCallState(strings.ToLower(strings.TrimSpace(word)))
+		if callState == "waiting" {
+			callState = SkillShareCallWaitingForApproval
 		}
-		if !state.IsValid() {
+		if !callState.IsValid() {
 			return nil, fmt.Errorf("a call state is ran, failed, refused, waiting, declined or expired; %q is none of them", word)
 		}
-		if !slices.Contains(states, state) {
-			states = append(states, state)
+		if !slices.Contains(askedCallStates, callState) {
+			askedCallStates = append(askedCallStates, callState)
 		}
 	}
-	return states, nil
+	return askedCallStates, nil
+}
+
+// AskedWord is the state as SkillShareCallStatesAsked takes it, which is what
+// the command line prints and the agent's tool answers: waiting for
+// waiting_for_approval, and the operation's own name for any other.
+func (self SkillShareCallState) AskedWord() string {
+	if self == SkillShareCallWaitingForApproval {
+		return "waiting"
+	}
+	return string(self)
 }
 
 // SkillShareCallWaitFor is how long a call waits for the owner before it

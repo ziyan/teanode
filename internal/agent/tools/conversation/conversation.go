@@ -56,6 +56,13 @@ func init() {
 					switch strings.TrimSpace(asked.Action) {
 					case "react":
 						if strings.TrimSpace(asked.ChatMessageID) != "" {
+							// An emoji that is not one is refused by react
+							// before anything is said, so there is nothing
+							// to ask the person about, and no card to carry
+							// words the model chose.
+							if reactionEmoji := strings.TrimSpace(asked.Emoji); reactionEmoji != "" && models.ValidateReactionEmoji(reactionEmoji) != nil {
+								return tools.RiskRead
+							}
 							return tools.RiskOutward
 						}
 						return tools.RiskWrite
@@ -401,7 +408,7 @@ func reactPreview(ctx context.Context, call conversationArguments) string {
 	if reactionEmoji == "" {
 		return "Take the agent's reaction off " + where
 	}
-	return fmt.Sprintf("React %s to %s", reactionEmoji, where)
+	return fmt.Sprintf("React %s to %s", tools.Named(reactionEmoji, ""), where)
 }
 
 // sendPreview is the card for a send: which chat, found by its title, and
@@ -512,26 +519,18 @@ func react(ctx context.Context, run tools.Run, arguments conversationArguments) 
 			return err
 		}
 		// A message of a chat is not a row of a conversation, and reacting
-		// to one is said to everybody in the chat: it has its own argument.
+		// to one is said to everybody in the chat: it has its own argument,
+		// which the tool's description names. Given here it reads exactly
+		// like a message that does not exist, as does somebody else's
+		// message, as their conversation does to read.
 		if message == nil {
-			chatMessage, err := tx.GetChatMessage(messageId)
-			if err != nil {
-				return err
-			}
-			if chatMessage != nil {
-				return fmt.Errorf("that is a chat message; use chat_message_id")
-			}
 			return fmt.Errorf("there is no message %q", messageId)
 		}
-		// Somebody else's message reads exactly like one that does not
-		// exist, as their conversation does to read.
-		var conversation *models.AgentConversation
-		if message != nil {
-			if conversation, err = tx.GetAgentConversation(message.ConversationID); err != nil {
-				return err
-			}
+		conversation, err := tx.GetAgentConversation(message.ConversationID)
+		if err != nil {
+			return err
 		}
-		if message == nil || conversation == nil || conversation.AgentID != agentId {
+		if conversation == nil || conversation.AgentID != agentId {
 			return fmt.Errorf("there is no message %q", messageId)
 		}
 		if reactionEmoji != "" && !message.CanBeReactedToBy(models.ReactorAgent) {

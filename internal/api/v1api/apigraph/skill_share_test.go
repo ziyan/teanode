@@ -84,7 +84,7 @@ func newSkillShareWorld(t *testing.T) *skillShareWorld {
 }
 
 const skillShareFields = `{ id skillName toolNames ownerUsername granteeUsername paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount }`
-const skillShareCallFields = `{ id toolName callState amountMinor currencyCode requestReason granteeUsername answerNote toolArguments }`
+const skillShareCallFields = `{ id toolName callState amountMinor currencyCode requestReason granteeUsername answerNote toolArguments amountArgumentName }`
 
 func (self *skillShareWorld) shareQuery(toolNames string, granteeId string, extra string) string {
 	return fmt.Sprintf(`mutation { ShareSkill(skillName: "payments", toolNames: %s, granteeUserId: %q %s) %s }`, toolNames, granteeId, extra, skillShareFields)
@@ -183,7 +183,8 @@ func TestSkillSharesAndTheirCallsAreSeenByTheTwoPeopleAndNoOneElse(t *testing.T)
 		}
 		calls := world.call(t, user, fmt.Sprintf(`query { ListSkillShareCalls(shareId: %q) %s }`, shareId, skillShareCallFields))["ListSkillShareCalls"].([]any)
 		if len(calls) != 1 || calls[0].(map[string]any)["id"] != callId || calls[0].(map[string]any)["requestReason"] != "the weekly groceries" ||
-			calls[0].(map[string]any)["callState"] != "waiting_for_approval" || calls[0].(map[string]any)["amountMinor"].(float64) != 2500 {
+			calls[0].(map[string]any)["callState"] != "waiting_for_approval" || calls[0].(map[string]any)["amountMinor"].(float64) != 2500 ||
+			calls[0].(map[string]any)["amountArgumentName"] != "amount_minor" {
 			t.Errorf("%s is shown the calls %v", user.Username, calls)
 		}
 	}
@@ -352,7 +353,7 @@ func TestSavingASkillMakesSharesThatNoLongerQualifyAskEveryTime(t *testing.T) {
 		}
 		if _, err := tx.ShareSkill(world.ada.ID, &models.SkillShare{
 			SkillName: "payments", ToolNames: []string{"pay"}, GranteeUserID: world.cora.ID,
-			PaymentLimitMinor: new(int64(500)), CurrencyCode: "usd",
+			PaymentLimitMinor: new(int64(500)), MonthlyLimitMinor: new(int64(100)), CurrencyCode: "usd",
 		}); err != nil {
 			t.Fatalf("ShareSkill: %s", err)
 		}

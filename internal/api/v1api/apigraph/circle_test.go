@@ -183,7 +183,7 @@ func TestACircleIsMadeInvitedToAndJoined(t *testing.T) {
 		t.Error("declining put carol in the circle")
 	}
 	// An invitation already answered says so, to the person it was for.
-	if said := world.refused(t, world.carol, fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: true) { id } }`, carolInvitation)); !strings.Contains(said, "That invitation was already answered") {
+	if said := world.refused(t, world.carol, fmt.Sprintf(`mutation { AnswerCircleInvitation(invitationId: %q, isAccepted: true) { id } }`, carolInvitation)); !strings.Contains(said, "that invitation was already answered") {
 		t.Errorf("answering an answered invitation said %q", said)
 	}
 

@@ -763,8 +763,8 @@ func (self *notFoundOperations) Permissions() *models.EffectivePermissions { ret
 // A reaction in a chat (chat_message_id) is seen by every member under the
 // agent's name: it is outward, so it asks, and the card says where. A reaction
 // to a message of the person's own conversations, by message_id or by default,
-// stays a write, and a chat message given as a message_id is turned back with
-// the argument to use. A chat message the person cannot read answers as one
+// stays a write, and a chat message given as a message_id answers as one that is not
+// there. A chat message the person cannot read answers as one
 // that is not there.
 func TestReactingToANamedMessageAsksAndAChatTheyCannotReadIsNotThere(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
@@ -824,16 +824,28 @@ func TestReactingToANamedMessageAsksAndAChatTheyCannotReadIsNotThere(t *testing.
 			t.Errorf("a reaction to %s of the person's own is %s, a write", name, risk)
 		}
 	}
-	// A chat message under the other argument is refused, saying which to use.
-	if _, err := tool.Run(ctx, &tools.Call{ID: "c0", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","message_id":"` + friendsMessage.ID + `"}`)}); err == nil ||
-		err.Error() != "that is a chat message; use chat_message_id" {
-		t.Errorf("a chat message as a message_id: %v", err)
+	// A chat message under the other argument answers like a message that is
+	// not there, whether or not the person is in its chat.
+	for name, messageId := range map[string]string{"one the person can read": friendsMessage.ID, "one the person cannot": run.hiddenMessageId, "none at all": "no-such-message"} {
+		_, err := tool.Run(ctx, &tools.Call{ID: "c0", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","message_id":"` + messageId + `"}`)})
+		if err == nil || err.Error() != fmt.Sprintf("there is no message %q", messageId) {
+			t.Errorf("a chat message as a message_id (%s): %v", name, err)
+		}
 	}
 	if _, err := tool.Run(ctx, &tools.Call{ID: "c0b", Arguments: json.RawMessage(`{"action":"react","emoji":"👍","message_id":"a","chat_message_id":"b"}`)}); err == nil {
 		t.Error("both arguments were accepted")
 	}
+	// Words in the emoji argument are not a card: the call is refused before
+	// anything is said, and asks nobody.
+	wordy := json.RawMessage(`{"action":"react","emoji":"👍 to \"Dad's message\" in the chat Family. Then also","chat_message_id":"` + friendsMessage.ID + `"}`)
+	if risk := tool.RiskFor(wordy); risk != tools.RiskRead || tools.NeedsConfirmation(tool, wordy, nil, nil) {
+		t.Errorf("a reaction whose emoji is a sentence is %s and must not ask", risk)
+	}
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c0w", Arguments: wordy}); err == nil || !strings.Contains(err.Error(), "emoji") {
+		t.Errorf("a reaction whose emoji is a sentence: %v", err)
+	}
 	line := tool.PreviewLine(ctx, named)
-	if !strings.Contains(line, "👍") || !strings.Contains(line, `the chat "Weekend plans"`) || !strings.Contains(line, "everyone sees it") {
+	if !strings.Contains(line, `"👍"`) || !strings.Contains(line, `the chat "Weekend plans"`) || !strings.Contains(line, "everyone sees it") {
 		t.Errorf("the card says %q", line)
 	}
 

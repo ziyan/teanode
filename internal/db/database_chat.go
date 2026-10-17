@@ -355,11 +355,12 @@ func (self *transaction) loadChats(chatIds []string) ([]*models.Chat, error) {
 		AgentName      string `gorm:"column:agent_name"`
 		IsAgentActive  bool   `gorm:"column:is_agent_active"`
 		ConversationID string `gorm:"column:conversation_id"`
+		IsArchived     bool   `gorm:"column:is_archived"`
 	}
 	var conversationRows []conversationRow
 	if err := self.tx.Raw(`SELECT "agent_conversation"."chat_id" AS chat_id, "agent"."user_id" AS user_id, "agent"."id" AS agent_id,
 			"agent"."name" AS agent_name, ("agent"."enabled" AND "agent"."operator_disabled_at" IS NULL) AS is_agent_active,
-			"agent_conversation"."id" AS conversation_id
+			"agent_conversation"."id" AS conversation_id, ("agent_conversation"."archived_at" IS NOT NULL) AS is_archived
 		FROM "agent_conversation" JOIN "agent" ON "agent"."id" = "agent_conversation"."agent_id"
 		WHERE "agent_conversation"."chat_id" IN ?`, chatIds).Scan(&conversationRows).Error; err != nil {
 		return nil, err
@@ -383,6 +384,7 @@ func (self *transaction) loadChats(chatIds []string) ([]*models.Chat, error) {
 		member := chatMemberFromModel(&memberRows[index], users)
 		if found, ok := conversations[chat.ID+"/"+member.UserID]; ok {
 			member.ConversationID, member.AgentID = found.ConversationID, found.AgentID
+			member.IsConversationArchived = found.IsArchived
 			member.AgentName, member.IsAgentActive = found.AgentName, found.IsAgentActive
 			if strings.TrimSpace(member.AgentName) == "" {
 				member.AgentName = models.AgentDefaultName

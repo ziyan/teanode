@@ -522,7 +522,11 @@ only). `ListCalendars` gives each calendar in a person's list a color none of th
 others has while there are colors left (`spreadCalendarColors`: the person's own
 calendars choose first, then the rest by identifier, each keeping the color its
 identifier hashes to when that is free and otherwise taking the next free one),
-so the dashboard and the app, which both draw what the server says, show the same;
+so the dashboard (`calendar-tone-N`) and the app (the first eight colors of its avatar
+palette, by `colorIndex`) show the same for every calendar but the person's own, which
+keeps the dashboard's accent and takes its place in the spread on the app, where green
+is what can be pressed; the app hashes the identifier itself only when the server sent
+no place;
 the agenda is in time order across every calendar shown, the day's all-day events
 first; the toast after adding or saving an event names the calendar when it is a
 circle's or somebody else's; busy blocks are gray and cannot be opened; events in a calendar shared
