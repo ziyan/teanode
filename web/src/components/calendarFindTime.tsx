@@ -13,7 +13,8 @@ import { useTranslation } from '../i18n/i18n'
 // the hours of the day to offer, and the stretches nobody has anything booked
 // in. The server says when each is busy (ListCalendarFreeBusy, which the
 // command line's `calendar free --with` and the agent's free_together ask too)
-// and the sum is freeByDay, the same one they make.
+// and the sum is freeByDay, the same kind of sum they make, with the days and
+// the hours in the browser's zone and not the calendar's.
 
 type Person = { userId: string; username: string; name: string }
 
@@ -90,7 +91,7 @@ export function FindATimeDialog({ ownUserId, onClose }: { ownUserId: string; onC
   const [to, setTo] = useState(dayText(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6)))
   const [earliest, setEarliest] = useState('09:00')
   const [latest, setLatest] = useState('17:00')
-  const [busy, setBusy] = useState(false)
+  const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [found, setFound] = useState<FreeStretch[] | null>(null)
 
@@ -114,7 +115,7 @@ export function FindATimeDialog({ ownUserId, onClose }: { ownUserId: string; onC
       setProblem(t('calendar.findTimeBadHours'))
       return
     }
-    setBusy(true)
+    setIsBusy(true)
     setProblem(null)
     try {
       const dayAfterLast = new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1)
@@ -138,7 +139,7 @@ export function FindATimeDialog({ ownUserId, onClose }: { ownUserId: string; onC
     } catch (failure) {
       setProblem(failureText(failure, t('calendar.failed')))
     } finally {
-      setBusy(false)
+      setIsBusy(false)
     }
   }
 
@@ -154,7 +155,7 @@ export function FindATimeDialog({ ownUserId, onClose }: { ownUserId: string; onC
       title={t('calendar.findTimeTitle')}
       submitLabel={t('calendar.findTimeSubmit')}
       closeLabel={t('common.done')}
-      busy={busy}
+      busy={isBusy}
       error={problem}
       canSubmit={chosen.length > 0}
       onClose={onClose}
@@ -216,8 +217,8 @@ export function FindATimeDialog({ ownUserId, onClose }: { ownUserId: string; onC
       {days.length > 0 && (
         <div className="calendar-shares" aria-label={t('calendar.findTimeResult')}>
           {days.map(({ day, stretches }) => (
-            <div key={day.getTime()} className="calendar-share-row">
-              <span className="calendar-share-name">{dayFormat.format(day)}</span>
+            <div key={day.getTime()} className="calendar-free-day">
+              <span className="calendar-free-day-name">{dayFormat.format(day)}</span>
               <span>
                 {stretches
                   .map((stretch) => `${timeFormat.format(stretch.startsAt)} - ${timeFormat.format(stretch.endsAt)}`)

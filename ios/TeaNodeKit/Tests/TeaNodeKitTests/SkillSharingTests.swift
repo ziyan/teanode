@@ -48,6 +48,15 @@ final class SkillSharingTests: XCTestCase {
         XCTAssertEqual(long.argumentLines[2].value.count, 300)
     }
 
+    func testAnArgumentThatIsTheAmountIsNotSaidTwice() throws {
+        let sameAmount = try call(arguments: #"{"merchant":"Example Store","amount":140.0,"quantity":140}"#)
+        XCTAssertEqual(sameAmount.argumentLines.map(\.name), ["merchant", "quantity"])
+        let inMinorUnits = try call(arguments: #"{"merchant":"Example Store","total_amount":"14000"}"#)
+        XCTAssertEqual(inMinorUnits.argumentLines.map(\.name), ["merchant"])
+        let different = try call(arguments: #"{"merchant":"Example Store","amount":150}"#)
+        XCTAssertEqual(different.argumentLines.map(\.name), ["amount", "merchant"])
+    }
+
     func testWhatToTypeIsWrittenInTheCurrencysOwnDigits() {
         XCTAssertEqual(SkillShareMoney.typedExample(currencyCode: "usd"), "1000.00")
         XCTAssertEqual(SkillShareMoney.typedExample(currencyCode: "jpy"), "1000")

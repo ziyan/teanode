@@ -5,7 +5,10 @@ import TeaNodeKit
 /// their calendar with the person, a run of days and the hours of the day to
 /// offer, and the stretches nobody has anything booked in. The dashboard's
 /// Find a time dialog, the command line's `calendar free --with` and the
-/// agent's free_together make the same sum from the same busy times.
+/// agent's free_together make the same kind of sum from the same busy times;
+/// the days and hours here are the phone's zone, which is what the calendar
+/// screen shows, and the command line and the agent count them in the
+/// calendar's own zone, so across two zones the times offered differ.
 struct FindATimeScreen: View {
     let connection: Connection
     /// The person's own account, whose busy times are always among them.

@@ -2,7 +2,7 @@ import Foundation
 
 // Skills shared with other people, and the calls made through them. The same
 // operations the dashboard, the command line and the agent's skill tool use.
-// Whether a call goes ahead, waits for its owner or is turned back is decided on
+// Whether a call goes ahead, waits for its owner or is refused is decided on
 // the server (internal/skills/share.go, internal/agent/skill_share.go); nothing
 // here runs a skill or moves money. docs/subsystems/skills.md ("Sharing a
 // skill") says how it works.
@@ -88,6 +88,9 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
         let apart: Set<String> = ["amount_minor", "amountMinor", "currency", "request_reason"]
         var lines: [(name: String, value: String)] = []
         for name in object.keys.sorted() where !apart.contains(name) {
+            // The amount is on the card already, in the currency's own digits: an
+            // argument that says the same thing, in either unit, is not said twice.
+            if isAmountAlreadyShown(name: name, value: object[name]) { continue }
             let text: String
             switch object[name] {
             case .string(let string)?: text = string
@@ -103,6 +106,25 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
             lines.append((name: name.replacingOccurrences(of: "_", with: " "), value: text))
         }
         return lines
+    }
+}
+
+extension SkillShareCall {
+    /// Whether an argument is the amount the card shows: named for an amount, and
+    /// a number that is that amount in minor units or in the currency's own.
+    fileprivate func isAmountAlreadyShown(name: String, value: JSONValue?) -> Bool {
+        guard let amountMinor, name.lowercased().contains("amount") else { return false }
+        let number: Double
+        switch value {
+        case .number(let given)?: number = given
+        case .string(let given)?:
+            guard let parsed = Double(given) else { return false }
+            number = parsed
+        default: return false
+        }
+        var divisor = 1.0
+        for _ in 0..<SkillShareMoney.exponent(of: currencyCode) { divisor *= 10 }
+        return abs(number - Double(amountMinor)) < 1e-9 || abs(number - Double(amountMinor) / divisor) < 1e-9
     }
 }
 

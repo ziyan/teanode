@@ -235,7 +235,8 @@ struct ShareTargetPicker: View {
             if !circles.isEmpty {
                 Section("Circles") {
                     ForEach(circles) { circle in
-                        Text("Everyone in \(circle.name)").tag(Optional(ShareTarget.circle(circle.id)))
+                        // The size too, so two circles with one name can be told apart.
+                        Text("Everyone in \(circle.name) (\(CircleWords.memberCount(circle.memberCount)))").tag(Optional(ShareTarget.circle(circle.id)))
                     }
                 }
             }

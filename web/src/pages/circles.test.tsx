@@ -85,7 +85,7 @@ function renderAt(entry: string, options: { isOperator?: boolean } = {}) {
             authenticationRequired: true,
             username: 'person-a-login',
             passkeysEnabled: false,
-            permissions: options.isOperator ? { everywhere: ['user:manage', 'circle:use'], byDomain: [] } : undefined,
+            permissions: { everywhere: options.isOperator ? ['user:manage', 'circle:use'] : ['circle:use'], byDomain: [] },
           }}
         >
           <MemoryRouter initialEntries={[entry]}>
@@ -259,7 +259,7 @@ async function fillAccount(values: { username: string; name: string; password: s
   fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: values.name } })
   fireEvent.change(within(dialog).getByLabelText('Password'), { target: { value: values.password } })
   if (values.isAdmin) {
-    fireEvent.click(within(dialog).getByLabelText('Make them an admin'))
+    fireEvent.click(within(dialog).getByLabelText('Make them an admin of Fixture Home'))
   }
   return dialog
 }
@@ -384,6 +384,51 @@ it('says in the Leave confirmation that the last one out deletes the circle and 
   const dialog = await screen.findByRole('alertdialog', { name: 'Leave Fixture Home?' })
   expect(within(dialog).getByText(/deleted when its last member leaves/)).toBeTruthy()
   expect(within(dialog).getByText(/only admin, make somebody else an admin first/)).toBeTruthy()
+})
+
+it('leaves out the warning about being the only admin when somebody else is an admin too', async () => {
+  answerWith({
+    read: circle({
+      members: [member('person-a', 'admin', 'Person A'), member('person-b', 'admin', 'Person B')],
+    }),
+  })
+  renderAt('/circles/circle-one')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Leave' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Leave Fixture Home?' })
+  expect(within(dialog).getByText(/deleted when its last member leaves/)).toBeTruthy()
+  expect(within(dialog).queryByText(/only admin/)).toBeNull()
+})
+
+it('says circles are not on, and offers nothing that would fail, to a person without circle:use', async () => {
+  answerWith({ circles: [circle()], read: circle() })
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <SessionProvider
+          value={{
+            userId: 'person-a',
+            authenticated: true,
+            authenticationRequired: true,
+            username: 'person-a-login',
+            passkeysEnabled: false,
+            permissions: { everywhere: ['mail:use'], byDomain: [] },
+          }}
+        >
+          <MemoryRouter initialEntries={['/circles']}>
+            <Routes>
+              <Route path="/circles" element={<CirclesPage />} />
+              <Route path="/circles/:circleId" element={<CirclePage />} />
+            </Routes>
+          </MemoryRouter>
+        </SessionProvider>
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+  expect(await screen.findByText(/Circles are not on for your account/)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'New circle' })).toBeNull()
+  // Nothing was asked of the server, which would have refused it all.
+  expect(vi.mocked(graphql)).not.toHaveBeenCalled()
 })
 
 it('shows the server’s refusal in the Leave confirmation and stays on the page', async () => {

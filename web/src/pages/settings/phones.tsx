@@ -189,7 +189,7 @@ export function PhonesPage() {
               onChange={(event) => setEditing({ ...editing, phoneName: event.target.value })}
             />
           </label>
-          <fieldset className="field">
+          <fieldset className="phone-kinds">
             <legend>{t('phones.toldAbout')}</legend>
             <p className="muted field-hint">{t('phones.toldAboutHint')}</p>
             {kinds.map((kind) => (

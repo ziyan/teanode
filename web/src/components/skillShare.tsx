@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { failureText, graphql, isNotFound } from '../api'
 import { Avatar } from './avatar'
-import { Tag, formatTime } from './common'
+import { Tag } from './common'
 import { useToast } from './toast'
 import { useQuery } from './useQuery'
 import { useTranslation, type Key, type Values } from '../i18n/i18n'
@@ -95,6 +95,14 @@ export function currencyExponent(currencyCode: string): number {
   return 2
 }
 
+// typedExample is an amount as it is typed in the currency's own digits, for
+// saying what to type when one could not be read: 1000.00, 1000.000 for a
+// currency of thousandths, or 1000 where there is no minor unit.
+export function typedExample(currencyCode: string): string {
+  const exponent = currencyExponent(currencyCode)
+  return exponent === 0 ? '1000' : '1000.' + '0'.repeat(exponent)
+}
+
 // formatMinor writes an amount in minor units as people write money: 14.00 USD.
 export function formatMinor(minor: number, currencyCode: string): string {
   const exponent = currencyExponent(currencyCode)
@@ -136,7 +144,11 @@ export function limitsLine(share: SkillShare, t: (key: Key, values?: Values) => 
 // the amount and currency, which the card shows apart. A value is kept whole:
 // the owner is approving exactly this call, and a cut value could hide the part
 // that matters. The card wraps it.
-export function argumentLines(toolArguments: string, hide: string[]): [string, string][] {
+export function argumentLines(
+  toolArguments: string,
+  hide: string[],
+  amount?: { minor: number | null; currencyCode: string },
+): [string, string][] {
   let parsed: unknown
   try {
     parsed = JSON.parse(toolArguments)
@@ -147,10 +159,38 @@ export function argumentLines(toolArguments: string, hide: string[]): [string, s
   const lines: [string, string][] = []
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (hide.includes(key) || value === null || value === undefined || value === '') continue
+    // The card already says the amount, in the currency's own digits: an
+    // argument that says the same thing, in whichever unit, is not said twice.
+    if (amount && isSameAmount(key, value, amount.minor, amount.currencyCode)) continue
     const text = typeof value === 'string' ? value : JSON.stringify(value)
     lines.push([key.replace(/_/g, ' '), text])
   }
   return lines
+}
+
+// isSameAmount says an argument is the amount the card already shows: named
+// for an amount, and a number that is that amount in minor units or in the
+// currency's own.
+function isSameAmount(key: string, value: unknown, minor: number | null, currencyCode: string): boolean {
+  if (minor === null || !/amount/i.test(key)) return false
+  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(number)) return false
+  const own = minor / 10 ** currencyExponent(currencyCode)
+  return Math.abs(number - minor) < 1e-9 || Math.abs(number - own) < 1e-9
+}
+
+// formatCallTime is when a call was made or waits until, as the rest of the
+// dashboard writes a day ("Tue, Oct 20") and the time, to the minute.
+export function formatCallTime(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 // SkillShareCallCard is one call of a shared skill, with who asked, what, and for how
@@ -175,7 +215,10 @@ export function SkillShareCallCard({
   const name = call.granteeName || call.granteeUsername
   const isWaiting = call.callState === 'waiting_for_approval'
   const amount = call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : ''
-  const lines = argumentLines(call.toolArguments, ['amount_minor', 'amountMinor', 'currency', 'request_reason'])
+  const lines = argumentLines(call.toolArguments, ['amount_minor', 'amountMinor', 'currency', 'request_reason'], {
+    minor: call.amountMinor,
+    currencyCode: call.currencyCode,
+  })
 
   async function answer(isApproved: boolean) {
     setBusy(true)
@@ -253,7 +296,7 @@ export function SkillShareCallCard({
             </button>
           </div>
           {call.expiresAt ? (
-            <p className="muted">{t('skillShare.callExpires', { time: formatTime(call.expiresAt) })}</p>
+            <p className="muted">{t('skillShare.callExpires', { time: formatCallTime(call.expiresAt) })}</p>
           ) : null}
         </>
       ) : isWaiting ? (

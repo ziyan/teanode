@@ -17,6 +17,8 @@ import { lazyPage } from './lazyPage'
 import { ThemeToggle } from './components/theme'
 import { LanguagePicker, useTranslation } from './i18n/i18n'
 import { AccountMenu } from './components/accountMenu'
+import { CircleInvitationMark } from './components/circleInvitationMark'
+import { useLabelWithInvitationCount } from './components/circleInvitations'
 import { Sidebar, useIsDesktop, useSidebar } from './components/sidebar'
 import { MenuIcon, ShieldIcon } from './components/icons'
 import { Breadcrumb, BreadcrumbProvider, PageHeading } from './components/breadcrumb'
@@ -144,6 +146,46 @@ const CirclePage = lazyPage(async () => ({
 const FinanceLinkPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/financeLink')).FinanceLinkPage,
 }))
+
+// MenuToggleButton opens the rail on a phone. The rail, and the account
+// button with whose account this is, is behind it, so the marks that belong on
+// the account button are on it too: signed in as somebody else, and
+// invitations waiting for an answer.
+function MenuToggleButton({
+  isOpen,
+  onClick,
+  impersonatedUsername,
+}: {
+  isOpen: boolean
+  onClick: () => void
+  impersonatedUsername?: string
+}) {
+  const { t } = useTranslation()
+  const label = useLabelWithInvitationCount(
+    impersonatedUsername
+      ? `${t('nav.toggle')}: ${t('impersonation.signedInAs', { username: impersonatedUsername })}`
+      : t('nav.toggle'),
+  )
+  return (
+    <Tooltip label={t('nav.toggle')}>
+      <button
+        type="button"
+        className={impersonatedUsername ? 'icon-button menu-marked menu-impersonated' : 'icon-button menu-marked'}
+        aria-label={label}
+        aria-expanded={isOpen}
+        onClick={onClick}
+      >
+        <MenuIcon />
+        {impersonatedUsername && (
+          <span className="avatar-badge" aria-hidden="true">
+            <ShieldIcon size={10} />
+          </span>
+        )}
+        <CircleInvitationMark />
+      </button>
+    </Tooltip>
+  )
+}
 
 export function App() {
   const { t } = useTranslation()
@@ -383,29 +425,11 @@ export function App() {
               has nowhere else to be and this comes back. */}
               {!desktop && (
                 <header className="topbar">
-                  <Tooltip label={t('nav.toggle')}>
-                    <button
-                      type="button"
-                      className={session.impersonatorUsername ? 'icon-button menu-impersonated' : 'icon-button'}
-                      aria-label={
-                        session.impersonatorUsername
-                          ? `${t('nav.toggle')}: ${t('impersonation.signedInAs', { username: session.username })}`
-                          : t('nav.toggle')
-                      }
-                      aria-expanded={drawerOpen}
-                      onClick={() => setDrawerOpen((previous) => !previous)}
-                    >
-                      <MenuIcon />
-                      {/* On a phone the rail, and the avatar that says whose
-                          account this is, is behind this button: the mark
-                          goes on it too, so it is on screen on every page. */}
-                      {session.impersonatorUsername && (
-                        <span className="avatar-badge" aria-hidden="true">
-                          <ShieldIcon size={10} />
-                        </span>
-                      )}
-                    </button>
-                  </Tooltip>
+                  <MenuToggleButton
+                    isOpen={drawerOpen}
+                    onClick={() => setDrawerOpen((previous) => !previous)}
+                    impersonatedUsername={session.impersonatorUsername ? session.username : undefined}
+                  />
                   {/* The way back up sits on the bar rather than on the page.
                       The bar is otherwise empty here, and on a phone a line
                       of its own for two words is a line the calendar or the

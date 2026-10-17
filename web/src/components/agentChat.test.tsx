@@ -182,6 +182,12 @@ it('takes the line of a turn that was stopped off the screen, and leaves the res
   expect(remaining.map((line) => line.key)).toEqual([lines[0].key, streamingKeyOf('run-2')])
 })
 
+it('draws the words of an answer being written in the color of the agent’s owner, as its stored message is', () => {
+  const run = { runId: 'run-1', name: 'Robin', authorAgentId: 'agent-robin' }
+  const lines = linesWithStreamedText([], { ...run, text: 'Thurs', authorAvatarColorIndex: 7 })
+  expect(lines[0]).toMatchObject({ authorAvatarColorIndex: 7 })
+})
+
 it('adds the words of an answer to the line for its run, and the stored message takes its place', () => {
   const run = { runId: 'run-1', name: 'Robin', authorAgentId: 'agent-robin' }
   let lines: ChatLine[] = [said('01', 'person-b')]

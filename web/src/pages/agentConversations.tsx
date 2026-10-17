@@ -184,6 +184,9 @@ export function AgentConversationsPage() {
                 </span>
                 {/* What it is about: the agent's summary, else what it is
                     working toward, so no tile is a bare title. */}
+                {/* A direct chat is titled by the person it is with, so a
+                    line saying it is a chat with them repeats the title. */}
+                {conversation.chat?.chatKind === 'direct' && !conversation.summary ? null : (
                 <span
                   className={conversation.summary ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
                   id={`conversation-${conversation.id}-summary`}
@@ -201,6 +204,7 @@ export function AgentConversationsPage() {
                     t('agentConversations.noSummary')
                   )}
                 </span>
+                )}
                 <span className="tile-detail">
                   <RelativeTime value={conversation.lastAt} />
                   {conversation.chat ? <UnreadCount count={conversation.chat.unreadCount} /> : null}

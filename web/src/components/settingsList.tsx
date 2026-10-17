@@ -55,6 +55,7 @@ export function SettingsRow({
   avatar,
   avatarUrl,
   avatarColorIndex,
+  mark,
 }: {
   title: React.ReactNode
   subtitle?: React.ReactNode
@@ -68,10 +69,14 @@ export function SettingsRow({
   // them the monogram takes a color from the name.
   avatarUrl?: string | null
   avatarColorIndex?: number | null
+  // A mark in the place of the avatar, for a row about something that is not
+  // one person (a circle), so its text starts where the rows about people do.
+  mark?: React.ReactNode
 }) {
   return (
     <div className="settings-row">
       {avatar ? <Avatar name={avatar} avatarUrl={avatarUrl} colorIndex={avatarColorIndex} size={28} /> : null}
+      {!avatar && mark ? <span className="settings-row-mark">{mark}</span> : null}
       <div className="settings-row-body">
         <div className="settings-row-title">
           <strong>{title}</strong>

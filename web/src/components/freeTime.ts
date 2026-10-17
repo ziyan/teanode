@@ -1,8 +1,10 @@
-// Working out when people are all free from when each is busy. The same sum
-// the command line and the agent make (calendar.FreeByDay on the server side
-// of them), so that the time one offers is the time the others offer: day by
-// day, between an earliest and a latest hour, with everyone's busy times
-// merged, so what is left is when all of them could meet.
+// Working out when people are all free from when each is busy. The same kind
+// of sum the command line and the agent make (calendar.FreeByDay on the server
+// side of them): day by day, between an earliest and a latest hour, with
+// everyone's busy times merged, so what is left is when all of them could
+// meet. The days and the hours are the browser's zone, which is what the
+// calendar page shows; the command line and the agent count them in the
+// calendar's own zone, so across two zones the times offered differ.
 
 export type BusyPeriod = { startsAt: string; endsAt: string }
 

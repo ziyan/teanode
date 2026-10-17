@@ -319,14 +319,27 @@ final class CalendarModel {
         do {
             try await connection.perform(change, isRetry: isRetry)
             keep(nil)
-            doneText = change.operation == "delete"
-                ? String(localized: "\(change.summary) removed") : String(localized: "\(change.summary) saved")
+            doneText = savedWords(for: change)
             await reload()
             return true
         } catch {
             problemText = error.localizedDescription
             return false
         }
+    }
+
+    /// What the toast says after a change went through: that it was removed or
+    /// saved, and, for an event put in a circle's calendar or one shared with the
+    /// person, which calendar it is in, as the dashboard says it.
+    private func savedWords(for change: CalendarChange) -> String {
+        if change.operation == "delete" { return String(localized: "\(change.summary) removed") }
+        guard case .string(let calendarId)? = change.variables["calendarId"], let destination = calendar(withId: calendarId), !destination.isOwn
+        else { return String(localized: "\(change.summary) saved") }
+        let calendarName = displayName(of: destination)
+        if case .string(let eventId)? = change.variables["id"], !eventId.isEmpty {
+            return String(localized: "\(change.summary) saved in \(calendarName)")
+        }
+        return String(localized: "\(change.summary) is in \(calendarName)")
     }
 
     private func keep(_ change: CalendarChange?) {

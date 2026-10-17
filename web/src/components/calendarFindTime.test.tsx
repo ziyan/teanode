@@ -69,7 +69,7 @@ it('offers only the people who shared a calendar, and lists when everyone chosen
 
   await waitFor(() => expect(screen.getByLabelText('When everyone is free')).toBeTruthy())
   const result = screen.getByLabelText('When everyone is free')
-  // 09:00 to 10:00 and 12:00 to 17:00, the same sum the command line makes.
+  // 09:00 to 10:00 and 12:00 to 17:00 in the browser's zone.
   expect(result.textContent).toMatch(/9:00\s?(AM)?\s-\s10:00|09:00\s-\s10:00/)
   expect(result.textContent).toMatch(/12:00\s?(PM)?\s-\s0?5:00|12:00\s-\s17:00/)
   const asks = vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('ListCalendarFreeBusy'))
