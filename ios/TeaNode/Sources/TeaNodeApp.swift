@@ -116,6 +116,7 @@ struct ConversationsSheet: View {
                             } label: {
                                 Label("New side chat", systemImage: "plus")
                             }
+                            .menuRow(isSelected: false)
                         }
                         if app.canChat {
                             Button {
@@ -123,11 +124,13 @@ struct ConversationsSheet: View {
                             } label: {
                                 Label("Message someone", systemImage: "person.crop.circle.badge.plus")
                             }
+                            .menuRow(isSelected: false)
                             Button {
                                 isStartingGroup = true
                             } label: {
-                                Label("New group", systemImage: "person.3")
+                                Label("New group", systemImage: "person.2")
                             }
+                            .menuRow(isSelected: false)
                         }
                     } header: {
                         if leading != nil { Text("Chats") }
@@ -253,7 +256,7 @@ struct ConversationsSheet: View {
                 Button {
                     isStartingGroup = true
                 } label: {
-                    Label("New group", systemImage: "person.3")
+                    Label("New group", systemImage: "person.2")
                 }
             } label: {
                 Label("New conversation", systemImage: "square.and.pencil")
@@ -333,12 +336,27 @@ struct ConversationsSheet: View {
                     Label("Mute until I unmute", systemImage: "bell.slash")
                 }
             }
+            // Put away like any other conversation, for this person alone, and
+            // listed with the archived until it is brought back.
+            Button {
+                Task {
+                    await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) }
+                    if !conversation.isArchived { leaveIfOpen(conversation) }
+                }
+            } label: {
+                if conversation.isArchived {
+                    Label("Unarchive", systemImage: "tray.and.arrow.up")
+                } else {
+                    Label("Archive", systemImage: "archivebox")
+                }
+            }
         }
     }
 
-    /// A row for either kind of conversation: a chat with people has none of
-    /// the menu a side chat with the agent has (rename, make main, archive,
-    /// delete), wherever the list is drawn, search results included.
+    /// A row for either kind of conversation: a chat with people has the
+    /// menu of a side chat with the agent less rename, make main and delete
+    /// (it has mute and archive instead), wherever the list is drawn, search
+    /// results included.
     @ViewBuilder
     private func listRow(_ conversation: AgentConversation) -> some View {
         if conversation.isChat {

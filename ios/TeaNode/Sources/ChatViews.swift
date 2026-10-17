@@ -335,6 +335,7 @@ struct ChatMenu: View {
 /// list.
 struct ChatMembersSheet: View {
     let model: ConversationModel
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var isAdding = false
     @State private var removing: ChatMember?
@@ -403,6 +404,16 @@ struct ChatMembersSheet: View {
                 // Switches for an agent that is off would be accepted and do
                 // nothing, so the section says it is off, as the dashboard does.
                 Text("Your agent is off.")
+                // Where it is turned on, as the screen with no agent offers it.
+                // A person with no agent at all has nothing to turn on.
+                if app.hasAgent {
+                    Button {
+                        dismiss()
+                        app.openedSection = .settings
+                    } label: {
+                        Label("Open Settings", systemImage: "gearshape")
+                    }
+                }
             } else {
                 Toggle(
                     "My agent remembers this chat",

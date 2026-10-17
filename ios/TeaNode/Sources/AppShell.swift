@@ -515,11 +515,12 @@ struct SideMenu: View {
                     .fontWeight(section == part ? .semibold : .regular)
                     .foregroundStyle(section == part ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
             }
+            // The chats are in the agent's part: what waits in them is the
+            // number on its entry. Before menuRow, so the row's hidden
+            // separator stays the outermost of its modifiers.
+            .badge(part == .agent ? app.unreadChatCount : 0)
             .menuRow(isSelected: false)
             .accessibilityAddTraits(section == part ? .isSelected : [])
-            // The chats are in the agent's part: what waits in them is the
-            // number on its entry.
-            .badge(part == .agent ? app.unreadChatCount : 0)
         }
     }
 }

@@ -53,6 +53,7 @@ export type SkillShareCall = {
   requestReason: string
   amountMinor: number | null
   currencyCode: string
+  amountArgumentName: string
   callState: string
   toolOutput: string
   answeredAt: string | null
@@ -66,7 +67,7 @@ export const SKILL_SHARE_FIELDS = `id skillName toolNames ownerUserId ownerUsern
   paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor`
 
 export const SKILL_SHARE_CALL_FIELDS = `id skillShareId isShareEnded skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
-  ownerName toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt`
+  ownerName toolName toolArguments requestReason amountMinor currencyCode amountArgumentName callState toolOutput answeredAt answerNote expiresAt createdAt`
 
 export const LIST_SKILL_SHARE_CALLS = `query ($shareId: String!, $callState: String) {
   ListSkillShareCalls(shareId: $shareId, callState: $callState) { ${SKILL_SHARE_CALL_FIELDS} }
@@ -141,14 +142,10 @@ export function limitsLine(share: SkillShare, t: (key: Key, values?: Values) => 
 }
 
 // argumentLines are the arguments a call was made with, one line each, less
-// the amount and currency, which the card shows apart. A value is kept whole:
+// the ones named in hide, which the card shows apart. A value is kept whole:
 // the owner is approving exactly this call, and a cut value could hide the part
 // that matters. The card wraps it.
-export function argumentLines(
-  toolArguments: string,
-  hide: string[],
-  amount?: { minor: number | null; currencyCode: string },
-): [string, string][] {
+export function argumentLines(toolArguments: string, hide: string[]): [string, string][] {
   let parsed: unknown
   try {
     parsed = JSON.parse(toolArguments)
@@ -159,24 +156,10 @@ export function argumentLines(
   const lines: [string, string][] = []
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (hide.includes(key) || value === null || value === undefined || value === '') continue
-    // The card already says the amount, in the currency's own digits: an
-    // argument that says the same thing, in whichever unit, is not said twice.
-    if (amount && isSameAmount(key, value, amount.minor, amount.currencyCode)) continue
     const text = typeof value === 'string' ? value : JSON.stringify(value)
     lines.push([key.replace(/_/g, ' '), text])
   }
   return lines
-}
-
-// isSameAmount says an argument is the amount the card already shows: named
-// for an amount, and a number that is that amount in minor units or in the
-// currency's own.
-function isSameAmount(key: string, value: unknown, minor: number | null, currencyCode: string): boolean {
-  if (minor === null || !/amount/i.test(key)) return false
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
-  if (!Number.isFinite(number)) return false
-  const own = minor / 10 ** currencyExponent(currencyCode)
-  return Math.abs(number - minor) < 1e-9 || Math.abs(number - own) < 1e-9
 }
 
 // formatCallTime is when a call was made or waits until, as the rest of the
@@ -215,10 +198,18 @@ export function SkillShareCallCard({
   const name = call.granteeName || call.granteeUsername
   const isWaiting = call.callState === 'waiting_for_approval'
   const amount = call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : ''
-  const lines = argumentLines(call.toolArguments, ['amount_minor', 'amountMinor', 'currency', 'request_reason'], {
-    minor: call.amountMinor,
-    currencyCode: call.currencyCode,
-  })
+  // The card says the amount in the currency's own digits, so the argument the
+  // skill declares it is read from is not said again; any other argument, even
+  // one with "amount" in its name and the same number, is part of what the
+  // owner is approving and stays. When no amount could be read the card shows
+  // none, and that argument stays too.
+  const lines = argumentLines(call.toolArguments, [
+    'amount_minor',
+    'amountMinor',
+    'currency',
+    'request_reason',
+    ...(call.amountMinor !== null && call.amountArgumentName ? [call.amountArgumentName] : []),
+  ])
 
   async function answer(isApproved: boolean) {
     setBusy(true)

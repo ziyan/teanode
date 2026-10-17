@@ -279,20 +279,34 @@ extension CalendarModel.ViewMode {
 }
 
 extension CalendarModel {
-    /// A few system colors for calendars the server keeps no colour for.
-    /// Green is left out: in this app green is what can be pressed.
+    /// A few system colors for a calendar the server sent no place in its
+    /// spread of colors for. Green is left out: in this app green is what can be
+    /// pressed.
     static let palette: [Color] = [.blue, .orange, .purple, .teal, .indigo, .pink, .brown, .cyan]
 
+    /// The color of a calendar that has none of its own: the place the server
+    /// gave it among the colors of the person's calendars, which it spreads so
+    /// that no two are alike, painted in the first eight colors of the avatar
+    /// palette, which are the dashboard's `calendar-tone-0` to `calendar-tone-7`.
+    /// Only when the server sent no place is the id hashed into the palette.
+    private func spreadColor(of calendar: AgentCalendar?, calendarId: String) -> Color {
+        if let colorIndex = calendar?.colorIndex {
+            return AvatarPalette.color(at: CalendarPalette.spreadIndex(serverIndex: colorIndex))
+        }
+        return Self.palette[CalendarPalette.index(calendarId: calendarId, paletteCount: Self.palette.count)]
+    }
+
     /// The color an event is painted: its calendar's own when the server
-    /// keeps one, or else a color of the palette, always the same one for
-    /// the same calendar.
+    /// keeps one, or else the calendar's color in the spread, always the same
+    /// one for the same calendar.
     func color(of event: CalendarEvent) -> Color {
         // The times somebody is busy are gray, whose calendar they are in.
         if event.isBusy { return Color(.systemGray) }
-        if let parts = CalendarColorComponents(hexText: calendar(withId: event.calendarId)?.colour) {
+        let eventCalendar = calendar(withId: event.calendarId)
+        if let parts = CalendarColorComponents(hexText: eventCalendar?.colour) {
             return Color(red: parts.red, green: parts.green, blue: parts.blue)
         }
-        return Self.palette[CalendarPalette.index(calendarId: event.calendarId, paletteCount: Self.palette.count)]
+        return spreadColor(of: eventCalendar, calendarId: event.calendarId)
     }
 
     /// The color a calendar is painted in the list of calendars.
@@ -300,7 +314,7 @@ extension CalendarModel {
         if let parts = CalendarColorComponents(hexText: calendar.colour) {
             return Color(red: parts.red, green: parts.green, blue: parts.blue)
         }
-        return Self.palette[CalendarPalette.index(calendarId: calendar.id, paletteCount: Self.palette.count)]
+        return spreadColor(of: calendar, calendarId: calendar.id)
     }
 }
 

@@ -22,12 +22,12 @@ final class SkillSharingTests: XCTestCase {
         XCTAssertNil(SkillShareMoney.parse("1400.5", currencyCode: "jpy"))
     }
 
-    private func call(state: String = "waiting_for_approval", arguments: String = #"{"action":"card","merchant":"Example Store","amount_minor":14000,"currency":"usd","request_reason":"x","note":""}"#) throws -> SkillShareCall {
+    private func call(state: String = "waiting_for_approval", amountArgumentName: String = "amount_minor", amountMinor: String = "14000", arguments: String = #"{"action":"card","merchant":"Example Store","amount_minor":14000,"currency":"usd","request_reason":"x","note":""}"#) throws -> SkillShareCall {
         let json = """
             {"id":"call-1","skillShareId":"share-1","skillName":"payments","granteeUserId":"ben-id","granteeUsername":"ben","granteeName":"Ben Example",
              "granteeAvatarUrl":null,"granteeAvatarColorIndex":3,"ownerName":"Ada Example","toolName":"pay",
              "toolArguments":\(String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)),
-             "requestReason":"the weekly groceries","amountMinor":14000,"currencyCode":"usd","callState":"\(state)","toolOutput":"",
+             "requestReason":"the weekly groceries","amountMinor":\(amountMinor),"currencyCode":"usd","amountArgumentName":"\(amountArgumentName)","callState":"\(state)","toolOutput":"",
              "answeredAt":null,"answerNote":"","expiresAt":"2026-10-18T10:00:00Z","createdAt":"2026-10-17T10:00:00Z"}
             """
         return try JSONDecoder().decode(SkillShareCall.self, from: Data(json.utf8))
@@ -48,13 +48,16 @@ final class SkillSharingTests: XCTestCase {
         XCTAssertEqual(long.argumentLines[2].value.count, 300)
     }
 
-    func testAnArgumentThatIsTheAmountIsNotSaidTwice() throws {
-        let sameAmount = try call(arguments: #"{"merchant":"Example Store","amount":140.0,"quantity":140}"#)
-        XCTAssertEqual(sameAmount.argumentLines.map(\.name), ["merchant", "quantity"])
-        let inMinorUnits = try call(arguments: #"{"merchant":"Example Store","total_amount":"14000"}"#)
-        XCTAssertEqual(inMinorUnits.argumentLines.map(\.name), ["merchant"])
-        let different = try call(arguments: #"{"merchant":"Example Store","amount":150}"#)
-        XCTAssertEqual(different.argumentLines.map(\.name), ["amount", "merchant"])
+    func testOnlyTheArgumentTheSkillDeclaresAsTheAmountIsNotSaidTwice() throws {
+        let declared = try call(amountArgumentName: "amount", arguments: #"{"merchant":"Example Store","amount":14000,"fee_amount":14000,"quantity":14000}"#)
+        XCTAssertEqual(declared.argumentLines.map(\.name), ["fee amount", "merchant", "quantity"])
+        // With no amount read the card shows none, so the argument stays.
+        let unread = try call(amountArgumentName: "amount", amountMinor: "null", arguments: #"{"merchant":"Example Store","amount":"about 140"}"#)
+        XCTAssertEqual(unread.argumentLines.map(\.name), ["amount", "merchant"])
+        XCTAssertEqual(unread.argumentLines.map(\.value), ["about 140", "Example Store"])
+        // A name that merely says amount is shown when the skill declares another.
+        let other = try call(arguments: #"{"merchant":"Example Store","amount":150}"#)
+        XCTAssertEqual(other.argumentLines.map(\.name), ["amount", "merchant"])
     }
 
     func testWhatToTypeIsWrittenInTheCurrencysOwnDigits() {

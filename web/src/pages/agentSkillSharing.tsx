@@ -483,14 +483,11 @@ function ShareSkillDialog({
     currency: isCurrencyValid ? code.toUpperCase() : t('skillShare.amountUnreadableCurrency'),
     example: typedExample(code),
   })
-  const canSubmit =
-    personId !== '' &&
-    chosen.size > 0 &&
-    (!pays || isAskedEveryTime || hasLimit) &&
-    (!hasLimit || isCurrencyValid) &&
-    !isCurrencyBad &&
-    isLimitReadable &&
-    !isPaymentAboveMonthly
+  // Asking every time sends no limits, so whatever is wrong with the limit
+  // fields (which are not drawn then) does not hold the share back.
+  const areLimitsAcceptable =
+    (!pays || hasLimit) && (!hasLimit || isCurrencyValid) && !isCurrencyBad && isLimitReadable && !isPaymentAboveMonthly
+  const canSubmit = personId !== '' && chosen.size > 0 && (isAskedEveryTime || areLimitsAcceptable)
 
   async function submit() {
     const person = people.find((each) => each.userId === personId)

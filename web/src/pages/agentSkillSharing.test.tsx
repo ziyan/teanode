@@ -351,6 +351,27 @@ it('says why Share is off for a currency that is not three letters, and for one 
   expect(within(dialog).getByRole('button', { name: 'Share' }).hasAttribute('disabled')).toBe(false)
 })
 
+it('lets Share be pressed with Ask me every time, whatever was wrong with the limits it hides', async () => {
+  vi.mocked(graphql).mockResolvedValue(overview())
+  inApp(<SkillSharesCard />)
+  fireEvent.click(await screen.findByRole('button', { name: 'payments: Share' }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.change(within(dialog).getByLabelText('Share with'), { target: { value: 'ben-id' } })
+  fireEvent.change(within(dialog).getByLabelText('Per payment'), { target: { value: '500' } })
+  fireEvent.change(within(dialog).getByLabelText('Per month'), { target: { value: '100' } })
+  fireEvent.change(within(dialog).getByLabelText(/^Currency/), { target: { value: 'dollars' } })
+  expect(within(dialog).getByText('The limit for one payment cannot be above the monthly limit.')).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: 'Share' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(within(dialog).getByLabelText(/Ask me every time/))
+  expect(within(dialog).queryByText(/cannot be above the monthly limit/)).toBeNull()
+  expect(within(dialog).queryByText('Use the three-letter code, such as usd.')).toBeNull()
+  expect(within(dialog).getByRole('button', { name: 'Share' }).hasAttribute('disabled')).toBe(false)
+  // And back: the fields and their reasons return with Share off again.
+  fireEvent.click(within(dialog).getByLabelText(/Ask me every time/))
+  expect(within(dialog).getByText('The limit for one payment cannot be above the monthly limit.')).toBeTruthy()
+  expect(within(dialog).getByRole('button', { name: 'Share' }).hasAttribute('disabled')).toBe(true)
+})
+
 it('says a share that failed once, in the dialog, and not also in a toast', async () => {
   vi.mocked(graphql).mockResolvedValue(overview())
   inApp(<SkillSharesCard />)

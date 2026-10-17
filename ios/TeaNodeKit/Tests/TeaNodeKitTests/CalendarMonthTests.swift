@@ -126,6 +126,9 @@ final class CalendarMonthTests: XCTestCase {
         let spread = Set((0..<40).map { CalendarPalette.index(calendarId: "calendar-\($0)", paletteCount: 8) })
         XCTAssertGreaterThan(spread.count, 4)
         XCTAssertEqual(CalendarPalette.index(calendarId: "any", paletteCount: 0), 0)
+        XCTAssertEqual(CalendarPalette.spreadIndex(serverIndex: 5), 5)
+        XCTAssertEqual(CalendarPalette.spreadIndex(serverIndex: 8), 0)
+        XCTAssertEqual(CalendarPalette.spreadIndex(serverIndex: -1), 7)
     }
 
     func testLunarNames() {
