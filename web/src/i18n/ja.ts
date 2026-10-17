@@ -3547,6 +3547,7 @@ export const ja: Catalog = {
   'agentDrawer.goalNeedsYouTurn': '目標があなたを必要としています',
   'agentDrawer.herdrQuestionTurn': 'コーディングセッションからの質問',
   'agentDrawer.herdrSessionTurn': 'コーディングセッションが終わりました',
+  'agentDrawer.restartResumeTurn': '再起動のあと、続きを進めています',
   'agentDrawer.openGoal': '目標を開く',
   'goals.nextScheduled': '次の実行 {when}',
   'goals.runsOnSchedule': 'スケジュールで実行',

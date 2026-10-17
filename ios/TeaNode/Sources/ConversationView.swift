@@ -1601,6 +1601,7 @@ struct CheckInLine: View {
         case .alert: String(localized: "Alert from your mail")
         case .herdrQuestion: String(localized: "A coding session asks you")
         case .herdrSession: String(localized: "A coding session finished")
+        case .restartResume: String(localized: "Carrying on after a restart")
         case .approved: String(localized: "Approved after the turn ended")
         case .declined: String(localized: "Declined after the turn ended")
         case nil: marker
@@ -1615,6 +1616,7 @@ struct CheckInLine: View {
         case .backgroundWork: "list.bullet"
         case .schedule: "calendar"
         case .speakFirst: "sparkles"
+        case .restartResume: "arrow.clockwise"
         case .approved: "checkmark"
         case .declined: "xmark"
         case nil: "bell"

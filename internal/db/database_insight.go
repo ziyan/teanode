@@ -138,6 +138,9 @@ type InsightOperation interface {
 	// ListAgentMessages is a conversation's messages, oldest first, each
 	// with its reactions.
 	ListAgentMessages(conversationId string, options *Options) ([]*models.AgentMessage, error)
+	// ListLatestAgentMessages is the newest limit messages of a
+	// conversation, oldest first, without their reactions.
+	ListLatestAgentMessages(conversationId string, limit int) ([]*models.AgentMessage, error)
 	// GetAgentConversationMessage is one message of the conversation
 	// given, with its reactions, or nil when the conversation has no
 	// message by that id.
@@ -1090,6 +1093,25 @@ func (self *transaction) ListAgentMessages(conversationId string, options *Optio
 	}
 	if err := self.attachReactions(conversationId, messages); err != nil {
 		return nil, err
+	}
+	return messages, nil
+}
+
+func (self *transaction) ListLatestAgentMessages(conversationId string, limit int) ([]*models.AgentMessage, error) {
+	if limit <= 0 {
+		limit = 1
+	}
+	var found []agentMessageModel
+	if err := self.tx.Where("\"conversation_id\" = ?", conversationId).Order("\"created_at\" DESC, \"id\" DESC").Limit(limit).Find(&found).Error; err != nil {
+		return nil, err
+	}
+	messages := make([]*models.AgentMessage, 0, len(found))
+	for index := len(found) - 1; index >= 0; index-- {
+		message, err := messageFromModel(&found[index])
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
 	}
 	return messages, nil
 }

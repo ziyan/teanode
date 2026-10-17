@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -11,4 +12,18 @@ import (
 // outside them without filing thousands.
 func (self *Agent) EmbedOverviewSectionsOfTheMostImportant(ctx context.Context, agent *models.Agent, limit, pageCount int) (int, error) {
 	return self.embedOverviewSections(ctx, agent, limit, pageCount)
+}
+
+// ResumeCutTurns is the look at the conversations a restart cut short, as
+// of a start at startedAt.
+func (self *Agent) ResumeCutTurns(ctx context.Context, startedAt time.Time) {
+	self.resumeCutTurns(ctx, startedAt)
+}
+
+// SetStopGrace is how long Stop waits for the turns people are reading,
+// and returns what it was.
+func SetStopGrace(grace time.Duration) time.Duration {
+	previous := stopGrace
+	stopGrace = grace
+	return previous
 }

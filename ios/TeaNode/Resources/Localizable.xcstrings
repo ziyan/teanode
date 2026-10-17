@@ -8565,6 +8565,22 @@
         }
       }
     },
+    "Carrying on after a restart": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再起動のあと、続きを進めています"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重启之后，接着继续"
+          }
+        }
+      }
+    },
     "Cash": {
       "localizations": {
         "ja": {
