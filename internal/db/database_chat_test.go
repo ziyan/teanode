@@ -707,7 +707,7 @@ func TestAFileSentByADeletedAccountIsMarkedRemoved(t *testing.T) {
 }
 
 // One reaction for each reactor on a message, replaced by reacting again and
-// taken away by an empty one; a message taken back has none and takes no more.
+// taken away by an empty one; a message deleted has none and takes no more.
 func TestAChatMessageHasOneReactionForEachPerson(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
@@ -739,14 +739,14 @@ func TestAChatMessageHasOneReactionForEachPerson(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := tx.SetChatMessageReaction(message.ID, models.ReactorPerson, alice.ID, "x", "👍"); !errors.Is(err, db.ErrNotFound) {
-			t.Errorf("a reaction on a message taken back: %v", err)
+			t.Errorf("a reaction on a message deleted: %v", err)
 		}
 		read, err = tx.GetChatMessage(message.ID)
 		if err != nil || read.DeletedAt == nil || read.Body != "" || len(read.Reactions) != 0 {
-			t.Errorf("a message taken back is %+v, %v", read, err)
+			t.Errorf("a message deleted is %+v, %v", read, err)
 		}
 		if _, err := tx.EditChatMessage(message.ID, "back"); !errors.Is(err, db.ErrNotFound) {
-			t.Errorf("a message taken back was edited: %v", err)
+			t.Errorf("a message deleted was edited: %v", err)
 		}
 	})
 }

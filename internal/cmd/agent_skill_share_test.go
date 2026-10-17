@@ -108,7 +108,7 @@ func skillSharingServer(test *testing.T) (*httptest.Server, func(string) map[str
 	calls := map[string]map[string]any{}
 	const call = `{"id":"call-1","skillShareId":"s1","skillName":"payments","granteeUserId":"u-ben","granteeUsername":"ben","granteeName":"Ben","ownerName":"Ada",
 		"toolName":"pay","toolArguments":"{}","requestReason":"the weekly groceries","amountMinor":14000,"currencyCode":"usd","callState":"waiting_for_approval",
-		"toolOutput":"","decidedAt":null,"decisionNote":"","expiresAt":null,"createdAt":"2026-10-17T10:00:00Z"}`
+		"toolOutput":"","answeredAt":null,"answerNote":"","expiresAt":null,"createdAt":"2026-10-17T10:00:00Z"}`
 	answers := map[string]string{
 		"ListCirclePeople": `[{"userId":"u-ben","username":"ben","name":"Ben"}]`,
 		"ShareSkill": `{"id":"s1","skillName":"payments","toolNames":["pay"],"granteeUsername":"ben","paymentLimitMinor":10000,"monthlyLimitMinor":40000,"currencyCode":"usd",
@@ -237,7 +237,7 @@ func TestSkillSharesAndCallsAreListedAndAnswered(test *testing.T) {
 	if err != nil || !strings.Contains(output, "declined; Ben was told") {
 		test.Errorf("decline: %q %v", output, err)
 	}
-	if variables := called("AnswerSkillShareCall"); variables["callId"] != "call-1" || variables["isApproved"] != false || variables["decisionNote"] != "not today" {
+	if variables := called("AnswerSkillShareCall"); variables["callId"] != "call-1" || variables["isApproved"] != false || variables["answerNote"] != "not today" {
 		test.Errorf("what declining sent: %v", variables)
 	}
 

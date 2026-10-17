@@ -344,12 +344,12 @@ takes them from the next turn; and every call is checked again when it is made.
    judges the owner's own commands, with the owner's name and the owner's agent's
    name. Reading, changing and spending go ahead, because the share is the
    owner's word on spending. Speaking for the owner, giving somebody access,
-   something that cannot be undone, and a judgement that could not be had make
+   something that cannot be undone, and a judgment that could not be had make
    the call wait.
 5. A call that goes ahead is written down as `ran` and then carried out, by
    calling the very runner the owner's own agent uses for that tool, with a run
    made for the owner's agent. That is the whole of "on the owner's computer as
-   the owner": her secrets, her reach for the skill, her attached computer and
+   the owner": their secrets, their reach for the skill, their attached computer and
    the skill's own rules. It is written before it is carried out so that a call
    still in flight counts toward the month, and changed to `failed` if it
    errors. With the owner's computer not connected the call answers that and
@@ -358,18 +358,18 @@ takes them from the next turn; and every call is checked again when it is made.
    amount the server read, and the reason the other person's agent gave, for a
    day. A share has at most twenty waiting at once; the next is turned back
    until some are answered, so an agent that asks again and again cannot bury
-   the one she meant to answer.
+   the one they meant to answer.
 
-**The approval.** The owner gets a card in her main conversation (a note of
-the kind `payment_waiting`) with who asked, the tool, what it was given, the
+**The approval.** The owner gets a card in their main conversation (a note of
+the kind `skill_share_call_waiting`) with who asked, the tool, what it was given, the
 amount, and the reason their agent gave, shown as that person's words and never
-as an instruction; and a notification of the kind `payment` on her phones,
-whether or not she is looking at a screen, which only opens the app. She
-answers with `AnswerSkillShareCall`, from the card, the agent page or the
+as an instruction; and a notification of the kind `skill_share_call` on their phones,
+whether or not they are looking at a screen, which only opens the app. They
+answer with `AnswerSkillShareCall`, from the card, the agent page or the
 iPhone app; `teanode agent skill calls` lists what waits, with where to
 approve it, and `decline` says no. Approving runs exactly the stored call with the
-stored arguments, skipping the limits and the judge, since the approval is her
-word on this call, and it needs her computer connected first: with it away the
+stored arguments, skipping the limits and the judge, since the approval is their
+word on this call, and it needs their computer connected first: with it away the
 approval is refused and the call keeps waiting. The answer is a conditional
 update from `waiting_for_approval`, so two answers at once, from the phone and
 the drawer, change the row once and run the call once. A call nobody answers in
@@ -383,8 +383,8 @@ other sites, or from the iPhone app's own sign-in. A command line token, an API
 token, the console and the agent's own operations are refused, with "approve it
 on the dashboard or in the iPhone app". That is the whole guard, because an
 agent can drive the owner's computer (the `shell`, `terminal`, `claude_code`,
-`codex` and `herdr` tools reach it, and her saved command line sign-in is
-there), and anything it types arrives as her token.
+`codex` and `herdr` tools reach it, and their saved command line sign-in is
+there), and anything it types arrives as their token.
 
 How the server tells the phone app's token from a command line token: the
 token row has a `client_kind`, `app` or empty, and `Principal.CredentialKind`
@@ -414,7 +414,7 @@ shares runs without the owner's approval.
 On top of that is a courtesy: a `shell` call, or a `terminal` start or typed
 text, whose words look like `teanode agent skill approve` or `decline`
 (`tools.AnswersSkillShareCall`: the words agent, skill and approve or decline in
-that order, with a few between) asks her first, as money, and `personsAnswer`,
+that order, with a few between) asks them first, as money, and `personsAnswer`,
 which nobody can allow, keeps it from running in a turn with nobody present.
 It is a guess over words, not a parse of the shell, and it does not have to
 hold: the server refuses the approval however the command was written.

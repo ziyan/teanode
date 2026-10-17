@@ -359,7 +359,7 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 
-	var ada, ben, adaCalendarID, groupChatID, firstCircleID, secondCircleID string
+	var ada, ben, adaCalendarId, groupChatId, firstCircleId, secondCircleId string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		adaUser := newCircleTestUser(t, tx, "parallel-ada")
 		benUser := newCircleTestUser(t, tx, "parallel-ben")
@@ -375,10 +375,10 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 		if err != nil {
 			t.Fatal(err)
 		}
-		firstCircleID, secondCircleID = first.ID, second.ID
-		for _, circleID := range []string{first.ID, second.ID} {
-			for _, userID := range []string{ada, ben} {
-				if _, err := tx.AddCircleMember(circleID, userID, models.MemberRoleMember, ""); err != nil {
+		firstCircleId, secondCircleId = first.ID, second.ID
+		for _, circleId := range []string{first.ID, second.ID} {
+			for _, userId := range []string{ada, ben} {
+				if _, err := tx.AddCircleMember(circleId, userId, models.MemberRoleMember, ""); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -387,7 +387,7 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 		if err != nil {
 			t.Fatal(err)
 		}
-		adaCalendarID = calendar.ID
+		adaCalendarId = calendar.ID
 		if _, err := tx.ShareCalendar(ada, &models.CalendarShare{CalendarID: calendar.ID, GranteeUserID: ben, ShareLevel: models.ShareLevelDetails}); err != nil {
 			t.Fatal(err)
 		}
@@ -395,7 +395,7 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 		if err != nil {
 			t.Fatal(err)
 		}
-		groupChatID = group.ID
+		groupChatId = group.ID
 	})
 
 	// The first transaction has left and has not committed yet when the
@@ -405,7 +405,7 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 	firstDone := make(chan error, 1)
 	go func() {
 		firstDone <- database.Transaction(func(tx db.Transaction) error {
-			if _, err := tx.RemoveCircleMember(firstCircleID, ada); err != nil {
+			if _, err := tx.RemoveCircleMember(firstCircleId, ada); err != nil {
 				return err
 			}
 			close(firstHasLeft)
@@ -417,7 +417,7 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 	secondDone := make(chan error, 1)
 	go func() {
 		secondDone <- database.Transaction(func(tx db.Transaction) error {
-			_, err := tx.RemoveCircleMember(secondCircleID, ben)
+			_, err := tx.RemoveCircleMember(secondCircleId, ben)
 			return err
 		})
 	}()
@@ -444,11 +444,11 @@ func TestTwoPeopleLeavingTwoCirclesAtOnceLeaveNoShareOrGroupChatBetweenStrangers
 		if shares, err := tx.SharesCircle(ada, ben); err != nil || shares {
 			t.Fatalf("Ada and Ben still share a circle: %v %v", shares, err)
 		}
-		calendarShares, err := tx.ListCalendarShares(adaCalendarID)
+		calendarShares, err := tx.ListCalendarShares(adaCalendarId)
 		if err != nil || len(calendarShares) != 0 {
 			t.Errorf("Ada's calendar is still shared with Ben: %v %v", calendarShares, err)
 		}
-		group, err := tx.GetChat(groupChatID)
+		group, err := tx.GetChat(groupChatId)
 		if err != nil || group == nil {
 			t.Fatalf("GetChat: %v %v", group, err)
 		}

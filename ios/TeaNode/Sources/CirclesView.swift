@@ -169,15 +169,15 @@ struct CirclesView: View {
 }
 
 /// CircleRow is a circle in a line or two: its name, what kind it is and how
-/// many people are in it, beside a few of their faces.
+/// many people are in it, beside a few of their pictures.
 private struct CircleRow: View {
     let circle: PeopleCircle
 
-    private static let mostFaces = 3
+    private static let mostAvatars = 3
 
     var body: some View {
         HStack(spacing: 12) {
-            faces
+            avatars
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: circle.name)
                 Text(verbatim: details).font(.footnote).foregroundStyle(Color(.secondaryLabel))
@@ -185,10 +185,10 @@ private struct CircleRow: View {
         }
     }
 
-    /// A few members' faces, each overlapping the one before.
-    private var faces: some View {
+    /// A few members' pictures, each overlapping the one before.
+    private var avatars: some View {
         HStack(spacing: -10) {
-            ForEach(circle.members.prefix(Self.mostFaces)) { member in
+            ForEach(circle.members.prefix(Self.mostAvatars)) { member in
                 AvatarView(name: member.displayName, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: 30)
                     .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
             }
@@ -409,7 +409,7 @@ struct CircleDetailView: View {
     }
 }
 
-/// MemberRow is somebody in a circle: their face, what to call them, the
+/// MemberRow is somebody in a circle: their picture, what to call them, the
 /// username they sign in with when that is different, and whether they are an
 /// admin.
 private struct MemberRow: View {

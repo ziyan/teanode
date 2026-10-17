@@ -130,7 +130,7 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 		state.Permissions = principal.Permissions
 		state.Manages = principal.Permissions.Manages()
 		if principal.User != nil {
-			state.AvatarURL = avatarURL(principal.User)
+			state.AvatarURL = avatarUrl(principal.User)
 			state.AvatarColorIndex = avatar.InitialColorIndex(principal.User.ID)
 		}
 	}
@@ -162,7 +162,7 @@ func (self *graph) signedInAs(ctx context.Context, username string) *SessionStat
 				state.UserID = principal.UserID()
 				state.Permissions = principal.Permissions
 				state.Manages = principal.Permissions.Manages()
-				state.AvatarURL = avatarURL(user)
+				state.AvatarURL = avatarUrl(user)
 				state.AvatarColorIndex = avatar.InitialColorIndex(user.ID)
 			}
 		}

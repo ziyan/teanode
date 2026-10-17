@@ -253,7 +253,8 @@ username, a name and a first password, and they are in the circle at once,
 with nothing to accept. They sign in with that username and password and can
 change the password themselves under **Settings → Change password**. On the
 command line it is one step: `teanode user create --circle <circle-id>
-personb`.
+personb` prompts for the first password, and `--stdin` reads it from standard
+input instead (`teanode user create --stdin --circle <circle-id> personb`).
 
 Once you share a circle with someone you can message each other. Chats are
 in the agent's drawer, under **Message someone**, and every circle has a chat

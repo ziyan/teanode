@@ -39,7 +39,7 @@ func TestChatParity(test *testing.T) {
 		"RemoveChatMember":  {"remove", ""},
 		"LeaveChat":         {"leave", ""},
 		"EditChatMessage":   {"edit", ""},
-		"DeleteChatMessage": {"unsay", ""},
+		"DeleteChatMessage": {"delete-message", ""},
 		"MarkChatRead":      {"read", ""},
 		"MuteChat":          {"mute", ""},
 		"SetChatTyping":     {"", ""},
@@ -48,7 +48,7 @@ func TestChatParity(test *testing.T) {
 		// What a member allows their agent in a chat is theirs to switch from a
 		// terminal or a screen, and no business of the agent's own.
 		"SetChatAgentReading":         {"remember", ""},
-		"SetChatAgentAskableByOthers": {"askable", ""},
+		"SetChatAgentAskableByOthers": {"others-may-ask", ""},
 	}
 	for operation := range operations {
 		if _, isListed := table[operation]; !isListed {
@@ -171,7 +171,7 @@ func TestAChatTranscriptShowsAuthorsAndIsSafeForATerminal(test *testing.T) {
 	for _, want := range []string{
 		"Weekend (c1), 7 message(s), 2 unread", "in it: Alice, Bob (old) (deleted account)",
 		"Maria: hello\\x1b[2K there", "↪ replying to \"hello\"", "you: hi (edited)", "(Maria reacted 👍)",
-		"(taken back)",
+		"(deleted)",
 		// An agent is told by its owner, and two that are both called "Agent"
 		// are told apart by it.
 		"Bertie · Alice's agent: Alice will be late.", "Maria's agent: noted", "Alice's agent: same here",

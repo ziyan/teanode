@@ -8,7 +8,7 @@ import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/setti
 import {
   LIST_ENDED_SKILL_SHARE_CALLS,
   LIST_SKILL_SHARE_CALLS,
-  PaymentCard,
+  SkillShareCallCard,
   SKILL_SHARE_FIELDS,
   formatMinor,
   limitsLine,
@@ -151,7 +151,7 @@ export function SkillSharesCard() {
                   actions={
                     <>
                       <button type="button" aria-expanded={opened.has(share.id)} onClick={() => toggle(share.id)}>
-                        {t('skillShare.requests')}
+                        {t('skillShare.activity')}
                       </button>
                       <Tooltip label={t('skillShare.stop')}>
                         <button
@@ -197,7 +197,7 @@ export function SkillSharesCard() {
                   subtitle={limitsAndMonth(share, t)}
                   actions={
                     <button type="button" aria-expanded={opened.has(share.id)} onClick={() => toggle(share.id)}>
-                      {t('skillShare.requests')}
+                      {t('skillShare.activity')}
                     </button>
                   }
                 />
@@ -290,8 +290,8 @@ function limitsAndMonth(share: SkillShare, t: ReturnType<typeof useTranslation>[
   return parts.join(' · ')
 }
 
-// ShareCalls are the requests made through one share: the ones that wait first,
-// with the buttons that answer them for the owner, then the rest as short rows.
+// ShareCalls are what was asked through one share: what waits first, with the
+// buttons that answer it for the owner, then the rest as short rows.
 function ShareCalls({ share, isOwner, onChanged }: { share: SkillShare; isOwner: boolean; onChanged?: () => void }) {
   const { t } = useTranslation()
   const calls = useQuery(
@@ -302,42 +302,55 @@ function ShareCalls({ share, isOwner, onChanged }: { share: SkillShare; isOwner:
       }),
     [share.id],
   )
-  if (!calls.data) return <p className="muted skill-share-calls">{t('payment.loading')}</p>
+  if (!calls.data) return <p className="muted skill-share-calls">{t('skillShare.callLoading')}</p>
   const rows = calls.data.ListSkillShareCalls
-  if (rows.length === 0) return <SettingsEmpty>{t('skillShare.noRequests')}</SettingsEmpty>
+  if (rows.length === 0) return <SettingsEmpty>{t('skillShare.noActivity')}</SettingsEmpty>
+  const waiting = rows.filter((call) => call.callState === 'waiting_for_approval')
+  const answered = rows.filter((call) => call.callState !== 'waiting_for_approval')
   return (
     <div className="skill-share-calls">
-      {rows.map((call) =>
-        call.callState === 'waiting_for_approval' ? (
-          <PaymentCard
-            key={call.id}
-            call={call}
-            isOwner={isOwner}
-            onAnswered={() => {
-              void calls.reload()
-              onChanged?.()
-            }}
-          />
-        ) : (
-          <SettingsRow
-            key={call.id}
-            title={call.toolName}
-            badge={
-              <Tag
-                value={t(`skillShare.callState.${call.callState}` as Parameters<typeof t>[0])}
-                tone={call.callState === 'ran' ? 'good' : 'bad'}
-              />
-            }
-            subtitle={[
-              call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : '',
-              new Date(call.createdAt).toLocaleString(),
-              call.requestReason,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          />
-        ),
-      )}
+      {waiting.length > 0 ? (
+        <>
+          <h4 className="skill-share-calls-heading">
+            {isOwner ? t('skillShare.callsWaitingForYou') : t('skillShare.callState.waiting_for_approval')}
+          </h4>
+          {waiting.map((call) => (
+            <SkillShareCallCard
+              key={call.id}
+              call={call}
+              isOwner={isOwner}
+              onAnswered={() => {
+                void calls.reload()
+                onChanged?.()
+              }}
+            />
+          ))}
+        </>
+      ) : null}
+      {answered.length > 0 ? (
+        <>
+          <h4 className="skill-share-calls-heading">{t('skillShare.callsAnswered')}</h4>
+          {answered.map((call) => (
+            <SettingsRow
+              key={call.id}
+              title={call.toolName}
+              badge={
+                <Tag
+                  value={t(`skillShare.callState.${call.callState}` as Parameters<typeof t>[0])}
+                  tone={call.callState === 'ran' ? 'good' : 'bad'}
+                />
+              }
+              subtitle={[
+                call.amountMinor !== null ? formatMinor(call.amountMinor, call.currencyCode) : '',
+                new Date(call.createdAt).toLocaleString(),
+                call.requestReason,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            />
+          ))}
+        </>
+      ) : null}
     </div>
   )
 }

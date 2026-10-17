@@ -152,7 +152,7 @@ it('shares with Ask me every time instead of limits, sending none', async () => 
   })
 })
 
-it('lists a share with its limits and the month so far, its waiting requests first, and the shares made to the person', async () => {
+it('lists a share with its limits and the month so far, its waiting calls first, and the shares made to the person', async () => {
   vi.mocked(graphql).mockImplementation(async (query: string) => {
     if (query.includes('isShareEnded: true')) return { ListSkillShareCalls: [] }
     if (query.includes('ListSkillShareCalls')) {
@@ -176,8 +176,8 @@ it('lists a share with its limits and the month so far, its waiting requests fir
             currencyCode: 'usd',
             callState: 'waiting_for_approval',
             toolOutput: '',
-            decidedAt: null,
-            decisionNote: '',
+            answeredAt: null,
+            answerNote: '',
             expiresAt: '2026-10-18T10:00:00Z',
             createdAt: '2026-10-17T10:00:00Z',
           },
@@ -206,9 +206,11 @@ it('lists a share with its limits and the month so far, its waiting requests fir
   expect(screen.getByText('music from Cora Example')).toBeTruthy()
   expect(screen.getByText('asks you every time')).toBeTruthy()
 
-  fireEvent.click(screen.getAllByRole('button', { name: 'Requests' })[0])
+  fireEvent.click(screen.getAllByRole('button', { name: 'Activity' })[0])
   expect(await screen.findByRole('button', { name: 'Approve and run it' })).toBeTruthy()
   expect(screen.getByText('Example Store')).toBeTruthy()
+  // What waits is headed as waiting for the owner, in the screen's words.
+  expect(screen.getByRole('heading', { name: 'Waiting for you' })).toBeTruthy()
 })
 
 it('keeps the record of the calls of shares that ended, in a section of their own', async () => {
@@ -234,8 +236,8 @@ it('keeps the record of the calls of shares that ended, in a section of their ow
             currencyCode: 'usd',
             callState: 'ran',
             toolOutput: '',
-            decidedAt: null,
-            decisionNote: '',
+            answeredAt: null,
+            answerNote: '',
             expiresAt: null,
             createdAt: '2026-10-17T10:00:00Z',
           },
@@ -274,8 +276,8 @@ it('draws the record of ended shares even when there is nothing left to lend or 
             currencyCode: '',
             callState: 'expired',
             toolOutput: '',
-            decidedAt: null,
-            decisionNote: '',
+            answeredAt: null,
+            answerNote: '',
             expiresAt: null,
             createdAt: '2026-10-17T10:00:00Z',
           },

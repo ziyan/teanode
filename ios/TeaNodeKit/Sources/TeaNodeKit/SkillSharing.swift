@@ -62,8 +62,8 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
     /// ran, failed, refused, waiting_for_approval, declined or expired.
     public let callState: String
     public let toolOutput: String
-    public let decidedAt: String?
-    public let decisionNote: String
+    public let answeredAt: String?
+    public let answerNote: String
     public let expiresAt: String?
     public let createdAt: String
 
@@ -105,7 +105,7 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// SkillShareNote is the detail of a payment_waiting note of the main
+/// SkillShareNote is the detail of a skill_share_call_waiting note of the main
 /// conversation: which call waits, in which share. The card reads the call
 /// itself, so that it shows how it stands now.
 public struct SkillShareNote: Decodable, Hashable, Sendable {
@@ -204,7 +204,7 @@ extension Documents {
         """
     static let skillShareCallFields = """
         id skillShareId skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex ownerName
-        toolName toolArguments requestReason amountMinor currencyCode callState toolOutput decidedAt decisionNote expiresAt createdAt
+        toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt
         """
     public static let skillShares = """
         query { ListSkillShares { \(skillShareFields) } }
@@ -226,8 +226,8 @@ extension Documents {
         }
         """
     public static let answerSkillShareCall = """
-        mutation ($callId: String!, $isApproved: Boolean!, $decisionNote: String) {
-          AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, decisionNote: $decisionNote) { \(skillShareCallFields) }
+        mutation ($callId: String!, $isApproved: Boolean!, $answerNote: String) {
+          AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, answerNote: $answerNote) { \(skillShareCallFields) }
         }
         """
 }
@@ -308,12 +308,12 @@ extension Connection {
     /// Approves or declines a call that waits, as the share's owner. Approving
     /// runs exactly that call once on the owner's computer. The agent never
     /// answers one: the server refuses it.
-    public func answerSkillShareCall(callId: String, isApproved: Bool, decisionNote: String?) async throws -> SkillShareCall {
+    public func answerSkillShareCall(callId: String, isApproved: Bool, answerNote: String?) async throws -> SkillShareCall {
         struct Answer: Decodable, Sendable { let AnswerSkillShareCall: SkillShareCall }
-        let note = decisionNote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let note = answerNote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return try await execute(
             Documents.answerSkillShareCall,
-            variables: ["callId": .string(callId), "isApproved": .bool(isApproved), "decisionNote": note.isEmpty ? .null : .string(note)],
+            variables: ["callId": .string(callId), "isApproved": .bool(isApproved), "answerNote": note.isEmpty ? .null : .string(note)],
             as: Answer.self
         ).AnswerSkillShareCall
     }

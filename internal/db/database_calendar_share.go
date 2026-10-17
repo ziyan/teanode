@@ -257,7 +257,7 @@ func (self *transaction) ListReachableCalendars(userId string) ([]*models.Reacha
 			ownerIds = append(ownerIds, *row.UserID)
 		}
 	}
-	owners, err := loadUsersByID(self.tx, ownerIds)
+	owners, err := loadUsersById(self.tx, ownerIds)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +432,7 @@ func (self *transaction) ListCalendarShares(calendarId string) ([]*models.Calend
 			circleIds = append(circleIds, *row.GranteeCircleID)
 		}
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}

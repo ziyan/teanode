@@ -743,13 +743,13 @@ func TestOnlyTheAuthorEditsAndAnAdminOfAGroupCanDeleteAnyMessage(t *testing.T) {
 		t.Errorf("a member deleting another's message was told %q", message)
 	}
 	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, bobMessage))
-	unsaid := events.next(agent.EventUnsaid)
-	if unsaid == nil || unsaid.MessageID != bobMessage {
-		t.Errorf("Carol's feed carried %+v", unsaid)
+	deleted := events.next(agent.EventDeleted)
+	if deleted == nil || deleted.MessageID != bobMessage {
+		t.Errorf("Carol's feed carried %+v", deleted)
 	}
 	taken := world.read(t, world.carol, carolGroup)[0]
 	if taken["isDeleted"] != true || taken["content"] != "" {
-		t.Errorf("a message taken back reads %v", taken)
+		t.Errorf("a message deleted reads %v", taken)
 	}
 	world.call(t, world.carol, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, carolMessage))
 	world.refused(t, world.bob, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, carolMessage))
@@ -765,7 +765,7 @@ func TestOnlyTheAuthorEditsAndAnAdminOfAGroupCanDeleteAnyMessage(t *testing.T) {
 // An edit, a reaction and a message taken back are told only to the members
 // the message is readable by. Somebody added to a group after a message was
 // said was never shown it, and the feed must not hand them its new words, who
-// reacted to it, or that it was taken back.
+// reacted to it, or that it was deleted.
 func TestAChangeToAMessageIsNotToldToALateJoiner(t *testing.T) {
 	world := newChatWorld(t)
 	world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
@@ -794,7 +794,7 @@ func TestAChangeToAMessageIsNotToldToALateJoiner(t *testing.T) {
 	world.call(t, world.bob, fmt.Sprintf(`mutation { EditChatMessage(messageId: %q, message: "before carol, changed") { id } }`, before))
 	world.call(t, world.alice, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: "👍") }`, before))
 	world.call(t, world.bob, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, before))
-	for _, kind := range []agent.EventKind{agent.EventEdited, agent.EventReacted, agent.EventUnsaid} {
+	for _, kind := range []agent.EventKind{agent.EventEdited, agent.EventReacted, agent.EventDeleted} {
 		if aliceEvents.next(kind) == nil {
 			t.Errorf("Alice, who was there, was not told of the %s", kind)
 		}
@@ -810,7 +810,7 @@ func TestAChangeToAMessageIsNotToldToALateJoiner(t *testing.T) {
 	if edited == nil || edited.Message == nil || edited.Message.Content != "after carol, changed" {
 		t.Errorf("Carol's feed carried %+v for an edit of what she was shown", edited)
 	}
-	if carolEvents.next(agent.EventReacted) == nil || carolEvents.next(agent.EventUnsaid) == nil {
+	if carolEvents.next(agent.EventReacted) == nil || carolEvents.next(agent.EventDeleted) == nil {
 		t.Error("Carol was not told of a reaction to, or the taking back of, what she was shown")
 	}
 }
@@ -862,10 +862,10 @@ func TestAMessageIsBoundedAndNeedsWordsOrAFile(t *testing.T) {
 	if message := ask("   "); !strings.Contains(message, "say something") {
 		t.Errorf("an empty message was answered %q", message)
 	}
-	if message := ask(strings.Repeat("é", models.ChatMessageLength+1)); !strings.Contains(message, "at most 16000 characters") {
+	if message := ask(strings.Repeat("é", models.ChatMessageMostCharacters+1)); !strings.Contains(message, "at most 16000 characters") {
 		t.Errorf("a message of 16001 characters was answered %q", message)
 	}
-	if message := ask(strings.Repeat("é", models.ChatMessageLength)); message != "" {
+	if message := ask(strings.Repeat("é", models.ChatMessageMostCharacters)); message != "" {
 		t.Errorf("a message of exactly 16000 characters was refused: %q", message)
 	}
 	// A read-only profile does not write to other people.
@@ -1091,12 +1091,12 @@ func TestAFileSentInAChatIsReadableByTheOthersInIt(t *testing.T) {
 	// Taking the message back takes the file with it.
 	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, message["id"]))
 	if code := fetch(world.bob); code != http.StatusNotFound {
-		t.Errorf("after the message was taken back, a member fetching the file got %d", code)
+		t.Errorf("after the message was deleted, a member fetching the file got %d", code)
 	}
 }
 
 // One person keeps only so much of the files they send in chats: a message
-// with files stays until it is taken back and everybody in the chat reads
+// with files stays until it is deleted and everybody in the chat reads
 // them, so nothing sweeps them. A send past the limit is refused with how much
 // is kept and what to do, and taking old messages back makes room.
 func TestAPersonKeepsOnlySoMuchOfTheFilesTheySendInChats(t *testing.T) {

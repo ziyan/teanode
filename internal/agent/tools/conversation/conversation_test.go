@@ -507,8 +507,13 @@ func TestConversationListsReadsAndSendsInAChat(t *testing.T) {
 		t.Fatalf("the chat reads %v", messages)
 	}
 	first, second := messages[0].(map[string]any), messages[1].(map[string]any)
-	if first["from"] != "Example Friend" || first["from_the_person"] != false || second["from_the_person"] != true || second["from"] != "Example Owner" {
+	if first["from"] != "Example Friend" || first["is_from_the_person"] != false || second["is_from_the_person"] != true || second["from"] != "Example Owner" {
 		t.Errorf("who said what: %v", messages)
+	}
+	// Somebody else's words in a chat have an author and no role, which
+	// would say "user" for every other person.
+	if first["role"] != nil || second["role"] != nil {
+		t.Errorf("a message of a chat carries no role: %v", messages)
 	}
 
 	sending := json.RawMessage(`{"action":"send","conversation_id":"` + chatConversation.ID + `","text":"I will be late."}`)

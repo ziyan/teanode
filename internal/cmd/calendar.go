@@ -36,7 +36,7 @@ func NewCalendarCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "from", Usage: "the first day, as YYYY-MM-DD; today by default"},
 					&cli.StringFlag{Name: "until", Usage: "the day after the last; a week after 'from' by default"},
-					&cli.StringFlag{Name: "whose", Usage: "a username to read the calendar they shared with you, or 'everyone' for every calendar shared with you and your circles' calendars, each entry at the level it was shared at"},
+					&cli.StringFlag{Name: "owner", Usage: "a username to read the calendar they shared with you, or 'everyone' for every calendar shared with you and your circles' calendars, each entry at the level it was shared at"},
 				},
 				Action: runCalendarList,
 			},
@@ -171,7 +171,7 @@ func eventFlags() []cli.Flag {
 // theCalendar is the caller's own, made by the server if they have never had
 // one. Everything here works on one calendar, because a person has one; their
 // reminders list beside it is teanode reminder's, and the calendars shared with
-// them or kept by a circle are reached by name (--whose) rather than by
+// them or kept by a circle are reached by name (--owner) rather than by
 // being the first one listed.
 func theCalendar(ctx context.Context, connection *client.Client) (*client.Calendar, error) {
 	calendars, err := client.ListCalendars(ctx, connection)
@@ -249,7 +249,7 @@ func runCalendarList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
-	if strings.TrimSpace(command.String("whose")) != "" {
+	if strings.TrimSpace(command.String("owner")) != "" {
 		return runCalendarSharedList(ctx, command, connection, kept)
 	}
 	where := zoneOf(kept)
@@ -663,7 +663,7 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 			found.Name, whose, level, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
 		})
 	}
-	return printTable([]string{"name", "whose", "level", "timezone", "week starts", "colour", "holds", "id"}, rows)
+	return printTable([]string{"name", "owner", "level", "timezone", "week starts", "colour", "holds", "id"}, rows)
 }
 
 func runCalendarSet(ctx context.Context, command *cli.Command) error {

@@ -10181,7 +10181,7 @@ button.with-icon {
   --leaf: var(--avatar-7);
 }
 
-/* When someone is busy and nothing else is shared: a grey block that says so
+/* When someone is busy and nothing else is shared: a gray block that says so
    and cannot be opened, since there is nothing in it. */
 .calendar-busy-block {
   --leaf: var(--muted);
@@ -15303,7 +15303,7 @@ body.has-recording-bar .content {
   white-space: nowrap;
 }
 
-/* The picture row at the head of the profile form: the face, and what can be
+/* The picture row at the head of the profile form: the picture, and what can be
    done to it. */
 .profile-picture {
   display: flex;
@@ -15342,7 +15342,7 @@ body.has-recording-bar .content {
 }
 
 /* The circles a person is in, one card each. The card is a link, so the whole
-   of it is the target; its members are a few faces overlapping and a count. */
+   of it is the target; its members are a few pictures overlapping and a count. */
 .circle-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -15384,7 +15384,7 @@ body.has-recording-bar .content {
   gap: var(--space-2);
 }
 
-/* Overlapping faces: a ring in the card's own color separates one from the
+/* Overlapping pictures: a ring in the card's own color separates one from the
    next. */
 .avatar-stack {
   display: flex;
@@ -15407,7 +15407,7 @@ body.has-recording-bar .content {
 
 /* Chats in the drawer: a conversation with people in it. The person's own
    messages are the bubbles they always were, on the right; everybody
-   else's are on the left with a face, and a name above the first of a run. */
+   else's are on the left with a picture, and a name above the first of a run. */
 
 /* The number on the drawer's button: the chats with something new in them.
    The accent, as the account menu's count of invitations. */
@@ -15428,7 +15428,7 @@ body.has-recording-bar .content {
   box-shadow: 0 0 0 2px var(--background);
 }
 
-/* In the picker a chat is its faces, its title and, when something is
+/* In the picker a chat is its pictures, its title and, when something is
    waiting, a bold title and a count at the end of the line. */
 .agent-drawer-list-name.chat {
   display: flex;
@@ -15467,15 +15467,15 @@ body.has-recording-bar .content {
   font-variant-numeric: tabular-nums;
 }
 
-.chat-faces {
+.chat-avatars {
   flex: none;
 }
 
-.chat-faces .avatar {
+.chat-avatars .avatar {
   box-shadow: 0 0 0 2px var(--background);
 }
 
-.chat-faces .avatar + .avatar {
+.chat-avatars .avatar + .avatar {
   margin-left: -8px;
 }
 
@@ -15517,9 +15517,9 @@ body.has-recording-bar .content {
   color: var(--bad);
 }
 
-/* One message of a chat from somebody else: their face at the left of the
+/* One message of a chat from somebody else: their picture at the left of the
    first of a run, and the bubble beside it. The ones after it in the run
-   sit closer under it and keep the face's room empty. */
+   sit closer under it and keep the picture's room empty. */
 .agent-chat-turn {
   display: flex;
   max-width: 100%;
@@ -15542,7 +15542,7 @@ body.has-recording-bar .content {
   max-width: 100%;
 }
 
-.agent-chat-face {
+.agent-chat-avatar {
   flex: none;
   width: 28px;
 }
@@ -15594,7 +15594,7 @@ body.has-recording-bar .content {
   color: var(--text);
 }
 
-/* Under the newest message each of the others has read: their faces,
+/* Under the newest message each of the others has read: their pictures,
    small. */
 .agent-chat-reads {
   display: inline-flex;
@@ -15706,8 +15706,8 @@ body.has-recording-bar .content {
   text-overflow: ellipsis;
 }
 
-/* On the page of conversations a chat's tile leads with its faces. */
-.conversation-tile-title .chat-faces {
+/* On the page of conversations a chat's tile leads with its pictures. */
+.conversation-tile-title .chat-avatars {
   margin-right: 6px;
   vertical-align: middle;
 }
@@ -15733,7 +15733,7 @@ body.has-recording-bar .content {
 
 /* A call of a skill the person shared, waiting for their word. The card the
    drawer and the agent page both draw (components/skillShare.tsx). */
-.payment-card {
+.skill-share-call-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -15743,58 +15743,64 @@ body.has-recording-bar .content {
   background: var(--surface);
   max-width: 100%;
 }
-.payment-card-head {
+.skill-share-call-card-head {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-.payment-card-title {
+.skill-share-call-card-title {
   flex: 1 1 12rem;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.payment-card-facts {
+.skill-share-call-card-facts {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 12px;
   margin: 0;
 }
-.payment-card-facts dt {
+.skill-share-call-card-facts dt {
   color: var(--muted);
   text-transform: capitalize;
 }
-.payment-card-facts dd {
+.skill-share-call-card-facts dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
-.payment-card-line {
+.skill-share-call-card-line {
   display: contents;
 }
-.payment-card-amount {
+.skill-share-call-card-amount {
   font-weight: 600;
   font-size: 1.1em;
 }
-.payment-card-reason {
+.skill-share-call-card-reason {
   margin: 0;
   padding: 6px 10px;
   border-left: 3px solid var(--border);
 }
-.payment-card-reason blockquote {
+.skill-share-call-card-reason blockquote {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.payment-card-note {
+.skill-share-call-card-note {
   width: 100%;
 }
-.payment-card-actions {
+.skill-share-call-card-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
-.payment-card p {
+.skill-share-call-card p {
   margin: 0;
+}
+.skill-share-calls-heading {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--muted);
 }
 .skill-share-calls {
   display: flex;

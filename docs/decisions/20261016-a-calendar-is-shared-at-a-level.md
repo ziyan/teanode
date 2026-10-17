@@ -31,7 +31,7 @@ circle they share, at one **share level**:
 
 An event the owner marked private (`CLASS:PRIVATE` or
 `CLASS:CONFIDENTIAL`) is `busy` to everybody else whatever the level, and
-that rule lives beside the four judgements of what makes somebody busy.
+that rule lives beside the four judgments of what makes somebody busy.
 
 A family circle may have a **circle calendar**: a calendar row owned by
 the circle rather than by an account, which every member reads and

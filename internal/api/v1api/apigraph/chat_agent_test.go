@@ -668,7 +668,7 @@ func TestAFailedChatTurnRetractsTheWordsItStreamed(t *testing.T) {
 	if streamed == nil || streamed.RunID != runId || streamed.Text != "Thursday at" {
 		t.Fatalf("Grace was streamed %+v; want the first words of the run %s", streamed, runId)
 	}
-	retracted := nextFeedEvent(graceFeed, agent.EventUnsaid)
+	retracted := nextFeedEvent(graceFeed, agent.EventDeleted)
 	if retracted == nil || retracted.MessageID != agent.ChatStreamingKey(runId) || retracted.ConversationID != graceChat {
 		t.Fatalf("Grace was told %+v; want the provisional line of the run %s taken back", retracted, runId)
 	}

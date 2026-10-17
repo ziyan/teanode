@@ -28,7 +28,7 @@ final class SkillSharingTests: XCTestCase {
              "granteeAvatarUrl":null,"granteeAvatarColorIndex":3,"ownerName":"Ada Example","toolName":"pay",
              "toolArguments":\(String(decoding: try JSONEncoder().encode(arguments), as: UTF8.self)),
              "requestReason":"the weekly groceries","amountMinor":14000,"currencyCode":"usd","callState":"\(state)","toolOutput":"",
-             "decidedAt":null,"decisionNote":"","expiresAt":"2026-10-18T10:00:00Z","createdAt":"2026-10-17T10:00:00Z"}
+             "answeredAt":null,"answerNote":"","expiresAt":"2026-10-18T10:00:00Z","createdAt":"2026-10-17T10:00:00Z"}
             """
         return try JSONDecoder().decode(SkillShareCall.self, from: Data(json.utf8))
     }

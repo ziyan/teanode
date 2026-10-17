@@ -168,7 +168,7 @@ func describeCircleMember(member *models.CircleMember) *CircleMember {
 	if member.User != nil {
 		described.Username = member.User.Username
 		described.Name = member.User.Name
-		described.AvatarURL = avatarURL(member.User)
+		described.AvatarURL = avatarUrl(member.User)
 	}
 	return described
 }

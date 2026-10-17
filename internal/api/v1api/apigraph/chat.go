@@ -63,8 +63,8 @@ type ChatMutation interface {
 	// edited.
 	EditChatMessage(ctx context.Context, arguments EditChatMessageArguments) (*models.AgentMessage, error)
 
-	// Take a message back: the caller's own, or any in a group chat the caller
-	// is an admin of. The others are told, and see that it was taken back.
+	// Delete a message: the caller's own, or any in a group chat the caller
+	// is an admin of. The others are told, and see that it was deleted.
 	DeleteChatMessage(ctx context.Context, arguments DeleteChatMessageArguments) (bool, error)
 
 	// Say the caller has read a chat through a message. The mark moves
@@ -188,7 +188,7 @@ func describeChatMembers(members []*models.ChatMember, viewerUserId string) {
 			member.AgentID, member.AgentName, member.IsAgentActive = "", "", false
 		}
 		if member.User != nil {
-			member.AvatarURL = avatarURL(member.User)
+			member.AvatarURL = avatarUrl(member.User)
 		}
 		key := member.UserID
 		if key == "" {
@@ -493,7 +493,7 @@ func describeChatAuthors(messages []*models.AgentMessage, users map[string]*mode
 		}
 		message.AuthorAvatarColorIndex = avatar.InitialColorIndex(key)
 		if message.AuthorKind == models.ChatAuthorPerson {
-			message.AuthorAvatarURL = avatarURL(users[message.AuthorUserID])
+			message.AuthorAvatarURL = avatarUrl(users[message.AuthorUserID])
 		}
 		message.IsMine = message.AuthorUserID != "" && message.AuthorUserID == callerUserId
 	}
@@ -543,7 +543,7 @@ func (self *graph) publishChatEvents(ctx context.Context, chatId string, build f
 }
 
 // publishChatMessageEvents is publishChatEvents for a change to one message
-// (edited, unsaid, reacted): told only to the members the message is readable
+// (edited, deleted, reacted): told only to the members the message is readable
 // by, because a person who joined after it was said was never shown it, and an
 // edit would hand them its new words, a reaction its context.
 func (self *graph) publishChatMessageEvents(ctx context.Context, message *models.ChatMessage, build func(member *models.ChatMember) agent.Event) {
@@ -823,7 +823,7 @@ func (self *graph) DeleteChatMessage(ctx context.Context, arguments DeleteChatMe
 		return false, translateError(err)
 	}
 	self.publishChatMessageEvents(ctx, message, func(*models.ChatMember) agent.Event {
-		return agent.Event{Kind: agent.EventUnsaid, MessageID: message.ID}
+		return agent.Event{Kind: agent.EventDeleted, MessageID: message.ID}
 	})
 	return true, nil
 }

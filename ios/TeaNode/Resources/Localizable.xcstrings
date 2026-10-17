@@ -1201,6 +1201,22 @@
         }
       }
     },
+    "%@’s agent asked to run %@ with your %@ skill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@さんのエージェントが、あなたのスキル「%3$@」で%2$@を実行しようとしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@的助手想通过你的技能“%3$@”运行%2$@"
+          }
+        }
+      }
+    },
     "%@’s calendar": {
       "localizations": {
         "ja": {
@@ -1229,6 +1245,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "圈子自己的日历，圈子里的每个人都可以查看和编辑。其中的日程不能有参与者。"
+          }
+        }
+      }
+    },
+    "Above these limits, or when the amount cannot be read, the tool waits for you. The limits are in the currency you give. One that failed still counts toward the month, because a failure after the command acted looks the same as one before.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限を超える場合や金額が読み取れない場合は、あなたの承認を待ちます。上限は入力した通貨で数えます。失敗したものも、コマンドが動いた後の失敗は動く前の失敗と見分けがつかないため、その月の合計に数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过上限，或无法读出金额时，会等待你的确认。上限以你填写的币种计算。失败的也计入当月，因为命令已经执行之后的失败与执行之前的失败看起来一样。"
           }
         }
       }
@@ -1425,6 +1457,22 @@
         }
       }
     },
+    "does not say what it costs, so it always asks you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "費用が分からないため、必ず確認します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "技能没有说明费用，所以总会问你"
+          }
+        }
+      }
+    },
     "Event": {
       "localizations": {
         "ja": {
@@ -1457,6 +1505,22 @@
         }
       }
     },
+    "Everything waits for your approval, whatever it costs.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金額にかかわらず、すべて承認を待ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无论金额多少，一切都等待你的确认。"
+          }
+        }
+      }
+    },
     "How much": {
       "localizations": {
         "ja": {
@@ -1469,6 +1533,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "共享范围"
+          }
+        }
+      }
+    },
+    "Let someone in a circle you share run a skill of yours. It runs on your own computer, as you. Anything above the limits you set, or that cannot be priced, waits for your word.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じサークルの人に、あなたのスキルを実行させることができます。実行はあなたのコンピューターで、あなたとして行われます。設定した上限を超えるものや、金額が読み取れないものは、あなたの承認を待ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让同一圈子里的人运行你的技能。它在你自己的电脑上、以你的身份运行。超过你设定的上限，或无法确定金额的操作，会等待你的确认。"
           }
         }
       }
@@ -3445,6 +3525,22 @@
         }
       }
     },
+    "No amount is stated. Only you can say whether it is fine.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金額が書かれていません。問題ないかはあなたにしか判断できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有写明金额，是否可以只有你能判断。"
+          }
+        }
+      }
+    },
     "Only %@'s owner can ask it in this chat.": {
       "localizations": {
         "ja": {
@@ -3477,6 +3573,38 @@
         }
       }
     },
+    "only works on something an earlier tool of this share made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この共有の別のツールが作ったものにのみ使えます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只能用于这次共享中先前的工具生成的内容"
+          }
+        }
+      }
+    },
+    "Open one to see what was asked through it. What waits for you is first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開くと、その共有で求められたことを確認できます。承認待ちが先頭です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开后可以查看通过它发起的内容，等待你确认的排在最前。"
+          }
+        }
+      }
+    },
     "Open the menu to read and write to the people you share a circle with.": {
       "localizations": {
         "ja": {
@@ -3489,6 +3617,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开菜单，即可与和你同在一个圈子的人聊天。"
+          }
+        }
+      }
+    },
+    "Skills other people lend your agent. Each tool runs on their computer and is limited to the limits they set.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他の人があなたのエージェントに貸しているスキルです。実行は相手のコンピューターで、相手が決めた上限が適用されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "别人借给你的助手使用的技能。每个工具都在对方的电脑上运行，并受对方设定的上限约束。"
+          }
+        }
+      }
+    },
+    "Skills you share, when a call waits for you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有しているスキルについて、返事を待つ呼び出しがあるとき"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你共享的技能有调用在等你处理时"
           }
         }
       }
@@ -3985,6 +4145,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "对方可能已停止共享。%@"
+          }
+        }
+      }
+    },
+    "Their agent is offered the tools you choose. Your computer must be connected for a tool to run, and you can stop sharing at any time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選んだツールが相手のエージェントに提供されます。ツールの実行にはあなたのコンピューターが接続されている必要があり、共有はいつでもやめられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方的助手会获得你选择的工具。工具运行时你的电脑必须在线，你也可以随时停止共享。"
           }
         }
       }
@@ -5717,7 +5893,7 @@
         }
       }
     },
-    "That photo could not be read.": {
+    "That picture could not be read.": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -5728,7 +5904,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "无法读取该照片。"
+            "value": "无法读取该图片。"
           }
         }
       }
@@ -5777,6 +5953,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个圈子已不存在"
+          }
+        }
+      }
+    },
+    "This is no longer there.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これはもうありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个已经不存在了。"
           }
         }
       }
@@ -46520,6 +46712,22 @@
         }
       }
     },
+    "Your agent asked to run %@ with %@’s %@ skill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントが、%2$@さんのスキル「%3$@」で%1$@を実行しようとしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手想通过%2$@的技能“%3$@”运行%1$@"
+          }
+        }
+      }
+    },
     "Your agent is not following anything right now.": {
       "localizations": {
         "ja": {
@@ -56168,22 +56376,6 @@
         }
       }
     },
-    "Let someone in a circle you share use a skill of yours. Each use runs on your own computer, as you. A use above the limits you set, or one that cannot be priced, waits for your word.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同じサークルの人に、あなたのスキルを使わせることができます。使うたびに、あなたのコンピューターであなたとして実行されます。設定した上限を超える場合や、金額が読み取れない場合は、あなたの承認を待ちます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "让同一圈子里的人使用你的技能。每次使用都在你自己的电脑上、以你的身份运行。超过你设定的上限，或无法确定金额的使用，会等待你的确认。"
-          }
-        }
-      }
-    },
     "%@ loses %@ at once, and the record of what was asked through it goes with it.": {
       "localizations": {
         "ja": {
@@ -56212,38 +56404,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "你共享的"
-          }
-        }
-      }
-    },
-    "Open one to see what was asked through it. Requests waiting for you are first.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開くと、その共有で依頼されたことを確認できます。承認待ちが先頭です。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开后可以查看通过它发起的请求，等待你确认的排在最前。"
-          }
-        }
-      }
-    },
-    "Skills other people lend your agent. Each use runs on their computer and is held to the limits they set.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "他の人があなたのエージェントに使わせているスキルです。実行は相手のコンピューターで、相手が決めた上限が適用されます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "别人借给你的助手使用的技能。每次使用都在对方的电脑上运行，并受对方设定的上限约束。"
           }
         }
       }
@@ -56296,22 +56456,6 @@
         }
       }
     },
-    "Their agent is offered the tools you choose. Your computer must be connected for a use to run, and you can stop sharing at any time.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選んだツールが相手のエージェントに提供されます。実行にはあなたのコンピューターが接続されている必要があり、共有はいつでもやめられます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方的助手会获得你选择的工具。使用时你的电脑必须在线，你也可以随时停止共享。"
-          }
-        }
-      }
-    },
     "Tools to share": {
       "localizations": {
         "ja": {
@@ -56340,38 +56484,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "会付款：需要设置上限或经你确认"
-          }
-        }
-      }
-    },
-    "only for requests made through this share": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この共有で作られた依頼にのみ使えます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只能用于通过这次共享发起的请求"
-          }
-        }
-      }
-    },
-    "does not say what it costs, so every use asks you": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "費用が分からないため、使うたびに確認します"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "技能没有说明费用，所以每次使用都会问你"
           }
         }
       }
@@ -56440,22 +56552,6 @@
         }
       }
     },
-    "Every use waits for your approval, whatever it costs.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "金額にかかわらず、使うたびに承認を待ちます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无论金额多少，每次使用都等待你的确认。"
-          }
-        }
-      }
-    },
     "A tool that pays is shared with a limit, or with Ask me every time.": {
       "localizations": {
         "ja": {
@@ -56468,22 +56564,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "会付款的工具需要设置上限，或选择“每次都问我”才能共享。"
-          }
-        }
-      }
-    },
-    "Above these limits, or when the amount cannot be read, a use waits for you. The limits are in the currency you give. A use that failed still counts toward the month, because a failure after the command acted looks the same as one before.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上限を超える場合や金額が読み取れない場合は、あなたの承認を待ちます。上限は入力した通貨で数えます。失敗した利用も、コマンドが動いた後の失敗は動く前の失敗と見分けがつかないため、その月の合計に数えます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "超过上限，或无法读出金额时，使用会等待你的确认。上限以你填写的币种计算。失败的使用也计入当月，因为命令已经执行之后的失败与执行之前的失败看起来一样。"
           }
         }
       }
@@ -56536,38 +56616,6 @@
         }
       }
     },
-    "%@ asked to use your %@ skill": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@さんがあなたのスキル「%2$@」の使用を求めています"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@请求使用你的技能“%2$@”"
-          }
-        }
-      }
-    },
-    "You asked to use %@’s %@ skill": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@さんのスキル「%2$@」の使用を求めました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你请求使用%1$@的技能“%2$@”"
-          }
-        }
-      }
-    },
     "Tool": {
       "localizations": {
         "ja": {
@@ -56580,22 +56628,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "工具"
-          }
-        }
-      }
-    },
-    "Not stated in the request. Only you can say whether it is fine.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "依頼に金額が書かれていません。問題ないかはあなたにしか判断できません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请求中没有写明金额，是否可以只有你能判断。"
           }
         }
       }
@@ -56680,22 +56712,6 @@
         }
       }
     },
-    "This request is no longer there.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この依頼はもうありません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这个请求已经不存在了。"
-          }
-        }
-      }
-    },
     "Lend a skill to someone in a circle you share, and answer what they ask. Each use runs on your computer, as you.": {
       "localizations": {
         "ja": {
@@ -56712,22 +56728,6 @@
         }
       }
     },
-    "Requests to use a skill you shared, and how yours came out": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有したスキルの使用依頼と、あなたの依頼の結果"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "使用你共享技能的请求，以及你的请求的结果"
-          }
-        }
-      }
-    },
     "Skills shared with you": {
       "localizations": {
         "ja": {
@@ -56740,22 +56740,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "共享给你的技能"
-          }
-        }
-      }
-    },
-    "Approve this payment": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この支払いを承認する"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "批准这笔付款"
           }
         }
       }

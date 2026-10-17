@@ -93,11 +93,11 @@ func chatCommands() []*cli.Command {
 			Action:    runChatRemember,
 		},
 		{
-			Name:      "askable",
-			Usage:     "let the others in a chat ask your agent there, which then answers them held to the chat and the web, or stop them",
+			Name:      "others-may-ask",
+			Usage:     "others in this chat may ask your agent there (on), who then answers them limited to the chat and the web, or may not (off)",
 			ArgsUsage: "<conversation-id> on|off",
 			Flags:     []cli.Flag{JSONFlag()},
-			Action:    runChatAskable,
+			Action:    runChatOthersMayAsk,
 		},
 		{
 			Name:      "edit",
@@ -107,11 +107,11 @@ func chatCommands() []*cli.Command {
 			Action:    runChatEdit,
 		},
 		{
-			Name:      "unsay",
-			Usage:     "take one of your messages back; in a group chat an admin may take back any",
+			Name:      "delete-message",
+			Usage:     "delete one of your messages for everybody in the chat; in a group chat an admin may delete any",
 			ArgsUsage: "<message-id>",
 			Flags:     []cli.Flag{ForceFlag()},
-			Action:    runChatUnsay,
+			Action:    runChatDeleteMessage,
 		},
 	}
 }
@@ -156,8 +156,8 @@ func requireConversationArgument(command *cli.Command) (string, error) {
 	return conversationId, nil
 }
 
-func printChatConversation(command *cli.Command, conversation *client.AgentConversation, asJson bool, said string) error {
-	if asJson {
+func printChatConversation(command *cli.Command, conversation *client.AgentConversation, isJson bool, said string) error {
+	if isJson {
 		return PrintJSON(conversation)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "%s: %s%s\n", conversation.ID, forTerminal(conversation.Title), said)
@@ -319,7 +319,7 @@ func runChatRemember(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-func runChatAskable(ctx context.Context, command *cli.Command) error {
+func runChatOthersMayAsk(ctx context.Context, command *cli.Command) error {
 	conversationId, err := requireConversationArgument(command)
 	if err != nil {
 		return err
@@ -528,7 +528,7 @@ func runChatEdit(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-func runChatUnsay(ctx context.Context, command *cli.Command) error {
+func runChatDeleteMessage(ctx context.Context, command *cli.Command) error {
 	messageId := strings.TrimSpace(command.Args().First())
 	if messageId == "" {
 		return fmt.Errorf("which message? give its id, as conversation show --json lists them")
@@ -537,13 +537,13 @@ func runChatUnsay(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := confirm(command, fmt.Sprintf("This takes message %s back for everybody in the chat.", messageId)); err != nil {
+	if err := confirm(command, fmt.Sprintf("This deletes message %s for everybody in the chat.", messageId)); err != nil {
 		return err
 	}
 	if err := client.DeleteChatMessage(ctx, connection, messageId); err != nil {
 		return describeError(command, err)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s: taken back\n", messageId)
+	_, _ = fmt.Fprintf(command.Writer, "%s: deleted\n", messageId)
 	return nil
 }
 
@@ -580,7 +580,7 @@ func chatMessageLines(message *client.AgentMessage) string {
 	}
 	switch {
 	case message.IsDeleted:
-		_, _ = fmt.Fprintf(&builder, "[%s] %s: (taken back)  %s\n", when, authorWords(message), message.ID)
+		_, _ = fmt.Fprintf(&builder, "[%s] %s: (deleted)  %s\n", when, authorWords(message), message.ID)
 	default:
 		edited := ""
 		if message.EditedAt != nil {

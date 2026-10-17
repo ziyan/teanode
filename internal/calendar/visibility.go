@@ -31,7 +31,7 @@ const busyLabel = "Busy"
 // busyProperties are what an event keeps when the reader may know only that
 // the owner is busy: when it is, how it repeats, which repeats were moved or
 // called off, and whether it makes the owner busy at all (STATUS and TRANSP are
-// two of the four judgements). Nothing about what it is.
+// two of the four judgments). Nothing about what it is.
 var busyProperties = map[string]bool{
 	ical.PropUID:             true,
 	ical.PropDateTimeStamp:   true,

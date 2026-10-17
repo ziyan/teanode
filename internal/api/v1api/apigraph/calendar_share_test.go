@@ -250,7 +250,7 @@ func TestACalendarSharedAtTitlesShowsTitlesOnly(t *testing.T) {
 	}
 }
 
-// A calendar shared at busy shows grey blocks and no events.
+// A calendar shared at busy shows gray blocks and no events.
 func TestACalendarSharedAtBusyShowsOnlyWhenTheOwnerIsBusy(t *testing.T) {
 	world := newCalendarShareWorld(t)
 	world.putEvent(t, world.adaCalendar, event("one", "Dentist", "20300102T100000Z", "20300102T110000Z", "LOCATION:Elm Street"))

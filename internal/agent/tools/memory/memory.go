@@ -134,7 +134,7 @@ func init() {
 					"offset":          tools.IntegerProperty("for index: how many lines to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
 					"link_offset":     tools.IntegerProperty("for get: how many of the page's links to pass over; a get with it answers with the next 40 links alone, to read on from where a get stopped listing them"),
 					"owner":           tools.StringProperty("for get, index and search: the username of someone who shared pages with the person, to read what they shared, read only; search without it also searches what is shared. Every write refuses an owner other than the person"),
-					"with":            tools.StringProperty("for share: who to share the page with, a username of somebody the person shares a circle with or the name of a circle they are in"),
+					"with":            tools.StringProperty("for share: who to share the page with, the username of somebody the person shares a circle with or the id of a circle they are in"),
 					"is_quote_shared": tools.BooleanProperty("for share: show the words each fact was read in as well; only when the person said to, since they are quoted from their mail, chat and documents"),
 					"share_id":        tools.StringProperty("for unshare: the share to take back, from shares"),
 					"items":           tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
@@ -212,6 +212,17 @@ func init() {
 					}
 					return "Change what it knows"
 				}),
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						Action string `json:"action"`
+						Path   string `json:"path"`
+						With   string `json:"with"`
+					}
+					if err := json.Unmarshal(arguments, &call); err != nil || call.Action != "share" {
+						return ""
+					}
+					return "Share " + tools.Named(call.Path, "the graph") + " with " + tools.GranteeWords(ctx, call.With)
+				},
 				Run:     runMemory,
 				RiskOf:  riskOfMemory,
 				Overlay: recalledOverlay,

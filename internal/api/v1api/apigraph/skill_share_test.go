@@ -84,7 +84,7 @@ func newSkillShareWorld(t *testing.T) *skillShareWorld {
 }
 
 const skillShareFields = `{ id skillName toolNames ownerUsername granteeUsername paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount }`
-const skillShareCallFields = `{ id toolName callState amountMinor currencyCode requestReason granteeUsername decisionNote toolArguments }`
+const skillShareCallFields = `{ id toolName callState amountMinor currencyCode requestReason granteeUsername answerNote toolArguments }`
 
 func (self *skillShareWorld) shareQuery(toolNames string, granteeId string, extra string) string {
 	return fmt.Sprintf(`mutation { ShareSkill(skillName: "payments", toolNames: %s, granteeUserId: %q %s) %s }`, toolNames, granteeId, extra, skillShareFields)
@@ -111,7 +111,7 @@ func (self *skillShareWorld) waitingCall(t *testing.T, shareId string) string {
 }
 
 func (self *skillShareWorld) answer(callId string, isApproved bool) string {
-	return fmt.Sprintf(`mutation { AnswerSkillShareCall(callId: %q, isApproved: %v, decisionNote: "ok") %s }`, callId, isApproved, skillShareCallFields)
+	return fmt.Sprintf(`mutation { AnswerSkillShareCall(callId: %q, isApproved: %v, answerNote: "ok") %s }`, callId, isApproved, skillShareCallFields)
 }
 
 // Who may share: a person who can use their agent and circles, with someone
@@ -252,7 +252,7 @@ func TestOnlyTheOwnerAsAPersonAnswersACall(t *testing.T) {
 
 	// And she does, as herself.
 	approved := world.call(t, world.ada, world.answer(callId, true))["AnswerSkillShareCall"].(map[string]any)
-	if approved["callState"] != "ran" || approved["decisionNote"] != "ok" || world.computer.ran.Load() != 1 {
+	if approved["callState"] != "ran" || approved["answerNote"] != "ok" || world.computer.ran.Load() != 1 {
 		t.Errorf("the owner's approval: %v (%d commands)", approved, world.computer.ran.Load())
 	}
 	world.worker.Wait()

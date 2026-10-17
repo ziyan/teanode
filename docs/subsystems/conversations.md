@@ -8,16 +8,17 @@ Where everything the agent has said and done is kept.
 `internal/api/v1api/apigraph/chat.go`, `internal/chat` (the hub that carries a
 chat to its members), `internal/agent/chat.go`.
 
-## Four kinds
+## Five kinds
 
-- **main** — the one continuous conversation. There is exactly one per agent,
+- **main**: the one continuous conversation. There is exactly one per agent,
   made on demand. It is never deleted and never archived; it is compacted
   instead.
-- **named** — a conversation kept apart, listed in the drawer's picker, which
+- **named**: a conversation kept apart, listed in the drawer's picker, which
   a person can rename, archive or delete.
-- **run** — the transcript of a job nobody watched: a triage, a research pass,
+- **run**: the transcript of a job nobody watched: a triage, a research pass,
   a scheduled run. Written so there is something to read afterwards.
-
+- **goal**: the conversation of one goal, where the agent takes its turns
+  toward it out of the person's sight; see A goal below.
 - **chat**: a member's own conversation for a chat with other people in it;
   see Chats below.
 
@@ -226,7 +227,7 @@ still has the default name (`models.AgentSpeakerLabel` for the command line and
 phone notification titles, `agentSpeakerName` in the dashboard,
 `AgentSpeaker.name` in the app). Nobody reads another member's
 conversation, an operator included: not to read it, ask in it, or react in it as
-them. A message taken back keeps its row and loses its words and files; an edited
+them. A deleted message keeps its row and loses its words and files; an edited
 one has `editedAt`. A reply shows the words of the message it is to, except to a
 member who joined after that was said: the reply still says which message it is
 to, and neither a read nor the `said` event told to that member carries its
@@ -241,7 +242,7 @@ reading afresh.
 share a circle; once they no longer do it stays readable by both and refuses
 messages ("you no longer share a circle"). A group chat's members must each
 share a circle with whoever adds them, its maker is its first admin, and only
-its admins rename it, add and remove people and take back others' messages. A
+its admins rename it, add and remove people and delete others' messages. A
 group chat holds at most 50 people at once, and one person starts at most 20 in
 a day (those still there are counted); the refusal says which. People in a chat
 together see each other's pictures for as long as they are both in it, whatever
@@ -267,8 +268,8 @@ and it needs words or a file. A person keeps at most 1GB of the files they sent
 in chats (`agent.limits.maxChatAttachmentAccountBytes`, `db.ChatAttachmentBytes`):
 a message with files stays until somebody deletes it, and nothing sweeps
 them, so a send past the limit is refused with how much they keep and that
-deleting old messages with files makes room. An edit, a reaction and a message
-taken back are told only to the members the message was readable by
+deleting old messages with files makes room. An edit, a reaction and a deleted
+message are told only to the members the message was readable by
 (`publishChatMessageEvents`), so somebody added to a group later is never handed
 the new words of what was said before them. `SayInChatAsAgent`, which the `conversation`
 tool's `send` action calls, writes the same message as the agent: its name, and
@@ -363,7 +364,7 @@ that called a tool leaves an assistant row with the calls and no words. No tool
 result can reach a chat message, because the only text posted is the model's own
 answer. The final round of a turn, which has no calls to leave a row behind, leaves an
 assistant row of the owner's own with no words and the round's cost (and the
-cost of the judgements carried to it), so that what a chat turn cost is summed
+cost of the judgments carried to it), so that what a chat turn cost is summed
 from the owner's rows like any turn's and never from the chat's message, which
 everybody reads; the history leaves such a row out. The agent's message does not move its owner's read mark, so the answer
 counts as unread for an owner who was not looking. While the turn runs every
@@ -378,12 +379,14 @@ the same turn to the owner (`asked`, `tool_call`, `tool_result`, `confirmation`,
 card a turn raises is a row of the owner's conversation, so only the owner sees
 it.
 
-*The member turn.* It is held to what everybody in the chat may see. It runs on
+*The member turn.* It is limited to the chat and the web. It runs on
 the owner's agent, budget and usage (the owner's usage page shows it), with the
 settings `applyChatSettings` imposes and a caller cannot loosen: read only, the
 tools `web_search`, `web_fetch`, `datetime`, `conversation` and `tool_search`
 and no other (no mail, memory, files, calendar, finance, devices, skills or
-connected servers), at most eight rounds and six searches and six fetches, and
+connected servers; and nothing the owner shared with particular people, a
+shared calendar or shared pages, because the answer goes to the whole room and
+the owner shared those with them and not with it), at most eight rounds and six searches and six fetches, and
 nobody to ask, so a call that would need a card is refused and never shown to the
 owner. At most three turns of an agent run or wait in a chat; a question from
 somebody else past that is refused (its asker is told it failed) and the
@@ -427,9 +430,9 @@ how far each has read and what their agent does there, and `teanode agent ask
 --conversation ID` and `teanode agent chat --conversation ID` write in one;
 `--ask-agent` on `ask` asks your own agent there and follows the turn like an
 ordinary ask, and a line of `agent chat` that starts with `@agent` does the same.
-`direct`, `group`, `add`, `remove`, `leave`, `mute`, `read`, `edit` and `unsay`
-do the rest, and `remember ID on|off` and `askable ID on|off` are the two
-switches. `agent chat` finds what the others say by looking every couple of
+`direct`, `group`, `add`, `remove`, `leave`, `mute`, `read`, `edit` and
+`delete-message` do the rest, and `remember ID on|off` and
+`others-may-ask ID on|off` are the two switches. `agent chat` finds what the others say by looking every couple of
 seconds, as a terminal cannot be pushed to.
 
 ## Searching

@@ -5,7 +5,7 @@ import Foundation
     /// turn's words as they are written, its tools, its cards. A turn already
     /// running when the feed opens is replayed from its start, so a screen
     /// that opens mid-turn shows all of it. A chat's feed carries its own
-    /// events beside these: a message said, edited or taken back, a member's
+    /// events beside these: a message said, edited or deleted, a member's
     /// read mark, someone typing, and a reaction by name (`AgentEvent`).
     ///
     /// The stream ends with an error when the connection drops; the screen

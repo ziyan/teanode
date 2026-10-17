@@ -220,7 +220,12 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 			if heldToChat != "" && message.AuthorKind == "" {
 				continue
 			}
-			entry := map[string]any{"message_id": message.ID, "at": message.CreatedAt.Format(time.RFC3339), "role": message.Role}
+			entry := map[string]any{"message_id": message.ID, "at": message.CreatedAt.Format(time.RFC3339)}
+			// A message of a chat has an author instead of a role: its role
+			// says "user" for every other person, which is not who they are.
+			if message.AuthorKind == "" {
+				entry["role"] = message.Role
+			}
 			if reacted := reactionsOf(message); len(reacted) > 0 {
 				entry["reactions"] = reacted
 			}
@@ -233,9 +238,9 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				if message.AuthorKind == models.ChatAuthorAgent && message.AuthorOwnerName != "" {
 					entry["from_owner"] = message.AuthorOwnerName
 				}
-				entry["from_the_person"] = message.AuthorUserID == run.Agent().UserID
+				entry["is_from_the_person"] = message.AuthorUserID == run.Agent().UserID
 				if message.IsDeleted {
-					entry["taken_back"] = true
+					entry["is_deleted"] = true
 				}
 			}
 			if message.Name != "" {
@@ -269,7 +274,11 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		}
 		if conversation.IsChat() {
 			// The page was already the last that many.
-			answer["earlier_messages"] = max(chatTotal-len(messages), 0)
+			earlier := max(chatTotal-len(messages), 0)
+			answer["earlier_messages"] = earlier
+			if earlier > 0 {
+				answer["note"] = fmt.Sprintf("the last %d; ask again with a larger limit for what came before", len(messages))
+			}
 			if conversation.Chat != nil {
 				people := make([]string, 0, len(conversation.Chat.Members))
 				for _, member := range conversation.Chat.Members {
@@ -279,7 +288,6 @@ func runConversation(ctx context.Context, call *tools.Call) (*tools.Result, erro
 				}
 				answer["people_in_it"] = people
 			}
-			delete(answer, "note")
 		}
 		answer["messages"] = said
 		result, err := tools.JSONResult(answer)

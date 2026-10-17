@@ -183,7 +183,7 @@ func TestAnUnreadableFileIsBusyFromItsColumns(t *testing.T) {
 	}
 }
 
-// The private rule is beside the four judgements and changes nothing about
+// The private rule is beside the four judgments and changes nothing about
 // whether somebody is busy: their own free-busy is the same with or without it.
 func TestPrivateDoesNotChangeWhoIsBusy(t *testing.T) {
 	t.Parallel()

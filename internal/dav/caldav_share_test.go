@@ -19,10 +19,10 @@ import (
 // guests, and a private event.
 type sharedWorld struct {
 	*world
-	bertieCalendarID string
-	circleID         string
+	bertieCalendarId string
+	circleId         string
 	// A circle alice is not in, with a calendar of its own.
-	strangersCalendarID string
+	strangersCalendarId string
 }
 
 const dentistVisit = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Example//EN\r\nBEGIN:VEVENT\r\n" +
@@ -78,12 +78,12 @@ func newSharedWorld(t *testing.T) (*sharedWorld, func()) {
 		if err != nil {
 			t.Fatalf("CreateCalendar: %s", err)
 		}
-		shared.bertieCalendarID = bertieCalendar.ID
+		shared.bertieCalendarId = bertieCalendar.ID
 		circle, err := tx.CreateCircle(&models.Circle{Name: "Home", CircleKind: models.CircleKindFamily}, here.userID)
 		if err != nil {
 			t.Fatalf("CreateCircle: %s", err)
 		}
-		shared.circleID = circle.ID
+		shared.circleId = circle.ID
 		if _, err := tx.AddCircleMember(circle.ID, here.other, models.MemberRoleMember, here.userID); err != nil {
 			t.Fatalf("AddCircleMember: %s", err)
 		}
@@ -96,12 +96,12 @@ func newSharedWorld(t *testing.T) (*sharedWorld, func()) {
 		if err != nil {
 			t.Fatalf("CreateCircleCalendar: %s", err)
 		}
-		shared.strangersCalendarID = strangers.ID
+		shared.strangersCalendarId = strangers.ID
 	})
-	putIn(t, here.database, shared.bertieCalendarID, dentistVisit)
-	putIn(t, here.database, shared.bertieCalendarID, privateVisit)
-	putIn(t, here.database, shared.bertieCalendarID, plainVisit)
-	putIn(t, here.database, shared.strangersCalendarID, plainVisit)
+	putIn(t, here.database, shared.bertieCalendarId, dentistVisit)
+	putIn(t, here.database, shared.bertieCalendarId, privateVisit)
+	putIn(t, here.database, shared.bertieCalendarId, plainVisit)
+	putIn(t, here.database, shared.strangersCalendarId, plainVisit)
 	return shared, done
 }
 
@@ -110,7 +110,7 @@ func (self *sharedWorld) share(t *testing.T, shareLevel models.ShareLevel) {
 	t.Helper()
 	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
 		if _, err := tx.ShareCalendar(self.other, &models.CalendarShare{
-			CalendarID: self.bertieCalendarID, GranteeUserID: self.userID, ShareLevel: shareLevel,
+			CalendarID: self.bertieCalendarId, GranteeUserID: self.userID, ShareLevel: shareLevel,
 		}); err != nil {
 			t.Fatalf("ShareCalendar: %s", err)
 		}
@@ -172,33 +172,33 @@ func TestASharedCalendarAppearsInTheHomeSetWithItsOwnersName(t *testing.T) {
 
 	here.share(t, models.ShareLevelTitles)
 	listing = here.homeSet(t)
-	if got := listing[here.path(here.bertieCalendarID)]; got != "bertie's calendar (read only)" {
+	if got := listing[here.path(here.bertieCalendarId)]; got != "bertie's calendar (read only)" {
 		t.Fatalf("the shared calendar is read only and named for its owner: %v", listing)
 	}
 	if got := listing[here.path(here.calendarID)]; got != "Calendar (read write)" {
 		t.Fatalf("their own calendar is still writable: %q", got)
 	}
 	// Neither the other circle's calendar nor anything unshared.
-	if _, listed := listing[here.path(here.strangersCalendarID)]; listed {
+	if _, listed := listing[here.path(here.strangersCalendarId)]; listed {
 		t.Fatalf("a circle alice is not in: %v", listing)
 	}
 
 	// A circle's own calendar is writable for every member, under its name.
-	var circleCalendarID string
+	var circleCalendarId string
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		made, err := tx.CreateCircleCalendar(here.circleID, "The household", "")
+		made, err := tx.CreateCircleCalendar(here.circleId, "The household", "")
 		if err != nil {
 			t.Fatalf("CreateCircleCalendar: %s", err)
 		}
-		circleCalendarID = made.ID
+		circleCalendarId = made.ID
 	})
 	listing = here.homeSet(t)
-	if got := listing[here.path(circleCalendarID)]; got != "The household (read write)" {
+	if got := listing[here.path(circleCalendarId)]; got != "The household (read write)" {
 		t.Fatalf("the circle calendar: %v", listing)
 	}
 
 	here.share(t, models.ShareLevelEdit)
-	if got := here.homeSet(t)[here.path(here.bertieCalendarID)]; got != "bertie's calendar (read write)" {
+	if got := here.homeSet(t)[here.path(here.bertieCalendarId)]; got != "bertie's calendar (read write)" {
 		t.Fatalf("at edit it is writable: %q", got)
 	}
 }
@@ -209,7 +209,7 @@ func TestASharedCalendarIsReadAtItsLevelOverCalDAV(t *testing.T) {
 	here.share(t, models.ShareLevelTitles)
 
 	fetch := func(name string) string {
-		answer := here.ask(t, http.MethodGet, here.path(here.bertieCalendarID, name), "")
+		answer := here.ask(t, http.MethodGet, here.path(here.bertieCalendarId, name), "")
 		body := text(t, answer)
 		if answer.StatusCode != http.StatusOK {
 			t.Fatalf("fetching %s: %d %s", name, answer.StatusCode, body)
@@ -228,7 +228,7 @@ func TestASharedCalendarIsReadAtItsLevelOverCalDAV(t *testing.T) {
 
 	// A listing and a report are redacted the same way, and the version a
 	// listing names is the version a fetch names.
-	answer := here.ask(t, "REPORT", here.path(here.bertieCalendarID), `<?xml version="1.0"?>
+	answer := here.ask(t, "REPORT", here.path(here.bertieCalendarId), `<?xml version="1.0"?>
 		<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
 		  <d:prop><d:getetag/><c:calendar-data/></d:prop>
 		  <c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">
@@ -247,10 +247,10 @@ func TestASharedCalendarIsReadAtItsLevelOverCalDAV(t *testing.T) {
 	if strings.Count(report, "<response ") != 3 {
 		t.Errorf("three events in the report: %s", report)
 	}
-	listing := here.ask(t, "PROPFIND", here.path(here.bertieCalendarID), propfindETags, "Depth", "1")
+	listing := here.ask(t, "PROPFIND", here.path(here.bertieCalendarId), propfindETags, "Depth", "1")
 	listed := text(t, listing)
 	etag := regexp.MustCompile(`<getetag\b[^>]*>[^<]+</getetag>`)
-	headed := here.ask(t, http.MethodGet, here.path(here.bertieCalendarID, "dentist"), "")
+	headed := here.ask(t, http.MethodGet, here.path(here.bertieCalendarId, "dentist"), "")
 	_ = text(t, headed)
 	if !strings.Contains(listed, strings.Trim(headed.Header.Get("ETag"), `"`)) || len(etag.FindAllString(listed, -1)) != 3 {
 		t.Errorf("the listing names the versions a fetch gives:\n%s\n%s", listed, headed.Header.Get("ETag"))
@@ -259,7 +259,7 @@ func TestASharedCalendarIsReadAtItsLevelOverCalDAV(t *testing.T) {
 	// The owner's own copy is whole.
 	var stored string
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		object, err := tx.GetCalendarObject(here.bertieCalendarID, "dentist")
+		object, err := tx.GetCalendarObject(here.bertieCalendarId, "dentist")
 		if err != nil || object == nil {
 			t.Fatalf("GetCalendarObject: %v %v", object, err)
 		}
@@ -271,7 +271,7 @@ func TestASharedCalendarIsReadAtItsLevelOverCalDAV(t *testing.T) {
 
 	// Somebody's calendar that was not shared, and a circle alice is not in,
 	// are not there.
-	for _, calendarId := range []string{here.strangersCalendarID, "nothing"} {
+	for _, calendarId := range []string{here.strangersCalendarId, "nothing"} {
 		for _, method := range []string{http.MethodGet, "PROPFIND"} {
 			answer := here.ask(t, method, here.path(calendarId, "library"), "", "Depth", "0")
 			_ = text(t, answer)
@@ -299,14 +299,14 @@ func TestAWriteBelowEditIsRefusedBeforeTheLibrarySeesIt(t *testing.T) {
 	for _, level := range []models.ShareLevel{models.ShareLevelTitles, models.ShareLevelDetails} {
 		here.share(t, level)
 		for name, request := range map[string]struct{ method, path, body string }{
-			"put a good event":    {http.MethodPut, here.path(here.bertieCalendarID, "new"), plainVisit},
-			"put garbage":         {http.MethodPut, here.path(here.bertieCalendarID, "garbage"), "this is not a calendar"},
-			"replace an event":    {http.MethodPut, here.path(here.bertieCalendarID, "library"), plainVisit},
-			"delete":              {http.MethodDelete, here.path(here.bertieCalendarID, "library"), ""},
-			"delete one absent":   {http.MethodDelete, here.path(here.bertieCalendarID, "absent"), ""},
-			"make a collection":   {"MKCOL", here.path(here.bertieCalendarID, "inside"), ""},
-			"change properties":   {"PROPPATCH", here.path(here.bertieCalendarID), `<?xml version="1.0"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:displayname>Mine</d:displayname></d:prop></d:set></d:propertyupdate>`},
-			"a method of its own": {"FROBNICATE", here.path(here.bertieCalendarID, "library"), ""},
+			"put a good event":    {http.MethodPut, here.path(here.bertieCalendarId, "new"), plainVisit},
+			"put garbage":         {http.MethodPut, here.path(here.bertieCalendarId, "garbage"), "this is not a calendar"},
+			"replace an event":    {http.MethodPut, here.path(here.bertieCalendarId, "library"), plainVisit},
+			"delete":              {http.MethodDelete, here.path(here.bertieCalendarId, "library"), ""},
+			"delete one absent":   {http.MethodDelete, here.path(here.bertieCalendarId, "absent"), ""},
+			"make a collection":   {"MKCOL", here.path(here.bertieCalendarId, "inside"), ""},
+			"change properties":   {"PROPPATCH", here.path(here.bertieCalendarId), `<?xml version="1.0"?><d:propertyupdate xmlns:d="DAV:"><d:set><d:prop><d:displayname>Mine</d:displayname></d:prop></d:set></d:propertyupdate>`},
+			"a method of its own": {"FROBNICATE", here.path(here.bertieCalendarId, "library"), ""},
 		} {
 			answer := here.ask(t, request.method, request.path, request.body, "Content-Type", "text/calendar; charset=utf-8")
 			said := text(t, answer)
@@ -317,7 +317,7 @@ func TestAWriteBelowEditIsRefusedBeforeTheLibrarySeesIt(t *testing.T) {
 	}
 	// Nothing was written, and the event is as it was.
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		count, err := tx.CountCalendarObjects(here.bertieCalendarID)
+		count, err := tx.CountCalendarObjects(here.bertieCalendarId)
 		if err != nil || count != 3 {
 			t.Fatalf("still three events: %d %v", count, err)
 		}
@@ -336,7 +336,7 @@ func TestAnEditorWritesEventsWithoutGuestsOverCalDAV(t *testing.T) {
 	here.share(t, models.ShareLevelEdit)
 
 	put := func(name, body string) *http.Response {
-		return here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, name), body, "Content-Type", "text/calendar; charset=utf-8")
+		return here.ask(t, http.MethodPut, here.path(here.bertieCalendarId, name), body, "Content-Type", "text/calendar; charset=utf-8")
 	}
 	answer := put("outing", strings.Replace(plainVisit, "UID:library", "UID:outing", 1))
 	if _ = text(t, answer); answer.StatusCode != http.StatusCreated {
@@ -351,7 +351,7 @@ func TestAnEditorWritesEventsWithoutGuestsOverCalDAV(t *testing.T) {
 	for name, response := range map[string]*http.Response{
 		"add an event with guests":    put("party", guestVisit),
 		"change an event with guests": put("dentist", strings.Replace(dentistVisit, "Dentist", "Dentist, moved", 1)),
-		"remove an event with guests": here.ask(t, http.MethodDelete, here.path(here.bertieCalendarID, "dentist"), ""),
+		"remove an event with guests": here.ask(t, http.MethodDelete, here.path(here.bertieCalendarId, "dentist"), ""),
 		"strip an event's guests":     put("dentist", strings.Replace(plainVisit, "UID:library", "UID:dentist", 1)),
 	} {
 		said := text(t, response)
@@ -359,13 +359,13 @@ func TestAnEditorWritesEventsWithoutGuestsOverCalDAV(t *testing.T) {
 			t.Errorf("%s: %d %q", name, response.StatusCode, said)
 		}
 	}
-	answer = here.ask(t, http.MethodDelete, here.path(here.bertieCalendarID, "outing"), "")
+	answer = here.ask(t, http.MethodDelete, here.path(here.bertieCalendarId, "outing"), "")
 	if _ = text(t, answer); answer.StatusCode >= 300 {
 		t.Errorf("an editor removes an event without guests: %d", answer.StatusCode)
 	}
 	// The event with guests is as bertie left it.
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		object, err := tx.GetCalendarObject(here.bertieCalendarID, "dentist")
+		object, err := tx.GetCalendarObject(here.bertieCalendarId, "dentist")
 		if err != nil || object == nil || !strings.Contains(object.Data, "guest@example.net") || strings.Contains(object.Data, "moved") {
 			t.Fatalf("the meeting is untouched: %v %v", object, err)
 		}
@@ -379,13 +379,13 @@ func TestACalendarSharedAtBusyAnswersFreeBusyAndNothingElse(t *testing.T) {
 
 	// Not a calendar to read.
 	for method, wanted := range map[string]int{http.MethodGet: http.StatusNotFound, "PROPFIND": http.StatusNotFound} {
-		path := here.path(here.bertieCalendarID, "dentist")
+		path := here.path(here.bertieCalendarId, "dentist")
 		answer := here.ask(t, method, path, propfindETags, "Depth", "0")
 		if _ = text(t, answer); answer.StatusCode != wanted {
 			t.Errorf("%s: %d", method, answer.StatusCode)
 		}
 	}
-	answer := here.ask(t, "REPORT", here.path(here.bertieCalendarID), `<?xml version="1.0"?>
+	answer := here.ask(t, "REPORT", here.path(here.bertieCalendarId), `<?xml version="1.0"?>
 		<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:prop><c:calendar-data/></d:prop>
 		<c:filter><c:comp-filter name="VCALENDAR"/></c:filter></c:calendar-query>`)
 	if _ = text(t, answer); answer.StatusCode != http.StatusNotFound {
@@ -394,7 +394,7 @@ func TestACalendarSharedAtBusyAnswersFreeBusyAndNothingElse(t *testing.T) {
 
 	// But when is he busy, yes: the dentist and the private event, and the
 	// library visit, in the window, and nothing about what any of it is.
-	answer = here.ask(t, "REPORT", here.path(here.bertieCalendarID), `<?xml version="1.0"?>
+	answer = here.ask(t, "REPORT", here.path(here.bertieCalendarId), `<?xml version="1.0"?>
 		<c:free-busy-query xmlns:c="urn:ietf:params:xml:ns:caldav">
 		  <c:time-range start="20300101T000000Z" end="20300110T000000Z"/>
 		</c:free-busy-query>`)
@@ -417,7 +417,7 @@ func TestACalendarSharedAtBusyAnswersFreeBusyAndNothingElse(t *testing.T) {
 		}
 	}
 	// And not for a calendar that was never shared with her.
-	answer = here.ask(t, "REPORT", here.path(here.strangersCalendarID), `<?xml version="1.0"?>
+	answer = here.ask(t, "REPORT", here.path(here.strangersCalendarId), `<?xml version="1.0"?>
 		<c:free-busy-query xmlns:c="urn:ietf:params:xml:ns:caldav"><c:time-range start="20300101T000000Z" end="20300110T000000Z"/></c:free-busy-query>`)
 	if _ = text(t, answer); answer.StatusCode != http.StatusNotFound {
 		t.Errorf("free-busy of a calendar nobody shared: %d", answer.StatusCode)
@@ -427,35 +427,35 @@ func TestACalendarSharedAtBusyAnswersFreeBusyAndNothingElse(t *testing.T) {
 func TestACircleCalendarIsWrittenByEveryMemberOverCalDAV(t *testing.T) {
 	here, done := newSharedWorld(t)
 	defer done()
-	var circleCalendarID string
+	var circleCalendarId string
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		made, err := tx.CreateCircleCalendar(here.circleID, "The household", "")
+		made, err := tx.CreateCircleCalendar(here.circleId, "The household", "")
 		if err != nil {
 			t.Fatalf("CreateCircleCalendar: %s", err)
 		}
-		circleCalendarID = made.ID
+		circleCalendarId = made.ID
 	})
-	answer := here.ask(t, http.MethodPut, here.path(circleCalendarID, "play"), strings.Replace(plainVisit, "UID:library", "UID:play", 1),
+	answer := here.ask(t, http.MethodPut, here.path(circleCalendarId, "play"), strings.Replace(plainVisit, "UID:library", "UID:play", 1),
 		"Content-Type", "text/calendar; charset=utf-8")
 	if _ = text(t, answer); answer.StatusCode != http.StatusCreated {
 		t.Fatalf("a member adds to the circle's calendar: %d", answer.StatusCode)
 	}
-	answer = here.ask(t, http.MethodGet, here.path(circleCalendarID, "play"), "")
+	answer = here.ask(t, http.MethodGet, here.path(circleCalendarId, "play"), "")
 	if body := text(t, answer); answer.StatusCode != http.StatusOK || !strings.Contains(body, "SUMMARY:Library") {
 		t.Fatalf("and reads it back whole: %d %s", answer.StatusCode, body)
 	}
-	if answer = here.ask(t, http.MethodPut, here.path(circleCalendarID, "party"), guestVisit, "Content-Type", "text/calendar; charset=utf-8"); answer.StatusCode != http.StatusForbidden {
+	if answer = here.ask(t, http.MethodPut, here.path(circleCalendarId, "party"), guestVisit, "Content-Type", "text/calendar; charset=utf-8"); answer.StatusCode != http.StatusForbidden {
 		t.Errorf("no guests in a circle's calendar: %d %s", answer.StatusCode, text(t, answer))
 	} else {
 		_ = text(t, answer)
 	}
-	if answer = here.ask(t, http.MethodDelete, here.path(circleCalendarID, "play"), ""); answer.StatusCode >= 300 {
+	if answer = here.ask(t, http.MethodDelete, here.path(circleCalendarId, "play"), ""); answer.StatusCode >= 300 {
 		t.Errorf("a member removes an event: %d", answer.StatusCode)
 	}
 	_ = text(t, answer)
 	// Another circle's calendar is not found, for reading or writing.
 	for _, request := range []struct{ method, name string }{{http.MethodGet, "library"}, {http.MethodPut, "mine"}, {http.MethodDelete, "library"}} {
-		answer := here.ask(t, request.method, here.path(here.strangersCalendarID, request.name), plainVisit, "Content-Type", "text/calendar; charset=utf-8")
+		answer := here.ask(t, request.method, here.path(here.strangersCalendarId, request.name), plainVisit, "Content-Type", "text/calendar; charset=utf-8")
 		if _ = text(t, answer); answer.StatusCode != http.StatusNotFound {
 			t.Errorf("%s in a circle alice is not in: %d", request.method, answer.StatusCode)
 		}
@@ -464,17 +464,17 @@ func TestACircleCalendarIsWrittenByEveryMemberOverCalDAV(t *testing.T) {
 	// Alice leaves the circle (bertie takes over as admin), and the calendar
 	// goes with her.
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		if _, err := tx.SetCircleMemberRole(here.circleID, here.other, models.MemberRoleAdmin); err != nil {
+		if _, err := tx.SetCircleMemberRole(here.circleId, here.other, models.MemberRoleAdmin); err != nil {
 			t.Fatalf("SetCircleMemberRole: %s", err)
 		}
-		if _, err := tx.RemoveCircleMember(here.circleID, here.userID); err != nil {
+		if _, err := tx.RemoveCircleMember(here.circleId, here.userID); err != nil {
 			t.Fatalf("RemoveCircleMember: %s", err)
 		}
 	})
-	if _, listed := here.homeSet(t)[here.path(circleCalendarID)]; listed {
+	if _, listed := here.homeSet(t)[here.path(circleCalendarId)]; listed {
 		t.Errorf("a calendar of a circle alice left is still listed")
 	}
-	answer = here.ask(t, http.MethodGet, here.path(circleCalendarID, "play"), "")
+	answer = here.ask(t, http.MethodGet, here.path(circleCalendarId, "play"), "")
 	if _ = text(t, answer); answer.StatusCode != http.StatusNotFound {
 		t.Errorf("and cannot be read: %d", answer.StatusCode)
 	}
@@ -489,16 +489,16 @@ func TestAnEditorSeesAPrivateEventAsBusyAndCannotChangeIt(t *testing.T) {
 	defer done()
 	here.share(t, models.ShareLevelEdit)
 
-	answer := here.ask(t, http.MethodGet, here.path(here.bertieCalendarID, "secret"), "")
+	answer := here.ask(t, http.MethodGet, here.path(here.bertieCalendarId, "secret"), "")
 	if body := text(t, answer); answer.StatusCode != http.StatusOK || strings.Contains(body, "Surprise") || strings.Contains(body, "barn") || !strings.Contains(body, "SUMMARY:Busy") {
 		t.Fatalf("an editor is shown a private event as busy: %d\n%s", answer.StatusCode, body)
 	}
 	changed := strings.Replace(privateVisit, "SUMMARY:Surprise party", "SUMMARY:Busy", 1)
 	for name, response := range map[string]*http.Response{
-		"change":  here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, "secret"), changed, "Content-Type", "text/calendar; charset=utf-8"),
-		"remove":  here.ask(t, http.MethodDelete, here.path(here.bertieCalendarID, "secret"), ""),
-		"unmark":  here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, "secret"), strings.Replace(privateVisit, "CLASS:PRIVATE\r\n", "", 1), "Content-Type", "text/calendar; charset=utf-8"),
-		"confide": here.ask(t, http.MethodPut, here.path(here.bertieCalendarID, "secret"), strings.Replace(privateVisit, "CLASS:PRIVATE", "CLASS:CONFIDENTIAL", 1), "Content-Type", "text/calendar; charset=utf-8"),
+		"change":  here.ask(t, http.MethodPut, here.path(here.bertieCalendarId, "secret"), changed, "Content-Type", "text/calendar; charset=utf-8"),
+		"remove":  here.ask(t, http.MethodDelete, here.path(here.bertieCalendarId, "secret"), ""),
+		"unmark":  here.ask(t, http.MethodPut, here.path(here.bertieCalendarId, "secret"), strings.Replace(privateVisit, "CLASS:PRIVATE\r\n", "", 1), "Content-Type", "text/calendar; charset=utf-8"),
+		"confide": here.ask(t, http.MethodPut, here.path(here.bertieCalendarId, "secret"), strings.Replace(privateVisit, "CLASS:PRIVATE", "CLASS:CONFIDENTIAL", 1), "Content-Type", "text/calendar; charset=utf-8"),
 	} {
 		said := text(t, response)
 		if response.StatusCode != http.StatusForbidden || !strings.Contains(said, "private to its owner") {
@@ -506,27 +506,27 @@ func TestAnEditorSeesAPrivateEventAsBusyAndCannotChangeIt(t *testing.T) {
 		}
 	}
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		object, err := tx.GetCalendarObject(here.bertieCalendarID, "secret")
+		object, err := tx.GetCalendarObject(here.bertieCalendarId, "secret")
 		if err != nil || object == nil || !strings.Contains(object.Data, "Surprise party") || !strings.Contains(object.Data, "CLASS:PRIVATE") {
 			t.Fatalf("the private event is as its owner left it: %v %v", object, err)
 		}
 	})
 
 	// A circle's calendar has no owner to keep it from.
-	var circleCalendarID string
+	var circleCalendarId string
 	dbtest.RunTransactionOn(t, here.database, func(tx db.Transaction) {
-		made, err := tx.CreateCircleCalendar(here.circleID, "The household", "")
+		made, err := tx.CreateCircleCalendar(here.circleId, "The household", "")
 		if err != nil {
 			t.Fatalf("CreateCircleCalendar: %s", err)
 		}
-		circleCalendarID = made.ID
+		circleCalendarId = made.ID
 	})
-	putIn(t, here.database, circleCalendarID, privateVisit)
-	answer = here.ask(t, http.MethodGet, here.path(circleCalendarID, "secret"), "")
+	putIn(t, here.database, circleCalendarId, privateVisit)
+	answer = here.ask(t, http.MethodGet, here.path(circleCalendarId, "secret"), "")
 	if body := text(t, answer); answer.StatusCode != http.StatusOK || !strings.Contains(body, "Surprise party") {
 		t.Fatalf("a member reads a private event of the circle's calendar whole: %d\n%s", answer.StatusCode, body)
 	}
-	answer = here.ask(t, http.MethodDelete, here.path(circleCalendarID, "secret"), "")
+	answer = here.ask(t, http.MethodDelete, here.path(circleCalendarId, "secret"), "")
 	if _ = text(t, answer); answer.StatusCode >= 300 {
 		t.Errorf("and removes it: %d", answer.StatusCode)
 	}

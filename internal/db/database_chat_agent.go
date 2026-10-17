@@ -32,7 +32,7 @@ type ChatAgentOperation interface {
 	// they left, interleaved with the member's own agent's rows in the
 	// conversation, oldest first. Without a compaction it is the newest limit
 	// of them; with one, everything from the message it stands in for, which
-	// is kept, and the compaction's note. A message taken back is left out.
+	// is kept, and the compaction's note. A deleted message is left out.
 	// With isChatOnly it is the chat's messages alone, the newest limit of
 	// them, with none of the member's own agent's rows and no compaction, and
 	// only those every current member of the chat could read (created at or
@@ -43,7 +43,7 @@ type ChatAgentOperation interface {
 
 	// ListChatMessagesAfter is the messages of a chat newer than the one
 	// given, oldest first, for the reading of a chat as a source. A message
-	// taken back is left out. An empty id starts at the beginning.
+	// deleted is left out. An empty id starts at the beginning.
 	ListChatMessagesAfter(chatId, afterMessageId string, limit int) ([]*models.ChatMessage, error)
 
 	// NewestChatMessageID is the id of the newest message of a chat, empty

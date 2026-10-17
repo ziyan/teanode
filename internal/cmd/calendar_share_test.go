@@ -95,8 +95,8 @@ func TestCalendarSharingParity(test *testing.T) {
 		}
 		return false
 	}
-	if !hasFlag(commands["list"], "whose") {
-		test.Error("teanode calendar list has no --whose")
+	if !hasFlag(commands["list"], "owner") {
+		test.Error("teanode calendar list has no --owner")
 	}
 	if !hasFlag(commands["free"], "with") {
 		test.Error("teanode calendar free has no --with")
@@ -270,10 +270,10 @@ func TestSharesAndUnshareAndCircleCalendar(test *testing.T) {
 
 // Listing another person's calendar says whose each entry is and shows busy
 // time as busy; "calendars" says whose each calendar is and the level.
-func TestListWhoseSaysWhoseEachEntryIs(test *testing.T) {
+func TestListOwnerSaysWhoseEachEntryIs(test *testing.T) {
 	server, called := sharingServer(test)
 
-	output, err := runCalendarCommand(test, server, "list", "--whose", "ben", "--from", "2030-01-02", "--until", "2030-01-03")
+	output, err := runCalendarCommand(test, server, "list", "--owner", "ben", "--from", "2030-01-02", "--until", "2030-01-03")
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -285,11 +285,11 @@ func TestListWhoseSaysWhoseEachEntryIs(test *testing.T) {
 			test.Errorf("the listing lacks %q:\n%s", wanted, output)
 		}
 	}
-	if _, err = runCalendarCommand(test, server, "list", "--whose", "cora"); err == nil || !strings.Contains(err.Error(), "has not shared") {
+	if _, err = runCalendarCommand(test, server, "list", "--owner", "cora"); err == nil || !strings.Contains(err.Error(), "has not shared") {
 		test.Errorf("somebody who shared nothing: %v", err)
 	}
 	// Everybody's includes the circle's calendar, and not the caller's own.
-	output, err = runCalendarCommand(test, server, "list", "--whose", "everyone", "--json", "--from", "2030-01-02", "--until", "2030-01-03")
+	output, err = runCalendarCommand(test, server, "list", "--owner", "everyone", "--json", "--from", "2030-01-02", "--until", "2030-01-03")
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestListWhoseSaysWhoseEachEntryIs(test *testing.T) {
 	}
 	whose := map[any]bool{}
 	for _, entry := range entries {
-		whose[entry["whose"]] = true
+		whose[entry["owner"]] = true
 	}
 	if !whose["Ben"] || !whose["Home"] || whose["Ada"] {
 		test.Errorf("everyone's is the shared calendars and the circle's: %v", whose)

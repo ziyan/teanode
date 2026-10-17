@@ -33,15 +33,15 @@ const chatReadThroughKey = "chatReadThrough"
 // off, which also switches the source off (db.switchOffChatAgent).
 func (self *Agent) readChat(ctx context.Context, run *Run, source *models.AgentKnowledgeSource, cursor map[string]any) (string, db.SourceCounts, error) {
 	counts := db.SourceCounts{}
-	chatID := source.Specification.ChatID
-	if chatID == "" {
+	chatId := source.Specification.ChatID
+	if chatId == "" {
 		return "", counts, fmt.Errorf("which chat?")
 	}
 	after, _ := cursor[chatReadThroughKey].(string)
 	var chat *models.Chat
 	var messages []*models.ChatMessage
 	if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		if chat, err = tx.GetChat(chatID); err != nil || chat == nil {
+		if chat, err = tx.GetChat(chatId); err != nil || chat == nil {
 			return err
 		}
 		member := chat.Member(run.Owner.ID)
@@ -49,7 +49,7 @@ func (self *Agent) readChat(ctx context.Context, run *Run, source *models.AgentK
 			chat = nil
 			return nil
 		}
-		messages, err = tx.ListChatMessagesAfter(chatID, after, ingestEntries)
+		messages, err = tx.ListChatMessagesAfter(chatId, after, ingestEntries)
 		return err
 	}); err != nil {
 		return "", counts, err

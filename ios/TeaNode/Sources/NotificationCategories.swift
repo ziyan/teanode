@@ -11,7 +11,7 @@ enum NotificationCategories {
     static let approval = "approval"
     static let message = "message"
     static let chat = "chat"
-    static let payment = "payment"
+    static let skillShareCall = "skill_share_call"
     static let questionPrefix = "question-"
 
     /// The categories known before any notification arrives. A question's
@@ -32,7 +32,7 @@ enum NotificationCategories {
             UNNotificationCategory(identifier: chat, actions: [chatReplyAction, openAction], intentIdentifiers: []),
             // Only to open the app: an answer that runs somebody's payment is
             // given on the card, not from a lock screen.
-            UNNotificationCategory(identifier: payment, actions: [openAction], intentIdentifiers: []),
+            UNNotificationCategory(identifier: skillShareCall, actions: [openAction], intentIdentifiers: []),
         ]
     }
 
@@ -64,8 +64,8 @@ enum NotificationCategories {
             return fixed.first { $0.identifier == approval }
         case "chat":
             return fixed.first { $0.identifier == chat }
-        case "payment":
-            return fixed.first { $0.identifier == payment }
+        case "skill_share_call":
+            return fixed.first { $0.identifier == skillShareCall }
         case "question":
             let buttons = Array((content.buttons ?? []).prefix(4))
             let actions: [UNNotificationAction] = buttons.map { button in

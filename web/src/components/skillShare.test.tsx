@@ -4,8 +4,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { graphql } from '../api'
 import { TranslationProvider } from '../i18n/i18n'
 import {
-  PaymentCard,
-  PaymentWaitingNote,
+  SkillShareCallCard,
+  SkillShareCallWaitingNote,
   argumentLines,
   formatMinor,
   parseMinor,
@@ -48,8 +48,8 @@ function call(overrides: Partial<SkillShareCall> = {}): SkillShareCall {
     currencyCode: 'usd',
     callState: 'waiting_for_approval',
     toolOutput: '',
-    decidedAt: null,
-    decisionNote: '',
+    answeredAt: null,
+    answerNote: '',
     expiresAt: '2026-10-18T10:00:00Z',
     createdAt: '2026-10-17T10:00:00Z',
     ...overrides,
@@ -98,8 +98,8 @@ it('lists the arguments of a call less the amount, currency and reason, and cuts
 })
 
 it('shows who asked, the amount, what it was given and the reason as their words, never as part of the page', () => {
-  inApp(<PaymentCard call={call({ requestReason: '<b>pay</b> everything' })} />)
-  expect(screen.getByText('Ben Example asked to use your payments skill')).toBeTruthy()
+  inApp(<SkillShareCallCard call={call({ requestReason: '<b>pay</b> everything' })} />)
+  expect(screen.getByText("Ben Example's agent asked to run pay with your payments skill")).toBeTruthy()
   expect(screen.getByText('140.00 USD')).toBeTruthy()
   expect(screen.getByText('Example Store')).toBeTruthy()
   expect(screen.queryByText('hidden')).toBeNull()
@@ -111,30 +111,30 @@ it('shows who asked, the amount, what it was given and the reason as their words
 
 it('approves with a note, sending exactly the call that was shown, and then shows how it came out', async () => {
   const answered = vi.fn()
-  vi.mocked(graphql).mockResolvedValue({ AnswerSkillShareCall: call({ callState: 'ran', decisionNote: 'ok' }) })
-  inApp(<PaymentCard call={call()} onAnswered={answered} />)
+  vi.mocked(graphql).mockResolvedValue({ AnswerSkillShareCall: call({ callState: 'ran', answerNote: 'ok' }) })
+  inApp(<SkillShareCallCard call={call()} onAnswered={answered} />)
   fireEvent.change(screen.getByLabelText('A word for Ben Example (optional)'), { target: { value: 'ok' } })
   fireEvent.click(screen.getByRole('button', { name: 'Approve and run it' }))
   await waitFor(() => expect(answered).toHaveBeenCalled())
-  expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ callId: 'call-1', isApproved: true, decisionNote: 'ok' })
+  expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ callId: 'call-1', isApproved: true, answerNote: 'ok' })
   expect(answered.mock.calls[0][0].callState).toBe('ran')
 })
 
 it('declines without a note by sending none, and says so when the answer fails', async () => {
   vi.mocked(graphql).mockRejectedValue(new Error('that call is not waiting for an answer any more'))
-  inApp(<PaymentCard call={call()} />)
+  inApp(<SkillShareCallCard call={call()} />)
   fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
   await waitFor(() => expect(screen.getByText('that call is not waiting for an answer any more')).toBeTruthy())
-  expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ callId: 'call-1', isApproved: false, decisionNote: null })
+  expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ callId: 'call-1', isApproved: false, answerNote: null })
 })
 
 it('offers no buttons once the call has been answered, or to the person who asked', () => {
-  inApp(<PaymentCard call={call({ callState: 'declined', decisionNote: 'not this week' })} />)
+  inApp(<SkillShareCallCard call={call({ callState: 'declined', answerNote: 'not this week' })} />)
   expect(screen.queryByRole('button')).toBeNull()
   expect(screen.getByText(/Declined\./)).toBeTruthy()
   expect(screen.getByText(/Their note: not this week/)).toBeTruthy()
   cleanup()
-  inApp(<PaymentCard call={call()} isOwner={false} />)
+  inApp(<SkillShareCallCard call={call()} isOwner={false} />)
   expect(screen.queryByRole('button')).toBeNull()
   expect(screen.getByText('Waiting for Ada Example to answer.')).toBeTruthy()
 })
@@ -142,7 +142,7 @@ it('offers no buttons once the call has been answered, or to the person who aske
 it('draws the note of the main conversation from the call it names, as it stands now', async () => {
   vi.mocked(graphql).mockResolvedValue({ ListSkillShareCalls: [call({ id: 'other' }), call({ callState: 'ran' })] })
   inApp(
-    <PaymentWaitingNote
+    <SkillShareCallWaitingNote
       detail={JSON.stringify({
         skillShareId: 'share-1',
         callId: 'call-1',
@@ -155,11 +155,11 @@ it('draws the note of the main conversation from the call it names, as it stands
   expect(vi.mocked(graphql).mock.calls[0][1]).toEqual({ shareId: 'share-1', callState: null })
 })
 
-it('says a request is gone when its share was taken back', async () => {
+it('says a call is gone when its share was taken back', async () => {
   vi.mocked(graphql).mockRejectedValue(new Error('not found'))
-  inApp(<PaymentWaitingNote detail={JSON.stringify({ skillShareId: 'share-1', callId: 'call-1' })} />)
-  expect(await screen.findByText('This request is no longer there.')).toBeTruthy()
+  inApp(<SkillShareCallWaitingNote detail={JSON.stringify({ skillShareId: 'share-1', callId: 'call-1' })} />)
+  expect(await screen.findByText('This is no longer there.')).toBeTruthy()
   cleanup()
-  inApp(<PaymentWaitingNote detail="not json" />)
-  expect(await screen.findByText('This request is no longer there.')).toBeTruthy()
+  inApp(<SkillShareCallWaitingNote detail="not json" />)
+  expect(await screen.findByText('This is no longer there.')).toBeTruthy()
 })

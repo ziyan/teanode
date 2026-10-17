@@ -25,7 +25,7 @@ import (
 // wants nobody else to read: PRIVATE, or CONFIDENTIAL, which calendar programs
 // use for the same intent.
 //
-// Beside the four judgements of what makes somebody busy, because it is the
+// Beside the four judgments of what makes somebody busy, because it is the
 // fifth thing the owner says about an event that decides what others are told,
 // and it is decided the same way for every door: a private event is busy to
 // everybody else whatever the level it was shared at. It changes nothing about

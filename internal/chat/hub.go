@@ -65,15 +65,15 @@ type Hub struct {
 	nextFeed   int
 
 	relayMutex sync.Mutex
-	relaying   bool
+	isRelaying bool
 	relayQueue []agent.Event
 	relayWake  chan struct{}
 }
 
-// feedBacklog is how many events a feed holds for a subscriber that has
+// hubBacklogEvents is how many events a feed holds for a subscriber that has
 // stopped reading before it starts losing them. A drawer that missed some
 // reads the chat again.
-const feedBacklog = 128
+const hubBacklogEvents = 128
 
 // relayed is an event as it travels between instances.
 type relayed struct {
@@ -125,7 +125,7 @@ func (self *Hub) Start() {
 		return
 	}
 	self.relayMutex.Lock()
-	self.relaying = true
+	self.isRelaying = true
 	self.relayWake = make(chan struct{}, 1)
 	self.relayMutex.Unlock()
 	self.waitGroup.Add(1)
@@ -165,7 +165,7 @@ func (self *Hub) Stop() {
 // is replayed, as no event of a chat belongs to a run: a client that opens
 // later reads what it missed with the messages.
 func (self *Hub) Subscribe(conversationId string) (<-chan agent.Event, func()) {
-	channel := make(chan agent.Event, feedBacklog)
+	channel := make(chan agent.Event, hubBacklogEvents)
 	self.feedsMutex.Lock()
 	if self.feeds == nil {
 		self.feeds = map[string]map[int]chan agent.Event{}
@@ -250,7 +250,7 @@ func (self *Hub) deliver(event agent.Event) {
 func (self *Hub) relay(event agent.Event) {
 	self.relayMutex.Lock()
 	defer self.relayMutex.Unlock()
-	if !self.relaying {
+	if !self.isRelaying {
 		return
 	}
 	self.relayQueue = append(self.relayQueue, event)

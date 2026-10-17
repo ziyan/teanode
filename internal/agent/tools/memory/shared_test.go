@@ -367,7 +367,7 @@ func TestSharingIsAGrantingCall(t *testing.T) {
 }
 
 // Sharing goes through the same operations the dashboard and the command line
-// use, resolving a username or a circle's name.
+// use, resolving a username or a circle's id.
 func TestSharingGoesThroughTheAPI(t *testing.T) {
 	run, closeDatabase := aSharingRun(t, "sharing-api")
 	defer closeDatabase()
@@ -386,17 +386,20 @@ func TestSharingGoesThroughTheAPI(t *testing.T) {
 	if sent := run.operations.sent["ShareAgentPage"]; sent["granteeUserId"] != "ben-id" || sent["granteeCircleId"] != nil || sent["path"] != "people/a" || sent["isQuoteShared"] != false {
 		t.Errorf("what was sent: %v", sent)
 	}
-	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"home","is_quote_shared":true}`); err != nil {
+	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"home-id","is_quote_shared":true}`); err != nil {
 		t.Fatalf("share with a circle: %s", err)
 	}
 	if sent := run.operations.sent["ShareAgentPage"]; sent["granteeCircleId"] != "home-id" || sent["granteeUserId"] != nil || sent["isQuoteShared"] != true {
 		t.Errorf("what was sent for a circle: %v", sent)
 	}
-	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"stranger"}`); err == nil || !strings.Contains(err.Error(), "neither somebody the person shares a circle with nor a circle") {
+	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"stranger"}`); err == nil || !strings.Contains(err.Error(), "neither the username of somebody the person shares a circle with nor the id of a circle") {
 		t.Errorf("somebody in no circle: %v", err)
 	}
 	if _, err := callMemory(t, run, `{"action":"share","path":"people/a"}`); err == nil {
 		t.Error("with whom")
+	}
+	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"Home"}`); err == nil {
+		t.Error("a circle is shared with by its id, not its name")
 	}
 	result, err = callMemory(t, run, `{"action":"shares"}`)
 	if err != nil || !strings.Contains(result.Content, `"with":"everyone in Home"`) || !strings.Contains(result.Content, `"with":"ben"`) {

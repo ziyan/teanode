@@ -120,8 +120,8 @@ func TestAChatIsFollowedLiveOnAServerWithNoAgentWorker(t *testing.T) {
 		t.Errorf("Bob's feed carried %+v for the edit", edited)
 	}
 	world.call(t, world.alice, fmt.Sprintf(`mutation { DeleteChatMessage(messageId: %q) }`, messageId))
-	if unsaid := nextFeedEvent(bobFeed, agent.EventUnsaid); unsaid == nil || unsaid.MessageID != messageId {
-		t.Errorf("Bob's feed carried %+v for taking it back", unsaid)
+	if deleted := nextFeedEvent(bobFeed, agent.EventDeleted); deleted == nil || deleted.MessageID != messageId {
+		t.Errorf("Bob's feed carried %+v for deleting it", deleted)
 	}
 
 	// Nobody follows a chat but its people, with a worker or without.

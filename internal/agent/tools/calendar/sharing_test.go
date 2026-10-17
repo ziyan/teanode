@@ -117,7 +117,7 @@ func TestTheAgendaOfWhatOthersSharedSaysWhoseItIs(t *testing.T) {
 	}}
 	ctx := runWith(operations)
 
-	answer, err := call(t, "calendar_agenda", ctx, `{"whose":"ben","from":"2030-01-02","until":"2030-01-03"}`)
+	answer, err := call(t, "calendar_agenda", ctx, `{"owner":"ben","from":"2030-01-02","until":"2030-01-03"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,10 +126,10 @@ func TestTheAgendaOfWhatOthersSharedSaysWhoseItIs(t *testing.T) {
 		t.Fatalf("two entries: %v", answer)
 	}
 	first, second := events[0].(map[string]any), events[1].(map[string]any)
-	if first["what"] != "busy" || first["whose"] != "Ben" || first["level"] != "titles" || first["event"] != nil {
+	if first["what"] != "busy" || first["owner"] != "Ben" || first["share_level"] != "titles" || first["event"] != nil {
 		t.Errorf("busy time is busy and has nothing to act on: %v", first)
 	}
-	if second["what"] != "Dentist" || second["where"] != "Elm Street" || second["whose"] != "Ben" {
+	if second["what"] != "Dentist" || second["where"] != "Elm Street" || second["owner"] != "Ben" {
 		t.Errorf("a title at titles: %v", second)
 	}
 	if second["event"] != nil {
@@ -141,7 +141,7 @@ func TestTheAgendaOfWhatOthersSharedSaysWhoseItIs(t *testing.T) {
 
 	// Everyone: every calendar shared with the person and the circle's own,
 	// and an identifier for what the person may change.
-	answer, err = call(t, "calendar_agenda", ctx, `{"whose":"everyone","from":"2030-01-02","until":"2030-01-03"}`)
+	answer, err = call(t, "calendar_agenda", ctx, `{"owner":"everyone","from":"2030-01-02","until":"2030-01-03"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +149,8 @@ func TestTheAgendaOfWhatOthersSharedSaysWhoseItIs(t *testing.T) {
 	var acted bool
 	for _, each := range answer["events"].([]any) {
 		row := each.(map[string]any)
-		whose[row["whose"].(string)] = true
-		if row["whose"] == "Home" && row["event"] == "e1" {
+		whose[row["owner"].(string)] = true
+		if row["owner"] == "Home" && row["event"] == "e1" {
 			acted = true
 		}
 	}
@@ -161,14 +161,14 @@ func TestTheAgendaOfWhatOthersSharedSaysWhoseItIs(t *testing.T) {
 		t.Errorf("an event at edit has its identifier: %v", answer)
 	}
 
-	if _, err := call(t, "calendar_agenda", ctx, `{"whose":"dave"}`); err == nil || !strings.Contains(err.Error(), "has not shared") {
+	if _, err := call(t, "calendar_agenda", ctx, `{"owner":"dave"}`); err == nil || !strings.Contains(err.Error(), "has not shared") {
 		t.Errorf("somebody who shared nothing: %v", err)
 	}
 	// And the person's own grant is what opens any of it.
 	ungranted := &routing{answers: map[string]string{"ListCalendars": `[
 		{"id":"own","name":"Calendar","agentGranted":false,"calendarKind":"events","shareLevel":"owner"},
 		{"id":"ben-cal","name":"Calendar","calendarKind":"events","shareLevel":"titles","ownerUsername":"ben"}]`}}
-	if _, err := call(t, "calendar_agenda", runWith(ungranted), `{"whose":"ben"}`); err == nil || !strings.Contains(err.Error(), "not given you their calendar") {
+	if _, err := call(t, "calendar_agenda", runWith(ungranted), `{"owner":"ben"}`); err == nil || !strings.Contains(err.Error(), "not given you their calendar") {
 		t.Errorf("without the grant: %v", err)
 	}
 }
@@ -185,7 +185,7 @@ func TestFreeTogetherMatchesTheCommandLine(t *testing.T) {
 			{"userId":"u-ben","username":"ben","isShared":true,"periods":[{"startsAt":"2030-01-02T10:30:00Z","endsAt":"2030-01-02T12:00:00Z"},{"startsAt":"2030-01-02T15:00:00Z","endsAt":"2030-01-02T16:00:00Z"}]}]`,
 	}}
 	ctx := runWith(operations)
-	answer, err := call(t, "calendar_free_together", ctx, `{"usernames":["ben"],"from":"2030-01-02","until":"2030-01-03"}`)
+	answer, err := call(t, "calendar_free_together", ctx, `{"with":["ben"],"from":"2030-01-02","until":"2030-01-03"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestFreeTogetherMatchesTheCommandLine(t *testing.T) {
 	}
 
 	// Hours of the day are the person's to narrow.
-	answer, err = call(t, "calendar_free_together", ctx, `{"usernames":["ben"],"from":"2030-01-02","until":"2030-01-03","earliest":"12:00","latest":"14:00"}`)
+	answer, err = call(t, "calendar_free_together", ctx, `{"with":["ben"],"from":"2030-01-02","until":"2030-01-03","earliest":"12:00","latest":"14:00"}`)
 	if err != nil || len(answer["free"].([]any)) != 1 {
 		t.Errorf("a narrower day: %v %v", answer, err)
 	}
@@ -213,13 +213,13 @@ func TestFreeTogetherMatchesTheCommandLine(t *testing.T) {
 	// Somebody who shared nothing, and somebody who is not in a circle.
 	operations.answers["ListCalendarFreeBusy"] = `[
 		{"userId":"u-ada","isShared":true,"periods":[]},{"userId":"u-cora","isShared":false,"periods":[]}]`
-	if _, err := call(t, "calendar_free_together", ctx, `{"usernames":["cora"]}`); err == nil || !strings.Contains(err.Error(), "cora has not shared") {
+	if _, err := call(t, "calendar_free_together", ctx, `{"with":["cora"]}`); err == nil || !strings.Contains(err.Error(), "cora has not shared") {
 		t.Errorf("who has not shared is said: %v", err)
 	}
-	if _, err := call(t, "calendar_free_together", ctx, `{"usernames":["stranger"]}`); err == nil || !strings.Contains(err.Error(), "circle") {
+	if _, err := call(t, "calendar_free_together", ctx, `{"with":["stranger"]}`); err == nil || !strings.Contains(err.Error(), "circle") {
 		t.Errorf("a stranger: %v", err)
 	}
-	if _, err := call(t, "calendar_free_together", ctx, `{"usernames":[]}`); err == nil {
+	if _, err := call(t, "calendar_free_together", ctx, `{"with":[]}`); err == nil {
 		t.Errorf("nobody to compare with")
 	}
 }
@@ -239,11 +239,11 @@ func TestWhatTheAgentIsAskedAboutBeforeSharingOrWritingToOthersCalendars(t *test
 	}
 	risks := map[string]tools.Risk{
 		`{"action":"shares"}`:                                                   tools.RiskRead,
-		`{"action":"free_together","usernames":["ben"]}`:                        tools.RiskRead,
+		`{"action":"free_together","with":["ben"]}`:                             tools.RiskRead,
 		`{"action":"agenda","whose":"everyone"}`:                                tools.RiskRead,
-		`{"action":"share","person":"ben","level":"titles"}`:                    tools.RiskGranting,
-		`{"action":"share","circle":"Home","level":"busy"}`:                     tools.RiskGranting,
-		`{"action":"unshare","share":"s1"}`:                                     tools.RiskWrite,
+		`{"action":"share","with":"ben","share_level":"titles"}`:                tools.RiskGranting,
+		`{"action":"share","with":"c1","share_level":"busy"}`:                   tools.RiskGranting,
+		`{"action":"unshare","share_id":"s1"}`:                                  tools.RiskWrite,
 		`{"action":"add","summary":"School play","circle":"Home"}`:              tools.RiskWrite,
 		`{"action":"add","summary":"Lunch","person":"cora"}`:                    tools.RiskOutward,
 		`{"action":"edit","event":"e1","summary":"Moved","circle":"Home"}`:      tools.RiskWrite,
@@ -257,7 +257,7 @@ func TestWhatTheAgentIsAskedAboutBeforeSharingOrWritingToOthersCalendars(t *test
 			t.Errorf("%s is %q, not %q", arguments, got, want)
 		}
 	}
-	if !tools.NeedsConfirmation(calendar, []byte(`{"action":"share","person":"ben","level":"titles"}`), nil, nil) {
+	if !tools.NeedsConfirmation(calendar, []byte(`{"action":"share","with":"ben","share_level":"titles"}`), nil, nil) {
 		t.Error("sharing is asked about first")
 	}
 }
@@ -315,20 +315,20 @@ func TestSharingAndUnsharingSendWhatWasAskedFor(t *testing.T) {
 	}}
 	ctx := runWith(operations)
 
-	answer, err := call(t, "calendar_share", ctx, `{"person":"ben","level":"Titles"}`)
-	if err != nil || answer["shared_with"] != "ben" || answer["level"] != "titles" {
+	answer, err := call(t, "calendar_share", ctx, `{"with":"ben","share_level":"Titles"}`)
+	if err != nil || answer["with"] != "ben" || answer["share_level"] != "titles" || answer["share_id"] != "s1" {
 		t.Fatalf("sharing with a person: %v %v", answer, err)
 	}
 	if sent := operations.sent["ShareCalendar"]; sent["calendarId"] != "own" || sent["granteeUserId"] != "u-ben" || sent["shareLevel"] != "titles" {
 		t.Errorf("what was sent: %v", sent)
 	}
-	if _, err := call(t, "calendar_share", ctx, `{"circle":"home","level":"busy"}`); err != nil {
+	if _, err := call(t, "calendar_share", ctx, `{"with":"c1","share_level":"busy"}`); err != nil {
 		t.Fatal(err)
 	}
 	if sent := operations.sent["ShareCalendar"]; sent["granteeCircleId"] != "c1" || sent["granteeUserId"] != nil {
-		t.Errorf("a circle by name: %v", sent)
+		t.Errorf("a circle by id: %v", sent)
 	}
-	for _, arguments := range []string{`{"level":"busy"}`, `{"person":"ben","circle":"Home","level":"busy"}`, `{"person":"stranger","level":"busy"}`, `{"circle":"Club","level":"busy"}`} {
+	for _, arguments := range []string{`{"share_level":"busy"}`, `{"with":"stranger","share_level":"busy"}`, `{"with":"Home","share_level":"busy"}`, `{"with":"c9","share_level":"busy"}`} {
 		if _, err := call(t, "calendar_share", ctx, arguments); err == nil {
 			t.Errorf("%s is refused", arguments)
 		}
@@ -337,7 +337,7 @@ func TestSharingAndUnsharingSendWhatWasAskedFor(t *testing.T) {
 	if err != nil || len(shares["shares"].([]any)) != 2 {
 		t.Fatalf("the shares: %v %v", shares, err)
 	}
-	if _, err := call(t, "calendar_unshare", ctx, `{"share":"s2"}`); err != nil {
+	if _, err := call(t, "calendar_unshare", ctx, `{"share_id":"s2"}`); err != nil {
 		t.Fatal(err)
 	}
 	if operations.sent["UnshareCalendar"]["shareId"] != "s2" {
@@ -425,7 +425,7 @@ func TestTheAgendaRowsGiveWhatEditAndRemoveTake(t *testing.T) {
 		"ListCalendars":      sharedCalendars,
 		"ListCalendarEvents": `[{"id":"e1","summary":"Dentist","startsAt":"2030-01-02T10:00:00Z","endsAt":"2030-01-02T11:00:00Z"}]`,
 	}}
-	answer, err := call(t, "calendar_agenda", runWith(operations), `{"whose":"everyone","from":"2030-01-02","until":"2030-01-03"}`)
+	answer, err := call(t, "calendar_agenda", runWith(operations), `{"owner":"everyone","from":"2030-01-02","until":"2030-01-03"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,13 +436,36 @@ func TestTheAgendaRowsGiveWhatEditAndRemoveTake(t *testing.T) {
 			t.Errorf("a calendar identifier no tool takes is not given: %v", row)
 		}
 		switch {
-		case row["whose"] == "Home" && row["circle"] == "Home" && row["person"] == nil:
+		case row["owner"] == "Home" && row["circle"] == "Home" && row["person"] == nil:
 			circles++
-		case row["whose"] == "Cora" && row["person"] == "cora" && row["circle"] == nil:
+		case row["owner"] == "Cora" && row["person"] == "cora" && row["circle"] == nil:
 			people++
 		}
 	}
 	if circles != 1 || people != 1 {
 		t.Errorf("one circle row and one person row: %v", answer)
+	}
+}
+
+// The card for sharing names who, by their username or their circle's name,
+// and never the circle's identifier the model gave.
+func TestTheCardForSharingNamesWhoItIsFor(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"ListCalendars":    sharedCalendars,
+		"ListCirclePeople": `[{"userId":"u-ben","username":"ben","name":"Ben"}]`,
+		"ListCircles":      `[{"id":"c1","name":"Home"}]`,
+	}}
+	ctx := runWith(operations)
+	calendar := tools.Build().Get("calendar")
+	if calendar == nil {
+		t.Fatal("calendar is registered")
+	}
+	for arguments, want := range map[string]string{
+		`{"action":"share","with":"c1","share_level":"busy"}`:    `Share your calendar with everyone in Home, at "busy"`,
+		`{"action":"share","with":"Ben","share_level":"titles"}`: `Share your calendar with ben, at "titles"`,
+	} {
+		if line := calendar.PreviewLine(ctx, []byte(arguments)); line != want {
+			t.Errorf("%s is previewed as %q, want %q", arguments, line, want)
+		}
 	}
 }

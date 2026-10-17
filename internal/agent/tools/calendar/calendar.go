@@ -23,11 +23,11 @@ func init() {
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "What is on between two dates. One entry per time something happens, " +
 					"so an event that repeats weekly appears once for each week in the window. " +
-					"With 'whose', what other people have shared with the person instead: one person's, or everybody's.",
+					"With 'owner', what other people have shared with the person instead: one person's, or everybody's.",
 				Parameters: tools.Object(map[string]any{
 					"from":  tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
 					"until": tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
-					"whose": tools.StringProperty("a username to read the calendar they shared with the person, or 'everyone' for every calendar shared with the person " +
+					"owner": tools.StringProperty("a username to read the calendar they shared with the person, or 'everyone' for every calendar shared with the person " +
 						"and their circles' calendars; leave out for the person's own. Each entry says whose it is and shows only as much as was shared: " +
 						"a title, everything, or just 'busy'"),
 				}),
@@ -57,12 +57,12 @@ func init() {
 					"Only people who shared their calendar with the person can be asked; it says who has not. " +
 					"Use it to propose a time for several people rather than reading each agenda.",
 				Parameters: tools.Object(map[string]any{
-					"usernames": tools.ArrayProperty("the other people, by username; the person is always included", tools.StringProperty("a username")),
-					"from":      tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
-					"until":     tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
-					"earliest":  tools.StringProperty("the earliest hour of the day to offer, as HH:MM; 09:00 by default"),
-					"latest":    tools.StringProperty("the latest, as HH:MM; 17:00 by default"),
-				}, "usernames"),
+					"with":     tools.ArrayProperty("the other people, by username; the person is always included", tools.StringProperty("a username")),
+					"from":     tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
+					"until":    tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
+					"earliest": tools.StringProperty("the earliest hour of the day to offer, as HH:MM; 09:00 by default"),
+					"latest":   tools.StringProperty("the latest, as HH:MM; 17:00 by default"),
+				}, "with"),
 				Run: runFreeTogether,
 			},
 			{
@@ -81,21 +81,19 @@ func init() {
 					"or 'edit' (details, and they may add, change and remove events that have no guests). Sharing again changes the level. " +
 					"Events marked private are only ever shown as busy.",
 				Parameters: tools.Object(map[string]any{
-					"person": tools.StringProperty("the username to share with, from circle_people; leave out when sharing with a circle"),
-					"circle": tools.StringProperty("the circle to share with, by name or identifier, from circle list; leave out when sharing with a person"),
-					"level":  tools.EnumProperty("how much to show", "busy", "titles", "details", "edit"),
-				}, "level"),
-				Preview: tools.PreviewOf(func(call struct {
-					Person string `json:"person"`
-					Circle string `json:"circle"`
-					Level  string `json:"level"`
-				}) string {
-					with := tools.Named(call.Person, "")
-					if with == "" {
-						with = "everyone in " + tools.Named(call.Circle, "one of their circles")
+					"with":        tools.StringProperty("who to share with: the username of somebody the person shares a circle with, from circle_people, or the id of a circle they are in, from circle list"),
+					"share_level": tools.EnumProperty("how much to show", "busy", "titles", "details", "edit"),
+				}, "with", "share_level"),
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						With       string `json:"with"`
+						ShareLevel string `json:"share_level"`
 					}
-					return "Share your calendar with " + with + ", at " + tools.Named(call.Level, "a level")
-				}),
+					if err := json.Unmarshal(arguments, &call); err != nil {
+						return ""
+					}
+					return "Share your calendar with " + tools.GranteeWords(ctx, call.With) + ", at " + tools.Named(call.ShareLevel, "a level")
+				},
 				Run: runShare,
 			},
 			{
@@ -103,8 +101,8 @@ func init() {
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "Stop sharing the person's calendar with someone, by the share identifier shares gives.",
 				Parameters: tools.Object(map[string]any{
-					"share": tools.StringProperty("the share, as the identifier shares gives"),
-				}, "share"),
+					"share_id": tools.StringProperty("the share, as the identifier shares gives"),
+				}, "share_id"),
 				Run: runUnshare,
 			},
 			{
@@ -211,11 +209,12 @@ func init() {
 				Run:       runRemove,
 			},
 		},
-			// One calendar tool. Reading the diary, finding a free hour,
-			// putting something in it and taking it out again are one thing
-			// with four verbs, and the risk of each is the action's own: the
-			// agenda is a read, an event with guests on it is outward, and
-			// removing one cannot be undone.
+			// One calendar tool, whose actions are the members below: reading
+			// the diary, finding a free hour alone or with others, sharing it
+			// and listing or taking back those shares, and putting something in
+			// it, changing it and taking it out. The risk of each is the
+			// action's own: the agenda is a read, sharing is granting, an event
+			// with guests on it is outward, and removing one cannot be undone.
 			tools.Group{
 				Name: "calendar", Family: tools.FamilyAccount,
 				Description: "The person's own calendar (synchronized over CalDAV), the calendars other people and their circles share with them, and sharing the person's own.",
@@ -380,12 +379,12 @@ type windowArguments struct {
 	Earliest string `json:"earliest"`
 	Latest   string `json:"latest"`
 
-	// Whose is a username or "everyone": which shared calendars the agenda
+	// Owner is a username or "everyone": which shared calendars the agenda
 	// reads instead of the person's own.
-	Whose string `json:"whose"`
+	Owner string `json:"owner"`
 
-	// Usernames are the people free_together asks about.
-	Usernames []string `json:"usernames"`
+	// With are the people free_together asks about, by username.
+	With []string `json:"with"`
 }
 
 // window is the stretch a caller asked about, in the zone the person keeps
@@ -482,7 +481,7 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(arguments.Whose) != "" {
+	if strings.TrimSpace(arguments.Owner) != "" {
 		return runSharedAgenda(ctx, run, arguments, from, until, where)
 	}
 	found, err := readAgenda(ctx, run, calendarId, from, until)

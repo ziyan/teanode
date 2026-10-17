@@ -58,19 +58,19 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 	if err != nil {
 		return nil, err
 	}
-	whose := strings.TrimSpace(arguments.Whose)
-	isEveryone := strings.EqualFold(whose, "everyone")
+	owner := strings.TrimSpace(arguments.Owner)
+	isEveryone := strings.EqualFold(owner, "everyone")
 	var chosen []*calendarEntry
 	for _, each := range calendars {
 		if each.isOwn() || each.CalendarKind == "reminders" {
 			continue
 		}
-		if isEveryone || (!each.IsCircleCalendar && strings.EqualFold(each.OwnerUsername, whose)) {
+		if isEveryone || (!each.IsCircleCalendar && strings.EqualFold(each.OwnerUsername, owner)) {
 			chosen = append(chosen, each)
 		}
 	}
 	if len(chosen) == 0 && !isEveryone {
-		return nil, fmt.Errorf("%s has not shared a calendar with the person", whose)
+		return nil, fmt.Errorf("%s has not shared a calendar with the person", owner)
 	}
 
 	type entry struct {
@@ -85,7 +85,7 @@ func runSharedAgenda(ctx context.Context, run tools.Run, arguments windowArgumen
 		}
 		for _, item := range found {
 			starts, ends := moments(item, where)
-			row := map[string]any{"whose": each.whose(), "level": each.ShareLevel}
+			row := map[string]any{"owner": each.whose(), "share_level": each.ShareLevel}
 			// The value calendar_edit and calendar_remove take to reach this
 			// calendar, so an entry can be acted on without another lookup.
 			if each.IsCircleCalendar {
@@ -150,8 +150,8 @@ func runFreeTogether(ctx context.Context, call *tools.Call) (*tools.Result, erro
 	if err != nil {
 		return nil, err
 	}
-	if len(arguments.Usernames) == 0 {
-		return nil, fmt.Errorf("say whose calendars to compare, by username")
+	if len(arguments.With) == 0 {
+		return nil, fmt.Errorf("say whose calendars to compare: give 'with', their usernames")
 	}
 	_, zone, err := theCalendar(ctx, run.Operations())
 	if err != nil {
@@ -189,7 +189,7 @@ func runFreeTogether(ctx context.Context, call *tools.Call) (*tools.Result, erro
 		return nil, err
 	}
 	userIds := []string{ownerUserId}
-	for _, username := range arguments.Usernames {
+	for _, username := range arguments.With {
 		person, err := personNamed(people, username)
 		if err != nil {
 			return nil, err
@@ -285,11 +285,11 @@ func runShares(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	rows := make([]map[string]any, 0, len(result.ListCalendarShares))
 	for _, share := range result.ListCalendarShares {
-		row := map[string]any{"share": share.ID, "level": share.ShareLevel}
+		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel}
 		if share.GranteeCircleName != "" {
-			row["circle"] = share.GranteeCircleName
+			row["with"] = "everyone in " + share.GranteeCircleName
 		} else {
-			row["person"] = share.GranteeUsername
+			row["with"] = share.GranteeUsername
 			row["name"] = share.GranteeName
 		}
 		rows = append(rows, row)
@@ -303,51 +303,26 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	arguments, err := tools.DecodeArguments[struct {
-		Person string `json:"person"`
-		Circle string `json:"circle"`
-		Level  string `json:"level"`
+		With       string `json:"with"`
+		ShareLevel string `json:"share_level"`
 	}](call)
 	if err != nil {
 		return nil, err
 	}
-	person, circle := strings.TrimSpace(arguments.Person), strings.TrimSpace(arguments.Circle)
-	if (person == "") == (circle == "") {
-		return nil, fmt.Errorf("share with one person or one circle: give 'person' or 'circle', not both and not neither")
+	grantee, err := tools.ResolveGrantee(ctx, run.Operations(), arguments.With)
+	if err != nil {
+		return nil, err
 	}
 	calendarId, _, err := theCalendar(ctx, run.Operations())
 	if err != nil {
 		return nil, err
 	}
-	variables := map[string]any{"calendarId": calendarId, "shareLevel": strings.ToLower(strings.TrimSpace(arguments.Level))}
-	said := ""
-	if person != "" {
-		people, err := peopleOf(ctx, run.Operations())
-		if err != nil {
-			return nil, err
-		}
-		found, err := personNamed(people, person)
-		if err != nil {
-			return nil, err
-		}
-		variables["granteeUserId"], said = found.UserID, found.Username
+	variables := map[string]any{"calendarId": calendarId, "shareLevel": strings.ToLower(strings.TrimSpace(arguments.ShareLevel)),
+		"granteeUserId": nil, "granteeCircleId": nil}
+	if grantee.UserID != "" {
+		variables["granteeUserId"] = grantee.UserID
 	} else {
-		var circles struct {
-			ListCircles []struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"ListCircles"`
-		}
-		if err := run.Operations().Execute(ctx, `query { ListCircles { id name } }`, nil, &circles); err != nil {
-			return nil, err
-		}
-		for _, each := range circles.ListCircles {
-			if each.ID == circle || strings.EqualFold(each.Name, circle) {
-				variables["granteeCircleId"], said = each.ID, each.Name
-			}
-		}
-		if said == "" {
-			return nil, fmt.Errorf("the person is not in a circle called %q", circle)
-		}
+		variables["granteeCircleId"] = grantee.CircleID
 	}
 	var result struct {
 		ShareCalendar struct {
@@ -363,7 +338,7 @@ func runShare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	return tools.JSONResult(map[string]any{
-		"shared_with": said, "level": result.ShareCalendar.ShareLevel, "share": result.ShareCalendar.ID,
+		"with": grantee.Description, "share_level": result.ShareCalendar.ShareLevel, "share_id": result.ShareCalendar.ID,
 	})
 }
 
@@ -373,21 +348,21 @@ func runUnshare(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 	arguments, err := tools.DecodeArguments[struct {
-		Share string `json:"share"`
+		ShareID string `json:"share_id"`
 	}](call)
 	if err != nil {
 		return nil, err
 	}
-	share := strings.TrimSpace(arguments.Share)
-	if share == "" {
-		return nil, fmt.Errorf("say which share, by the identifier shares gives")
+	shareId := strings.TrimSpace(arguments.ShareID)
+	if shareId == "" {
+		return nil, fmt.Errorf("say which share: give share_id, from shares")
 	}
 	if _, _, err := theCalendar(ctx, run.Operations()); err != nil {
 		return nil, err
 	}
 	if err := run.Operations().Execute(ctx, `mutation ($shareId: String!) { UnshareCalendar(shareId: $shareId) }`,
-		map[string]any{"shareId": share}, &struct{}{}); err != nil {
+		map[string]any{"shareId": shareId}, &struct{}{}); err != nil {
 		return nil, err
 	}
-	return tools.JSONResult(map[string]any{"unshared": share})
+	return tools.JSONResult(map[string]any{"unshared": shareId})
 }

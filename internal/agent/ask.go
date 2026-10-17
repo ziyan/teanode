@@ -275,11 +275,11 @@ const (
 
 	// The events of a chat conversation, which belong to no run. Each is
 	// published to the conversation of every member who is in the chat.
-	EventSaid   EventKind = "said"   // a new message: Message, whole unless IsMessageCut
-	EventEdited EventKind = "edited" // a message was changed: Message
-	EventUnsaid EventKind = "unsaid" // a message was taken back: MessageID; or, named ChatStreamingKey(run), words that were streamed and will not be stored
-	EventRead   EventKind = "read"   // a member's read mark moved: UserID, MessageID
-	EventTyping EventKind = "typing" // a member is writing: UserID, Name; an agent is thinking: AuthorAgentID, Name
+	EventSaid    EventKind = "said"    // a new message: Message, whole unless IsMessageCut
+	EventEdited  EventKind = "edited"  // a message was changed: Message
+	EventDeleted EventKind = "deleted" // a message was deleted: MessageID; or, named ChatStreamingKey(run), words that were streamed and will not be stored
+	EventRead    EventKind = "read"    // a member's read mark moved: UserID, MessageID
+	EventTyping  EventKind = "typing"  // a member is writing: UserID, Name; an agent is thinking: AuthorAgentID, Name
 
 	// EventMembers says the people in a chat or what they allow changed (a
 	// switch for their agent): read the chat's members again.
@@ -509,9 +509,9 @@ type AskRun struct {
 
 	usage llm.Usage
 
-	// chatState is what a turn in a chat keeps while it runs: the text it is
+	// chatProgress is what a turn in a chat keeps while it runs: the text it is
 	// streaming and who is in the chat.
-	chatState chatRunState
+	chatProgress chatRunProgress
 }
 
 // The bounds of a turn.
@@ -578,12 +578,12 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 			return nil, err
 		}
 	}
-	runID := settings.RunID
-	if runID == "" {
-		runID = security.NewULID()
+	runId := settings.RunID
+	if runId == "" {
+		runId = security.NewULID()
 	}
 	run := &AskRun{
-		ID:            runID,
+		ID:            runId,
 		lastWroteAt:   time.Now(),
 		settings:      settings,
 		agent:         self,
@@ -1032,7 +1032,8 @@ func (self *AskRun) loop() {
 			// message or a tool's result is what the next start looks for
 			// to carry the turn on (resume.go), and a note would end it.
 			// A chat's turn is not carried on (resume.go reads main and
-			// named conversations only), and its words were taken back above.
+			// named conversations only), and its words were taken off the
+			// screens above.
 			log.Noticef("a turn of the agent of %q was cut short by the server stopping", self.settings.Owner.Username)
 		} else if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
@@ -1538,7 +1539,7 @@ func (self *AskRun) turn() error {
 					if posted != nil {
 						history[len(history)-1].SourceID = posted.message.ID
 					}
-					// What the answering round cost, and the judgements
+					// What the answering round cost, and the judgments
 					// carried to it, are the owner's own row, as in any
 					// turn: a row with no words and no calls, which is
 					// nothing to read, and which the history leaves out. The
@@ -2469,7 +2470,7 @@ type turnPromptData struct {
 	self      []string
 
 	// chat is who is in the room, for a turn in a chat; nil anywhere else.
-	chat *chatPromptData
+	chat *chatPromptFacts
 }
 
 // deferredCatalog is a line for each tool not loaded, and one for each
@@ -2690,7 +2691,7 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		granted = append(granted, fmt.Sprintf("- the address book %q, with %d people in it", book.Name, book.Contacts))
 	}
 	if shared > 0 && isOwnCalendarGranted {
-		granted = append(granted, fmt.Sprintf("- %d calendars other people or their circles share with them; read with calendar agenda and whose, at the level each was shared at", shared))
+		granted = append(granted, fmt.Sprintf("- %d calendars other people or their circles share with them; read with calendar agenda and its owner argument, at the level each was shared at", shared))
 	}
 	if calendars > 0 {
 		withheld = append(withheld, "their calendar")

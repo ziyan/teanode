@@ -42,7 +42,7 @@ function sizedPictureUrl(avatarUrl: string, size: number): string {
 //
 // Drawn as an element of its own rather than a style on whatever held the
 // letter before, so the rail, a row in a list and the settings page show the
-// same face. Children are drawn on top, which is where the mark for an operator
+// same picture. Children are drawn on top, which is where the mark for an operator
 // signed in as this account goes.
 export function Avatar({
   name,

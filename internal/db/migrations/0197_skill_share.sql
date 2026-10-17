@@ -90,8 +90,8 @@ CREATE TABLE "skill_share_call" (
     "call_state"              character varying(24)  NOT NULL
         CHECK ("call_state" IN ('ran', 'failed', 'refused', 'waiting_for_approval', 'declined', 'expired')),
     "tool_output"             jsonb,
-    "decided_at"              timestamp with time zone,
-    "decision_note"           text                   NOT NULL DEFAULT '',
+    "answered_at"              timestamp with time zone,
+    "answer_note"           text                   NOT NULL DEFAULT '',
     "expires_at"              timestamp with time zone,
     "wake_claimed_at"         timestamp with time zone,
     "woken_at"                timestamp with time zone,
@@ -105,4 +105,4 @@ CREATE INDEX "skill_share_call_parties" ON "skill_share_call" ("owner_agent_id",
 CREATE INDEX "skill_share_call_ended" ON "skill_share_call" ("owner_agent_id", "created_at" DESC) WHERE "skill_share_id" IS NULL;
 CREATE INDEX "skill_share_call_ended_grantee" ON "skill_share_call" ("grantee_user_id", "created_at" DESC) WHERE "skill_share_id" IS NULL;
 CREATE INDEX "skill_share_call_waiting" ON "skill_share_call" ("expires_at") WHERE "call_state" = 'waiting_for_approval';
-CREATE INDEX "skill_share_call_unwoken" ON "skill_share_call" ("decided_at") WHERE "decided_at" IS NOT NULL AND "woken_at" IS NULL;
+CREATE INDEX "skill_share_call_unwoken" ON "skill_share_call" ("answered_at") WHERE "answered_at" IS NOT NULL AND "woken_at" IS NULL;

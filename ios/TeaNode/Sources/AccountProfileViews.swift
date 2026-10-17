@@ -145,14 +145,14 @@ struct PreferencesView: View {
         .toast(done: $doneText, problem: $problemText)
     }
 
-    /// Reads the chosen photo, whatever the library kept it as (HEIC among
+    /// Reads the chosen picture, whatever the library kept it as (HEIC among
     /// them), and sends it as a JPEG.
     private func setPicture(_ item: PhotosPickerItem) async {
         isChangingPicture = true
         defer { isChangingPicture = false }
         do {
             guard let pictureData = try await item.loadTransferable(type: Data.self), let jpeg = AvatarPicture.jpeg(from: pictureData) else {
-                problemText = String(localized: "That photo could not be read.")
+                problemText = String(localized: "That picture could not be read.")
                 return
             }
             let saved = try await connection.setAccountAvatar(jpeg)
@@ -217,14 +217,14 @@ struct PreferencesView: View {
     }
 }
 
-/// AvatarPicture makes the bytes of a chosen photo into what the server takes
+/// AvatarPicture makes the bytes of a chosen picture into what the server takes
 /// as a person's picture.
 enum AvatarPicture {
     /// The longest side a picture is sent at; the server keeps 512 pixels, so
     /// this is only to keep the upload small.
     static let longestSide: CGFloat = 2048
 
-    /// A JPEG at most longestSide on its longest side, whatever the photo was
+    /// A JPEG at most longestSide on its longest side, whatever the picture was
     /// taken as. Drawing it again also turns it upright and leaves every
     /// metadata block, the location included, behind. Nil when the bytes are
     /// not a picture.

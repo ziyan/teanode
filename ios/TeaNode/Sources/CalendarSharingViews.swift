@@ -95,7 +95,7 @@ struct CalendarListSheet: View {
     }
 }
 
-/// CalendarListRow is one calendar in the list: its color, the owner's face
+/// CalendarListRow is one calendar in the list: its color, the owner's picture
 /// when it is another person's, its name and how much of it the person may
 /// use.
 struct CalendarListRow: View {

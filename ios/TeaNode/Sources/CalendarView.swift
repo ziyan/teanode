@@ -284,7 +284,7 @@ extension CalendarModel {
     /// keeps one, or else a color of the palette, always the same one for
     /// the same calendar.
     func color(of event: CalendarEvent) -> Color {
-        // The times somebody is busy are grey, whose calendar they are in.
+        // The times somebody is busy are gray, whose calendar they are in.
         if event.isBusy { return Color(.systemGray) }
         if let parts = CalendarColorComponents(hexText: calendar(withId: event.calendarId)?.colour) {
             return Color(red: parts.red, green: parts.green, blue: parts.blue)

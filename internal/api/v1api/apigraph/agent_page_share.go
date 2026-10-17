@@ -145,7 +145,7 @@ const reachedPageCountMost = 1000
 func describeSharedPage(page *models.SharedPage) *SharedAgentPageView {
 	view := &SharedAgentPageView{
 		OwnerUserID: page.OwnerUserID, OwnerUsername: page.OwnerUsername, OwnerName: page.OwnerName,
-		OwnerAvatarURL: avatarURL(page.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(page.OwnerUserID),
+		OwnerAvatarURL: avatarUrl(page.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(page.OwnerUserID),
 		Path: page.Path, Name: page.Name, NodeKind: string(page.NodeKind), Aliases: page.Aliases,
 		Opening:       page.Opening,
 		IsQuoteShared: page.IsQuoteShared,
@@ -157,7 +157,7 @@ func describeSharedPage(page *models.SharedPage) *SharedAgentPageView {
 func describeSharedRoot(root *models.SharedRoot) *SharedAgentPageRootView {
 	return &SharedAgentPageRootView{
 		OwnerUserID: root.OwnerUserID, OwnerUsername: root.OwnerUsername, OwnerName: root.OwnerName,
-		OwnerAvatarURL: avatarURL(root.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(root.OwnerUserID),
+		OwnerAvatarURL: avatarUrl(root.OwnerUser), OwnerAvatarColorIndex: avatar.InitialColorIndex(root.OwnerUserID),
 		Path: root.Path, Name: root.Name, NodeKind: string(root.NodeKind),
 		Opening: root.Opening, IsQuoteShared: root.IsQuoteShared,
 	}

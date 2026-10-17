@@ -490,7 +490,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   }, [view, on, weekStart])
 
   // One question per calendar shown, answered together. A calendar shared at
-  // busy answers with grey blocks and nothing else.
+  // busy answers with gray blocks and nothing else.
   const events = useQuery(
     () =>
       shown.length > 0
@@ -778,7 +778,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   }, [view, on, loading])
 
   const entry = (event: CalendarEvent) => {
-    // All the caller is told is that the owner is busy then: a grey block
+    // All the caller is told is that the owner is busy then: a gray block
     // that says so, and cannot be opened, because there is nothing in it.
     if (event.isBusyOnly) {
       return (

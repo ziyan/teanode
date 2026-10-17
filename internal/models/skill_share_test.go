@@ -58,7 +58,7 @@ func TestAPaymentWaitingNoteReadsBack(t *testing.T) {
 	if ParseSkillShareCallNote("not json") != nil || ParseSkillShareCallNote(`{"callId":"x"}`) != nil {
 		t.Error("a detail that names no call and share was read")
 	}
-	if got := NoteText(NotePaymentWaiting, detail); got != "Ben asked to use a skill you shared, and it is waiting for your approval" {
+	if got := NoteText(NoteSkillShareCallWaiting, detail); got != "Ben asked to use a skill you shared, and it is waiting for your approval" {
 		t.Errorf("the note in English: %q", got)
 	}
 }

@@ -20,10 +20,10 @@ import (
 // 20260929-background-work-wakes-the-conversation-that-started-it.md): the same
 // waker, the same count of woken turns before the person writes again, the same
 // note instead when there are none left. The row is the record, and the wake
-// claims it first so that the instance that decided the call and another
+// claims it first so that the instance that answered the call and another
 // instance's sweep never both wake the conversation.
 
-// skillShareAnswer is a decided call with the names its telling uses.
+// skillShareAnswer is an answered call with the names its telling uses.
 type skillShareAnswer struct {
 	call      *models.SkillShareCall
 	ownerName string
@@ -42,7 +42,7 @@ func skillShareCallInFlight(callId string) string {
 	return "share:" + callId
 }
 
-// wakeForSkillShareCall has a decided call wake the conversation of the turn
+// wakeForSkillShareCall has an answered call wake the conversation of the turn
 // that made it, with whatever else ends there meanwhile.
 func (self *Agent) wakeForSkillShareCall(answer *skillShareAnswer) {
 	if answer == nil || answer.call == nil || answer.call.GranteeConversationID == "" {
@@ -228,8 +228,8 @@ func skillShareWakeMessage(answers []*skillShareAnswer) string {
 		if call.AmountMinor != nil {
 			fmt.Fprintf(&builder, "amount: %s\n", models.FormatMinor(*call.AmountMinor, call.CurrencyCode))
 		}
-		if call.DecisionNote != "" {
-			builder.WriteString("the note from " + quotedName(answer.ownerName) + ":\n" + fenced(call.DecisionNote) + "\n")
+		if call.AnswerNote != "" {
+			builder.WriteString("the note from " + quotedName(answer.ownerName) + ":\n" + fenced(call.AnswerNote) + "\n")
 		}
 		if len(call.ToolOutput) > 0 {
 			encoded, _ := json.Marshal(call.ToolOutput)

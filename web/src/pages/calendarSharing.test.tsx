@@ -232,7 +232,7 @@ it('lists every calendar the person reaches, each with whose it is and what they
   expect(screen.getByText("Ben's lunch")).toBeTruthy()
 })
 
-it('shows a calendar shared only at busy as a grey Busy block, with nothing to open', async () => {
+it('shows a calendar shared only at busy as a gray Busy block, with nothing to open', async () => {
   show()
   const block = (await screen.findByText('Busy', { selector: '.calendar-agenda-title' })).closest(
     '.calendar-agenda-row',

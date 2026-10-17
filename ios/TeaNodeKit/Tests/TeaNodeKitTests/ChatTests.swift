@@ -291,7 +291,7 @@ final class ChatTests: XCTestCase {
             ]),
             isChat: true)
         XCTAssertEqual(transcript.lines.first?.reactions.count, 1)
-        transcript.apply(try event(#"{"kind":"unsaid","runId":"","sequence":0,"messageId":"01J0000000000000000000001"}"#))
+        transcript.apply(try event(#"{"kind":"deleted","runId":"","sequence":0,"messageId":"01J0000000000000000000001"}"#))
         XCTAssertEqual(transcript.lines.count, 1)
         XCTAssertEqual(transcript.lines.first?.text, "")
         XCTAssertTrue(transcript.lines.first?.isDeleted ?? false)
@@ -305,7 +305,7 @@ final class ChatTests: XCTestCase {
                 #"{"kind":"text","runId":"run-1","sequence":0,"text":"Thursday at","name":"Leaf","authorOwnerName":"Person A","authorAgentId":"agent-a"}"#
             ))
         XCTAssertEqual(transcript.lines.count, 1)
-        transcript.apply(try event(#"{"kind":"unsaid","runId":"","sequence":0,"messageId":"streaming-run-1"}"#))
+        transcript.apply(try event(#"{"kind":"deleted","runId":"","sequence":0,"messageId":"streaming-run-1"}"#))
         XCTAssertTrue(transcript.lines.isEmpty)
     }
 

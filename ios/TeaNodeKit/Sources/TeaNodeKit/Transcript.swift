@@ -517,7 +517,7 @@ public struct Transcript: Sendable {
     /// the stored message replaces one after another.
     static func streamingId(runId: String) -> String { "\(streamingPrefix)\(runId)" }
 
-    /// What every streaming line's id begins with, and so what an unsaid event
+    /// What every streaming line's id begins with, and so what a deleted event
     /// that names one begins with.
     static let streamingPrefix = "streaming-"
 
@@ -545,11 +545,11 @@ public struct Transcript: Sendable {
         lines[index].editedAt = message.editedAt
     }
 
-    /// A message of a chat that was taken back: a mark that it was, not a gap.
+    /// A message of a chat that was deleted: a mark that it was, not a gap.
     /// The line an agent's words were drawn as while they came is taken off
     /// instead, when the turn was stopped or failed: no message was stored for
     /// it, so there is nothing to mark.
-    public mutating func apply(unsaid messageId: String) {
+    public mutating func apply(deleted messageId: String) {
         if messageId.hasPrefix(Self.streamingPrefix) {
             lines.removeAll { $0.id == messageId && $0.isStreaming }
             return
@@ -603,8 +603,8 @@ public struct Transcript: Sendable {
         case "edited":
             if let message = event.message { apply(edited: message) }
             return
-        case "unsaid":
-            if let messageId = event.messageId { apply(unsaid: messageId) }
+        case "deleted":
+            if let messageId = event.messageId { apply(deleted: messageId) }
             return
         case "asked":
             // In a chat what was said is a message of the chat, drawn from its

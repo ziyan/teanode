@@ -121,7 +121,7 @@ func describeUser(user *models.User) *User {
 		GroupIDs:     groupIds,
 		CreatedAt:    user.CreatedAt,
 
-		AvatarURL:        avatarURL(user),
+		AvatarURL:        avatarUrl(user),
 		AvatarColorIndex: avatar.InitialColorIndex(user.ID),
 	}
 }

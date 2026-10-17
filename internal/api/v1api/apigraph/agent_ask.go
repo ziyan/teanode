@@ -122,7 +122,7 @@ type AgentSubscription interface {
 	// instance: the turns in flight are replayed, then it is live until
 	// the subscription ends. A turn begins with an "asked" event carrying
 	// what was said. A chat's feed carries what the people do in it: said,
-	// edited, unsaid, reacted, read and typing. Needs agent:use, or
+	// edited, deleted, reacted, read and typing. Needs agent:use, or
 	// circle:use for a chat.
 	AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error)
 }
@@ -759,7 +759,7 @@ func describeOwnMessages(messages []*models.AgentMessage, owner *models.User, sp
 			message.AuthorKind = models.ChatAuthorPerson
 			message.AuthorUserID = owner.ID
 			message.AuthorName = owner.DisplayName()
-			message.AuthorAvatarURL = avatarURL(owner)
+			message.AuthorAvatarURL = avatarUrl(owner)
 		} else {
 			message.AuthorKind = models.ChatAuthorAgent
 			message.AuthorAgentID = speakingAgent.ID

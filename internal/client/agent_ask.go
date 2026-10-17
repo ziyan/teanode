@@ -76,7 +76,7 @@ type AgentMessage struct {
 	Reactions []AgentMessageReaction `json:"reactions"`
 
 	// Who wrote it: a person or an agent, by name. IsMine says you or your
-	// agent did. A message taken back has IsDeleted and no words.
+	// agent did. A deleted message has IsDeleted and no words.
 	AuthorKind    string `json:"authorKind"`
 	AuthorUserID  string `json:"authorUserId"`
 	AuthorName    string `json:"authorName"`

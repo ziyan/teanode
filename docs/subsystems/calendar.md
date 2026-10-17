@@ -386,10 +386,10 @@ The dashboard, the command line and the agent reach the same API, and the rule
 is that none of them can do something the others cannot. `teanode calendar
 list|show|add|edit|remove|free|calendars|set` is the whole of it from a
 terminal (and `share|shares|unshare|circle`, under Sharing below); for the
-agent it is one tool, `calendar`, whose action is `agenda`, `free`, `add`,
-`edit` or `remove`: the same abilities, under one name,
-because a catalog with a name per verb is a catalog a model reads less
-carefully.
+agent it is one tool, `calendar`, whose action is `agenda`, `free`,
+`free_together`, `shares`, `share`, `unshare`, `add`, `edit` or `remove`: the
+same abilities, under one name, because a catalog with a name per verb is a
+catalog a model reads less carefully.
 
 Two things make the agent's set different from the other two.
 
@@ -469,14 +469,14 @@ change from the busy copy would write it over the real event. A circle's
 calendar has no owner, so its events are never redacted for its members. A redacted event carries
 `X-TEANODE-BUSY:TRUE`, which is how the
 dashboard tells "Busy" the label from an event somebody called Busy. The rule
-that decides it, `calendar.IsPrivateClass`, sits beside the four judgements of
+that decides it, `calendar.IsPrivateClass`, sits beside the four judgments of
 what makes somebody busy and changes nothing about whether the owner is busy:
 their own free-busy is the same with or without it.
 
 **Free-busy for a shared calendar is the owner's free-busy.**
 `commands.BusyOccurrences` is the one function that decides which occurrences
 make somebody busy; the owner's own CalDAV free-busy, a shared calendar's, the
-dashboard's grey blocks (`ListCalendarEvents` at `busy`), and the free times of
+dashboard's gray blocks (`ListCalendarEvents` at `busy`), and the free times of
 several people (`ListCalendarFreeBusy`) all call it, with the owner's addresses,
 so that none of them can disagree. `calendar.FreeByDay` turns busy times into the
 stretches everybody is free, and both `teanode calendar free --with` and the
@@ -500,29 +500,36 @@ shared at `busy` is not listed: it has no events to show, and answers the
 free-busy REPORT a phone asks of it. The library writes `current-user-privilege-set`
 as read and write for every calendar, so a PROPFIND is taken in a buffer and the
 write privilege is removed from the calendars the person may only read
-(`internal/dav/privileges.go`), which makes a phone grey out the editing. That is
+(`internal/dav/privileges.go`), which makes a phone gray out the editing. That is
 a courtesy: a PUT, DELETE or any other change to a calendar below `edit` is
 refused with 403 before the library reads a byte of it, and again where the
 event is kept.
 
-**Leaving a circle.** `EndCalendarSharesOutsideCircles(userId)` deletes the
-direct shares between that person and anyone they no longer share a circle with,
-in both directions, and their shares to circles they are no longer in. It is
-called in the transaction that takes a person out of a circle, after the member
-row is gone, so the shares do not come back if the two meet in another circle
-later. A circle's calendar goes with the circle (`ON DELETE CASCADE`).
+**Leaving a circle.** `endSharesOutsideCircles` (`internal/db/database_circle.go`)
+is called in the transaction that takes a person out of a circle, after the
+member row is gone, so the shares do not come back if the two meet in another
+circle later. For each person affected it calls `endCalendarSharesOutsideCircles`
+(`internal/db/database_calendar_share.go`), which deletes the direct shares
+between that person and anyone they no longer share a circle with, in both
+directions, and their shares to circles they are no longer in, and the same
+for pages and skills: `endPageSharesOutsideCircles` and
+`endSkillSharesOutsideCircles`. A circle's calendar goes with the circle
+(`ON DELETE CASCADE`).
 
 **The surfaces.** Dashboard: the calendar page lists every calendar with a color,
-the owner's face, and a check to show or hide it (remembered in the browser
-only); busy blocks are grey and cannot be opened; events in a calendar shared
+the owner's picture, and a check to show or hide it (remembered in the browser
+only); busy blocks are gray and cannot be opened; events in a calendar shared
 below `edit` open to be read; the Share button opens the panel for the person's
 own calendar; the circle page offers "Make a family calendar" (any kind may have
 one; it says "shared calendar" for friends and colleagues). The app has the same
 list, sharing screen and read-only events. The command line: `teanode calendar
-share|shares|unshare|circle`, `list --whose`, `free --with`. The agent's
-`calendar` tool: `agenda` takes `whose`, and `free_together`, `shares`, `share`
-(a grant, asked about first) and `unshare` are actions of it; adding to a circle's
-calendar is the person's own change, and to another person's calendar shared at
+share|shares|unshare|circle`, `list --owner`, `free --with`. The agent's
+`calendar` tool has the actions `agenda`, `free`, `free_together`, `shares`,
+`share`, `unshare`, `add`, `edit` and `remove`: `agenda` takes `owner` (a
+username, or `everyone`) to read what others shared, `free_together` takes
+`with` (usernames), `share` takes `with` (a username, or the id of a circle)
+and `share_level`, and `unshare` takes `share_id`. `share` is a grant, asked
+about first; adding to a circle's calendar is the person's own change, and to another person's calendar shared at
 `edit` it is outward. What the agent reads of other people's calendars it reads
 as the person, at the level each was shared at, and only when the person has
 given it their own calendar.

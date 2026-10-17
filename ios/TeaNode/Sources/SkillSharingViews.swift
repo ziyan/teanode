@@ -2,10 +2,10 @@ import LocalAuthentication
 import SwiftUI
 import TeaNodeKit
 
-// Skills the person lends to somebody in a circle they share, and the requests
-// made through them. Each use runs on the person's own computer, as them, held
-// to the limits they set; a use above the limits, or one the server cannot
-// price, waits for the person's word, which is given on a card (here, and in
+// Skills the person lends to somebody in a circle they share, and the calls
+// made through them. Each call runs on the person's own computer, as them,
+// limited to the limits they set; a call above the limits, or one the server
+// cannot price, waits for the person's word, which is given on a card (here, and in
 // the main conversation) and never from a notification. What goes ahead and
 // what waits is decided on the server; these screens draw it and send the
 // answer. docs/subsystems/skills.md ("Sharing a skill") says how it works.
@@ -13,7 +13,7 @@ import TeaNodeKit
 // MARK: - Money in words
 
 /// SkillSharingWords is how these screens say what a share allows and what a
-/// request came to.
+/// call came to.
 enum SkillSharingWords {
     /// What a share allows without asking, in a line.
     static func limits(of share: SkillShare) -> String {
@@ -52,7 +52,7 @@ enum SkillSharingWords {
         }
     }
 
-    /// How a request came out, as a sentence under its card.
+    /// How a call came out, as a sentence under its card.
     static func outcome(of call: SkillShareCall) -> String {
         var words: String
         switch call.callState {
@@ -63,7 +63,7 @@ enum SkillSharingWords {
         case "expired": words = String(localized: "Nobody answered in time, so it expired.")
         default: words = String(localized: "Waiting.")
         }
-        if !call.decisionNote.isEmpty { words += " " + String(localized: "Their note: \(call.decisionNote)") }
+        if !call.answerNote.isEmpty { words += " " + String(localized: "Their note: \(call.answerNote)") }
         return words
     }
 }
@@ -71,7 +71,7 @@ enum SkillSharingWords {
 // MARK: - The screen
 
 /// SkillSharingView is the shared-skills screen of the Connections tab: the
-/// installed skills the person can lend, what they lent with the requests made
+/// installed skills the person can lend, what they lent with the calls made
 /// through it, and what others lent them.
 struct SkillSharingView: View {
     let connection: Connection
@@ -133,7 +133,7 @@ struct SkillSharingView: View {
             if people.isEmpty && isLoaded {
                 Text("You do not share a circle with anybody yet. Start or join one under Circles to share a skill.")
             } else {
-                Text("Let someone in a circle you share use a skill of yours. Each use runs on your own computer, as you. A use above the limits you set, or one that cannot be priced, waits for your word.")
+                Text("Let someone in a circle you share run a skill of yours. It runs on your own computer, as you. Anything above the limits you set, or that cannot be priced, waits for your word.")
             }
         }
     }
@@ -168,7 +168,7 @@ struct SkillSharingView: View {
         } header: {
             Text("Shared by you")
         } footer: {
-            Text("Open one to see what was asked through it. Requests waiting for you are first.")
+            Text("Open one to see what was asked through it. What waits for you is first.")
         }
     }
 
@@ -186,7 +186,7 @@ struct SkillSharingView: View {
         } header: {
             Text("Skills shared with you")
         } footer: {
-            Text("Skills other people lend your agent. Each use runs on their computer and is held to the limits they set.")
+            Text("Skills other people lend your agent. Each tool runs on their computer and is limited to the limits they set.")
         }
     }
 
@@ -214,8 +214,8 @@ struct SkillSharingView: View {
     }
 }
 
-/// ShareRow is one share in a list: the other person's face and name, the skill
-/// and its tools, what it allows, and how many requests wait.
+/// ShareRow is one share in a list: the other person's picture and name, the skill
+/// and its tools, what it allows, and how many calls wait.
 private struct ShareRow: View {
     let share: SkillShare
     let isOwn: Bool
@@ -296,7 +296,7 @@ struct ShareSkillSheet: View {
                         }
                     }
                 } footer: {
-                    Text("Their agent is offered the tools you choose. Your computer must be connected for a use to run, and you can stop sharing at any time.")
+                    Text("Their agent is offered the tools you choose. Your computer must be connected for a tool to run, and you can stop sharing at any time.")
                 }
                 Section {
                     ForEach(skill.tools) { tool in
@@ -313,9 +313,9 @@ struct ShareSkillSheet: View {
                                     if tool.isAmountDeclared {
                                         Text("pays: needs a limit or your approval")
                                     } else if tool.isScoped {
-                                        Text("only for requests made through this share")
+                                        Text("only works on something an earlier tool of this share made")
                                     } else {
-                                        Text("does not say what it costs, so every use asks you")
+                                        Text("does not say what it costs, so it always asks you")
                                     }
                                 }
                                 .font(.footnote).foregroundStyle(.secondary)
@@ -338,11 +338,11 @@ struct ShareSkillSheet: View {
                     }
                 } footer: {
                     if isAskedEveryTime {
-                        Text("Every use waits for your approval, whatever it costs.")
+                        Text("Everything waits for your approval, whatever it costs.")
                     } else if pays && !hasLimit {
                         Text("A tool that pays is shared with a limit, or with Ask me every time.")
                     } else {
-                        Text("Above these limits, or when the amount cannot be read, a use waits for you. The limits are in the currency you give. A use that failed still counts toward the month, because a failure after the command acted looks the same as one before.")
+                        Text("Above these limits, or when the amount cannot be read, the tool waits for you. The limits are in the currency you give. One that failed still counts toward the month, because a failure after the command acted looks the same as one before.")
                     }
                 }
                 if let problemText {
@@ -383,10 +383,10 @@ struct ShareSkillSheet: View {
     }
 }
 
-// MARK: - The requests made through a share
+// MARK: - What was asked through a share
 
-/// SkillShareCallsView lists the requests made through one share: the ones that
-/// wait first, each on a card the owner answers, then the rest in a line each.
+/// SkillShareCallsView lists what was asked through one share: what waits
+/// first, each on a card the owner answers, then the rest in a line each.
 struct SkillShareCallsView: View {
     let connection: Connection
     let share: SkillShare
@@ -401,21 +401,30 @@ struct SkillShareCallsView: View {
             if isLoaded && calls.isEmpty {
                 Text("Nothing has been asked through this yet.").foregroundStyle(.secondary)
             }
-            ForEach(calls) { call in
-                if call.isWaiting {
-                    PaymentCard(connection: connection, call: call, isOwner: share.isOwnedByCaller) { answered in
-                        replace(answered)
-                        onChanged()
-                    }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                } else {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 8) {
-                            Text(verbatim: call.toolName).fontDesign(.monospaced)
-                            UpkeepTag(text: SkillSharingWords.state(call.callState), tone: SkillSharingWords.tone(call.callState))
+            let waitingCalls = calls.filter(\.isWaiting)
+            let answeredCalls = calls.filter { !$0.isWaiting }
+            if !waitingCalls.isEmpty {
+                Section(share.isOwnedByCaller ? LocalizedStringKey("Waiting for you") : LocalizedStringKey("Waiting")) {
+                    ForEach(waitingCalls) { call in
+                        SkillShareCallCard(connection: connection, call: call, isOwner: share.isOwnedByCaller) { answered in
+                            replace(answered)
+                            onChanged()
                         }
-                        Text(verbatim: [call.amountText, UpkeepWords.when(call.createdAt), call.requestReason].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.footnote).foregroundStyle(.secondary)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                }
+            }
+            if !answeredCalls.isEmpty {
+                Section("Answered") {
+                    ForEach(answeredCalls) { call in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 8) {
+                                Text(verbatim: call.toolName).fontDesign(.monospaced)
+                                UpkeepTag(text: SkillSharingWords.state(call.callState), tone: SkillSharingWords.tone(call.callState))
+                            }
+                            Text(verbatim: [call.amountText, UpkeepWords.when(call.createdAt), call.requestReason].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -444,12 +453,12 @@ struct SkillShareCallsView: View {
 
 // MARK: - The card
 
-/// PaymentCard is one request made through a share: who asked, the tool, the
+/// SkillShareCallCard is one call made through a share: who asked, the tool, the
 /// amount, what it was given, and the reason their agent gave, quoted as their
 /// words and never as an instruction. While it waits, the owner answers it
 /// here: Approve runs exactly this call on their computer once, Decline stops
 /// it. The person it is shared with sees only how it stands.
-struct PaymentCard: View {
+struct SkillShareCallCard: View {
     let connection: Connection
     let call: SkillShareCall
     let isOwner: Bool
@@ -469,14 +478,14 @@ struct PaymentCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 AvatarView(name: call.shownGrantee, avatarUrl: call.granteeAvatarUrl, colorIndex: call.granteeAvatarColorIndex, size: 32)
-                Text(isOwner ? String(localized: "\(call.shownGrantee) asked to use your \(call.skillName) skill") : String(localized: "You asked to use \(call.ownerName)’s \(call.skillName) skill"))
+                Text(isOwner ? String(localized: "\(call.shownGrantee)’s agent asked to run \(call.toolName) with your \(call.skillName) skill") : String(localized: "Your agent asked to run \(call.toolName) with \(call.ownerName)’s \(call.skillName) skill"))
                     .font(.subheadline.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
             }
             VStack(alignment: .leading, spacing: 4) {
                 fact(String(localized: "Tool"), call.toolName)
                 if call.amountText.isEmpty {
-                    fact(String(localized: "Amount"), String(localized: "Not stated in the request. Only you can say whether it is fine."))
+                    fact(String(localized: "Amount"), String(localized: "No amount is stated. Only you can say whether it is fine."))
                 } else {
                     fact(String(localized: "Amount"), call.amountText, isProminent: true)
                 }
@@ -546,10 +555,10 @@ struct PaymentCard: View {
         // Approving spends money, so it takes the phone's owner and not just
         // whoever holds it unlocked; declining spends nothing and needs no one.
         if isApproved {
-            guard await DeviceOwner.confirm(approvalPrompt: String(localized: "Approve this payment")) else { return }
+            guard await DeviceOwner.confirm(approvalPrompt: String(localized: "Approve and run it")) else { return }
         }
         do {
-            onAnswered(try await connection.answerSkillShareCall(callId: call.id, isApproved: isApproved, decisionNote: note))
+            onAnswered(try await connection.answerSkillShareCall(callId: call.id, isApproved: isApproved, answerNote: note))
         } catch {
             problemText = error.localizedDescription
         }
@@ -573,11 +582,11 @@ enum DeviceOwner {
     }
 }
 
-/// PaymentWaitingCard is the payment_waiting note of the main conversation as a
+/// SkillShareCallWaitingCard is the skill_share_call_waiting note of the main conversation as a
 /// card: the note names the call, the call is read for how it stands now (it may
 /// have been answered on the dashboard since), and the card is drawn from that.
 /// A call that is gone, because the share was taken back, says so.
-struct PaymentWaitingCard: View {
+struct SkillShareCallWaitingCard: View {
     let connection: Connection
     let noteDetail: String
     @State private var call: SkillShareCall?
@@ -587,9 +596,9 @@ struct PaymentWaitingCard: View {
     var body: some View {
         CardSurface {
             if let call {
-                PaymentCard(connection: connection, call: call, isOwner: true) { answered in self.call = answered }
+                SkillShareCallCard(connection: connection, call: call, isOwner: true) { answered in self.call = answered }
             } else if isLoaded || isGone {
-                Label("This request is no longer there.", systemImage: "questionmark.circle")
+                Label("This is no longer there.", systemImage: "questionmark.circle")
                     .font(.footnote).foregroundStyle(.secondary)
             } else {
                 ProgressView()
