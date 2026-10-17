@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsSection } from '../../components/settingsList'
@@ -28,7 +28,17 @@ function AccountPeoplePage() {
   const { t, plural } = useTranslation()
   const navigate = useNavigate()
   const displayedName = useDisplayedPersonName()
-  const [isHiddenShown, setIsHiddenShown] = useState(false)
+  // Whether hidden people are shown is in the address (?hidden=1), so that a
+  // reload, Back and a copied link all keep it.
+  const [parameters, setParameters] = useSearchParams()
+  const isHiddenShown = parameters.get('hidden') === '1'
+  const setIsHiddenShown = (isShown: boolean) =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      if (isShown) written.set('hidden', '1')
+      else written.delete('hidden')
+      return written
+    })
   const [naming, setNaming] = useState<PhotoFaceGroup | null>(null)
   const session = useSession()
   const canNamePeople =
@@ -125,11 +135,18 @@ function PersonCell({
           {plural(group.photoCount, { one: 'photos.itemCountOne', other: 'photos.itemCountOther' })}
         </span>
       </Link>
-      {group.isHidden && <Tag value={t('photos.hiddenTag')} />}
-      {!isNamed && canName && (
-        <button type="button" className="photo-person-name-button" onClick={onName}>
-          {t('photos.nameAction')}
-        </button>
+      {(group.isHidden || canName) && (
+        // The room for the Name button is kept on a tile that has no use for
+        // it, so that every tile is as tall as the one that does and naming a
+        // person does not move the rows under them.
+        <div className="photo-person-foot">
+          {group.isHidden && <Tag value={t('photos.hiddenTag')} />}
+          {!isNamed && canName && (
+            <button type="button" className="photo-person-name-button" onClick={onName}>
+              {t('photos.nameAction')}
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

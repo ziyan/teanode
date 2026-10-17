@@ -1099,11 +1099,22 @@ button.conversation-tile:focus-visible {
   padding-right: 0;
 }
 
+/* The rail's width, said once for whatever sits beside it (the toasts begin
+   where the content does). The rail is collapsed to icons when it carries the
+   collapsed class. */
+:root {
+  --rail-width: 232px;
+}
+
+:root:has(.sidebar.collapsed) {
+  --rail-width: 60px;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: 232px;
-  flex: 0 0 232px;
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
   min-height: 0;
   height: 100vh;
   height: 100dvh;
@@ -1119,8 +1130,8 @@ button.conversation-tile:focus-visible {
 /* Collapsed, it keeps the icons and drops the words. Wide enough for a
    comfortable target around a centered icon and nothing more. */
 .sidebar.collapsed {
-  width: 60px;
-  flex: 0 0 60px;
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
 }
 
 .sidebar.collapsed .sidebar-label {
@@ -8770,9 +8781,11 @@ p.notice.domain-logo-note {
    whoever reached for the next one; the foot is where nothing is acted on,
    and the right of it is the agent's button and the upload tray. */
 .toasts {
+  /* Where the strip begins: at the content, which is where the rail ends. */
+  --toasts-left: calc(var(--rail-width, 232px) + var(--space-4));
   position: fixed;
   bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
-  left: calc(232px + var(--space-4));
+  left: var(--toasts-left);
   z-index: 80;
   display: flex;
   flex-direction: column;
@@ -8786,7 +8799,9 @@ p.notice.domain-logo-note {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  max-width: min(420px, calc(100vw - var(--space-4) * 2));
+  /* Ends before the agent's drawer and the upload tray (--toast-edge, set
+     from where they are). */
+  max-width: min(420px, calc(var(--toast-edge, calc(100vw - var(--space-4))) - var(--toasts-left, var(--space-4))));
   padding: 10px 10px 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
@@ -8859,8 +8874,16 @@ p.notice.domain-logo-note {
    window's own margin. */
 @media (max-width: 760px) {
   .toasts {
-    left: var(--space-4);
+    --toasts-left: var(--space-4);
   }
+}
+
+/* With the drawer or the tray leaving too little room beside the rail, the
+   strip starts at the window's margin, over the rail, above the account row
+   at its foot. */
+.toasts.over-rail {
+  --toasts-left: var(--space-4);
+  bottom: calc(var(--toast-lift, 72px) + env(safe-area-inset-bottom));
 }
 
 /* On a phone the strip is the width of the screen, because 420px of message
@@ -11560,8 +11583,16 @@ main.content:has(> .knowledge-frame) {
   list-style: none;
 }
 
+/* The tile fills its grid cell, so that the tiles of a row are one height
+   whatever is under each picture. */
+.photo-person-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
 .photo-person-cell {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
@@ -11605,6 +11636,16 @@ main.content:has(> .knowledge-frame) {
 .photo-person-name-button {
   padding: 4px 12px;
   font-size: var(--text-body);
+}
+
+/* Where the tag and the Name button go: as tall as the button, with or
+   without one, so that a tile that is named is no shorter than one that is not. */
+.photo-person-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 32px;
 }
 
 .photo-person-cell .face-picture.is-large {
@@ -17610,6 +17651,25 @@ label.checkbox.is-plain > span > .muted {
     min-height: 44px;
   }
 
+  /* An icon like its neighbors on a phone: the words stay for a screen reader,
+     and the bar keeps to one line. */
+  .photo-viewer-bar .photo-save-button {
+    justify-content: center;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .photo-viewer-bar .photo-save-button .photo-save-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   .photo-selection-bar {
     padding-inline: 2px;
   }
@@ -17653,6 +17713,10 @@ label.checkbox.is-plain > span > .muted {
     min-height: 44px;
   }
 
+  .photo-person-foot {
+    min-height: 44px;
+  }
+
   .contact-picker-row {
     min-height: 48px;
   }
@@ -17691,10 +17755,21 @@ label.checkbox.is-plain > span > .muted {
 }
 
 .photo-near-filter {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   min-height: 40px;
   padding-left: var(--space-3);
   font-size: var(--text-body);
+}
+
+/* The place is what gives way when the chip is longer than the room it has:
+   it is cut with an ellipsis, and the close button beside it keeps its size. */
+.photo-near-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 600px) {
@@ -17702,8 +17777,25 @@ label.checkbox.is-plain > span > .muted {
     min-height: 44px;
   }
 
+  /* The chip goes under the search when it does not fit beside it, rather
+     than squeezing the search box, and its close button is a 44px square. */
+  .photo-toolbar-tools {
+    flex-wrap: wrap;
+  }
+
+  .photo-toolbar-tools input[type='search'] {
+    min-width: 160px;
+  }
+
   .photo-near-filter {
     min-height: 44px;
+    padding-block: 0;
+    padding-right: 0;
+  }
+
+  .photo-near-filter .icon-button {
+    width: 44px;
+    height: 44px;
   }
 }
 

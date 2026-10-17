@@ -153,7 +153,7 @@ photo rather than of the server, and a failure waits longer each time (1, 5,
 count against the photo, and waits 1, 5, 15 and then 60 minutes by how many
 such failures there were in a row (`processing_outage_count`), so a missing
 program or a full disk is not retried every minute.
-`RetryPhotoProcessing` starts a failed photo again.
+`RetryPhotoProcessing` starts a failed photo again, and makes the thumbnails of a ready one again to replace thumbnails that look wrong: the dashboard's and the iPhone's "Make thumbnails again", `teanode photo retry` and the agent tool's `retry`.
 
 A claim is known by the time it was made (`processing_claimed_at`, which each
 renewal moves), and what a worker records at the end, ready or failed, is
@@ -204,7 +204,10 @@ starts at.
 or a contact, and a point and a distance, and searches: full-text over the
 place, file name, camera, album titles, the names of the people in it, the
 description and the text in the picture, and, when an embedding model
-is configured, by meaning over the descriptions. A search with words embeds
+is configured, by meaning over the descriptions. The library is listed newest
+taken first; the trash is listed newest moved to the trash first (`trashed_at`,
+then id), the order its groups are read in, and a search by how well it
+matches. A search with words embeds
 them first, in a transaction of its own that is over before the model is asked
 (`ListPhotos` and `CountPhotos` are in `isModelBackedQuery`, and read in phases
 as recall does), so a slow model does not hold a database connection.

@@ -617,7 +617,7 @@ func TestTrashNamesThePhotosAndDeleteAsksFirst(test *testing.T) {
 func TestRetryNamesThePhotosAndSaysHowManyWereQueued(test *testing.T) {
 	server := newPhotoServer(test)
 	output, _, err := server.run(test, "retry", "photo-1", "photo-2")
-	if err != nil || !strings.Contains(output, "queued to make previews again for 1 of 2 photos") {
+	if err != nil || !strings.Contains(output, "queued to make thumbnails again for 1 of 2 photos") {
 		test.Fatalf("%v: %s", err, output)
 	}
 	if got := server.variables[len(server.variables)-1]["photoIds"]; !reflect.DeepEqual(got, []any{"photo-1", "photo-2"}) {

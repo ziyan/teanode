@@ -95,7 +95,7 @@ func NewPhotoCommand() *cli.Command {
 			{Name: "trash", Usage: "move photos to the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
 			{Name: "restore", Usage: "restore photos from the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
 			{
-				Name: "retry", Usage: "make the previews of photos again: the ones that failed, and ones that are ready but look wrong", ArgsUsage: "<id>...",
+				Name: "retry", Usage: "make the thumbnails of photos again: the ones that failed, and ones that are ready but look wrong", ArgsUsage: "<id>...",
 				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRetry,
 			},
 			{Name: "delete", Usage: "delete photos in the Trash forever", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoDelete},
@@ -932,7 +932,7 @@ func runPhotoRestore(ctx context.Context, command *cli.Command) error {
 }
 
 func runPhotoRetry(ctx context.Context, command *cli.Command) error {
-	return runPhotoMove(ctx, command, client.RetryPhotoProcessing, "retriedCount", "queued to make previews again for")
+	return runPhotoMove(ctx, command, client.RetryPhotoProcessing, "retriedCount", "queued to make thumbnails again for")
 }
 
 func runPhotoDelete(ctx context.Context, command *cli.Command) error {

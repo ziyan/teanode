@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -307,6 +309,77 @@ func TestPhotoTrashRestoreAndDeleteOnlyTrashed(test *testing.T) {
 		files, err := transaction.ListPhotoFiles(ownerId, []string{second.ID})
 		if err != nil || len(files) != 0 {
 			test.Fatalf("the files of a deleted photo are still there: %v %v", files, err)
+		}
+	})
+}
+
+func TestPhotoTrashIsListedNewestTrashedFirstAcrossPages(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-trash-order-owner")
+	// The dates taken run the opposite way to the days moved to the Trash, and
+	// two photos were moved at the same moment, so that the order has to break
+	// that tie by id.
+	takenLongAgo := time.Date(2010, 1, 1, 12, 0, 0, 0, time.UTC)
+	takenRecently := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	oldest := newTestPhoto(test, database, ownerId, "trashed-first", &takenRecently)
+	middle := newTestPhoto(test, database, ownerId, "trashed-second", &takenLongAgo)
+	sameMomentOne := newTestPhoto(test, database, ownerId, "trashed-third-a", &takenLongAgo)
+	sameMomentTwo := newTestPhoto(test, database, ownerId, "trashed-third-b", &takenRecently)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if trashed, err := transaction.TrashPhotos(ownerId, []string{oldest.ID, middle.ID, sameMomentOne.ID, sameMomentTwo.ID}); err != nil || trashed != 4 {
+			test.Fatalf("trashed %d: %v", trashed, err)
+		}
+	})
+	dbtest.Exec(test, database, "UPDATE photo SET trashed_at = now() - interval '3 days' WHERE id = '"+oldest.ID+"'")
+	dbtest.Exec(test, database, "UPDATE photo SET trashed_at = now() - interval '2 days' WHERE id = '"+middle.ID+"'")
+	dbtest.Exec(test, database, "UPDATE photo SET trashed_at = now() - interval '1 day' WHERE id IN ('"+sameMomentOne.ID+"', '"+sameMomentTwo.ID+"')")
+	expectedIds := []string{sameMomentOne.ID, sameMomentTwo.ID}
+	sort.Sort(sort.Reverse(sort.StringSlice(expectedIds)))
+	expectedIds = append(expectedIds, middle.ID, oldest.ID)
+
+	idsOf := func(photos []*models.Photo) []string {
+		ids := []string{}
+		for _, photo := range photos {
+			ids = append(ids, photo.ID)
+		}
+		return ids
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		whole, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 10, IsTrashed: true})
+		if err != nil || !slices.Equal(idsOf(whole), expectedIds) {
+			test.Fatalf("the trash is listed %v, want %v: %v", idsOf(whole), expectedIds, err)
+		}
+		// Paged by number and by the last photo of the previous page, the pages
+		// join up in the same order.
+		var byOffset, byCursor []string
+		for offset := 0; offset < 4; offset += 3 {
+			page, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 3, Offset: offset, IsTrashed: true})
+			if err != nil {
+				test.Fatal(err)
+			}
+			byOffset = append(byOffset, idsOf(page)...)
+		}
+		cursor := ""
+		for pageIndex := 0; pageIndex < 2; pageIndex++ {
+			page, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 3, BeforePhotoID: cursor, IsTrashed: true})
+			if err != nil {
+				test.Fatal(err)
+			}
+			byCursor = append(byCursor, idsOf(page)...)
+			if len(page) > 0 {
+				cursor = page[len(page)-1].ID
+			}
+		}
+		if !slices.Equal(byOffset, expectedIds) || !slices.Equal(byCursor, expectedIds) {
+			test.Fatalf("pages by number %v and by cursor %v, want %v", byOffset, byCursor, expectedIds)
+		}
+		// A photo that is not in the Trash is not a place to continue from.
+		if _, err := transaction.RestorePhotos(ownerId, []string{middle.ID}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 3, BeforePhotoID: middle.ID, IsTrashed: true}); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("continuing after a restored photo gave %v", err)
 		}
 	})
 }

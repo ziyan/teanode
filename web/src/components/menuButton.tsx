@@ -24,12 +24,17 @@ export function MenuButton({
   // the foot of the rail, where a menu opening downwards would open off the
   // bottom of the window.
   placement = 'below',
+  // What opens: a menu of things to choose from, or a small dialog-like
+  // popover holding a form (radios, date fields), which a screen reader must
+  // not announce as a list of menu items.
+  popup = 'menu',
   render,
 }: {
   label: string
   icon: React.ReactNode
   className?: string
   placement?: 'below' | 'above'
+  popup?: 'menu' | 'dialog'
   render: (close: () => void) => React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -127,7 +132,7 @@ export function MenuButton({
         type="button"
         ref={trigger}
         className={className}
-        aria-haspopup="menu"
+        aria-haspopup={popup}
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={label}
@@ -137,7 +142,14 @@ export function MenuButton({
       </button>
       {open &&
         createPortal(
-          <div className="menu" id={id} role="menu" ref={menu} style={position}>
+          <div
+            className="menu"
+            id={id}
+            role={popup}
+            aria-label={popup === 'dialog' ? label : undefined}
+            ref={menu}
+            style={position}
+          >
             {render(() => setOpen(false))}
           </div>,
           document.body,

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { graphql } from '../../api'
 import { ToastProvider } from '../../components/toast'
@@ -13,16 +13,19 @@ vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   graphql: vi.fn(),
 }))
+// Whether the person has contacts, which is what lets them name a person.
+let isContactsEnabled = false
 vi.mock('../../session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session')>()),
   useSession: () => ({
     userId: 'person-1',
-    services: { isPhotosEnabled: true },
-    permissions: { everywhere: ['photos:use'], byDomain: [] },
+    services: { isPhotosEnabled: true, isContactsEnabled },
+    permissions: { everywhere: ['photos:use', 'contacts:use'], byDomain: [] },
   }),
 }))
 
 beforeEach(() => {
+  isContactsEnabled = false
   vi.mocked(graphql).mockReset()
   forgetKnownPeople()
 })
@@ -62,11 +65,17 @@ function serve(groups: unknown[], library = photoLibrary()) {
   })
 }
 
-const showPeoplePage = () =>
+function Address() {
+  const location = useLocation()
+  return <output data-testid="address">{location.pathname + location.search}</output>
+}
+
+const showPeoplePage = (entry = '/photos/people') =>
   render(
     <TranslationProvider>
       <ToastProvider>
-        <MemoryRouter initialEntries={['/photos/people']}>
+        <MemoryRouter initialEntries={[entry]}>
+          <Address />
           <Routes>
             <Route path="/photos/people" element={<PhotoPeoplePage />} />
             <Route path="/photos/people/:photoFaceGroupId" element={<p>The person page</p>} />
@@ -97,6 +106,23 @@ it('lists the hidden people only after Show hidden is chosen', async () => {
   expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
   const listed = vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('ListPhotoFaceGroups'))
   expect(listed.some(([, variables]) => variables?.isHiddenIncluded === true)).toBe(true)
+})
+
+it('keeps Show hidden in the address, so that a reload and a copied link keep it', async () => {
+  serve([group({}), group({ id: 'group-2', contactName: 'Hidden Person', isHidden: true })])
+  showPeoplePage()
+  await screen.findByRole('link', { name: /Sample Person/ })
+  fireEvent.click(screen.getByLabelText('Show hidden people'))
+  await screen.findByRole('link', { name: /Hidden Person/ })
+  expect(screen.getByTestId('address').textContent).toBe('/photos/people?hidden=1')
+  fireEvent.click(screen.getByLabelText('Show hidden people'))
+  await waitFor(() => expect(screen.queryByRole('link', { name: /Hidden Person/ })).toBeNull())
+  expect(screen.getByTestId('address').textContent).toBe('/photos/people')
+  cleanup()
+  // A page opened on the address shows them, with the box ticked.
+  showPeoplePage('/photos/people?hidden=1')
+  expect(await screen.findByRole('link', { name: /Hidden Person/ })).toBeTruthy()
+  expect((screen.getByLabelText('Show hidden people') as HTMLInputElement).checked).toBe(true)
 })
 
 it("says that finding people is not set up in a sentence of its own, not in the server's words", async () => {
@@ -178,14 +204,17 @@ it('keeps People in the choice when faces cannot be found but people were found 
   expect(await screen.findByRole('button', { name: 'People' })).toBeTruthy()
 })
 
-function serveContacts(contacts: { id: string; name: string }[]) {
+function serveContacts(contacts: { id: string; name: string }[], books = 1) {
   vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
-    if (document.includes('ListAddressBooks')) return { ListAddressBooks: [{ id: 'book-1' }] } as never
+    if (document.includes('ListAddressBooks')) {
+      return { ListAddressBooks: Array.from({ length: books }, (_, index) => ({ id: `book-${index + 1}` })) } as never
+    }
     if (document.includes('ListContacts')) {
       const query = String(variables?.query ?? '').toLowerCase()
       return {
         ListContacts: contacts
           .filter((contact) => contact.name.toLowerCase().includes(query))
+          .slice(0, Number(variables?.first ?? contacts.length))
           .map((contact) => ({ ...contact, organization: '', emails: [] })),
       } as never
     }
@@ -211,6 +240,38 @@ it('names a person with a contact chosen from the address book', async () => {
   fireEvent.click(await within(dialog).findByLabelText('Other Person'))
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
   expect(onSubmit).toHaveBeenCalledWith({ kind: 'contact', contactId: 'contact-2' })
+})
+
+const manyContacts = (count: number) =>
+  Array.from({ length: count }, (_, index) => ({
+    id: `contact-${index}`,
+    name: `Person ${String(index).padStart(2, '0')}`,
+  }))
+const showNamingDialog = () =>
+  render(
+    <TranslationProvider>
+      <ToastProvider>
+        <NamePersonDialog currentName="" onSubmit={vi.fn()} onClose={vi.fn()} />
+      </ToastProvider>
+    </TranslationProvider>,
+  )
+
+it('says the first 20 contacts are listed only when a book had more than that', async () => {
+  serveContacts(manyContacts(21))
+  showNamingDialog()
+  expect(await screen.findByText('The first 20 contacts are listed. Type to narrow the list.')).toBeTruthy()
+  expect(screen.getAllByRole('radio')).toHaveLength(20)
+  cleanup()
+  // A book with exactly 20 has nothing more to type for, and neither do two books of 11.
+  serveContacts(manyContacts(20))
+  showNamingDialog()
+  await screen.findByLabelText('Person 19')
+  expect(screen.queryByText(/The first 20 contacts are listed/)).toBeNull()
+  cleanup()
+  serveContacts(manyContacts(11), 2)
+  showNamingDialog()
+  await waitFor(() => expect(screen.getAllByRole('radio')).toHaveLength(22))
+  expect(screen.queryByText(/The first 20 contacts are listed/)).toBeNull()
 })
 
 it('offers a new contact for a name the address book does not have, and not for one it has', async () => {
@@ -331,4 +392,16 @@ it('marks a contact that already names another person, and leaves it choosable',
   expect(marked.textContent).toContain('Already names another person')
   const plain = screen.getByRole('radio', { name: /Other Person/ }).closest('label') as HTMLElement
   expect(plain.textContent).not.toContain('Already names')
+})
+
+it('keeps the room for the Name button on every tile, so that the tiles of a row are one height', async () => {
+  isContactsEnabled = true
+  serve([group({}), group({ id: 'group-2', contactId: '', contactName: '' })])
+  showPeoplePage()
+  await screen.findByRole('link', { name: /Sample Person/ })
+  const tiles = Array.from(document.querySelectorAll('.photo-person-cell'))
+  expect(tiles).toHaveLength(2)
+  for (const tile of tiles) expect(tile.querySelector('.photo-person-foot')).not.toBeNull()
+  expect(screen.getAllByRole('button', { name: 'Name' })).toHaveLength(1)
+  expect(tiles[0].querySelector('.photo-person-foot')?.querySelector('button')).toBeNull()
 })

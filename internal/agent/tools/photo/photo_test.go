@@ -310,7 +310,7 @@ func TestFavoriteTrashRestoreAndSaveUseTheSharedOperations(test *testing.T) {
 	// Retrying makes the previews of photos again; it is a write, and it names
 	// the photos the way trash does.
 	operations.answers["RetryPhotoProcessing"] = "1"
-	if result, err := current.call(map[string]any{"operation": "retry", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "1 of 2 photos queued to have their previews made again") {
+	if result, err := current.call(map[string]any{"operation": "retry", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "1 of 2 photos queued to have their thumbnails made again") {
 		test.Fatalf("%v %v", result, err)
 	}
 	if asked := operations.asked("RetryPhotoProcessing"); len(asked) != 1 || len(asked[0]["photoIds"].([]string)) != 2 {

@@ -122,20 +122,29 @@ export interface ContactChoice {
 // book.
 const CONTACT_CHOICES = 20
 
-// The contacts of the person's address books that match what was typed.
-export async function findContactChoices(searchText: string, signal?: AbortSignal): Promise<ContactChoice[]> {
+// The contacts of the person's address books that match what was typed, and
+// whether some book had more matching than are listed. One more than the
+// dialog lists is asked for from each book, so that a book with exactly that
+// many is not mistaken for one with more.
+export async function findContactChoices(
+  searchText: string,
+  signal?: AbortSignal,
+): Promise<{ contacts: ContactChoice[]; hasMore: boolean }> {
   const books = (await graphql<{ ListAddressBooks: { id: string }[] }>(PEOPLE_DOCUMENTS.ListAddressBooks, {}, signal))
     .ListAddressBooks
   const found = await Promise.all(
     books.map((book) =>
       graphql<{ ListContacts: ContactChoice[] }>(
         PEOPLE_DOCUMENTS.ListContacts,
-        { addressBookId: book.id, query: searchText || null, first: CONTACT_CHOICES },
+        { addressBookId: book.id, query: searchText || null, first: CONTACT_CHOICES + 1 },
         signal,
       ),
     ),
   )
-  return found.flatMap((answer) => answer.ListContacts)
+  return {
+    contacts: found.flatMap((answer) => answer.ListContacts.slice(0, CONTACT_CHOICES)),
+    hasMore: found.some((answer) => answer.ListContacts.length > CONTACT_CHOICES),
+  }
 }
 
 // The person has no address book to make a contact in. A page says it in its

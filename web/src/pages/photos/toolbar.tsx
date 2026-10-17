@@ -57,10 +57,14 @@ const KIND_LABELS = {
   video: 'photos.kindVideo',
 } as const
 
-// The Filter button of the dashboard's lists (the one Recordings and Contacts
-// have), with what narrows a library behind it: the kind of photo and the
-// dates it was taken between. Lit while anything is set, so that a list that
-// is narrower than the library says so where the filters are said.
+// A Filter button with the same name and icon as the one on the dashboard's
+// tables (Recordings, Contacts), but not the same control: a table's opens a
+// row of filters under its own columns, and a library is a grid with no
+// columns to put them under. This one is a popover over the grid holding a
+// small form: the kind of photo and the dates it was taken between, so it is
+// announced as a dialog with a name, not as a menu. Lit while anything is set,
+// so that a list that is narrower than the library says so where the filters
+// are said.
 export function PhotoFilterMenu({
   photoKind,
   fromDay,
@@ -79,6 +83,7 @@ export function PhotoFilterMenu({
   return (
     <MenuButton
       label={t('filter.toggle')}
+      popup="dialog"
       className={isFiltering ? 'photo-filter-button active' : 'photo-filter-button'}
       icon={
         <>
