@@ -242,7 +242,12 @@ type FoundPlaceView struct {
 	DistanceMeters   float64 `json:"distanceMeters"`
 
 	// PlaceID is the caller's own place there, null when they have none.
-	PlaceID *string `json:"placeId"`
+	// For such a row PlaceName is the caller's own name for it when they named
+	// it (otherwise the OpenStreetMap name), PlaceLabel is its label (empty
+	// when it has none) and IsNamedByPerson says whose name PlaceName is.
+	PlaceID         *string `json:"placeId"`
+	PlaceLabel      string  `json:"placeLabel"`
+	IsNamedByPerson bool    `json:"isNamedByPerson"`
 }
 
 // FoundPlacePageView is a page of found places.
@@ -632,8 +637,9 @@ func describePlaceVisit(visit *models.PlaceVisit, isOwner bool) *PlaceVisitView 
 }
 
 // describeFoundPlace is a place OpenStreetMap found; placeId is the caller's
-// own place for the same object, if they have one.
-func describeFoundPlace(found *place.Found, placeId string) *FoundPlaceView {
+// own place for the same object, if they have one (own, nil when they have
+// none or it could not be read).
+func describeFoundPlace(found *place.Found, placeId string, own *models.Place) *FoundPlaceView {
 	view := &FoundPlaceView{
 		PlaceName: found.PlaceName, OSMType: found.OSMType, OSMID: found.OSMID, OSMCategory: found.OSMCategory,
 		AddressText: found.AddressText, LatitudeDegrees: found.LatitudeDegrees, LongitudeDegrees: found.LongitudeDegrees,
@@ -641,6 +647,13 @@ func describeFoundPlace(found *place.Found, placeId string) *FoundPlaceView {
 	}
 	if placeId != "" {
 		view.PlaceID = &placeId
+	}
+	if own != nil {
+		view.PlaceLabel = string(own.PlaceLabel)
+		view.IsNamedByPerson = own.IsNamedByPerson
+		if own.IsNamedByPerson {
+			view.PlaceName = own.PlaceName
+		}
 	}
 	return view
 }
@@ -932,6 +945,7 @@ func (self *graph) mergeFoundWithOwn(tx db.Transaction, userId string, found []*
 			PlaceName: own.Place.PlaceName, OSMType: own.Place.OSMType, OSMID: own.Place.OSMID, OSMCategory: own.Place.OSMCategory,
 			AddressText: own.Place.AddressText, LatitudeDegrees: own.Place.LatitudeDegrees, LongitudeDegrees: own.Place.LongitudeDegrees,
 			DistanceMeters: own.DistanceMeters, PlaceID: &own.Place.ID,
+			PlaceLabel: string(own.Place.PlaceLabel), IsNamedByPerson: own.Place.IsNamedByPerson,
 		})
 	}
 	for _, each := range found {
@@ -939,7 +953,13 @@ func (self *graph) mergeFoundWithOwn(tx db.Transaction, userId string, found []*
 		if placeId != "" && listed[placeId] {
 			continue
 		}
-		rows = append(rows, describeFoundPlace(each, placeId))
+		var ownPlace *models.Place
+		if placeId != "" {
+			if ownPlace, err = tx.GetPlace(userId, placeId); err != nil {
+				return nil, err
+			}
+		}
+		rows = append(rows, describeFoundPlace(each, placeId, ownPlace))
 	}
 	sortFoundByDistance(rows)
 	return rows, nil
@@ -1014,19 +1034,32 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 		references = append(references, db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID})
 	}
 	var ownByObject map[db.OSMReference]string
+	ownPlaces := map[string]*models.Place{}
 	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
 		if _, err := self.requireLocationPerson(phaseContext); err != nil {
 			return err
 		}
+		tx := self.transaction(phaseContext)
 		var err error
-		ownByObject, err = self.transaction(phaseContext).FindPlaceIDsByOSM(userId, references)
-		return err
+		if ownByObject, err = tx.FindPlaceIDsByOSM(userId, references); err != nil {
+			return err
+		}
+		for _, placeId := range ownByObject {
+			if ownPlaces[placeId] != nil {
+				continue
+			}
+			if ownPlaces[placeId], err = tx.GetPlace(userId, placeId); err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
 	page := &FoundPlacePageView{FoundPlaces: make([]*FoundPlaceView, 0, len(found)), NextOffset: nextOffsetOf(nextOffset)}
 	for _, each := range found {
-		page.FoundPlaces = append(page.FoundPlaces, describeFoundPlace(each, ownByObject[db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID}]))
+		placeId := ownByObject[db.OSMReference{OSMType: each.OSMType, OSMID: each.OSMID}]
+		page.FoundPlaces = append(page.FoundPlaces, describeFoundPlace(each, placeId, ownPlaces[placeId]))
 	}
 	return page, nil
 }

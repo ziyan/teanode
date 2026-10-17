@@ -399,3 +399,20 @@ func TestAPlaceLineNamesThePlaceTheWayThePersonWould(test *testing.T) {
 		}
 	}
 }
+
+// A found row that is the person's own place is called the way placeLine
+// calls a place.
+func TestAFoundPlaceLineNamesTheRowTheWayThePersonWould(test *testing.T) {
+	test.Parallel()
+
+	for expected, found := range map[string]*client.FoundPlace{
+		"Grandma's [family]": {PlaceName: "Grandma's", IsNamedByPerson: true, PlaceLabel: "family"},
+		"Home (Maple Park)":  {PlaceName: "Maple Park", PlaceLabel: "home"},
+		"Gym (1 Elm Street)": {AddressText: "1 Elm Street", PlaceLabel: "gym"},
+		"Maple Park":         {PlaceName: "Maple Park"},
+	} {
+		if got := foundPlaceLine(found); got != expected {
+			test.Errorf("%+v is %q, want %q", found, got, expected)
+		}
+	}
+}

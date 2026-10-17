@@ -348,9 +348,17 @@ func TestPlacesFromTheProvider(t *testing.T) {
 	// A check-in list still offers the person's own places while the provider
 	// is off, and only a search is refused.
 	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.0001, longitudeDegrees: -75.0001, placeName: "Home") { id } }`)
-	own := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40, longitudeDegrees: -75) { placeName placeId } }`)["ListNearbyPlaces"].([]any)
+	own := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 40, longitudeDegrees: -75) { placeName placeId placeLabel isNamedByPerson } }`)["ListNearbyPlaces"].([]any)
 	if len(own) != 1 || own[0].(map[string]any)["placeName"] != "Home" || own[0].(map[string]any)["placeId"] == nil {
 		t.Errorf("their own places with the provider off: %v", own)
+	}
+	if row := own[0].(map[string]any); row["isNamedByPerson"] != true || row["placeLabel"] != "" {
+		t.Errorf("a place they named says so: %v", row)
+	}
+	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.5, longitudeDegrees: -75.0, placeLabel: "gym") { id } }`)
+	labeled := world.call(t, world.ada, `query { ListNearbyPlaces(latitudeDegrees: 41.5, longitudeDegrees: -75.0) { placeName placeLabel isNamedByPerson } }`)["ListNearbyPlaces"].([]any)
+	if row := labeled[0].(map[string]any); row["placeLabel"] != "gym" || row["isNamedByPerson"] != false {
+		t.Errorf("a place they only labeled carries its label and the map's name: %v", labeled)
 	}
 	if message := world.refused(t, world.ada, `query { SearchPlaces(query: "playground", latitudeDegrees: 40, longitudeDegrees: -75) { foundPlaces { placeName } } }`); !strings.Contains(message, "operator") || !strings.Contains(message, "OpenStreetMap") {
 		t.Errorf("whose switch it is: %s", message)

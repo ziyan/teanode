@@ -865,7 +865,9 @@ function LocationContent({ userId }: { userId: string }) {
                 </span>
               </span>
               <span className="location-row-meta">
-                {LABEL_KEYS[place.placeLabel] && <Tag value={t(LABEL_KEYS[place.placeLabel])} />}
+                {LABEL_KEYS[place.placeLabel] && placeTitle(place, t) !== t(LABEL_KEYS[place.placeLabel]) && (
+                  <Tag value={t(LABEL_KEYS[place.placeLabel])} />
+                )}
               </span>
             </button>
           ))}

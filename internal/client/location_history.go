@@ -89,6 +89,11 @@ type FoundPlace struct {
 	LongitudeDegrees float64 `json:"longitudeDegrees"`
 	DistanceMeters   float64 `json:"distanceMeters"`
 	PlaceID          *string `json:"placeId"`
+
+	// PlaceLabel and IsNamedByPerson are filled when the row is the caller's
+	// own place; PlaceName is then their name for it when they named it.
+	PlaceLabel      string `json:"placeLabel"`
+	IsNamedByPerson bool   `json:"isNamedByPerson"`
 }
 
 // FoundPlacePage is a page of found places; NextOffset is null on the last.
@@ -113,7 +118,7 @@ const (
 	placeVisitFields = `id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
     place { ` + placeFields + ` }`
 
-	foundPlaceFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId`
+	foundPlaceFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson`
 
 	DocumentGetLocation = `query ($userId: String) {
   GetLocation(userId: $userId) {

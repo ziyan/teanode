@@ -56,6 +56,10 @@ export type FoundPlace = {
   longitudeDegrees: number
   distanceMeters: number
   placeId: string | null
+  // Filled when the row is the person's own place: its label, and whether
+  // placeName is the name they gave it (else it is the map's).
+  placeLabel: string
+  isNamedByPerson: boolean
 }
 
 export const POINT_FIELDS = 'latitudeDegrees longitudeDegrees accuracyMeters measuredAt'
@@ -73,11 +77,27 @@ export const LABEL_KEYS: Record<string, Key> = {
   gym: 'location.label.gym',
 }
 
+// What the two words below need of a place: a found place has no osmName, its
+// placeName is the map's name unless the person named it.
+type NamedPlace = Pick<Place, 'placeName' | 'isNamedByPerson' | 'placeLabel' | 'addressText'> & { osmName?: string }
+
+// foundPlaceNamed is a found place as the words below read it: for a row that
+// is not the person's own, the map's name stands as osmName.
+export function foundPlaceNamed(found: FoundPlace): NamedPlace {
+  return {
+    placeName: found.placeName,
+    isNamedByPerson: found.isNamedByPerson,
+    placeLabel: found.placeLabel,
+    addressText: found.addressText,
+    osmName: found.isNamedByPerson ? '' : found.placeName,
+  }
+}
+
 // placeTitle is what a place is called on screen: the name the person gave
 // it, else the word of its label ("Home"), else the name OpenStreetMap or the
 // address gave it (the server's placeName), else the address, else that it
 // has no name.
-export function placeTitle(place: Place, t: (key: Key) => string): string {
+export function placeTitle(place: NamedPlace, t: (key: Key) => string): string {
   const labelWord = LABEL_KEYS[place.placeLabel] ? t(LABEL_KEYS[place.placeLabel]) : ''
   return (
     (place.isNamedByPerson ? place.placeName.trim() : '') ||
@@ -90,11 +110,11 @@ export function placeTitle(place: Place, t: (key: Key) => string): string {
 
 // placeSubtitle is the second line of a place: when the label word stands as
 // its name, the name OpenStreetMap gave it or its address; otherwise nothing.
-export function placeSubtitle(place: Place, t: (key: Key) => string): string {
+export function placeSubtitle(place: NamedPlace, t: (key: Key) => string): string {
   const title = placeTitle(place, t)
   if (place.isNamedByPerson && place.placeName.trim()) return ''
   if (!LABEL_KEYS[place.placeLabel] || title !== t(LABEL_KEYS[place.placeLabel])) return ''
-  return place.osmName.trim() || place.addressText.trim()
+  return (place.osmName ?? '').trim() || place.addressText.trim()
 }
 
 // dayKeyOf is the calendar day, as the person's own clock counts it, that a
