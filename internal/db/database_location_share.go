@@ -54,6 +54,12 @@ type LocationShareOperation interface {
 	// location:use: they cannot read the location, so they are not told of it
 	// either.
 	ListLocationGrantees(ownerUserId string) ([]*LocationGrantee, error)
+
+	// FilterLocationGrantees answers which of the people named by userIds the
+	// owner's location reaches now, by the conditions of ListLocationGrantees
+	// but for the people given and without needing them to have an agent: one
+	// query for all the maps open on an instance.
+	FilterLocationGrantees(ownerUserId string, userIds []string) ([]string, error)
 }
 
 // LocationSharer is a person whose location reaches the viewer.
@@ -238,12 +244,15 @@ func (self *transaction) ListLocationShares(sharerUserId string) ([]*models.Loca
 // both the viewer and the owner to be in it. The join on the owner's account
 // is what stops a disabled account's location reaching anybody, and the two
 // conditions on the viewer stop it reaching a viewer whose account is disabled
-// or whose roles do not give location:use (@permission).
+// or whose roles do not give location:use (@permission). The owner needs
+// location:use too: an operator who takes it from a role has switched Location
+// off for those people, and what they stored is no longer read by others.
 var reachingLocationSharesQuery = `
 SELECT share.user_id AS owner_user_id, share.share_level AS share_level
 FROM "location_share" share
 JOIN "user" owner_user ON owner_user.id = share.user_id AND owner_user.disabled_at IS NULL
 WHERE share.user_id <> @viewer
+  AND ` + userHasPermissionSQL("share.user_id") + `
   AND (@owner = '' OR share.user_id = @owner)
   AND EXISTS (SELECT 1 FROM "user" viewer_user WHERE viewer_user.id = @viewer AND viewer_user.disabled_at IS NULL)
   AND ` + userHasPermissionSQL("@viewer") + `
@@ -341,19 +350,13 @@ func (self *transaction) ListLocationSharers(viewerUserId string) ([]*LocationSh
 	return sharers, nil
 }
 
-func (self *transaction) ListLocationGrantees(ownerUserId string) ([]*LocationGrantee, error) {
-	if ownerUserId == "" {
-		return []*LocationGrantee{}, nil
-	}
-	// The same conditions as reachingLocationSharesQuery, read from the
-	// owner's side.
-	var rows []struct {
-		UserID   string    `gorm:"column:user_id"`
-		AgentID  string    `gorm:"column:agent_id"`
-		SharedAt time.Time `gorm:"column:shared_at"`
-	}
-	if err := self.tx.Raw(`
-SELECT grantee.user_id AS user_id, grantee_agent.id AS agent_id, min(grantee.shared_at) AS shared_at FROM (
+// locationGranteesSQL selects user_id and shared_at of the people the owner's
+// location (@owner) reaches, by the conditions of reachingLocationSharesQuery
+// read from the owner's side: the owner's and the grantee's accounts are
+// enabled and both have location:use (@permission). A condition on
+// grantee.user_id may follow it.
+const locationGranteesSQL = `
+SELECT grantee.user_id AS user_id, min(grantee.shared_at) AS shared_at FROM (
   SELECT share.grantee_user_id AS user_id, share.created_at AS shared_at
   FROM "location_share" share
   WHERE share.user_id = @owner AND share.grantee_user_id IS NOT NULL
@@ -370,10 +373,25 @@ SELECT grantee.user_id AS user_id, grantee_agent.id AS agent_id, min(grantee.sha
 ) grantee
 JOIN "user" owner_user ON owner_user.id = @owner AND owner_user.disabled_at IS NULL
 JOIN "user" grantee_user ON grantee_user.id = grantee.user_id AND grantee_user.disabled_at IS NULL
-JOIN "agent" grantee_agent ON grantee_agent.user_id = grantee.user_id
-WHERE grantee.user_id <> @owner AND `+userHasPermissionSQL("grantee.user_id")+`
-GROUP BY grantee.user_id, grantee_agent.id
-ORDER BY grantee.user_id ASC`, sql.Named("owner", ownerUserId),
+WHERE grantee.user_id <> @owner AND {GRANTEE_FILTER}
+  AND EXISTS (SELECT 1 FROM "user_group" JOIN "group_role" ON group_role.group_id = user_group.group_id
+		JOIN "role_permission" ON role_permission.role_id = group_role.role_id
+		WHERE user_group.user_id = @owner AND role_permission.permission_key = @permission)
+GROUP BY grantee.user_id`
+
+func (self *transaction) ListLocationGrantees(ownerUserId string) ([]*LocationGrantee, error) {
+	if ownerUserId == "" {
+		return []*LocationGrantee{}, nil
+	}
+	var rows []struct {
+		UserID   string    `gorm:"column:user_id"`
+		AgentID  string    `gorm:"column:agent_id"`
+		SharedAt time.Time `gorm:"column:shared_at"`
+	}
+	if err := self.tx.Raw(`SELECT reached.user_id, grantee_agent.id AS agent_id, reached.shared_at FROM (`+
+		strings.Replace(locationGranteesSQL, "{GRANTEE_FILTER}", userHasPermissionSQL("grantee.user_id"), 1)+`) reached
+JOIN "agent" grantee_agent ON grantee_agent.user_id = reached.user_id
+ORDER BY reached.user_id ASC`, sql.Named("owner", ownerUserId),
 		sql.Named("permission", string(models.PermissionLocationUse))).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -382,6 +400,20 @@ ORDER BY grantee.user_id ASC`, sql.Named("owner", ownerUserId),
 		grantees = append(grantees, &LocationGrantee{UserID: row.UserID, AgentID: row.AgentID, SharedAt: row.SharedAt.In(time.Local)})
 	}
 	return grantees, nil
+}
+
+func (self *transaction) FilterLocationGrantees(ownerUserId string, userIds []string) ([]string, error) {
+	if ownerUserId == "" || len(userIds) == 0 {
+		return []string{}, nil
+	}
+	reached := []string{}
+	if err := self.tx.Raw(`SELECT reached.user_id FROM (`+
+		strings.Replace(locationGranteesSQL, "{GRANTEE_FILTER}", userHasPermissionSQL("grantee.user_id")+` AND grantee.user_id IN @candidates`, 1)+`) reached
+ORDER BY reached.user_id ASC`, sql.Named("owner", ownerUserId), sql.Named("candidates", userIds),
+		sql.Named("permission", string(models.PermissionLocationUse))).Scan(&reached).Error; err != nil {
+		return nil, err
+	}
+	return reached, nil
 }
 
 // endLocationSharesOutsideCircles deletes the location shares that only a

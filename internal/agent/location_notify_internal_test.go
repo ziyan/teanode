@@ -33,12 +33,13 @@ func newLocationNotifyFixture(t *testing.T, shareLevel models.LocationShareLevel
 		if _, err := tx.AddCircleMember(circle.ID, fixture.owner.ID, models.MemberRoleMember, fixture.sharer.ID); err != nil {
 			t.Fatalf("AddCircleMember: %s", err)
 		}
-		// The person who is told can use Location, as the ordinary roles allow.
+		// The person who is told and the one who shares can use Location, as the
+		// ordinary roles allow.
 		role, err := tx.CreateRole(&models.Role{Name: "Location users", Permissions: []models.Permission{models.PermissionLocationUse}})
 		if err != nil {
 			t.Fatalf("CreateRole: %s", err)
 		}
-		if _, err := tx.CreateGroup(&models.Group{Name: "Location users", RoleIDs: []string{role.ID}, UserIDs: []string{fixture.owner.ID}}); err != nil {
+		if _, err := tx.CreateGroup(&models.Group{Name: "Location users", RoleIDs: []string{role.ID}, UserIDs: []string{fixture.owner.ID, fixture.sharer.ID}}); err != nil {
 			t.Fatalf("CreateGroup: %s", err)
 		}
 		if shareLevel != "" {
@@ -266,5 +267,24 @@ func TestAnArrivalBeforeTheShareIsNotToldAndNeitherIsAPersonWithoutThePermission
 	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
 	if fixture.told() != 0 {
 		t.Errorf("a person who can no longer use Location was sent %d notifications", fixture.told())
+	}
+}
+
+// An arrival joined into an earlier visit is stored with the first arrival,
+// hours old; the notice is judged by the time that was reported, so a person
+// who left and came back within minutes is told to have arrived again.
+func TestAnArrivalJoinedIntoAnEarlierVisitIsToldByTheTimeReported(t *testing.T) {
+	fixture := newLocationNotifyFixture(t, models.LocationShareLevelCurrent)
+	visit := fixture.visitTo(t, &models.Place{PlaceName: "Corner Cafe", IsNamedByPerson: true})
+	earlier := time.Now().Add(-3 * time.Hour)
+	visit.ArrivedAt, visit.DepartedAt = &earlier, nil
+
+	fixture.worker.Phones().NotifyPlaceVisit(context.Background(), fixture.sharer.ID, visit, true)
+	if fixture.told() != 0 {
+		t.Fatalf("judged by the stored arrival it is old: %d notifications", fixture.told())
+	}
+	fixture.worker.Phones().NotifyPlaceVisitAt(context.Background(), fixture.sharer.ID, visit, true, time.Now())
+	if fixture.told() != 1 {
+		t.Errorf("the arrival just reported was sent %d notifications, not one", fixture.told())
 	}
 }

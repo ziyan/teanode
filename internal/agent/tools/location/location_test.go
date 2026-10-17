@@ -119,7 +119,7 @@ func TestNowAnswersWhatIsKeptWhereNobodyCanBeAsked(t *testing.T) {
 	if position["latitude_degrees"] != 40.0005 || position["age"] != "4 minutes ago" || position["reported_by"] != "phone" {
 		t.Errorf("the position and how old it is: %v", position)
 	}
-	if at := answer["at"].(map[string]any); at["place_name"] != "Maple Park" || at["is_in_progress"] != true {
+	if at := answer["at"].(map[string]any); at["place_display_name"] != "Maple Park" || at["is_in_progress"] != true {
 		t.Errorf("the place they are at: %v", at)
 	}
 	if !result.Untrusted {
@@ -164,7 +164,7 @@ func TestNowAsksWhereItCanAndFallsBack(t *testing.T) {
 // Visits are read in the person's zone and paged.
 func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	operations := &routing{answers: map[string]string{"ListLocationVisits": `{"nextOffset":20,"placeVisits":[
-		{"arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T10:15:00Z","durationSeconds":2700,"place":{"id":"p1","placeName":"Maple Park","placeLabel":"home"}},
+		{"arrivedAt":"2026-10-17T09:30:00Z","departedAt":"2026-10-17T10:15:00Z","durationSeconds":2700,"place":{"id":"p1","placeName":"Maple Park","osmName":"Maple Park","placeLabel":"home"}},
 		{"arrivedAt":"2026-10-17T11:00:00Z","place":{"id":"p2","placeName":"Elm Library"}}]}`}}
 	answer, result, err := act(t, runOf(operations), "visits", `{"from":"2026-10-17","until":"2026-10-19","place_label":"Home","limit":20}`, false)
 	if err != nil {
@@ -172,7 +172,7 @@ func TestVisitsAreReadInTheirZoneAndPaged(t *testing.T) {
 	}
 	visits := answer["visits"].([]any)
 	first, second := visits[0].(map[string]any), visits[1].(map[string]any)
-	if first["place_name"] != "Maple Park" || first["place_label"] != "home" || first["visit_duration"] != "45 minutes" || first["arrived"] != "2026-10-17 09:30" {
+	if first["place_display_name"] != "Home" || first["osm_name"] != "Maple Park" || first["place_label"] != "home" || first["visit_duration"] != "45 minutes" || first["arrived"] != "2026-10-17 09:30" {
 		t.Errorf("a finished visit: %v", first)
 	}
 	if second["left"] != "still there" {
@@ -258,7 +258,7 @@ func TestWritesAndTheirRisks(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := operations.sent["SavePlace"]
-	if answer["place_name"] != "Grandma's" || sent["placeName"] != "Grandma's" || sent["placeLabel"] != "family" || sent["radiusMeters"] != nil {
+	if answer["place_display_name"] != "Grandma's" || sent["placeName"] != "Grandma's" || sent["placeLabel"] != "family" || sent["radiusMeters"] != nil {
 		t.Errorf("only what was given: %v %v", answer, sent)
 	}
 	if _, _, err := act(t, runOf(operations), "save_place", `{"place_name":"Nowhere"}`, false); err == nil {
@@ -427,5 +427,22 @@ func TestPagingIsPassedOnAsGiven(t *testing.T) {
 	}
 	if sent := operations.sent["SearchPlaces"]; sent["limitCount"] != 0 {
 		t.Errorf("a number the API refuses is left to it to refuse: %v", sent)
+	}
+}
+
+// A place is called by the name the person gave it, else by its label, else by
+// what the map calls it, else by its address, else by its city.
+func TestAPlaceIsCalledByTheNameThePersonGaveThenTheLabelThenTheMap(t *testing.T) {
+	cases := map[string]placeData{
+		"Grandma's":    {PlaceName: "Grandma's", IsNamedByPerson: true, PlaceLabel: "family", OSMName: "Elm Court"},
+		"Family":       {PlaceName: "Elm Court", PlaceLabel: "family", OSMName: "Elm Court"},
+		"Elm Court":    {PlaceName: "Elm Court", OSMName: "Elm Court", AddressText: "1 Elm Street"},
+		"1 Elm Street": {PlaceName: "Exampleton", AddressText: "1 Elm Street"},
+		"Exampleton":   {PlaceName: "Exampleton"},
+	}
+	for expected, place := range cases {
+		if got := placeDisplayName(&place); got != expected {
+			t.Errorf("%+v is called %q, expected %q", place, got, expected)
+		}
 	}
 }

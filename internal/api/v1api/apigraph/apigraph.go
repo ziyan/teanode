@@ -85,6 +85,11 @@ type graph struct {
 	locationEvents locationEventHub
 	mapLimitsOnce  sync.Once
 	mapLimitsValue *ratelimit.Registry
+
+	// locationLimits are what one account may ask of the place provider and
+	// how fast it may make places (location_limits.go).
+	locationLimitsOnce  sync.Once
+	locationLimitsValue *locationRateLimits
 }
 
 // New builds the GraphQL component, generating the schema by reflection over

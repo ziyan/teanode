@@ -1172,14 +1172,23 @@ func (self *graph) keepBrowserLocation(ctx context.Context, principal *api.Princ
 		// A browser's clock a little ahead of this one's is the same moment.
 		measuredAt = now
 	}
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		_, err := tx.InsertLocationPoints(principal.User.ID, []*models.LocationPoint{{
+	newPointCount := 0
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, []*models.LocationPoint{{
 			LatitudeDegrees: answer.LatitudeDegrees, LongitudeDegrees: answer.LongitudeDegrees, AccuracyMeters: answer.AccuracyMeters,
 			MeasuredAt: measuredAt, LocationSource: models.LocationSourceBrowser,
 		}})
 		return err
 	}); err != nil {
 		log.Warningf("cannot keep the location the browser gave: %s", err)
+		return
+	}
+	// Told once the position is stored, as a phone's report is, so that the
+	// maps of the people it is shared with move now and not at their next read.
+	if newPointCount > 0 {
+		if err := self.database.NotifyLocationEvent(principal.User.ID); err != nil {
+			log.Warningf("cannot tell the listeners that a location changed: %s", err)
+		}
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 // is made of and no more.
 const (
 	pointFields = `latitudeDegrees longitudeDegrees accuracyMeters measuredAt locationSource`
-	placeFields = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmCategory addressText visitCount lastVisitAt`
+	placeFields = `id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText visitCount lastVisitAt`
 	visitFields = `arrivedAt departedAt durationSeconds place { ` + placeFields + ` }`
 	foundFields = `placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId`
 
@@ -77,6 +77,7 @@ type placeData struct {
 	LatitudeDegrees  float64    `json:"latitudeDegrees"`
 	LongitudeDegrees float64    `json:"longitudeDegrees"`
 	RadiusMeters     float64    `json:"radiusMeters"`
+	OSMName          string     `json:"osmName"`
 	OSMCategory      string     `json:"osmCategory"`
 	AddressText      string     `json:"addressText"`
 	VisitCount       int        `json:"visitCount"`
@@ -243,12 +244,34 @@ func (self *scope) position(point *pointData) map[string]any {
 	}
 }
 
-// placeRow is a place as the model reads it. The keys are the ones the actions
-// that take a place take.
+// placeDisplayName is what to call a place: the name the person gave it; else,
+// for a place they labeled, the label word (Home, Work); else the name
+// OpenStreetMap gave it, then its address, then the name it has until it is
+// named (its city).
+func placeDisplayName(place *placeData) string {
+	switch {
+	case place.IsNamedByPerson && place.PlaceName != "":
+		return place.PlaceName
+	case place.PlaceLabel != "":
+		return strings.ToUpper(place.PlaceLabel[:1]) + place.PlaceLabel[1:]
+	case place.OSMName != "":
+		return place.OSMName
+	case place.AddressText != "":
+		return place.AddressText
+	}
+	return place.PlaceName
+}
+
+// placeRow is a place as the model reads it. place_display_name is what to call
+// it; place_label and osm_name are the pieces it was chosen from, and place_id
+// is what the actions that take a place take.
 func (self *scope) placeRow(place *placeData) map[string]any {
-	row := map[string]any{"place_id": place.ID, "place_name": place.PlaceName}
+	row := map[string]any{"place_id": place.ID, "place_display_name": placeDisplayName(place)}
 	if place.PlaceLabel != "" {
 		row["place_label"] = place.PlaceLabel
+	}
+	if place.OSMName != "" {
+		row["osm_name"] = place.OSMName
 	}
 	if place.AddressText != "" {
 		row["address_text"] = place.AddressText
@@ -982,7 +1005,7 @@ func placeNameOf(ctx context.Context, placeId string) string {
 	}
 	for _, place := range result.ListPlaces.Places {
 		if place.ID == placeId {
-			return place.PlaceName
+			return placeDisplayName(&place)
 		}
 	}
 	return ""

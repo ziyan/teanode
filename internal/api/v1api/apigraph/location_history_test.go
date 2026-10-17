@@ -81,13 +81,16 @@ func TestAReportIsOneVisitWhenSentInPieces(t *testing.T) {
 	world := newLocationWorld(t)
 	arrival := ago(40 * time.Minute)
 	departure := ago(10 * time.Minute)
+	// One time for the point of both reports: a second call to ago can land in
+	// the next second, and the resent position would be a different one.
+	measuredAt := ago(30 * time.Minute)
 
-	first := world.report(t, world.ada, pointInput(40.0005, -75.0003, ago(30*time.Minute)), visitInput("k1", 40.0005, -75.0003, arrival, ""))
+	first := world.report(t, world.ada, pointInput(40.0005, -75.0003, measuredAt), visitInput("k1", 40.0005, -75.0003, arrival, ""))
 	if first["newPointCount"] != float64(1) || first["newVisitCount"] != float64(1) {
 		t.Fatalf("the first report: %v", first)
 	}
-	again := world.report(t, world.ada, pointInput(40.0005, -75.0003, ago(30*time.Minute)), visitInput("k1", 40.0005, -75.0003, arrival, ""))
-	if again["newPointCount"] != float64(0) || again["newVisitCount"] != float64(0) {
+	again := world.report(t, world.ada, pointInput(40.0005, -75.0003, measuredAt), visitInput("k1", 40.0005, -75.0003, arrival, ""))
+	if again["newPointCount"] != float64(0) || again["newVisitCount"] != float64(0) || again["updatedVisitCount"] != float64(0) {
 		t.Errorf("sent again it adds nothing: %v", again)
 	}
 

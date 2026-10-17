@@ -45,15 +45,20 @@ func (self *fakeProvider) Search(context.Context, string, float64, float64, floa
 func TestPlacesThatWaitAreNamed(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	t.Cleanup(release)
-	var user *models.User
+	// Two people with two places each: a run takes only a few of one
+	// person's places, and only for people who may use Location.
+	var users [2]*models.User
 	var placeIds [4]string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		var err error
-		if user, err = tx.CreateUser(&models.User{Username: "place-job-person"}); err != nil {
-			t.Fatalf("CreateUser: %s", err)
+		for index, username := range []string{"place-job-person", "place-job-other"} {
+			var err error
+			if users[index], err = tx.CreateUser(&models.User{Username: username}); err != nil {
+				t.Fatalf("CreateUser: %s", err)
+			}
+			dbtest.GrantPermission(t, tx, users[index].ID, models.PermissionLocationUse)
 		}
 		for index, latitude := range []float64{10, 20, 30, 40} {
-			made, err := tx.CreatePlace(user.ID, &models.Place{PlaceName: "Somewhere, Country", LatitudeDegrees: latitude, LongitudeDegrees: 5})
+			made, err := tx.CreatePlace(users[index/2].ID, &models.Place{PlaceName: "Somewhere, Country", LatitudeDegrees: latitude, LongitudeDegrees: 5})
 			if err != nil {
 				t.Fatalf("CreatePlace: %s", err)
 			}
@@ -70,19 +75,19 @@ func TestPlacesThatWaitAreNamed(t *testing.T) {
 		t.Errorf("each place was asked about once: %v", provider.asked)
 	}
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
-		named, err := tx.GetPlace(user.ID, placeIds[0])
+		named, err := tx.GetPlace(users[0].ID, placeIds[0])
 		if err != nil || named.PlaceName != "Maple Park" || named.NamedAt == nil || named.OSMID != 7 || named.OSMCategory != "leisure=park" {
 			t.Errorf("named from the map: %+v %v", named, err)
 		}
-		unknown, err := tx.GetPlace(user.ID, placeIds[1])
+		unknown, err := tx.GetPlace(users[0].ID, placeIds[1])
 		if err != nil || unknown.NamedAt == nil || unknown.PlaceName != "Somewhere, Country" {
 			t.Errorf("known to the map as nothing: it keeps its city and is not asked again: %+v %v", unknown, err)
 		}
-		failed, err := tx.GetPlace(user.ID, placeIds[2])
+		failed, err := tx.GetPlace(users[1].ID, placeIds[2])
 		if err != nil || failed.NamedAt != nil || failed.NamingErrorMessage != "could not reach the place provider" {
 			t.Errorf("a failure is recorded on the place as a sentence that names no address, and it waits: %+v %v", failed, err)
 		}
-		faraway, err := tx.GetPlace(user.ID, placeIds[3])
+		faraway, err := tx.GetPlace(users[1].ID, placeIds[3])
 		if err != nil || faraway.NamedAt == nil || faraway.PlaceName != "Somewhere, Country" || faraway.OSMID != 0 || faraway.OSMName != "" {
 			t.Errorf("an answer farther than the place's radius is nothing known, and the place is not asked about again: %+v %v", faraway, err)
 		}

@@ -32,13 +32,10 @@ const (
 	// A day ends once, so an hour is soon enough.
 	locationJournalEvery = time.Hour
 
-	// locationJournalFirstDays is how many days back the first run goes.
-	locationJournalFirstDays = 14
-
-	// locationJournalRewriteDays is how many days before the newest written
-	// day a run looks again. A departure can be reported a day or two late,
-	// when the phone had no signal, and that changes the day's words.
-	locationJournalRewriteDays = 3
+	// locationJournalDays is how many days back every run looks. A departure
+	// can be reported a day or two late, when the phone had no signal, and an
+	// erase, a forgotten place or a new name changes the words of older days.
+	locationJournalDays = 14
 
 	// locationJournalVisitsMost is how many visits one day lists. A day with
 	// more is a position flickering between two places, and the rest add
@@ -157,8 +154,8 @@ func openVisitEnds(visits []*models.PlaceVisit) map[string]time.Time {
 type locationVisitSpan struct {
 	visit               *models.PlaceVisit
 	start, end          time.Time
-	beganEarlier        bool
-	continuesNextDay    bool
+	doesBeginEarlier    bool
+	doesContinueNextDay bool
 	isArrivalUnreported bool
 }
 
@@ -197,10 +194,10 @@ func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time)
 			continue
 		}
 		if span.start.Before(dayStart) {
-			span.start, span.beganEarlier = dayStart, true
+			span.start, span.doesBeginEarlier = dayStart, true
 		}
 		if span.end.After(dayEnd) || (visit.DepartedAt == nil && !isFollowed) {
-			span.end, span.continuesNextDay = dayEnd, true
+			span.end, span.doesContinueNextDay = dayEnd, true
 		}
 		spans = append(spans, span)
 	}
@@ -280,11 +277,11 @@ func locationVisitLine(span locationVisitSpan, dayEnd time.Time) string {
 		}
 	}
 	switch {
-	case span.beganEarlier && span.continuesNextDay:
+	case span.doesBeginEarlier && span.doesContinueNextDay:
 		line += ", there the whole day"
-	case span.beganEarlier:
+	case span.doesBeginEarlier:
 		line += ", there since the day before"
-	case span.continuesNextDay:
+	case span.doesContinueNextDay:
 		line += ", still there at midnight"
 	}
 	return line
@@ -313,18 +310,12 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		if !source.Enabled {
 			return nil
 		}
-		from := today.AddDate(0, 0, -locationJournalFirstDays)
-		latest, err := tx.GetLatestLocationDayStart(source.ID)
-		if err != nil {
-			return err
-		}
-		if latest != nil {
-			latestLocal := latest.In(zone)
-			rewriteFrom := time.Date(latestLocal.Year(), latestLocal.Month(), latestLocal.Day()-locationJournalRewriteDays, 0, 0, 0, 0, zone)
-			if rewriteFrom.After(from) {
-				from = rewriteFrom
-			}
-		}
+		// Every run looks at all of the days it covers, not only the newest:
+		// an erase of part of a day or the forgetting of a place deletes the
+		// day's document, and a rename or a label changes what it says, and
+		// each of those has to be written again from what is left. A day whose
+		// text is unchanged is not written.
+		from := today.AddDate(0, 0, -locationJournalDays)
 		var visits []*models.PlaceVisit
 		for offset := 0; ; {
 			page, nextOffset, err := tx.ListPlaceVisits(owner.ID, db.PlaceVisitFilter{From: &from, Until: &today, Offset: offset, LimitCount: 200})

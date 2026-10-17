@@ -124,15 +124,30 @@ func PlaceVisitBody(place *models.Place, isArrival bool) string {
 // to a circle that is the share's own date. The sending is in the background,
 // as NotifyPhones is.
 func (self *PhoneNotifier) NotifyPlaceVisit(ctx context.Context, ownerUserId string, visit *models.PlaceVisit, isArrival bool) {
-	if visit == nil || ownerUserId == "" {
+	if visit == nil {
 		return
 	}
 	happenedAt := visit.DepartedAt
 	if isArrival {
 		happenedAt = visit.ArrivedAt
 	}
+	if happenedAt == nil {
+		return
+	}
+	self.NotifyPlaceVisitAt(ctx, ownerUserId, visit, isArrival, *happenedAt)
+}
+
+// NotifyPlaceVisitAt is NotifyPlaceVisit for an arrival or a departure that
+// happened at a time of its own. A visit that was joined into an earlier one
+// is stored with the first arrival, hours old, though the person arrived just
+// now, so the window and the date of the share are tested against the time
+// that was reported.
+func (self *PhoneNotifier) NotifyPlaceVisitAt(ctx context.Context, ownerUserId string, visit *models.PlaceVisit, isArrival bool, happenedAt time.Time) {
+	if visit == nil || ownerUserId == "" {
+		return
+	}
 	now := time.Now()
-	if happenedAt == nil || now.Sub(*happenedAt) > placeVisitNoticeWindow {
+	if now.Sub(happenedAt) > placeVisitNoticeWindow {
 		return
 	}
 	place := visit.Place

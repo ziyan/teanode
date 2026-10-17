@@ -84,7 +84,13 @@ func nominatimServer(t *testing.T, requests *[]string) *httptest.Server {
 			case query.Get("lat") == "10.500000" && query.Get("layer") == "poi":
 				say(writer, `{"osm_type":"way","osm_id":4242,"lat":"10.500100","lon":"20.500100","category":"leisure","type":"park","name":"Example Park","display_name":"Example Park, Sample Street, Exampleton, Testland"}`)
 			case query.Get("lat") == "11.000000" && query.Get("layer") == "address":
-				say(writer, `{"osm_type":"node","osm_id":77,"lat":"11.000000","lon":"21.000000","category":"place","type":"house","name":"","display_name":"12, Sample Street, Exampleton, Testland"}`)
+				say(writer, `{"osm_type":"node","osm_id":77,"lat":"11.000000","lon":"21.000000","category":"place","type":"house","name":"","display_name":"12, Sample Street, Exampleton, Testland","address":{"house_number":"12","road":"Sample Street","suburb":"Old Quarter","city":"Exampleton"}}`)
+			case query.Get("lat") == "14.000000" && query.Get("layer") == "poi":
+				say(writer, `{"osm_type":"node","osm_id":88,"lat":"14.000000","lon":"24.000000","category":"highway","type":"elevator","name":"Example Avenue","display_name":"Example Avenue, Exampleton, Testland"}`)
+			case query.Get("lat") == "14.000000" && query.Get("layer") == "address":
+				say(writer, `{"osm_type":"way","osm_id":99,"lat":"14.000000","lon":"24.000000","category":"highway","type":"residential","name":"","display_name":"6, Rue Example, Old Quarter, Exampleton, Testland","address":{"house_number":"6","road":"Rue Example","suburb":"Old Quarter","city":"Exampleton"}}`)
+			case query.Get("lat") == "15.000000" && query.Get("layer") == "address":
+				say(writer, `{"osm_type":"node","osm_id":55,"lat":"15.000000","lon":"25.000000","category":"place","type":"house","name":"","display_name":"7, Exampleton, Testland","address":{"suburb":"Old Quarter","city":"Exampleton"}}`)
 			case query.Get("lat") == "12.000000" && query.Get("layer") == "address":
 				say(writer, `{"error":"Unable to geocode"}`)
 			case query.Get("lat") == "13.000000":
@@ -142,7 +148,7 @@ func TestNominatimFallsBackToTheAddressAndNamesAHouseByItsStreet(t *testing.T) {
 	if err != nil || found == nil {
 		t.Fatalf("Name: %v, %v", found, err)
 	}
-	if found.PlaceName != "12" || found.OSMType != "node" || found.OSMCategory != "place=house" || !strings.HasPrefix(found.AddressText, "12, Sample Street") {
+	if found.PlaceName != "12 Sample Street" || found.OSMType != "node" || found.OSMCategory != "place=house" || !strings.HasPrefix(found.AddressText, "12, Sample Street") {
 		t.Errorf("the house came back as %+v", found)
 	}
 	if len(requests) != 2 || !strings.Contains(requests[0], "layer=poi") || !strings.Contains(requests[1], "layer=address") {
@@ -153,6 +159,35 @@ func TestNominatimFallsBackToTheAddressAndNamesAHouseByItsStreet(t *testing.T) {
 	found, err = provider.Name(context.Background(), 12, 22)
 	if found != nil || err != nil {
 		t.Errorf("a point with nothing there is %v, %v", found, err)
+	}
+}
+
+// An elevator or a road on the poi layer is not a place a person goes to: the
+// address answer names the point, by its number and road and never by the
+// number alone.
+func TestNominatimDoesNotNameAPointAfterAnElevatorOrAHouseNumber(t *testing.T) {
+	t.Parallel()
+
+	var requests []string
+	server := nominatimServer(t, &requests)
+	defer server.Close()
+	provider := &nominatimProvider{requester: newTestRequester(server)}
+
+	found, err := provider.Name(context.Background(), 14, 24)
+	if err != nil || found == nil {
+		t.Fatalf("Name: %v, %v", found, err)
+	}
+	if found.PlaceName != "6 Rue Example" || found.OSMID != 99 {
+		t.Errorf("the address names it, not the elevator: %+v", found)
+	}
+	if len(requests) != 2 || !strings.Contains(requests[1], "layer=address") || !strings.Contains(requests[1], "addressdetails=1") {
+		t.Errorf("the address was asked for with its parts: %v", requests)
+	}
+
+	// With no road the neighborhood is the name; with a name of its own, that.
+	found, err = provider.Name(context.Background(), 15, 25)
+	if err != nil || found == nil || found.PlaceName != "Old Quarter" {
+		t.Errorf("no number and no road: %+v, %v", found, err)
 	}
 }
 
@@ -258,6 +293,11 @@ func photonServer(t *testing.T, requests *[]string) *httptest.Server {
 		mutex.Unlock()
 		switch request.URL.Path {
 		case "/reverse":
+			if request.URL.Query().Get("lat") == "14.000000" {
+				say(writer, `{"type":"FeatureCollection","features":[
+					{"type":"Feature","geometry":{"type":"Point","coordinates":[24,14]},"properties":{"osm_type":"N","osm_id":88,"osm_key":"highway","osm_value":"elevator","name":"Example Avenue","street":"Rue Example","housenumber":"6","city":"Exampleton"}}]}`)
+				return
+			}
 			if request.URL.Query().Get("lat") == "12.000000" {
 				say(writer, `{"type":"FeatureCollection","features":[]}`)
 				return
@@ -294,6 +334,12 @@ func TestPhotonNamesAPoint(t *testing.T) {
 	found, err = provider.Name(context.Background(), 12, 22)
 	if found != nil || err != nil {
 		t.Errorf("a point with nothing there is %v, %v", found, err)
+	}
+
+	// Only an elevator there: named by the address, not by the elevator.
+	found, err = provider.Name(context.Background(), 14, 24)
+	if err != nil || found == nil || found.PlaceName != "6 Rue Example" {
+		t.Errorf("an elevator is the address: %+v, %v", found, err)
 	}
 }
 

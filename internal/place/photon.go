@@ -32,6 +32,8 @@ type photonFeature struct {
 		Street      string `json:"street"`
 		HouseNumber string `json:"housenumber"`
 		City        string `json:"city"`
+		District    string `json:"district"`
+		Locality    string `json:"locality"`
 		Country     string `json:"country"`
 	} `json:"properties"`
 }
@@ -68,15 +70,31 @@ func (self *photonFeature) toFound() *Found {
 	if properties.OSMKey != "" && properties.OSMValue != "" {
 		found.OSMCategory = properties.OSMKey + "=" + properties.OSMValue
 	}
-	// A house has no name, only its address, whose first part is its number
-	// and street.
+	// A house has no name, only its address: its number and street, then the
+	// neighborhood, then the city.
 	if found.PlaceName == "" {
-		found.PlaceName = street
-	}
-	if found.PlaceName == "" {
-		found.PlaceName = properties.City
+		found.PlaceName = addressName(properties.HouseNumber, properties.Street, firstText(properties.Locality, properties.District), properties.City)
 	}
 	return found
+}
+
+// firstText is the first of the texts that is not empty.
+func firstText(texts ...string) string {
+	for _, text := range texts {
+		if strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
+}
+
+// toAddressFound is a feature that is not a point of interest (a road, a stop,
+// an elevator) as the address it stands at: named by the address and not by
+// what it is.
+func (self *photonFeature) toAddressFound() *Found {
+	cleared := *self
+	cleared.Properties.Name = ""
+	return cleared.toFound()
 }
 
 func (self *photonAnswer) found() []*Found {
@@ -98,11 +116,28 @@ func (self *photonProvider) Name(ctx context.Context, latitudeDegrees, longitude
 	}, &answer); err != nil {
 		return nil, err
 	}
-	for _, found := range answer.found() {
-		found.DistanceMeters = DistanceMeters(latitudeDegrees, longitudeDegrees, found.LatitudeDegrees, found.LongitudeDegrees)
-		return found, nil
+	// The first feature that is a point of interest. A road, a stop or an
+	// elevator is not one, and when there is nothing else the first of them
+	// stands for the address.
+	var found *Found
+	for index := range answer.Features {
+		feature := &answer.Features[index]
+		if isNotAPlace(feature.Properties.OSMKey + "=" + feature.Properties.OSMValue) {
+			if found == nil {
+				found = feature.toAddressFound()
+			}
+			continue
+		}
+		if candidate := feature.toFound(); candidate != nil {
+			found = candidate
+			break
+		}
 	}
-	return nil, nil
+	if found == nil {
+		return nil, nil
+	}
+	found.DistanceMeters = DistanceMeters(latitudeDegrees, longitudeDegrees, found.LatitudeDegrees, found.LongitudeDegrees)
+	return found, nil
 }
 
 // Search matches the words, leaning toward the point, and keeps what is within

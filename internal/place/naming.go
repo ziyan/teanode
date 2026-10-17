@@ -71,7 +71,9 @@ func NameClaimed(ctx context.Context, database db.Database, provider Provider, c
 		errorMessage = FailureSentence(askErr)
 	case found != nil:
 		distanceMeters := DistanceMeters(claimed.LatitudeDegrees, claimed.LongitudeDegrees, found.LatitudeDegrees, found.LongitudeDegrees)
-		if distanceMeters <= claimed.RadiusMeters+namingDistanceMarginMeters {
+		// An area the provider chose for the point (a park, a campus) is
+		// positioned at its middle, which can be far from a point inside it.
+		if found.IsChosenForPoint || distanceMeters <= claimed.RadiusMeters+namingDistanceMarginMeters {
 			named = &db.NamedPlace{
 				PlaceName: found.PlaceName, OSMType: found.OSMType, OSMID: found.OSMID,
 				OSMCategory: found.OSMCategory, AddressText: found.AddressText,
@@ -79,7 +81,7 @@ func NameClaimed(ctx context.Context, database db.Database, provider Provider, c
 		}
 	}
 	if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-		return tx.SetPlaceNamed(claimed.ID, named, errorMessage, time.Now())
+		return tx.SetPlaceNamed(claimed.ID, claimed.NamingClaimedAt, named, errorMessage, time.Now())
 	}); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			// Forgotten while it was being asked about.

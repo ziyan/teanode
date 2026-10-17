@@ -20,7 +20,7 @@ type LocationPoint struct {
 	LocationSource       string    `json:"locationSource"`
 }
 
-// Place is a spot with a name and a radius, belonging to one person.
+// Place is a named place with a radius, belonging to one person.
 type Place struct {
 	ID                 string     `json:"id"`
 	UserID             string     `json:"userId"`
@@ -391,7 +391,7 @@ func SavePlace(ctx context.Context, connection *Client, change PlaceChange) (*Pl
 	return result.SavePlace, nil
 }
 
-// ForgetPlace deletes a place and every visit at it.
+// ForgetPlace deletes a place and every visit to it.
 func ForgetPlace(ctx context.Context, connection *Client, placeId string) error {
 	var result struct {
 		ForgetPlace bool `json:"ForgetPlace"`

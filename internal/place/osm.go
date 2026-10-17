@@ -38,7 +38,10 @@ const maximumResponseBytes = 4 << 20
 
 // Found is a named place on the map: what a provider answered for a point or
 // for a search. DistanceMeters is its distance from the point that was asked
-// about, for the answers that have one.
+// about, for the answers that have one. IsChosenForPoint is true when the
+// provider picked this object as the one that holds the point (Nominatim's
+// areas), so that its distance from the middle of a park or a campus says
+// nothing about whether the point is in it.
 type Found struct {
 	PlaceName        string
 	OSMType          string
@@ -48,6 +51,33 @@ type Found struct {
 	LatitudeDegrees  float64
 	LongitudeDegrees float64
 	DistanceMeters   float64
+	IsChosenForPoint bool
+}
+
+// notAPlaceCategories are the OpenStreetMap keys of things a person does not go
+// to: a road, a rail line or a stop on it, a gate, a pole, an elevator or a
+// pipe. A reverse answer with one of them is not a point of interest.
+var notAPlaceCategories = map[string]bool{
+	"highway": true, "railway": true, "public_transport": true, "barrier": true, "power": true, "man_made": true,
+}
+
+// isNotAPlace says whether an OpenStreetMap category ("key=value") is one of
+// those a person does not go to, or a bare house (which is an address).
+func isNotAPlace(osmCategory string) bool {
+	key, _, _ := strings.Cut(osmCategory, "=")
+	return notAPlaceCategories[key] || osmCategory == "place=house"
+}
+
+// addressName is the name for a place the map has no name for, built from its
+// address: the house number and road, then the road, then the neighborhood or
+// suburb, then the city. Empty when no part is known.
+func addressName(houseNumber, road, neighborhood, city string) string {
+	for _, candidate := range []string{strings.TrimSpace(houseNumber + " " + road), road, neighborhood, city} {
+		if candidate = strings.TrimSpace(candidate); candidate != "" {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // Provider names points and finds places from OpenStreetMap data. Every call

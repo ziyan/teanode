@@ -12,7 +12,7 @@ type LocationLockOperation interface {
 	// lock on one person's location records. A phone that sends a batch again
 	// while the first send is still being stored, and a check-in at the same
 	// moment as a report, would otherwise both find no visit for a key or no
-	// place at a spot, and each make one.
+	// place at one position, and each make one.
 	LockLocation(userId string) error
 }
 

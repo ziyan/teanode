@@ -278,7 +278,7 @@ free of project-specific assumptions:
     clamav      optional virus scanning
     spamc       optional SpamAssassin scoring
     geoip       optional sender geolocation
-    place       names for the spots people go to, from OpenStreetMap or the cities table
+    place       names for the places people go to, from OpenStreetMap or the cities table
     dropper     connection drop list
     graphapi    GraphQL schema generation from Go types
     atomicfile  write-to-temp-then-rename, used for every sensitive file

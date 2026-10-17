@@ -125,9 +125,10 @@ type LocationOperation interface {
 	EraseLocationHistory(userId string, from, until *time.Time) (pointCount, visitCount, placeCount int, err error)
 
 	// ClaimPlacesToName takes up to limitCount places that wait for a name and
-	// that no instance has taken in the last ten minutes, oldest first, and
-	// marks them taken, so that two instances do not ask a provider about the
-	// same place.
+	// that no instance has taken in the last ten minutes, oldest first and at
+	// most a few of each person's, and marks them taken, so that two instances
+	// do not ask a provider about the same place. Places of a person who may
+	// not use Location are left alone.
 	ClaimPlacesToName(limitCount int, now time.Time) ([]*models.Place, error)
 
 	// ClaimPlaceToName takes one place that waits for a name, for the caller
@@ -142,8 +143,11 @@ type LocationOperation interface {
 	// claimed again once its claim is old. Without one, found is what the
 	// provider knows about the position, or nil when it knows nothing, and either
 	// way the place is named from now on. A name the person gave is never
-	// replaced. ErrNotFound when there is no such place.
-	SetPlaceNamed(placeId string, found *NamedPlace, errorMessage string, now time.Time) error
+	// replaced. ErrNotFound when there is no such place. claimedAt is the claim
+	// the answer was asked under (Place.NamingClaimedAt); the answer is dropped
+	// if the place has been moved, and so lost that claim, since it is about
+	// where the place used to be. Nil skips that check.
+	SetPlaceNamed(placeId string, claimedAt *time.Time, found *NamedPlace, errorMessage string, now time.Time) error
 }
 
 // PlaceChanges is what a person may change about a place. A nil field is left
@@ -229,14 +233,21 @@ type NamedPlace struct {
 }
 
 const (
-	// placeListDefaultLimit and placeListMaximumLimit bound a page of places
+	// PlacePageDefault and PlacePageMost bound a page of places
 	// or of visits when the caller names no limit or too large a one.
-	placeListDefaultLimit = 50
-	placeListMaximumLimit = 200
+	PlacePageDefault = 50
+	PlacePageMost    = 200
 
 	// placeVisitJoinGap is how close two Visits to one place must be to be one:
 	// iOS sometimes reports a visit as two, with a few minutes between.
 	placeVisitJoinGap = 10 * time.Minute
+
+	// placeNamingPerPersonMost is how many of one person's places the naming
+	// job takes in a run.
+	placeNamingPerPersonMost = 3
+
+	// PlaceCountMost is how many places one person may have.
+	PlaceCountMost = 5000
 
 	// placeNamingClaimDuration is how long a place taken for naming is left
 	// alone before another instance may take it.
@@ -411,9 +422,9 @@ func cleanPlaceText(text string, limit int) string {
 // may be.
 func pageLimit(limitCount int) int {
 	if limitCount <= 0 {
-		return placeListDefaultLimit
+		return PlacePageDefault
 	}
-	return min(limitCount, placeListMaximumLimit)
+	return min(limitCount, PlacePageMost)
 }
 
 // placeDistanceSQL is the great circle distance in meters between a place's
@@ -531,6 +542,13 @@ func (self *transaction) CreatePlace(userId string, place *models.Place) (*model
 	}
 	if utf8.RuneCountInString(place.PlaceName) > placeNameMaximumLength {
 		return nil, fmt.Errorf("%w: a name is at most %d characters", ErrInvalidArguments, placeNameMaximumLength)
+	}
+	var placeCount int64
+	if err := self.tx.Model(&placeModel{}).Where("\"user_id\" = ?", userId).Count(&placeCount).Error; err != nil {
+		return nil, err
+	}
+	if placeCount >= PlaceCountMost {
+		return nil, fmt.Errorf("%w: a person may have at most %d places; forget some first", ErrInvalidArguments, PlaceCountMost)
 	}
 	now := time.Now()
 	row := &placeModel{
@@ -882,9 +900,13 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 		// still open elsewhere, whose departure the phone never delivered, is
 		// over. Without this it would stay open for ever and count as time
 		// spent in two places at once.
+		// A visit open at this same place is ended too, and the join below
+		// makes the two one visit again, open if this one is: of two visits
+		// that end at the same moment, the one still going is the later.
 		if kept.ArrivedAt != nil {
 			if err := self.tx.Model(&placeVisitModel{}).
-				Where("\"user_id\" = ? AND \"id\" <> ? AND \"departed_at\" IS NULL AND \"arrived_at\" <= ?", userId, kept.ID, *kept.ArrivedAt).
+				Where("\"user_id\" = ? AND \"id\" <> ? AND \"departed_at\" IS NULL AND \"arrived_at\" <= ?",
+					userId, kept.ID, *kept.ArrivedAt).
 				Updates(map[string]any{"departed_at": *kept.ArrivedAt, "updated_at": now}).Error; err != nil {
 				return false, err
 			}
@@ -933,6 +955,26 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 		}
 	}
 
+	// Arrivals can be delivered out of order: a visit that has an arrival and
+	// no departure while the person arrived somewhere else after it is over at
+	// the earliest such arrival.
+	if kept.ArrivedAt != nil && kept.DepartedAt == nil {
+		var laterArrivals []time.Time
+		if err := self.tx.Model(&placeVisitModel{}).
+			Where("\"user_id\" = ? AND \"id\" <> ? AND \"place_id\" <> ? AND \"arrived_at\" > ?", userId, kept.ID, kept.PlaceID, *kept.ArrivedAt).
+			Order("\"arrived_at\" ASC").Limit(1).Pluck("arrived_at", &laterArrivals).Error; err != nil {
+			return false, err
+		}
+		if len(laterArrivals) > 0 {
+			endedAt := laterArrivals[0]
+			kept.DepartedAt = &endedAt
+			if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", kept.ID).
+				Updates(map[string]any{"departed_at": endedAt, "updated_at": now}).Error; err != nil {
+				return false, err
+			}
+		}
+	}
+
 	joined, err := self.joinPlaceVisits(&kept)
 	if err != nil {
 		return false, err
@@ -948,8 +990,13 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 // the latest of them is still in progress; the others are deleted, and their
 // client keys are kept in place_visit_key.
 func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitModel, error) {
+	// Only the visits that can join this one are read: those that begin before
+	// it ends plus the gap and end after it begins minus the gap (a visit with
+	// no departure ends where it begins). A home or a workplace has thousands
+	// of visits after a year, and the rest cannot take part.
 	var group []placeVisitModel
-	if err := self.tx.Where("\"user_id\" = ? AND \"place_id\" = ?", visit.UserID, visit.PlaceID).
+	if err := self.tx.Where("\"user_id\" = ? AND \"place_id\" = ? AND COALESCE(\"arrived_at\", \"departed_at\") < ? AND COALESCE(\"departed_at\", \"arrived_at\") > ?",
+		visit.UserID, visit.PlaceID, visitEnd(visit).Add(placeVisitJoinGap), visitStart(visit).Add(-placeVisitJoinGap)).
 		Order("COALESCE(\"arrived_at\", \"departed_at\") ASC, \"id\" ASC").Find(&group).Error; err != nil {
 		return nil, err
 	}
@@ -983,7 +1030,9 @@ func (self *transaction) joinPlaceVisits(visit *placeVisitModel) (*placeVisitMod
 	survivor := &chosen[0]
 	latest := &chosen[0]
 	for index := range chosen {
-		if visitEnd(&chosen[index]).After(visitEnd(latest)) {
+		// At the same moment a visit still going is later than one that ended.
+		if visitEnd(&chosen[index]).After(visitEnd(latest)) ||
+			(visitEnd(&chosen[index]).Equal(visitEnd(latest)) && chosen[index].DepartedAt == nil && latest.DepartedAt != nil) {
 			latest = &chosen[index]
 		}
 	}
@@ -1194,17 +1243,34 @@ func (self *transaction) ClaimPlacesToName(limitCount int, now time.Time) ([]*mo
 	if limitCount <= 0 {
 		return nil, nil
 	}
+	// A few places of each person at most, oldest first, so that one account
+	// with thousands of waiting places does not stand in front of everyone
+	// else's, and only for people who may still use Location. The rows are
+	// locked with SKIP LOCKED, so that two instances at once take different
+	// places.
+	var candidateIds []string
+	if err := self.tx.Raw(`SELECT claimable.id FROM (
+			SELECT DISTINCT "user_id" FROM "place" WHERE "named_at" IS NULL AND ("naming_claimed_at" IS NULL OR "naming_claimed_at" < @cutoff)) waiting
+		CROSS JOIN LATERAL (
+			SELECT place.id, place.created_at FROM "place" place
+			WHERE place.user_id = waiting.user_id AND place.named_at IS NULL AND (place.naming_claimed_at IS NULL OR place.naming_claimed_at < @cutoff)
+			AND `+userHasPermissionSQL("place.user_id")+`
+			ORDER BY place.created_at ASC, place.id ASC
+			LIMIT @per_user
+			FOR UPDATE SKIP LOCKED) claimable
+		ORDER BY claimable.created_at ASC, claimable.id ASC
+		LIMIT @limit`,
+		sql.Named("cutoff", now.Add(-placeNamingClaimDuration)), sql.Named("limit", limitCount),
+		sql.Named("per_user", min(placeNamingPerPersonMost, limitCount)), sql.Named("permission", string(models.PermissionLocationUse))).
+		Scan(&candidateIds).Error; err != nil {
+		return nil, err
+	}
+	if len(candidateIds) == 0 {
+		return nil, nil
+	}
 	var rows []placeModel
-	if err := self.tx.Raw(`UPDATE "place" SET "naming_claimed_at" = @now
-		WHERE "id" IN (
-			SELECT "id" FROM "place"
-			WHERE "named_at" IS NULL AND ("naming_claimed_at" IS NULL OR "naming_claimed_at" < @cutoff)
-			ORDER BY "created_at" ASC, "id" ASC
-			LIMIT @limit
-			FOR UPDATE SKIP LOCKED)
-		RETURNING *`,
-		sql.Named("now", now), sql.Named("cutoff", now.Add(-placeNamingClaimDuration)), sql.Named("limit", limitCount)).
-		Scan(&rows).Error; err != nil {
+	if err := self.tx.Raw(`UPDATE "place" SET "naming_claimed_at" = @now WHERE "id" IN @ids RETURNING *`,
+		sql.Named("now", now), sql.Named("ids", candidateIds)).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	places := make([]*models.Place, 0, len(rows))
@@ -1227,9 +1293,11 @@ func (self *transaction) ClaimPlaceToName(placeId string, now time.Time) (*model
 		WHERE "id" = (
 			SELECT "id" FROM "place"
 			WHERE "id" = @place AND "named_at" IS NULL AND ("naming_claimed_at" IS NULL OR "naming_claimed_at" < @cutoff)
+			AND `+userHasPermissionSQL(`"place"."user_id"`)+`
 			FOR UPDATE SKIP LOCKED)
 		RETURNING *`,
-		sql.Named("now", now), sql.Named("cutoff", now.Add(-placeNamingClaimDuration)), sql.Named("place", placeId)).
+		sql.Named("now", now), sql.Named("cutoff", now.Add(-placeNamingClaimDuration)), sql.Named("place", placeId),
+		sql.Named("permission", string(models.PermissionLocationUse))).
 		Scan(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -1239,10 +1307,15 @@ func (self *transaction) ClaimPlaceToName(placeId string, now time.Time) (*model
 	return rows[0].toModel(), nil
 }
 
-func (self *transaction) SetPlaceNamed(placeId string, found *NamedPlace, errorMessage string, now time.Time) error {
+func (self *transaction) SetPlaceNamed(placeId string, claimedAt *time.Time, found *NamedPlace, errorMessage string, now time.Time) error {
 	var locked placeModel
 	if err := lockRow(self.tx, &locked, placeId); err != nil {
 		return err
+	}
+	// A place moved while the provider was asked about it lost its claim, and
+	// the answer is about where it used to be.
+	if claimedAt != nil && (locked.NamingClaimedAt == nil || !locked.NamingClaimedAt.Equal(*claimedAt)) {
+		return nil
 	}
 	updates := map[string]any{"updated_at": now}
 	if errorMessage != "" {

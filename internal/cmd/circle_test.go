@@ -113,8 +113,8 @@ func TestCircleSharingHint(test *testing.T) {
 	test.Parallel()
 
 	for circleKind, wanted := range map[string]string{
-		"family":     "share your calendar and your location with it: teanode calendar share, teanode location share",
-		"colleagues": "share your calendar with it: teanode calendar share",
+		"family":     "you can share your calendar and where you are with it, if your account may use them: teanode calendar share, teanode location share",
+		"colleagues": "you can share your calendar with it, if your account may use it: teanode calendar share",
 		"friends":    "",
 		"":           "",
 	} {

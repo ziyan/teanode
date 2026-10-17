@@ -11,7 +11,7 @@ The reasons for the two choices that shape it are in
 `docs/decisions/20261017-places-are-named-from-openstreetmap.md`. The words are
 fixed: a **position** is what a person reads (in the code and the API a
 **point**, `LocationPoint`, one reported position); a **visit** is one time at a
-place, from an arrival to a departure; a **place** is a spot with a name and a
+place, from an arrival to a departure; a **place** is somewhere with a name and a
 radius; a **label** is home, work, school, family or gym; to **check in** is to
 say by hand that you are at a place, and a **check-in** is that visit.
 
@@ -76,13 +76,22 @@ anywhere and places keep the name of their city. A new place is named in the
 background right after the report that made it is stored, through one limiter
 shared by every caller of the provider: one request a second for each instance,
 and a caller that would wait more than a few seconds is turned away, so a person
-looping on search cannot starve the naming or break the provider's policy. The
+looping on search cannot starve the naming or break the provider's policy. Each
+account is also limited to 12 searches or check-in lists a minute and 60 new
+places a minute, may have at most 5000 places, and the naming job takes at most
+three waiting places of each person in a run and none of a person who may not
+use Location. A road, a rail line, a stop, a barrier, a pole or a man-made
+structure such as an elevator is not a point of interest, so the address names
+the place instead (house number and road, then road, then neighborhood, then
+city). The
 agent's periodic job is the sweeper for places whose first try failed; it takes a
 place again once its claim is old. A failed try is stored as a fixed sentence
 ("could not reach the place provider"), never the provider's address or the
 request, and only the owner reads it. An answer farther from the position than
 the place's radius plus a small margin is taken as "nothing known" rather than
-as the name.
+as the name, except for an area the provider itself chose for the position (a
+park or a campus is positioned at its middle). An answer for a place that was
+moved while the provider was being asked is dropped.
 
 The check-in list and the agent's search use the same provider, with the
 person's words (search) or position (check-in list) as the request. With the
@@ -116,7 +125,7 @@ level `owner`.
 Whether a viewer reaches a person, and at what level, is decided in one place
 (`graph.reachLocation`, the database's `GetLocationShareLevel`) at the moment of
 each call: a share to a person reaches them only while the two still share a
-circle, a share to a circle only while both are in it, the viewer needs
+circle, a share to a circle only while both are in it, the viewer and the owner both need
 `location:use`, and both accounts must be enabled. Leaving a circle ends the
 reach at once. Anything short of the level asked for, and a person who does not
 exist, are the same answer, "not found". The command line and the agent say
@@ -175,7 +184,9 @@ answers carry the untrusted mark.
 - **The journal**: for every person who has visits, one document for each ended
   day (`location:YYYY-MM-DD`), written from the visits with no model call, which
   the dream reads like any other document; and a monthly digest of how many
-  hours were spent at which places. A day whose visits are all erased has no
+  hours were spent at which places. Every run looks at the last 14 days again, so
+  a day written again after an erase of part of it, a forgotten place or a new
+  name or label says what is left. A day whose visits are all erased has no
   document.
 - **Only where a turn can ask a browser or phone** does `now` ask for a fresh
   position, once; elsewhere it answers the last one kept, with its age.

@@ -9,7 +9,6 @@ import (
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/util/deferutil"
 )
 
@@ -100,7 +99,7 @@ func (self *locationEventHub) subscribe(database db.Database, viewerUserId strin
 // deliver hands one event to the maps that may see it: the person's own, the
 // ones the event says have just lost the right to (so that they read again and
 // drop the person), and those of the people the location reaches now, decided
-// for all of them in one transaction.
+// for all of them by one query.
 func (self *locationEventHub) deliver(database db.Database, payload string) {
 	var event db.LocationEvent
 	if json.Unmarshal([]byte(payload), &event) != nil || event.UserID == "" {
@@ -130,12 +129,15 @@ func (self *locationEventHub) deliver(database db.Database, payload string) {
 		ctx, cancel := context.WithTimeout(context.Background(), locationEventDecisionWait)
 		defer cancel()
 		if err := database.TransactionContext(ctx, func(tx db.Transaction) error {
-			for _, viewerUserId := range toDecide {
-				level, err := tx.GetLocationShareLevel(viewerUserId, event.UserID)
-				if err != nil {
-					return err
-				}
-				isAllowed[viewerUserId] = level.AtLeast(models.LocationShareLevelCurrent)
+			// One query for all of them: who among the open maps the person's
+			// location reaches. A viewer who shares no circle with the person
+			// costs nothing.
+			reached, err := tx.FilterLocationGrantees(event.UserID, toDecide)
+			if err != nil {
+				return err
+			}
+			for _, viewerUserId := range reached {
+				isAllowed[viewerUserId] = true
 			}
 			return nil
 		}); err != nil {

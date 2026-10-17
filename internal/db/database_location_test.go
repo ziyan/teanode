@@ -26,7 +26,17 @@ func locationUser(t *testing.T, tx db.Transaction, username string) string {
 	if err != nil {
 		t.Fatalf("CreateUser(%s): %s", username, err)
 	}
+	// Places of people who may not use Location are not named.
+	dbtest.GrantPermission(t, tx, user.ID, models.PermissionLocationUse)
 	return user.ID
+}
+
+// grantLocation lets a person made with dbtest.CreateUser use Location.
+func grantLocation(t *testing.T, database db.Database, userId string) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		dbtest.GrantPermission(t, tx, userId, models.PermissionLocationUse)
+	})
 }
 
 func locationPlace(t *testing.T, tx db.Transaction, userId, name string, latitudeDegrees float64) *models.Place {
@@ -218,13 +228,13 @@ func TestMovingAPlaceFartherThanItsRadiusMakesItWaitToBeNamedAgain(t *testing.T)
 		userId := locationUser(t, tx, "location-move")
 		now := time.Now()
 		named := locationPlace(t, tx, userId, "", 10.5)
-		if err := tx.SetPlaceNamed(named.ID, &db.NamedPlace{
+		if err := tx.SetPlaceNamed(named.ID, nil, &db.NamedPlace{
 			PlaceName: "Example Park", OSMType: models.OSMTypeWay, OSMID: 42, OSMCategory: "leisure=park", AddressText: "Elm Street, Exampleton, Exampleland",
 		}, "", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		kept := locationPlace(t, tx, userId, "", 11.5)
-		if err := tx.SetPlaceNamed(kept.ID, &db.NamedPlace{PlaceName: "Other Park", OSMType: models.OSMTypeNode, OSMID: 43, AddressText: "Oak Street"}, "", now); err != nil {
+		if err := tx.SetPlaceNamed(kept.ID, nil, &db.NamedPlace{PlaceName: "Other Park", OSMType: models.OSMTypeNode, OSMID: 43, AddressText: "Oak Street"}, "", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		ownName := "My Park"
@@ -304,7 +314,7 @@ func TestAPersonNamesLabelsAndMovesTheirPlaces(t *testing.T) {
 		// A place the map never named has nothing to go back to: it has no
 		// name, and waits to be named.
 		bare := locationPlace(t, tx, userId, "", 11)
-		if err = tx.SetPlaceNamed(bare.ID, nil, "", locationDay); err != nil {
+		if err = tx.SetPlaceNamed(bare.ID, nil, nil, "", locationDay); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		own := "My Spot"
@@ -788,6 +798,7 @@ func TestPlacesAreClaimedForNamingOnceAndNamedByTheProvider(t *testing.T) {
 	database, release := dbtest.AcquireDatabase(t)
 	defer release()
 	userId := dbtest.CreateUser(t, database, "location-claim")
+	grantLocation(t, database, userId)
 	var firstId, secondId, thirdId string
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		first := locationPlace(t, tx, userId, "Exampleton", 10.5)
@@ -832,6 +843,7 @@ func TestPlacesAreClaimedForNamingOnceAndNamedByTheProvider(t *testing.T) {
 
 	// Two instances at once get different places.
 	freshId := dbtest.CreateUser(t, database, "location-claim-fresh")
+	grantLocation(t, database, freshId)
 	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
 		for index := 0; index < 4; index++ {
 			locationPlace(t, tx, freshId, "Fresh", 11+float64(index)/10)
@@ -877,7 +889,7 @@ func TestWhatAProviderAnsweredIsRecordedWithoutReplacingAPersonsName(t *testing.
 		now := time.Now()
 
 		// A failure is recorded and the place keeps waiting.
-		if err := tx.SetPlaceNamed(made.ID, nil, "place: the provider answered 503", now); err != nil {
+		if err := tx.SetPlaceNamed(made.ID, nil, nil, "place: the provider answered 503", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		kept, _ := tx.GetPlace(userId, made.ID)
@@ -886,7 +898,7 @@ func TestWhatAProviderAnsweredIsRecordedWithoutReplacingAPersonsName(t *testing.
 		}
 
 		found := &db.NamedPlace{PlaceName: "Example Park", OSMType: models.OSMTypeWay, OSMID: 4242, OSMCategory: "leisure=park", AddressText: "Example Park, Sample Street, Exampleton"}
-		if err := tx.SetPlaceNamed(made.ID, found, "", now); err != nil {
+		if err := tx.SetPlaceNamed(made.ID, nil, found, "", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		kept, _ = tx.GetPlace(userId, made.ID)
@@ -904,7 +916,7 @@ func TestWhatAProviderAnsweredIsRecordedWithoutReplacingAPersonsName(t *testing.
 			t.Fatalf("SavePlace: %s", err)
 		}
 		renamed := &db.NamedPlace{PlaceName: "Example Gardens", OSMType: models.OSMTypeNode, OSMID: 7}
-		if err := tx.SetPlaceNamed(made.ID, renamed, "", now); err != nil {
+		if err := tx.SetPlaceNamed(made.ID, nil, renamed, "", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		kept, _ = tx.GetPlace(userId, made.ID)
@@ -915,17 +927,17 @@ func TestWhatAProviderAnsweredIsRecordedWithoutReplacingAPersonsName(t *testing.
 		// A provider that knows nothing still ends the wait, and leaves the
 		// name as it was.
 		quiet := locationPlace(t, tx, userId, "Elsewhere", 12)
-		if err := tx.SetPlaceNamed(quiet.ID, nil, "", now); err != nil {
+		if err := tx.SetPlaceNamed(quiet.ID, nil, nil, "", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		if kept, _ = tx.GetPlace(userId, quiet.ID); kept.NamedAt == nil || kept.PlaceName != "Elsewhere" || kept.OSMType != "" {
 			t.Fatalf("after an empty answer: %+v", kept)
 		}
 
-		if err := tx.SetPlaceNamed("missing", nil, "", now); !errors.Is(err, db.ErrNotFound) {
+		if err := tx.SetPlaceNamed("missing", nil, nil, "", now); !errors.Is(err, db.ErrNotFound) {
 			t.Errorf("a place that is not there: %v", err)
 		}
-		if err := tx.SetPlaceNamed(made.ID, &db.NamedPlace{OSMType: "area"}, "", now); !errors.Is(err, db.ErrInvalidArguments) {
+		if err := tx.SetPlaceNamed(made.ID, nil, &db.NamedPlace{OSMType: "area"}, "", now); !errors.Is(err, db.ErrInvalidArguments) {
 			t.Errorf("a type nobody knows: %v", err)
 		}
 	})
@@ -1039,6 +1051,10 @@ func TestAnArrivalEndsTheVisitsStillOpenElsewhere(t *testing.T) {
 		if err != nil || libraryVisit.DepartedAt != nil {
 			t.Fatalf("an older arrival delivered late ended the library visit: %+v, %v", libraryVisit, err)
 		}
+		// It is over where the later arrival began, not open for ever.
+		if parkVisit, err := tx.GetPlaceVisitByClientKey(userId, "park-early"); err != nil || parkVisit.DepartedAt == nil || !parkVisit.DepartedAt.Equal(*minutesAfterNine(200)) {
+			t.Fatalf("the late early visit ends where the library visit began: %+v, %v", parkVisit, err)
+		}
 		// A departure alone is not an arrival.
 		if _, err := tx.PutPlaceVisit(userId, locationVisit(park.ID, "park-left", -1, 500)); err != nil {
 			t.Fatalf("PutPlaceVisit: %s", err)
@@ -1083,7 +1099,7 @@ func TestAPlaceKeepsOnlyTextThatFitsAndIsPrintable(t *testing.T) {
 			len([]rune(made.OSMCategory)) != 128 || len([]rune(made.AddressText)) != 512 {
 			t.Fatalf("CreatePlace: %+v, %v", made, err)
 		}
-		if err := tx.SetPlaceNamed(made.ID, &db.NamedPlace{PlaceName: "Elm\r\nLibrary", OSMType: models.OSMTypeNode, OSMID: 5, AddressText: "1 Elm\nStreet"}, "", locationDay); err != nil {
+		if err := tx.SetPlaceNamed(made.ID, nil, &db.NamedPlace{PlaceName: "Elm\r\nLibrary", OSMType: models.OSMTypeNode, OSMID: 5, AddressText: "1 Elm\nStreet"}, "", locationDay); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		named, err := tx.GetPlace(userId, made.ID)
@@ -1112,7 +1128,7 @@ func TestOnePlaceCanBeClaimedToNameRightAway(t *testing.T) {
 		if later, err := tx.ClaimPlaceToName(made.ID, now.Add(time.Hour)); err != nil || later == nil {
 			t.Fatalf("a claim an hour old has run out: %+v, %v", later, err)
 		}
-		if err := tx.SetPlaceNamed(made.ID, nil, "", now); err != nil {
+		if err := tx.SetPlaceNamed(made.ID, nil, nil, "", now); err != nil {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		if named, err := tx.ClaimPlaceToName(made.ID, now.Add(24*time.Hour)); err != nil || named != nil {
@@ -1120,6 +1136,108 @@ func TestOnePlaceCanBeClaimedToNameRightAway(t *testing.T) {
 		}
 		if gone, err := tx.ClaimPlaceToName("no-such-place", now); err != nil || gone != nil {
 			t.Fatalf("a place that is gone: %+v, %v", gone, err)
+		}
+	})
+}
+
+// An arrival at the place where the person already has an open visit joins it,
+// and the visit stays open: the person is still there.
+func TestAnArrivalAtThePlaceOfTheOpenVisitKeepsItOpen(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-same-place-open")
+		cafe := locationPlace(t, tx, userId, "Birch Cafe", 10.5)
+		if _, err := tx.PutPlaceVisit(userId, locationVisit(cafe.ID, "first", 0, -1)); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		visit := locationVisit(cafe.ID, "second", 60, -1)
+		if _, err := tx.PutPlaceVisit(userId, visit); err != nil {
+			t.Fatalf("PutPlaceVisit: %s", err)
+		}
+		if visit.DepartedAt != nil {
+			t.Errorf("the visit answered has a departure: %+v", visit)
+		}
+		if open, err := tx.GetOpenPlaceVisit(userId); err != nil || open == nil || open.Place.ID != cafe.ID || open.ArrivedAt == nil || !open.ArrivedAt.Equal(*minutesAfterNine(0)) {
+			t.Fatalf("the person is still at the cafe, since the first arrival: %+v, %v", open, err)
+		}
+	})
+}
+
+// Places wait for a name a few of each person's at a time, and only for people
+// who may use Location.
+func TestOnlyAFewPlacesOfOnePersonAreClaimedAndOnlyForPeopleWhoMayUseLocation(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	var busyId, quietId, deniedId string
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		busyId = locationUser(t, tx, "location-claim-busy")
+		quietId = locationUser(t, tx, "location-claim-quiet")
+		user, err := tx.CreateUser(&models.User{Username: "location-claim-denied"})
+		if err != nil {
+			t.Fatalf("CreateUser: %s", err)
+		}
+		deniedId = user.ID
+		for index := 0; index < 8; index++ {
+			locationPlace(t, tx, busyId, "Busy", 20+float64(index)/10)
+		}
+		locationPlace(t, tx, quietId, "Quiet", 30)
+		locationPlace(t, tx, deniedId, "Denied", 40)
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlacesToName(20, time.Now())
+		if err != nil {
+			t.Fatalf("ClaimPlacesToName: %s", err)
+		}
+		counts := map[string]int{}
+		for _, each := range claimed {
+			counts[each.UserID]++
+		}
+		if counts[busyId] != 3 || counts[quietId] != 1 || counts[deniedId] != 0 {
+			t.Errorf("claimed per person: %v", counts)
+		}
+	})
+}
+
+// The people among some candidates that a location reaches are found in one
+// query. When the owner's roles do not give location:use, nobody is reached.
+func TestFilterLocationGranteesAndTheOwnersPermission(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		world := newLocationShareWorld(t, tx)
+		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
+			t.Fatalf("ShareLocation: %s", err)
+		}
+		reached, err := tx.FilterLocationGrantees(world.ada.ID, []string{world.ben.ID, world.cora.ID, world.dave.ID})
+		if err != nil || len(reached) != 1 || reached[0] != world.ben.ID {
+			t.Fatalf("only ben is reached: %v, %v", reached, err)
+		}
+		if none, err := tx.FilterLocationGrantees(world.ada.ID, []string{world.cora.ID}); err != nil || len(none) != 0 {
+			t.Fatalf("a person ada does not share with: %v, %v", none, err)
+		}
+	})
+
+	second, releaseSecond := dbtest.AcquireDatabase(t)
+	defer releaseSecond()
+	dbtest.RunTransactionOn(t, second, func(tx db.Transaction) {
+		world := newShareWorld(t, tx)
+		role, err := tx.CreateRole(&models.Role{Name: "Viewers", Permissions: []models.Permission{models.PermissionLocationUse}})
+		if err != nil {
+			t.Fatalf("CreateRole: %s", err)
+		}
+		// Only ben has location:use; ada, who shares, does not.
+		if _, err := tx.CreateGroup(&models.Group{Name: "Viewers", RoleIDs: []string{role.ID}, UserIDs: []string{world.ben.ID}}); err != nil {
+			t.Fatalf("CreateGroup: %s", err)
+		}
+		if _, err := tx.ShareLocation(world.ada.ID, &models.LocationShare{GranteeUserID: world.ben.ID, ShareLevel: models.LocationShareLevelCurrent}); err != nil {
+			t.Fatalf("ShareLocation: %s", err)
+		}
+		if level := locationLevelOf(t, tx, world.ben.ID, world.ada.ID); level != "" {
+			t.Errorf("ada has no location:use and ben reads her at %q", level)
+		}
+		if reached, err := tx.FilterLocationGrantees(world.ada.ID, []string{world.ben.ID}); err != nil || len(reached) != 0 {
+			t.Errorf("ada has no location:use and reaches %v, %v", reached, err)
 		}
 	})
 }

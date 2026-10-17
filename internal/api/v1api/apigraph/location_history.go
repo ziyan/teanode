@@ -83,7 +83,7 @@ type LocationMutation interface {
 	// off. Needs location:use.
 	SavePlace(ctx context.Context, arguments SavePlaceArguments) (*PlaceView, error)
 
-	// Delete a place and every visit at it. Needs location:use.
+	// Delete a place and every visit to it. Needs location:use.
 	ForgetPlace(ctx context.Context, arguments ForgetPlaceArguments) (bool, error)
 
 	// Record that the caller is at a place now: one of their own, or a place
@@ -453,11 +453,6 @@ const (
 	// nearbyOwnPlacesMost is how many of the person's own places a nearby
 	// listing shows.
 	nearbyOwnPlacesMost = 20
-
-	// placePageDefault and placePageMost bound a page of visits or places
-	// when the caller names none or too many.
-	placePageDefault = 50
-	placePageMost    = 200
 )
 
 // errPlaceProviderOff is what a listing of found places answers while the
@@ -536,9 +531,6 @@ func locationFailure(err error) error {
 	return translateError(err)
 }
 
-// optionalPlaceProvider is the provider the server's settings name now, nil
-// while the operator has switched it off, or the refusal to say that it is not
-// set up properly.
 // placeProviderFailure is a failed question to the place provider as the
 // person is told it: a busy provider is a refusal they can act on by asking
 // again in a moment, anything else says the provider could not be asked.
@@ -549,6 +541,9 @@ func placeProviderFailure(err error) error {
 	return fmt.Errorf("the place provider could not be asked just now: %s", place.FailureSentence(err))
 }
 
+// optionalPlaceProvider is the provider the server's settings name now, nil
+// while the operator has switched it off, or the refusal to say that it is not
+// set up properly.
 func (self *graph) optionalPlaceProvider() (place.Provider, error) {
 	provider, err := place.ProviderFor(self.config.Current())
 	if err != nil {
@@ -777,7 +772,7 @@ func (self *graph) ListLocationVisits(ctx context.Context, arguments ListLocatio
 	if err != nil {
 		return nil, err
 	}
-	offset, limitCount, err := pageOf(arguments.Offset, arguments.LimitCount, placePageDefault, placePageMost)
+	offset, limitCount, err := pageOf(arguments.Offset, arguments.LimitCount, db.PlacePageDefault, db.PlacePageMost)
 	if err != nil {
 		return nil, err
 	}
@@ -819,7 +814,7 @@ func (self *graph) ListPlaces(ctx context.Context, arguments ListPlacesArguments
 	if err != nil {
 		return nil, err
 	}
-	offset, limitCount, err := pageOf(arguments.Offset, arguments.LimitCount, placePageDefault, placePageMost)
+	offset, limitCount, err := pageOf(arguments.Offset, arguments.LimitCount, db.PlacePageDefault, db.PlacePageMost)
 	if err != nil {
 		return nil, err
 	}
@@ -880,6 +875,9 @@ func (self *graph) ListNearbyPlaces(ctx context.Context, arguments ListNearbyPla
 	// places alone.
 	var found []*place.Found
 	if provider != nil {
+		if err := self.allowPlaceLookup(userId); err != nil {
+			return nil, err
+		}
 		if found, err = provider.Search(ctx, "", arguments.LatitudeDegrees, arguments.LongitudeDegrees, radiusMeters, 1); err != nil {
 			return nil, placeProviderFailure(err)
 		}
@@ -982,6 +980,9 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 	}
 	provider, err := self.placeProvider()
 	if err != nil {
+		return nil, err
+	}
+	if err := self.allowPlaceLookup(userId); err != nil {
 		return nil, err
 	}
 	// One more than the page, to know whether there is a next one.
@@ -1208,7 +1209,8 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 		}
 		if stored.IsNew {
 			view.NewVisitCount++
-		} else {
+		} else if stored.IsChanged {
+			// A batch sent again changes nothing, and says so.
 			view.UpdatedVisitCount++
 		}
 		isChanged = isChanged || stored.IsNew || stored.IsChanged
@@ -1232,6 +1234,11 @@ func (self *graph) ReportLocation(ctx context.Context, arguments ReportLocationA
 type visitNotice struct {
 	Visit     *models.PlaceVisit
 	IsArrival bool
+
+	// HappenedAt is the time that was reported for the arrival or the
+	// departure, not the stored visit's: a visit joined into an earlier one
+	// keeps the earlier arrival.
+	HappenedAt time.Time
 }
 
 // afterLocationChange tells what a stored change did, once it is committed and
@@ -1251,7 +1258,7 @@ func (self *graph) afterLocationChange(ctx context.Context, tx db.Transaction, u
 			return
 		}
 		for _, notice := range notices {
-			notifier.NotifyPlaceVisit(detached, userId, notice.Visit, notice.IsArrival)
+			notifier.NotifyPlaceVisitAt(detached, userId, notice.Visit, notice.IsArrival, notice.HappenedAt)
 		}
 	})
 }
@@ -1315,10 +1322,10 @@ func (self *graph) putReportedVisit(tx db.Transaction, userId string, reported R
 	// An arrival is told when it is first heard of, and a departure when it
 	// is added to a visit that had none.
 	switch {
-	case isNew && visit.ArrivedAt != nil:
-		stored.Notice = &visitNotice{Visit: visit, IsArrival: true}
-	case !isNew && known != nil && known.DepartedAt == nil && visit.DepartedAt != nil:
-		stored.Notice = &visitNotice{Visit: visit, IsArrival: false}
+	case isNew && reported.ArrivedAt != nil:
+		stored.Notice = &visitNotice{Visit: visit, IsArrival: true, HappenedAt: *reported.ArrivedAt}
+	case !isNew && known != nil && known.DepartedAt == nil && reported.DepartedAt != nil && visit.DepartedAt != nil:
+		stored.Notice = &visitNotice{Visit: visit, IsArrival: false, HappenedAt: *reported.DepartedAt}
 	}
 	return stored, nil
 }
@@ -1349,6 +1356,9 @@ func (self *graph) placeForReportedVisit(tx db.Transaction, userId string, repor
 	found, err := tx.FindPlaceAt(userId, reported.LatitudeDegrees, reported.LongitudeDegrees)
 	if err != nil || found != nil {
 		return found, false, err
+	}
+	if err := self.allowNewPlace(userId); err != nil {
+		return nil, false, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
 		PlaceName: placeNameFor(reported.LatitudeDegrees, reported.LongitudeDegrees), LatitudeDegrees: reported.LatitudeDegrees,
@@ -1403,6 +1413,9 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 			made.PlaceName, made.IsNamedByPerson = strings.TrimSpace(*arguments.PlaceName), true
 		} else {
 			made.PlaceName = placeNameFor(made.LatitudeDegrees, made.LongitudeDegrees)
+		}
+		if err := self.allowNewPlace(userId); err != nil {
+			return nil, err
 		}
 		if saved, err = tx.CreatePlace(userId, made); err != nil {
 			return nil, locationFailure(err)
@@ -1500,7 +1513,7 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 		return nil, err
 	}
 	if ended != nil {
-		notices = append(notices, visitNotice{Visit: ended, IsArrival: false})
+		notices = append(notices, visitNotice{Visit: ended, IsArrival: false, HappenedAt: endedAt})
 	}
 
 	visit := &models.PlaceVisit{
@@ -1511,7 +1524,7 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 		return nil, locationFailure(err)
 	}
 	visit.Place = checkedIn
-	notices = append(notices, visitNotice{Visit: visit, IsArrival: true})
+	notices = append(notices, visitNotice{Visit: visit, IsArrival: true, HappenedAt: now})
 	// A place found nearby arrives named, so there is none to name.
 	self.afterLocationChange(ctx, tx, userId, notices, nil)
 	if err := attachVisitSummaries(tx, userId, []*models.Place{checkedIn}); err != nil {
@@ -1552,6 +1565,9 @@ func (self *graph) placeFromFound(tx db.Transaction, userId string, arguments Ch
 	}
 	if placeName == "" {
 		placeName = placeNameFor(*arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
+	}
+	if err := self.allowNewPlace(userId); err != nil {
+		return nil, err
 	}
 	made, err := tx.CreatePlace(userId, &models.Place{
 		PlaceName: placeName, LatitudeDegrees: *arguments.LatitudeDegrees, LongitudeDegrees: *arguments.LongitudeDegrees,

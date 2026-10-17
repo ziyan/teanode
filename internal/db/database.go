@@ -168,12 +168,25 @@ type LocationEvent struct {
 // report itself is stored already, and this is only a word to the instances
 // listening now. A viewer that missed the word reads the location again.
 func (self *database) NotifyLocationEvent(userId string, endedForUserIds ...string) error {
-	payload, err := json.Marshal(&LocationEvent{UserID: userId, EndedForUserIDs: endedForUserIds})
-	if err != nil {
-		return err
+	// A notice carries at most 8000 bytes and an ID is 32 characters, so the
+	// people a share stopped reaching go in as many notices as it takes, each
+	// naming the owner. Every notice also moves the owner's own maps.
+	for start := 0; start == 0 || start < len(endedForUserIds); start += locationEventEndedMost {
+		end := min(start+locationEventEndedMost, len(endedForUserIds))
+		payload, err := json.Marshal(&LocationEvent{UserID: userId, EndedForUserIDs: endedForUserIds[start:end]})
+		if err != nil {
+			return err
+		}
+		if err := self.db.Exec("SELECT pg_notify(?, ?)", LocationEventChannel, string(payload)).Error; err != nil {
+			return err
+		}
 	}
-	return self.db.Exec("SELECT pg_notify(?, ?)", LocationEventChannel, string(payload)).Error
+	return nil
 }
+
+// locationEventEndedMost is how many people one location event names, so that
+// its payload stays far below the 8000 bytes a notice may carry.
+const locationEventEndedMost = 100
 
 // ListenLocationEvents delivers the payload (a LocationEvent as JSON) of every
 // report any instance announces, for as long as the context lives. A listener

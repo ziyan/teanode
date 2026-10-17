@@ -26,6 +26,19 @@ type nominatimPlace struct {
 	ObjectType   string `json:"type"`
 	Name         string `json:"name"`
 	DisplayName  string `json:"display_name"`
+
+	// Address holds the parts of the address, as addressdetails=1 asks for.
+	Address map[string]any `json:"address"`
+}
+
+// addressPart is the first of the keys the address has, as text.
+func (self *nominatimPlace) addressPart(keys ...string) string {
+	for _, key := range keys {
+		if text, isText := self.Address[key].(string); isText && strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
 }
 
 // toFound turns a result into a Found, or nil when it has no usable position.
@@ -46,11 +59,22 @@ func (self *nominatimPlace) toFound() *Found {
 	if self.Category != "" && self.ObjectType != "" {
 		found.OSMCategory = self.Category + "=" + self.ObjectType
 	}
-	// A house comes back with no name, only its address. The first part of
-	// the address is its number and street, which is the best name it has.
+	// A house or a street comes back with no name, only its address. The first
+	// part of the display name is not it: for a house it can be a number alone.
 	if found.PlaceName == "" {
-		found.PlaceName = strings.TrimSpace(strings.SplitN(self.DisplayName, ",", 2)[0])
+		found.PlaceName = addressName(self.addressPart("house_number"), self.addressPart("road", "pedestrian", "footway", "path"),
+			self.addressPart("neighbourhood", "suburb", "quarter", "city_district"),
+			self.addressPart("city", "town", "village", "municipality", "hamlet"))
 	}
+	// An answer without address parts is named by the first part of its
+	// display name, unless that is only a number.
+	if found.PlaceName == "" {
+		if first := strings.TrimSpace(strings.SplitN(self.DisplayName, ",", 2)[0]); strings.Trim(first, "0123456789 ") != "" {
+			found.PlaceName = first
+		}
+	}
+	// The area that holds the point is the provider's own choice.
+	found.IsChosenForPoint = self.OSMType == "way" || self.OSMType == "relation"
 	return found
 }
 
@@ -61,17 +85,23 @@ func (self *nominatimProvider) Name(ctx context.Context, latitudeDegrees, longit
 	for _, layer := range []string{"poi", "address"} {
 		var answer nominatimPlace
 		if err := self.get(ctx, "/reverse", url.Values{
-			"format":      {"jsonv2"},
-			"lat":         {strconv.FormatFloat(latitudeDegrees, 'f', 6, 64)},
-			"lon":         {strconv.FormatFloat(longitudeDegrees, 'f', 6, 64)},
-			"zoom":        {"18"},
-			"layer":       {layer},
-			"namedetails": {"1"},
+			"format":         {"jsonv2"},
+			"lat":            {strconv.FormatFloat(latitudeDegrees, 'f', 6, 64)},
+			"lon":            {strconv.FormatFloat(longitudeDegrees, 'f', 6, 64)},
+			"zoom":           {"18"},
+			"layer":          {layer},
+			"namedetails":    {"1"},
+			"addressdetails": {"1"},
 		}, &answer); err != nil {
 			return nil, err
 		}
 		// An answer of {"error": ...} is "nothing here", not a failure.
 		if answer.ErrorMessage != "" {
+			continue
+		}
+		// A road, a stop or an elevator is not a point of interest: the address
+		// answer that follows says where the point is better.
+		if layer == "poi" && isNotAPlace(answer.Category+"="+answer.ObjectType) {
 			continue
 		}
 		if found := answer.toFound(); found != nil {
@@ -98,11 +128,12 @@ func (self *nominatimProvider) Search(ctx context.Context, query string, latitud
 	west, north, east, south := boundingBox(latitudeDegrees, longitudeDegrees, radiusMeters)
 	var answers []nominatimPlace
 	if err := self.get(ctx, "/search", url.Values{
-		"format":  {"jsonv2"},
-		"q":       {query},
-		"viewbox": {fmt.Sprintf("%.6f,%.6f,%.6f,%.6f", west, north, east, south)},
-		"bounded": {"1"},
-		"limit":   {strconv.Itoa(searchFetchCount(limitCount))},
+		"format":         {"jsonv2"},
+		"q":              {query},
+		"viewbox":        {fmt.Sprintf("%.6f,%.6f,%.6f,%.6f", west, north, east, south)},
+		"bounded":        {"1"},
+		"addressdetails": {"1"},
+		"limit":          {strconv.Itoa(searchFetchCount(limitCount))},
 	}, &answers); err != nil {
 		return nil, err
 	}

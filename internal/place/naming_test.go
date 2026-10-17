@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
@@ -33,6 +34,7 @@ func newWaitingPlace(t *testing.T, database db.Database, username string) (userI
 		if err != nil {
 			t.Fatalf("CreateUser: %s", err)
 		}
+		dbtest.GrantPermission(t, tx, user.ID, models.PermissionLocationUse)
 		made, err := tx.CreatePlace(user.ID, &models.Place{PlaceName: "Exampleton, Exampleland", LatitudeDegrees: 10.5, LongitudeDegrees: 20.5})
 		if err != nil {
 			t.Fatalf("CreatePlace: %s", err)
@@ -115,5 +117,53 @@ func TestNameNowDropsADistantAnswerAndRecordsAFailureAsASentence(t *testing.T) {
 	}
 	if err := NameNow(context.Background(), database, failing, "no-such-place"); err != nil {
 		t.Errorf("a place that is gone: %s", err)
+	}
+}
+
+// A park the provider chose for the point is positioned at its middle, which
+// can be far from a point inside it; it still names the place.
+func TestNameNowNamesAPlaceInsideALargeAreaTheProviderChose(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+
+	userId, placeId := newWaitingPlace(t, database, "name-now-area")
+	provider := &scriptedProvider{found: &Found{
+		PlaceName: "Big Park", OSMType: models.OSMTypeWay, OSMID: 13, OSMCategory: "leisure=park",
+		LatitudeDegrees: 10.5036, LongitudeDegrees: 20.5, IsChosenForPoint: true,
+	}}
+	if err := NameNow(context.Background(), database, provider, placeId); err != nil {
+		t.Fatalf("NameNow: %s", err)
+	}
+	if named := readPlace(t, database, userId, placeId); named.PlaceName != "Big Park" || named.OSMID != 13 {
+		t.Errorf("400 m from the middle of the park it is in: %+v", named)
+	}
+}
+
+// A place moved while the provider was being asked is not given the answer
+// about where it used to be.
+func TestNameClaimedDropsTheAnswerForAPlaceMovedMeanwhile(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	t.Cleanup(release)
+
+	userId, placeId := newWaitingPlace(t, database, "name-claimed-moved")
+	var claimed *models.Place
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		var err error
+		if claimed, err = tx.ClaimPlaceToName(placeId, time.Now()); err != nil || claimed == nil {
+			t.Fatalf("ClaimPlaceToName: %v, %v", claimed, err)
+		}
+	})
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		latitude, longitude := 11.5, 21.5
+		if _, err := tx.SavePlace(userId, placeId, db.PlaceChanges{LatitudeDegrees: &latitude, LongitudeDegrees: &longitude}); err != nil {
+			t.Fatalf("SavePlace: %s", err)
+		}
+	})
+	provider := &scriptedProvider{found: &Found{PlaceName: "Old Cafe", OSMType: models.OSMTypeNode, OSMID: 14, LatitudeDegrees: 10.5, LongitudeDegrees: 20.5}}
+	if err := NameClaimed(context.Background(), database, provider, claimed); err != nil {
+		t.Fatalf("NameClaimed: %s", err)
+	}
+	if waiting := readPlace(t, database, userId, placeId); waiting.NamedAt != nil || waiting.OSMID != 0 || waiting.PlaceName == "Old Cafe" {
+		t.Errorf("the old position's answer was kept: %+v", waiting)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	_ "github.com/ziyan/teanode/internal/agent/tools/all"
 	"github.com/ziyan/teanode/internal/api/v1api/apigraph"
+	"github.com/ziyan/teanode/internal/client"
 )
 
 // Location is on the API, the command line and the agent's location tool under
@@ -357,5 +359,43 @@ func TestLocationSaysWhenOnlyWhereTheyAreNowIsShared(test *testing.T) {
 	}
 	if _, err := runLocationCommand(test, server, "now", "--person", "cleo"); err != nil {
 		test.Errorf("where they are now is shared: %v", err)
+	}
+}
+
+// Every section of the settings the API has is read by the command line,
+// places among them: dropping one from the selection would make 'settings'
+// silently stop showing it.
+func TestEverySettingsSectionIsRead(test *testing.T) {
+	test.Parallel()
+
+	kind := reflect.TypeFor[apigraph.Settings]()
+	for index := 0; index < kind.NumField(); index++ {
+		section, _, _ := strings.Cut(kind.Field(index).Tag.Get("json"), ",")
+		if section == "" || section == "-" {
+			continue
+		}
+		if !regexp.MustCompile(`(^|\s)` + section + `\s`).MatchString(client.DocumentGetSettings) {
+			test.Errorf("the settings section %q is not in what the command line reads", section)
+		}
+	}
+}
+
+// A place is called by the name the person gave it, else by its label, else by
+// what the map calls it, else by its address, else by its city.
+func TestAPlaceLineNamesThePlaceTheWayThePersonWould(test *testing.T) {
+	test.Parallel()
+
+	for expected, found := range map[string]*client.Place{
+		"Grandma's [family]": {PlaceName: "Grandma's", IsNamedByPerson: true, PlaceLabel: "family", OSMName: "Elm Court"},
+		"Home (Maple Park)":  {PlaceName: "Maple Park", PlaceLabel: "home", OSMName: "Maple Park"},
+		"Gym":                {PlaceName: "Exampleton", PlaceLabel: "gym"},
+		"Maple Park":         {PlaceName: "Maple Park", OSMName: "Maple Park", AddressText: "1 Elm Street"},
+		"1 Elm Street":       {PlaceName: "Exampleton", AddressText: "1 Elm Street"},
+		"Exampleton":         {PlaceName: "Exampleton"},
+		"(not named yet)":    {},
+	} {
+		if got := placeLine(found); got != expected {
+			test.Errorf("%+v is %q, want %q", found, got, expected)
+		}
 	}
 }

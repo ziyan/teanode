@@ -334,13 +334,15 @@ func runCircleAccept(ctx context.Context, command *cli.Command) error {
 
 // circleSharingHint says what can be shared with a circle just joined, and
 // the commands that do it: a family shares the calendar and where they are,
-// colleagues the calendar. Empty for any other circle.
+// colleagues the calendar. The CLI does not know what the account may use, so
+// it says "if your account may", where the dashboard and the app leave out
+// what is not allowed. Empty for any other circle.
 func circleSharingHint(circleKind string) string {
 	switch models.CircleKind(circleKind) {
 	case models.CircleKindFamily:
-		return "share your calendar and your location with it: teanode calendar share, teanode location share"
+		return "you can share your calendar and where you are with it, if your account may use them: teanode calendar share, teanode location share"
 	case models.CircleKindColleagues:
-		return "share your calendar with it: teanode calendar share"
+		return "you can share your calendar with it, if your account may use it: teanode calendar share"
 	}
 	return ""
 }

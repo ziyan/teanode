@@ -244,22 +244,36 @@ func countWords(count int, noun string) string {
 	return fmt.Sprintf("%d %ss", count, noun)
 }
 
-// placeLine is a place as one cell: its name, and its label in brackets.
+// placeLine is a place as one cell, called by what the person would call it:
+// the name they gave it, with its label in brackets; else its label word
+// (Home, Work), with what the map calls it in parentheses; else the name the
+// map gave it, then its address, then its city.
 func placeLine(found *client.Place) string {
 	if found == nil {
 		return ""
 	}
-	name := found.PlaceName
-	if name == "" {
-		name = found.AddressText
+	mapName := found.OSMName
+	if mapName == "" {
+		mapName = found.AddressText
 	}
-	if name == "" {
-		name = "(not named yet)"
+	switch {
+	case found.IsNamedByPerson && found.PlaceName != "":
+		if found.PlaceLabel != "" {
+			return fmt.Sprintf("%s [%s]", found.PlaceName, found.PlaceLabel)
+		}
+		return found.PlaceName
+	case found.PlaceLabel != "":
+		label := strings.ToUpper(found.PlaceLabel[:1]) + found.PlaceLabel[1:]
+		if mapName != "" {
+			return fmt.Sprintf("%s (%s)", label, mapName)
+		}
+		return label
+	case mapName != "":
+		return mapName
+	case found.PlaceName != "":
+		return found.PlaceName
 	}
-	if found.PlaceLabel != "" {
-		return fmt.Sprintf("%s [%s]", name, found.PlaceLabel)
-	}
-	return name
+	return "(not named yet)"
 }
 
 func timeCell(value *time.Time) string {
