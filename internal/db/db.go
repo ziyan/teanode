@@ -180,6 +180,7 @@ type Transaction interface {
 	GroupOperation
 	CircleOperation
 	CalendarShareOperation
+	LocationOperation
 	PageShareOperation
 	SkillShareOperation
 	ChatOperation

@@ -80,6 +80,7 @@ func (self *Configuration) Validate() error {
 		self.validateSmtp(validator)
 	}
 	self.validateAgent(validator)
+	self.validatePlaces(validator)
 	if self.Services.MailRouting.Enabled() {
 		self.validateDkim(validator)
 	}

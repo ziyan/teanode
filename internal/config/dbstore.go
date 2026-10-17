@@ -34,6 +34,7 @@ const (
 	settingAntivirus = "antivirus"
 	settingAntispam  = "antispam"
 	settingGeoIp     = "geoip"
+	settingPlaces    = "places"
 	settingStorage   = "storage"
 	settingPasskey   = "passkey"
 	settingSSO       = "sso"
@@ -56,6 +57,7 @@ func (self *Configuration) sections() map[string]any {
 		settingAntivirus: &self.Antivirus,
 		settingAntispam:  &self.Antispam,
 		settingGeoIp:     &self.GeoIP,
+		settingPlaces:    &self.Places,
 		settingStorage:   &self.Storage,
 		settingPasskey:   &self.Passkey,
 		settingSSO:       &self.SSO,

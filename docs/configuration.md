@@ -949,6 +949,30 @@ that published rule data when you enable it and load it.
 
 **`databaseFile`** — DatabaseFile is a MaxMind .mmdb file.
 
+### `places`
+
+Where the names of the spots a person goes to come from, and the map they are
+drawn on. A place is named from OpenStreetMap data when a person first goes
+there, once, and the name is kept, so a server with a handful of people asks
+very little of the provider.
+
+**`providerKind`**: `nominatim` (the default) or `photon`. Empty turns the
+provider off: a place is then named after its city from a table built into the
+server, nothing is sent anywhere, and a person can still name it themselves.
+The same provider answers the check-in list and the agent's place search.
+
+**`providerUrl`**: The provider's address, without a trailing path. The
+default is the OpenStreetMap Foundation's public Nominatim server, whose usage
+policy allows light use from an application that identifies itself and asks for
+each place once; this server sends at most one request a second, whichever
+provider is set, with a User-Agent that names it. Photon is for a server you
+run yourself. The address must be https; plain http is accepted only for
+localhost and private addresses.
+
+**`mapStyleUrl`**: The map style the dashboard draws its maps from, fetched
+through the server so that a viewer's browser talks to nothing else. The default
+is OpenFreeMap's `liberty` style. The same address rules apply.
+
 ### `storage`
 
 **`mode`**: `local` requires a directory and treats S3 as a best-effort mirror.

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/place"
 )
 
 var _ tools.Locating = (*AskRun)(nil)
@@ -107,7 +108,7 @@ func locationFrom(said string) (*tools.BrowserLocation, error) {
 	if message := strings.TrimSpace(answer.ErrorMessage); message != "" {
 		return nil, fmt.Errorf("location_unavailable: the browser could not say where it is (%s). Ask the person where they are if it matters", cutMarked(message, 200))
 	}
-	if !isOnEarth(answer.LatitudeDegrees, answer.LongitudeDegrees) || answer.AccuracyMeters < 0 || math.IsNaN(answer.AccuracyMeters) {
+	if !place.IsOnEarth(answer.LatitudeDegrees, answer.LongitudeDegrees) || answer.AccuracyMeters < 0 || math.IsNaN(answer.AccuracyMeters) {
 		return nil, fmt.Errorf("location_unavailable: the browser answered with a place that is not on the earth")
 	}
 	return &tools.BrowserLocation{
@@ -116,8 +117,4 @@ func locationFrom(said string) (*tools.BrowserLocation, error) {
 		AccuracyMeters:   answer.AccuracyMeters,
 		MeasuredAt:       answer.MeasuredAt,
 	}, nil
-}
-
-func isOnEarth(latitudeDegrees, longitudeDegrees float64) bool {
-	return latitudeDegrees >= -90 && latitudeDegrees <= 90 && longitudeDegrees >= -180 && longitudeDegrees <= 180
 }

@@ -38,7 +38,7 @@ To see it working at the end: two accounts in one family circle, each with the a
   Evidence: `internal/place/place.go` and `internal/photo/process.go` (`namePlace`) on branch `photos`; migration `0220_photo.sql` there.
 
 - Observation: Google Places allows only its place id to be stored, everything else must be fetched again, and its results may only be shown on a Google map. Mapbox requires its own map. Apple's server API reportedly allows only temporary caching. OpenStreetMap data (ODbL) may be stored and shown to anybody with the credit "© OpenStreetMap contributors".
-  Evidence: developers.google.com/maps/documentation/places/web-service/policies; docs.mapbox.com/api/search/geocoding; operations.osmfoundation.org/policies/nominatim.
+  Evidence: the published terms of each: the Google Maps Platform policies for the Places API, the Mapbox geocoding documentation, and the OpenStreetMap Foundation's Nominatim usage policy (read 2026-10-17).
 
 - Observation: iOS relaunches a closed app for visit events (`startMonitoringVisits`) and for significant location changes (about 500 m, at most every five minutes), without the `location` background mode, as long as the person allowed "Always". From iOS 18, an app that is allowed Always receives updates in the background only while it holds a `CLServiceSession(authorization: .always)`, which it may only start while in the foreground and must start again at every launch. Apple publishes no figure for how late a visit's arrival and departure arrive.
   Evidence: developer.apple.com/documentation/corelocation/cllocationmanager/startmonitoringvisits(); WWDC24 session 10212 "What's new in location authorization".

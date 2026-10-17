@@ -110,6 +110,11 @@ readonly ALLOWED_HOSTS=(
   console.anthropic.com
   aistudio.google.com
 
+  # Where the table of cities that names a photo's place comes from: a public
+  # data service, which its license asks to be credited, and which the script
+  # that rebuilds the table downloads from.
+  .geonames.org
+
   # Apple's public services, which the iPhone app's plan and README name:
   # the developer site, App Store Connect, and the push service the relay
   # sends to.
@@ -129,6 +134,14 @@ readonly ALLOWED_HOSTS=(
   # European Central Bank's public reference rates, which the code fetches and
   # the finance accounts plan names.
   www.ecb.europa.eu
+
+  # Where places are named and drawn from, by default: the OpenStreetMap
+  # Foundation's usage policy for its public naming server, which the code
+  # that asks it cites, and the free public server of map tiles and styles
+  # the configuration defaults to. Both are addresses of public services that
+  # the code and the location plan have to name.
+  operations.osmfoundation.org
+  tiles.openfreemap.org
 
   # The services the published skills call. They are in the fixtures under
   # internal/skills/testdata, which are the registry's own files kept
