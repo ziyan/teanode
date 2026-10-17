@@ -110,7 +110,7 @@ export function translateNow(key: Key, values?: Values): string {
   return translate(CATALOGS[detectLanguage()] ?? en, key, values)
 }
 
-interface Translation {
+export interface Translation {
   t: (key: Key, values?: Values) => string
   // plural picks the right form for a count in the reader's language, through
   // the platform's own rules. English needs two forms, Chinese and Japanese

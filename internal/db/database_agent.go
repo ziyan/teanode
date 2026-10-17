@@ -609,6 +609,14 @@ func (self *transaction) DeleteAgent(agentId string) error {
 		if err := tx.Where("\"agent_id\" = ?", agentId).Delete(&agentUsageModel{}).Error; err != nil {
 			return err
 		}
+		// The chats the owner is in say their agent reads them and may be
+		// asked in them; it is gone, and the sources and the conversations
+		// that made it so go with it. Left set, a screen showed an agent in
+		// the chat that is not there, and the others offered to ask it.
+		if err := tx.Model(&chatMemberModel{}).Where(`"user_id" = ?`, before.UserID).
+			Updates(map[string]any{"is_agent_reading": false, "is_agent_askable_by_others": false}).Error; err != nil {
+			return err
+		}
 		return tx.Where("\"id\" = ?", agentId).Delete(&agentModel{}).Error
 	})
 }

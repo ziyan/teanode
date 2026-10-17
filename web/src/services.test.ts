@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ServiceCapabilities, Session } from './api'
-import { homePath } from './services'
+import { homePath, isPathAvailable } from './services'
 
 const operator = (services: Partial<ServiceCapabilities>) =>
   ({
@@ -14,6 +14,7 @@ const operator = (services: Partial<ServiceCapabilities>) =>
       isCalendarEnabled: false,
       isRemindersEnabled: false,
       isContactsEnabled: false,
+      isPhotosEnabled: false,
       isAssistantEnabled: false,
       hasPendingServiceRestart: false,
       hasCompletedSetup: false,
@@ -37,5 +38,23 @@ describe('homePath', () => {
     expect(homePath(operator({ hasCompletedSetup: true, hasModelProvider: true, isAssistantEnabled: true }))).toBe(
       '/agent',
     )
+  })
+})
+
+describe('photos', () => {
+  const withPhotos = (isPhotosEnabled: boolean) => operator({ isPhotosEnabled }).services
+  it('is a page only when the service is on', () => {
+    expect(isPathAvailable('/photos', withPhotos(true))).toBe(true)
+    expect(isPathAvailable('/photos/photo-1', withPhotos(true))).toBe(true)
+    expect(isPathAvailable('/photos', withPhotos(false))).toBe(false)
+    expect(isPathAvailable('/photos', undefined)).toBe(false)
+  })
+  it('is not mistaken for another page whose path starts the same', () => {
+    expect(isPathAvailable('/photosynthesis', withPhotos(false))).toBe(true)
+  })
+  it('is home for a person who has only photos', () => {
+    const session = operator({ hasCompletedSetup: true, isPhotosEnabled: true })
+    session.permissions = { everywhere: ['photos:use'], byDomain: [] }
+    expect(homePath(session)).toBe('/photos')
   })
 })

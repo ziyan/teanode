@@ -113,7 +113,7 @@ func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 	if self.settings.Registry == nil {
 		return
 	}
-	hasArrival := self.takeArrival()
+	hasArrival := self.presence.takeArrival()
 	if now.Sub(self.lastSpeak) < speakFirstEvery && !hasArrival {
 		return
 	}
@@ -133,7 +133,7 @@ func (self *Agent) queueSpeakingFirst(ctx context.Context, now time.Time) {
 		if !agent.Enabled || agent.OperatorDisabledAt != nil {
 			continue
 		}
-		isPresent, idle := self.isPresent(agent.UserID, now)
+		isPresent, idle := self.presence.isPresent(agent.UserID, now)
 		if !isPresent {
 			continue
 		}

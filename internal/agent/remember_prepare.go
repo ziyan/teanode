@@ -11,17 +11,24 @@ import (
 )
 
 // Model calls stay outside the transactions that write pages and facts.
-func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, asked askedFrom, selfPage *models.AgentNode, most int) []*preparedFact {
+func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer *RememberAnswer, theirWords map[string]bool, asked askedFrom, selfPage *models.AgentNode, most int, shared *sharedWords) ([]*preparedFact, int) {
 	agentId := run.Agent.ID
 	// What each fact would say, and what its page would be called.
 	prepared := make([]*preparedFact, 0, len(answer.Facts))
 	// What the person asked to be remembered is counted apart, against an
 	// allowance of its own: a list of short statements they asked to have
 	// kept would otherwise lose all but its first few.
-	counted, askedCount := 0, 0
+	counted, askedCount, refusedCount := 0, 0, 0
 	for index, wanted := range answer.Facts {
 		text := strings.TrimSpace(wanted.Text)
 		if text == "" {
+			continue
+		}
+		// Shared knowledge is read where it lives and never copied. Refused
+		// before the fact takes up the allowance or opens its page.
+		if shared.holds(wanted, asked.shown, theirWords) {
+			refusedCount++
+			log.Noticef("not filing %q on %q: %s", firstWordsOf(text, 8), wanted.Path, sharedPageRefusal)
 			continue
 		}
 		if asked.holds(wanted) {
@@ -72,7 +79,7 @@ func (self *Agent) prepareRememberedFacts(ctx context.Context, run *Run, answer 
 		})
 	}
 
-	return prepared
+	return prepared, refusedCount
 }
 
 func (self *Agent) prepareRememberedEvidence(ctx context.Context, agentId string, prepared []*preparedFact, evidenceKind models.EvidenceKind, shown map[string]string) whatWasFiled {

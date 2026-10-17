@@ -14,7 +14,7 @@ import (
 // that signs what it publishes and installed by an operator for everybody.
 
 func newAgentSkillCommand() *cli.Command {
-	return &cli.Command{
+	command := &cli.Command{
 		Name:  "skill",
 		Usage: "tools installed from the skill registry, for everyone on this server",
 		Commands: []*cli.Command{
@@ -96,6 +96,8 @@ func newAgentSkillCommand() *cli.Command {
 			},
 		},
 	}
+	command.Commands = append(command.Commands, newAgentSkillShareCommands()...)
+	return command
 }
 
 func runAgentSkillList(ctx context.Context, command *cli.Command) error {
@@ -211,9 +213,19 @@ func printAgentSkillTools(command *cli.Command, skill *client.AgentSkill) error 
 		if tool.NeedsComputer {
 			name += "*"
 		}
-		rows = append(rows, []string{name, tool.Kind, tool.Description})
+		// What sharing it would mean, for deciding what to lend: a tool that
+		// says what it costs can be shared with limits; one that works on
+		// requests a share made can be shared safely; the rest always ask.
+		sharing := ""
+		switch {
+		case tool.IsAmountDeclared:
+			sharing = "pays; share with limits"
+		case tool.IsScoped:
+			sharing = "own requests only"
+		}
+		rows = append(rows, []string{name, tool.Kind, sharing, tool.Description})
 	}
-	return printTable([]string{"tool", "kind", "what it does"}, rows)
+	return printTable([]string{"tool", "kind", "if shared", "what it does"}, rows)
 }
 
 func runAgentSkillSearch(ctx context.Context, command *cli.Command) error {

@@ -99,7 +99,7 @@ func (self *speakFirstWorld) speakFirstJobs(t *testing.T) []*models.AgentJob {
 // with a message of its own; once, not at every tick.
 func TestTheAgentIntroducesItselfToAPersonWhoIsThere(t *testing.T) {
 	world := newSpeakFirstWorld(t)
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now())
 	world.tick(t)
 
 	jobs := world.speakFirstJobs(t)
@@ -128,7 +128,7 @@ func TestTheAgentIntroducesItselfToAPersonWhoIsThere(t *testing.T) {
 	}
 
 	// The next tick leaves it be: the greeting is waiting for an answer.
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(2*time.Minute))
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now().Add(2*time.Minute))
 	if err := world.worker.TickAt(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
@@ -147,7 +147,7 @@ func TestTheAgentIntroducesItselfInAConversationNobodyHasSpokenIn(t *testing.T) 
 			t.Fatalf("CreateAgentConversation: %s", err)
 		}
 	})
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now())
 	world.tick(t)
 
 	jobs := world.speakFirstJobs(t)
@@ -178,7 +178,7 @@ func TestTheAgentGreetsSomebodyWhoArrivesWithoutWaitingAMinute(t *testing.T) {
 		t.Fatalf("nobody there, nobody greeted: %+v", jobs)
 	}
 	later := time.Now().Add(5 * time.Second)
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, later)
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", later)
 	if err := world.worker.TickAt(context.Background(), later); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
@@ -194,8 +194,8 @@ func TestTheAgentDoesNotSpeakFirstToSomebodyWhoIsAway(t *testing.T) {
 	// No report at all; then a hidden tab; then a visible one that
 	// reported long ago.
 	world.tick(t)
-	world.worker.ReportPresence(world.owner.ID, "", false, 0, time.Now())
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(-10*time.Minute))
+	world.worker.ReportPresence(world.owner.ID, "", false, 0, "", time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now().Add(-10*time.Minute))
 	if err := world.worker.TickAt(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
@@ -219,14 +219,14 @@ func TestTheAgentDoesNotIntroduceItselfToSomebodyItKnows(t *testing.T) {
 		}
 	})
 	// Present, but quiet for less than half an hour: nothing yet.
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now())
 	world.tick(t)
 	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
 		t.Fatalf("not while they are talking: %+v", jobs)
 	}
 	// An hour later, still nothing, and the introduction is marked over.
 	later := time.Now().Add(time.Hour)
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, later)
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", later)
 	if err := world.worker.TickAt(context.Background(), later); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
@@ -252,7 +252,7 @@ func TestNotNowKeepsTheAgentQuietUnlessAsked(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now())
 	world.tick(t)
 	if jobs := world.speakFirstJobs(t); len(jobs) != 0 {
 		t.Fatalf("snoozed: %+v", jobs)
@@ -293,7 +293,7 @@ func TestAMemoryCheckIsAskedForWhenMemoryKnowsEnough(t *testing.T) {
 		}
 	})
 	present := func(at time.Time) {
-		world.worker.ReportPresence(world.owner.ID, "", true, 0, at)
+		world.worker.ReportPresence(world.owner.ID, "", true, 0, "", at)
 		if err := world.worker.TickAt(context.Background(), at); err != nil {
 			t.Fatalf("Tick: %s", err)
 		}
@@ -377,7 +377,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 	}, "a-key-hash", "a-refresh-hash"); err != nil {
 		t.Fatalf("CreateAuthorizedToken: %s", err)
 	}
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now())
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now())
 	world.tick(t)
 
 	jobs := world.speakFirstJobs(t)
@@ -403,7 +403,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 		}
 	})
 
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(2*time.Minute))
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now().Add(2*time.Minute))
 	if err := world.worker.TickAt(context.Background(), time.Now().Add(2*time.Minute)); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}
@@ -424,7 +424,7 @@ func TestANewPhoneIsShownAroundOnce(t *testing.T) {
 	}, "another-key-hash", "another-refresh-hash"); err != nil {
 		t.Fatalf("CreateAuthorizedToken: %s", err)
 	}
-	world.worker.ReportPresence(world.owner.ID, "", true, 0, time.Now().Add(4*time.Minute))
+	world.worker.ReportPresence(world.owner.ID, "", true, 0, "", time.Now().Add(4*time.Minute))
 	if err := world.worker.TickAt(context.Background(), time.Now().Add(4*time.Minute)); err != nil {
 		t.Fatalf("Tick: %s", err)
 	}

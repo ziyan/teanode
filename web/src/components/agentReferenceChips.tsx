@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { AgentReference } from '../api'
 import { useTranslation } from '../i18n/i18n'
+import { photoSmallPreviewPath } from '../photos/api'
 import { formatMoney } from './common'
 import { CloseIcon, ReplyIcon, SparkIcon } from './icons'
 import { Tooltip } from './tooltip'
@@ -19,8 +21,8 @@ function referenceDay(postedOn: string): string {
 
 // referenceLabel is what a chip says about what the person pointed at: a
 // thread by its subject, a page of memory by its name, a recording by
-// its title, a finance transaction by its day, merchant (or description)
-// and amount.
+// its title, a photo by its place and date (or file name), a finance
+// transaction by its day, merchant (or description) and amount.
 export function referenceLabel(reference: AgentReference, t: ReturnType<typeof useTranslation>['t']): string {
   if (reference.financeTransactionId) {
     const amount = Number(reference.amount)
@@ -32,7 +34,29 @@ export function referenceLabel(reference: AgentReference, t: ReturnType<typeof u
   }
   if (reference.recordingId)
     return t('agentDrawer.recordingReference', { title: reference.recordingTitle || t('recordings.untitled') })
+  if (reference.photoId)
+    return reference.photoTitle
+      ? t('agentDrawer.photoReference', { title: reference.photoTitle })
+      : t('agentDrawer.photoReferenceUntitled')
   return reference.subject || reference.name || reference.path || reference.itemId || reference.threadId || ''
+}
+
+// ReferenceMark is the small picture before a chip's words: the photo itself
+// for a photo, which may not have a preview yet (then, as for anything else,
+// the spark).
+function ReferenceMark({ reference }: { reference: AgentReference }) {
+  const [isBroken, setIsBroken] = useState(false)
+  if (!reference.photoId || isBroken) return <SparkIcon size={11} />
+  return (
+    <img
+      className="agent-reference-photo"
+      src={photoSmallPreviewPath(reference.photoId)}
+      alt=""
+      loading="lazy"
+      draggable={false}
+      onError={() => setIsBroken(true)}
+    />
+  )
 }
 
 // referenceHint is the line on hover: who a thread is from, a page's
@@ -51,7 +75,15 @@ export function isReplyReference(reference: AgentReference): boolean {
 // ReplyQuote is the message a turn answers, above the box while it is
 // being written: who said it, the start of it, and a way to drop it. On
 // the person's line once sent it is the quote above their words.
-export function ReplyQuote({ reference, title, onRemove }: { reference: AgentReference; title: string; onRemove: () => void }) {
+export function ReplyQuote({
+  reference,
+  title,
+  onRemove,
+}: {
+  reference: AgentReference
+  title: string
+  onRemove: () => void
+}) {
   const { t } = useTranslation()
   return (
     <div className="agent-reply-quote">
@@ -92,11 +124,11 @@ export function ReferenceChips({
         const label = referenceLabel(reference, t)
         return (
           <Tooltip
-            key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? reference.recordingId ?? ''}-${index}`}
+            key={`${reference.itemId ?? reference.path ?? reference.financeTransactionId ?? reference.recordingId ?? reference.photoId ?? ''}-${index}`}
             label={referenceHint(reference)}
           >
             <span className="agent-reference-chip">
-              <SparkIcon size={11} /> {label}
+              <ReferenceMark reference={reference} /> {label}
               {onRemove && (
                 <button
                   type="button"

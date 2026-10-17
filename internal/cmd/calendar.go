@@ -36,6 +36,7 @@ func NewCalendarCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "from", Usage: "the first day, as YYYY-MM-DD; today by default"},
 					&cli.StringFlag{Name: "until", Usage: "the day after the last; a week after 'from' by default"},
+					&cli.StringFlag{Name: "owner", Usage: "a username to read the calendar they shared with you, or 'everyone' for every calendar shared with you and your circles' calendars, each entry at the level it was shared at"},
 				},
 				Action: runCalendarList,
 			},
@@ -46,13 +47,17 @@ func NewCalendarCommand() *cli.Command {
 					"know about rather than an appointment -- and neither does anything\n" +
 					"cancelled:\n\n" +
 					"  teanode calendar free --from 2026-09-14 --until 2026-09-19\n" +
-					"  teanode calendar free --earliest 08:00 --latest 18:00",
+					"  teanode calendar free --earliest 08:00 --latest 18:00\n\n" +
+					"With --with, when you and those people are all free. They must have\n" +
+					"shared their calendar with you, at busy or more:\n\n" +
+					"  teanode calendar free --with ada,ben --from 2026-09-14 --until 2026-09-19",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "from", Usage: "the first day, as YYYY-MM-DD; today by default"},
 					&cli.StringFlag{Name: "until", Usage: "the day after the last; a week after 'from' by default"},
 					&cli.StringFlag{Name: "earliest", Usage: "the earliest hour of the day to offer, as HH:MM; 09:00 by default"},
 					&cli.StringFlag{Name: "latest", Usage: "the latest, as HH:MM; 17:00 by default"},
+					&cli.StringSliceFlag{Name: "with", Usage: "usernames of people to be free together with, separated by commas"},
 				},
 				Action: runCalendarFree,
 			},
@@ -89,8 +94,43 @@ func NewCalendarCommand() *cli.Command {
 				Action:    runCalendarRemove,
 			},
 			{
+				Name:      "share",
+				Usage:     "share your calendar with a person or a circle at a level",
+				ArgsUsage: "<username|circle>",
+				Description: "Who can see what is your choice, a calendar at a time:\n\n" +
+					"  busy     when you are busy, and nothing else\n" +
+					"  titles   the time, title and place of each event\n" +
+					"  details  everything in an event, guests included\n" +
+					"  edit     details, and they may add and change events\n\n" +
+					"An event you mark private ('teanode calendar add --private', or\n" +
+					"'edit --private') is only ever shown as busy. Sharing again\n" +
+					"changes the level; 'teanode calendar shares' lists them and\n" +
+					"'teanode calendar unshare' takes one back.",
+				Flags:  []cli.Flag{JSONFlag(), shareLevelFlag(), calendarFlag()},
+				Action: runCalendarShare,
+			},
+			{
+				Name:   "shares",
+				Usage:  "who your calendar is shared with, and at what level",
+				Flags:  []cli.Flag{JSONFlag(), calendarFlag()},
+				Action: runCalendarShares,
+			},
+			{
+				Name:      "unshare",
+				Usage:     "stop sharing your calendar with someone",
+				ArgsUsage: "<share-id>",
+				Action:    runCalendarUnshare,
+			},
+			{
+				Name:      "circle",
+				Usage:     "make a circle's own calendar, which everyone in the circle reads and writes",
+				ArgsUsage: "<circle-id>",
+				Flags:     []cli.Flag{JSONFlag(), &cli.StringFlag{Name: "name", Usage: "what to call it; the circle's name by default"}},
+				Action:    runCalendarCircle,
+			},
+			{
 				Name:   "calendars",
-				Usage:  "the calendars this account keeps",
+				Usage:  "the calendars you reach: your own, your circles', and the ones shared with you",
 				Flags:  []cli.Flag{JSONFlag()},
 				Action: runCalendarCalendars,
 			},
@@ -101,7 +141,7 @@ func NewCalendarCommand() *cli.Command {
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "what to call it"},
 					&cli.StringFlag{Name: "description", Usage: "what it is for"},
-					&cli.StringFlag{Name: "colour", Usage: "what a client paints it, as #rrggbb"},
+					&cli.StringFlag{Name: "color", Aliases: []string{"colour"}, Usage: "what a client paints it, as #rrggbb"},
 					&cli.StringFlag{Name: "timezone", Usage: "the zone a new event is written in, as an IANA name"},
 					&cli.StringFlag{Name: "week-start", Usage: "the day a week is drawn from, sunday or monday"},
 				},
@@ -123,20 +163,23 @@ func eventFlags() []cli.Flag {
 		&cli.BoolFlag{Name: "all-day", Usage: "something that belongs to the day rather than to a time"},
 		&cli.StringFlag{Name: "repeat", Usage: "how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO; give it empty to stop"},
 		&cli.StringFlag{Name: "status", Usage: "confirmed, tentative or cancelled"},
+		&cli.BoolFlag{Name: "private", Usage: "an event you mark private is only ever shown to others you share your calendar with as busy; --private=false takes the mark off"},
 		&cli.StringSliceFlag{Name: "invite", Usage: "an address to invite; repeat for more. Everybody listed is sent an invitation"},
 	}
 }
 
-// theCalendar is the caller's, made by the server if they have never had one.
-// Everything here works on one calendar, because a person has one; their
-// reminders list beside it is teanode reminder's.
+// theCalendar is the caller's own, made by the server if they have never had
+// one. Everything here works on one calendar, because a person has one; their
+// reminders list beside it is teanode reminder's, and the calendars shared with
+// them or kept by a circle are reached by name (--owner) rather than by
+// being the first one listed.
 func theCalendar(ctx context.Context, connection *client.Client) (*client.Calendar, error) {
 	calendars, err := client.ListCalendars(ctx, connection)
 	if err != nil {
 		return nil, err
 	}
 	for _, found := range calendars {
-		if found.CalendarKind != string(models.CalendarReminders) {
+		if found.CalendarKind != string(models.CalendarReminders) && found.IsOwn() {
 			return found, nil
 		}
 	}
@@ -206,6 +249,9 @@ func runCalendarList(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return describeError(command, err)
 	}
+	if strings.TrimSpace(command.String("owner")) != "" {
+		return runCalendarSharedList(ctx, command, connection, kept)
+	}
 	where := zoneOf(kept)
 	from, until, err := windowFrom(command, where)
 	if err != nil {
@@ -246,6 +292,9 @@ func runCalendarList(ctx context.Context, command *cli.Command) error {
 		}
 		if event.Status == "CANCELLED" {
 			marks = append(marks, "cancelled")
+		}
+		if event.IsPrivate {
+			marks = append(marks, "private")
 		}
 		rows = append(rows, []string{
 			when, ends, event.Summary, event.Location, strings.Join(marks, ", "), event.ID,
@@ -313,6 +362,9 @@ func runCalendarShow(ctx context.Context, command *cli.Command) error {
 	}
 	if event.Status != "" {
 		fmt.Printf("  %s\n", strings.ToLower(event.Status))
+	}
+	if event.IsPrivate {
+		fmt.Printf("  private: others you share your calendar with see only that you are busy\n")
 	}
 	if event.Organizer != "" {
 		fmt.Printf("  called by %s\n", event.Organizer)
@@ -409,6 +461,10 @@ func eventFieldsFrom(command *cli.Command, kept *client.Calendar, wasAllDay bool
 	if command.IsSet("all-day") {
 		allDay := command.Bool("all-day")
 		fields.AllDay = &allDay
+	}
+	if command.IsSet("private") {
+		isPrivate := command.Bool("private")
+		fields.IsPrivate = &isPrivate
 	}
 	if command.IsSet("invite") {
 		invited := command.StringSlice("invite")
@@ -597,11 +653,17 @@ func runCalendarCalendars(ctx context.Context, command *cli.Command) error {
 		if found.CalendarKind == string(models.CalendarReminders) {
 			held = plural(found.Events, "reminder", "reminders")
 		}
+		// Whose it is and what the caller may do with it, for the ones that are
+		// not their own: a calendar shared with them is read only below edit.
+		whose, level := "you", "owner"
+		if !found.IsOwn() {
+			whose, level = whoseCalendar(found), found.ShareLevel
+		}
 		rows = append(rows, []string{
-			found.Name, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
+			found.Name, whose, level, found.Timezone, found.WeekStart, found.Colour, held, found.ID,
 		})
 	}
-	return printTable([]string{"name", "timezone", "week starts", "colour", "holds", "id"}, rows)
+	return printTable([]string{"name", "owner", "level", "timezone", "week starts", "color", "holds", "id"}, rows)
 }
 
 func runCalendarSet(ctx context.Context, command *cli.Command) error {
@@ -622,8 +684,8 @@ func runCalendarSet(ctx context.Context, command *cli.Command) error {
 	if command.IsSet("description") {
 		description = command.String("description")
 	}
-	if command.IsSet("colour") {
-		colour = command.String("colour")
+	if command.IsSet("color") {
+		colour = command.String("color")
 	}
 	if command.IsSet("timezone") {
 		timezone = command.String("timezone")
@@ -670,6 +732,9 @@ func runCalendarFree(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
+	if len(command.StringSlice("with")) > 0 {
+		return runCalendarFreeTogether(ctx, command, connection, found)
+	}
 	where := zoneOf(found)
 	from, until, err := windowFrom(command, where)
 	if err != nil {
@@ -697,33 +762,30 @@ func runCalendarFree(ctx context.Context, command *cli.Command) error {
 		From  string `json:"from"`
 		Until string `json:"until"`
 	}
+	busy := make([]calendar.Occurrence, 0, len(events))
+	for _, event := range events {
+		// A whole day is not an appointment, and something called off is not
+		// on.
+		if event.AllDay || strings.EqualFold(event.Status, "CANCELLED") {
+			continue
+		}
+		starts, err := time.Parse(time.RFC3339, event.StartsAt)
+		if err != nil {
+			continue
+		}
+		ends, err := time.Parse(time.RFC3339, event.EndsAt)
+		if err != nil || !ends.After(starts) {
+			ends = starts.Add(time.Hour)
+		}
+		busy = append(busy, calendar.Occurrence{StartsAt: starts, EndsAt: ends})
+	}
 	var free []stretch
-	for day := from; day.Before(until); day = day.AddDate(0, 0, 1) {
-		opens, closes := day.Add(earliest), day.Add(latest)
-		busy := make([]calendar.Occurrence, 0, len(events))
-		for _, event := range events {
-			// A whole day is not an appointment, and something called off
-			// is not on.
-			if event.AllDay || strings.EqualFold(event.Status, "CANCELLED") {
-				continue
-			}
-			starts, err := time.Parse(time.RFC3339, event.StartsAt)
-			if err != nil {
-				continue
-			}
-			ends, err := time.Parse(time.RFC3339, event.EndsAt)
-			if err != nil || !ends.After(starts) {
-				ends = starts.Add(time.Hour)
-			}
-			busy = append(busy, calendar.Occurrence{StartsAt: starts, EndsAt: ends})
-		}
-		for _, gap := range calendar.Free(calendar.FreeBusy(busy, opens, closes), opens, closes) {
-			free = append(free, stretch{
-				Day:   day.Format("2006-01-02"),
-				From:  gap.StartsAt.In(where).Format("15:04"),
-				Until: gap.EndsAt.In(where).Format("15:04"),
-			})
-		}
+	for _, gap := range calendar.FreeByDay(busy, from, until, earliest, latest) {
+		free = append(free, stretch{
+			Day:   gap.Day.Format("2006-01-02"),
+			From:  gap.StartsAt.In(where).Format("15:04"),
+			Until: gap.EndsAt.In(where).Format("15:04"),
+		})
 	}
 	if command.Bool("json") {
 		return PrintJSON(free)

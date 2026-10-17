@@ -48,7 +48,7 @@ func (self *transaction) GetSyncCredential(selector string) (*models.SyncCredent
 	return &credential, nil
 }
 func (self *transaction) CreateSyncCredential(credential *models.SyncCredential) (*models.SyncCredential, error) {
-	if credential == nil || credential.UserID == "" || strings.TrimSpace(credential.CredentialName) == "" || len(credential.CredentialName) > 128 || len(credential.Selector) < 12 || len(credential.Selector) > 32 || (!credential.HasCalendarAccess && !credential.HasRemindersAccess && !credential.HasContactsAccess) {
+	if credential == nil || credential.UserID == "" || strings.TrimSpace(credential.CredentialName) == "" || len(credential.CredentialName) > 128 || len(credential.Selector) < 12 || len(credential.Selector) > 32 || (!credential.HasCalendarAccess && !credential.HasRemindersAccess && !credential.HasContactsAccess && !credential.HasPhotosAccess) {
 		return nil, ErrInvalidArguments
 	}
 	if _, err := bcrypt.Cost([]byte(credential.PasswordHash)); err != nil {

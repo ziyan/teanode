@@ -109,9 +109,19 @@ type Parsed struct {
 	Recurring bool
 
 	// Status is the event's own STATUS, and Transparent marks an event its
-	// owner has said does not make them busy.
+	// owner has said does not make them busy. Class is its CLASS in capitals:
+	// PUBLIC, PRIVATE or CONFIDENTIAL, or empty.
 	Status      string
 	Transparent bool
+	Class       string
+
+	// IsPrivate is whether Class marks the event private (PRIVATE or
+	// CONFIDENTIAL), worked out once so that callers do not each decide.
+	IsPrivate bool
+
+	// IsBusyOnly marks an event that was reduced to when it is before it was
+	// shown to somebody it is not shared with (see Redact).
+	IsBusyOnly bool
 
 	// Organizer and Attendees are who is arranging it and who is asked.
 	// Method is the file's METHOD: REQUEST, REPLY or CANCEL when it arrived
@@ -200,6 +210,13 @@ func Parse(data []byte) (*Parsed, error) {
 	}
 	if status, err := event.Status(); err == nil {
 		parsed.Status = strings.ToUpper(string(status))
+	}
+	if marked := event.Props.Get(BusyOnlyProperty); marked != nil {
+		parsed.IsBusyOnly = strings.EqualFold(strings.TrimSpace(marked.Value), "TRUE")
+	}
+	if class, err := event.Props.Text(ical.PropClass); err == nil {
+		parsed.Class = strings.ToUpper(strings.TrimSpace(class))
+		parsed.IsPrivate = IsPrivateClass(parsed.Class)
 	}
 	if transparency, err := event.Props.Text(ical.PropTransparency); err == nil {
 		parsed.Transparent = strings.EqualFold(strings.TrimSpace(transparency), "TRANSPARENT")

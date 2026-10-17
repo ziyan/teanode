@@ -40,6 +40,9 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // menu of these pages; the trail only needs to carry a page's own
   // ancestors, which a knowledge page has and the others do not.
   { prefix: '/mailbox', trail: [{ label: 'nav.mailbox', to: '/mailbox' }] },
+  // Reached from the account menu, so the trail starts at the page. A circle
+  // adds its own name below.
+  { prefix: '/circles', trail: [{ label: 'circles.title', to: '/circles' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
   { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },
@@ -68,6 +71,9 @@ const SECTION_PAGES: { path: string; label: Key; isRailItem?: boolean }[] = [
   { path: '/manage/mail/compose', label: 'nav.compose' },
   { path: '/mailbox/contacts', label: 'nav.contacts', isRailItem: true },
   { path: '/mailbox/calendar', label: 'nav.calendar', isRailItem: true },
+  // Photos has a row in the rail beside the calendar, and a path under it
+  // for the photo being looked at.
+  { path: '/photos', label: 'nav.photos', isRailItem: true },
   { path: '/mailbox/compose', label: 'nav.compose' },
   // Missing, so this page fell back to the section it is in and called
   // itself Mailbox — in the trail, in the heading, and in the tab.
@@ -155,6 +161,16 @@ function useTrail(): { label: string; to?: string }[] {
     const sectionPage = SECTION_PAGES.find(
       (candidate) => candidate.path === location.pathname || location.pathname.startsWith(candidate.path + '/'),
     )
+    // An album is a step below the list of albums, and the photo being
+    // looked at in it is the same page. Until its title arrives the heading
+    // is blank, not "Photos".
+    if (sectionPage?.path === '/photos' && location.pathname.startsWith('/photos/albums/')) {
+      return [{ label: t(sectionPage.label), to: '/photos/albums' }, { label: detail ?? '' }]
+    }
+    // A person is the same, a step below the list of people.
+    if (sectionPage?.path === '/photos' && location.pathname.startsWith('/photos/people/')) {
+      return [{ label: t(sectionPage.label), to: '/photos/people' }, { label: detail ?? '' }]
+    }
     // A row of the mailbox's rail is the whole trail, and so is a path
     // under it: one list open on Subscriptions is still that page.
     if (sectionPage?.isRailItem) {

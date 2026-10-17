@@ -380,6 +380,17 @@ func (self *Agent) Active() bool {
 	return self != nil && self.Enabled && self.OperatorDisabledAt == nil
 }
 
+// IsPlaceholder says the row was made for a person who chats and has never
+// touched their agent: switched off, and not changed since it was made.
+// Everybody who can chat has an agent row, because their conversations and
+// phones hang from it (db.EnsureAgent), and such a row is to everything that
+// asks whether the person uses an agent -- their settings page, the operator's
+// list, a grant of a mailbox -- as if there were none. The first time the
+// person saves anything about their agent the row is changed, and is theirs.
+func (self *Agent) IsPlaceholder() bool {
+	return self != nil && !self.Enabled && self.OperatorDisabledAt == nil && self.ModifiedAt.Equal(self.CreatedAt)
+}
+
 // DisplayName is what to call the agent.
 func (self *Agent) DisplayName() string {
 	if self == nil || strings.TrimSpace(self.Name) == "" {
@@ -719,6 +730,12 @@ const (
 	// to, when there is one.
 	AgentJobReadReceipt AgentJobKind = "read_receipt"
 
+	// AgentJobDescribePhoto writes what is in a photo, with the words that
+	// can be read in it, and keeps it on the photo and searchable. Its
+	// subject is the photo. The kind's name is at most 16 characters, which
+	// is what a run's job kind column holds.
+	AgentJobDescribePhoto AgentJobKind = "describe_photo"
+
 	// AgentJobTaxDocument reads a paystub or a tax form (a W-2) out of
 	// a file handed in as one and records it. Its subject is the uploaded
 	// file.
@@ -911,6 +928,12 @@ const (
 // on the operator's "ask first" list, which only ever makes the agent more
 // careful.
 const UnattendedRiskOperatorListed UnattendedRisk = "operatorListed"
+
+// UnattendedRiskPersonsAnswer is the other reason no person can allow: the
+// call answers something that waits for the person's own word, such as the
+// call a person they shared a paying skill with is waiting on. Only the person
+// gives that, so an allowance for when they are not there never covers it.
+const UnattendedRiskPersonsAnswer UnattendedRisk = "personsAnswer"
 
 // UnattendedRisks is every reason a person may allow, in the order the
 // settings show them.

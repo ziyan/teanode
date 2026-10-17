@@ -20,6 +20,13 @@
             refreshToken: "", expiresAt: .distantFuture, username: "robin")
 
         func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+            if let photoAnswer = Self.photoAnswer(request) {
+                return (photoAnswer, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
+            // A person's picture is read from its address, not asked for in GraphQL.
+            if let picture = Self.avatarPicture(for: request) {
+                return (picture, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+            }
             let query = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let answer: String
             if let recordingAnswer = Self.recordingAnswer(query: query) {
@@ -27,6 +34,8 @@
             } else if let herdrAnswer = Self.herdrAnswer(query: query, body: request.httpBody) {
                 // Before "ReadAgent" below, which these operation names start with.
                 answer = herdrAnswer
+            } else if let circlesAnswer = Self.circlesAnswer(query: query, body: request.httpBody) {
+                answer = circlesAnswer
             } else if query.contains("AgentServerUsage") {
                 answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
@@ -40,7 +49,7 @@
                     answer = #"{"data":{"GetDeviceSetupCapabilities":{"canSetUpMail":true,"canSetUpCalendar":true,"canSetUpReminders":true,"canSetUpContacts":true,"mailboxes":[{"id":"mailbox-demo","name":"Personal","addresses":[]}]}}}"#
                 }
             } else if query.contains("GetServiceCapabilities") {
-                answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
+                answer = #"{"data":{"GetServiceCapabilities":{"isMailRoutingEnabled":true,"isMailboxEnabled":true,"isCalendarEnabled":true,"isRemindersEnabled":true,"isContactsEnabled":true,"isPhotosEnabled":true,"isAssistantEnabled":true,"hasPendingServiceRestart":false,"hasCompletedSetup":true}}}"#
             } else if query.contains("ReadAgentConversation") {
                 answer = Self.screen?.hasPrefix("conversation-long-message") == true ? Self.longMessageConversation : Self.conversation
             } else if query.contains("ListAgentConversations") {
@@ -344,6 +353,11 @@
         }
 
         /// The screen Settings opens for a screenshot: `-TeaNodeScreen people`.
+        /// `photos-backup-off` and `photos-backup-on` open Photo backup off, and
+        /// part way through a library, `photos-backup-waiting` with files
+        /// waiting for the network, and `photos-backup-background` with a long
+        /// queue the system is sending with the app closed; the engine takes its invented counts from
+        /// this name (PhotoBackupEngine.applyDemo), so no server is asked.
         static var screen: String? {
             let arguments = ProcessInfo.processInfo.arguments
             guard let index = arguments.firstIndex(of: "-TeaNodeScreen"), index + 1 < arguments.count else { return nil }
@@ -525,6 +539,8 @@
         static let conversations = #"""
             {"data":{"ListAgentConversations":[
               {"id":"main","kind":"main","title":null,"summary":null,"lastAt":"2026-10-10T09:05:00Z"},
+              \#(directChatListEntry),
+              \#(groupChatListEntry),
               {"id":"trip","kind":"named","title":"Weekend trip","summary":null,"lastAt":"2026-10-09T18:30:00Z"},
               {"id":"taxes","kind":"named","title":"Receipts for the year","summary":null,"lastAt":"2026-10-02T12:00:00Z"}
             ]}}
@@ -592,7 +608,7 @@
         /// check.
         static let session = #"""
             {"data":{"GetSession":{"username":"robin","userId":"robin","manages":true,
-              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act"],"byDomain":[]},
+              "permissions":{"everywhere":["mail:audit","queue:manage","report:read","domain:manage","user:manage","group:manage","role:manage","audit:read","server:manage","agent:audit","agent:act","circle:use","photos:use"],"byDomain":[]},
               "impersonatorUsername":null}}}
             """#
 

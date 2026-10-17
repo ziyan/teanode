@@ -14,20 +14,18 @@ public enum Documents {
         """
     public static let conversations = """
         query ($archived: Boolean, $query: String) {
-          ListAgentConversations(archived: $archived, query: $query) { id kind jobKind title summary lastAt archivedAt goal goalState goalNote }
+          ListAgentConversations(archived: $archived, query: $query) { id kind jobKind title summary lastAt archivedAt goal goalState goalNote chat { \(chatFields) } }
         }
         """
     public static let conversation = """
         query ($conversationId: String, $first: Int, $offset: Int) {
           ReadAgentConversation(conversationId: $conversationId, first: $first, offset: $offset) {
-            conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote }
+            conversation { id kind jobKind title summary lastAt archivedAt goal goalState goalNote chat { \(chatFields) } }
             actingAs
             messages {
-              id createdAt role content name toolCallId toolCalls { id name arguments }
+              \(messageFields)
+              toolCalls { id name arguments }
               usage { promptTokens completionTokens cost }
-              attachments { id name contentType size }
-              references { itemId threadId subject from path name recordingId recordingTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
-              reactions { emoji reactorKind reactedAt }
             }
             total
             todos { id text doneAt }
@@ -36,8 +34,8 @@ public enum Documents {
         }
         """
     public static let ask = """
-        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput) {
-          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer) { runId conversationId }
+        mutation ($conversationId: String, $message: String!, $surface: String, $attachmentIds: [String!], $references: [AgentReferenceInput!], $drawerId: String, $interruptedAnswer: InterruptedAnswerInput, $addressedAgentIds: [String!]) {
+          AskAgent(conversationId: $conversationId, message: $message, surface: $surface, attachmentIds: $attachmentIds, references: $references, drawerId: $drawerId, interruptedAnswer: $interruptedAnswer, addressedAgentIds: $addressedAgentIds) { runId conversationId }
         }
         """
     public static let voice = """
@@ -118,8 +116,8 @@ public enum Documents {
         mutation ($messageId: String!, $emoji: String!) { ReactToAgentMessage(messageId: $messageId, emoji: $emoji) }
         """
     public static let reportPresence = """
-        mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String) {
-          ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds, reporterId: $reporterId)
+        mutation ($isVisible: Boolean!, $idleSeconds: Int!, $reporterId: String, $conversationId: String) {
+          ReportAgentPresence(isVisible: $isVisible, idleSeconds: $idleSeconds, reporterId: $reporterId, conversationId: $conversationId)
         }
         """
     public static let registerPhone = """
@@ -147,7 +145,11 @@ public enum Documents {
         """
     public static let conversationEvents = """
         subscription ($conversationId: String!) {
-          AgentConversationEvents(conversationId: $conversationId) { kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind }
+          AgentConversationEvents(conversationId: $conversationId) {
+            kind runId sequence at text tool callId arguments risk note noteKind noteDetail error drawerId messageId emoji reactorKind
+            reactorUserId reactorName userId name authorAgentId authorOwnerName isMessageCut
+            message { \(messageFields) }
+          }
         }
         """
 
@@ -161,6 +163,11 @@ public enum Documents {
         "setMainConversation": setMainConversation, "ideas": ideas, "startIdea": startIdea, "markIdeasShown": markIdeasShown, "shareAttachment": shareAttachment, "devices": devices, "voice": voice,
         "backgroundCommands": backgroundCommands, "backgroundCommand": backgroundCommand, "stopBackgroundCommand": stopBackgroundCommand,
         "readRun": readRun, "registerLiveActivity": registerLiveActivity,
+        "chatPeople": chatPeople, "openDirectChat": openDirectChat, "createGroupChat": createGroupChat, "renameChat": renameChat,
+        "addChatMembers": addChatMembers, "removeChatMember": removeChatMember, "leaveChat": leaveChat,
+        "editChatMessage": editChatMessage, "deleteChatMessage": deleteChatMessage, "markChatRead": markChatRead, "muteChat": muteChat,
+        "setChatTyping": setChatTyping, "setChatAgentReading": setChatAgentReading,
+        "setChatAgentAskableByOthers": setChatAgentAskableByOthers,
     ]
 }
 
@@ -379,7 +386,8 @@ extension Connection {
     /// runs in.
     public func ask(
         _ message: String, in conversationId: String?, attachmentIds: [String] = [], references: [AgentReference] = [],
-        surface: String = Surface.typed, drawerId: String, interruptedAnswer: (heardText: String, unheardText: String)? = nil
+        surface: String = Surface.typed, drawerId: String, interruptedAnswer: (heardText: String, unheardText: String)? = nil,
+        addressedAgentIds: [String] = []
     ) async throws -> (runId: String, conversationId: String) {
         struct Answer: Decodable, Sendable {
             struct Asked: Decodable, Sendable {
@@ -400,6 +408,9 @@ extension Connection {
             variables["interruptedAnswer"] = .object([
                 "heardText": .string(interruptedAnswer.heardText), "unheardText": .string(interruptedAnswer.unheardText),
             ])
+        }
+        if !addressedAgentIds.isEmpty {
+            variables["addressedAgentIds"] = .array(addressedAgentIds.map { .string($0) })
         }
         if let conversationId { variables["conversationId"] = .string(conversationId) }
         let asked = try await execute(Documents.ask, variables: variables, as: Answer.self).AskAgent
@@ -488,12 +499,24 @@ extension Connection {
         _ = try await execute(Documents.reactToMessage, variables: ["messageId": .string(messageId), "emoji": .string(emoji)], as: Answer.self)
     }
 
-    public func reportPresence(isVisible: Bool) async throws {
+    /// Says whether the app is in front of the person and which conversation
+    /// it shows, an empty id when it is on another screen: a message in a
+    /// chat is held back from the phone only while that chat is on screen.
+    public func reportPresence(isVisible: Bool, conversationId: String = "") async throws {
         struct Answer: Decodable, Sendable { let ReportAgentPresence: Bool? }
         _ = try await execute(
             Documents.reportPresence,
-            variables: ["isVisible": .bool(isVisible), "idleSeconds": .number(0), "reporterId": .string(Self.presenceReporterId)],
+            variables: Self.presenceVariables(isVisible: isVisible, conversationId: conversationId),
             as: Answer.self)
+    }
+
+    /// The variables of a presence report, apart from the call so that what
+    /// is sent can be checked.
+    static func presenceVariables(isVisible: Bool, conversationId: String) -> [String: JSONValue] {
+        [
+            "isVisible": .bool(isVisible), "idleSeconds": .number(0), "reporterId": .string(presenceReporterId),
+            "conversationId": .string(conversationId),
+        ]
     }
 
     /// This launch of the app's name in its presence reports, so the server

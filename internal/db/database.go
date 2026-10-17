@@ -121,6 +121,29 @@ func (self *database) ListenAgentEvents(ctx context.Context) (<-chan string, err
 	return self.listen(ctx, AgentEventChannel)
 }
 
+// ChatEventChannel is what an instance LISTENs on to hear what happened in
+// the chats of the people the other instances serve: a message said, edited
+// or taken back, a reaction, a read mark, somebody typing. A channel of its
+// own, because chats exist on a server that runs no agent, which listens on
+// AgentEventChannel only when it has a model.
+const ChatEventChannel = "chat_event"
+
+// NotifyChatEvent is outside any transaction, like NotifyAgentEvent: a chat
+// event is not a change to keep, only a word to the instances listening now.
+// The change itself is in the chat's tables, and a client that missed the word
+// reads the conversation again.
+func (self *database) NotifyChatEvent(payload string) error {
+	return self.db.Exec("SELECT pg_notify(?, ?)", ChatEventChannel, payload).Error
+}
+
+// ListenChatEvents delivers every payload any instance notifies, for as long
+// as the context lives. A listener that lost its connection reconnects on its
+// own, and what was said while it was away is gone: a drawer that missed an
+// event reads the chat again when it follows it again.
+func (self *database) ListenChatEvents(ctx context.Context) (<-chan string, error) {
+	return self.listen(ctx, ChatEventChannel)
+}
+
 // listenConnectWait is how long listen waits for the LISTEN to be in place
 // before handing back the channel regardless: the listener keeps trying on
 // its own, and whoever is waiting has a poll to fall back on.

@@ -26,6 +26,8 @@ public struct AccessSession: Codable, Hashable, Sendable {
     public var canManageGroups: Bool { holds("group:manage") }
     public var canManageRoles: Bool { holds("role:manage") }
     public var canReadAudit: Bool { holds("audit:read") }
+    /// Whether the person may keep a photo library and back a device up to it.
+    public var canUsePhotos: Bool { holds("photos:use") }
 }
 
 /// AccessUser is somebody with an account on the server, as the people page
@@ -38,6 +40,11 @@ public struct AccessUser: Codable, Hashable, Sendable, Identifiable {
     public let name: String?
     /// The address that receives notifications.
     public let email: String?
+    /// Where their picture is, a path to read with the app's token; nil when
+    /// they have none.
+    public var avatarUrl: String? = nil
+    /// Which of the twelve colors their initial is drawn on without a picture.
+    public var avatarColorIndex: Int? = nil
     /// When they were disabled, or nil while they may sign in.
     public let disabledAt: String?
     /// Whether they have a password at all; one without signs in with a
@@ -301,7 +308,7 @@ public struct AuditEventPage: Codable, Hashable, Sendable {
 extension Documents {
     /// What every read and change of a person answers with.
     static let accessUserFields = """
-        id username name email disabledAt hasPassword groupIds createdAt
+        id username name email avatarUrl avatarColorIndex disabledAt hasPassword groupIds createdAt
         """
     /// What every read and change of a group answers with.
     static let accessGroupFields = """

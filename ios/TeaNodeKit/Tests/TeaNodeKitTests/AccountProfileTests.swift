@@ -115,6 +115,44 @@ final class AccountProfileTests: XCTestCase {
         XCTAssertEqual(variables["timezoneMode"], .string("fixed"))
     }
 
+    // MARK: Picture
+
+    func testDecodesThePictureAndColorTheServerChose() async throws {
+        let (connection, _) = connection(answering: #"""
+            {"data":{"GetCurrentUser":{"id":"user-1","username":"robin","name":"Robin","email":null,"avatarUrl":"/api/v1/avatar/user/user-1?v=3","avatarColorIndex":7,"timezone":"","timezoneMode":""}}}
+            """#)
+        let read = try await connection.accountProfile()
+        XCTAssertEqual(read?.avatarUrl, "/api/v1/avatar/user/user-1?v=3")
+        XCTAssertEqual(read?.avatarColorIndex, 7)
+    }
+
+    func testAProfileWithNoPictureHasNoAddress() async throws {
+        let (connection, _) = connection(answering: #"""
+            {"data":{"GetCurrentUser":{"id":"user-1","username":"robin","avatarUrl":null,"avatarColorIndex":2}}}
+            """#)
+        let read = try await connection.accountProfile()
+        XCTAssertNil(read?.avatarUrl)
+        XCTAssertEqual(read?.avatarColorIndex, 2)
+    }
+
+    func testSettingThePictureSendsTheBytesAsBase64() async throws {
+        let (connection, fake) = connection(answering: #"""
+            {"data":{"SetUserAvatar":{"id":"user-1","username":"robin","avatarUrl":"/api/v1/avatar/user/user-1?v=4","avatarColorIndex":7}}}
+            """#)
+        let saved = try await connection.setAccountAvatar(Data([0xFF, 0xD8, 0xFF]))
+        XCTAssertEqual(saved.avatarUrl, "/api/v1/avatar/user/user-1?v=4")
+        XCTAssertEqual(try sentVariables(fake)["content"], .string("/9j/"))
+    }
+
+    func testRemovingThePictureAnswersWithNoAddress() async throws {
+        let (connection, _) = connection(answering: #"""
+            {"data":{"RemoveUserAvatar":{"id":"user-1","username":"robin","avatarUrl":null,"avatarColorIndex":7}}}
+            """#)
+        let saved = try await connection.removeAccountAvatar()
+        XCTAssertNil(saved.avatarUrl)
+        XCTAssertEqual(saved.avatarColorIndex, 7)
+    }
+
     // MARK: Password
 
     func testAPasswordChangeNeedsBothTypingsToMatch() {

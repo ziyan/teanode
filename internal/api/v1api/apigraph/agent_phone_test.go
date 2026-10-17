@@ -59,6 +59,56 @@ func (self *signInWorld) giveAnAgent(t *testing.T) {
 	})
 }
 
+// giveAChatOnly lets the person use circles and not the agent, whose row is
+// switched off: a person who is among people on a server with no model.
+func (self *signInWorld) giveAChatOnly(t *testing.T) {
+	t.Helper()
+	dbtest.RunTransactionOn(t, self.database, func(tx db.Transaction) {
+		role, err := tx.CreateRole(&models.Role{Name: "chat only test role", Permissions: []models.Permission{models.PermissionCircleUse}})
+		if err != nil {
+			t.Fatalf("CreateRole: %s", err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "chat only test group", UserIDs: []string{self.person.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			t.Fatalf("CreateGroup: %s", err)
+		}
+		if _, err := tx.CreateAgent(&models.Agent{UserID: self.person.ID, Enabled: false}); err != nil {
+			t.Fatalf("CreateAgent: %s", err)
+		}
+	})
+}
+
+// A person who only chats, on a server with no agent worker, registers their
+// phone like any other: it is how a chat reaches them when they are not
+// looking, and it needs no model.
+func TestAPersonWhoOnlyChatsRegistersAPhoneWithNoAgentWorker(test *testing.T) {
+	world := newSignInWorld(test)
+	world.giveAChatOnly(test)
+	world.graph.settings.Agent = nil
+	appClient := world.register(test, "com.example.app:/oauth")
+	_, answer := world.post(test, api.PathOAuthToken, url.Values{
+		"grant_type": {"urn:teanode:params:oauth:grant-type:connect-code"}, "client_id": {appClient},
+		"connect_code": {world.connectCode(test)}, "device_name": {"A test phone"},
+	})
+	appToken, _ := answer["access_token"].(string)
+	if appToken == "" {
+		test.Fatalf("the app could not connect: %v", answer)
+	}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	register := `mutation { RegisterAgentPhone(phoneName: "A test phone", phoneModel: "iPhone17,1", pushRegistration: "sealed:a-registration", payloadKey: "` + base64.StdEncoding.EncodeToString(key) + `") { id canBeNotified } }`
+	data, errors := world.askWithToken(test, appToken, register)
+	if len(errors) > 0 {
+		test.Fatalf("RegisterAgentPhone with no worker: %v", errors)
+	}
+	if phone, _ := data["RegisterAgentPhone"].(map[string]any); phone["canBeNotified"] != true {
+		test.Errorf("the phone registered as %v", phone)
+	}
+	data, errors = world.ask(test, `{ ListAgentPhones { phones { id } } }`)
+	if list, _ := data["ListAgentPhones"].(map[string]any); len(errors) > 0 || len(list["phones"].([]any)) != 1 {
+		test.Errorf("the phones are %v, %v", data, errors)
+	}
+}
+
 // A phone is registered by the app with the token it connected with, and
 // nothing else: not a browser, not a token somebody made by hand. Removing
 // it signs it out, however many times the app has renewed its token since.

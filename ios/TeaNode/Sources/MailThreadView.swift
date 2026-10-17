@@ -616,7 +616,7 @@ struct ProposalCard: View {
     private func accept() async {
         do {
             if proposal.kind == "event" {
-                guard let calendar = try await mail.connection.calendars().first(where: { $0.calendarKind == "events" }) else { return }
+                guard let calendar = try await mail.connection.calendars().first(where: { $0.calendarKind == "events" && $0.isOwn }) else { return }
                 let change = CalendarChange(operation: "save", summary: proposal.summary, variables: [
                     "calendarId": .string(calendar.id), "summary": .string(proposal.summary), "location": .string(proposal.location),
                     "startsAt": .string(proposal.starts), "endsAt": .string(proposal.ends.isEmpty ? proposal.starts : proposal.ends),

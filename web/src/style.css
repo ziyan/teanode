@@ -237,24 +237,131 @@ td a:hover {
   position: relative;
 }
 
+/* The twelve colors a person without a picture gets behind their initial,
+   chosen by the server from a hash of their id so the same person is the same
+   color on every screen and in the iPhone app (the app carries the same
+   twelve). Each holds white text at 4.5 to 1 or better; the dark set is the
+   same hues one step down, so a circle of color does not glare on the dark
+   ground. */
+:root {
+  --avatar-0: #b23a2e;
+  --avatar-1: #b0521a;
+  --avatar-2: #8c6600;
+  --avatar-3: #5c7a1c;
+  --avatar-4: #1d7a45;
+  --avatar-5: #0f7a73;
+  --avatar-6: #0e6e94;
+  --avatar-7: #2f5fb3;
+  --avatar-8: #5b4fc2;
+  --avatar-9: #8a44b3;
+  --avatar-10: #a63a82;
+  --avatar-11: #5f6873;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --avatar-0: #a8392e;
+    --avatar-1: #a4501c;
+    --avatar-2: #7d5c00;
+    --avatar-3: #55711c;
+    --avatar-4: #1b6d3f;
+    --avatar-5: #0e6d67;
+    --avatar-6: #0e6485;
+    --avatar-7: #2c56a3;
+    --avatar-8: #5348b0;
+    --avatar-9: #7c3fa3;
+    --avatar-10: #953676;
+    --avatar-11: #565e69;
+  }
+}
+
+:root[data-theme='dark'] {
+  --avatar-0: #a8392e;
+  --avatar-1: #a4501c;
+  --avatar-2: #7d5c00;
+  --avatar-3: #55711c;
+  --avatar-4: #1b6d3f;
+  --avatar-5: #0e6d67;
+  --avatar-6: #0e6485;
+  --avatar-7: #2c56a3;
+  --avatar-8: #5348b0;
+  --avatar-9: #7c3fa3;
+  --avatar-10: #953676;
+  --avatar-11: #565e69;
+}
+
+/* A person: their picture, or their initial on a color of their own. Sized by
+   the component, which sets width, height and font size inline because the
+   rail, a list row and the settings page each want a different one. */
 .avatar {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font: inherit;
-  font-size: 13px;
+  color: #ffffff;
   font-weight: 600;
   line-height: 1;
-  cursor: pointer;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.avatar-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-color-0 {
+  background: var(--avatar-0);
+}
+
+.avatar-color-1 {
+  background: var(--avatar-1);
+}
+
+.avatar-color-2 {
+  background: var(--avatar-2);
+}
+
+.avatar-color-3 {
+  background: var(--avatar-3);
+}
+
+.avatar-color-4 {
+  background: var(--avatar-4);
+}
+
+.avatar-color-5 {
+  background: var(--avatar-5);
+}
+
+.avatar-color-6 {
+  background: var(--avatar-6);
+}
+
+.avatar-color-7 {
+  background: var(--avatar-7);
+}
+
+.avatar-color-8 {
+  background: var(--avatar-8);
+}
+
+.avatar-color-9 {
+  background: var(--avatar-9);
+}
+
+.avatar-color-10 {
+  background: var(--avatar-10);
+}
+
+.avatar-color-11 {
+  background: var(--avatar-11);
 }
 
 /* Signed in as somebody else: the avatar wears a mark in the warning color,
@@ -279,8 +386,34 @@ td a:hover {
   color: var(--surface);
 }
 
-.menu-impersonated {
+.menu-impersonated,
+.menu-marked {
   position: relative;
+}
+
+/* Invitations to a circle that wait for an answer, on the corner of the
+   account button and of the phone's menu button, in the accent as the number
+   on the drawer's launcher. */
+.circle-invitation-mark {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+.menu-marked > .circle-invitation-mark {
+  top: 2px;
+  right: 0;
 }
 
 .menu {
@@ -324,6 +457,15 @@ td a:hover {
   font-size: 12px;
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+/* The slot before a choice in a menu of things that can be ticked, so that
+   the ticked and the unticked line up. */
+.menu-check {
+  display: inline-flex;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
 }
 
 .menu button,
@@ -411,6 +553,14 @@ td a:hover {
    something to stretch; a modifier says what is meant. */
 .page-actions-end {
   justify-content: flex-end;
+}
+
+/* The last row of a page, at the end of the scrolling area, is where the
+   drawer's round button (44 pixels, 20 from the corner) floats. A narrow
+   window keeps room under the content for it; a wide one does not, and an
+   action at the right end of the last row came to rest half under it. */
+.page-actions-foot {
+  margin-bottom: 48px;
 }
 
 /* Room above it when it follows something. At the top of a page this row is
@@ -992,11 +1142,22 @@ button.conversation-tile:focus-visible {
   padding-right: 0;
 }
 
+/* The rail's width, said once for whatever sits beside it (the toasts begin
+   where the content does). The rail is collapsed to icons when it carries the
+   collapsed class. */
+:root {
+  --rail-width: 232px;
+}
+
+:root:has(.sidebar.collapsed) {
+  --rail-width: 60px;
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: 232px;
-  flex: 0 0 232px;
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
   min-height: 0;
   height: 100vh;
   height: 100dvh;
@@ -1012,8 +1173,8 @@ button.conversation-tile:focus-visible {
 /* Collapsed, it keeps the icons and drops the words. Wide enough for a
    comfortable target around a centered icon and nothing more. */
 .sidebar.collapsed {
-  width: 60px;
-  flex: 0 0 60px;
+  width: var(--rail-width);
+  flex: 0 0 var(--rail-width);
 }
 
 .sidebar.collapsed .sidebar-label {
@@ -2676,6 +2837,12 @@ pre.message-text {
     min-height: 40px;
   }
 
+  /* The rows of a menu are one height: its buttons took the 40 above and its
+     links, the ones that go to a page, stayed at the 37 their padding makes. */
+  .menu a {
+    min-height: 40px;
+  }
+
   /* A height was not enough for the ones that are only a picture. Nothing
      gave them a width, so they stayed as wide as the icon inside them: the
      cross that dismisses a toast was 22 pixels across in a 40 pixel row, and
@@ -3090,6 +3257,12 @@ body,
   margin: 0 0 4px;
 }
 
+/* A card that is only a head, a page's own title with its icons, has nothing
+   under it for the margin to separate from. */
+.settings-section.card > .settings-section-head:last-child {
+  margin-bottom: 0;
+}
+
 .settings-section-head p {
   margin: 0;
   max-width: var(--measure);
@@ -3223,9 +3396,11 @@ body,
 
   /* One button sits on the title's line instead, and the description runs
      the full width under both: the title is short, so the line has room,
-     and the button stays beside what it adds to. A row of controls keeps
-     the rule above, since beside the title it would squeeze it. */
-  .settings-section-head:has(> div:first-child + button:last-child) {
+     and the button stays beside what it adds to. So do a few icons marked
+     head-icons (a page's rename and delete): each is a square, two or three
+     fit beside a title. A row of words keeps the rule above, since beside
+     the title it would squeeze it. */
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3233,23 +3408,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) > div:first-child {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) h3 {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) > div:first-child > p {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(> div:first-child + button:last-child) > button {
+  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -3283,6 +3458,42 @@ body,
   .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
     width: auto;
   }
+
+  /* A row about a person keeps the person's picture beside their name: with
+     the body taking the full width, the picture sat alone on a line above
+     it. A single control (a menu of what can be done to them) stays on the
+     same line; more than one still drops below. */
+  .settings-row:has(> .avatar, > .settings-row-mark) > .settings-row-body {
+    min-width: 0;
+    flex: 1 1 calc(100% - 28px - var(--space-3));
+  }
+
+  /* A wrapper of several buttons is one child too, so it is excluded: the
+     users page puts five icons in one, and they do not fit beside a name. */
+  .settings-row:has(> .avatar, > .settings-row-mark):has(> .settings-row-actions > :only-child):not(
+      :has(> .settings-row-actions > .row-actions > :nth-child(2))
+    ) {
+    flex-wrap: nowrap;
+  }
+
+  .settings-row:has(> .avatar, > .settings-row-mark):has(> .settings-row-actions > :only-child):not(
+      :has(> .settings-row-actions > .row-actions > :nth-child(2))
+    )
+    > .settings-row-actions {
+    width: auto;
+  }
+}
+
+/* The mark of a row about a circle stands where a person's picture does, the
+   same size, so the names of a list of both line up. */
+.settings-row-mark {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
 }
 
 /* Having none of something is ordinary, so it is said rather than shown as an
@@ -3381,7 +3592,19 @@ label.checkbox {
 
 label.checkbox input {
   width: auto;
+  /* A tick box, not a text field: the phone's thumb-sized height for inputs
+     made every row of ticks 40 pixels tall. The label is what is tapped. */
+  min-height: 0;
   margin: 0;
+}
+
+/* In a dialog it is a line of the form like the fields' own labels, not a
+   smaller muted one beside them. */
+.dialog label.checkbox {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text);
 }
 
 /* A form is read down a column, and a field stretched across a wide screen is
@@ -6855,7 +7078,12 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
      and fit-content gives it only when it does. */
   align-self: flex-start;
   max-width: 100%;
-  background: var(--field);
+  /* A wash of the text color over the page rather than --field: in the dark
+     theme --field is one shade off the page (#18181b on #141416), so the
+     bubbles of the agent and of the other people in a chat all but vanished
+     into the drawer. Derived from the two tokens, so each theme gets its own
+     contrast and light stays close to what it was. */
+  background: color-mix(in srgb, var(--text) 8%, var(--background));
   white-space: normal;
 }
 
@@ -7238,7 +7466,7 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 /* The question a late answer answers, or the message a reply answers,
    above it and quieter: either may be far up the conversation by now. A
    long one shows its start. */
-.agent-line.user .agent-in-reply-to {
+.agent-line .agent-in-reply-to {
   margin: 0 0 6px;
   padding-left: 8px;
   border-left: 2px solid currentColor;
@@ -7329,6 +7557,15 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 .agent-line-actions .icon-action {
   padding: 2px;
+}
+
+/* A bubble on the left keeps the corner at its left end, as the recording's
+   passage does: a short message with five buttons grows the corner into the
+   room beside it, not past the drawer's edge, where the first button was cut
+   off and the person could not react to "OK". */
+.agent-line.assistant .agent-line-actions {
+  right: auto;
+  left: 6px;
 }
 
 /* A recording's passage on the left keeps the corner at its left end, over
@@ -7673,6 +7910,22 @@ button.agent-reaction:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.agent-reference-photo {
+  display: block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: 0 2px 0 -6px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: var(--border);
+}
+
+/* A photo's chip is as tall as its picture, which is the picture of it. */
+.agent-reference-chip:has(.agent-reference-photo) {
+  padding-block: 1px;
 }
 
 /* The cross that takes a chip off: an icon action, at the chip's size
@@ -8543,24 +8796,6 @@ p.notice.domain-logo-note {
   font-weight: 600;
 }
 
-/* The monogram at the head of a row about a person, so a list of people is
-   found by shape before it is read. Sized to the row rather than to a face:
-   this sits beside one line of text, not above a card. */
-.settings-row-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-}
-
 /* What they sign in with, beside what to call them. Set apart by weight and
    size rather than by a separator, because it is a different kind of fact
    about the same person. */
@@ -8627,18 +8862,22 @@ p.notice.domain-logo-note {
   white-space: nowrap;
 }
 
-/* Where the program says what just happened: the top right corner, just
-   under the bar, out of the way of what is being read and never over the
-   thing that was acted on. It used to be the foot of the window on the left,
-   where it covered the person's own menu at the bottom of the rail, which is
-   what they reach for next. Stacked downward, newest at the top. */
+/* Where the program says what just happened: the foot of the window, at the
+   left of the page and not of the rail, which is as wide as the window's
+   left margin where the person's own menu is, newest at the bottom. It was the
+   top right corner, where it covered the buttons that a page keeps at the
+   right of its header (New event, Upload, Share) and took the click of
+   whoever reached for the next one; the foot is where nothing is acted on,
+   and the right of it is the agent's button and the upload tray. */
 .toasts {
+  /* Where the strip begins: at the content, which is where the rail ends. */
+  --toasts-left: calc(var(--rail-width, 232px) + var(--space-4));
   position: fixed;
-  top: calc(56px + env(safe-area-inset-top) + var(--space-2));
-  right: var(--space-4);
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  left: var(--toasts-left);
   z-index: 80;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   gap: var(--space-2);
   /* The strip takes no clicks; each message does. Otherwise an invisible
      column down the side of the window would swallow them. */
@@ -8649,7 +8888,9 @@ p.notice.domain-logo-note {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  max-width: min(420px, calc(100vw - var(--space-4) * 2));
+  /* Ends before the agent's drawer and the upload tray (--toast-edge, set
+     from where they are). */
+  max-width: min(420px, calc(var(--toast-edge, calc(100vw - var(--space-4))) - var(--toasts-left, var(--space-4))));
   padding: 10px 10px 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-3);
@@ -8708,7 +8949,7 @@ p.notice.domain-logo-note {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateY(-6px);
+    transform: translateY(6px);
   }
 }
 
@@ -8718,31 +8959,31 @@ p.notice.domain-logo-note {
   }
 }
 
+/* Where the rail is a drawer and not a column, the strip starts at the
+   window's own margin. */
+@media (max-width: 760px) {
+  .toasts {
+    --toasts-left: var(--space-4);
+  }
+}
+
+/* With the drawer or the tray leaving too little room beside the rail, the
+   strip starts at the window's margin, over the rail, above the account row
+   at its foot. */
+.toasts.over-rail {
+  --toasts-left: var(--space-4);
+  bottom: calc(var(--toast-lift, 72px) + env(safe-area-inset-bottom));
+}
+
 /* On a phone the strip is the width of the screen, because 420px of message
-   beside 30px of margin is neither, and at the bottom, where the thumb is
-   and the eye goes after acting: at the top it covered the page's title.
-   It stands clear of the agent's button, which keeps the same 84 pixels
-   free, and the newest is the lowest, rising into place. */
+   beside 30px of margin is neither, and stands clear of the agent's button,
+   which keeps the same 84 pixels free. A page that has the upload tray there
+   too puts the toasts above it (the tray says how tall it is). */
 @media (max-width: 600px) {
   .toasts {
-    top: auto;
-    bottom: calc(84px + env(safe-area-inset-bottom));
+    bottom: calc(84px + env(safe-area-inset-bottom) + var(--photo-tray-height, 0px));
     left: var(--space-2);
     right: var(--space-2);
-    flex-direction: column;
-  }
-}
-
-@media (max-width: 600px) and (prefers-reduced-motion: no-preference) {
-  .toast {
-    animation-name: toast-up;
-  }
-}
-
-@keyframes toast-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
   }
 }
 
@@ -9973,6 +10214,15 @@ button.with-icon {
   border-left: 3px solid var(--leaf);
 }
 
+/* The lock on the person's own private events: small, in the text color's
+   muted shade, and sitting on the line with the title. */
+.calendar-lock {
+  display: inline-flex;
+  margin-right: 0.25rem;
+  vertical-align: -1px;
+  color: var(--muted);
+}
+
 .calendar-entry-time {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -9986,6 +10236,169 @@ button.with-icon {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Calendars other than the person's own: a circle's, and the ones shared with
+   them. Each is told apart by a color, which every entry takes through the
+   --leaf the rules above already read, so a shared calendar needs no rules of
+   its own. The caller's own calendar keeps the accent. */
+.calendar-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0.5rem 0 0;
+}
+
+.calendar-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  /* No label margin: the row's own gap spaces them, and on a phone the
+     margin and a 40 pixel tick box made each chip a row of its own. */
+  margin: 0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.calendar-chip input {
+  /* A tick box is not a text field, so the phone's thumb-sized height for
+     inputs does not apply to it. */
+  width: auto;
+  min-height: 0;
+  margin: 0;
+}
+
+.calendar-chip-swatch {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  background: var(--leaf);
+}
+
+.calendar-chip-level {
+  font-size: 0.75rem;
+}
+
+.calendar-bar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.calendar-tone-0 {
+  --leaf: var(--avatar-0);
+}
+.calendar-tone-1 {
+  --leaf: var(--avatar-1);
+}
+.calendar-tone-2 {
+  --leaf: var(--avatar-2);
+}
+.calendar-tone-3 {
+  --leaf: var(--avatar-3);
+}
+.calendar-tone-4 {
+  --leaf: var(--avatar-4);
+}
+.calendar-tone-5 {
+  --leaf: var(--avatar-5);
+}
+.calendar-tone-6 {
+  --leaf: var(--avatar-6);
+}
+.calendar-tone-7 {
+  --leaf: var(--avatar-7);
+}
+
+/* When someone is busy and nothing else is shared: a gray block that says so
+   and cannot be opened, since there is nothing in it. */
+.calendar-busy-block {
+  --leaf: var(--muted);
+  cursor: default;
+  font-style: italic;
+}
+
+/* A busy block says whose it is in words that may be longer than the block is
+   wide ("Busy · teen"); when it is tall enough for a second line they wrap
+   instead of being cut to "Busy · t…". */
+.calendar-placed.calendar-busy-block:not(.compact) .calendar-placed-title {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.calendar-placed.calendar-busy-block:hover {
+  background: color-mix(in srgb, var(--leaf) 18%, var(--surface));
+}
+
+.calendar-shares-heading {
+  margin: var(--space-3) 0 0;
+}
+
+.calendar-shares {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0 var(--space-4);
+}
+
+.calendar-share-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.calendar-share-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A day with its free stretches: the day on its own line, the times under it
+   and wrapping as they need to. In the row of a share the name takes what the
+   rest leaves and is cut, which cut a day to an ellipsis once a day had
+   several stretches. */
+.calendar-free-day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendar-free-day-name {
+  font-weight: 600;
+}
+
+/* Finding a time together: the people who shared a calendar, one to a line,
+   then the days and the hours as two columns of fields. */
+.calendar-find-people {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-4);
+}
+
+/* The rows of people are the dialog's own checkbox rows, at the size and the
+   gap of the fields beside them rather than twice the height. */
+.calendar-find-people label.checkbox {
+  margin: var(--space-1) 0 0;
+}
+
+.calendar-find-people > .muted {
+  margin-top: var(--space-2);
+}
+
+.calendar-find-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.calendar-viewed p {
+  margin: 0.25rem 0;
+}
+
+.calendar-viewed-notes {
+  white-space: pre-wrap;
 }
 
 /* The page fills the area it is given and does not grow past it.
@@ -10722,6 +11135,15 @@ main.content:has(> .knowledge-frame) {
   border-top: 1px solid var(--border);
 }
 
+/* On a phone a card is pulled out to the page's edges and so is a row in it,
+   which is right on a page and 12 pixels too wide inside a pane that already
+   has its own padding: the text was cut at the left once the pane scrolled. */
+.knowledge-pane .settings-section.card,
+.knowledge-pane .settings-row {
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* The same for what is inside them: a fact and a link are lines of a page. */
 .knowledge-pane .settings-row,
 .knowledge-pane .settings-empty {
@@ -11074,6 +11496,87 @@ main.content:has(> .knowledge-frame) {
   letter-spacing: 0.04em;
 }
 
+/* What other people shared with the person: under the folders at the top of
+   the list, one group for each person, their picture and name over a row for
+   each page they shared. The rows are the list's own; they are links here
+   because a shared page is opened by address, with the owner in it. */
+.knowledge-shared {
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.knowledge-shared-person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+/* The same mark beside a page's own tags, where it is the owner's badge. */
+.knowledge-page-head-meta .knowledge-shared-person {
+  padding: 0;
+}
+
+.knowledge-shared a.knowledge-row {
+  text-decoration: none;
+}
+
+/* No result of the search of what is shared: inset like the rows, not a box
+   flush to both edges of the list. */
+.knowledge-shared .settings-empty {
+  margin: var(--space-2) var(--space-3);
+  min-height: 80px;
+}
+
+/* The line a person whose agent is off reads where the list of their own
+   pages would start. */
+.knowledge-agent-off {
+  margin: 0;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+/* What the other side will see, in the dialog that shares a page: the page as
+   they read it, in a box of its own that scrolls so the choice above it and
+   the button under it stay in view. */
+.share-preview {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--space-3);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.share-preview h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.share-preview .settings-section.card {
+  border: 0;
+  padding: 0;
+  margin-top: var(--space-3);
+  /* Not pulled out to the box's edge, as a card is on a phone: the body is
+     inset like the heading above it. */
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.share-preview .settings-section-head {
+  margin-bottom: var(--space-2);
+}
+
+.share-preview .settings-row {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border: 0;
+  background: none;
+}
+
 /* A fact the agent folded into another. Greyed rather than hidden: it is
    still there, and the number beside it is where its words went. */
 .knowledge-folded {
@@ -11203,6 +11706,331 @@ main.content:has(> .knowledge-frame) {
   max-width: 100%;
 }
 
+/* --- people and descriptions ----------------------------------------------
+   A face is a round picture cut from a photo; the viewer's details gain a
+   section for the people in the photo and one for its description. */
+.face-picture {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--field);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.face-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.face-picture.is-small {
+  width: 36px;
+  height: 36px;
+}
+
+.face-picture.is-medium {
+  width: 48px;
+  height: 48px;
+}
+
+.face-picture.is-large {
+  width: 72px;
+  height: 72px;
+  font-size: 28px;
+}
+
+.photo-show-hidden {
+  margin: 0;
+}
+
+.photo-person-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--space-4) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The tile fills its grid cell, so that the tiles of a row are one height
+   whatever is under each picture. */
+.photo-person-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+.photo-person-cell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-2);
+  text-align: center;
+}
+
+.photo-person-cell:hover {
+  background: var(--field);
+}
+
+/* The picture, the name and the count are one link; what is beside it (the
+   tag, the way to name) is not part of it. */
+.photo-person-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.photo-person-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-2);
+}
+
+/* A person hidden from the list, shown because Show hidden is on: the picture
+   and the name dimmed, and the tag says why. */
+.photo-person-cell.is-hidden .face-picture,
+.photo-person-cell.is-hidden .photo-person-name,
+.photo-person-cell.is-hidden .photo-person-details {
+  opacity: 0.5;
+}
+
+.photo-person-name-button {
+  padding: 4px 12px;
+  font-size: var(--text-body);
+}
+
+/* Where the tag and the Name button go: as tall as the button, with or
+   without one, so that a tile that is named is no shorter than one that is not. */
+.photo-person-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 32px;
+}
+
+.photo-person-cell .face-picture.is-large {
+  width: min(100%, 112px);
+  height: auto;
+  aspect-ratio: 1;
+  margin-bottom: var(--space-1);
+  font-size: 40px;
+}
+
+.photo-person-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-person-name.muted {
+  font-weight: 400;
+}
+
+.photo-person-details {
+  font-size: var(--text-label);
+}
+
+.photo-person-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.photo-person-head-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.photo-person-head-body strong {
+  font-size: var(--text-title);
+  overflow-wrap: anywhere;
+}
+
+.photo-person-head-body strong.muted {
+  font-weight: 400;
+}
+
+.photo-person-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: var(--space-2);
+  max-height: 16rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+}
+
+.photo-person-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: center;
+}
+
+.photo-person-choice.is-chosen {
+  border-color: var(--accent);
+  background: var(--field);
+}
+
+.photo-person-choice-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-viewer-section {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+/* A section of the details is labeled as the rows above it are: muted and
+   regular, at the label size. */
+.photo-viewer-section h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 400;
+}
+
+.photo-viewer-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.photo-viewer-section > h3 {
+  margin-bottom: var(--space-2);
+}
+
+.photo-viewer-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-viewer-person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.photo-viewer-person-link {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.photo-viewer-person-link:hover .photo-viewer-person-name {
+  text-decoration: underline;
+}
+
+.photo-viewer-person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  /* Where there is a pointer, "Not them" waits for the pointer; on a touch
+     screen there is nothing to hover with, so it is always shown. */
+  .photo-viewer-person-not {
+    opacity: 0;
+  }
+
+  .photo-viewer-person:hover .photo-viewer-person-not,
+  .photo-viewer-person:focus-within .photo-viewer-person-not {
+    opacity: 1;
+  }
+}
+
+.photo-description,
+.photo-description-text {
+  margin: 0 0 var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.photo-description-label {
+  margin: var(--space-2) 0 2px;
+  font-size: var(--text-label);
+}
+
+.photo-description-text {
+  white-space: pre-wrap;
+}
+
+.photo-description-source {
+  margin: 0;
+  font-size: var(--text-label);
+}
+
+.photo-describing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.photo-describing .photo-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.photo-viewer-section p.muted {
+  margin: 0 0 var(--space-2);
+}
+
+/* Describe and Ask are the two things to do with the picture, and look it:
+   one width, one weight, the whole of the panel. */
+.photo-viewer-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+.photo-viewer-action svg {
+  flex: 0 0 auto;
+}
+
 .in-memory-page {
   overflow-wrap: anywhere;
 }
@@ -11212,15 +12040,82 @@ main.content:has(> .knowledge-frame) {
 .contact-picker {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  max-height: 16rem;
+  max-height: min(55vh, 22rem);
   overflow-y: auto;
   margin-top: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background:
+    linear-gradient(var(--background) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--background) 70%) bottom / 100% 28px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 22%), transparent) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 22%), transparent) bottom / 100% 8px no-repeat scroll,
+    var(--background);
 }
 
+/* A row of the list, the way a row of a list is drawn here: the name at the
+   text size and color, what else there is to say about it under it in muted
+   text, a line between. */
 .contact-picker-row {
-  align-items: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  min-height: 48px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-size: var(--text-body);
   overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.contact-picker-row:first-child {
+  border-top: none;
+}
+
+.contact-picker-row:hover {
+  background: var(--sidebar-hover);
+}
+
+.contact-picker-row.is-chosen {
+  background: var(--field);
+}
+
+.contact-picker label.contact-picker-row {
+  margin: 0;
+}
+
+/* A tick or a radio is as big as it draws itself, whatever height a phone gives
+   the fields. */
+.contact-picker-row input,
+label.checkbox.is-plain input {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+.contact-picker-text {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.contact-picker-text > span {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.contact-picker-text > .contact-picker-detail {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.contact-picker-empty {
+  margin: 0;
+  padding: var(--space-3);
 }
 
 /* A picture or a file a fact was read out of, under the fact. Small
@@ -15441,3 +16336,2308 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin: var(--space-4) 0;
   text-align: center;
 }
+
+/* --- photos ---------------------------------------------------------------
+   The library's timeline, the viewer over it, and the upload tray. */
+.photos-page {
+  position: relative;
+}
+
+.photos-page > .settings-section {
+  margin-top: var(--space-4);
+}
+
+/* The one row under the tabs, on every page of Photos: what the page searches
+   with at the left and what can be done on it at the right. Its height is the
+   height of a control, so that the row is as tall with a selection (the bar
+   takes its place) as without, with nothing to search as with, and the page
+   does not move when any of them changes. */
+.photo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+  min-height: 40px;
+}
+
+.photo-toolbar-tools {
+  display: flex;
+  flex: 1 1 280px;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.photo-toolbar-tools:empty {
+  display: none;
+}
+
+.photo-toolbar-tools input[type='search'] {
+  flex: 1 1 160px;
+  max-width: 440px;
+  min-width: 0;
+  width: auto;
+}
+
+.photo-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.photo-toolbar-actions:empty {
+  display: none;
+}
+
+/* Every control of the row is one height, whatever it is: the search, the
+   filter, the words and the icons. */
+.photo-toolbar input[type='search'],
+.photo-toolbar .photo-filter-button,
+.photo-toolbar-actions > button {
+  min-height: 40px;
+}
+
+.photo-toolbar-actions > button,
+.photo-filter-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* An icon in the row is a button of the row's height with the border the
+   others have, not the bare 28px a table row's icon is. */
+.photo-toolbar-actions .icon-action {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.photo-toolbar-actions .icon-action.danger {
+  color: var(--bad);
+}
+
+.photo-toolbar-actions .icon-action:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+}
+
+.photo-filter-button.active {
+  border-color: var(--border-strong);
+  background: var(--field);
+}
+
+/* What the Filter button opens: the kinds one under the other, then the two
+   dates, then the way to clear them. */
+.photo-filter-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2);
+}
+
+.photo-filter-form label {
+  margin-bottom: 0;
+}
+
+.photo-filter-kinds {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.photo-filter-kinds legend {
+  padding: 0;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.photo-filter-kinds label.checkbox {
+  margin-top: 0;
+  padding: 6px 0;
+}
+
+.photo-filter-form .menu-clear {
+  margin-bottom: 0;
+}
+
+/* The same strip of tabs on every page. */
+.photo-sections .tabs {
+  margin-bottom: var(--space-4);
+}
+
+/* The bar that takes the toolbar's place while photos are selected stays at
+   the top of the page while the photos scroll under it, with a ground of its
+   own, so that what can be done to them is in reach however far down the
+   selecting went. */
+.photo-selection-bar {
+  position: sticky;
+  /* Flush with the top of the scrolling page, not with the padding inside it:
+     the page's padding is above the bar and photos would show through it. */
+  top: calc(-1 * var(--space-6));
+  z-index: 6;
+  /* Close, the count and five buttons at most (Remove from album is the
+     fifth) have to fit a phone's width. */
+  column-gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+
+.photo-selection-bar .icon-button {
+  flex: 0 0 auto;
+}
+
+/* The page's padding is smaller where the rail is a drawer. */
+@media (max-width: 760px) {
+  .photo-selection-bar {
+    top: calc(-1 * var(--space-4));
+  }
+}
+
+/* One line, even with a button more in the bar (Remove from album): the count
+   gives way with an ellipsis rather than wrapping into two lines. */
+.photo-selection-bar strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-trash-note {
+  margin: 0 0 var(--space-3);
+}
+
+/* Rows left over from the list the person has just left, until this list's
+   arrive: dimmed, and out of reach of the buttons of the new list. */
+.photo-list {
+  transition: opacity 120ms ease;
+}
+
+.photo-list.is-loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.photo-day-heading {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.photo-day:first-child .photo-day-heading {
+  margin-top: 0;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 4px;
+}
+
+.photo-cell {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--field);
+}
+
+.photo-open {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+}
+
+.photo-open:hover:not(:disabled) {
+  background: transparent;
+}
+
+.photo-open:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.photo-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--field);
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+}
+
+.photo-cell.is-selected .photo-image {
+  transform: scale(0.88);
+  border-radius: 4px;
+}
+
+.photo-cell.is-selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--field));
+}
+
+.photo-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.photo-state-failed {
+  color: var(--bad);
+}
+
+.photo-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: photo-spin 900ms linear infinite;
+}
+
+@keyframes photo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-spinner {
+    animation-duration: 3s;
+  }
+}
+
+.photo-mark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 55%));
+}
+
+.photo-mark-length {
+  right: 5px;
+  bottom: 5px;
+  padding: 3px 6px;
+  border-radius: var(--radius-round);
+  background: rgb(0 0 0 / 55%);
+  filter: none;
+}
+
+.photo-mark-favorite {
+  left: 6px;
+  bottom: 6px;
+}
+
+.photo-mark-favorite svg {
+  fill: currentColor;
+}
+
+/* The mark Live Photos wear: a ring with a dot in it. */
+.photo-mark-live {
+  top: 6px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+.photo-mark-live::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* The tick that selects. It is a real checkbox, kept for the keyboard and
+   for assistive technology, drawn as a round mark over the corner. */
+.photo-check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.photo-check input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.photo-check-box {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 30%);
+  color: #fff;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+}
+
+.photo-cell.is-selected .photo-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.is-selecting .photo-check,
+.photo-check:focus-within {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .photo-cell:hover .photo-check {
+    opacity: 1;
+  }
+}
+
+/* A touch screen has no hover to reveal the tick, and ticks on every cell all
+   the time crowd the grid. They appear in selection mode (the Select button),
+   and until then the invisible tick must not catch a tap meant to open. */
+@media (hover: none) {
+  .photo-timeline:not(.is-selecting) .photo-check {
+    visibility: hidden;
+  }
+}
+
+/* --- the viewer --- */
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  background: var(--background);
+  color: var(--text);
+}
+
+.photo-viewer-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.photo-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+}
+
+.photo-viewer-spacer {
+  flex: 1 1 auto;
+}
+
+.photo-viewer-bar .icon-button.is-on,
+.photo-live-button.is-on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.photo-viewer-bar .photo-favorite.is-on {
+  background: transparent;
+  color: var(--bad);
+}
+
+.photo-viewer-bar .photo-favorite.is-on svg {
+  fill: currentColor;
+}
+
+.photo-live-button {
+  padding: 4px 12px;
+  border-radius: var(--radius-round);
+  font-size: 12px;
+  font-weight: 650;
+  touch-action: none;
+  user-select: none;
+}
+
+.photo-viewer-stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.photo-viewer-picture {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.photo-fitted,
+.photo-live-video,
+.photo-viewer-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.photo-live-video {
+  position: absolute;
+  inset: 0;
+  background: var(--background);
+}
+
+.photo-viewer-video {
+  background: #000;
+  border-radius: var(--radius-2);
+}
+
+.photo-viewer-zoom {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  cursor: zoom-out;
+}
+
+.photo-zoomed {
+  display: block;
+  max-width: none;
+  margin: auto;
+}
+
+/* A picture the browser cannot draw as it is, zoomed from the large
+   preview: twice the size of the window. */
+.photo-zoomed-preview {
+  width: 200%;
+  height: auto;
+}
+
+.photo-viewer-message {
+  color: var(--muted);
+}
+
+/* The reason a photo has no picture, and what can be done about it, one
+   under the other and centered on the stage. */
+.photo-viewer-message-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 420px;
+  padding: 0 var(--space-4);
+  text-align: center;
+}
+
+.photo-viewer-message-block .photo-viewer-message {
+  margin: 0;
+}
+
+.photo-viewer-step {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--shadow-raised);
+}
+
+.photo-viewer-previous {
+  left: var(--space-3);
+}
+
+.photo-viewer-next {
+  right: var(--space-3);
+}
+
+.photo-viewer-details {
+  flex: 0 0 320px;
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.photo-viewer-details h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-title);
+}
+
+.photo-viewer-details dl {
+  margin: 0;
+}
+
+.photo-viewer-details dl > div + div {
+  margin-top: var(--space-3);
+}
+
+.photo-viewer-details dt {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.photo-viewer-details dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  /* Under the picture rather than beside it, and not over it: the viewer
+     becomes a column, the picture is fitted to the room the details leave, and
+     the details scroll in a box of their own below it. A sheet laid over the
+     picture hid half of it. */
+  .photo-viewer {
+    flex-direction: column;
+  }
+
+  .photo-viewer-main {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .photo-viewer-details {
+    flex: 0 1 auto;
+    max-height: 45%;
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    border-left: none;
+    overscroll-behavior: contain;
+  }
+
+  .photo-viewer-step {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* The details could not be read: the sentence and the way to try again. */
+.photo-viewer-failure {
+  margin-bottom: var(--space-3);
+}
+
+.photo-viewer-failure p {
+  margin: 0 0 var(--space-2);
+}
+
+/* --- the drop target --- */
+.photo-drop {
+  position: fixed;
+  inset: var(--space-4);
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  color: var(--text);
+  pointer-events: none;
+}
+
+/* --- the upload tray --- */
+/* Above the agent's button (44px high, 20px from the corner), as the recording
+   bar is, so that neither covers the other; the toasts are at the other end of
+   the window. */
+.photo-tray {
+  position: fixed;
+  right: 20px;
+  bottom: 76px;
+  z-index: 45;
+  width: 340px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.photo-tray-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+
+.photo-tray-list {
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.photo-tray-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 2px var(--space-2);
+  align-items: center;
+  padding: 6px var(--space-3);
+  font-size: var(--text-label);
+}
+
+.photo-tray-item + .photo-tray-item {
+  border-top: 1px solid var(--border);
+}
+
+/* The line that counts the files the tray does not list. */
+.photo-tray-summary {
+  display: block;
+}
+
+.photo-tray-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-tray-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-tray-item.is-failed .photo-tray-state {
+  color: var(--bad);
+}
+
+.photo-tray-item .icon-action {
+  grid-column: 3;
+  grid-row: 1;
+  margin: -4px -6px -4px 0;
+}
+
+.photo-tray-bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border: none;
+  border-radius: var(--radius-round);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.photo-tray-bar::-webkit-progress-bar {
+  background: var(--border);
+}
+
+.photo-tray-bar::-webkit-progress-value {
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.photo-tray-bar::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.photo-tray-bar:indeterminate {
+  background-color: var(--border);
+  background-image: linear-gradient(var(--muted), var(--muted));
+  background-repeat: no-repeat;
+  background-size: 40% 100%;
+  animation: photo-tray-wait 1.4s ease-in-out infinite;
+}
+
+@keyframes photo-tray-wait {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-tray-bar:indeterminate {
+    animation: none;
+  }
+}
+
+.photo-tray-bar.is-reading::-webkit-progress-value {
+  background: var(--muted);
+}
+
+.photo-tray-bar.is-reading::-moz-progress-bar {
+  background: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .photo-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* The width of the screen, standing above the agent's button; the toasts
+     rise above it (the tray says how tall it is in --photo-tray-height). */
+  .photo-tray {
+    right: var(--space-2);
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    left: var(--space-2);
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* --- albums ---------------------------------------------------------------
+   The grid of covers, the suggestions above it, and the album menu's rows. */
+.photo-album-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: var(--space-4) var(--space-3);
+}
+
+.photo-album-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.photo-album-cover {
+  display: block;
+  aspect-ratio: 1;
+  margin-bottom: var(--space-1);
+  overflow: hidden;
+  border-radius: var(--radius-2);
+  background: var(--field);
+}
+
+.photo-album-cell:hover .photo-album-cover {
+  filter: brightness(0.94);
+}
+
+.photo-album-cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-2);
+}
+
+.photo-album-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-album-cover-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
+}
+
+.photo-album-title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-album-details {
+  overflow: hidden;
+  font-size: var(--text-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-suggestions {
+  margin-bottom: var(--space-6);
+}
+
+.photo-section-heading {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-title);
+}
+
+.photo-section-hint {
+  margin: 0 0 var(--space-3);
+}
+
+.photo-suggestion-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+}
+
+.photo-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+}
+
+.photo-suggestion + .photo-suggestion {
+  border-top: 1px solid var(--border);
+}
+
+.photo-suggestion-samples {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.photo-suggestion-samples img,
+.photo-suggestion-blank {
+  display: block;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--field);
+}
+
+.photo-suggestion-body {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.photo-suggestion-body > span {
+  overflow-wrap: anywhere;
+}
+
+.photo-suggestion > button {
+  flex: 0 0 auto;
+}
+
+.photo-album-choice {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.photo-album-choice-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-album-choice .muted {
+  font-size: var(--text-label);
+}
+
+.photo-viewer-albums {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-viewer-albums li + li {
+  margin-top: 2px;
+}
+
+@media (max-width: 600px) {
+  .photo-album-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .photo-suggestion {
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .photo-suggestion-samples {
+    flex: 1 0 100%;
+  }
+
+  .photo-suggestion-body {
+    flex: 1 1 60%;
+  }
+}
+
+/* The picture row at the head of the profile form: the picture, and what can be
+   done to it. */
+.profile-picture {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.profile-picture-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.profile-picture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* The number of invitations waiting, at the end of the account menu's
+   Circles row. The accent says "look here" without a second color for it. */
+.menu-badge {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The circles a person is in, one card each. The card is a link, so the whole
+   of it is the target; its members are a few pictures overlapping and a count. */
+.circle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.circle-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: 0;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.circle-card:hover {
+  border-color: var(--accent);
+}
+
+.circle-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.circle-card-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.circle-card-members {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Overlapping pictures: a ring in the card's own color separates one from the
+   next. */
+.avatar-stack {
+  display: flex;
+}
+
+.avatar-stack .avatar {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.avatar-stack .avatar + .avatar {
+  margin-left: -8px;
+}
+
+@media (max-width: 600px) {
+  .circle-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* Chats in the drawer: a conversation with people in it. The person's own
+   messages are the bubbles they always were, on the right; everybody
+   else's are on the left with a picture, and a name above the first of a run. */
+
+/* The number on the drawer's button: the chats with something new in them.
+   The accent, as the account menu's count of invitations. */
+.agent-drawer-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+/* In the picker a chat is its pictures, its title and, when something is
+   waiting, a bold title and a count at the end of the line. */
+.agent-drawer-list-name.chat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-drawer-list-name.chat .chat-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-drawer-list-row.unread .chat-title {
+  font-weight: 700;
+}
+
+.chat-muted {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.chat-unread {
+  flex: none;
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-avatars {
+  flex: none;
+}
+
+.chat-avatars .avatar {
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+/* Four pixels, of which the ring takes two: at 20 pixels, eight covered the
+   first picture's letter entirely. */
+.chat-avatars .avatar + .avatar {
+  margin-left: -4px;
+}
+
+/* New side chat, Message someone and New group are one block at the top of
+   the list; only the last of them draws the line under it. */
+.agent-drawer-list-row.new.stacked {
+  margin-bottom: 0;
+  border-bottom: 0;
+  border-radius: 6px;
+}
+
+/* The offer where the main conversation would be, with the agent off. */
+.agent-drawer-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin: auto 0;
+}
+
+.head-menu-action {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.head-menu-action:hover,
+.head-menu-action:focus-visible {
+  background: var(--sidebar-hover);
+}
+
+.head-menu-action.danger,
+.head-menu-action.danger svg {
+  color: var(--bad);
+}
+
+/* One message of a chat from somebody else: their picture at the left of the
+   first of a run, and the bubble beside it. The ones after it in the run
+   sit closer under it and keep the picture's room empty. */
+.agent-chat-turn {
+  display: flex;
+  max-width: 100%;
+  gap: 8px;
+}
+
+.agent-chat-turn:not(.mine):not(.starts-run) {
+  margin-top: -5px;
+}
+
+.agent-chat-turn.mine {
+  align-self: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 85%;
+  gap: 2px;
+}
+
+.agent-chat-turn.mine .agent-line.user {
+  max-width: 100%;
+}
+
+.agent-chat-avatar {
+  flex: none;
+  width: 28px;
+}
+
+.agent-chat-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agent-chat-author {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* A person's words are shown as they were typed, line breaks and all. Not an
+   agent's: its answer is Markdown, drawn as elements, and the line breaks
+   between its list items would show as empty lines. */
+.agent-line.assistant.chat-person:not(.chat-agent) {
+  white-space: pre-wrap;
+}
+
+.agent-line.pending {
+  opacity: 0.6;
+}
+
+.agent-line.chat-deleted {
+  font-style: italic;
+  background: none;
+  border: 1px dashed var(--border);
+}
+
+.agent-chat-edited {
+  margin-left: 6px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* The bubble is the accent, so a primary button in it is the bubble's own
+   color and has no shape. Turned over: the page's color with the accent's
+   letters. */
+.agent-line.user .agent-chat-edit button.primary {
+  border-color: var(--background);
+  background: var(--background);
+  color: var(--accent);
+}
+
+.agent-line.user .agent-chat-edit button.primary:hover:not(:disabled) {
+  border-color: var(--background);
+  background: var(--background);
+  opacity: 0.85;
+}
+
+.agent-chat-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  color: var(--text);
+}
+
+/* Under the newest message each of the others has read: their pictures,
+   small. */
+/* What the person's own agent did, one folded row above its answer: under
+   the avatar's column, where the answer's words start. */
+.agent-line.tool.work {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-left: 36px;
+}
+
+.agent-line.tool.work > .agent-tool-toggle {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chat-reads {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.agent-chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* The agents an @ offers, above the box they are chosen for. */
+.agent-drawer-input {
+  position: relative;
+}
+
+.agent-mention-list {
+  position: absolute;
+  right: 10px;
+  bottom: 100%;
+  left: 10px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  max-height: 200px;
+  margin: 0 0 4px;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.agent-mention-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+
+.agent-mention-list li.active {
+  background: var(--sidebar-hover);
+}
+
+.agent-mention-name {
+  font-weight: 600;
+}
+
+/* What a phone is told about: a group of ticks under the name, with a bold
+   heading as the chat's switches have, not the browser's own box with its
+   legend over the border. */
+.phone-kinds {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.phone-kinds legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.phone-kinds .field-hint {
+  margin: var(--space-1) 0 0;
+}
+
+.phone-kinds label.checkbox {
+  margin: var(--space-3) 0 0;
+}
+
+/* What a member allows their agent in the chat: two switches, each with the
+   sentence that says what it means. */
+.chat-agent-switches {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.chat-agent-switches legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.chat-agent-switches label.checkbox {
+  margin-top: var(--space-4);
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.chat-agent-switches legend + label.checkbox {
+  margin-top: var(--space-2);
+}
+
+/* Each sentence sits under its own switch and a gap away from the next. */
+.chat-agent-switches input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.chat-agent-switches p {
+  margin: var(--space-1) 0 0 24px;
+  max-width: var(--measure);
+  font-size: 13px;
+}
+
+.chat-agent-switches p.chat-agent-off {
+  margin-left: 0;
+  font-size: var(--text-body);
+}
+
+.chat-agent-switches p.chat-agent-off + p.chat-agent-off {
+  margin-top: var(--space-2);
+}
+
+/* The people to choose from, in the dialogs for a new group, a message to
+   someone and adding to a group. Taller than the three rows it once was; on
+   a phone, where the dialog is the screen, the list takes the room between
+   the group's name and the buttons. */
+.chat-people {
+  display: flex;
+  flex-direction: column;
+  max-height: min(56dvh, 440px);
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .dialog:has(> .chat-people) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog:has(> .chat-people) > .chat-people {
+    flex: 1 1 auto;
+    max-height: none;
+  }
+}
+
+/* One person: a box, a picture, the name and the username. The class is not
+   the message bubble's (.chat-person), which shares the word and not the
+   rules. The dialog styles every label as a field, and every span in a label
+   as its help text, so both are undone here the way a row of any other
+   checkbox list does it. */
+.chat-people label.chat-person-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 5px 0;
+  font-size: var(--text-body);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chat-person-row input {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+/* The name gives way to the username, which stays whole: a name cut with an
+   ellipsis is still a name, and a username cut in groups of letters is not
+   one. */
+.chat-people .chat-person-row .chat-person-name {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-people .chat-person-row .chat-person-username {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
+.chat-members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-members li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chat-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* On the page of conversations a chat's tile leads with its pictures. */
+.conversation-tile-title .chat-avatars {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.tile-detail .chat-unread {
+  display: inline-block;
+  margin-left: 8px;
+}
+
+/* The second way into a circle, for an operator: under the invitation form,
+   set apart by a line, the button and the one sentence that says what it
+   does. */
+.circle-account {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.circle-account p {
+  margin: var(--space-2) 0 0;
+  max-width: var(--measure);
+}
+
+/* A call of a skill the person shared, waiting for their word. The card the
+   drawer and the agent page both draw (components/skillShare.tsx). */
+.skill-share-call-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  max-width: 100%;
+}
+.skill-share-call-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.skill-share-call-card-title {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.skill-share-call-card-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+.skill-share-call-card-facts dt {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+.skill-share-call-card-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.skill-share-call-card-line {
+  display: contents;
+}
+/* An argument is shown whole, in the lines it was written in. */
+.skill-share-call-card-line dd {
+  white-space: pre-wrap;
+}
+.skill-share-call-card-amount {
+  font-weight: 600;
+  font-size: 1.1em;
+}
+.skill-share-call-card-reason {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--border);
+}
+.skill-share-call-card-reason blockquote {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.skill-share-call-card-note {
+  width: 100%;
+}
+.skill-share-call-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.skill-share-call-card p {
+  margin: 0;
+}
+.skill-share-calls-heading {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--muted);
+}
+.skill-share-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0 8px 36px;
+}
+.skill-share-tools {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skill-share-tools legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+/* A choice of the form that shares a skill: the name in the text's own weight
+   and color, the words about it a muted line under it. The dialog's rule for a
+   span in a label (small, muted, a block) made the name look as disabled as its
+   hint, and the hint went after a dot. Written with the dialog in it to beat
+   that rule and the one for a label with a tick box. */
+.dialog label.skill-share-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.dialog label.skill-share-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.dialog label.skill-share-choice > input {
+  margin-top: 3px;
+}
+
+.dialog label.skill-share-choice > span > .skill-share-choice-name {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.dialog label.skill-share-choice > span > .skill-share-choice-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+/* What is wrong with a field, said under it and above the next label, as
+   close to the field as to the label that follows. */
+.dialog label + span.error {
+  display: block;
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+}
+
+/* The one after the tools stands apart from them as a field does. */
+.dialog .skill-share-tools + label.skill-share-choice {
+  margin: var(--space-3) 0;
+}
+@media (max-width: 640px) {
+  .skill-share-calls {
+    padding-left: 0;
+  }
+}
+
+/* --- onboarding: Photos on a new server -------------------------------------
+   The welcome page's second way in, for somebody who came for their photos
+   and not for an assistant; the card that says how to back an iPhone up; and
+   the warning edge a notice takes when it is something to act on. */
+.notice.warn {
+  border-left-color: var(--warn);
+}
+
+.welcome-other {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  text-align: center;
+}
+
+.welcome-other > p {
+  /* With the column's gap, the space it always had before the buttons. */
+  margin: 0 0 calc(var(--space-3) - var(--space-2));
+  font-size: var(--text-body);
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.photo-backup {
+  margin-top: var(--space-4);
+}
+
+.photo-backup-steps {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.photo-backup-steps code {
+  overflow-wrap: anywhere;
+}
+
+.photo-backup > .notice {
+  margin-bottom: 0;
+}
+
+.services-review {
+  margin-top: var(--space-3);
+}
+
+.services-saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+.services-saved > p {
+  margin: 0;
+}
+
+.waiting-restart .page-actions {
+  margin-top: var(--space-3);
+  align-items: stretch;
+}
+
+.waiting-restart .page-actions a.button {
+  justify-content: center;
+}
+
+/* --- shared albums ---------------------------------------------------------
+   Whose an album or a photo is, the dialog that shares an album, and the
+   picker that adds photos to one. */
+.photo-album-section + .photo-album-section {
+  margin-top: var(--space-6);
+}
+
+.photo-owner-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-label);
+  color: var(--muted);
+}
+
+.photo-owner-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-circle-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--field);
+  color: var(--muted);
+}
+
+.photo-circle-chip-large {
+  width: 28px;
+  height: 28px;
+}
+
+.photo-album-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.photo-album-head .photo-owner-mark {
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.photo-share-heading {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.photo-share-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.photo-share-name {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-share-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.photo-share-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 14rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+}
+
+.photo-share-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  background: transparent;
+  font-weight: 400;
+  text-align: left;
+}
+
+.photo-share-choice.is-chosen {
+  border-color: var(--accent);
+  background: var(--field);
+}
+
+.photo-share-choice-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The tick's room is there whether the row is chosen or not, so a row is as
+   tall chosen as not. */
+.photo-share-choice-check {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 28px;
+}
+
+.photo-share-levels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* A choice and what it means: the choice at the text size, the meaning under
+   it in muted text, in line with the words and not with the box. */
+.photo-share-option {
+  margin-top: var(--space-2);
+}
+
+.photo-share-levels .photo-share-option {
+  margin-top: 0;
+}
+
+.photo-share-option label.checkbox {
+  margin: 0;
+}
+
+.photo-share-option-hint {
+  margin: 2px 0 0 calc(13px + var(--space-2));
+  font-size: var(--text-label);
+}
+
+.photo-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 4px;
+  max-height: 22rem;
+  margin-top: var(--space-2);
+  overflow-y: auto;
+}
+
+.photo-picker-cell {
+  position: relative;
+  display: block;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: none;
+  border-radius: 4px;
+  background: var(--field);
+}
+
+.photo-picker-cell img,
+.photo-picker-blank {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 120ms ease;
+}
+
+.photo-picker-cell.is-selected img {
+  transform: scale(0.88);
+  border-radius: 4px;
+}
+
+.photo-picker-cell.is-selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--field));
+}
+
+.photo-picker-check {
+  inset: 6px auto auto 6px;
+  width: 22px;
+  height: 22px;
+}
+
+.photo-picker-cell.is-selected .photo-picker-check {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.photo-save-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 34px;
+  padding: 4px 12px;
+  border-radius: var(--radius-round);
+  font-size: var(--text-label);
+  font-weight: 650;
+}
+
+.photo-change-date {
+  margin-left: var(--space-1);
+  vertical-align: middle;
+}
+
+/* On a phone the viewer's bar holds more icons than the width has room for
+   (an album's photo has the cover and the take-out beside the usual ones), and
+   the last, Details, was pushed off the edge. They wrap to a second line, still
+   in one row of the viewer's own padding. */
+@media (max-width: 600px) {
+  .photo-viewer-bar {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+}
+
+/* --- photos, the second look ------------------------------------------------
+   One toolbar under one strip of tabs, rows that say what they are, and a hit
+   area a thumb can find. */
+
+/* A checkbox or a radio whose words are the page's own, not a hint under a
+   field: the text size and color, with the explanation under it muted. */
+label.checkbox.is-plain {
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+label.checkbox.is-plain > span {
+  color: var(--text);
+  font-size: var(--text-body);
+  margin-bottom: 0;
+}
+
+label.checkbox.is-plain > span > .muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* A picture that has not arrived is the cell's neutral ground, not the alt text
+   in a broken-image box. The alt text is still there for a screen reader. */
+.photo-image:not(.is-loaded) {
+  opacity: 0;
+}
+
+.photo-day-heading .photo-day-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-label);
+  font-weight: 400;
+}
+
+.photo-closest {
+  margin-bottom: var(--space-3);
+}
+
+.photo-closest .photo-day-heading {
+  margin: 0;
+}
+
+.photo-closest p {
+  margin: 2px 0 0;
+  font-size: var(--text-label);
+}
+
+.photo-suggestion-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.photo-show-hidden.checkbox {
+  margin-top: 0;
+}
+
+@media (max-width: 600px) {
+  /* The strip of tabs is the width of the page and its tabs share it; four
+     tabs of a few words each fit the narrowest phone, and a tab is as tall as
+     a finger. */
+  .photo-sections .tabs {
+    gap: 0;
+  }
+
+  .photo-sections .tabs button {
+    flex: 1 1 auto;
+    min-height: 44px;
+    margin-right: 0;
+    padding: 8px var(--space-1);
+    text-align: center;
+  }
+
+  /* The tools take the line and the actions are the one under it, at its
+     right. */
+  .photo-toolbar-tools {
+    flex-basis: 100%;
+  }
+
+  .photo-toolbar-actions {
+    flex: 1 1 100%;
+  }
+
+  /* Whatever is touched is at least 44px each way. */
+  .photos-page input[type='search'],
+  .photos-page .photo-toolbar button,
+  .photo-filter-button {
+    min-height: 44px;
+  }
+
+  .photo-toolbar-actions .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-selection-bar .icon-button,
+  .photo-viewer .icon-button,
+  .photo-viewer-bar .photo-save-button,
+  .photo-tray .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-viewer-bar .photo-save-button,
+  .photo-viewer-bar .photo-live-button {
+    min-height: 44px;
+  }
+
+  /* An icon like its neighbors on a phone: the words stay for a screen reader,
+     and the bar keeps to one line. */
+  .photo-viewer-bar .photo-save-button {
+    justify-content: center;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .photo-viewer-bar .photo-save-button .photo-save-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .photo-selection-bar {
+    padding-inline: 2px;
+  }
+
+  .photo-viewer-bar {
+    gap: 0;
+    padding-inline: 4px;
+  }
+
+  .photo-viewer-step {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-viewer-person-not,
+  .photo-viewer-details .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* The corner tick is 22px to look at and 44px to hit. */
+  .photo-check {
+    top: 0;
+    left: 0;
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-check-box {
+    inset: auto;
+    top: 8px;
+    left: 8px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .photo-show-hidden,
+  .photo-filter-kinds label.checkbox,
+  .photo-share-option label.checkbox,
+  .photo-person-name-button {
+    min-height: 44px;
+  }
+
+  .photo-person-foot {
+    min-height: 44px;
+  }
+
+  .contact-picker-row {
+    min-height: 48px;
+  }
+
+  .photo-suggestion-actions .icon-action,
+  .photo-share-row .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .photo-share-choice,
+  .photo-suggestion-actions button,
+  .photo-viewer-action {
+    min-height: 44px;
+  }
+
+  /* The choice is 44px to hit; its explanation reads as under its words, not
+     under its box. */
+  .photo-share-option-hint {
+    margin-top: -8px;
+  }
+}
+
+.photo-share-names-hint {
+  margin-left: 0;
+  margin-top: var(--space-3);
+}
+
+/* The one thing the details offer to do with a place: look around it. A button
+   under the place's name, at the size of a row's own. */
+.photo-near-button {
+  display: block;
+  margin-top: var(--space-1);
+  padding: 4px 12px;
+  font-size: var(--text-label);
+}
+
+.photo-near-filter {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding-left: var(--space-3);
+  font-size: var(--text-body);
+}
+
+/* The place is what gives way when the chip is longer than the room it has:
+   it is cut with an ellipsis, and the close button beside it keeps its size. */
+.photo-near-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .photo-near-button {
+    min-height: 44px;
+  }
+
+  /* The chip goes under the search when it does not fit beside it, rather
+     than squeezing the search box, and its close button is a 44px square. */
+  .photo-toolbar-tools {
+    flex-wrap: wrap;
+  }
+
+  .photo-toolbar-tools input[type='search'] {
+    min-width: 160px;
+  }
+
+  .photo-near-filter {
+    min-height: 44px;
+    padding-block: 0;
+    padding-right: 0;
+  }
+
+  .photo-near-filter .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* A page's icons stay together when its row of actions wraps: two icons on a
+   line of their own, not one left over. */
+.photo-icon-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+
+/* On a phone every Photos control is a 44px target, the small ones in lists
+   and trays too, and the page ends clear of the floating assistant button,
+   which would otherwise sit over its last line. */
+@media (max-width: 600px) {
+  .photos-page {
+    padding-bottom: 88px;
+  }
+
+  .photo-viewer-albums a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .photo-person-head-body button {
+    min-height: 44px;
+  }
+
+  .photo-tray-item .icon-action {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* On a phone a finger needs 44 pixels: the buttons that end a dialog, the
+   fields in one, and the top bar's menu button are made that tall there. A
+   desktop keeps the 40-pixel controls the pages are measured around. */
+@media (max-width: 600px) {
+  .dialog-actions button {
+    min-height: 44px;
+  }
+
+  .dialog input:not([type='checkbox']):not([type='radio']),
+  .dialog select {
+    min-height: 44px;
+  }
+
+  .topbar .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+}
+

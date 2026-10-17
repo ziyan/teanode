@@ -24,6 +24,20 @@ type Principal struct {
 	// an impersonation: User is whose account it is, Impersonator who is
 	// really there.
 	Impersonator *models.User
+
+	// CredentialKind is what the request signed in with. It is how an
+	// operation that must be a person's own tap tells one from a program
+	// that holds the person's command line token. Empty for a request that
+	// did not come in over HTTP with a credential, such as the agent's own
+	// operations, which are therefore never taken as a tap.
+	CredentialKind models.CredentialKind
+}
+
+// IsPersonsTap says whether the request is the person's own tap on a screen:
+// signed in by the dashboard's session or by the phone app's token, and not
+// an operator signed in as the person.
+func (self *Principal) IsPersonsTap() bool {
+	return self != nil && self.User != nil && self.Impersonator == nil && self.CredentialKind.IsInteractive()
 }
 
 // IsImpersonation says whether an operator is signed in as the account

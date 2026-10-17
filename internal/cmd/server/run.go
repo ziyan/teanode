@@ -28,6 +28,7 @@ import (
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/api/v1api"
 	"github.com/ziyan/teanode/internal/bootstrap"
+	"github.com/ziyan/teanode/internal/chat"
 	"github.com/ziyan/teanode/internal/cmd"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/dav"
@@ -38,6 +39,7 @@ import (
 	"github.com/ziyan/teanode/internal/mailer"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/mx"
+	"github.com/ziyan/teanode/internal/photo"
 	"github.com/ziyan/teanode/internal/recording"
 	"github.com/ziyan/teanode/internal/scheduling"
 	"github.com/ziyan/teanode/internal/spamfilter"
@@ -283,6 +285,12 @@ type server struct {
 	agentRegistry *llm.Registry
 	agentWorker   *agent.Agent
 
+	// chatHub carries what happens in a chat to the people in it, and to the
+	// phones of those who are not looking. Unlike the agent it always
+	// exists: a household may run this server for mail, calendars and chats
+	// with no language model.
+	chatHub *chat.Hub
+
 	// scheduler reads the invitations that arrive as mail. Unlike the
 	// agent it follows the event-calendar service: a person with no agent
 	// still wants their meetings.
@@ -450,6 +458,8 @@ func openServer(store config.Store, database db.Database, secret []byte, instanc
 			return nil, err
 		}
 	}
+
+	self.openChatHub()
 
 	if err := self.openAgentWorker(configuration); err != nil {
 		return nil, err
@@ -771,6 +781,37 @@ func (self *server) openStorage(configuration *config.Configuration) error {
 			cleanup.Stop()
 			cleanupGroup.Wait()
 		})
+
+		// The photo library's upkeep runs only where the library is offered.
+		// Which services run is fixed at start, so this is decided once.
+		if configuration.Services.IsEnabled(models.ServicePhotos) {
+			photos := photo.New(self.database, files, self.store.Current)
+			// Temporary copies of videos are made inside the data directory,
+			// which an earlier run may have left files in.
+			if err := photos.PrepareWorkDirectory(); err != nil {
+				log.Warningf("cannot prepare the photo work directory: %s", err)
+			}
+			var photoGroup sync.WaitGroup
+			// Deleting what the library no longer needs: parts of uploads
+			// that went nowhere, photos past the trash, unreferenced files.
+			photoCleanup := periodic.New(context.Background(), &photoGroup, func(ctx context.Context) error {
+				return photos.Cleanup(ctx, 100)
+			}, &periodic.Settings{Interval: time.Minute, Name: "photo:cleanup"})
+			// Previews and metadata for photos that arrived. Two workers take
+			// one photo each, every fifteen seconds, and go on taking the next
+			// while photos wait (up to 200 in a pass); instances share the
+			// waiting photos.
+			photoProcess := periodic.New(context.Background(), &photoGroup, func(ctx context.Context) error {
+				return photos.Process(ctx, 200)
+			}, &periodic.Settings{Interval: 15 * time.Second, Name: "photo:process"})
+			photoCleanup.Start()
+			photoProcess.Start()
+			self.onClose(func() {
+				photoCleanup.Stop()
+				photoProcess.Stop()
+				photoGroup.Wait()
+			})
+		}
 	}
 	return nil
 }
@@ -979,6 +1020,7 @@ func (self *server) openWeb(configuration *config.Configuration) error {
 		Restarter:   self.restarter,
 		AuthLimiter: self.authLimiter(configuration),
 		Agent:       self.agentService(),
+		Chat:        self.chatHub,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot create the API: %w", err)
@@ -1113,7 +1155,7 @@ const authLimiterAddresses = 8192
 // worth an hour of somebody's afternoon.
 func startupOnly(configuration *config.Configuration) map[string]any {
 	return map[string]any{
-		"services": []bool{configuration.Services.IsEnabled(models.ServiceMailRouting), configuration.Services.IsEnabled(models.ServiceMailboxes), configuration.Services.IsEnabled(models.ServiceCalendar), configuration.Services.IsEnabled(models.ServiceReminders), configuration.Services.IsEnabled(models.ServiceContacts)},
+		"services": []bool{configuration.Services.IsEnabled(models.ServiceMailRouting), configuration.Services.IsEnabled(models.ServiceMailboxes), configuration.Services.IsEnabled(models.ServiceCalendar), configuration.Services.IsEnabled(models.ServiceReminders), configuration.Services.IsEnabled(models.ServiceContacts), configuration.Services.IsEnabled(models.ServicePhotos)},
 		"listen":   configuration.Listen,
 		// The model registry and the agent worker are built once from
 		// these; a provider, a key or a model changed on the settings page

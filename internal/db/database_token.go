@@ -65,6 +65,7 @@ type tokenModel struct {
 	ClientID    *string `gorm:"column:client_id;size:32"`
 	Resource    string  `gorm:"type:text"`
 	RefreshHash *string `gorm:"column:refresh_hash;size:64"`
+	ClientKind  *string `gorm:"column:client_kind;size:16"`
 }
 
 func (self *tokenModel) TableName() string {
@@ -85,6 +86,7 @@ func tokenFromModel(model *tokenModel) *models.Token {
 		UserAgent:  model.UserAgent,
 		ClientID:   stringOrEmpty(model.ClientID),
 		Resource:   model.Resource,
+		ClientKind: models.TokenClientKind(stringOrEmpty(model.ClientKind)),
 	}
 }
 
@@ -137,6 +139,7 @@ func (self *database) CreateAuthorizedToken(token *models.Token, keyHash, refres
 		ClientID:    stringOrNil(token.ClientID),
 		Resource:    token.Resource,
 		RefreshHash: stringOrNil(refreshHash),
+		ClientKind:  stringOrNil(string(token.ClientKind)),
 	}
 	if err := self.db.Create(model).Error; err != nil {
 		return nil, err

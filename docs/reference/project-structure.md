@@ -53,6 +53,13 @@ itself rather than through the vendored encoder, which does not quote a
 parameter value that needs quoting and does not fold; what it writes is a
 fixed point, which is what lets the ETag be taken over the stored text.
 
+**`internal/avatar`**: a person's picture, and nothing else: whatever PNG or
+JPEG somebody uploads is decoded, turned upright, cropped to a square and
+encoded again as a 512 pixel PNG, and a smaller one on request. Encoding again
+from the decoded pixels is what leaves every metadata block behind, a photo's
+location included; the decoder refuses a file whose declared size would take
+too much memory before it reads a pixel.
+
 **`internal/calendar`** — the iCalendar format, and nothing else: parsing an
 event, writing one out, expanding a recurrence into the times it happens, and
 describing a time zone as the offsets themselves rather than as a name. Unlike
@@ -205,6 +212,17 @@ many. Prompts are templates under `prompts/`, with golden files in
 the prompt's layers, compaction, the event feed and what crosses instances,
 memory and its vectors, the budgets — is written down in
 `docs/subsystems/`.
+
+**`internal/chat`**: what happens in a chat, carried to the people in it. The
+hub (`hub.go`) is the feed of every member's chat conversation: it publishes an
+event to the members who are in the chat, relays it to the other instances of
+the server through the database, and tells the phones of those who are not
+looking (`notify.go`). `agents.go` decides which agents a message starts: no
+database, only the author, the addressed agents and who is in the room. It
+exists whatever the agent configuration is, so a household with no language
+model still has live chats; the agent publishes into the same hub when it takes
+part in one. The chat's storage is in `internal/db`, and the operations are
+`internal/api/v1api/apigraph/chat.go`; see `docs/subsystems/conversations.md`.
 
 **`internal/skills`** — skills: a file of declarations fetched from a registry
 that signs what it publishes, read here and carried out here. `registry.go`

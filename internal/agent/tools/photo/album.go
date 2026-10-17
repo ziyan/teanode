@@ -1,0 +1,422 @@
+package photo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/ziyan/teanode/internal/agent/tools"
+	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
+)
+
+// Albums are named sets of the library's photos. The operations call the ones
+// the dashboard's Albums page and teanode photo album call.
+
+// albumDayText is a moment as the day it falls on in the person's zone.
+func albumDayText(moment *time.Time, location *time.Location) string {
+	if moment == nil {
+		return ""
+	}
+	return moment.In(location).Format("2006-01-02")
+}
+
+// albumRow is an album as the agent is told of it. The title is the person's
+// own words, so an answer that carries it is untrusted.
+func albumRow(album *models.PhotoAlbum, location *time.Location) map[string]any {
+	row := map[string]any{
+		"album_id": album.ID, "album_title": album.AlbumTitle, "photo_count": album.PhotoCount,
+		"first_taken_on": albumDayText(album.FirstTakenAt, location), "last_taken_on": albumDayText(album.LastTakenAt, location),
+	}
+	// Whose it is and what the person may do with it: an album that is not
+	// theirs is read where it is, and nothing in it is theirs to keep until
+	// they ask.
+	switch {
+	case album.IsOwnedByCaller:
+		row["level"] = "owner"
+	case album.CircleID != nil:
+		row["circle_name"], row["level"] = album.CircleName, string(album.ShareLevel)
+	default:
+		row["owner_name"], row["level"] = album.OwnerName, string(album.ShareLevel)
+	}
+	if !album.IsOwnedByCaller && album.IsLocationIncluded {
+		row["shows_where_photos_were_taken"] = true
+	}
+	return row
+}
+
+func albumIdOf(asked *arguments, operation string) (string, error) {
+	albumId := strings.TrimSpace(asked.AlbumID)
+	if albumId == "" {
+		return "", fmt.Errorf("%s needs album_id; album-list gives them", operation)
+	}
+	return albumId, nil
+}
+
+func albumList(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
+	albums, err := client.ListPhotoAlbums(ctx, current.Operations())
+	if err != nil {
+		return nil, err
+	}
+	location := tools.Location(current.Owner())
+	rows := make([]map[string]any, 0, len(albums))
+	for _, album := range albums {
+		rows = append(rows, albumRow(album, location))
+	}
+	answer := map[string]any{"note": "album-read with album_id (or list with album_id) gives an album's photos, in an album shared with the person too; an album with an owner_name or circle_name is not the person's own"}
+	page, err := pageOfRows(rows, asked, answer)
+	if err != nil {
+		return nil, err
+	}
+	answer["albums"] = page
+	result, err := tools.JSONResult(answer)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	return result, nil
+}
+
+func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-read")
+	if err != nil {
+		return nil, err
+	}
+	album, err := client.ReadPhotoAlbum(ctx, current.Operations(), albumId)
+	if err != nil {
+		return nil, err
+	}
+	details := albumRow(album, tools.Location(current.Owner()))
+	details["created_at"] = album.CreatedAt.In(tools.Location(current.Owner())).Format("2006-01-02 15:04")
+	details["note"] = "the album's photos follow, a page at a time; photos in the Trash are not counted until they are restored"
+	// The album's photos are the list the answer pages: the rows list gives for
+	// album_id, from offset, and next_offset when there are more.
+	listed := *asked
+	listed.AlbumID = albumId
+	filter, err := filterOf(&listed, tools.Location(current.Owner()))
+	if err != nil {
+		return nil, err
+	}
+	photos, err := client.ListPhotos(ctx, current.Operations(), filter)
+	if err != nil {
+		return nil, err
+	}
+	details["photos"] = listedRows(photos)
+	pagePhotos(ctx, current.Operations(), filter, len(photos), details)
+	result, err := tools.JSONResult(details)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	return result, nil
+}
+
+func albumCreate(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumTitle := strings.TrimSpace(asked.AlbumTitle)
+	if albumTitle == "" {
+		return nil, errors.New("album-create needs album_title")
+	}
+	var photoIds []string
+	if len(asked.PhotoIDs) > 0 || strings.TrimSpace(asked.PhotoID) != "" {
+		var err error
+		if photoIds, err = photoIdsOf(asked, "album-create", maximumAlbumPhotoCount); err != nil {
+			return nil, err
+		}
+	}
+	circleId := ""
+	if circleTyped := strings.TrimSpace(asked.Circle); circleTyped != "" {
+		var err error
+		if circleId, _, err = circleNamed(ctx, executor, circleTyped); err != nil {
+			return nil, err
+		}
+	}
+	album, err := client.CreateCirclePhotoAlbum(ctx, executor, circleId, albumTitle, photoIds)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(map[string]any{"album_id": album.ID, "album_title": album.AlbumTitle, "photo_count": album.PhotoCount})
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "made the album " + album.AlbumTitle
+	return result, nil
+}
+
+func albumRename(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-rename")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(asked.AlbumTitle) == "" {
+		return nil, errors.New("album-rename needs album_title")
+	}
+	album, err := client.RenamePhotoAlbum(ctx, executor, albumId, asked.AlbumTitle)
+	if err != nil {
+		return nil, err
+	}
+	return tools.TextResult("%s is now called %s", album.ID, album.AlbumTitle), nil
+}
+
+// albumCover chooses which photo of an album stands for it; the server
+// refuses a photo that is not in the album.
+func albumCover(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-cover")
+	if err != nil {
+		return nil, err
+	}
+	photoId := strings.TrimSpace(asked.PhotoID)
+	if photoId == "" {
+		return nil, errors.New("album-cover needs photo_id, a photo that is in the album; list with album_id gives them")
+	}
+	album, err := client.SetPhotoAlbumCover(ctx, executor, albumId, photoId)
+	if err != nil {
+		return nil, err
+	}
+	return tools.TextResult("%s now shows photo %s as its cover", album.ID, photoId), nil
+}
+
+func albumDelete(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-delete")
+	if err != nil {
+		return nil, err
+	}
+	if err := client.DeletePhotoAlbum(ctx, executor, albumId); err != nil {
+		return nil, err
+	}
+	return tools.TextResult("deleted the album %s; its photos are still in the library", albumId), nil
+}
+
+// albumMove is album-add and album-remove: an album and a list of photos in, a
+// count out.
+func albumMove(ctx context.Context, executor client.Executor, asked *arguments, change func(context.Context, client.Executor, string, []string) (int, error), done string) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, asked.Operation)
+	if err != nil {
+		return nil, err
+	}
+	photoIds, err := photoIdsOf(asked, asked.Operation, maximumAlbumPhotoCount)
+	if err != nil {
+		return nil, err
+	}
+	count, err := change(ctx, executor, albumId, photoIds)
+	if err != nil {
+		return nil, err
+	}
+	return tools.TextResult("%d of %d photos %s the album", count, len(photoIds), done), nil
+}
+
+// albumSuggest offers the trips and events among photos in no album. The
+// dates it gives are exact: listing between them gives the run's photos.
+func albumSuggest(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
+	takenAfter, takenBefore, err := takenRangeOf(asked, tools.Location(current.Owner()))
+	if err != nil {
+		return nil, err
+	}
+	suggestions, err := client.SuggestPhotoAlbums(ctx, current.Operations(), takenAfter, takenBefore)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(suggestions))
+	for _, suggestion := range suggestions {
+		rows = append(rows, map[string]any{
+			"album_title": suggestion.AlbumTitle, "photo_count": suggestion.PhotoCount, "place_names": suggestion.PlaceNames,
+			"taken_after": suggestion.TakenAfter.Format(time.RFC3339), "taken_before": suggestion.TakenBefore.Format(time.RFC3339),
+			"sample_photo_ids": suggestion.SamplePhotoIDs,
+		})
+	}
+	answer := map[string]any{"suggestions": rows}
+	if len(rows) == 0 {
+		answer["note"] = "nothing to suggest: a trip or an event is a run of at least 12 photos, taken without a gap of more than 6 hours, that are in no album"
+	} else {
+		answer["note"] = "nothing is created yet. If the person agrees, list the photos with taken_after and taken_before as given, then album-create with the title they choose and those photo_ids"
+	}
+	return tools.JSONResult(answer)
+}
+
+// albumCardPreview names the album on the cards the person must read before
+// they answer them, deleting an album and sharing one: an identifier would
+// mean nothing to them. Any other operation is described by previewOf.
+func albumCardPreview(ctx context.Context, arguments json.RawMessage) string {
+	var asked struct {
+		Operation string `json:"operation"`
+		AlbumID   string `json:"album_id"`
+		Person    string `json:"person"`
+		Circle    string `json:"circle"`
+		Level     string `json:"share_level"`
+		Location  bool   `json:"is_location_included"`
+	}
+	if err := json.Unmarshal(arguments, &asked); err != nil {
+		return ""
+	}
+	operation := strings.ToLower(strings.TrimSpace(asked.Operation))
+	if operation != "album-delete" && operation != "album-share" {
+		return ""
+	}
+	named := "an album"
+	if run, err := tools.RunFrom(ctx); err == nil && strings.TrimSpace(asked.AlbumID) != "" {
+		if album, err := client.ReadPhotoAlbum(ctx, run.Operations(), strings.TrimSpace(asked.AlbumID)); err == nil {
+			named = tools.Named(album.AlbumTitle, "an album")
+		}
+	}
+	if operation == "album-delete" {
+		return "Delete " + named + "; its photos stay in the library"
+	}
+	with := tools.Named(asked.Person, "")
+	if with == "" {
+		with = "everyone in " + tools.Named(asked.Circle, "one of their circles")
+	}
+	level := "view"
+	if strings.ToLower(strings.TrimSpace(asked.Level)) == string(models.PhotoAlbumShareLevelContribute) {
+		level = "view and add photos"
+	}
+	text := "Share " + named + " with " + with + ", to " + level
+	if asked.Location {
+		text += ", including where the photos were taken"
+	}
+	return text
+}
+
+// circleNamed is the circle the person's agent was told of: by identifier or
+// by name, among the circles the person is in.
+func circleNamed(ctx context.Context, executor client.Executor, typed string) (string, string, error) {
+	circles, err := client.ListCircles(ctx, executor)
+	if err != nil {
+		return "", "", err
+	}
+	for _, circle := range circles {
+		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
+			return circle.ID, circle.Name, nil
+		}
+	}
+	return "", "", fmt.Errorf("%q is not a circle the person is in; circle list gives them", typed)
+}
+
+// personNamed is the person the agent was told to share with: by username,
+// among the people who share a circle with the person.
+func personNamed(ctx context.Context, executor client.Executor, typed string) (string, string, error) {
+	people, err := client.ListCirclePeople(ctx, executor)
+	if err != nil {
+		return "", "", err
+	}
+	for _, person := range people {
+		if strings.EqualFold(person.Username, typed) {
+			return person.UserID, person.Username, nil
+		}
+	}
+	return "", "", fmt.Errorf("%q does not share a circle with the person; circle_people gives the people they can share with", typed)
+}
+
+// albumShare shares one of the person's albums. The card that asked first says
+// whom with and how far, because this decides who may look at the person's
+// photos.
+func albumShare(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-share")
+	if err != nil {
+		return nil, err
+	}
+	person, circle := strings.TrimSpace(asked.Person), strings.TrimSpace(asked.Circle)
+	if (person == "") == (circle == "") {
+		return nil, errors.New("album-share needs person (a username) or circle (a name or id), not both and not neither")
+	}
+	shareLevel := strings.ToLower(strings.TrimSpace(asked.ShareLevel))
+	if shareLevel == "" {
+		shareLevel = string(models.PhotoAlbumShareLevelView)
+	}
+	if !models.PhotoAlbumShareLevel(shareLevel).IsValid() {
+		return nil, fmt.Errorf("share_level is view or contribute, not %q", asked.ShareLevel)
+	}
+	var granteeUserId, granteeCircleId, sharedWith string
+	if person != "" {
+		granteeUserId, sharedWith, err = personNamed(ctx, executor, person)
+	} else {
+		var circleName string
+		granteeCircleId, circleName, err = circleNamed(ctx, executor, circle)
+		sharedWith = "everyone in " + circleName
+	}
+	if err != nil {
+		return nil, err
+	}
+	share, err := client.SharePhotoAlbum(ctx, executor, albumId, granteeUserId, granteeCircleId, shareLevel, asked.IsLocationIncluded)
+	if err != nil {
+		return nil, err
+	}
+	result, err := tools.JSONResult(map[string]any{
+		"share_id": share.ID, "shared_with": sharedWith, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result.Note = "shared an album with " + sharedWith
+	return result, nil
+}
+
+func albumUnshare(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	shareId := strings.TrimSpace(asked.ShareID)
+	if shareId == "" {
+		return nil, errors.New("album-unshare needs share_id; album-shares gives them")
+	}
+	if err := client.RemovePhotoAlbumShare(ctx, executor, shareId); err != nil {
+		return nil, err
+	}
+	return tools.TextResult("stopped sharing; the photos the other person put in the album left it with their access"), nil
+}
+
+func albumShares(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	albumId, err := albumIdOf(asked, "album-shares")
+	if err != nil {
+		return nil, err
+	}
+	shares, err := client.ListPhotoAlbumShares(ctx, executor, albumId)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(shares))
+	for _, share := range shares {
+		row := map[string]any{"share_id": share.ID, "share_level": share.ShareLevel, "is_location_included": share.IsLocationIncluded}
+		if share.GranteeCircleID != nil {
+			row["circle_name"] = share.GranteeCircleName
+		} else {
+			row["person"], row["person_name"] = share.GranteeUsername, share.GranteeName
+		}
+		rows = append(rows, row)
+	}
+	// Names are what other people called themselves.
+	answer := map[string]any{}
+	page, err := pageOfRows(rows, asked, answer)
+	if err != nil {
+		return nil, err
+	}
+	answer["shares"] = page
+	result, err := tools.JSONResult(answer)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	return result, nil
+}
+
+// saveShared keeps photos of a shared album in the person's own library, at
+// the person's asking. What is kept is what the person could see: without the
+// place unless the share included it.
+func saveShared(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	photoIds, err := photoIdsOf(asked, "save-shared", maximumSaveSharedPhotoCount)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]string, 0, len(photoIds))
+	savedCount := 0
+	for _, photoId := range photoIds {
+		saved, err := client.SavePhotoToLibrary(ctx, executor, photoId)
+		if err != nil {
+			rows = append(rows, photoId+": "+err.Error())
+			continue
+		}
+		savedCount++
+		rows = append(rows, photoId+": kept as "+saved.ID)
+	}
+	result := tools.TextResult("%s", strings.Join(rows, "\n"))
+	result.Note = fmt.Sprintf("kept %d of %d photos in the library", savedCount, len(photoIds))
+	return result, nil
+}

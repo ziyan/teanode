@@ -56,6 +56,16 @@ export function PencilIcon(props: IconProps) {
   )
 }
 
+// A closed padlock: something only its owner may read.
+export function LockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </Icon>
+  )
+}
+
 // Drafts are what is still being written: the pencil.
 export function DraftsIcon(props: IconProps) {
   return <PencilIcon {...props} />
@@ -934,6 +944,16 @@ export function MinusIcon(props: IconProps) {
   )
 }
 
+// EyeIcon is an eye: to look at something without changing it.
+export function EyeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  )
+}
+
 // InfoIcon is a letter i in a circle: how a number is worked out.
 export function InfoIcon(props: IconProps) {
   return (
@@ -965,12 +985,129 @@ export function ReceiptIcon(props: IconProps) {
   )
 }
 
+// A heart: what a favorite photo is marked with. Outline like the rest; a
+// favorite is drawn with the page's own rule that fills it.
+export function HeartIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
+    </Icon>
+  )
+}
+
 // CodeIcon is a pair of angle brackets: the coding sessions.
 export function CodeIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="m8 7-5 5 5 5" />
       <path d="m16 7 5 5-5 5" />
+    </Icon>
+  )
+}
+
+// Download: an arrow into a tray, for saving a file from the server.
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+    </Icon>
+  )
+}
+
+// Upload: the same tray with the arrow going out of it.
+export function UploadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+    </Icon>
+  )
+}
+
+// A magnifying glass with a plus in it: look closer.
+export function ZoomInIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3M11 8v6M8 11h6" />
+    </Icon>
+  )
+}
+
+// Restore: an arrow turning back, for bringing something out of the trash.
+export function RestoreIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 7v6h6" />
+      <path d="M3.5 13a9 9 0 1 0 2.6-6.4L3 9.5" />
+    </Icon>
+  )
+}
+
+// An album: a photo with another behind it, as albums are stacked in every
+// photo app.
+export function AlbumIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+    </Icon>
+  )
+}
+
+// Add to an album: the album with a plus in its front photo.
+export function AlbumAddIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+      <path d="M10 11.5v6M7 14.5h6" />
+    </Icon>
+  )
+}
+
+// Keep a photo: a picture with a plus at its corner, for putting a photo into
+// the person's own library.
+export function PhotoSaveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-8" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M20 17l-4.5-4.5L7 21" />
+      <path d="M19 2v6M16 5h6" />
+    </Icon>
+  )
+}
+
+// Take out of an album: the album with a minus in its front photo.
+export function AlbumRemoveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+      <path d="M7 14.5h6" />
+    </Icon>
+  )
+}
+
+// Make this photo the face of its album: the album with a star on its front
+// photo, so that it is not mistaken for adding to the album or taking out of it.
+export function AlbumCoverIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="7" width="14" height="14" rx="2" />
+      <path d="M7 3h12a2 2 0 0 1 2 2v12" />
+      <path d="m10 11 1.1 2.2 2.4.35-1.75 1.7.42 2.4L10 16.5l-2.17 1.15.42-2.4-1.75-1.7 2.4-.35L10 11Z" />
+    </Icon>
+  )
+}
+
+// An eye with a stroke through it: hidden, or hide.
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9.9 5.2A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.8 17.8 0 0 1-3.2 4.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="m3 3 18 18" />
     </Icon>
   )
 }

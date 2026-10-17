@@ -242,6 +242,29 @@ lists what the program will ask for — the incoming server, the outgoing
 server on port 587, and the username — and most programs find those on their
 own from the address.
 
+## 9. Bring the people you share it with
+
+If others use this server, a household or a few friends, put them in a
+**circle**. Open **Circles** from the account menu at the foot of the rail,
+make one called what it is (Family, say), and add the people. Someone who
+already has an account is invited by username and joins when they accept.
+Someone who has none is added with **Make an account for someone**: give a
+username, a name and a first password, and they are in the circle at once,
+with nothing to accept. They sign in with that username and password and can
+change the password themselves under **Settings → Change password**. On the
+command line a circle is made with `teanode circle create --kind family
+Family` (`--kind` is required: `family`, `friends` or `colleagues`), and the
+account is one step: `teanode user create --circle <circle-id> personb`
+prompts for the first password, and `--stdin` reads it from standard input
+instead (`teanode user create --stdin --circle <circle-id> personb`). That
+command takes only a username; the name other people see is set afterwards
+with `teanode user update personb --name "Person B"`, and until then they see
+the username.
+
+Once you share a circle with someone you can message each other. Chats are
+in the agent's drawer, under **Message someone**, and every circle has a chat
+of its own.
+
 ## Where to go next
 
 - **More addresses.** Aliases match with a regular expression, so
@@ -261,6 +284,19 @@ own from the address.
   addresses through port 587. A credential — on the domain's settings page,
   optionally restricted to one sender address — is for programs and scripts
   that send as the domain rather than as a person.
+- **Photos.** On from the first start, with nothing to choose: each person has
+  a Photos page in the rail. Upload from the dashboard or with
+  `teanode photo upload <folder>`, or turn on **Photo backup** in the iPhone
+  app's settings to send the phone's whole library in the background. The
+  iPhone app only signs in over https (plain http is accepted only for
+  loopback, which a phone cannot reach), so a server reached at
+  `http://localhost` or a local address needs a TLS address first (see
+  "Photos and the iPhone app" in `reference/deployment.md`). Deleting a photo
+  on the phone leaves it here. A library is large: put the storage
+  (`storage.directory`, or the S3 bucket) on a disk with room for it, and back
+  it up with the database. **Manage → Server → Setup** turns it off, or turns
+  on Calendar, Contacts and the rest; the page says what starts after a
+  restart and has a **Restart now** button.
 - **More domains.** Each gets its own signing key by default. If you would
   rather they all shared one, point `<selector>._domainkey` at the primary
   domain with a CNAME and the dashboard will show you the record to publish.

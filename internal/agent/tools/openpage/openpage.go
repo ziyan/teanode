@@ -83,7 +83,14 @@ func PagePath(written string) (string, error) {
 			if path == "" {
 				return "", fmt.Errorf("%q is not a %s: link to anything", written, scheme)
 			}
-			return PagePath(path)
+			// A page another person shared opens with its owner, the one
+			// query a link of ours carries (models.DashboardPath checked it).
+			path, owner, isShared := strings.Cut(path, "?owner=")
+			shown, err := PagePath(path)
+			if err != nil || !isShared {
+				return shown, err
+			}
+			return shown + "?owner=" + owner, nil
 		}
 	}
 	if written == "" {

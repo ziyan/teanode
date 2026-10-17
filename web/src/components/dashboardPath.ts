@@ -10,10 +10,49 @@ import { useNavigate } from 'react-router-dom'
 // models.ValidPath and models.Slug).
 const MEMORY_SEGMENT = /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u
 
+// A username a link may name as the owner of a shared page: letters, digits
+// and -._~ alone, the characters that need no escaping in an address (the
+// server's ownerPattern in models/dashboard_link.go).
+const OWNER_USERNAME = /^[A-Za-z0-9._~-]{1,64}$/
+
+// SHARED_CITATION is a fact of another person's shared page cited in prose,
+// "people/a-grandparent#3 (shared by Ada)": the path and number, and the name
+// the page belongs to. The agent writes it that way when it cites what it read
+// in a page somebody shared, and a link to the page is [name](memory:PATH#N@username).
+export const SHARED_CITATION = /([a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*)#(\d{1,6}) \(shared by ([^)\n]+)\)/g
+
+// hasSharedCitation is whether the words cite a fact of a shared page.
+export function hasSharedCitation(text: string): boolean {
+  return new RegExp(SHARED_CITATION.source).test(text)
+}
+
+// linkSharedCitations turns each "people/a-grandparent#3 (shared by Ada)" in
+// prose into a link to the shared page, [that](memory:people/a-grandparent#3@ada).
+// The words name the owner by display name, so usernameOf finds the username
+// from the pages shared with the person; a name it cannot place, or places on
+// more than one person, is left as the words it was. A citation the agent
+// already made a link of is left alone.
+export function linkSharedCitations(text: string, usernameOf: (ownerName: string) => string | undefined): string {
+  return text.replace(
+    new RegExp(SHARED_CITATION.source, 'g'),
+    (written: string, path: string, number: string, ownerName: string, offset: number, whole: string) => {
+      if (whole[offset - 1] === '[' || whole[offset + written.length] === ']') return written
+      const username = usernameOf(ownerName.trim())
+      if (!username || !OWNER_USERNAME.test(username) || /[[\]]/.test(written)) return written
+      return `[${written}](memory:${path}#${number}@${username})`
+    },
+  )
+}
+
 // memoryPath is the Knowledge page a memory:PATH link opens, PATH#N for one
 // fact of it, or null for anything that is not a page the graph could hold.
 // The fact's number is accepted and not carried: the page opens as a whole.
-export function memoryPath(target: string): string | null {
+//
+// PATH#N@username, the username last, is a page another person shared with
+// the person, and opens it read only with ?owner=username.
+export function memoryPath(written: string): string | null {
+  const [target, owner, ...others] = written.split('@')
+  if (others.length > 0 || (owner !== undefined && !OWNER_USERNAME.test(owner))) return null
   const [path, fact, ...rest] = target.split('#')
   if (rest.length > 0 || (fact !== undefined && !/^[0-9]{1,6}$/.test(fact))) return null
   if (!path || path.length > 500) return null
@@ -22,7 +61,7 @@ export function memoryPath(target: string): string | null {
   for (const segment of segments) {
     if (!MEMORY_SEGMENT.test(segment) || segment !== segment.toLowerCase() || [...segment].length > 60) return null
   }
-  return `/knowledge/${path}`
+  return `/knowledge/${path}${owner === undefined ? '' : `?owner=${encodeURIComponent(owner)}`}`
 }
 
 // mailPath is the message a mail:ITEM_ID link opens, or null. Starred opens
@@ -51,6 +90,20 @@ const SHOWN_PREFIXES = ['/knowledge', '/mailbox', '/settings/agent', '/settings'
 // scheme, host, query, '..' or '//' reaches the router.
 export function shownPath(written: string): string | null {
   if (!written.startsWith('/') || written.length > 600) return null
+  // The one query a path of ours carries: whose shared page a Knowledge
+  // address opens (memoryPath). Checked here, apart from the segments.
+  const [withoutQuery, owner, ...others] = written.split('?owner=')
+  if (
+    others.length > 0 ||
+    (owner !== undefined && (!OWNER_USERNAME.test(owner) || !withoutQuery.startsWith('/knowledge/')))
+  ) {
+    return null
+  }
+  const shown = shownSegments(withoutQuery)
+  return shown === null || owner === undefined ? shown : `${shown}?owner=${owner}`
+}
+
+function shownSegments(written: string): string | null {
   const path = written.length > 1 && written.endsWith('/') ? written.slice(0, -1) : written
   const segments = path.slice(1).split('/')
   for (const segment of segments) {

@@ -3,10 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 
 	"github.com/ziyan/teanode/internal/client"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // NewUserCommand builds "teanode user", for the accounts that administer this
@@ -41,7 +44,15 @@ func NewUserCommand() *cli.Command {
 						Name:  "stdin",
 						Usage: "read the password from standard input instead of prompting",
 					},
+					&cli.StringSliceFlag{
+						Name:  "circle",
+						Usage: "put the new account in this circle, by the identifier 'teanode circle list' prints; repeat for several",
+					},
 				},
+				Description: "With --circle the account is also put in each circle at once, as a member and\n" +
+					"with no invitation to accept: 'teanode circle add' for an account that was just\n" +
+					"made. The person can sign in with the username and the password, and change the\n" +
+					"password themselves.",
 				Action: runUserCreate,
 			},
 			{
@@ -76,6 +87,25 @@ func NewUserCommand() *cli.Command {
 					},
 				},
 				Action: runUserPassword,
+			},
+			{
+				Name:  "avatar",
+				Usage: "set or remove a person's picture",
+				Commands: []*cli.Command{
+					{
+						Name:      "set",
+						Usage:     "use a PNG or JPEG as the picture of the signed-in account",
+						ArgsUsage: "<file>",
+						Flags:     append([]cli.Flag{avatarUserFlag()}, JSONFlag()),
+						Action:    runUserAvatarSet,
+					},
+					{
+						Name:   "remove",
+						Usage:  "take the picture away, so the account is shown as its initial",
+						Flags:  append([]cli.Flag{avatarUserFlag()}, JSONFlag()),
+						Action: runUserAvatarRemove,
+					},
+				},
 			},
 			{
 				Name:      "delete",
@@ -142,6 +172,22 @@ func runUserCreate(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	fmt.Printf("added %s\n", username)
+
+	// The account exists now whatever happens next, so a circle that cannot
+	// take it is reported with the command that finishes the job, and the
+	// others are still tried.
+	var refused []string
+	for _, circleId := range command.StringSlice("circle") {
+		circle, err := client.AddCircleMember(ctx, connection, circleId, username, string(models.MemberRoleMember))
+		if err != nil {
+			refused = append(refused, fmt.Sprintf("circle %s: %s (try: teanode circle add %s %s)", circleId, err, circleId, username))
+			continue
+		}
+		fmt.Printf("put %s in %s\n", username, circleDescription(circle))
+	}
+	if len(refused) > 0 {
+		return fmt.Errorf("%s was added, but not to every circle:\n  %s", username, strings.Join(refused, "\n  "))
+	}
 	return nil
 }
 
@@ -254,5 +300,52 @@ func runUserUpdate(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(user)
 	}
 	fmt.Printf("changed %s\n", user.Username)
+	return nil
+}
+
+func avatarUserFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:  "user",
+		Usage: "the account to change, by username, when it is not your own; needs user:manage",
+	}
+}
+
+func runUserAvatarSet(ctx context.Context, command *cli.Command) error {
+	path := command.Args().First()
+	if path == "" {
+		return usage("which file? usage: teanode user avatar set <file>")
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	user, err := client.SetUserAvatar(ctx, connection, command.String("user"), content)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(user)
+	}
+	fmt.Printf("set the picture of %s\n", user.Username)
+	return nil
+}
+
+func runUserAvatarRemove(ctx context.Context, command *cli.Command) error {
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	user, err := client.RemoveUserAvatar(ctx, connection, command.String("user"))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(user)
+	}
+	fmt.Printf("removed the picture of %s\n", user.Username)
 	return nil
 }

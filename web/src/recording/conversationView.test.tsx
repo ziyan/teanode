@@ -280,7 +280,7 @@ it('asks which pages of memory are linked to the bubble, by its range, only when
   const link = await screen.findByRole('link', { name: 'Fixture Guest' })
   expect(link.getAttribute('href')).toBe('/knowledge/people/fixture-guest')
   // A guess is said to be one.
-  expect(screen.getByText('Perhaps')).toBeTruthy()
+  expect(screen.getByText("The agent's guess")).toBeTruthy()
   const [, variables] = vi.mocked(graphql).mock.calls[0]
   expect(variables).toMatchObject({
     recordKind: 'recording_passage',

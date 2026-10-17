@@ -16,7 +16,10 @@ type AgentSpeakFirstMutation interface {
 	// sent by every open tab and the phone app each minute and whenever it
 	// is shown or hidden, each naming itself. The agent starts a
 	// conversation on its own only with somebody who is there to read it,
-	// and tells their phone what nobody is there to see. Needs agent:use.
+	// and tells their phone what nobody is there to see. A chat tells a
+	// member's phone unless one of their tabs or the app is showing that
+	// conversation, which is why a report says which it shows.
+	// Needs agent:use, or circle:use for the chats alone.
 	ReportAgentPresence(ctx context.Context, arguments ReportAgentPresenceArguments) (bool, error)
 
 	// Have the agent start a conversation now, for a reason: onboarding,
@@ -36,6 +39,11 @@ type ReportAgentPresenceArguments struct {
 	// out of sight hides only itself. Optional: a report without it is
 	// taken as an older dashboard's.
 	ReporterID *string `json:"reporterId"`
+
+	// ConversationID is the conversation the tab or the phone shows, empty
+	// or absent when it shows none. A message in a chat is not told to a
+	// phone while a visible report shows that chat's conversation.
+	ConversationID *string `json:"conversationId"`
 }
 
 // SpeakFirstNowArguments names why.
@@ -44,12 +52,20 @@ type SpeakFirstNowArguments struct {
 }
 
 func (self *graph) ReportAgentPresence(ctx context.Context, arguments ReportAgentPresenceArguments) (bool, error) {
-	principal, _, err := self.requireAgentPerson(ctx)
+	principal, _, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return false, err
 	}
-	worker := self.agentWorker()
-	if worker == nil {
+	// The chat hub and the agent share what is reported; a server with no
+	// agent has only the hub, and a chat is notified to a phone only while
+	// nobody is looking at it.
+	var presence api.ChatService
+	if hub := self.chatHub(); hub != nil {
+		presence = hub
+	} else if worker := self.agentWorker(); worker != nil {
+		presence = worker
+	}
+	if presence == nil {
 		return false, nil
 	}
 	reporterId := ""
@@ -59,7 +75,14 @@ func (self *graph) ReportAgentPresence(ctx context.Context, arguments ReportAgen
 			return false, fmt.Errorf("%w: a reporter id is at most 64 characters", api.ErrInvalidArguments)
 		}
 	}
-	worker.ReportPresence(principal.User.ID, reporterId, arguments.IsVisible, arguments.IdleSeconds, time.Now())
+	conversationId := ""
+	if arguments.ConversationID != nil {
+		conversationId = strings.TrimSpace(*arguments.ConversationID)
+		if len(conversationId) > 64 {
+			return false, fmt.Errorf("%w: a conversation id is at most 64 characters", api.ErrInvalidArguments)
+		}
+	}
+	presence.ReportPresence(principal.User.ID, reporterId, arguments.IsVisible, arguments.IdleSeconds, conversationId, time.Now())
 	return true, nil
 }
 

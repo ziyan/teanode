@@ -12,6 +12,7 @@ import (
 	"github.com/emersion/go-ical"
 
 	"github.com/ziyan/teanode/internal/calendar"
+	"github.com/ziyan/teanode/internal/calendar/commands"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
@@ -402,13 +403,13 @@ func (self *component) serveCalendarReport(writer http.ResponseWriter, request *
 			http.Error(writer, "that filter could not be read", http.StatusBadRequest)
 			return true
 		}
-		found, err := backing.calendarAt(ctx, signedIn, request.URL.Path)
+		found, err := backing.calendarAt(ctx, signedIn, request.URL.Path, models.ShareLevelTitles)
 		if err != nil {
 			status, message := statusOf(err)
 			http.Error(writer, message, status)
 			return true
 		}
-		held := componentOf(found)
+		held := componentOf(found.Calendar)
 		filter, nothing, usable := query.componentFilter(held)
 		if !usable {
 			http.Error(writer, "this server does not answer that filter", http.StatusBadRequest)
@@ -477,7 +478,9 @@ func (self *component) serveFreeBusy(writer http.ResponseWriter, request *http.R
 
 	ctx := request.Context()
 	signedIn := backing.who(ctx)
-	found, err := backing.calendarAt(ctx, signedIn, request.URL.Path)
+	// At busy: a calendar shared only so that its owner's free time can be
+	// asked about is still one this report answers.
+	found, err := backing.calendarAt(ctx, signedIn, request.URL.Path, models.ShareLevelBusy)
 	if err != nil {
 		status, message := statusOf(err)
 		http.Error(writer, message, status)
@@ -486,71 +489,16 @@ func (self *component) serveFreeBusy(writer http.ResponseWriter, request *http.R
 
 	// Whose calendar this is, by address, so that "which of these attendees
 	// is me" can be answered and an event they declined does not make them
-	// look busy.
-	//
-	// Every address of theirs, not just the mailbox this client signed in
-	// with: a calendar belongs to the account, and somebody with two
-	// mailboxes who declined a meeting under the other one was reported
-	// busy for a meeting they had said no to.
-	theirs := make(map[string]bool)
-	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		mailboxes, err := tx.ListMailboxes(signedIn.userID)
-		if err != nil {
-			return err
-		}
-		for _, mailbox := range mailboxes {
-			for _, address := range mailbox.Addresses {
-				theirs[strings.ToLower(strings.TrimSpace(address.Address))] = true
-			}
-		}
-		return nil
-	}); err != nil {
-		log.Warningf("cannot read the addresses of a calendar's owner: %s", err)
-	}
-
+	// look busy. The owner's, which is the signed-in person's own for their
+	// own calendar and somebody else's for one shared with them.
 	var busy []calendar.Occurrence
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		occurrences, err := tx.ListOccurrences(found.ID, from, until)
+		theirs, err := commands.OwnerAddresses(tx, found.UserID)
 		if err != nil {
-			return unexpectedCalendar(err)
+			log.Warningf("cannot read the addresses of a calendar's owner: %s", err)
 		}
-		// Whether an event makes its owner busy is a property of the
-		// event, not of each time it happens, so it is decided once per
-		// file however many occurrences that file has in the window.
-		counts := make(map[string]bool, len(occurrences))
-		for _, occurrence := range occurrences {
-			decided, already := counts[occurrence.ObjectID]
-			if !already {
-				object, err := tx.GetCalendarObject(found.ID, occurrence.ObjectID)
-				if err != nil {
-					return unexpectedCalendar(err)
-				}
-				if object == nil {
-					counts[occurrence.ObjectID] = false
-					continue
-				}
-				parsed, err := calendar.Parse([]byte(object.Data))
-				if err != nil {
-					// Kept text that cannot be read is this server's
-					// problem. Counted as busy, because the safe
-					// mistake here is to say somebody is unavailable
-					// when they are free rather than the other way
-					// round: the first wastes a slot, the second
-					// books over something real.
-					decided = true
-				} else {
-					decided = calendar.MakesBusy(parsed, theirs)
-				}
-				counts[occurrence.ObjectID] = decided
-			}
-			if !decided {
-				continue
-			}
-			busy = append(busy, calendar.Occurrence{
-				StartsAt: occurrence.StartsAt, EndsAt: occurrence.EndsAt, AllDay: occurrence.AllDay,
-			})
-		}
-		return nil
+		busy, err = commands.BusyOccurrences(tx, found.ID, theirs, from, until)
+		return unexpectedCalendar(err)
 	}); err != nil {
 		status, message := statusOf(err)
 		http.Error(writer, message, status)
@@ -572,7 +520,7 @@ func (self *component) serveFreeBusy(writer http.ResponseWriter, request *http.R
 // proportional to the window rather than to the calendar; without one, the
 // whole calendar, which is what a client enumerating asks for.
 func (self *component) eventsMatching(ctx context.Context, backing *calendarBackend,
-	found *models.Calendar, filter *compFilter) ([]*models.CalendarObject, error) {
+	found *reachedCalendar, filter *compFilter) ([]*models.CalendarObject, error) {
 	address := calendarPath(backing.who(ctx).userID, found.ID)
 	if filter == nil {
 		return backing.storedEvents(ctx, address)
@@ -626,7 +574,7 @@ func (self *component) eventsMatching(ctx context.Context, backing *calendarBack
 				continue
 			}
 			seen[occurrence.ObjectID] = true
-			object, err := tx.GetCalendarObject(found.ID, occurrence.ObjectID)
+			object, err := tx.ReadCalendarObject(found.ID, occurrence.ObjectID, found.shareLevel)
 			if err != nil {
 				return unexpectedCalendar(err)
 			}

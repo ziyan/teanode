@@ -25,6 +25,9 @@ final class AppModel {
     private(set) var connection: Connection?
 
     private(set) var services: ServiceCapabilities?
+    /// What the person may do on this server, as the access pages read it;
+    /// nil until read, or when it could not be.
+    private(set) var accessSession: AccessSession?
     /// Whether the server could not be asked which services it runs, and
     /// none are known yet: the app says so rather than calling them off.
     private(set) var hasServicesFailedToLoad = false
@@ -63,6 +66,10 @@ final class AppModel {
     /// A conversation a pressed notification asks to open.
     var openedConversationId: String?
 
+    /// Whether a pressed notification asks for the Circles screen, which the
+    /// settings screen opens and then clears.
+    var isCirclesOpened = false
+
     /// Something elsewhere in the app the person asked the agent about,
     /// such as a mail; the conversation takes it as what the next message
     /// refers to.
@@ -70,6 +77,9 @@ final class AppModel {
 
     /// A page of the agent's knowledge a link asks to open.
     var openedKnowledgePath: String?
+    /// A page another person shared, which a link asks to open by the
+    /// username of whoever shared it.
+    var openedSharedKnowledge: SharedKnowledgeLink?
     var openedRecordingLink: RecordingLink?
     private(set) var openedRecordingAccountKey: String?
 
@@ -222,11 +232,20 @@ final class AppModel {
             openedMailItemId = itemId
             return .handled
         case "memory":
-            let path = String(written.dropFirst("memory:".count).split(separator: "#").first ?? "")
+            // memory:PATH#N@username is a page another person shared, with
+            // the username last; without it the page is the person's own.
+            let target = written.dropFirst("memory:".count).split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false)
+            let path = String(target.first?.split(separator: "#").first ?? "")
             let segments = path.split(separator: "/")
             guard !segments.isEmpty, segments.count <= 8,
                 segments.allSatisfy({ $0.allSatisfy { $0.isLowercase || $0.isNumber || $0 == "-" } })
             else { return .discarded }
+            if target.count > 1 {
+                let owner = String(target[1])
+                guard !owner.isEmpty, owner.allSatisfy({ $0.isLetter || $0.isNumber || "._~-".contains($0) }) else { return .discarded }
+                openedSharedKnowledge = SharedKnowledgeLink(ownerUsername: owner, path: path)
+                return .handled
+            }
             // A memory link opens the page in the app, under More.
             openedKnowledgePath = path
             return .handled
@@ -275,10 +294,56 @@ final class AppModel {
         set { if !newValue { previewProblemText = nil } }
     }
 
-    /// Reads the agent's name.
+    /// Reads the agent's name, and whether the person has turned it on.
     func loadAgentName() async {
-        if let connection, let name = try? await connection.agentName() {
-            agentName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let connection, let identity = try? await connection.agentIdentity() {
+            agentName = identity.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            isAgentEnabledByPerson = identity.isOn
+            hasAgent = identity.hasAgent
+        }
+    }
+
+    /// Whether the person has turned their own agent on, as far as the
+    /// server has said; on until it says otherwise.
+    private(set) var isAgentEnabledByPerson = true
+
+    /// Whether the person has an agent at all, as far as the server has said.
+    /// One who has none is offered no switch to turn it on: only their chats.
+    private(set) var hasAgent = true
+
+    /// Whether there is an agent to talk to: the server runs agents and the
+    /// person turned theirs on. Without one the conversation screen shows
+    /// their chats, and where the main conversation would be, the offer to
+    /// turn the agent on.
+    var isAgentOn: Bool { (services?.isAssistantEnabled ?? true) && isAgentEnabledByPerson }
+
+    /// Whether the person can write to the people they share a circle with,
+    /// which needs no agent.
+    private(set) var canChat = false
+
+    /// How many messages wait in the chats that are not muted: the badge on
+    /// the entry to the conversations.
+    private(set) var unreadChatCount = 0
+
+    /// The person's own id, which of a chat's members they are; nil until
+    /// read.
+    private(set) var ownUserId: String?
+
+    /// Reads whether the person can chat, and how much is waiting for them
+    /// in their chats.
+    func refreshChats() async {
+        guard let connection else { return }
+        let session = try? await connection.accessSession()
+        guard !Task.isCancelled, self.connection === connection else { return }
+        if let userId = session?.userId { ownUserId = userId }
+        let canUseCircles = session?.holds("circle:use") ?? false
+        canChat = canUseCircles
+        guard canUseCircles else {
+            unreadChatCount = 0
+            return
+        }
+        if let conversations = try? await connection.conversations(), self.connection === connection {
+            unreadChatCount = ChatUnread.total(of: conversations)
         }
     }
 
@@ -322,6 +387,15 @@ final class AppModel {
         }
     }
 
+    /// What the account in use said about itself is not true of the next one.
+    private func forgetAccountFacts() {
+        ownUserId = nil
+        canChat = false
+        unreadChatCount = 0
+        isAgentEnabledByPerson = true
+        hasAgent = true
+    }
+
     private func use(_ account: Account) {
         if let local = MeetingRecorder.shared.localRecording, local.accountKey == account.accountKey,
             !local.belongsTo(accountKey: account.accountKey, recordingUserId: account.cachedRecordingUserId) {
@@ -331,6 +405,8 @@ final class AppModel {
         if isChanged {
             services = nil
             hasCodingComputers = false
+            accessSession = nil
+            forgetAccountFacts()
             openedRecordingLink = nil
             openedRecordingAccountKey = nil
         }
@@ -455,7 +531,10 @@ final class AppModel {
     func setUpNotifications() async {
         guard let connection else { return }
         await refreshServices()
-        guard services?.isAssistantEnabled == true else { return }
+        // A server with no model has chats and no assistant, and a message in
+        // a chat is told to the phone all the same.
+        if services?.isAssistantEnabled != true { await refreshChats() }
+        guard services?.isAssistantEnabled == true || canChat else { return }
         #if DEBUG
             // The screenshots CI takes would show the permission prompt.
             if DemoServer.isRequested { return }
@@ -583,7 +662,11 @@ final class AppModel {
         }
         if isOpening {
             await switchTo(notifying)
-            if !info.conversationId.isEmpty {
+            if info.notificationKind == "circle" {
+                // An invitation is answered on Circles, in the settings.
+                openedSection = .settings
+                isCirclesOpened = true
+            } else if !info.conversationId.isEmpty {
                 openedConversationId = info.conversationId
             }
             return
@@ -606,7 +689,12 @@ final class AppModel {
                 try await notifyingConnection.answerQuestion(runId: info.runId, callId: info.callId, answer: answer)
             }
         } catch {
-            await tell(String(localized: "That did not reach your agent: \(describe(error))"))
+            // A reply to a person in a chat went to the chat, not to the agent.
+            if info.notificationKind == "chat" {
+                await tell(String(localized: "That did not reach the chat: \(describe(error))"))
+            } else {
+                await tell(String(localized: "That did not reach your agent: \(describe(error))"))
+            }
         }
     }
 
@@ -633,6 +721,9 @@ final class AppModel {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: account.accountKey)
         }
         if let account { await RecordingUploads.shared.cancel(accountKey: account.accountKey) }
+        // Backup goes with the sign-in, and its password is revoked while the
+        // sign-in can still do it.
+        if let account { await PhotoBackupEngine.shared.accountRemoved(accountKey: account.accountKey, connection: connection) }
         if let account, signedOutText == nil {
             await SignIn(server: account.server, transport: transport).revoke(account)
         }
@@ -655,6 +746,7 @@ final class AppModel {
         account = nil
         accounts = []
         connection = nil
+        forgetAccountFacts()
         self.signedOutText = signedOutText
     }
 
@@ -678,6 +770,7 @@ final class AppModel {
             await MeetingRecorder.shared.stopForAccountRemoval(accountKey: other.accountKey)
         }
         await RecordingUploads.shared.cancel(accountKey: other.accountKey)
+        await PhotoBackupEngine.shared.accountRemoved(accountKey: other.accountKey, connection: otherConnections[other.accountKey])
         await SignIn(server: other.server, transport: transport).revoke(other)
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
@@ -693,6 +786,8 @@ final class AppModel {
         if let error = error as? TeaNodeError, error == .signedOut, let connection {
             Task { await signOut(ifEnded: connection, signedOutText: error.localizedDescription) }
         }
+        // The Kit names what went wrong with a photo; the words are the app's.
+        if let error = error as? PhotoError { return error.localizedText }
         if let error = error as? LocalizedError, let description = error.errorDescription {
             return description
         }
@@ -761,9 +856,13 @@ extension AppModel {
     func refreshServices() async {
         guard let connection else { return }
         async let refreshedServices = try? connection.serviceCapabilities()
+        // Read beside the services, so that Photos is shown or hidden once,
+        // not shown and then hidden.
+        async let refreshedSession = try? connection.accessSession()
         let hasVerifiedRecordingOwner = (try? await connection.recordingOwnerId()) != nil
         let verifiedAccount = await connection.account
         let availableServices = await refreshedServices
+        let readSession = await refreshedSession
         // A refresh cancelled as the screens are drawn again, right after
         // signing in, failed to load nothing: counted as a failure, it
         // flashed "Cannot reach your server" before another refresh landed.
@@ -774,6 +873,16 @@ extension AppModel {
         }
         if let availableServices { self.services = availableServices }
         hasServicesFailedToLoad = availableServices == nil && services == nil
+        // What the person may use decides whether Photos is offered. A read
+        // that fails keeps what was known, and nothing known offers it.
+        if let readSession { accessSession = readSession }
+    }
+
+    /// Whether Photos is offered: an operator turned it on for the server and
+    /// the person holds `photos:use`. It gates the Photos section, the rows
+    /// for Photo backup and People in Photos, and the backup switch.
+    var isPhotosOffered: Bool {
+        PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
 
     func noteCodingComputers() { hasCodingComputers = true }
@@ -795,8 +904,14 @@ extension AppModel {
         case .mail: return services.isMailboxEnabled
         case .calendar: return services.isCalendarEnabled || services.isRemindersEnabled
         case .contacts: return services.isContactsEnabled
+        // Hidden until an operator turns Photos on for the server, and from
+        // someone who may not use it.
+        case .photos: return isPhotosOffered
         case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
-        case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        // The agent's screen also holds the person's chats, which need no
+        // agent.
+        case .agent: return services.isAssistantEnabled || canChat
+        case .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
         case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }

@@ -146,6 +146,11 @@ func Default() *Configuration {
 				Region: "us-east-1",
 			},
 		},
+		Photos: Photos{
+			MaxFileBytes:             ByteSize(8 << 30),
+			TrashRetention:           Duration(30 * 24 * time.Hour),
+			IsFaceRecognitionEnabled: true,
+		},
 		Upgrade: Upgrade{
 			// Checking is on, installing is not. Being told that a release
 			// exists costs one request every six hours; installing one

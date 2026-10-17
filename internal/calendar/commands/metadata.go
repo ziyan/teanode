@@ -47,12 +47,9 @@ func (self *Commands) Update(ctx context.Context, principal *access.Principal, r
 	}
 	var outcome *UpdateOutcome
 	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
-		calendar, err := transaction.LockCalendar(strings.TrimSpace(request.ID))
+		calendar, err := requireOwnCalendar(transaction, principal, request.ID)
 		if err != nil {
 			return err
-		}
-		if calendar == nil || calendar.UserID != principal.User.ID {
-			return db.ErrNotFound
 		}
 		service := models.ServiceCalendar
 		if calendar.CalendarKind == models.CalendarReminders {

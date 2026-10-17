@@ -158,6 +158,7 @@ export interface ServiceCapabilities {
   isCalendarEnabled: boolean
   isRemindersEnabled: boolean
   isContactsEnabled: boolean
+  isPhotosEnabled: boolean
   isAssistantEnabled: boolean
   hasPendingServiceRestart: boolean
   hasCompletedSetup: boolean
@@ -174,6 +175,11 @@ export interface Session {
   // What to call this person, when they have said. Empty otherwise, and the
   // username stands in.
   name?: string
+
+  // Their picture, a path to fetch with the session, and the color their
+  // initial is drawn on when they have none.
+  avatarUrl?: string | null
+  avatarColorIndex?: number
 
   // Whether this server offers passkeys. The sign-in form shows the passkey
   // button only when it does.
@@ -209,7 +215,7 @@ export interface Permissions {
 // that from the resolver.
 
 const SESSION_FIELDS =
-  '{ authenticated authenticationRequired username name passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
+  '{ authenticated authenticationRequired username name avatarUrl avatarColorIndex passkeysEnabled userId manages ssoProviders { id name } permissions { everywhere byDomain { domainId permissions } } impersonatorUsername services { isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup hasModelProvider } }'
 
 export async function getSession(): Promise<Session> {
   const data = await graphql<{ GetSession: Session }>(`query { GetSession ${SESSION_FIELDS} }`)
@@ -1077,6 +1083,11 @@ export interface AgentReference {
   // server fills the title in again from the stored row.
   recordingId?: string
   recordingTitle?: string
+  // One of the person's photos, with the title its chip shows: the place and
+  // the date, or the file name. The server fills the title in again from the
+  // stored row.
+  photoId?: string
+  photoTitle?: string
   // A message of the conversation the turn answers: its id when the
   // drawer has one, whose it was, and what it said. The server reads the
   // words again from the stored message.
@@ -1151,6 +1162,14 @@ export function startAgentConversation(onStarted?: (conversationId: string) => v
 // any more, such as a conversation deleted since the page was drawn.
 export function isNotFound(caught: unknown): boolean {
   return caught instanceof APIError && /\b(api|db): not found\b/.test(caught.message)
+}
+
+// failureText is what to tell a person about a call that failed: the server's
+// own words when it answered and refused, since they say why, and otherwise
+// the sentence the caller wrote for a call that did not get through, which
+// says what to do next. A browser's "Failed to fetch" says neither.
+export function failureText(caught: unknown, fallback: string): string {
+  return caught instanceof APIError && caught.message ? caught.message : fallback
 }
 
 // The agent changed mail — filed, flagged, drafted, sent, a rule or a

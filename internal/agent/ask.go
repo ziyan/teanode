@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/computer"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,11 @@ type AskSettings struct {
 
 	// Conversation is where the turn goes; the caller made or found it.
 	Conversation *models.AgentConversation
+
+	// RunID, when set, is the id the run takes, for a caller that has to
+	// tell it before the run starts: a request starts its turns once it has
+	// committed, and answers with the run to follow.
+	RunID string
 
 	// Message is what the person said.
 	Message string
@@ -194,6 +200,12 @@ type AskSettings struct {
 	// same moment may be the one changing that state.
 	shouldYieldToRunningTurn bool
 
+	// Chat is set on a turn in a chat conversation: the turn answers in the
+	// chat, to everybody in it. Ask sets it for a late answer to a card in a
+	// chat; the caller of a turn that addresses the agent sets it. See
+	// chat_turn.go.
+	Chat *ChatTurn
+
 	// Short asks for the one-paragraph conduct rather than the full rules.
 	// A run with nobody present and six tools does not need the page about
 	// how to talk to somebody, and sorting runs on every message that
@@ -257,9 +269,21 @@ const (
 	EventTitled       EventKind = "titled"       // the conversation was given a title: Text
 	EventNavigate     EventKind = "navigate"     // the dashboard is to show a page of itself: Text is its path
 	EventLocate       EventKind = "locate"       // the browser the person writes in is asked where it is: CallID
-	EventReacted      EventKind = "reacted"      // a reaction on a message changed: MessageID, Emoji (empty is taken away), ReactorKind
+	EventReacted      EventKind = "reacted"      // a reaction on a message changed: MessageID, Emoji (empty is taken away), ReactorKind; in a chat also ReactorUserID, ReactorName
 	EventDone         EventKind = "done"
 	EventError        EventKind = "error"
+
+	// The events of a chat conversation, which belong to no run. Each is
+	// published to the conversation of every member who is in the chat.
+	EventSaid    EventKind = "said"    // a new message: Message, whole unless IsMessageCut
+	EventEdited  EventKind = "edited"  // a message was changed: Message
+	EventDeleted EventKind = "deleted" // a message was deleted: MessageID; or, named ChatStreamingKey(run), words that were streamed and will not be stored
+	EventRead    EventKind = "read"    // a member's read mark moved: UserID, MessageID
+	EventTyping  EventKind = "typing"  // a member is writing: UserID, Name; an agent is thinking: AuthorAgentID, Name
+
+	// EventMembers says the people in a chat or what they allow changed (a
+	// switch for their agent): read the chat's members again.
+	EventMembers EventKind = "members"
 )
 
 // Event is one thing that happened in a run.
@@ -285,10 +309,37 @@ type Event struct {
 	// MessageID, Emoji and ReactorKind are, on a reacted event, the
 	// message, the emoji now on it from that reactor, empty when the
 	// reaction was taken away, and who reacted: person or agent.
-	MessageID   string    `json:"messageId,omitempty"`
-	Emoji       string    `json:"emoji,omitempty"`
-	ReactorKind string    `json:"reactorKind,omitempty"`
-	At          time.Time `json:"at"`
+	MessageID   string `json:"messageId,omitempty"`
+	Emoji       string `json:"emoji,omitempty"`
+	ReactorKind string `json:"reactorKind,omitempty"`
+
+	// ReactorUserID and ReactorName say which person reacted, on a reacted
+	// event in a chat.
+	ReactorUserID string `json:"reactorUserId,omitempty"`
+	ReactorName   string `json:"reactorName,omitempty"`
+
+	// UserID and Name are, on a read event, the member whose mark moved and,
+	// on a typing event, the member who is writing and what to call them.
+	UserID string `json:"userId,omitempty"`
+	Name   string `json:"name,omitempty"`
+
+	// AuthorAgentID is, on a typing event of an agent ("is thinking") and on
+	// the text event of an answer being written in a chat, the agent: its
+	// Name is what to call it, and there is no UserID.
+	AuthorAgentID string `json:"authorAgentId,omitempty"`
+
+	// AuthorOwnerName is, on the same two events, the name of the agent's
+	// owner, so that a client can say whose agent is thinking when two of them
+	// are both called "Agent".
+	AuthorOwnerName string `json:"authorOwnerName,omitempty"`
+
+	// Message is, on a said or edited event, the message as the receiving
+	// member reads it. IsMessageCut says it was too long to travel to the
+	// other instances whole, or at all, and the client reads the
+	// conversation again.
+	Message      *models.AgentMessage `json:"message,omitempty"`
+	IsMessageCut bool                 `json:"isMessageCut,omitempty"`
+	At           time.Time            `json:"at"`
 }
 
 // sayNote tells whoever is watching a note of a kind: in English, and by
@@ -433,6 +484,11 @@ type AskRun struct {
 	// kept for the turn's rounds; see systemPrompt.
 	promptData *turnPromptData
 
+	// sharedIndex is the "Shared with you" lines read for this turn, in
+	// the overlay after the history; see sharedIndexOverlay.
+	sharedIndex       []string
+	isSharedIndexRead bool
+
 	// previous is the turn of the same conversation this one waits for;
 	// done closes when this one is over.
 	previous *AskRun
@@ -452,6 +508,10 @@ type AskRun struct {
 	isClosedToSteering bool
 
 	usage llm.Usage
+
+	// chatProgress is what a turn in a chat keeps while it runs: the text it is
+	// streaming and who is in the chat.
+	chatProgress chatRunProgress
 }
 
 // The bounds of a turn.
@@ -511,8 +571,19 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 	if strings.TrimSpace(settings.Message) == "" {
 		return nil, fmt.Errorf("agent: nothing was said")
 	}
+	// A turn in a chat answers there, to everybody in it, and a turn somebody
+	// else asked for is held to what all of them may see.
+	if settings.Conversation.IsChat() || settings.Chat != nil {
+		if err := applyChatSettings(settings); err != nil {
+			return nil, err
+		}
+	}
+	runId := settings.RunID
+	if runId == "" {
+		runId = security.NewULID()
+	}
 	run := &AskRun{
-		ID:            security.NewULID(),
+		ID:            runId,
 		lastWroteAt:   time.Now(),
 		settings:      settings,
 		agent:         self,
@@ -534,6 +605,19 @@ func (self *Agent) Ask(settings *AskSettings) (*AskRun, error) {
 		self.runsMutex.Unlock()
 		run.cancel()
 		return nil, errTurnRunning
+	}
+	// Somebody else's questions to the owner's agent wait their turn, and not
+	// without end: each is paid for by the owner.
+	if settings.isMemberTurn() {
+		waitingCount := 0
+		for each := self.latest[settings.Conversation.ID]; each != nil && !each.isFinished(); each = each.previous {
+			waitingCount++
+		}
+		if waitingCount >= memberTurnsWaitingMost {
+			self.runsMutex.Unlock()
+			run.cancel()
+			return nil, ErrAgentBusy
+		}
 	}
 	self.runs[run.ID] = run
 	// One turn at a time per conversation: a second one waits for the
@@ -935,11 +1019,21 @@ func (self *AskRun) loop() {
 	}
 	self.chooseDepth()
 	self.isGoalWaitingAtStart = self.isGoalWaiting()
-	if err := self.turn(); err != nil {
+	// In a chat, everybody there sees it thinking until the turn is over.
+	stopThinking := self.startThinkingInChat()
+	err := self.turn()
+	stopThinking()
+	if err != nil {
+		// Words streamed to the chat before it stopped or failed are not
+		// stored as a message; every screen drops the line they were drawn as.
+		self.retractChatText()
 		if self.isCutShortByStop() {
 			// Nothing is written: a conversation that ends on the person's
 			// message or a tool's result is what the next start looks for
 			// to carry the turn on (resume.go), and a note would end it.
+			// A chat's turn is not carried on (resume.go reads main and
+			// named conversations only), and its words were taken off the
+			// screens above.
 			log.Noticef("a turn of the agent of %q was cut short by the server stopping", self.settings.Owner.Username)
 		} else if errors.Is(err, context.Canceled) {
 			// Said in the transcript too, so that the words cut short
@@ -954,6 +1048,7 @@ func (self *AskRun) loop() {
 			// prompt and nothing else, and the reason was in the server
 			// log where the person never looks.
 			log.Warningf("the agent of %q failed a turn: %s", self.settings.Owner.Username, err)
+			self.tellAskerItFailed()
 			_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
 				_, err := tx.AppendAgentMessage(models.NewAgentNote(self.settings.Conversation.ID, models.NoteFailed, err.Error()))
 				return err
@@ -968,7 +1063,11 @@ func (self *AskRun) loop() {
 	self.mutex.Lock()
 	answer := self.lastAnswer
 	self.mutex.Unlock()
-	self.notifyAnswer(answer)
+	// An answer in a chat has been said to the people there, and their phones
+	// told, when it was posted.
+	if self.settings.Chat == nil {
+		self.notifyAnswer(answer)
+	}
 	self.emit(Event{Kind: EventDone})
 }
 
@@ -1013,11 +1112,16 @@ func (self *AskRun) turn() error {
 		if history, err = self.loadHistory(tx); err != nil {
 			return err
 		}
-		saved, err := keepPersonTurn(tx, settings)
-		if err != nil {
-			return err
+		// What was said in a chat is stored already, as the chat's message;
+		// only a turn with none of its own (a late answer to a card) keeps
+		// one here.
+		if !settings.isAnsweringChatMessage() {
+			saved, err := keepPersonTurn(tx, settings)
+			if err != nil {
+				return err
+			}
+			savedTurn = saved
 		}
-		savedTurn = saved
 		if err := self.sayDepth(tx); err != nil {
 			return err
 		}
@@ -1042,9 +1146,17 @@ func (self *AskRun) turn() error {
 			previousAnswer = history[index].Content
 		}
 	}
-	self.acknowledge(settings, savedTurn.ID, previousAnswer)
-	history = append(history, userTurn(ctx, self.agent.settings.Storage, personText(settings), settings.Attachments, settings.Pictures, settings.References))
-	history[len(history)-1].SourceID = savedTurn.ID
+	if settings.isAnsweringChatMessage() {
+		// The message that addressed the agent is the last thing the model
+		// reads, whoever wrote it: an owner's as their turn, anybody else's
+		// inside the fence.
+		history = append(history, self.chatTrigger(ctx))
+		history[len(history)-1].SourceID = settings.Chat.MessageID
+	} else {
+		self.acknowledge(settings, savedTurn.ID, previousAnswer)
+		history = append(history, userTurn(ctx, self.agent.settings.Storage, personText(settings), settings.Attachments, settings.Pictures, settings.References))
+		history[len(history)-1].SourceID = savedTurn.ID
+	}
 
 	// The catalog as this person sees it, and what the connected servers
 	// offer them.
@@ -1068,6 +1180,14 @@ func (self *AskRun) turn() error {
 	// tools and a quarter of every request, for a round that uses none.
 	// One the conversation has used is loaded, above.
 	for _, tool := range self.agent.SkillTools(ctx) {
+		if !listed(configuration.Agent.Tools.Disabled, tool) {
+			self.offered = append(self.offered, tool)
+		}
+	}
+	// The tools other people share with the person, run on their owners'
+	// computers under the share's limits (skill_share.go). Offered the same
+	// way, and held to the same lists.
+	for _, tool := range self.agent.SharedSkillTools(ctx, settings.Agent) {
 		if !listed(configuration.Agent.Tools.Disabled, tool) {
 			self.offered = append(self.offered, tool)
 		}
@@ -1303,7 +1423,7 @@ func (self *AskRun) turn() error {
 		} else if historyTokens > historyLimitFor(historyTokens) {
 			if settings.ReadThenAnswer {
 				answerNow = true
-			} else if !compactFailed {
+			} else if !compactFailed && !settings.isMemberTurn() {
 				compacted, err := self.compact(ctx, provider, model, modelName, history, askTailMessages)
 				if err != nil {
 					log.Warningf("cannot compact the conversation %q: %s", settings.Conversation.ID, err)
@@ -1377,7 +1497,7 @@ func (self *AskRun) turn() error {
 			RecordUsage(self.agent.settings.Database, settings.Agent.ID, "", modelName, usageKind, response.Usage)
 		}
 		if err != nil {
-			if llm.IsContextLengthError(err) && !overflowed && !settings.ReadThenAnswer {
+			if llm.IsContextLengthError(err) && !overflowed && !settings.ReadThenAnswer && !settings.isMemberTurn() {
 				overflowed = true
 				compacted, compactErr := self.compact(ctx, provider, model, modelName, history, compactOverflowTail)
 				if compactErr != nil {
@@ -1405,11 +1525,42 @@ func (self *AskRun) turn() error {
 			CacheReadTokens: response.Usage.CacheReadTokens, CacheWriteTokens: response.Usage.CacheWriteTokens,
 			Cost: configuration.Agent.CostOf(modelName, response.Usage.PromptTokens, response.Usage.AudioInputTokens, response.Usage.CompletionTokens, response.Usage.CacheReadTokens, response.Usage.CacheWriteTokens)}
 		self.carryJudgements(answerUsage)
+		var posted *postedChatMessage
 		if err := self.agent.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
+			// In a chat the words are said to the people there, as the chat's
+			// message; only the calls the round made, and what they cost,
+			// stay with the owner.
+			if settings.Chat != nil {
+				var err error
+				if posted, err = self.postChatAnswer(tx, answer.Content); err != nil {
+					return err
+				}
+				if len(answer.ToolCalls) == 0 {
+					if posted != nil {
+						history[len(history)-1].SourceID = posted.message.ID
+					}
+					// What the answering round cost, and the judgments
+					// carried to it, are the owner's own row, as in any
+					// turn: a row with no words and no calls, which is
+					// nothing to read, and which the history leaves out. The
+					// words are the chat's message, and the chat's message
+					// carries no cost, since the others in the chat read it.
+					_, err := tx.AppendAgentMessage(&models.AgentMessage{
+						ConversationID: settings.Conversation.ID,
+						Role:           string(llm.RoleAssistant),
+						Usage:          answerUsage,
+					})
+					return err
+				}
+			}
+			content := answer.Content
+			if settings.Chat != nil {
+				content = ""
+			}
 			saved, err := tx.AppendAgentMessage(&models.AgentMessage{
 				ConversationID: settings.Conversation.ID,
 				Role:           string(llm.RoleAssistant),
-				Content:        answer.Content,
+				Content:        content,
 				ToolCalls:      toolCallsOf(answer.ToolCalls),
 				Usage:          answerUsage,
 			})
@@ -1421,6 +1572,7 @@ func (self *AskRun) turn() error {
 		}); err != nil {
 			return err
 		}
+		self.announceChatAnswer(posted)
 		if strings.TrimSpace(answer.Content) != "" {
 			self.emit(Event{Kind: EventMessage, Text: answer.Content})
 		}
@@ -1697,7 +1849,13 @@ func (self *AskRun) chat(ctx context.Context, provider llm.Provider, request *ll
 		switch event.Kind {
 		case llm.StreamText:
 			text.WriteString(event.Text)
-			self.emit(Event{Kind: EventText, Text: event.Text})
+			if self.settings.Chat != nil {
+				// To every member's view of the chat, the owner's too, as a
+				// message the stored one replaces.
+				self.streamChatText(event.Text)
+			} else {
+				self.emit(Event{Kind: EventText, Text: event.Text})
+			}
 		case llm.StreamToolCall:
 			if event.ToolCall != nil {
 				toolCalls = append(toolCalls, *event.ToolCall)
@@ -1900,6 +2058,10 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			// are the runs that read mail from strangers, and what the
 			// person allows the agent to do alone is not theirs to steer.
 			isRestricted := self.ReadOnly() || self.settings.Allow != nil
+			if slices.Contains(unattendedRisks, models.UnattendedRiskPersonsAnswer) {
+				// Not something they can allow for when they are away.
+				return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "needs_confirmation: only the person can answer a call that waits for them; tell them it is waiting."}`)}
+			}
 			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
 				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
 			}
@@ -2098,6 +2260,9 @@ func (self *AskRun) takeCardSlot(ctx context.Context) (release func(), err error
 
 // loadHistory is the conversation as the model gets it.
 func (self *AskRun) loadHistory(tx db.Transaction) ([]llm.ChatMessage, error) {
+	if self.settings.Chat != nil {
+		return self.loadChatHistory(tx)
+	}
 	stored, err := tx.ListAgentMessages(self.settings.Conversation.ID, nil)
 	if err != nil {
 		return nil, err
@@ -2201,7 +2366,14 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 			situation: self.situation(ctx, configuration),
 			knowledge: knowledge,
 			self:      selfLines,
+			chat:      self.chatPrompt(ctx),
 		}
+	}
+	instructions := strings.TrimSpace(settings.Agent.Instructions)
+	// What the owner told their agent is theirs; a turn somebody else asked
+	// for does not carry it.
+	if settings.isMemberTurn() {
+		instructions = ""
 	}
 	return render("ask.txt", map[string]any{
 		"AgentName":         settings.Agent.DisplayName(),
@@ -2212,7 +2384,8 @@ func (self *AskRun) systemPrompt(ctx context.Context, configuration *config.Conf
 		"Short":             short,
 		"HouseInstructions": strings.TrimSpace(configuration.Agent.Instructions),
 		"Situation":         self.promptData.situation,
-		"Instructions":      strings.TrimSpace(settings.Agent.Instructions),
+		"Instructions":      instructions,
+		"Chat":              self.promptData.chat,
 		"Voice":             describeVoice(settings.Agent.Voice),
 		"Knowledge":         self.promptData.knowledge,
 		// The month as a path, so the prompt can say where this month's
@@ -2271,6 +2444,9 @@ func (self *AskRun) personSnapshot(ctx context.Context) (knowledge, selfLines []
 		}
 	}
 	knowledge = self.carryIndex(ctx, indexTokens)
+	// What other people shared is not here: a share taken back would stay in
+	// the prompt for the rest of the half hour. It is read for every turn,
+	// in the overlay after the history (sharedIndexOverlay).
 	selfLines = self.agent.selfLines(ctx, settings.Agent, settings.Owner)
 	if canCacheSnapshot {
 		self.agent.promptSnapshots.Store(conversationID, &promptSnapshot{agentID: settings.Agent.ID, knowledge: knowledge, self: selfLines, takenAt: now})
@@ -2292,6 +2468,9 @@ type turnPromptData struct {
 	situation string
 	knowledge []string
 	self      []string
+
+	// chat is who is in the room, for a turn in a chat; nil anywhere else.
+	chat *chatPromptFacts
 }
 
 // deferredCatalog is a line for each tool not loaded, and one for each
@@ -2342,6 +2521,11 @@ func firstSentence(text string) string {
 func (self *AskRun) situation(ctx context.Context, configuration *config.Configuration) string {
 	settings := self.settings
 	owner := settings.Owner
+	// A turn somebody else asked for says nothing of the owner's mailboxes,
+	// calendars, goals or what they may do.
+	if settings.isMemberTurn() {
+		return memberSituation(owner, settings.Agent, configuration)
+	}
 	var lines []string
 	name := personName(owner)
 	lines = append(lines, fmt.Sprintf("The person is %s (username %s).", name, owner.Username))
@@ -2449,6 +2633,7 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 			CalendarKind string `json:"calendarKind"`
 			Events       int    `json:"events"`
 			AgentGranted bool   `json:"agentGranted"`
+			ShareLevel   string `json:"shareLevel"`
 		} `json:"ListCalendars"`
 		ListAddressBooks []struct {
 			Name         string `json:"name"`
@@ -2459,7 +2644,7 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 	var collectionError error
 	configuration := self.Configuration()
 	if configuration.Services.IsEnabled(models.ServiceCalendar) || configuration.Services.IsEnabled(models.ServiceReminders) {
-		collectionError = self.settings.Operations.Execute(ctx, `query { ListCalendars { name calendarKind events agentGranted } }`, nil, &answer)
+		collectionError = self.settings.Operations.Execute(ctx, `query { ListCalendars { name calendarKind events agentGranted shareLevel } }`, nil, &answer)
 	}
 	if configuration.Services.IsEnabled(models.ServiceContacts) {
 		if err := self.settings.Operations.Execute(ctx, `query { ListAddressBooks { name contacts agentGranted } }`, nil, &answer); err != nil {
@@ -2472,9 +2657,21 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		// about them.
 		log.Debugf("cannot list the collections of %q for the prompt: %s", self.settings.Owner.Username, err)
 	}
-	calendars, reminderLists, books := 0, 0, 0
+	calendars, reminderLists, books, shared := 0, 0, 0, 0
+	isOwnCalendarGranted := false
 	for _, calendar := range answer.ListCalendars {
+		// Somebody else's calendar, or a circle's, is not one of theirs to
+		// grant or withhold: it is read at the level it was shared at, but
+		// only through the person's own calendar's grant (theCalendar in the
+		// calendar tool refuses without it).
+		if calendar.ShareLevel != "" && calendar.ShareLevel != string(models.ShareLevelOwner) {
+			shared++
+			continue
+		}
 		isReminders := calendar.CalendarKind == string(models.CalendarReminders)
+		if calendar.AgentGranted && !isReminders {
+			isOwnCalendarGranted = true
+		}
 		switch {
 		case !calendar.AgentGranted && isReminders:
 			reminderLists++
@@ -2493,8 +2690,19 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		}
 		granted = append(granted, fmt.Sprintf("- the address book %q, with %d people in it", book.Name, book.Contacts))
 	}
+	if self.settings.Operations != nil {
+		if line := photoLibraryLine(configuration, self.settings.Operations.Permissions()); line != "" {
+			granted = append(granted, line)
+		}
+	}
+	if shared > 0 && isOwnCalendarGranted {
+		granted = append(granted, fmt.Sprintf("- %d calendars other people or their circles share with them; read with calendar agenda and its owner argument, at the level each was shared at", shared))
+	}
 	if calendars > 0 {
 		withheld = append(withheld, "their calendar")
+	}
+	if shared > 0 && !isOwnCalendarGranted {
+		withheld = append(withheld, "calendars others share with them (closed while their own calendar is closed to you)")
 	}
 	if reminderLists > 0 {
 		withheld = append(withheld, "their reminders list")
@@ -2503,6 +2711,16 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		withheld = append(withheld, "their address book")
 	}
 	return granted, withheld
+}
+
+// photoLibraryLine says the person keeps a photo library, when the server
+// offers one and they may use it: a model that does not know it is there
+// does not look in it. Empty when they have none.
+func photoLibraryLine(configuration *config.Configuration, permissions *models.EffectivePermissions) string {
+	if !configuration.Services.IsEnabled(models.ServicePhotos) || permissions == nil || !permissions.Has(models.PermissionPhotosUse) {
+		return ""
+	}
+	return "- their photo library of pictures and videos, through the photo tool, which finds photos by date, place, camera and file name"
 }
 
 // sources lists the mailboxes, granted and not, as the situation says them.
@@ -2615,6 +2833,9 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 				blocks = append(blocks, block)
 			}
 		}
+	}
+	if block := self.sharedIndexOverlay(ctx); block != "" {
+		blocks = append(blocks, block)
 	}
 	_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
 		budget, err := CheckBudget(tx, configuration, settings.Agent, settings.Owner, time.Now())

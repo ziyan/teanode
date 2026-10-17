@@ -474,6 +474,8 @@ func (self *Agent) readOnePass(ctx context.Context, run *Run, source *models.Age
 		return self.readFromComputer(ctx, run, source, cursor)
 	case models.SourceSent:
 		return self.readSentMail(ctx, run, source, cursor)
+	case models.SourceChat:
+		return self.readChat(ctx, run, source, cursor)
 	}
 	return "", db.SourceCounts{}, fmt.Errorf("reading a %q source is not built yet", source.Kind)
 }

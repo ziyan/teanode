@@ -31,7 +31,8 @@ const PhoneKeyBytes = 32
 // Content is a notification as the phone shows it, before encryption.
 type Content struct {
 	// NotificationKind is what this is: alert, herdr_question,
-	// goal_needs_you, speak_first, approval, question, answer or test.
+	// goal_needs_you, speak_first, approval, question, answer, circle, chat,
+	// skill_share_call, photo or test.
 	NotificationKind string `json:"notificationKind"`
 
 	ConversationID string `json:"conversationId,omitempty"`

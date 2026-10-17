@@ -281,7 +281,7 @@ func contains(values []string, value string) bool {
 // severity orders the classes for the two questions a merged tool asks of
 // them: which is the gentlest, for the floor, and which the strictest, for a
 // call that cannot be read.
-var severity = map[Risk]int{RiskRead: 0, RiskWrite: 1, RiskGranting: 2, RiskOutward: 3, RiskDestructive: 4}
+var severity = map[Risk]int{RiskRead: 0, RiskWrite: 1, RiskGranting: 2, RiskMoney: 3, RiskOutward: 4, RiskDestructive: 5}
 
 func gentlest(actions []Action) Risk {
 	found := RiskDestructive

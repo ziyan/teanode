@@ -25,13 +25,13 @@ func NewServicesCommand() *cli.Command {
 			}
 			return PrintJSON(capabilities)
 		}},
-		{Name: "set", Usage: "change service choices (enabling requires a restart)", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "mail-routing"}, &cli.BoolFlag{Name: "mailboxes"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}}, Action: func(ctx context.Context, command *cli.Command) error {
+		{Name: "set", Usage: "change service choices (enabling requires a restart)", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "mail-routing"}, &cli.BoolFlag{Name: "mailboxes"}, &cli.BoolFlag{Name: "calendar"}, &cli.BoolFlag{Name: "reminders"}, &cli.BoolFlag{Name: "contacts"}, &cli.BoolFlag{Name: "photos"}}, Action: func(ctx context.Context, command *cli.Command) error {
 			connection, err := openClient(command)
 			if err != nil {
 				return err
 			}
 			selected := map[string]any{}
-			for _, field := range []struct{ flagName, fieldName string }{{"mail-routing", "isMailRoutingEnabled"}, {"mailboxes", "isMailboxEnabled"}, {"calendar", "isCalendarEnabled"}, {"reminders", "isRemindersEnabled"}, {"contacts", "isContactsEnabled"}} {
+			for _, field := range []struct{ flagName, fieldName string }{{"mail-routing", "isMailRoutingEnabled"}, {"mailboxes", "isMailboxEnabled"}, {"calendar", "isCalendarEnabled"}, {"reminders", "isRemindersEnabled"}, {"contacts", "isContactsEnabled"}, {"photos", "isPhotosEnabled"}} {
 				if command.IsSet(field.flagName) {
 					selected[field.fieldName] = command.Bool(field.flagName)
 				}

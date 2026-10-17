@@ -78,6 +78,9 @@ export function NavigationShortcuts({ onToggleSidebar }: { onToggleSidebar?: () 
     if (isPathAvailable('/contacts', services) && (hasMailbox || hasPermission(session.permissions, 'contacts:use'))) {
       list.push(go('p', t('nav.contacts'), '/contacts'))
     }
+    if (isPathAvailable('/photos', services) && hasPermission(session.permissions, 'photos:use')) {
+      list.push(go('h', t('nav.photos'), '/photos'))
+    }
     if (services?.isAssistantEnabled && hasAgentUse) {
       list.push(go('k', t('knowledge.title'), '/knowledge'))
     }

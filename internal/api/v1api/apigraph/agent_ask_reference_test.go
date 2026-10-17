@@ -60,3 +60,30 @@ func TestAskAgentRefusesAnotherPersonsRecording(test *testing.T) {
 		}
 	})
 }
+
+// A turn pointing at a photo is refused unless the photo is the asking
+// person's own and not deleted, the same way.
+func TestAskAgentRefusesAnotherPersonsPhoto(test *testing.T) {
+	fixture := newFinanceFixture(test, true)
+	var photo *models.Photo
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		var err error
+		if photo, _, err = tx.CreatePhoto(&models.Photo{UserID: fixture.owner.ID, ClientPhotoID: "invented", PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceCommandLine}); err != nil {
+			test.Fatalf("CreatePhoto: %s", err)
+		}
+	})
+	arguments := AskAgentArguments{
+		Message:    "Where was this?",
+		References: []models.AgentReference{{PhotoID: photo.ID}},
+	}
+	fixture.as(test, fixture.stranger, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.AskAgent(ctx, arguments); !errors.Is(err, api.ErrNotFound) {
+			test.Errorf("another person's photo answered %v", err)
+		}
+	})
+	fixture.as(test, fixture.owner, func(ctx context.Context, tx db.Transaction) {
+		if _, err := fixture.resolver.AskAgent(ctx, arguments); !errors.Is(err, agentpackage.ErrUnavailable) {
+			test.Errorf("the owner's photo answered %v", err)
+		}
+	})
+}

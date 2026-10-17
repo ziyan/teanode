@@ -30,11 +30,14 @@ type AgentView struct {
 // AgentCollection is one calendar or address book as a source: a switch, and
 // how much is in it.
 type AgentCollection struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Kind    string `json:"kind"`
-	Granted bool   `json:"granted"`
-	Items   int    `json:"items"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// CalendarKind is, for a calendar, what it holds: events or reminders;
+	// empty for an address book, and from a server that does not say.
+	CalendarKind string `json:"calendarKind"`
+	Granted      bool   `json:"granted"`
+	Items        int    `json:"items"`
 }
 
 // AgentSource is one mailbox as a source.
@@ -118,7 +121,7 @@ const agentViewSelection = `{
 		summaries { enabled minimumMessages style }
 		autoReply { enabled guidance scope allow never categories when hours { from until days } holdMinutes dailyLimit }
 		alerts { enabled } } }
-	collections { id name kind granted items }
+	collections { id name kind calendarKind granted items }
 	allowed { enabled triage summaries draftReplies search research autoReply ask schedules browser connectedServers }
 	budget { used limit resetsAt cost costLimit currency }
 	choices timezone language knowledgeLanguage categories

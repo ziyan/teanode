@@ -1968,3 +1968,113 @@ failure than a second copy; the turn is still in the conversation.
 The Approve and Deny actions on a notification require the phone to be
 unlocked, and the notification shows no preview on a locked phone unless the
 person chooses otherwise.
+
+# Ninth pass: circles, chats and what people share
+
+Two adversarial reviews, on 2026-10-17, of circles and chats between people on
+one server: circle membership and invitations, chats and the agents in them,
+calendars, memory pages and paying skills shared between people, and
+pictures. Each finding was fixed with a test that failed before the fix. The
+second review read the first one's fixes.
+
+## Summary
+
+Nobody reaches another person's data without a share they made, and every
+share ends when the two people stop sharing a circle. The serious findings
+were about what an agent could do as the person it serves: approve a call that
+spends the person's money, or carry what one person shared into a room of
+others. Both are now enforced by the server, not by words in a prompt.
+
+## Findings
+
+### SEC-96: An agent could approve a call that spends money (High, fixed)
+
+Approving a waiting call on a shared paying skill was an ordinary operation,
+and an agent can drive the person's own command line through the shell,
+terminal and coding tools, with the person's saved sign-in. A check on the
+words of a command is not a guard against that. Approving a call, sharing a
+skill, raising a share's limits and turning off "ask every time" are now
+accepted only from a dashboard session or from the iPhone app's own sign-in,
+which marks its token (`token.client_kind`). The command line's `approve` is
+gone. Declining, unsharing and lowering limits only take money away and work
+from anywhere. The iPhone app asks for Face ID before it approves.
+
+### SEC-97: A shared page's overview could name what was not shared (High, fixed)
+
+A page's overview is written by a model from the page's links, children and
+quotes, so it can name pages that were never shared and copy quotes the owner
+kept back. A reader no longer sees the overview or a page's edge notes. A
+summary that carries a quote (straight or curly, single or double) is withheld
+unless quotes were shared, and one that quotes a chat is withheld always.
+Search matches only the text the reader is shown.
+
+### SEC-98: A member's turn read the chat from before they joined (Medium, fixed)
+
+A turn somebody else starts with an owner's agent read the chat from the
+owner's join time, so a person who joined late could ask for what was said
+before them. A member turn now reads only messages every current member can
+read. Quoted replies to messages older than the reader's join time drop the
+quoted text, and edits and reactions go only to members who can read the
+message.
+
+### SEC-99: A member's turn had more than the chat (Medium, fixed)
+
+A member turn now gets the chat and the web only: no shared calendars or
+memory, because the owner's shares were made to particular people, not to the
+room. It needs the asker to hold `agent:use`, runs at the default effort, and
+the agent's memory refuses a note drawn from pages others shared.
+
+### SEC-100: Shares outlived the reason for them (Medium, fixed)
+
+Deleting a circle, or removing its last member, did not leave its group chats,
+and the "Shared with you" lines sat in the cached prompt for up to half an
+hour after a share ended. Every membership change now ends the calendar, page
+and skill shares that no longer have a circle behind them, in the same
+transaction and under one lock, and the shared lines are read fresh every
+turn. A disabled owner's shares stop reaching readers, and a disabled owner's
+skills stop running for others.
+
+### SEC-101: The invitation limit named which usernames exist (Medium, fixed)
+
+The hourly invitation limit was counted from stored invitations, so it was not
+reached for a username that does not exist, and deleting the circle reset it.
+Every invite call is now counted in a table that outlives circles, before any
+check on the username, and the answer is the same either way.
+
+### SEC-102: Ending a share erased the owner's record of calls (Medium, fixed)
+
+A call's row was deleted with its share. Calls now outlive their shares and
+carry the owner, grantee, skill and tool themselves, and the month's total
+for a new share between the same two people counts them. A call that failed
+counts toward the total, because a failure after the command acted cannot be
+told apart from one before.
+
+### SEC-103: Smaller findings (Low, fixed)
+
+- Limits: 20 circles made per person, 30 invitations per hour, 50 members in a
+  group chat, 20 group chats started per day, and 1 GiB of chat attachments
+  per person (`maxChatAttachmentAccountBytes`).
+- A picture is served to its owner, people with `user:manage`, circle-mates
+  and members of a chat together, and nobody else.
+- A replaced picture's file is deleted only after the transaction commits.
+- A private event (`CLASS:PRIVATE` or `CONFIDENTIAL`) is busy to everybody
+  else at every level, and nobody else can change it.
+- Reacting to a message in somebody else's chat conversation answers not
+  found, as reading does.
+- Names other people typed (an asker, an owner, a chat's title) reach the
+  model quoted, and what others shared is fenced as data.
+
+## Controls verified
+
+- Joining a circle is by invitation only, and the invite answer does not say
+  whether the account exists.
+- Calendars below the edit level are read-only over CalDAV as well as the API.
+- An agent's message never starts a turn, and at most four agents are
+  addressed by one message, so agents cannot answer each other in a loop.
+- Every operation this branch added is in `TestEveryOperationAuthorizes`.
+
+## What this pass did not do
+
+It did not review circles across servers, which are out of scope, or the
+paying skills' own registry, whose declarations of what a call costs belong to
+each skill.

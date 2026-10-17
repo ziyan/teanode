@@ -15,6 +15,9 @@ struct TeaNodeApp: App {
 
     init() {
         DisplayLanguage.chosen.apply()
+        // Files that photo downloads left in the temporary folder before the
+        // app was last closed.
+        Task.detached(priority: .utility) { PhotoTemporaryFiles.sweep() }
     }
 
     var body: some Scene {
@@ -33,9 +36,16 @@ struct TeaNodeApp: App {
             .environment(\.locale, language.locale)
             .environment(app)
             .onOpenURL { url in app.open(url) }
-            .onAppear { appearance.apply() }
+            .onAppear {
+                appearance.apply()
+                PhotoBackupEngine.shared.sceneBecameActive()
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { appearance.apply() }
+                if phase == .active {
+                    appearance.apply()
+                    // Photos taken since are backed up when the app comes back.
+                    PhotoBackupEngine.shared.sceneBecameActive()
+                }
             }
         }
     }
@@ -71,6 +81,9 @@ struct ConversationsSheet: View {
     @State private var renaming: AgentConversation?
     @State private var newTitle = ""
     @State private var deleting: AgentConversation?
+    /// The sheets for starting a chat with a person, and a group.
+    @State private var isMessagingSomeone = false
+    @State private var isStartingGroup = false
 
     var body: some View {
         NavigationStack {
@@ -83,40 +96,68 @@ struct ConversationsSheet: View {
                     if found.isEmpty {
                         Text("Nothing matches.").foregroundStyle(.secondary)
                     }
-                    ForEach(found) { conversation in row(conversation) }
+                    ForEach(found) { conversation in listRow(conversation) }
                 } else {
                     Section {
-                        Button {
-                            onChoose(nil)
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Main chat")
-                                    if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
-                                        WaitingMark()
+                        // A person with no agent has no main chat to open.
+                        if app.hasAgent {
+                            Button {
+                                onChoose(nil)
+                            } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Main chat")
+                                        if let main = conversations.first(where: \.isMain), waitingByConversation[main.id] != nil {
+                                            WaitingMark()
+                                        }
                                     }
+                                } icon: {
+                                    Image(systemName: "bubble.left")
                                 }
-                            } icon: {
-                                Image(systemName: "bubble.left")
+                                // Marked by its highlight when it is the one on
+                                // screen; green only marks what can be pressed.
+                                .foregroundStyle(.primary)
                             }
-                            // Marked by its highlight when it is the one on
-                            // screen; green only marks what can be pressed.
-                            .foregroundStyle(.primary)
+                            .menuRow(isSelected: currentId == nil)
                         }
-                        .menuRow(isSelected: currentId == nil)
-                        if !isPanel {
+                        if !isPanel, app.isAgentOn {
                             Button {
                                 Task { await start() }
                             } label: {
                                 Label("New side chat", systemImage: "plus")
                             }
+                            .menuRow(isSelected: false)
+                        }
+                        if app.canChat {
+                            Button {
+                                isMessagingSomeone = true
+                            } label: {
+                                Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                            }
+                            .menuRow(isSelected: false)
+                            Button {
+                                isStartingGroup = true
+                            } label: {
+                                Label("New group", systemImage: "person.2")
+                            }
+                            .menuRow(isSelected: false)
                         }
                     } header: {
                         if leading != nil { Text("Chats") }
                     }
                     .listSectionSeparator(.hidden)
+                    // The chats with people, by when they were last spoken in
+                    // (the server lists them so), apart from the side chats
+                    // with the agent.
+                    let chats = conversations.filter(\.isChat)
+                    if !chats.isEmpty {
+                        Section("People") {
+                            ForEach(chats) { conversation in chatRow(conversation) }
+                        }
+                        .listSectionSeparator(.hidden)
+                    }
                     Section("Side chats") {
-                        ForEach(conversations.filter { !$0.isMain }) { conversation in row(conversation) }
+                        ForEach(conversations.filter { !$0.isMain && !$0.isChat }) { conversation in row(conversation) }
                     }
                     .listSectionSeparator(.hidden)
                     Section {
@@ -125,7 +166,7 @@ struct ConversationsSheet: View {
                                 if archived.isEmpty {
                                     Text("Nothing has been archived.").foregroundStyle(.secondary)
                                 }
-                                ForEach(archived) { conversation in row(conversation) }
+                                ForEach(archived) { conversation in listRow(conversation) }
                             } else {
                                 ProgressView()
                             }
@@ -169,11 +210,7 @@ struct ConversationsSheet: View {
                 if isPanel {
                     MenuBrand()
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            Task { await start() }
-                        } label: {
-                            Label("New side chat", systemImage: "square.and.pencil")
-                        }
+                        newMenu
                     }
                 } else {
                     ToolbarItem(placement: .cancellationAction) {
@@ -191,6 +228,151 @@ struct ConversationsSheet: View {
                     Task { await act { try await connection.updateConversation(conversation.id, title: title) } }
                 }
             }
+            .sheet(isPresented: $isMessagingSomeone) {
+                ChatPeopleSheet(connection: connection, purpose: .direct) { userIds, _ in
+                    guard let userId = userIds.first else { return }
+                    await chatOpened(try await connection.openDirectChat(with: userId))
+                }
+            }
+            .sheet(isPresented: $isStartingGroup) {
+                ChatPeopleSheet(connection: connection, purpose: .group) { userIds, groupName in
+                    var draft = GroupChatDraft()
+                    draft.title = groupName
+                    draft.userIds = Set(userIds)
+                    await chatOpened(try await connection.createGroupChat(draft))
+                }
+            }
+        }
+    }
+
+    /// What starts a conversation: a side chat with the agent, when it is
+    /// on, or a chat with a person or a group, which needs no agent.
+    @ViewBuilder
+    private var newMenu: some View {
+        if app.canChat {
+            Menu {
+                if app.isAgentOn {
+                    Button {
+                        Task { await start() }
+                    } label: {
+                        Label("New side chat", systemImage: "plus")
+                    }
+                }
+                Button {
+                    isMessagingSomeone = true
+                } label: {
+                    Label("Message someone", systemImage: "person.crop.circle.badge.plus")
+                }
+                Button {
+                    isStartingGroup = true
+                } label: {
+                    Label("New group", systemImage: "person.2")
+                }
+            } label: {
+                Label("New conversation", systemImage: "square.and.pencil")
+            }
+        } else if app.isAgentOn {
+            Button {
+                Task { await start() }
+            } label: {
+                Label("New side chat", systemImage: "square.and.pencil")
+            }
+        }
+    }
+
+    /// A chat just opened or made is shown: the list is read again so that
+    /// it comes with its people.
+    private func chatOpened(_ conversationId: String) async {
+        await load()
+        onChoose(conversations.first { $0.id == conversationId }
+            ?? AgentConversation(id: conversationId, kind: "chat", title: nil, summary: nil, lastAt: nil))
+    }
+
+    /// A chat in the list: its people's pictures, its name, bold with a count
+    /// while messages wait in it, and a mark when it is muted.
+    private func chatRow(_ conversation: AgentConversation) -> some View {
+        let chat = conversation.chat
+        let unreadCount = chat?.unreadCount ?? 0
+        let name = ConversationModel.title(of: conversation, agentTitle: app.agentTitle, ownUserId: app.ownUserId)
+        return Button {
+            onChoose(conversation)
+        } label: {
+            HStack(spacing: 12) {
+                if let chat {
+                    ChatAvatarsView(chat: chat, ownUserId: app.ownUserId, size: 32)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .fontWeight(unreadCount > 0 ? .bold : .regular)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let lastAt = ServerTime.date(conversation.lastAt) {
+                        Text(lastAt, format: .relative(presentation: .named))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if chat?.isMuted == true {
+                    Image(systemName: "bell.slash")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Muted")
+                }
+                if unreadCount > 0 {
+                    UnreadBadge(unreadCount: unreadCount)
+                }
+            }
+        }
+        .menuRow(isSelected: conversation.id == currentId)
+        // No swipe actions, as for the other rows: everything is in the
+        // long press.
+        .contextMenu {
+            if chat?.isMuted == true {
+                Button {
+                    Task { await act { try await connection.muteChat(conversation.id, until: nil) } }
+                } label: {
+                    Label("Unmute", systemImage: "bell")
+                }
+            } else {
+                Button {
+                    Task { await act { try await connection.muteChat(conversation.id, until: Date().addingTimeInterval(8 * 60 * 60)) } }
+                } label: {
+                    Label("Mute for 8 hours", systemImage: "bell.slash")
+                }
+                Button {
+                    Task { await act { try await connection.muteChat(conversation.id, until: Date.distantFuture) } }
+                } label: {
+                    Label("Mute until I unmute", systemImage: "bell.slash")
+                }
+            }
+            // Put away like any other conversation, for this person alone, and
+            // listed with the archived until it is brought back.
+            Button {
+                Task {
+                    await act { try await connection.updateConversation(conversation.id, isArchived: !conversation.isArchived) }
+                    if !conversation.isArchived { leaveIfOpen(conversation) }
+                }
+            } label: {
+                if conversation.isArchived {
+                    Label("Unarchive", systemImage: "tray.and.arrow.up")
+                } else {
+                    Label("Archive", systemImage: "archivebox")
+                }
+            }
+        }
+    }
+
+    /// A row for either kind of conversation: a chat with people has the
+    /// menu of a side chat with the agent less rename, make main and delete
+    /// (it has mute and archive instead), wherever the list is drawn, search
+    /// results included.
+    @ViewBuilder
+    private func listRow(_ conversation: AgentConversation) -> some View {
+        if conversation.isChat {
+            chatRow(conversation)
+        } else {
+            row(conversation)
         }
     }
 
@@ -326,9 +508,16 @@ struct SettingsForm: View {
     @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
     private static let signOutRowId = "sign-out"
+    private static let photoBackupRowId = "photo-backup"
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
+    /// Whether the account may use circles, and how many invitations to join
+    /// one are waiting for an answer, as the badge on its row.
+    @State private var canUseCircles = false
+    @State private var openCircleInvitationCount = 0
+    /// Whether Circles is pushed because a notification of an invitation was pressed.
+    @State private var isShowingCircles = false
     #if DEBUG
         /// Whether the screen a screenshot names (`-TeaNodeScreen`) is
         /// pushed, and whether it has been once, so coming back stays here.
@@ -347,6 +536,16 @@ struct SettingsForm: View {
                             PreferencesView(connection: connection)
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
+                        }
+                        // Next to the profile, as on the dashboard's account menu: it is about who
+                        // the person is among other people.
+                        if canUseCircles {
+                            NavigationLink {
+                                CirclesView(connection: connection)
+                            } label: {
+                                Label("Circles", systemImage: "person.2")
+                            }
+                            .badge(openCircleInvitationCount)
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)
@@ -378,6 +577,21 @@ struct SettingsForm: View {
                             SessionsView(connection: connection)
                         } label: {
                             Label("Sessions", systemImage: "macbook.and.iphone")
+                        }
+                    }
+                }
+                if let connection = app.connection, app.isPhotosOffered {
+                    Section {
+                        NavigationLink {
+                            PhotoBackupView(connection: connection)
+                        } label: {
+                            PhotoBackupSettingsRow()
+                        }
+                        .id(Self.photoBackupRowId)
+                        NavigationLink {
+                            PhotoFacesSettingsView(connection: connection)
+                        } label: {
+                            Label("People in Photos", systemImage: "person.crop.circle")
                         }
                     }
                 }
@@ -473,10 +687,32 @@ struct SettingsForm: View {
                     isOperator = (try? await connection.isOperator()) ?? false
                 }
             }
+            .task { await PhotoBackupEngine.shared.refresh() }
+            // Again on coming back from the circles screen, where an invitation may have been answered.
+            .onAppear {
+                Task { await refreshCircles() }
+            }
+            .navigationDestination(isPresented: $isShowingCircles) {
+                if let connection = app.connection { CirclesView(connection: connection) }
+            }
+            .onChange(of: app.isCirclesOpened, initial: true) { _, isOpened in
+                guard isOpened else { return }
+                app.isCirclesOpened = false
+                isShowingCircles = true
+            }
             #if DEBUG
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
                     // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
+                    // `settings-photo-backup-other-account`: the Photo backup row as it reads when backup is on for another account.
+                    if DemoServer.screen == "settings-photo-backup-other-account", !hasShownDemoScreen {
+                        hasShownDemoScreen = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1))
+                            withAnimation { scroller.scrollTo(Self.photoBackupRowId, anchor: .center) }
+                        }
+                        return
+                    }
                     if DemoServer.screen == "settings-sign-out", !hasShownDemoScreen {
                         hasShownDemoScreen = true
                         Task {
@@ -493,6 +729,12 @@ struct SettingsForm: View {
                 }
             #endif
         }
+    }
+
+    private func refreshCircles() async {
+        guard let connection = app.connection else { return }
+        canUseCircles = (try? await connection.accessSession())?.holds("circle:use") ?? false
+        openCircleInvitationCount = canUseCircles ? ((try? await connection.circleInvitations())?.count ?? 0) : 0
     }
 
     #if DEBUG
@@ -513,6 +755,10 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-background", "photos-backup-other-account":
+                    PhotoBackupView(connection: connection)
+                case "photos-faces": PhotoFacesSettingsView(connection: connection)
+                case "photos-conversation-card": PhotoConversationCardDemo()
                 case "devices": DevicesView(connection: connection)
                 case "rules":
                     if let mail {
@@ -525,6 +771,11 @@ struct SettingsForm: View {
                 case "schedules": SchedulesView(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
+                case "circles": CirclesView(connection: connection)
+                case "circle-detail": CircleDetailDemoScreen(connection: connection)
+                case "skill-share-sheet": SkillSharingView(connection: connection)
+                case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
+                case "settings-picture": PreferencesView(connection: connection)
                 default: EmptyView()
                 }
             }
@@ -536,6 +787,31 @@ struct SettingsForm: View {
         let marketing = info?["CFBundleShortVersionString"] as? String ?? ""
         let build = info?["CFBundleVersion"] as? String ?? ""
         return "\(marketing) (\(build))"
+    }
+}
+
+/// PhotoBackupSettingsRow is the row in Settings that opens the Photo Backup
+/// screen, saying whether backup is on.
+struct PhotoBackupSettingsRow: View {
+    private let engine = PhotoBackupEngine.shared
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        HStack {
+            Label("Photo backup", systemImage: "icloud.and.arrow.up")
+            Spacer()
+            statusText
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// On only for the account backup is on for; for another account it says
+    /// which one, since this account's backup is off.
+    private var statusText: Text {
+        guard let enabledAccountKey = engine.enabledAccountKey else { return Text("Off") }
+        if enabledAccountKey == app.connection?.accountKey { return Text("On") }
+        return Text("On for \(PhotoBackupEngine.name(ofAccountKey: enabledAccountKey))")
     }
 }
 
@@ -592,6 +868,10 @@ struct NotificationKindToggle: View {
         case "approval": String(localized: "Approvals waiting for you")
         case "question": String(localized: "Questions for you")
         case "answer": String(localized: "Answers that come after you have left")
+        case "circle": String(localized: "Invitations to circles")
+        case "chat": String(localized: "Messages from people in your chats")
+        case "skill_share_call": String(localized: "Skill calls waiting for your approval")
+        case "photo": String(localized: "Photos added to albums shared with you")
         default: notificationKind
         }
     }

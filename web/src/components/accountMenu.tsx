@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 
 import { endImpersonation } from '../api'
 import { LanguageItems, useTranslation } from '../i18n/i18n'
+import { Avatar } from './avatar'
+import { CircleInvitationMark } from './circleInvitationMark'
+import { useLabelWithInvitationCount, useOpenCircleInvitationCount } from './circleInvitations'
 import { ConfirmDialog } from './dialog'
 import {
   ArrowLeftIcon,
@@ -12,6 +15,7 @@ import {
   GridIcon,
   KeyboardIcon,
   LogoutIcon,
+  PeopleIcon,
   SettingsIcon,
   ShieldIcon,
 } from './icons'
@@ -19,7 +23,7 @@ import { MenuButton } from './menuButton'
 import { showShortcuts } from './navigationShortcuts'
 import { ThemeItems } from './theme'
 import { SETTINGS_LANDING } from '../pages/settings/nav'
-import { useSession } from '../session'
+import { hasPermission, useSession } from '../session'
 import { firstManagementPath } from './sidebar'
 import { useToast } from './toast'
 
@@ -41,6 +45,8 @@ import { useToast } from './toast'
 export function AccountMenu({
   username,
   name,
+  avatarUrl,
+  avatarColorIndex,
   onLogout,
   collapsed,
   onToggleSidebar,
@@ -52,6 +58,11 @@ export function AccountMenu({
   // sign in with and two people can choose the same one.
   name?: string
 
+  // Their picture and the color their initial is drawn on when they have no
+  // picture, as the session reports them.
+  avatarUrl?: string | null
+  avatarColorIndex?: number | null
+
   onLogout: () => void
 
   // Whether the rail is narrowed, and how to change it. Absent where there is
@@ -60,8 +71,10 @@ export function AccountMenu({
   collapsed?: boolean
   onToggleSidebar?: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const session = useSession()
+  const canUseCircles = Boolean(session.userId) && hasPermission(session.permissions, 'circle:use')
+  const openInvitationCount = useOpenCircleInvitationCount()
   const managePath = firstManagementPath(session.permissions, session.services)
   const [signingOut, setSigningOut] = useState(false)
   const [returning, setReturning] = useState(false)
@@ -70,23 +83,34 @@ export function AccountMenu({
   // An operator signed in as this account: said by a mark on the avatar,
   // and the way back is in the menu it opens.
   const operator = session.impersonatorUsername
+  const buttonLabel = useLabelWithInvitationCount(
+    operator ? `${t('nav.account')}: ${t('impersonation.signedInAs', { username })}` : t('nav.account'),
+  )
 
   return (
     <>
       <MenuButton
         className="account-button"
-        label={operator ? `${t('nav.account')}: ${t('impersonation.signedInAs', { username })}` : t('nav.account')}
+        label={buttonLabel}
         placement="above"
         icon={
           <>
-            <span className={operator ? 'avatar avatar-impersonated' : 'avatar'} aria-hidden="true">
-              {initial(displayed)}
+            <Avatar
+              name={displayed}
+              avatarUrl={avatarUrl}
+              colorIndex={avatarColorIndex}
+              size={26}
+              className={operator ? 'avatar-impersonated' : undefined}
+            >
               {operator && (
                 <span className="avatar-badge">
                   <ShieldIcon size={10} />
                 </span>
               )}
-            </span>
+              {/* Invitations wait for an answer nobody else will ask for, so
+                  they are on the button and not only in the menu it opens. */}
+              <CircleInvitationMark />
+            </Avatar>
             <span className="sidebar-label account-name">{displayed}</span>
             {/* A single arrow that turns when the menu opens. Two arrows
                 pointing apart is what a sortable column header wears, and it
@@ -163,6 +187,31 @@ export function AccountMenu({
               <SettingsIcon />
               {t('nav.settings')}
             </Link>
+            {/* The people this person shares the server with. Here and not a
+                row of the rail because it is about who they are among other
+                people, like their settings, and the rail is for the work. The
+                number is the invitations still waiting for an answer: an
+                invitation is the one thing here somebody must be told of. */}
+            {canUseCircles && (
+              <Link
+                to="/circles"
+                role="menuitem"
+                onClick={close}
+                aria-label={
+                  openInvitationCount > 0
+                    ? `${t('circles.title')}: ${plural(
+                        openInvitationCount,
+                        { one: 'circles.waitingOne', other: 'circles.waiting' },
+                        { count: openInvitationCount },
+                      )}`
+                    : undefined
+                }
+              >
+                <PeopleIcon />
+                {t('circles.title')}
+                {openInvitationCount > 0 && <span className="menu-badge">{openInvitationCount}</span>}
+              </Link>
+            )}
             {/* The way into the management side, beside the account's own
                 settings because the two are the same kind of thing: places
                 that are not the mailbox, entered on purpose. It was a row at
@@ -210,14 +259,4 @@ export function AccountMenu({
       )}
     </>
   )
-}
-
-// initial is the first character of what is displayed, which is enough to tell
-// one account from another and does not pretend to be a picture nobody
-// uploaded.
-//
-// Array.from rather than charAt, so a name beginning with an emoji or a
-// character outside the basic plane is not cut in half.
-function initial(value: string): string {
-  return (Array.from(value.trim())[0] ?? '?').toUpperCase()
 }
