@@ -91,7 +91,7 @@ export function PhotoFilterMenu({
           {t('filter.toggle')}
         </>
       }
-      render={() => (
+      render={(close) => (
         <div className="photo-filter-form">
           <fieldset className="photo-filter-kinds">
             <legend>{t('photos.filterKind')}</legend>
@@ -129,7 +129,16 @@ export function PhotoFilterMenu({
           </label>
           <DateFormatHint />
           {isFiltering && (
-            <button type="button" className="menu-clear" onClick={onClear}>
+            <button
+              type="button"
+              className="menu-clear"
+              onClick={() => {
+                // The button goes once nothing is filtered: closing hands the
+                // keyboard back to Filter rather than dropping it on the page.
+                onClear()
+                close()
+              }}
+            >
               {t('photos.clearFilters')}
             </button>
           )}

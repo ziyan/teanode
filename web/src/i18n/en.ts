@@ -5746,7 +5746,7 @@ export const en = {
   'services.photosOnlyPassword': 'Lets the device in its name back up and read your photos. Nothing else.',
   'serverSettings.photosFaces': 'Find people in photos',
   'serverSettings.photosFacesHint':
-    'Finds the people in photos and groups them. Turning it off stops finding faces for everybody on this server.',
+    'Finds the people in photos and groups them. Turning it off stops finding people for everybody on this server.',
   'serverSettings.photosTitle': 'Photos',
   'serverSettings.photosIntro': "Limits on each person's photo library. A change applies to the next upload.",
   'serverSettings.photosMaxFileBytes': 'Largest file',
