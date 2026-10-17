@@ -24,6 +24,9 @@
             let answer: String
             if let recordingAnswer = Self.recordingAnswer(query: query) {
                 answer = recordingAnswer
+            } else if let herdrAnswer = Self.herdrAnswer(query: query, body: request.httpBody) {
+                // Before "ReadAgent" below, which these operation names start with.
+                answer = herdrAnswer
             } else if query.contains("AgentServerUsage") {
                 answer = Self.serverUsage
             } else if query.contains("ReadRecordingLimits") {
@@ -127,6 +130,65 @@
                 answer = #"{"data":{}}"#
             }
             return (Data(answer.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+
+        /// One invented coding session, as the server lists it.
+        private static func herdrSession(
+            computer: String, paneId: String, state: String, directory: String, kind: String = "claude", workspaceId: String,
+            workspaceLabel: String, workspaceNumber: Int, tabLabel: String, tabNumber: Int, isTabFocused: Bool = false, question: String = "null"
+        ) -> String {
+            #"{"computer":"\#(computer)","paneId":"\#(paneId)","paneName":"\#(workspaceLabel) \#(tabLabel)","codingAgentKind":"\#(kind)","codingSessionId":"session-\#(paneId)","herdrSessionState":"\#(state)","herdrAgentStatus":"\#(state)","paneTitle":"","workingDirectory":"\#(directory)","transcriptPath":"","isWatched":false,"workspaceId":"\#(workspaceId)","workspaceLabel":"\#(workspaceLabel)","workspaceNumber":\#(workspaceNumber),"tabId":"\#(workspaceId):\#(tabNumber)","tabLabel":"\#(tabLabel)","tabNumber":\#(tabNumber),"isTabFocused":\#(isTabFocused),"question":\#(question)}"#
+        }
+
+        private static let herdrQuestion = #"{"questionFingerprint":"fingerprint-style","herdrQuestionKind":"question","questionText":"Which style should the new footer link use?","isMultipleChoice":false,"isFromTranscript":false,"options":[{"optionNumber":1,"optionLabel":"Plain text link","optionDescription":"Matches the other footer links","herdrOptionKind":"choice"},{"optionNumber":2,"optionLabel":"Underlined link","optionDescription":"Easier to see on the small screen","herdrOptionKind":"choice"}]}"#
+
+        /// Two invented computers: a workspace of three tabs (working, asking
+        /// with two options, idle) and another with one tab on the first, and a
+        /// second computer with one tab.
+        private static var herdrSessionList: [String] {
+            [
+                herdrSession(
+                    computer: "laptop", paneId: "p1", state: "working", directory: "/work/website", workspaceId: "w1", workspaceLabel: "website",
+                    workspaceNumber: 1, tabLabel: "working", tabNumber: 1),
+                herdrSession(
+                    computer: "laptop", paneId: "p2", state: "asking", directory: "/work/website", workspaceId: "w1", workspaceLabel: "website",
+                    workspaceNumber: 1, tabLabel: "asking", tabNumber: 2, isTabFocused: true, question: herdrQuestion),
+                herdrSession(
+                    computer: "laptop", paneId: "p3", state: "idle", directory: "/work/website", kind: "codex", workspaceId: "w1",
+                    workspaceLabel: "website", workspaceNumber: 1, tabLabel: "idle", tabNumber: 3),
+                herdrSession(
+                    computer: "desk", paneId: "p4", state: "idle", directory: "/work/notes", workspaceId: "w2", workspaceLabel: "notes",
+                    workspaceNumber: 1, tabLabel: "notes", tabNumber: 1, isTabFocused: true),
+            ]
+        }
+
+        /// The coding sessions, their transcripts and the actions on them;
+        /// nil for any other query.
+        static func herdrAnswer(query: String, body: Data?) -> String? {
+            guard query.contains("AgentHerdr") else { return nil }
+            var variables: [String: Any] = [:]
+            if let body, let request = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                variables = request["variables"] as? [String: Any] ?? [:]
+            }
+            let sessions = herdrSessionList
+            let paneId = variables["paneId"] as? String ?? "p2"
+            let named = sessions.first { $0.contains(#""paneId":"\#(paneId)""#) } ?? sessions[1]
+            if query.contains("ListAgentHerdrSessions") {
+                return #"{"data":{"ListAgentHerdrSessions":{"computerNames":["laptop","desk"],"failedComputerNames":[],"sessions":["# + sessions.joined(separator: ",") + "]}}}"
+            } else if query.contains("ReadAgentHerdrSession") {
+                return #"{"data":{"ReadAgentHerdrSession":{"herdrSession":"# + named + #","turns":[{"herdrTurnRole":"person","turnText":"Add a Contact link to the footer, after About.","turnAt":null},{"herdrTurnRole":"agent","turnText":"I will look at the footer component first.","turnAt":null},{"herdrTurnRole":"tool","turnText":"Read src/Footer.tsx","turnAt":null},{"herdrTurnRole":"agent","turnText":"The footer lists its links from one array, so the new link is one more entry. I have added it and updated the snapshot test.","turnAt":null}],"isTruncated":false}}}"#
+            } else if query.contains("ReadAgentHerdrScreen") {
+                return #"{"data":{"ReadAgentHerdrScreen":{"herdrSession":"# + named + #","screenText":"$ npm test\n PASS  src/Footer.test.tsx\n Tests: 4 passed, 4 total"}}}"#
+            }
+            if query.contains("AnswerAgentHerdrQuestion") {
+                return #"{"data":{"AnswerAgentHerdrQuestion":{"herdrSession":"# + named + #","isAnswerAccepted":true,"answeredWith":"Plain text link"}}}"#
+            }
+            // Send, focus, watch, open and close answer with the session.
+            for name in ["SendAgentHerdrSession", "FocusAgentHerdrSession", "WatchAgentHerdrSession", "OpenAgentHerdrSession", "CloseAgentHerdrSession"]
+            where query.contains(name) {
+                return #"{"data":{"\#(name)":"# + named + "}}"
+            }
+            return nil
         }
 
         static let goals = #"""

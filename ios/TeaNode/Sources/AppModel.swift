@@ -772,6 +772,23 @@ extension AppModel {
         hasServicesFailedToLoad = availableServices == nil && services == nil
     }
 
+    /// Whether the person has a computer attached that runs herdr, which is
+    /// what the Coding section is for.
+    private(set) var hasCodingComputers = false
+
+    func noteCodingComputers() { hasCodingComputers = true }
+
+    /// Asks which computers run herdr. Computers that cannot be asked leave
+    /// what is known; the section on screen is not taken away under the
+    /// person (isKeeping).
+    func refreshCodingPresence(isKeeping: Bool) async {
+        guard let connection, services?.isAssistantEnabled == true,
+            let list = try? await connection.herdrSessions()
+        else { return }
+        let hasComputers = !list.computerNames.isEmpty
+        if hasComputers || !isKeeping { hasCodingComputers = hasComputers }
+    }
+
     func isSectionAvailable(_ section: AppSection) -> Bool {
         let services = services ?? .unavailable
         switch section {
@@ -780,6 +797,7 @@ extension AppModel {
         case .contacts: return services.isContactsEnabled
         case .recordings: return account?.cachedRecordingUserId != nil || MeetingRecorder.shared.hasSession
         case .agent, .goals, .ideas, .knowledge, .finance: return services.isAssistantEnabled
+        case .coding: return services.isAssistantEnabled && hasCodingComputers
         case .settings: return true
         }
     }

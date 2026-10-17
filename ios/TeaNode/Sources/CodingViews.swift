@@ -1,0 +1,1092 @@
+import PhotosUI
+import SwiftUI
+import TeaNodeKit
+
+/// CodingTarget names one coding session to open: the computer and the pane,
+/// as no two computers' panes are told apart by the pane's id alone.
+struct CodingTarget: Hashable {
+    let computer: String
+    let paneId: String
+
+    var id: String { "\(computer)/\(paneId)" }
+}
+
+/// CodingWorkspace is the coding sessions of one herdr workspace on one
+/// computer, in tab order.
+struct CodingWorkspace: Identifiable {
+    let id: String
+    let computer: String
+    let title: String
+    let sessions: [HerdrSession]
+}
+
+/// CodingModel is the list of the person's coding sessions, shared by the
+/// list and the session on screen, which keeps the tab strip's states.
+@MainActor
+@Observable
+final class CodingModel {
+    let connection: Connection
+    var list: HerdrList?
+    var loadFailureText: String?
+
+    init(connection: Connection) { self.connection = connection }
+
+    /// Reads the list again; what was known stays when it cannot be read.
+    func load() async {
+        do {
+            list = try await connection.herdrSessions()
+            loadFailureText = nil
+        } catch is CancellationError {
+        } catch {
+            if (error as? URLError)?.code != .cancelled { loadFailureText = error.localizedDescription }
+        }
+    }
+
+    func session(id: String) -> HerdrSession? {
+        list?.sessions.first { $0.id == id }
+    }
+
+    /// Puts a session as the server just answered it in the list, so a
+    /// change shows before the list is read again.
+    func upsert(_ session: HerdrSession) {
+        guard let current = list else { return }
+        var sessions = current.sessions
+        if let index = sessions.firstIndex(where: { $0.id == session.id }) {
+            sessions[index] = session
+        } else {
+            sessions.append(session)
+        }
+        list = HerdrList(computerNames: current.computerNames, failedComputerNames: current.failedComputerNames, sessions: sessions)
+    }
+
+    func remove(id: String) {
+        guard let current = list else { return }
+        list = HerdrList(
+            computerNames: current.computerNames, failedComputerNames: current.failedComputerNames,
+            sessions: current.sessions.filter { $0.id != id })
+    }
+
+    /// The sessions of the same workspace as this one, by tab number.
+    func siblings(of session: HerdrSession) -> [HerdrSession] {
+        guard !session.workspaceId.isEmpty else { return [session] }
+        let siblings = (list?.sessions ?? []).filter { $0.computer == session.computer && $0.workspaceId == session.workspaceId }
+        return siblings.sorted { $0.tabNumber < $1.tabNumber }
+    }
+
+    /// Every workspace, by computer in the order the server names them, then
+    /// by workspace number.
+    var workspaces: [CodingWorkspace] {
+        guard let list else { return [] }
+        var result: [CodingWorkspace] = []
+        var computers = list.computerNames
+        for session in list.sessions where !computers.contains(session.computer) {
+            computers.append(session.computer)
+        }
+        for computer in computers {
+            let onComputer = list.sessions.filter { $0.computer == computer }
+            var seen: [String] = []
+            for session in onComputer where !seen.contains(session.workspaceId) {
+                seen.append(session.workspaceId)
+            }
+            let grouped = seen.map { workspaceId in
+                let sessions = onComputer.filter { $0.workspaceId == workspaceId }.sorted { $0.tabNumber < $1.tabNumber }
+                return CodingWorkspace(
+                    id: "\(computer)/\(workspaceId)", computer: computer, title: sessions.first?.workspaceTitle ?? computer, sessions: sessions)
+            }
+            result += grouped.sorted { ($0.sessions.first?.workspaceNumber ?? 0) < ($1.sessions.first?.workspaceNumber ?? 0) }
+        }
+        return result
+    }
+}
+
+/// CodingScreen is the Coding section: the coding sessions on the person's
+/// computers, by computer and workspace, each opening to read and type into.
+struct CodingScreen: View {
+    let connection: Connection
+    @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var model: CodingModel
+    @State private var path = NavigationPath()
+    @State private var isOpening = false
+    @State private var doneText: String?
+    @State private var problemText: String?
+
+    init(connection: Connection) {
+        self.connection = connection
+        _model = State(initialValue: CodingModel(connection: connection))
+    }
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            List {
+                if let list = model.list {
+                    ForEach(model.workspaces) { workspace in
+                        Section {
+                            ForEach(workspace.sessions) { session in
+                                NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
+                                    CodingSessionRow(session: session)
+                                }
+                            }
+                        } header: {
+                            Text(verbatim: "\(workspace.title) · \(workspace.computer)")
+                        }
+                    }
+                    if !list.failedComputerNames.isEmpty {
+                        let names = list.failedComputerNames.joined(separator: ", ")
+                        Section {
+                            Label(String(localized: "\(names) did not answer, so their sessions are not listed."), systemImage: "wifi.exclamationmark")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Coding")
+            .withoutSwipeBack()
+            .navigationDestination(for: CodingTarget.self) { target in
+                CodingSessionView(model: model, initialId: target.id, doneText: $doneText, problemText: $problemText)
+            }
+            .overlay {
+                if let list = model.list {
+                    if list.sessions.isEmpty {
+                        ContentUnavailableView(
+                            "No coding sessions", systemImage: "chevron.left.forwardslash.chevron.right",
+                            description: Text("Open one with the plus button, or start Claude Code or Codex in herdr on your computer."))
+                    }
+                } else if let failure = model.loadFailureText {
+                    ContentUnavailableView("The coding sessions could not be read", systemImage: "wifi.exclamationmark", description: Text(failure))
+                } else {
+                    ProgressView()
+                }
+            }
+            .toolbar {
+                MenuButton()
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isOpening = true
+                    } label: {
+                        Label("Open a session", systemImage: "plus")
+                    }
+                    .disabled(model.list?.computerNames.isEmpty ?? true)
+                }
+            }
+            // Read while this list is what is on screen, and not while a
+            // session is open over it, which reads the list itself.
+            .task(id: "\(path.isEmpty)-\(scenePhase == .active)") {
+                guard path.isEmpty, scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    await model.load()
+                    if model.list?.computerNames.isEmpty == false { app.noteCodingComputers() }
+                    do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                }
+            }
+            .refreshable { await model.load() }
+            .sheet(isPresented: $isOpening) {
+                CodingOpenSheet(model: model) { session in
+                    model.upsert(session)
+                    path.append(CodingTarget(computer: session.computer, paneId: session.paneId))
+                }
+            }
+            #if DEBUG
+                // A screenshot of a session with its tab strip and
+                // transcript (`-TeaNodeScreen coding-session`).
+                .task {
+                    if DemoServer.isRequested, DemoServer.screen == "coding-session", path.isEmpty {
+                        path.append(CodingTarget(computer: "laptop", paneId: "p2"))
+                    }
+                }
+            #endif
+        }
+        .toast(done: $doneText, problem: $problemText)
+    }
+}
+
+/// CodingSessionRow is one coding session in the list: its tab, the agent,
+/// and what it is doing when that is working or asking.
+struct CodingSessionRow: View {
+    let session: HerdrSession
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: session.tabTitle)
+                Text(verbatim: session.codingAgentName)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            CodingStateLabel(session: session)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// CodingStateLabel says a session is working or asking, with a symbol and
+/// words; an idle one is not marked, as the list marks only what calls for
+/// a look.
+struct CodingStateLabel: View {
+    let session: HerdrSession
+
+    var body: some View {
+        if session.isAsking {
+            Label("Asking", systemImage: "questionmark.bubble")
+                .labelStyle(.tag)
+                .font(.caption)
+                .foregroundStyle(.orange)
+        } else if session.isWorking {
+            Label("Working", systemImage: "ellipsis")
+                .labelStyle(.tag)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// CodingPart is what a session shows: what was said, or its screen.
+enum CodingPart: String, CaseIterable, Identifiable {
+    case turns, screen
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .turns: String(localized: "Turns")
+        case .screen: String(localized: "Screen")
+        }
+    }
+}
+
+/// CodingSessionView is one coding session: its workspace's tabs, what was
+/// said in it or its screen, the question it asks, and a field to type into
+/// it. It reads again while it is on screen.
+struct CodingSessionView: View {
+    let model: CodingModel
+    let initialId: String
+    @Binding var doneText: String?
+    @Binding var problemText: String?
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var selectedId: String
+    @State private var part = CodingPart.turns
+    @State private var turns: [HerdrTurn] = []
+    @State private var isTruncated = false
+    @State private var turnCount = CodingSessionView.initialTurnCount
+    @State private var screenText = ""
+    @State private var isRead = false
+    @State private var draft = ""
+    @State private var pendingFiles: [PendingFile] = []
+    @State private var isSending = false
+    @State private var sentCount = 0
+    @State private var isOpeningTab = false
+    @State private var isConfirmingClose = false
+    @State private var isAtEnd = true
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
+
+    /// How many turns are read at first, and the most the server gives.
+    static let initialTurnCount = 50
+    static let greatestTurnCount = 100
+
+    init(model: CodingModel, initialId: String, doneText: Binding<String?>, problemText: Binding<String?>) {
+        self.model = model
+        self.initialId = initialId
+        _doneText = doneText
+        _problemText = problemText
+        _selectedId = State(initialValue: initialId)
+    }
+
+    private var connection: Connection { model.connection }
+    private var session: HerdrSession? { model.session(id: selectedId) }
+
+    var body: some View {
+        Group {
+            if let session {
+                content(session)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .navigationTitle(session?.workspaceTitle ?? "")
+        .navigationSubtitle(session?.computer ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let session {
+                ToolbarItem(placement: .topBarTrailing) {
+                    actionsMenu(session)
+                }
+            }
+        }
+        // Read while this is on screen and the app is in front: quickly
+        // while the session works or asks, slowly while it is idle.
+        .task(id: "\(selectedId)-\(part.rawValue)-\(turnCount)-\(scenePhase == .active)") {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await refresh()
+                let isBusy = session?.isWorking == true || session?.isAsking == true
+                do { try await Task.sleep(for: .seconds(isBusy ? 3 : 15)) } catch { return }
+            }
+        }
+        .onChange(of: selectedId) {
+            turns = []
+            screenText = ""
+            isRead = false
+            isTruncated = false
+            turnCount = Self.initialTurnCount
+        }
+        .sensoryFeedback(.success, trigger: sentCount)
+    }
+
+    // MARK: Layout
+
+    @ViewBuilder
+    private func content(_ session: HerdrSession) -> some View {
+        VStack(spacing: 0) {
+            tabStrip(session)
+            Picker("Show", selection: $part) {
+                ForEach(CodingPart.allCases) { part in
+                    Text(part.title).tag(part)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+            switch part {
+            case .turns: transcript(session)
+            case .screen: screen(session)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            composer(session)
+        }
+    }
+
+    /// The workspace's coding sessions, one chip each in tab order, and the
+    /// way to open another beside them. The chips scroll sideways, so the
+    /// largest text size does not cut any off; the plus stays in place.
+    private func tabStrip(_ session: HerdrSession) -> some View {
+        HStack(spacing: 4) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(model.siblings(of: session)) { tab in
+                        Button {
+                            selectedId = tab.id
+                        } label: {
+                            CodingTabChip(session: tab, isSelected: tab.id == selectedId)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .scrollIndicators(.hidden)
+            Menu {
+                Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
+                Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
+            } label: {
+                Group {
+                    if isOpeningTab {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "plus")
+                    }
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
+            }
+            .disabled(isOpeningTab)
+            .accessibilityLabel("New tab")
+            .padding(.trailing, 8)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func transcript(_ session: HerdrSession) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                if isTruncated, turnCount < Self.greatestTurnCount {
+                    Button {
+                        turnCount = Self.greatestTurnCount
+                    } label: {
+                        Text("Show earlier turns").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .controlSize(.large)
+                }
+                ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
+                    CodingTurnView(turn: turn)
+                }
+                if turns.isEmpty, isRead {
+                    Text("Nothing has been said in this session yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                }
+                questionCard(session)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+        }
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentSize.height - geometry.visibleRect.maxY < 120
+        } action: { _, isNearEnd in
+            isAtEnd = isNearEnd
+        }
+        .defaultScrollAnchor(.bottom)
+        .scrollDismissesKeyboard(.immediately)
+        .overlay {
+            if !isRead {
+                ProgressView()
+            }
+        }
+        // New turns keep the view at the end only when the person was
+        // there; one reading earlier turns is not pulled away.
+        .onChange(of: turns) {
+            if isAtEnd { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: session.question) {
+            if isAtEnd { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: isRead) { _, isRead in
+            if isRead { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: sentCount) {
+            withAnimation { scrollPosition.scrollTo(edge: .bottom) }
+        }
+    }
+
+    private func screen(_ session: HerdrSession) -> some View {
+        ScrollView([.vertical, .horizontal]) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(verbatim: screenText)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .fixedSize()
+                questionCard(session)
+            }
+            .padding()
+        }
+        .overlay {
+            if !isRead {
+                ProgressView()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func questionCard(_ session: HerdrSession) -> some View {
+        if session.isAsking, let question = session.codingQuestion {
+            CardSurface {
+                CodingAnswerCard(question: question) { options, freeText in
+                    await answer(question, options: options, freeText: freeText)
+                }
+            }
+            .id(question.questionFingerprint)
+        }
+    }
+
+    private func actionsMenu(_ session: HerdrSession) -> some View {
+        Menu {
+            Button {
+                Task { await show(session) }
+            } label: {
+                Label("Show on computer", systemImage: "display")
+            }
+            if session.isWatched {
+                Button {} label: {
+                    Label("Telling you when it finishes", systemImage: "bell.fill")
+                }
+                .disabled(true)
+            } else {
+                Button {
+                    Task { await watch(session) }
+                } label: {
+                    Label("Tell me when it finishes", systemImage: "bell")
+                }
+            }
+            Button(role: .destructive) {
+                isConfirmingClose = true
+            } label: {
+                Label("Close tab", systemImage: "xmark.circle")
+            }
+            .disabled(session.isWorking)
+        } label: {
+            Label("Actions", systemImage: "ellipsis.circle")
+        }
+        // On the menu, not on its item, which goes when the menu closes.
+        .confirmationDialog("Close this coding session?", isPresented: $isConfirmingClose, titleVisibility: .visible) {
+            Button("Close tab", role: .destructive) {
+                Task { await close(session) }
+            }
+        } message: {
+            Text("This ends \(session.codingAgentName) in \(session.tabTitle) on \(session.computer) and closes its pane. What was said stays in its history.")
+        }
+    }
+
+    private func composer(_ session: HerdrSession) -> some View {
+        CodingComposer(
+            draft: $draft, pendingFiles: $pendingFiles, isSending: isSending, isDisabled: session.isAsking
+        ) {
+            Task { await send(session) }
+        }
+    }
+
+    // MARK: Reading
+
+    private func refresh() async {
+        guard let session else { return }
+        let reading = session.id
+        do {
+            switch part {
+            case .turns:
+                let read = try await connection.readHerdrSession(computer: session.computer, paneId: session.paneId, turnCount: turnCount)
+                guard reading == selectedId else { return }
+                turns = read.turns
+                isTruncated = read.isTruncated
+                model.upsert(read.herdrSession)
+            case .screen:
+                let read = try await connection.readHerdrScreen(computer: session.computer, paneId: session.paneId)
+                guard reading == selectedId else { return }
+                screenText = read.screenText
+                model.upsert(read.herdrSession)
+            }
+            isRead = true
+            // The other tabs' states, for the strip.
+            await model.load()
+        } catch is CancellationError {
+        } catch {
+            if (error as? URLError)?.code != .cancelled { problemText = app.describe(error) }
+            isRead = true
+        }
+    }
+
+    // MARK: Actions
+
+    private func send(_ session: HerdrSession) async {
+        let text = draft.trimmed
+        guard !text.isEmpty || !pendingFiles.isEmpty, !isSending else { return }
+        guard pendingFiles.reduce(0, { $0 + $1.data.count }) <= PendingFile.bytesMost else {
+            problemText = String(localized: "The files come to more than 25 MB, more than the server takes in one message.")
+            return
+        }
+        isSending = true
+        defer { isSending = false }
+        let sending = pendingFiles
+        let sendingIds = Set(sending.map(\.id))
+        do {
+            var attachmentIds: [String] = []
+            for file in sending {
+                attachmentIds.append(try await connection.upload(name: file.name, contentType: file.contentType, data: file.data))
+            }
+            let sent = try await connection.sendHerdrSession(computer: session.computer, paneId: session.paneId, text: text, attachmentIds: attachmentIds)
+            model.upsert(sent)
+            draft = ""
+            // Files added while these were sent stay for the next message.
+            pendingFiles.removeAll { sendingIds.contains($0.id) }
+            sentCount += 1
+            await refresh()
+        } catch {
+            problemText = app.describe(error)
+        }
+    }
+
+    private func answer(_ question: CodingQuestion, options: [CodingQuestion.Option], freeText: String?) async {
+        do {
+            _ = try await connection.answerCodingQuestion(question, options: options, freeText: freeText)
+            sentCount += 1
+            await refresh()
+        } catch {
+            problemText = app.describe(error)
+            await refresh()
+        }
+    }
+
+    private func show(_ session: HerdrSession) async {
+        do {
+            model.upsert(try await connection.focusHerdrSession(computer: session.computer, paneId: session.paneId))
+            doneText = String(localized: "Shown on \(session.computer)")
+            await model.load()
+        } catch {
+            problemText = app.describe(error)
+        }
+    }
+
+    private func watch(_ session: HerdrSession) async {
+        do {
+            model.upsert(try await connection.watchHerdrSession(computer: session.computer, paneId: session.paneId))
+            doneText = String(localized: "Your agent will tell you when \(session.tabTitle) finishes")
+        } catch {
+            problemText = app.describe(error)
+        }
+    }
+
+    private func close(_ session: HerdrSession) async {
+        do {
+            _ = try await connection.closeHerdrSession(computer: session.computer, paneId: session.paneId)
+            model.remove(id: session.id)
+            doneText = String(localized: "Closed \(session.tabTitle)")
+            dismiss()
+        } catch {
+            problemText = app.describe(error)
+        }
+    }
+
+    /// Opens a new tab in this session's workspace, in its directory, and
+    /// shows it.
+    private func openTab(beside session: HerdrSession, codingAgentKind: String) async {
+        isOpeningTab = true
+        defer { isOpeningTab = false }
+        do {
+            let opened = try await connection.openHerdrSession(computer: session.computer, paneId: session.paneId, codingAgentKind: codingAgentKind)
+            model.upsert(opened)
+            selectedId = opened.id
+            await model.load()
+        } catch {
+            problemText = app.describe(error)
+        }
+    }
+}
+
+/// CodingTabChip is one tab of the strip: its name, a dot when herdr shows
+/// it on the computer's screen, and a mark when it works or asks. The one
+/// shown here is on a tinted ground.
+struct CodingTabChip: View {
+    let session: HerdrSession
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if session.isTabFocused {
+                Circle()
+                    .fill(.primary)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: session.tabTitle)
+                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                .lineLimit(1)
+            if session.isAsking {
+                Image(systemName: "questionmark.bubble.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+            } else if session.isWorking {
+                Image(systemName: "ellipsis")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(isSelected ? .primary : .secondary)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 44)
+        .background(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.2)) : AnyShapeStyle(Color(.tertiarySystemFill)), in: .capsule)
+        .contentShape(.capsule)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var accessibilityText: String {
+        var parts = [session.tabTitle]
+        if session.isTabFocused { parts.append(String(localized: "On screen")) }
+        if session.isAsking {
+            parts.append(String(localized: "Asking"))
+        } else if session.isWorking {
+            parts.append(String(localized: "Working"))
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// CodingTurnView is one thing said or done in a session: the person's words
+/// on the right in a bubble, the agent's on the left, a tool as one quiet
+/// line.
+struct CodingTurnView: View {
+    let turn: HerdrTurn
+
+    var body: some View {
+        switch turn.herdrTurnRole {
+        case "person":
+            HStack {
+                Spacer(minLength: 56)
+                Text(verbatim: turn.turnText)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor.opacity(0.2), in: .rect(cornerRadius: 20, style: .continuous))
+            }
+        case "tool":
+            Text(verbatim: turn.turnText)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+        default:
+            AgentBubble {
+                Text(Self.markdown(turn.turnText))
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    /// The agent writes Markdown; its line breaks are kept.
+    static func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
+}
+
+/// CodingAnswerCard is the question a session waits on, with its options as
+/// rows to choose: one press answers, or with several allowed the chosen ones
+/// are sent together. An option that takes typed text has a field.
+struct CodingAnswerCard: View {
+    let question: CodingQuestion
+    let onAnswer: ([CodingQuestion.Option], String?) async -> Void
+    @State private var chosen: Set<Int> = []
+    @State private var typed = ""
+    @State private var isAnswering = false
+    @State private var isShowingDetails = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                CardHeader(systemImage: "terminal", title: [question.codingAgentName, question.sessionName].filter { !$0.isEmpty }.joined(separator: " · "))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Button(isShowingDetails ? "Hide details" : "Details") {
+                    withAnimation { isShowingDetails.toggle() }
+                }
+                .font(.footnote)
+                .buttonStyle(.borderless)
+            }
+            Text(verbatim: question.headline)
+                .lineLimit(isShowingDetails ? 3 : nil)
+            if isShowingDetails {
+                CodingQuestionDetails(text: question.shownText)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(question.choices.enumerated()), id: \.element.optionNumber) { index, option in
+                    if index > 0 { Divider() }
+                    ChoiceRow(
+                        title: option.optionLabel, detail: option.optionDescription, isChosen: chosen.contains(option.optionNumber),
+                        isMultiple: question.isMultipleChoice
+                    ) {
+                        if question.isMultipleChoice {
+                            if chosen.contains(option.optionNumber) {
+                                chosen.remove(option.optionNumber)
+                            } else {
+                                chosen.insert(option.optionNumber)
+                            }
+                        } else {
+                            submit(options: [option], freeText: nil)
+                        }
+                    }
+                }
+            }
+            .disabled(isAnswering)
+            if question.isMultipleChoice {
+                Button {
+                    submit(options: question.choices.filter { chosen.contains($0.optionNumber) }, freeText: nil)
+                } label: {
+                    Text("Answer with these").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .disabled(chosen.isEmpty || isAnswering)
+            }
+            if question.options.contains(where: { $0.herdrOptionKind == "freeText" }) {
+                TextField("Type an answer", text: $typed, axis: .vertical)
+                    .lineLimit(1...4)
+                    .padding(12)
+                    .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 12, style: .continuous))
+                Button {
+                    submit(options: [], freeText: typed.trimmed)
+                } label: {
+                    Text("Answer").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .disabled(typed.trimmed.isEmpty || isAnswering)
+            }
+        }
+    }
+
+    private func submit(options: [CodingQuestion.Option], freeText: String?) {
+        isAnswering = true
+        Task {
+            await onAnswer(options, freeText)
+            isAnswering = false
+        }
+    }
+}
+
+/// CodingComposer is where the person types into a session: one rounded field
+/// with the words on top, adding files at the bottom left and sending at the
+/// bottom right, as the conversation's is. It is off while the session asks,
+/// since a typed line would answer the question by accident.
+struct CodingComposer: View {
+    @Binding var draft: String
+    @Binding var pendingFiles: [PendingFile]
+    let isSending: Bool
+    let isDisabled: Bool
+    let onSend: () -> Void
+    @State private var pickedItems: [PhotosPickerItem] = []
+    @State private var isPickingPhotos = false
+    @State private var isTakingPicture = false
+    @State private var isPickingFiles = false
+    @State private var loadingPictureCount = 0
+    @FocusState private var isFocused: Bool
+
+    private var canSend: Bool {
+        !isDisabled && !isSending && (!draft.trimmed.isEmpty || !pendingFiles.isEmpty)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if !pendingFiles.isEmpty || loadingPictureCount > 0 {
+                ScrollView(.horizontal) {
+                    HStack {
+                        ForEach(pendingFiles) { file in
+                            PendingFileChip(file: file, isUploading: isSending, isUploaded: false) {
+                                pendingFiles.removeAll { $0.id == file.id }
+                            }
+                        }
+                        ForEach(0..<loadingPictureCount, id: \.self) { _ in
+                            LoadingFileChip()
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                TextField(isDisabled ? String(localized: "Answer its question first") : String(localized: "Type an instruction for this session"), text: $draft, axis: .vertical)
+                    .lineLimit(1...8)
+                    .focused($isFocused)
+                    .disabled(isDisabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                HStack(spacing: 4) {
+                    Menu {
+                        Button {
+                            isPickingPhotos = true
+                        } label: {
+                            Label("Photo library", systemImage: "photo.on.rectangle")
+                        }
+                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                            Button {
+                                isTakingPicture = true
+                            } label: {
+                                Label("Camera", systemImage: "camera")
+                            }
+                        }
+                        Button {
+                            isPickingFiles = true
+                        } label: {
+                            Label("Files", systemImage: "folder")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 36, height: 36)
+                            .background(Color(.tertiarySystemFill), in: .circle)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(.rect)
+                    }
+                    .disabled(isDisabled)
+                    .accessibilityLabel("Add files")
+                    Spacer()
+                    Button(action: onSend) {
+                        Group {
+                            if isSending {
+                                ProgressView().tint(.white)
+                            } else {
+                                Image(systemName: "arrow.up")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(width: 36, height: 36)
+                        .background(canSend || isSending ? AnyShapeStyle(.tint) : AnyShapeStyle(Color(.tertiaryLabel)), in: .circle)
+                        .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .disabled(!canSend)
+                    .accessibilityLabel(isSending ? Text("Sending…") : Text("Send"))
+                }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 4)
+            }
+            .background {
+                Color.clear
+                    .contentShape(.rect(cornerRadius: 26, style: .continuous))
+                    .onTapGesture { isFocused = true }
+            }
+            .glassEffect(.regular, in: .rect(cornerRadius: 26, style: .continuous))
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+        .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 8, matching: .images)
+        .cameraPicker(isPresented: $isTakingPicture) { picture in
+            if let file = PendingFile(picture: picture, index: pendingFiles.count) {
+                pendingFiles.append(file)
+            }
+        }
+        .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case .success(let addresses) = result else { return }
+            for address in addresses {
+                if let file = PendingFile(fileAt: address) {
+                    pendingFiles.append(file)
+                }
+            }
+        }
+        .onChange(of: pickedItems) { _, items in
+            guard !items.isEmpty else { return }
+            pickedItems = []
+            Task { await add(items) }
+        }
+    }
+
+    private func add(_ items: [PhotosPickerItem]) async {
+        loadingPictureCount += items.count
+        for item in items {
+            defer { loadingPictureCount -= 1 }
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                let file = PendingFile(pictureData: data, index: pendingFiles.count)
+            else { continue }
+            pendingFiles.append(file)
+        }
+    }
+}
+
+/// CodingOpenSheet starts Claude Code or Codex in a new herdr pane, in a
+/// directory on one of the person's computers.
+struct CodingOpenSheet: View {
+    let model: CodingModel
+    let onOpened: (HerdrSession) -> Void
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var computer = ""
+    @State private var codingAgentKind = "claude"
+    @State private var directory = ""
+    @State private var agentName = ""
+    @State private var shouldSkipPermissions = false
+    @State private var isOpening = false
+    @State private var doneText: String?
+    @State private var problemText: String?
+
+    private var computerNames: [String] { model.list?.computerNames ?? [] }
+    private var chosenComputer: String { computer.isEmpty ? (computerNames.first ?? "") : computer }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if computerNames.count > 1 {
+                    Picker("Computer", selection: $computer) {
+                        ForEach(computerNames, id: \.self) { name in
+                            Text(verbatim: name).tag(name)
+                        }
+                    }
+                }
+                Section {
+                    Picker("Coding agent", selection: $codingAgentKind) {
+                        Text(verbatim: "Claude Code").tag("claude")
+                        Text(verbatim: "Codex").tag("codex")
+                    }
+                    .pickerStyle(.segmented)
+                    TextField("Directory", text: $directory, prompt: Text(verbatim: "~/src/example"))
+                        .monospaced()
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Name in herdr", text: $agentName, prompt: Text("The directory's name when left empty"))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                Section {
+                    Toggle(isOn: $shouldSkipPermissions) {
+                        if codingAgentKind == "codex" {
+                            Text("Skip approvals and the sandbox (--yolo)")
+                        } else {
+                            Text("Skip permission prompts (--dangerously-skip-permissions)")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Open a coding session")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isOpening {
+                        ProgressView()
+                    } else {
+                        Button("Open") { Task { await open() } }
+                            .disabled(directory.trimmed.isEmpty || chosenComputer.isEmpty)
+                    }
+                }
+            }
+            .toast(done: $doneText, problem: $problemText)
+        }
+        .interactiveDismissDisabled(isOpening)
+    }
+
+    private func open() async {
+        isOpening = true
+        defer { isOpening = false }
+        do {
+            let opened = try await model.connection.openHerdrSession(
+                computer: chosenComputer, directory: directory.trimmed, codingAgentKind: codingAgentKind,
+                agentName: agentName.trimmed.isEmpty ? nil : agentName.trimmed, shouldSkipPermissions: shouldSkipPermissions)
+            dismiss()
+            onOpened(opened)
+        } catch {
+            problemText = app.describe(error)
+        }
+    }
+}
+
+#if DEBUG
+    /// The demo's sessions, for the previews below.
+    @MainActor
+    private enum CodingPreviewData {
+        static var sessions: [HerdrSession] {
+            let body = DemoServer.herdrAnswer(query: "ListAgentHerdrSessions", body: nil) ?? ""
+            struct Payload: Decodable { let ListAgentHerdrSessions: HerdrList }
+            struct Answer: Decodable { let data: Payload }
+            return (try? JSONDecoder().decode(Answer.self, from: Data(body.utf8)))?.data.ListAgentHerdrSessions.sessions ?? []
+        }
+    }
+
+    #Preview("Asking, light") {
+        if let asking = CodingPreviewData.sessions.first(where: \.isAsking), let question = asking.codingQuestion {
+            CardSurface { CodingAnswerCard(question: question) { _, _ in } }
+                .padding()
+        }
+    }
+
+    #Preview("Asking, dark") {
+        if let asking = CodingPreviewData.sessions.first(where: \.isAsking), let question = asking.codingQuestion {
+            CardSurface { CodingAnswerCard(question: question) { _, _ in } }
+                .padding()
+                .preferredColorScheme(.dark)
+        }
+    }
+
+    #Preview("Tabs, light") {
+        VStack(alignment: .leading) {
+            ForEach(CodingPreviewData.sessions.prefix(3)) { session in
+                CodingTabChip(session: session, isSelected: session.isAsking)
+            }
+        }
+        .padding()
+    }
+#endif
