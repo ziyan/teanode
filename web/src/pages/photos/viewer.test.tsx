@@ -356,3 +356,45 @@ it('lists the edited version and the Live Photo video in the download menu when 
     ['Download Live Photo video', '/api/v1/photos/photo-1/files/liveVideo'],
   ])
 })
+
+const failedPhoto = {
+  ...photo,
+  photoProcessingState: 'failed',
+  processingErrorMessage: 'the file is cut short',
+  smallPreviewUrl: '',
+  largePreviewUrl: '',
+} as Photo
+
+// A photo that could not be read says why, and offers Try again beside the
+// reason; the caller says how many it moved.
+it('offers Try again beside the reason a photo failed', async () => {
+  const onRetryProcessing = vi.fn(async () => {})
+  show(vi.fn(), { photo: failedPhoto, onRetryProcessing })
+  expect(await screen.findByText('This photo could not be read: the file is cut short')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(onRetryProcessing).toHaveBeenCalledWith(expect.objectContaining({ id: 'photo-1' }))
+})
+
+it('offers no Try again on a failed photo in the Trash, or to a page that cannot retry', async () => {
+  show(vi.fn(), { photo: failedPhoto, onRetryProcessing: vi.fn(), isTrashed: true })
+  await screen.findByText('This photo could not be read: the file is cut short')
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+  cleanup()
+  show(vi.fn(), { photo: failedPhoto })
+  await screen.findByText('This photo could not be read: the file is cut short')
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+})
+
+// A ready photo can have its previews made again from the menu; a photo that
+// is waiting or failed has no such item, since nothing is ready to redo.
+it('puts Make previews again in the menu of a ready photo', async () => {
+  const onRetryProcessing = vi.fn(async () => {})
+  show(vi.fn(), { onRetryProcessing })
+  fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
+  expect(onRetryProcessing).toHaveBeenCalledWith(expect.objectContaining({ id: 'photo-1' }))
+  cleanup()
+  show(vi.fn(), { photo: failedPhoto, onRetryProcessing })
+  await screen.findByText('This photo could not be read: the file is cut short')
+  expect(screen.queryByRole('button', { name: 'More' })).toBeNull()
+})

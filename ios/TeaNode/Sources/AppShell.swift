@@ -194,9 +194,6 @@ struct MainView: View {
         .onChange(of: app.askingAbout) { _, reference in
             if reference != nil { section = .agent }
         }
-        .onChange(of: app.draftedMessage) { _, text in
-            if text != nil { section = .agent }
-        }
         .onChange(of: app.openedKnowledgePath) { _, knowledgePath in
             if knowledgePath != nil { section = .knowledge }
         }

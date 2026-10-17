@@ -257,6 +257,10 @@ struct ConversationView: View {
                     ReferenceStrip(systemImage: "brain", title: reference.name ?? path, detail: path, onCancel: drop)
                 } else if reference.recordingId != nil {
                     ReferenceStrip(systemImage: "waveform", title: reference.label, detail: "", onCancel: drop)
+                } else if reference.photoId != nil {
+                    ReferenceStrip(
+                        systemImage: "photo", title: reference.label.isEmpty ? String(localized: "Photo") : reference.label, detail: "",
+                        onCancel: drop)
                 } else if reference.financeTransactionId != nil {
                     ReferenceStrip(
                         systemImage: "creditcard", title: reference.merchantName.flatMap { $0.isEmpty ? nil : $0 } ?? reference.description ?? "",
@@ -361,13 +365,6 @@ struct ConversationFollowing: ViewModifier {
                 guard let reference else { return }
                 model.refer(to: reference)
                 app.askingAbout = nil
-            }
-            .onChange(of: app.draftedMessage, initial: true) { _, text in
-                // A message written elsewhere, such as a question about a
-                // photo, goes after what is in the box.
-                guard let text else { return }
-                model.draft = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? text : model.draft + "\n" + text
-                app.draftedMessage = nil
             }
             .onChange(of: app.isCallRequested, initial: true) { startRequestedCall() }
             .onChange(of: app.openingRequest, initial: true) { _, opening in
@@ -1194,7 +1191,7 @@ struct PersonBubble: View {
                     }
             }
             ForEach(line.references, id: \.self) { reference in
-                Label(reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
+                Label(reference.label.isEmpty && reference.photoId != nil ? String(localized: "Photo") : reference.label, systemImage: reference.recordingId != nil ? "waveform" : reference.photoId != nil ? "photo" : reference.merchantName != nil ? "creditcard" : reference.path != nil ? "brain" : "envelope")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

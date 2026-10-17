@@ -6,17 +6,20 @@ import XCTest
 final class PhotosTests: XCTestCase {
     private func photoJSON(
         id: String, kind: String = "picture", takenAt: String? = nil, offsetMinutes: Int? = nil, createdAt: String = "2026-03-01T00:00:00Z",
-        durationMS: Int = 0, smallPreviewUrl: String = "", largePreviewUrl: String = ""
+        durationMS: Int = 0, smallPreviewUrl: String = "", largePreviewUrl: String = "", placeName: String = ""
     ) -> String {
         let takenAt = takenAt.map { #""\#($0)""# } ?? "null"
         let offset = offsetMinutes.map { String($0) } ?? "null"
-        return #"{"id":"\#(id)","createdAt":"\#(createdAt)","photoKind":"\#(kind)","takenAt":\#(takenAt),"takenAtOffsetMinutes":\#(offset),"widthPixels":3024,"heightPixels":4032,"durationMS":\#(durationMS),"latitude":null,"longitude":null,"placeName":"","cameraMake":"","cameraModel":"","originalFilename":"IMG_0001.HEIC","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":null,"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":""}"#
+        return #"{"id":"\#(id)","createdAt":"\#(createdAt)","photoKind":"\#(kind)","takenAt":\#(takenAt),"takenAtOffsetMinutes":\#(offset),"widthPixels":3024,"heightPixels":4032,"durationMS":\#(durationMS),"latitude":null,"longitude":null,"placeName":"\#(placeName)","cameraMake":"","cameraModel":"","originalFilename":"IMG_0001.HEIC","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":null,"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":""}"#
     }
 
     private func photo(
-        _ id: String, kind: String = "picture", takenAt: String? = nil, offsetMinutes: Int? = nil, createdAt: String = "2026-03-01T00:00:00Z"
+        _ id: String, kind: String = "picture", takenAt: String? = nil, offsetMinutes: Int? = nil, createdAt: String = "2026-03-01T00:00:00Z",
+        placeName: String = ""
     ) throws -> Photo {
-        try JSONDecoder().decode(Photo.self, from: Data(photoJSON(id: id, kind: kind, takenAt: takenAt, offsetMinutes: offsetMinutes, createdAt: createdAt).utf8))
+        try JSONDecoder().decode(
+            Photo.self,
+            from: Data(photoJSON(id: id, kind: kind, takenAt: takenAt, offsetMinutes: offsetMinutes, createdAt: createdAt, placeName: placeName).utf8))
     }
 
     private let losAngeles = TimeZone(identifier: "America/Los_Angeles")!
@@ -91,6 +94,31 @@ final class PhotosTests: XCTestCase {
             XCTAssertEqual(days.map(\.id), ["2026-03-11", "2026-03-10"])
             XCTAssertEqual(days.map { $0.photos.map(\.id) }, [["tokyo"], ["la"]])
         }
+    }
+
+    func testTheChipOfAPhotoNamesItByPlaceAndDayThenByFileName() throws {
+        // The day is the one on the wall where it was taken: 08:30 on the 11th
+        // in Tokyo, whichever zone the phone is in.
+        let inTokyo = try photo("tokyo", takenAt: "2026-03-10T23:30:00Z", offsetMinutes: 540)
+        XCTAssertEqual(PhotoTimeline.referenceTitle(of: inTokyo, phoneTimeZone: losAngeles), "2026-03-11")
+        let atTheHarbor = try photo("harbor", takenAt: "2026-03-10T23:30:00Z", offsetMinutes: 540, placeName: "Harbor Town")
+        XCTAssertEqual(PhotoTimeline.referenceTitle(of: atTheHarbor, phoneTimeZone: losAngeles), "Harbor Town \u{00B7} 2026-03-11")
+        let placeOnly = try photo("place", placeName: "Harbor Town")
+        XCTAssertEqual(PhotoTimeline.referenceTitle(of: placeOnly), "Harbor Town")
+        // Nothing but a date the upload arrived on is no date taken: the file name.
+        let undated = try photo("undated")
+        XCTAssertEqual(PhotoTimeline.referenceTitle(of: undated), "IMG_0001.HEIC")
+    }
+
+    func testAPhotoReferenceIsSentByItsIdAndNamedByItsTitle() throws {
+        let reference = AgentReference(photoId: "photo-1", photoTitle: "Harbor Town \u{00B7} 2026-03-11")
+        XCTAssertEqual(reference.label, "Harbor Town \u{00B7} 2026-03-11")
+        XCTAssertFalse(reference.isReply)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(reference)) as? [String: Any])
+        XCTAssertEqual(object["photoId"] as? String, "photo-1")
+        XCTAssertEqual(object["photoTitle"] as? String, "Harbor Town \u{00B7} 2026-03-11")
+        XCTAssertNil(object["recordingId"])
+        XCTAssertEqual(AgentReference(photoId: "photo-1", photoTitle: "").label, "")
     }
 
     func testAPhotoWithoutAnOffsetFollowsThePhonesZone() throws {

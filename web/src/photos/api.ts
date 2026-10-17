@@ -176,6 +176,7 @@ export const PHOTO_DOCUMENTS = {
   RestorePhotos: 'mutation ($photoIds: [String!]!) { RestorePhotos(photoIds: $photoIds) }',
   DeletePhotos: 'mutation ($photoIds: [String!]!) { DeletePhotos(photoIds: $photoIds) }',
   EmptyPhotoTrash: 'mutation { EmptyPhotoTrash }',
+  RetryPhotoProcessing: 'mutation ($photoIds: [String!]!) { RetryPhotoProcessing(photoIds: $photoIds) }',
   ListPhotoAlbums: `query { ListPhotoAlbums { ${PHOTO_ALBUM_FIELDS} } }`,
   SuggestPhotoAlbums:
     'query { SuggestPhotoAlbums { takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds } }',
@@ -299,7 +300,7 @@ export async function setPhotoFavorite(photoId: string, isFavorite: boolean): Pr
 // The mutations that take photo ids send them in batches the server accepts,
 // and say how many of them it acted on.
 async function changePhotos(
-  name: 'TrashPhotos' | 'RestorePhotos' | 'DeletePhotos',
+  name: 'TrashPhotos' | 'RestorePhotos' | 'DeletePhotos' | 'RetryPhotoProcessing',
   photoIds: string[],
 ): Promise<number> {
   let changedCount = 0
@@ -312,6 +313,9 @@ async function changePhotos(
   return changedCount
 }
 
+// Puts photos whose previews failed (or that are ready and should be made
+// again) back to waiting, and says how many it moved.
+export const retryPhotoProcessing = (photoIds: string[]) => changePhotos('RetryPhotoProcessing', photoIds)
 export const trashPhotos = (photoIds: string[]) => changePhotos('TrashPhotos', photoIds)
 export const restorePhotos = (photoIds: string[]) => changePhotos('RestorePhotos', photoIds)
 export const deletePhotosForever = (photoIds: string[]) => changePhotos('DeletePhotos', photoIds)
@@ -320,6 +324,10 @@ export async function emptyPhotoTrash(): Promise<number> {
   const answer = await graphql<{ EmptyPhotoTrash: number }>(PHOTO_DOCUMENTS.EmptyPhotoTrash)
   return answer.EmptyPhotoTrash
 }
+
+// Where the small preview of a photo is read from, for a chip that shows the
+// photo without having the photo in hand.
+export const photoSmallPreviewPath = (photoId: string) => `/api/v1/photos/${encodeURIComponent(photoId)}/previews/small`
 
 // Where a file of a photo is downloaded from, to save. The server names the
 // download after the file's own name.

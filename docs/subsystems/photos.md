@@ -139,9 +139,10 @@ face joins the person's face group whose vector is closest, if similar
 enough, under a per-person lock; otherwise it starts a group. A group is
 nobody until the person names it by choosing a contact, or making one; the
 agent never names a face by guessing. A group nobody has named is listed as a
-person once it has at least three faces (`MinimumUnnamedPhotoFaceGroupFaceCount`;
-it counts faces, not photos, and a pair is more often a chance likeness); a
-named group is always listed. The agent's photo tool can take a name off a
+person once it has at least three faces
+(`MinimumUnnamedPhotoFaceGroupFaceCount`), which is three photos, since a
+group never takes two faces from one photo; a pair is more often a chance
+likeness. A named group is always listed. The agent's photo tool can take a name off a
 group (`person-unname`), hide a group or list it again (`person-hide`, with
 `is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
 face is not that person (`person-remove-face`, with the `photo_face_id` that

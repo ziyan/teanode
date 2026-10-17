@@ -9,6 +9,7 @@ import {
   DownloadIcon,
   HeartIcon,
   InfoIcon,
+  MoreIcon,
   PictureIcon,
   RefreshIcon,
   RestoreIcon,
@@ -127,6 +128,7 @@ export function PhotoViewer({
   photoLibrary,
   onDescribe,
   onAskAssistant,
+  onRetryProcessing,
   onRemoveFaceFromGroup,
 }: {
   photo: Photo
@@ -160,6 +162,9 @@ export function PhotoViewer({
   onDescribe?: (photo: Photo, isRedescribed: boolean) => Promise<void>
   // Opens the assistant with a question about this photo.
   onAskAssistant?: (photo: Photo) => void
+  // Puts a photo whose previews failed back to waiting, or makes the
+  // previews of a ready one again; the caller says how many it moved.
+  onRetryProcessing?: (photo: Photo) => Promise<void>
   // "This is not them": takes a face out of its group.
   onRemoveFaceFromGroup?: (face: PhotoFace) => Promise<void>
 }) {
@@ -485,6 +490,28 @@ export function PhotoViewer({
                   <TrashIcon size={18} />
                 </button>
               </Tooltip>
+              {onRetryProcessing && photo.photoProcessingState === 'ready' && (
+                <Tooltip label={t('photos.more')}>
+                  <MenuButton
+                    label={t('photos.more')}
+                    className="icon-button"
+                    icon={<MoreIcon size={18} />}
+                    render={(close) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={isBusy}
+                        onClick={() => {
+                          close()
+                          void onRetryProcessing(photo)
+                        }}
+                      >
+                        {t('photos.makePreviewsAgain')}
+                      </button>
+                    )}
+                  />
+                </Tooltip>
+              )}
             </>
           )}
           <Tooltip label={t('photos.details')}>
@@ -551,13 +578,20 @@ export function PhotoViewer({
               autoPlay
             />
           ) : !fittedSource ? (
-            <p className="photo-viewer-message">
-              {photo.photoProcessingState === 'failed'
-                ? photo.processingErrorMessage
-                  ? t('photos.failed', { message: photo.processingErrorMessage })
-                  : t('photos.failedNoMessage')
-                : t('photos.waiting')}
-            </p>
+            <div className="photo-viewer-message-block">
+              <p className="photo-viewer-message">
+                {photo.photoProcessingState === 'failed'
+                  ? photo.processingErrorMessage
+                    ? t('photos.failed', { message: photo.processingErrorMessage })
+                    : t('photos.failedNoMessage')
+                  : t('photos.waiting')}
+              </p>
+              {photo.photoProcessingState === 'failed' && onRetryProcessing && !isTrashed && (
+                <button type="button" disabled={isBusy} onClick={() => void onRetryProcessing(photo)}>
+                  {t('photos.tryAgain')}
+                </button>
+              )}
+            </div>
           ) : isZoomed ? (
             <div className="photo-viewer-zoom" ref={zoomScroller} onDoubleClick={toggleZoom}>
               <img

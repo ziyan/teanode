@@ -712,7 +712,7 @@ const CONVERSATION = `
         id createdAt role content name toolCallId toolCalls { id name arguments }
         usage { promptTokens completionTokens cost }
         attachments { id name contentType size isRemoved }
-        references { itemId threadId subject from path name recordingId recordingTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
+        references { itemId threadId subject from path name recordingId recordingTitle photoId photoTitle financeTransactionId postedOn amount currencyCode merchantName description agentMessageId quotedRole quotedText }
         reactions { emoji reactorKind reactedAt reactorUserId reactorName }
         authorKind authorUserId authorName authorOwnerName authorAvatarUrl authorAvatarColorIndex authorAgentId agentRunId isMine isAgentWork editedAt isDeleted
       }
@@ -3527,7 +3527,8 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             (reference.path && reference.path === detail.reference.path) ||
             (reference.financeTransactionId &&
               reference.financeTransactionId === detail.reference.financeTransactionId) ||
-            (reference.recordingId && reference.recordingId === detail.reference.recordingId),
+            (reference.recordingId && reference.recordingId === detail.reference.recordingId) ||
+            (reference.photoId && reference.photoId === detail.reference.photoId),
         )
           ? previous
           : [...previous, detail.reference],

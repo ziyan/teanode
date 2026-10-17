@@ -901,6 +901,26 @@ public enum PhotoTimeline {
         return moment.date.formatted(Date.FormatStyle(date: .complete, time: .shortened, locale: locale, timeZone: moment.timeZone))
     }
 
+    /// What the chip of a photo says when the person asks the agent about it:
+    /// the place and the day it was taken, on the clock where it was taken, or
+    /// the file name. The server words it again when the question is sent, the
+    /// same way, so the chip does not change. Empty when the photo has neither.
+    public static func referenceTitle(of photo: Photo, phoneTimeZone: TimeZone = .current) -> String {
+        var parts: [String] = []
+        let placeName = photo.placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !placeName.isEmpty { parts.append(placeName) }
+        if photo.takenAt != nil, let moment = moment(of: photo, phoneTimeZone: phoneTimeZone) {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = moment.timeZone
+            let components = calendar.dateComponents([.year, .month, .day], from: moment.date)
+            if let year = components.year, let month = components.month, let day = components.day {
+                parts.append(String(format: "%04ld-%02ld-%02ld", year, month, day))
+            }
+        }
+        if parts.isEmpty { return photo.originalFilename.trimmingCharacters(in: .whitespacesAndNewlines) }
+        return parts.joined(separator: " \u{00B7} ")
+    }
+
     /// How long a video runs, as m:ss, or h:mm:ss from an hour on. Whole
     /// seconds, rounded to the nearest.
     public static func durationText(milliseconds: Int) -> String {

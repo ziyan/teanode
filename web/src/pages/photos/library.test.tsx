@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { graphql } from '../../api'
+import { askAgentAbout, graphql } from '../../api'
 import { ToastProvider } from '../../components/toast'
 import { TranslationProvider } from '../../i18n/i18n'
 import { photoUploads } from '../../photos/uploadQueue'
@@ -10,12 +10,15 @@ import { PhotosPage } from './library'
 vi.mock('../../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../api')>()),
   graphql: vi.fn(),
+  askAgentAbout: vi.fn(),
 }))
+// Whether the session has an assistant to ask.
+let isAssistantEnabled = false
 vi.mock('../../session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session')>()),
   useSession: () => ({
     userId: 'person-1',
-    services: { isPhotosEnabled: true },
+    services: { isPhotosEnabled: true, isAssistantEnabled },
     permissions: { everywhere: ['photos:use'], byDomain: [] },
   }),
 }))
@@ -61,6 +64,7 @@ let library: ReturnType<typeof photoFixture>[]
 let readPhotoAnswer: (photoId: string) => Promise<unknown>
 let listAnswer: (variables: Record<string, unknown>) => Promise<unknown>
 let updatePhotoAnswer: (variables: Record<string, unknown>) => Promise<unknown>
+let retryAnswer: (variables: Record<string, unknown>) => Promise<unknown>
 
 const callsTo = (name: string) =>
   vi
@@ -92,8 +96,12 @@ beforeEach(() => {
   updatePhotoAnswer = async (variables) => ({
     UpdatePhoto: { ...photoFixture(String(variables.photoId)), isFavorite: variables.isFavorite },
   })
+  isAssistantEnabled = false
+  vi.mocked(askAgentAbout).mockReset()
+  retryAnswer = async (variables) => ({ RetryPhotoProcessing: (variables.photoIds as string[]).length })
   vi.mocked(graphql).mockReset()
   vi.mocked(graphql).mockImplementation(async (document: string, variables?: Record<string, unknown>) => {
+    if (document.includes('RetryPhotoProcessing(')) return (await retryAnswer(variables ?? {})) as never
     if (document.includes('ReadPhotoLibrary'))
       return {
         ReadPhotoLibrary: {
@@ -470,4 +478,97 @@ it('keeps the heart where the person put it while the server is slow to answer',
   await act(async () => finish())
   await waitFor(() => expect(screen.getByRole('button', { name: 'Remove from Favorites' })).toBeTruthy())
   expect(within(document.body).queryAllByRole('button', { name: 'Add to Favorites' })).toHaveLength(0)
+})
+
+// ---- asking about a photo, and trying again ----
+
+// The assistant is pointed at the photo, not sent its id in a sentence: the
+// drawer shows a chip, and the person writes the question.
+it('hands the drawer the photo as a reference, with the place and day, and closes the viewer', async () => {
+  isAssistantEnabled = true
+  vi.mocked(askAgentAbout).mockReturnValue(true)
+  library = library.map((photo) => (photo.id === 'photo-1' ? { ...photo, placeName: 'Harbor Town' } : photo))
+  readPhotoAnswer = async (photoId) => ({
+    ReadPhoto: {
+      photo: {
+        ...photoFixture(photoId, { placeName: 'Harbor Town' }),
+        photoDescription: '',
+        descriptionVisibleText: '',
+        describedAt: null,
+        isDescriptionRequested: false,
+      },
+      photoFiles: [],
+      albums: [],
+      faces: [],
+    },
+  })
+  show('/photos/photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Ask the assistant about this photo' }))
+  expect(askAgentAbout).toHaveBeenCalledWith({ photoId: 'photo-1', photoTitle: 'Harbor Town · 2030-07-12' })
+  await waitFor(() => expect(address()).toBe('/photos'))
+})
+
+it('goes to the agent settings when there is no agent to ask, and keeps the viewer', async () => {
+  isAssistantEnabled = true
+  vi.mocked(askAgentAbout).mockReturnValue(false)
+  show('/photos/photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Ask the assistant about this photo' }))
+  expect(askAgentAbout).toHaveBeenCalledTimes(1)
+  await waitFor(() => expect(address()).toBe('/settings/agent'))
+})
+
+const selectPhotos = async (...ids: string[]) => {
+  for (const id of ids) fireEvent.click(await screen.findByRole('checkbox', { name: `Select ${id}.jpg` }))
+}
+
+// Every selected photo has failed: the bar offers Try again, a toast says
+// how many were moved, and the list is read again.
+it('offers Try again in the selection bar when every selected photo has failed, and says how many', async () => {
+  library = library.map((photo) =>
+    photo.id === 'photo-3' ? photo : { ...photo, photoProcessingState: 'failed', smallPreviewUrl: '' },
+  )
+  show('/photos')
+  await selectPhotos('photo-1', 'photo-2')
+  const listsBefore = callsTo('ListPhotos').length
+  fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
+  await waitFor(() => expect(callsTo('RetryPhotoProcessing')).toEqual([{ photoIds: ['photo-1', 'photo-2'] }]))
+  expect(await screen.findByText('Trying 2 photos again.')).toBeTruthy()
+  await waitFor(() => expect(callsTo('ListPhotos').length).toBeGreaterThan(listsBefore))
+  expect(screen.queryByRole('toolbar')).toBeNull()
+})
+
+it('offers no Try again when a selected photo has not failed', async () => {
+  library = library.map((photo) =>
+    photo.id === 'photo-1' ? { ...photo, photoProcessingState: 'failed', smallPreviewUrl: '' } : photo,
+  )
+  show('/photos')
+  await selectPhotos('photo-1', 'photo-2')
+  await screen.findByRole('toolbar')
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+})
+
+it('retries the photo of the viewer, and makes previews again for a ready one', async () => {
+  library = library.map((photo) =>
+    photo.id === 'photo-1'
+      ? { ...photo, photoProcessingState: 'failed', smallPreviewUrl: '', largePreviewUrl: '' }
+      : photo,
+  )
+  show('/photos/photo-1')
+  fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
+  await waitFor(() => expect(callsTo('RetryPhotoProcessing')).toEqual([{ photoIds: ['photo-1'] }]))
+  expect(await screen.findByText('Trying 1 photo again.')).toBeTruthy()
+  cleanup()
+  show('/photos/photo-2')
+  fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
+  await waitFor(() => expect(callsTo('RetryPhotoProcessing')).toHaveLength(2))
+  expect(callsTo('RetryPhotoProcessing')[1]).toEqual({ photoIds: ['photo-2'] })
+})
+
+it('says so when nothing was moved, and when the server refuses', async () => {
+  retryAnswer = async () => ({ RetryPhotoProcessing: 0 })
+  show('/photos/photo-2')
+  fireEvent.click(await screen.findByRole('button', { name: 'More' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Make previews again' }))
+  expect(await screen.findByText('Nothing to try again.')).toBeTruthy()
 })

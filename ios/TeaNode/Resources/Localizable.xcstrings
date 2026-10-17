@@ -4911,22 +4911,6 @@
         }
       }
     },
-    "Look at photo %@ and tell me about it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "写真 %@ を見て、どんな写真か教えてください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请查看照片 %@，并告诉我它的内容。"
-          }
-        }
-      }
-    },
     "Merge %@ into %@?": {
       "localizations": {
         "ja": {

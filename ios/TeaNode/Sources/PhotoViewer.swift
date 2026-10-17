@@ -185,11 +185,10 @@ struct PhotoViewer: View {
         }
     }
 
-    /// Opens the conversation with a question about the photo in its box, for
-    /// the person to add to and send. There is no way for a message to point
-    /// at a photo yet, so the question names it.
+    /// Opens the conversation pointed at the photo: a chip above the box says
+    /// which photo, and the person writes their own question.
     private func askAgent(about photo: Photo) {
-        app.draftedMessage = String(localized: "Look at photo \(photo.id) and tell me about it.")
+        app.askingAbout = AgentReference(photoId: photo.id, photoTitle: PhotoTimeline.referenceTitle(of: photo))
         isShowingInfo = false
         dismiss()
     }

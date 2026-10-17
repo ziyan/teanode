@@ -52,6 +52,23 @@ export function dayKey(moment: Date, timeZone?: string): string {
   return `${part('year')}-${part('month')}-${part('day')}`
 }
 
+// photoReferenceTitle is what the chip of a photo says in the agent's
+// drawer: the place and the day it was taken, or its file name, the way the
+// server words it when the question is sent. A photo with none of them has no
+// title, and the chip says "Photo".
+export function photoReferenceTitle(
+  photo: Pick<Photo, 'takenAt' | 'placeName' | 'originalFilename'> & PlacedPhoto,
+  browserTimeZone?: string,
+): string {
+  const parts: string[] = []
+  if (photo.placeName.trim()) parts.push(photo.placeName.trim())
+  if (photo.takenAt) {
+    const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
+    if (!Number.isNaN(moment.getTime())) parts.push(dayKey(moment, timeZone))
+  }
+  return parts.length > 0 ? parts.join(' · ') : photo.originalFilename.trim()
+}
+
 // dayHeading is a day written the way the reader's language writes one, with
 // the weekday: "Saturday, July 12, 2025".
 export function dayHeading(moment: Date, language: string, timeZone?: string): string {

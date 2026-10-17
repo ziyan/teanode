@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { openAgentConversation } from '../../api'
+import { askAgentAbout } from '../../api'
 import { PageHeadingActions, useBreadcrumbDetail } from '../../components/breadcrumb'
 import { ErrorMessage, Loading } from '../../components/common'
 import { ConfirmDialog } from '../../components/dialog'
@@ -10,6 +10,7 @@ import {
   DownloadIcon,
   HeartIcon,
   MoreIcon,
+  RefreshIcon,
   RestoreIcon,
   TrashIcon,
   UploadIcon,
@@ -39,6 +40,7 @@ import {
   removePhotosFromAlbum,
   renamePhotoAlbum,
   restorePhotos,
+  retryPhotoProcessing,
   setPhotoAlbumCover,
   setPhotoFavorite,
   trashPhotos,
@@ -50,7 +52,7 @@ import {
 } from '../../photos/api'
 import { usePhotosChanged } from '../../photos/changes'
 import { FILTER_KINDS, parseDay, parsePhotoKind, startOfDay, startOfNextDay } from '../../photos/filters'
-import { formatByteSize, indexRange } from '../../photos/days'
+import { formatByteSize, indexRange, personTimeZone, photoReferenceTitle } from '../../photos/days'
 import {
   NoAddressBookError,
   createContact,
@@ -701,15 +703,39 @@ function AccountPhotosPage() {
     }
   }
 
-  // The assistant has no reference to a photo in the drawer, so the question
-  // names it by id in a draft the person can add to before sending. The
-  // viewer covers the drawer, so it closes and the drawer is what is seen.
+  // The assistant, pointed at this photo: the drawer opens with a chip for
+  // it (the photo's small picture and where and when it was taken) and the
+  // person writes their own question. The server words the title again from
+  // the stored row. The viewer covers the drawer, so it closes and the drawer
+  // is what is seen.
   function askAssistant(photo: Photo) {
-    if (!openAgentConversation('', t('photos.askAssistantDraft', { id: photo.id }))) {
+    if (!askAgentAbout({ photoId: photo.id, photoTitle: photoReferenceTitle(photo, personTimeZone()) })) {
       navigate('/settings/agent')
       return
     }
     closeViewer()
+  }
+
+  // Puts photos whose previews failed, or that are ready and should have
+  // their previews made again, back to waiting, and says how many it moved.
+  // The grid is read again, and the viewer with it, so a photo shows as
+  // waiting at once.
+  async function retryProcessing(targets: Photo[]) {
+    setIsBusy(true)
+    try {
+      const retriedCount = await retryPhotoProcessing(targets.map((photo) => photo.id))
+      toast.done(
+        retriedCount === 0
+          ? t('photos.retriedNone')
+          : plural(retriedCount, { one: 'photos.retriedOne', other: 'photos.retriedOther' }),
+      )
+      clearSelection()
+      await refresh()
+    } catch (caught) {
+      failedWith(caught)
+    } finally {
+      setIsBusy(false)
+    }
   }
 
   async function removeFaceFromGroup(face: PhotoFace) {
@@ -848,6 +874,8 @@ function AccountPhotosPage() {
 
   const selectedPhotos = photos.filter((photo) => selectedIds.has(photo.id))
   const areAllSelectedFavorites = selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.isFavorite)
+  const haveAllSelectedFailed =
+    selectedPhotos.length > 0 && selectedPhotos.every((photo) => photo.photoProcessingState === 'failed')
 
   const selectSection = (section: PhotoSection) => {
     if (section === 'albums') navigate('/photos/albums')
@@ -1063,6 +1091,19 @@ function AccountPhotosPage() {
                   <DownloadIcon size={18} />
                 </button>
               </Tooltip>
+              {haveAllSelectedFailed && (
+                <Tooltip label={t('photos.tryAgain')}>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t('photos.tryAgain')}
+                    disabled={isBusy}
+                    onClick={() => void retryProcessing(selectedPhotos)}
+                  >
+                    <RefreshIcon size={18} />
+                  </button>
+                </Tooltip>
+              )}
               <Tooltip label={t('photos.trash')}>
                 <button
                   type="button"
@@ -1230,6 +1271,7 @@ function AccountPhotosPage() {
           photoLibrary={info.data}
           onDescribe={describe}
           onAskAssistant={isAssistantOn ? askAssistant : undefined}
+          onRetryProcessing={(photo) => retryProcessing([photo])}
           onRemoveFaceFromGroup={removeFaceFromGroup}
           onNavigate={showPhoto}
           onClose={closeViewer}
