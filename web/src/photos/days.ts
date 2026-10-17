@@ -1,0 +1,156 @@
+import type { Photo } from './api'
+
+// The pure parts of the timeline: which day a photo belongs under, how a day
+// is written, and how long a video is.
+
+// The time zone the days of a photo with no known offset are drawn in: the
+// one this browser is in, which is also the one it tells the server about
+// with every call.
+export function personTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined
+  } catch {
+    return undefined
+  }
+}
+
+type PlacedPhoto = Pick<Photo, 'takenAt' | 'createdAt'> & { takenAtOffsetMinutes?: number | null }
+
+// A moment and the time zone to read its calendar fields in.
+export interface WallClock {
+  moment: Date
+  timeZone: string | undefined
+}
+
+// photoWallClock is the clock on the wall where and when a photo was taken.
+// The server keeps the offset the photo was taken at, so a trip abroad sits
+// under the dates the people there lived: the moment is shifted by the offset
+// and read as UTC. A photo with no offset, or no date taken at all (it is then
+// placed where it arrived), is read in the browser's zone.
+export function photoWallClock(photo: PlacedPhoto, browserTimeZone: string | undefined): WallClock {
+  if (photo.takenAt && photo.takenAtOffsetMinutes !== null && photo.takenAtOffsetMinutes !== undefined) {
+    return {
+      moment: new Date(new Date(photo.takenAt).getTime() + photo.takenAtOffsetMinutes * 60_000),
+      timeZone: 'UTC',
+    }
+  }
+  return { moment: new Date(photo.takenAt || photo.createdAt), timeZone: browserTimeZone }
+}
+
+// dayKey names the calendar day a moment falls on in a time zone, as
+// 2025-07-12. Two photos are under one heading exactly when their keys are
+// equal, so a late night photo and an early morning one are two days even
+// though they are minutes apart in UTC.
+export function dayKey(moment: Date, timeZone?: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(moment)
+  const part = (type: string) => parts.find((candidate) => candidate.type === type)?.value ?? ''
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+
+// dayHeading is a day written the way the reader's language writes one, with
+// the weekday: "Saturday, July 12, 2025".
+export function dayHeading(moment: Date, language: string, timeZone?: string): string {
+  return new Intl.DateTimeFormat(language, {
+    timeZone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(moment)
+}
+
+export interface PhotoDay<T> {
+  key: string
+  heading: string
+  photos: T[]
+}
+
+// groupByDay splits photos, which arrive newest first, into runs under one
+// heading each. A run is a day: photos on one day that the list does not
+// keep together (a page boundary, a search) get a heading each, which is
+// what a reader of a page expects.
+export function groupByDay<T extends PlacedPhoto>(
+  photos: T[],
+  language: string,
+  browserTimeZone?: string,
+): PhotoDay<T>[] {
+  const days: PhotoDay<T>[] = []
+  for (const photo of photos) {
+    const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
+    const key = dayKey(moment, timeZone)
+    const last = days[days.length - 1]
+    if (last && last.key === key) {
+      last.photos.push(photo)
+    } else {
+      days.push({ key, heading: dayHeading(moment, language, timeZone), photos: [photo] })
+    }
+  }
+  return days
+}
+
+// photoDateTime is the date and time of a photo for its details, on the
+// clock where it was taken, with the offset said when it is known so that a
+// reader sees it is not their own clock.
+export function photoDateTime(photo: PlacedPhoto, language: string, browserTimeZone?: string): string {
+  const { moment, timeZone } = photoWallClock(photo, browserTimeZone)
+  const text = new Intl.DateTimeFormat(language, {
+    timeZone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(moment)
+  const offset = photo.takenAt ? photo.takenAtOffsetMinutes : null
+  return offset === null || offset === undefined ? text : `${text} (${formatOffset(offset)})`
+}
+
+// +09:00, -03:30, +00:00.
+export function formatOffset(offsetMinutes: number): string {
+  const sign = offsetMinutes < 0 ? '-' : '+'
+  const absolute = Math.abs(offsetMinutes)
+  const twoDigits = (count: number) => String(count).padStart(2, '0')
+  return `UTC${sign}${twoDigits(Math.floor(absolute / 60))}:${twoDigits(absolute % 60)}`
+}
+
+// formatDuration is the length of a video as m:ss, or h:mm:ss from an hour
+// up: 4000 milliseconds is 0:04 and 3,725,000 is 1:02:05. A fraction of a
+// second is dropped rather than rounded, as a player does, so a video does
+// not claim to be longer than it is.
+export function formatDuration(durationMS: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMS / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const twoDigits = (count: number) => String(count).padStart(2, '0')
+  return hours > 0 ? `${hours}:${twoDigits(minutes)}:${twoDigits(seconds)}` : `${minutes}:${twoDigits(seconds)}`
+}
+
+// The indexes from one cell to another, both included, in either order: what
+// a shift-click selects.
+export function indexRange(firstIndex: number, secondIndex: number): number[] {
+  const start = Math.min(firstIndex, secondIndex)
+  const end = Math.max(firstIndex, secondIndex)
+  return Array.from({ length: end - start + 1 }, (_, offset) => start + offset)
+}
+
+// formatByteSize writes a size the way a person says one: 1.5 KB, 12.4 MB,
+// 8 GB. A whole number is written without a decimal, and nothing is written
+// as "—", which the shared formatter does for zero.
+export function formatByteSize(sizeBytes: number): string {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = Math.max(0, sizeBytes)
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex++
+  }
+  const text = unitIndex === 0 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '')
+  return `${text} ${units[unitIndex]}`
+}

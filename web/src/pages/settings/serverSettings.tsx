@@ -9,6 +9,7 @@ import {
   Identity,
   Listen,
   Passkey,
+  PhotosSettings,
   Resolver,
   SessionSettings,
   Smtp,
@@ -617,6 +618,63 @@ export function GeoIPForm({ settings, onSaved }: { settings: GeoIP; onSaved: () 
       </div>
 
       <RestartNote />
+
+      <SaveRow busy={busy} saved={saved} problem={problem} />
+    </form>
+  )
+}
+
+// PhotosForm holds the limits on each person's photo library. They are read
+// when a file is uploaded or a photo is deleted, so a change applies to the
+// next one and there is nothing to restart.
+export function PhotosForm({ settings, onSaved }: { settings: PhotosSettings; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const { busy, problem, saved, save } = useSaver(onSaved)
+
+  const [maxFileBytes, setMaxFileBytes] = useState(settings.maxFileBytes)
+  const [maxAccountBytes, setMaxAccountBytes] = useState(settings.maxAccountBytes)
+  const [trashRetention, setTrashRetention] = useState(settings.trashRetention)
+
+  useEffect(() => {
+    setMaxFileBytes(settings.maxFileBytes)
+    setMaxAccountBytes(settings.maxAccountBytes)
+    setTrashRetention(settings.trashRetention)
+  }, [settings])
+
+  return (
+    <form
+      className="card"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void save({ photos: { maxFileBytes, maxAccountBytes, trashRetention } })
+      }}
+    >
+      <h3>{t('serverSettings.photosTitle')}</h3>
+      <p className="muted">{t('serverSettings.photosIntro')}</p>
+
+      <div className="form-narrow">
+        <label>
+          <span>{t('serverSettings.photosMaxFileBytes')}</span>
+          <input className="mono" value={maxFileBytes} onChange={(event) => setMaxFileBytes(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.photosMaxFileBytesHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.photosMaxAccountBytes')}</span>
+          <input
+            className="mono"
+            value={maxAccountBytes}
+            onChange={(event) => setMaxAccountBytes(event.target.value)}
+          />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.photosMaxAccountBytesHint')}</p>
+
+        <label>
+          <span>{t('serverSettings.photosTrashRetention')}</span>
+          <input className="mono" value={trashRetention} onChange={(event) => setTrashRetention(event.target.value)} />
+        </label>
+        <p className="muted field-hint">{t('serverSettings.photosTrashRetentionHint')}</p>
+      </div>
 
       <SaveRow busy={busy} saved={saved} problem={problem} />
     </form>

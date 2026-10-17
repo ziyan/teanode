@@ -964,3 +964,51 @@ export function ReceiptIcon(props: IconProps) {
     </Icon>
   )
 }
+
+// A heart: what a favorite photo is marked with. Outline like the rest; a
+// favorite is drawn with the page's own rule that fills it.
+export function HeartIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z" />
+    </Icon>
+  )
+}
+
+// Download: an arrow into a tray, for saving a file from the server.
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+    </Icon>
+  )
+}
+
+// Upload: the same tray with the arrow going out of it.
+export function UploadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+    </Icon>
+  )
+}
+
+// A magnifying glass with a plus in it: look closer.
+export function ZoomInIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.3-4.3M11 8v6M8 11h6" />
+    </Icon>
+  )
+}
+
+// Restore: an arrow turning back, for bringing something out of the trash.
+export function RestoreIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 7v6h6" />
+      <path d="M3.5 13a9 9 0 1 0 2.6-6.4L3 9.5" />
+    </Icon>
+  )
+}

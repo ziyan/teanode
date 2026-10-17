@@ -100,6 +100,9 @@ const AgentConversationsPage = lazyPage(async () => ({
 const RecordingsPage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "recordings" */ './pages/recordings')).RecordingsPage,
 }))
+const PhotosPage = lazyPage(async () => ({
+  default: (await import(/* webpackChunkName: "photos" */ './pages/photos/library')).PhotosPage,
+}))
 const KnowledgePage = lazyPage(async () => ({
   default: (await import(/* webpackChunkName: "account" */ './pages/knowledge')).KnowledgePage,
 }))
@@ -535,6 +538,8 @@ export function App() {
                       splat route would read it as one. */}
                       <Route path="/knowledge/explore" element={<KnowledgeExplorePage />} />
                       <Route path="/knowledge/*" element={<KnowledgePage />} />
+                      <Route path="/photos" element={<PhotosPage />} />
+                      <Route path="/photos/:photoId" element={<PhotosPage />} />
                       <Route path="/recordings" element={<RecordingsPage />} />
                       <Route path="/recordings/:recordingId" element={<RecordingsPage />} />
                       {/* What the linked institutions report, a page of its own

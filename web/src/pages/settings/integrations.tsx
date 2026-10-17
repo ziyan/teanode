@@ -12,6 +12,7 @@ import {
   IdentityForm,
   ListenForm,
   PasskeyForm,
+  PhotosForm,
   ResolverForm,
   SessionForm,
   SmtpForm,
@@ -39,6 +40,7 @@ const SETTINGS = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
+      photos { maxFileBytes maxAccountBytes trashRetention }
       ${AGENT_SELECTION}
     }
   }`
@@ -61,6 +63,7 @@ export const UPDATE = `
     $identity: IdentityParametersInput
     $storage: StorageParametersInput
     $geoip: GeoIPParametersInput
+    $photos: PhotosParametersInput
     $agent: AgentParametersInput
   ) {
     UpdateSettings(
@@ -80,6 +83,7 @@ export const UPDATE = `
       identity: $identity
       storage: $storage
       geoip: $geoip
+      photos: $photos
       agent: $agent
     ) {
       s3 { enabled bucket region endpoint pathStyle accessKeyId hasSecretAccessKey credentialsFile }
@@ -97,6 +101,7 @@ export const UPDATE = `
       identity { name mailServers externalAddresses logLevel dataDirectory }
       storage { directory spoolRetention }
       geoip { enabled databaseFile }
+      photos { maxFileBytes maxAccountBytes trashRetention }
       ${AGENT_SELECTION}
     }
   }`
@@ -182,6 +187,7 @@ export type Identity = {
 }
 export type StorageSettings = { directory: string; spoolRetention: string }
 export type GeoIP = { enabled: boolean; databaseFile?: string }
+export type PhotosSettings = { maxFileBytes: string; maxAccountBytes: string; trashRetention: string }
 
 // Spam scoring has two engines and the built-in one has parts, so it is not
 // a Service — that shape is a host and a port and nothing else.
@@ -218,6 +224,7 @@ type Settings = {
   identity: Identity
   storage: StorageSettings
   geoip: GeoIP
+  photos: PhotosSettings
 }
 
 // The six forms, in four groups.
@@ -301,6 +308,7 @@ export function IntegrationsSection({ section, part }: { section: Section; part?
           <StorageForm settings={settings.storage} onSaved={reload} />
           <ObjectStoreForm settings={settings.s3} onSaved={reload} />
           <GeoIPForm settings={settings.geoip} onSaved={reload} />
+          <PhotosForm settings={settings.photos} onSaved={reload} />
         </>
       )}
       {section === 'certificates' && (

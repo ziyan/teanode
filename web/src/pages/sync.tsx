@@ -6,7 +6,7 @@ import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { SettingsSection, SettingsRow, SettingsEmpty, SecretDialog } from '../components/settingsList'
 import { TrashIcon } from '../components/icons'
 import { useQuery } from '../components/useQuery'
-import { useSession } from '../session'
+import { hasPermission, useSession } from '../session'
 import { PasswordUsage, sortNewestFirst } from '../components/passwordUsage'
 import { useTranslation } from '../i18n/i18n'
 import { DeviceSetupDialog, DEVICE_SETUP_CAPABILITIES, type DeviceSetupCapabilities } from '../components/deviceSetup'
@@ -17,13 +17,14 @@ type Credential = {
   hasCalendarAccess: boolean
   hasRemindersAccess: boolean
   hasContactsAccess: boolean
+  hasPhotosAccess: boolean
   createdAt: string
   lastUsedAt?: string | null
 }
-const CREDENTIAL = `id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess createdAt lastUsedAt`
+const CREDENTIAL = `id credentialName hasCalendarAccess hasRemindersAccess hasContactsAccess hasPhotosAccess createdAt lastUsedAt`
 const LIST = `{ ListSyncCredentials { ${CREDENTIAL} } }`
-const CREATE = `mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!) {
- CreateSyncCredential(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess) { username password principalPath credential { ${CREDENTIAL} } }
+const CREATE = `mutation ($credentialName: String!, $hasCalendarAccess: Boolean!, $hasRemindersAccess: Boolean!, $hasContactsAccess: Boolean!, $hasPhotosAccess: Boolean!) {
+ CreateSyncCredential(credentialName: $credentialName, hasCalendarAccess: $hasCalendarAccess, hasRemindersAccess: $hasRemindersAccess, hasContactsAccess: $hasContactsAccess, hasPhotosAccess: $hasPhotosAccess) { username password principalPath credential { ${CREDENTIAL} } }
 }`
 
 const REVOKE = `mutation ($credentialId: String!) { RevokeSyncCredential(credentialId: $credentialId) }`
@@ -40,6 +41,7 @@ function AccountDeviceSetupPage() {
   const [hasCalendarAccess, setHasCalendarAccess] = useState(false)
   const [hasRemindersAccess, setHasRemindersAccess] = useState(false)
   const [hasContactsAccess, setHasContactsAccess] = useState(false)
+  const [hasPhotosAccess, setHasPhotosAccess] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -52,6 +54,10 @@ function AccountDeviceSetupPage() {
     [session.userId],
   )
   const availableServices = capabilities.data?.GetDeviceSetupCapabilities
+  // Photos is not one of the services an Apple device is set up with, so the
+  // capabilities do not list it; a device password may carry it when the
+  // library is on and the person may keep one.
+  const canUsePhotos = session.services?.isPhotosEnabled === true && hasPermission(session.permissions, 'photos:use')
   const canSetUp =
     !!availableServices &&
     (availableServices.canSetUpMail ||
@@ -66,6 +72,7 @@ function AccountDeviceSetupPage() {
       hasCalendarAccess: hasCalendarAccess && availableServices?.canSetUpCalendar === true,
       hasRemindersAccess: hasRemindersAccess && availableServices?.canSetUpReminders === true,
       hasContactsAccess: hasContactsAccess && availableServices?.canSetUpContacts === true,
+      hasPhotosAccess: hasPhotosAccess && canUsePhotos,
     }
     try {
       const response = await graphql<{
@@ -99,9 +106,13 @@ function AccountDeviceSetupPage() {
     credentialName.trim() !== '' &&
     ((hasCalendarAccess && availableServices?.canSetUpCalendar === true) ||
       (hasRemindersAccess && availableServices?.canSetUpReminders === true) ||
-      (hasContactsAccess && availableServices?.canSetUpContacts === true))
+      (hasContactsAccess && availableServices?.canSetUpContacts === true) ||
+      (hasPhotosAccess && canUsePhotos))
   const hasCollections =
-    availableServices?.canSetUpCalendar || availableServices?.canSetUpReminders || availableServices?.canSetUpContacts
+    availableServices?.canSetUpCalendar ||
+    availableServices?.canSetUpReminders ||
+    availableServices?.canSetUpContacts ||
+    canUsePhotos
   return (
     <>
       <SettingsSection
@@ -164,6 +175,7 @@ function AccountDeviceSetupPage() {
                   credential.hasCalendarAccess && t('nav.calendar'),
                   credential.hasRemindersAccess && t('services.remindersLabel'),
                   credential.hasContactsAccess && t('nav.contacts'),
+                  credential.hasPhotosAccess && t('nav.photos'),
                 ]
                   .filter(Boolean)
                   .join(', ')}
@@ -237,6 +249,16 @@ function AccountDeviceSetupPage() {
                 onChange={(event) => setHasContactsAccess(event.target.checked)}
               />
               {t('nav.contacts')}
+            </label>
+          )}
+          {canUsePhotos && (
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={hasPhotosAccess}
+                onChange={(event) => setHasPhotosAccess(event.target.checked)}
+              />
+              {t('nav.photos')}
             </label>
           )}
         </FormDialog>

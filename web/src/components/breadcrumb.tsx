@@ -68,6 +68,9 @@ const SECTION_PAGES: { path: string; label: Key; isRailItem?: boolean }[] = [
   { path: '/manage/mail/compose', label: 'nav.compose' },
   { path: '/mailbox/contacts', label: 'nav.contacts', isRailItem: true },
   { path: '/mailbox/calendar', label: 'nav.calendar', isRailItem: true },
+  // Photos has a row in the rail beside the calendar, and a path under it
+  // for the photo being looked at.
+  { path: '/photos', label: 'nav.photos', isRailItem: true },
   { path: '/mailbox/compose', label: 'nav.compose' },
   // Missing, so this page fell back to the section it is in and called
   // itself Mailbox — in the trail, in the heading, and in the tab.

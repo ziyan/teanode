@@ -11,7 +11,7 @@ import { useTranslation } from '../i18n/i18n'
 import type { HostedServiceKey } from '../services'
 import { MailSetupPage } from './setup'
 
-const CAPABILITIES = `isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup`
+const CAPABILITIES = `isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup`
 // Beside the services: what waits for a restart, and whether the person
 // setting up has turned on an agent of their own, which is the last switch
 // between an enabled assistant and a conversation.
@@ -23,8 +23,8 @@ const SETUP = `{
 // manages the server need not be somebody who may use an agent.
 const READ_AGENT = `{ ReadAgent { agent { id enabled } allowed { enabled } } }`
 const TURN_ON_AGENT = `mutation { UpdateAgent(enabled: true) { agent { id enabled } } }`
-const UPDATE = `mutation ($isMailRoutingEnabled: Boolean, $isMailboxEnabled: Boolean, $isCalendarEnabled: Boolean, $isRemindersEnabled: Boolean, $isContactsEnabled: Boolean, $hasCompletedSetup: Boolean, $mailServerName: String) {
-  UpdateServices(isMailRoutingEnabled: $isMailRoutingEnabled, isMailboxEnabled: $isMailboxEnabled, isCalendarEnabled: $isCalendarEnabled, isRemindersEnabled: $isRemindersEnabled, isContactsEnabled: $isContactsEnabled, hasCompletedSetup: $hasCompletedSetup, mailServerName: $mailServerName) { ${CAPABILITIES} }
+const UPDATE = `mutation ($isMailRoutingEnabled: Boolean, $isMailboxEnabled: Boolean, $isCalendarEnabled: Boolean, $isRemindersEnabled: Boolean, $isContactsEnabled: Boolean, $isPhotosEnabled: Boolean, $hasCompletedSetup: Boolean, $mailServerName: String) {
+  UpdateServices(isMailRoutingEnabled: $isMailRoutingEnabled, isMailboxEnabled: $isMailboxEnabled, isCalendarEnabled: $isCalendarEnabled, isRemindersEnabled: $isRemindersEnabled, isContactsEnabled: $isContactsEnabled, isPhotosEnabled: $isPhotosEnabled, hasCompletedSetup: $hasCompletedSetup, mailServerName: $mailServerName) { ${CAPABILITIES} }
 }`
 
 type SetupAnswer = {
@@ -46,6 +46,7 @@ const hostedKeys: HostedServiceKey[] = [
   'isCalendarEnabled',
   'isRemindersEnabled',
   'isContactsEnabled',
+  'isPhotosEnabled',
 ]
 
 export function SetupPage() {
@@ -117,6 +118,7 @@ export function SetupPage() {
     isCalendarEnabled: t('nav.calendar'),
     isRemindersEnabled: t('services.remindersLabel'),
     isContactsEnabled: t('nav.contacts'),
+    isPhotosEnabled: t('nav.photos'),
   }
   const descriptions = {
     isMailRoutingEnabled: t('services.routing'),
@@ -124,6 +126,7 @@ export function SetupPage() {
     isCalendarEnabled: t('services.calendar'),
     isRemindersEnabled: t('services.reminders'),
     isContactsEnabled: t('services.contacts'),
+    isPhotosEnabled: t('services.photos'),
   }
   // Which of the two presets the choices on screen are, if either: the
   // assistant alone has no hosted service, and mail is routing and mailboxes
@@ -133,7 +136,8 @@ export function SetupPage() {
     choices.isMailboxEnabled &&
     !choices.isCalendarEnabled &&
     !choices.isRemindersEnabled &&
-    !choices.isContactsEnabled
+    !choices.isContactsEnabled &&
+    !choices.isPhotosEnabled
   const chosenPreset = !hostedKeys.some((serviceKey) => choices[serviceKey]) ? 'assistant' : hasOnlyMail ? 'mail' : null
   function preset(isMailSelected: boolean) {
     setChoices(
@@ -145,6 +149,7 @@ export function SetupPage() {
           isCalendarEnabled: false,
           isRemindersEnabled: false,
           isContactsEnabled: false,
+          isPhotosEnabled: false,
         },
     )
     setIsReviewing(false)
@@ -325,7 +330,8 @@ export function SetupPage() {
         )}
         {(setup.selectedServices.isCalendarEnabled ||
           setup.selectedServices.isRemindersEnabled ||
-          setup.selectedServices.isContactsEnabled) && (
+          setup.selectedServices.isContactsEnabled ||
+          setup.selectedServices.isPhotosEnabled) && (
           <p>
             <Link to="/settings/devices">{t('services.sync')}</Link>
           </p>

@@ -15019,3 +15019,614 @@ body.has-recording-bar .content {
 .finance-paystub-lines td {
   white-space: nowrap;
 }
+
+/* --- photos ---------------------------------------------------------------
+   The library's timeline, the viewer over it, and the upload tray. */
+.photos-page {
+  position: relative;
+}
+
+.photos-page > .settings-section {
+  margin-top: var(--space-4);
+}
+
+.photo-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+  /* As tall with a selection as without, so the grid does not move when the
+     first cell is ticked. */
+  min-height: 40px;
+}
+
+.photo-toolbar input[type='search'] {
+  flex: 1 1 220px;
+  max-width: 360px;
+  width: auto;
+}
+
+.photo-toolbar .segmented {
+  align-self: stretch;
+}
+
+.photo-toolbar .segmented button {
+  height: 100%;
+  padding: 4px 12px;
+}
+
+.photo-selection-bar {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  flex-wrap: nowrap;
+}
+
+.photo-selection-bar .icon-button {
+  flex: 0 0 auto;
+}
+
+.photo-trash-note {
+  margin: 0 0 var(--space-3);
+}
+
+.photo-day-heading {
+  margin: var(--space-6) 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.photo-day:first-child .photo-day-heading {
+  margin-top: 0;
+}
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 4px;
+}
+
+.photo-cell {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--field);
+}
+
+.photo-open {
+  display: block;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+}
+
+.photo-open:hover:not(:disabled) {
+  background: transparent;
+}
+
+.photo-open:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.photo-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--field);
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+}
+
+.photo-cell.is-selected .photo-image {
+  transform: scale(0.88);
+  border-radius: 4px;
+}
+
+.photo-cell.is-selected {
+  background: color-mix(in srgb, var(--accent) 22%, var(--field));
+}
+
+.photo-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.photo-state-failed {
+  color: var(--bad);
+}
+
+.photo-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: photo-spin 900ms linear infinite;
+}
+
+@keyframes photo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-spinner {
+    animation-duration: 3s;
+  }
+}
+
+.photo-mark {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 55%));
+}
+
+.photo-mark-length {
+  right: 5px;
+  bottom: 5px;
+  padding: 3px 6px;
+  border-radius: var(--radius-round);
+  background: rgb(0 0 0 / 55%);
+  filter: none;
+}
+
+.photo-mark-favorite {
+  left: 6px;
+  bottom: 6px;
+}
+
+.photo-mark-favorite svg {
+  fill: currentColor;
+}
+
+/* The mark Live Photos wear: a ring with a dot in it. */
+.photo-mark-live {
+  top: 6px;
+  right: 6px;
+  width: 16px;
+  height: 16px;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
+.photo-mark-live::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* The tick that selects. It is a real checkbox, kept for the keyboard and
+   for assistive technology, drawn as a round mark over the corner. */
+.photo-check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.photo-check input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.photo-check-box {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 30%);
+  color: #fff;
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+}
+
+.photo-cell.is-selected .photo-check-box {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.is-selecting .photo-check,
+.photo-check:focus-within {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .photo-cell:hover .photo-check {
+    opacity: 1;
+  }
+}
+
+/* A touch screen has no hover to reveal the tick, and without it nothing
+   could be selected. */
+@media (hover: none) {
+  .photo-check {
+    opacity: 0.85;
+  }
+}
+
+/* --- the viewer --- */
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  background: var(--background);
+  color: var(--text);
+}
+
+.photo-viewer-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.photo-viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+}
+
+.photo-viewer-spacer {
+  flex: 1 1 auto;
+}
+
+.photo-viewer-bar .icon-button.is-on,
+.photo-live-button.is-on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.photo-viewer-bar .photo-favorite.is-on {
+  background: transparent;
+  color: var(--bad);
+}
+
+.photo-viewer-bar .photo-favorite.is-on svg {
+  fill: currentColor;
+}
+
+.photo-live-button {
+  padding: 4px 12px;
+  border-radius: var(--radius-round);
+  font-size: 12px;
+  font-weight: 650;
+  touch-action: none;
+  user-select: none;
+}
+
+.photo-viewer-stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.photo-viewer-picture {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.photo-fitted,
+.photo-live-video,
+.photo-viewer-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.photo-live-video {
+  position: absolute;
+  inset: 0;
+  background: var(--background);
+}
+
+.photo-viewer-video {
+  background: #000;
+  border-radius: var(--radius-2);
+}
+
+.photo-viewer-zoom {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  cursor: zoom-out;
+}
+
+.photo-zoomed {
+  display: block;
+  max-width: none;
+  margin: auto;
+}
+
+/* A picture the browser cannot draw as it is, zoomed from the large
+   preview: twice the size of the window. */
+.photo-zoomed-preview {
+  width: 200%;
+  height: auto;
+}
+
+.photo-viewer-message {
+  color: var(--muted);
+}
+
+.photo-viewer-step {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--shadow-raised);
+}
+
+.photo-viewer-previous {
+  left: var(--space-3);
+}
+
+.photo-viewer-next {
+  right: var(--space-3);
+}
+
+.photo-viewer-details {
+  flex: 0 0 320px;
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.photo-viewer-details h2 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-title);
+}
+
+.photo-viewer-details dl {
+  margin: 0;
+}
+
+.photo-viewer-details dl > div + div {
+  margin-top: var(--space-3);
+}
+
+.photo-viewer-details dt {
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+.photo-viewer-details dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  /* Under the picture rather than beside it: a sheet that rises from the
+     bottom edge. */
+  .photo-viewer-details {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 2;
+    max-height: 55%;
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    border-left: none;
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
+    box-shadow: var(--shadow-floating);
+  }
+
+  .photo-viewer-step {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* --- the drop target --- */
+.photo-drop {
+  position: fixed;
+  inset: var(--space-4);
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-3);
+  background: color-mix(in srgb, var(--background) 88%, transparent);
+  color: var(--text);
+  pointer-events: none;
+}
+
+/* --- the upload tray --- */
+.photo-tray {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 45;
+  width: 340px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  background: var(--surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.photo-tray-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+
+.photo-tray-list {
+  max-height: 40vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.photo-tray-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 2px var(--space-2);
+  align-items: center;
+  padding: 6px var(--space-3);
+  font-size: var(--text-label);
+}
+
+.photo-tray-item + .photo-tray-item {
+  border-top: 1px solid var(--border);
+}
+
+.photo-tray-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-tray-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-tray-item.is-failed .photo-tray-state {
+  color: var(--bad);
+}
+
+.photo-tray-item .icon-action {
+  grid-column: 3;
+  grid-row: 1;
+  margin: -4px -6px -4px 0;
+}
+
+.photo-tray-bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border: none;
+  border-radius: var(--radius-round);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.photo-tray-bar::-webkit-progress-bar {
+  background: var(--border);
+}
+
+.photo-tray-bar::-webkit-progress-value {
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.photo-tray-bar::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.photo-tray-bar:indeterminate {
+  background-color: var(--border);
+  background-image: linear-gradient(var(--muted), var(--muted));
+  background-repeat: no-repeat;
+  background-size: 40% 100%;
+  animation: photo-tray-wait 1.4s ease-in-out infinite;
+}
+
+@keyframes photo-tray-wait {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-tray-bar:indeterminate {
+    animation: none;
+  }
+}
+
+.photo-tray-bar.is-reading::-webkit-progress-value {
+  background: var(--muted);
+}
+
+.photo-tray-bar.is-reading::-moz-progress-bar {
+  background: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .photo-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .photo-tray {
+    right: var(--space-2);
+    bottom: var(--space-2);
+    left: var(--space-2);
+    width: auto;
+    max-width: none;
+  }
+}
