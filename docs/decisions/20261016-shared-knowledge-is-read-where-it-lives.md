@@ -52,9 +52,8 @@ the GraphQL resolvers that resolves a page through a share before it
 resolves it in the reader's own graph. The prompt carries a short index of
 what is shared with the person, bounded like the rest of the index.
 
-Shared pages cannot be written by the reader. Knowledge that a household
-writes together needs an owner of its own; that is the circle agent, which
-is a separate decision and not part of this one.
+Shared pages cannot be written by the reader. Knowledge a household
+writes together, with no single owner, is not part of this design.
 
 A reader's agent that learns something new about a shared subject learns
 it in its own graph, under its own page, and the two pages can disagree.

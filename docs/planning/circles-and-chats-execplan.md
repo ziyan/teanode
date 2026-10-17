@@ -1,65 +1,76 @@
-# Circles: chats between people, shared calendars and memory, faces, and a guardian's approval
+# Circles: chats with people in the drawer, shared calendars, memory and payments, and faces
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds. It is maintained in accordance with the ExecPlan rules the maintainer keeps outside this repository; everything a contributor needs is written here.
 
 ## Purpose / Big Picture
 
-Today every account on a TeaNode server is alone. A household, a few friends or a small team on one server can only reach each other by mail, and each person's agent knows only what reached that one person. After this plan:
+Today every account on a TeaNode server is alone. A household, a few friends or colleagues on one server can only reach each other by mail, and each person's agent knows only what reached that one person. After this plan:
 
-- People who share a **circle** (a family, friends, a team) write to each other in **chats**: directly, two people, or as a group, on the dashboard, the iPhone app and the command line, with read state, reactions, pictures and phone notifications.
-- A person can bring their own agent into any chat by addressing it. The agent answers in the chat; what it did to find the answer (reading mail, looking at the calendar) stays in the owner's own conversation, and nobody else can start it unless the owner allowed that for the chat.
+- People who share a **circle** (their family, friends or colleagues) write to each other in **chats**: two people directly, or a group. A chat is one more conversation in the drawer and in the iPhone app's conversation list, read, written and reacted to exactly like a conversation with the agent, with read state, pictures and phone notifications. There is no separate chat page to learn.
+- A person can bring their own agent into any chat by addressing it. The agent answers in the chat; what it did to find the answer (reading mail, looking at the calendar) stays in the owner's own view of the chat, and nobody else can start it unless the owner allowed that for the chat.
 - A person can let the people in a circle see their calendar at a level they choose (just busy, titles, details, or edit), and a family can keep one calendar everybody writes. The agent can answer "when are we all free on Saturday".
 - A person can share part of their memory (a page and everything under it, such as the children's school or a grandparent's care) with a circle or a person. The other person's agent reads it live, read only, and it disappears from them the moment it is taken back.
+- A person who holds the household's payment skill can share its paying tool with somebody in their circle, with limits: a spouse pays within them without asking, and anything above them becomes an approval the owner answers. A child's every purchase is an approval their guardians answer, and approving it runs exactly the payment that was asked, on the owner's computer.
 - People have a picture, and every agent has a drawn face that moves with what the agent is doing: thinking, speaking, using a tool, waiting for an answer, dreaming.
-- In a family circle a child can ask for something to be bought. A guardian approves or declines it from a card or a phone notification, and if they choose, their own agent buys it with their own payment skill on their own computer.
 
-To see it working at the end: two accounts in one family circle, one an admin and one a child. The child sends "can I get the paperback of the book for school, 12.99?" to their agent in the drawer; the agent proposes a purchase approval, the child approves the card; the guardian's phone shows "Approve?"; the guardian opens the dashboard's Chats page, sees the family chat, sees the child's message about the book and the approval card in their own drawer, and approves with "have my agent buy it". The child's drawer then says the purchase was approved. Along the way the guardian's agent's face is shown thinking, then working, then waiting while Link asks the guardian.
+To see it working at the end: three accounts in one family circle, two adults (one holding the Link skill on their computer) and a child. The holder shares `link_pay` with the other adult with a limit of 100.00 a payment, and with the child (approval for every payment, which a child's share always has). The other adult asks their agent in the drawer to pay for a 40.00 order: it runs on the holder's computer and Link asks in its app. The child writes in the family chat, in the drawer, "can I get the paperback of the book for school?", then asks their agent "@<agent> please buy it, 12.99"; the child's agent shows the purchase on a card, the child approves it, and an approval reaches both guardians as a card in their drawer and a phone notification. One guardian approves; the payment runs on the holder's computer; the child's drawer says it went through. Along the way each agent's face shows it thinking, then working, then waiting.
 
-The design reasons are in six decision records, all dated 2026-10-16 under `docs/decisions/`: `people-on-one-server-meet-in-circles`, `a-chat-belongs-to-the-people-in-it`, `shared-knowledge-is-read-where-it-lives`, `a-calendar-is-shared-at-a-level`, `a-guardian-answers-and-pays-from-their-own-agent`, and `the-agents-face-is-drawn-and-moves-with-its-run`. They are proposed, not accepted, until the maintainer agrees with them; the first implementation pull request marks them accepted or records what changed.
+The design reasons are in six decision records, all dated 2026-10-16 under `docs/decisions/`: `people-on-one-server-meet-in-circles`, `a-chat-is-a-conversation-with-people-in-it`, `shared-knowledge-is-read-where-it-lives`, `a-calendar-is-shared-at-a-level`, `a-payment-skill-is-shared-call-by-call`, and `the-agents-face-is-drawn-and-moves-with-its-run`. They are proposed, not accepted, until the maintainer agrees with them; the first implementation pull request marks them accepted or records what changed.
 
 ## Progress
 
 - [x] (2026-10-16) Mapped accounts, access groups, conversations, streaming, push, cards, memory, calendar, the Link skill and avatars; wrote the six decision records and this plan.
-- [ ] Maintainer review of the decisions and of the open questions in the Decision Log.
+- [x] (2026-10-16) Maintainer answered the first open questions (see the Decision Log); revised: chats live in the drawer, guardians read their children's conversations, payment skills are shared with limits, no circle agent, kinds are family, friends and colleagues.
+- [ ] Maintainer review of the revised decisions.
 - [ ] Milestone 1: pictures for people.
-- [ ] Milestone 2: circles, invitations and the circle directory.
-- [ ] Milestone 3: chats between people.
+- [ ] Milestone 2: circles, invitations and guardians.
+- [ ] Milestone 3: chats in the drawer.
 - [ ] Milestone 4: the agent's face and its activity state.
 - [ ] Milestone 5: agents in chats.
 - [ ] Milestone 6: shared calendars and the circle calendar.
 - [ ] Milestone 7: shared memory.
-- [ ] Milestone 8: approvals, purchases and allowances.
-- [ ] Milestone 9 (decision pending): the circle agent.
+- [ ] Milestone 8: shared payment skills and approvals.
 
 ## Surprises & Discoveries
 
 - Observation: there is no relationship between accounts anywhere in the schema. The only "group" is the access group (`group`, `user_group`, `group_role` in migration 0014), which says what an account may manage. "Household" and "family" appear only in comments.
   Evidence: `internal/db/migrations/0014_access_control.sql`, `internal/models/user.go`; a search for household, family, team and organization in `internal/models` and `internal/db`.
 
-- Observation: a card can only be answered by the account that owns the agent. `requireAgentPerson` in `internal/api/v1api/apigraph/agent_ask.go` resolves the caller to their own agent, and the card is looked up under that agent. So a guardian's approval cannot be an ordinary card of the child's agent; it needs its own row and its own mutation.
+- Observation: a card can only be answered by the account that owns the agent. `requireAgentPerson` in `internal/api/v1api/apigraph/agent_ask.go` resolves the caller to their own agent, and the card is looked up under that agent. So an approval answered by somebody else cannot be an ordinary card; it needs its own row and its own mutation.
   Evidence: `agent_ask.go` (`requireAgentPerson`, `ResolveAgentConfirmation`), `agent_interaction.go` (`answerInteraction`).
 
-- Observation: payments run on the person's own computer as the person. The `link` skill (in the separate skills registry, `skills/link/skill.md`) calls `link-cli`, never asks for card numbers, never passes `--approve`, and every spend request waits for the person in the Link app. This is what makes "give the child the parent's Link" wrong and "the guardian's agent pays" right.
+- Observation: an operator with `agent:act` can already read anybody's conversation: `conversationFor` in `agent_ask.go` falls back to another person's conversation when the caller holds it. A guardian's read of a child's conversations is the same fallback with a narrower test, which is why the maintainer considered it no new exposure.
+  Evidence: `internal/api/v1api/apigraph/agent_ask.go`, `conversationFor`; `internal/models/permission.go`, `PermissionAgentAct`.
+
+- Observation: payments run on the person's own computer as the person. The `link` skill (in the separate skills registry, `skills/link/skill.md`) calls `link-cli`, never asks for card numbers, never passes `--approve`, and every spend request waits in the Link app. `link_pay` has three actions: `card` (a one-time card for a merchant, with `amount_cents` and `currency` in its arguments), `url` (pays an address answering HTTP 402, whose amount is not in the arguments) and `report`. So a limit can be checked before a `card` payment and cannot be before a `url` one.
 
 - Observation: the run events already reduce to an activity state. `activityStateOf` in `internal/agent/live_activity.go` maps `confirmation`, `question` and `locate` to waiting and `text`, `message`, `tool_call` and `tool_result` to working, for the iPhone's Live Activity. The face's states extend this one function rather than inventing a second mapping.
 
-- Observation: phone notifications target an agent, not a person (`notifyPhones(agentId, ...)` in `internal/agent/phone_push.go`, phones in `agent_phone` keyed by agent). A chat message to somebody whose agent is off would reach no phone. Milestone 3 has to make push target a person's phones whether or not their agent is on.
+- Observation: phone notifications target an agent, not a person (`notifyPhones(agentId, ...)` in `internal/agent/phone_push.go`, phones in `agent_phone` keyed by agent). Since every person who chats gets an `agent` row (switched off if they never turned it on), phones keep hanging from it and nothing about phones moves.
 
-- Observation: `chat` is already a word here, for chat archives read as a knowledge source (`internal/agent/ingest_document.go`, the `mattermost-mm` source type). A TeaNode chat read by an agent is also a chat being read as a source, so the word stays and means the same idea; the source kind for it is `chat` as well, with the chat's id.
+- Observation: `chat` is already a word here, for chat archives read as a knowledge source (`internal/agent/ingest_document.go`, the `mattermost-mm` source type), and `teanode agent chat` is the terminal's turn-by-turn talk with the agent. Both mean the same idea as a chat with people (a conversation), so the word stays; `teanode agent chat --conversation <a chat>` simply works.
 
 ## Decision Log
 
-- Decision: the word for a set of people is **circle**, with `circle_kind` `family`, `friends` or `work` and `member_role` `admin`, `member` or `child`. Admins of a family circle are the child's **guardians**.
-  Rationale: `group` is the access group and must not mean two things. `household` does not fit colleagues. One word with a kind covers the three cases the request names. See `20261016-people-on-one-server-meet-in-circles.md`.
-  Date/Author: 2026-10-16, design.
+- Decision: the word for a set of people is **circle**, with `circle_kind` `family`, `friends` or `colleagues` and `member_role` `admin`, `member` or `child`; screens say the kind where "circle" would read oddly ("your colleagues").
+  Rationale: `group` is the access group and must not mean two things. The maintainer asked whether "circle" was awkward for coworkers and settled on the kind carrying it. See `20261016-people-on-one-server-meet-in-circles.md`.
+  Date/Author: 2026-10-16, maintainer.
 
-- Decision: chats are new tables, not `agent_conversation` rows, and an agent's turn in a chat runs in the agent's own conversation of the new kind `chat`, with only its answer posted to the chat.
-  Rationale: a conversation is one agent's and holds its tool results; a chat is several people's. Keeping the working transcript with the owner is what stops one person's mail reaching the others through a tool result. See `20261016-a-chat-belongs-to-the-people-in-it.md`.
-  Date/Author: 2026-10-16, design.
+- Decision: **guardian** is a flag on an adult member of a family circle (`circle_member.is_guardian`), separate from `admin`. Admins manage the circle; guardians answer their children's approvals and may read their children's conversations, read only, audited, and the child is told.
+  Rationale: the maintainer answered yes to guardians reading a child's chats, because an operator can already read anyone's, and asked whether an admin only administers the circle. It does; a grandparent may manage the family calendar without answering for the children, so the two are kept apart.
+  Date/Author: 2026-10-16, maintainer.
+
+- Decision: a chat is shown and used as a conversation, in the drawer and the app's conversation screen, through the existing conversation operations. Storage keeps what the people and agents say once, in `chat_message`, and each member's own agent's working rows in that member's `agent_conversation` of kind `chat`; reading interleaves the two.
+  Rationale: the maintainer asked to reuse the drawer and the agent conversations rather than add a new interface and navigation. One shared set of conversation rows was not possible because they would include each member's agent's tool results. See `20261016-a-chat-is-a-conversation-with-people-in-it.md`.
+  Date/Author: 2026-10-16, maintainer.
 
 - Decision: only a person's message starts an agent's turn in a chat, and by default only the agent's owner can start it.
   Rationale: no agent-to-agent loops, no other member steering somebody's agent into their mail. An owner may let others ask, chat by chat, and those turns are held to what all members can see.
   Date/Author: 2026-10-16, design.
+
+- Decision: payments are shared as named tools of a skill, with limits per payment and per month, run on the owner's computer; above a limit, or with no readable amount, a call becomes an approval for the owner; a child's share needs an approval for every call, answered by a guardian.
+  Rationale: the maintainer pointed out that a spouse, an adult member, needs to pay with the household's Link too. One mechanism covers both the spouse (limits, rarely asked) and the child (always asked), and approving runs exactly the asked call instead of a fresh turn of the approver's agent. See `20261016-a-payment-skill-is-shared-call-by-call.md`.
+  Date/Author: 2026-10-16, maintainer.
 
 - Decision: memory is shared as a live read-only view of a subtree of pages, never copied.
   Rationale: a copy is stale the next day and survives being taken back. See `20261016-shared-knowledge-is-read-where-it-lives.md`.
@@ -69,25 +80,25 @@ The design reasons are in six decision records, all dated 2026-10-16 under `docs
   Rationale: the three things people ask of each other's calendars are different, and free-busy already exists as one piece of code. See `20261016-a-calendar-is-shared-at-a-level.md`.
   Date/Author: 2026-10-16, design.
 
-- Decision: a child's purchase is an **approval** answered by a guardian; the guardian's own agent pays with the guardian's own tools.
-  Rationale: see `20261016-a-guardian-answers-and-pays-from-their-own-agent.md`.
-  Date/Author: 2026-10-16, design.
-
 - Decision: the agent's face is a drawn, parametric description, not a generated image; a person's avatar is an uploaded picture with an initial as the fallback.
   Rationale: it can move with the run, it is the same on every surface, and it needs no image model. See `20261016-the-agents-face-is-drawn-and-moves-with-its-run.md`.
   Date/Author: 2026-10-16, design.
 
+- Decision: no circle agent. A circle has no agent of its own and no graph its members write together.
+  Rationale: the maintainer agreed to drop it for now; it would need `agent.user_id` to become optional, which every agent code path assumes.
+  Date/Author: 2026-10-16, maintainer.
+
+- Decision: when an account is deleted, its chat messages are kept, shown as from a deleted account under the name it had (`chat_member.removed_at` and `member_name` kept on the membership row; `author_user_id` cleared).
+  Rationale: the maintainer agreed to a soft delete: the others' replies make no sense without what they answered.
+  Date/Author: 2026-10-16, maintainer.
+
+- Decision: people on other servers are out of scope.
+  Rationale: the maintainer's answer. Reaching them stays mail.
+  Date/Author: 2026-10-16, maintainer.
+
 - Decision: the milestones ship in the order of this plan, each as its own pull request, each on every surface (dashboard, agent tools, command line, iPhone app) before the next starts.
   Rationale: `CONTRIBUTING.md` requires parity per capability. Pictures come first because every later screen shows people; circles come before chats because a chat's members are drawn from circles; faces come before agents in chats because a chat with two agents needs them told apart.
   Date/Author: 2026-10-16, design.
-
-- Open question for the maintainer: may a guardian read a child's chats? Proposed answer: no. A guardian sees the child's approvals, which circles and chats the child is in, and the child's agent's settings, but not the messages. Reading a child's messages is the kind of thing a family decides for itself, and a server that does it silently teaches the child to use another app.
-
-- Open question for the maintainer: should a circle have an agent of its own (Milestone 9)? Proposed answer: not in the first release. A circle agent would own a graph the members write together and answer anyone in the circle chat, and it needs `agent.user_id` to become optional, which every agent code path assumes. The shared views of Milestone 7 cover reading each other's knowledge without it.
-
-- Open question for the maintainer: when an account is deleted, what happens to what it wrote in chats? Proposed answer: the messages stay, shown as from "a former member", because the other people's replies make no sense without them; the author link is cleared and the picture removed.
-
-- Open question for the maintainer: chats with people on other servers. Proposed answer: out of scope. A circle is one server's accounts; reaching anyone else stays mail.
 
 ## Outcomes & Retrospective
 
@@ -122,11 +133,11 @@ Migrations are numbered SQL files in `internal/db/migrations` with a matching `.
 Terms this plan introduces, each used with one meaning everywhere (tables, Go, GraphQL, command line, tools, screens):
 
 - **circle**, **circle kind**, **member role**, **guardian**, **invitation**: see the first decision record.
-- **chat**: a conversation between people. **direct chat** (two people) and **group chat**; the **circle chat** is the group chat every circle has. A **chat message** is written by a person or by an agent.
+- **chat**: a conversation with people in it. **direct chat** (two people) and **group chat**; the **circle chat** is the group chat every circle has. A **chat message** is written by a person or by an agent and is seen by every member. A member's **chat conversation** is their own `agent_conversation` of kind `chat` for that chat, which also holds what their own agent did there.
 - **face**: the agent's drawn picture. **activity state**: what the agent is doing, which the face shows.
 - **avatar**: a person's picture.
-- **share**: a row that lets a circle or a person read something of somebody else's. A **calendar share** has a **share level**; a **page share** covers a path and everything under it.
-- **approval**: a child's request to their guardians, with an **approval kind** and an **approval state**. An **allowance** is a monthly amount a child's approved purchases count against.
+- **share**: a row that lets a circle or a person use something of somebody else's. A **calendar share** has a **share level**; a **page share** covers a path and everything under it; a **skill share** names tools of a skill and has limits.
+- **approval**: a request that a person, not an agent, must answer: the owner of a skill share for a call above its limits, or a child's guardians for anything a child may not do alone. It has an **approval kind** and an **approval state**.
 
 ## Plan of Work
 
@@ -134,7 +145,7 @@ Each milestone is one pull request. Each lands on all four surfaces, follows the
 
 ### Milestone 1: pictures for people
 
-At the end of this milestone every person can upload a picture, and every place that shows a person (the account menu, the users page, and later the chats) shows it, or their initial on a color of their own. The closest existing feature is the contact photo (`internal/contacts/contacts.go` `Photo`, served by `internal/api/v1api/apigraph/contact_photo.go`).
+At the end of this milestone every person can upload a picture, and every place that shows a person (the account menu, the users page, and later the chats in the drawer) shows it, or their initial on a color of their own. The closest existing feature is the contact photo (`internal/contacts/contacts.go` `Photo`, served by `internal/api/v1api/apigraph/contact_photo.go`).
 
 Add migration `NNNN_user_avatar.sql`: `user.avatar_file_id varchar(64) NULL` and `user.avatar_updated_at timestamptz NULL`. The picture is stored through `storage.Files` under an id of the form `avatar-user-<ULID>`.
 
@@ -146,82 +157,90 @@ Surfaces: the dashboard's account settings page gets a picture row (choose, crop
 
 Acceptance: upload a photo with location metadata from the dashboard; the account menu shows it; `curl` the avatar URL with the person's token and `exiftool` the result: no GPS fields. Remove it; the initial is back on the same color on the dashboard and the app.
 
-### Milestone 2: circles
+### Milestone 2: circles, invitations and guardians
 
-At the end of this milestone a person can make a circle, invite people by username, accept or decline invitations, see the members, change roles if they are an admin, and leave. Nothing is shared yet; the circle is the list later milestones share with. The closest existing feature is access groups (`internal/agent/tools/people/people.go` `group_manage`, `web/src/pages/access`).
+At the end of this milestone a person can make a circle, invite people by username, accept or decline invitations, see the members, change roles and guardians if they are an admin, and leave; and a guardian can read their children's conversations. Nothing else is shared yet; the circle is the list later milestones share with. The closest existing feature is access groups (`internal/agent/tools/people/people.go` `group_manage`, `web/src/pages/access`).
 
 Migration `NNNN_circle.sql`:
 
     circle: id varchar(26) primary key, created_at, modified_at, name varchar(100) not null,
-            circle_kind varchar(16) not null check in ('family','friends','work'),
+            circle_kind varchar(16) not null check in ('family','friends','colleagues'),
             created_by_user_id varchar(26) null references "user" on delete set null
     circle_member: circle_id references circle on delete cascade,
             user_id references "user" on delete cascade, member_role varchar(16) not null
-            check in ('admin','member','child'), joined_at, invited_by_user_id null,
-            primary key (circle_id, user_id)
+            check in ('admin','member','child'), is_guardian boolean not null default false,
+            joined_at, invited_by_user_id null, primary key (circle_id, user_id),
+            check (not is_guardian or member_role <> 'child')
     circle_invitation: id, circle_id references circle on delete cascade,
             invited_user_id references "user" on delete cascade, invited_by_user_id,
-            member_role, created_at, expires_at, answered_at null,
+            member_role, is_guardian, created_at, expires_at, answered_at null,
             invitation_answer varchar(16) null check in ('accepted','declined','withdrawn')
 
-plus the permission `circle:use` seeded into Administrator, Operator and Member, and a check (in Go, in one transaction holding the circle's row) that a `child` member is only in a `family` circle, that a circle always keeps at least one admin, and that a child has at least one guardian.
+plus the permission `circle:use` seeded into Administrator, Operator and Member, and checks (in Go, in one transaction holding the circle's row) that `child` and `is_guardian` occur only in a `family` circle, that a circle always keeps at least one admin, and that a family circle with a child keeps at least one guardian.
 
-`internal/models/circle.go` defines `Circle`, `CircleMember`, `CircleInvitation`, `CircleKind`, `MemberRole` and `InvitationAnswer`. `internal/db/database_circle.go` holds the queries, including `SharesCircle(userId, otherUserId string) (bool, error)` and `CircleUserIDs(userId string) ([]string, error)` (everybody the person shares a circle with), which every later milestone uses to authorize.
+`internal/models/circle.go` defines `Circle`, `CircleMember`, `CircleInvitation`, `CircleKind`, `MemberRole` and `InvitationAnswer`. `internal/db/database_circle.go` holds the queries, including `SharesCircle(userId, otherUserId string) (bool, error)`, `CircleUserIDs(userId string) ([]string, error)` (everybody the person shares a circle with) and `GuardiansOf(childUserId string) ([]string, error)` (the guardians of every family circle the child is in), which later milestones use to authorize.
 
-GraphQL operations: `ListCircles`, `ReadCircle`, `CreateCircle`, `RenameCircle`, `DeleteCircle` (admins), `InviteToCircle(circleId, username, memberRole)`, `ListCircleInvitations` (to me), `AnswerCircleInvitation(invitationId, accept)`, `WithdrawCircleInvitation`, `SetCircleMemberRole`, `RemoveCircleMember`, `LeaveCircle`, and for operators `AddCircleMember(circleId, userId, memberRole)`. `requireCircleMember(context, circleId) (*models.Circle, *models.CircleMember, error)` and `requireCircleAdmin` join the helpers in `authorize.go`. `InviteToCircle` answers the same whether or not the username exists or is already a member; an invitation to nobody is never stored. A child's attempt to accept an invitation or leave returns a refusal that says a guardian has to approve it (Milestone 8 turns that into an approval).
+GraphQL operations: `ListCircles`, `ReadCircle`, `CreateCircle`, `RenameCircle`, `DeleteCircle` (admins), `InviteToCircle(circleId, username, memberRole, isGuardian)`, `ListCircleInvitations` (to me), `AnswerCircleInvitation(invitationId, accept)`, `WithdrawCircleInvitation`, `SetCircleMemberRole(circleId, userId, memberRole, isGuardian)`, `RemoveCircleMember`, `LeaveCircle`, and for operators `AddCircleMember(circleId, userId, memberRole, isGuardian)`. `requireCircleMember(context, circleId) (*models.Circle, *models.CircleMember, error)` and `requireCircleAdmin` join the helpers in `authorize.go`. `InviteToCircle` answers the same whether or not the username exists or is already a member; an invitation to nobody is never stored. A child's attempt to accept an invitation or leave returns a refusal that says a guardian has to approve it (Milestone 8 turns that into an approval).
 
-The invited person learns of an invitation as a note in their main conversation (a new `AgentNoteKind`, `circle_invited`, when their agent is on), as a phone notification of the new kind `circle` (see Milestone 3 for push without an agent; until then only people whose agent is on get it), and on the dashboard as a badge on Circles.
+Guardians reading: `conversationFor` in `internal/api/v1api/apigraph/agent_ask.go` already falls back to another person's conversation for an operator with `agent:act`. Add a second fallback beside it: the caller is a guardian of the conversation's owner (`GuardiansOf`). The fallback is read only: `ListAgentConversations` and `ReadAgentConversation` (and `AgentConversationEvents`) accept the child's agent for a guardian, and every mutation still requires the caller's own agent. Each read writes an `audit_event` naming the guardian and the conversation. The child's drawer and app show, once per conversation list and in the agent settings, "Your guardians can read your conversations", with their names. Surfaces: the circle page lists each child with "Read their conversations", which opens the conversations page filtered to that child's agent, read only; the command line gets `teanode agent conversation list --person <username>` and `show` accepting a child's conversation; the iPhone app's circle screen links to the same list.
 
-Surfaces: dashboard page `web/src/pages/circles.tsx` at `/circles` and `/circles/{id}` (members with avatars and roles, invite, pending invitations, leave); command line `internal/cmd/circle.go`: `teanode circle list|show|create|rename|delete|invite|invitations|accept|decline|withdraw|role|remove|leave`; agent tool `internal/agent/tools/circle` with actions `list`, `show`, `invite` (risk `granting`), `answer` (risk `granting`), `leave` (`destructive`); iPhone app `CirclesView.swift` under Settings.
+The invited person learns of an invitation as a note in their main conversation (a new `AgentNoteKind`, `circle_invited`), as a phone notification of the new kind `circle` when they have a phone paired, and on the dashboard as a badge on the account menu's Circles entry.
 
-Acceptance: as person A, `teanode circle create --kind family "Home"`, `teanode circle invite <circle> personb --role member`; as person B, `teanode circle invitations` lists it, `teanode circle accept <invitation>`; `teanode circle show <circle>` as either lists both with roles. As A, invite a username that does not exist: the answer is the same as before and `teanode circle show` lists no pending invitation for it. Tests in `internal/api/v1api/apigraph/circle_test.go` cover: a non-member reading a circle gets not found; the last admin cannot leave or be demoted; a child cannot be added to a `friends` circle; removing a member removes nothing else yet (later milestones extend this test).
+Surfaces: dashboard page `web/src/pages/circles.tsx` at `/circles` and `/circles/{id}` (members with avatars, roles and the guardian mark, invite, pending invitations, leave), reached from the account menu, not a new top-level section; command line `internal/cmd/circle.go`: `teanode circle list|show|create|rename|delete|invite|invitations|accept|decline|withdraw|role|remove|leave`; agent tool `internal/agent/tools/circle` with actions `list`, `show`, `invite` (risk `granting`), `answer` (risk `granting`), `leave` (`destructive`); iPhone app `CirclesView.swift` under Settings.
 
-### Milestone 3: chats between people
+Acceptance: as person A, `teanode circle create --kind family "Home"`, `teanode circle invite <circle> personb --role member --guardian`, `teanode circle invite <circle> personc --role child`; as B and C, `teanode circle invitations` lists it and `teanode circle accept <invitation>` joins. `teanode circle show <circle>` lists all three with roles. As A, invite a username that does not exist: the answer is the same and no pending invitation is listed. As B (a guardian), `teanode agent conversation list --person personc` lists C's conversations and `show` reads one; writing to it is refused; the audit log has the read; C's drawer says their guardians can read their conversations. As C, the same for B is not found. Tests in `internal/api/v1api/apigraph/circle_test.go` cover: a non-member reading a circle gets not found; the last admin cannot leave or be demoted; a child cannot be added to a `friends` circle; a guardian of one family cannot read a child of another; a member who is not a guardian cannot read a child's conversation.
 
-At the end of this milestone people who share a circle can write to each other in direct and group chats on every surface, see who has read what, react, attach pictures, and get a phone notification. No agent takes part yet. The closest existing feature is the agent's conversation and its feed (`internal/models/insight.go`, `internal/agent/feed.go`, `web/src/components/agentDrawer.tsx`, `ios/TeaNode/Sources/ConversationView.swift`); the chat copies the drawer's message list, reply bar and reactions rather than inventing new ones.
+### Milestone 3: chats in the drawer
 
-Migration `NNNN_chat.sql`:
+At the end of this milestone people who share a circle can write to each other in direct and group chats, which appear in the drawer's conversation list beside the main and named conversations, on the conversations page, in the iPhone app's conversation list and on the command line's conversation commands. They see who has read what, react, attach pictures and get phone notifications. No agent takes part yet. There is no new page and no new navigation: the closest existing feature is the conversation itself (`internal/models/insight.go`, `internal/agent/feed.go`, `web/src/components/agentDrawer.tsx`, `web/src/pages/agentConversations.tsx`, `ios/TeaNode/Sources/ConversationView.swift`), and this milestone teaches it about people.
+
+Storage. Migration `NNNN_chat.sql`:
 
     chat: id, created_at, modified_at, chat_kind check in ('direct','group'),
           title varchar(100) null, circle_id null references circle on delete cascade,
           created_by_user_id null, last_message_at null,
           direct_key varchar(53) null unique   -- the two user ids, sorted, joined by ':'
-    chat_member: chat_id references chat on delete cascade, user_id references "user"
-          on delete cascade, member_role check in ('admin','member'), joined_at,
+    chat_member: chat_id references chat on delete cascade,
+          user_id null references "user" on delete set null, member_name varchar(100),
+          member_role check in ('admin','member'), joined_at, removed_at null,
           read_through_message_id varchar(26) null, muted_until timestamptz null,
           is_agent_reading boolean not null default false,
           is_agent_askable_by_others boolean not null default false,
-          primary key (chat_id, user_id)
+          unique (chat_id, user_id)
     chat_message: id varchar(26) primary key (a ULID, so ids sort by time), chat_id
           references chat on delete cascade, created_at,
           author_user_id null references "user" on delete set null,
+          author_member_name varchar(100) not null,
           author_agent_id null references agent on delete set null,
           agent_run_id varchar(26) null, body text not null, attachments jsonb not null
           default '[]', reply_to_message_id null, edited_at null, deleted_at null
     chat_reaction: message_id references chat_message on delete cascade,
-          reactor_user_id null, reactor_agent_id null, emoji varchar(32) not null,
           reactor_key varchar(40) not null,   -- 'user:<id>' or 'agent:<id>'
-          created_at, primary key (message_id, reactor_key)
+          emoji varchar(32) not null, created_at, primary key (message_id, reactor_key)
+    agent_conversation: add chat_id varchar(26) null references chat on delete cascade,
+          unique (agent_id, chat_id); kind gains 'chat'
 
-with an index on `chat_message (chat_id, id)`. A direct chat is unique per pair through `direct_key`, so asking for the chat with somebody twice returns the same chat. A circle's circle chat is made with the circle and its membership follows `circle_member` in the same transactions that change the circle. A group chat's members must each share a circle with the person who adds them (`SharesCircle`). The `is_agent_*` columns exist now so Milestone 5 needs no second migration of this table; nothing reads them yet.
+with an index on `chat_message (chat_id, id)`. A direct chat is unique per pair through `direct_key`, so opening the chat with somebody twice returns the same chat. A circle's circle chat is made with the circle, and its membership follows `circle_member` in the same transactions that change the circle. A group chat's members must each share a circle with the person who adds them (`SharesCircle`). The `is_agent_*` columns exist now so Milestone 5 needs no second migration of this table.
 
-`models.ChatMessage` gets a `ValidateChatMessageBody` (at most 16,000 characters, not empty unless there are attachments). Attachments reuse the agent's attachment upload path: a picture is uploaded first (`UploadChatAttachment`, the same size limits as `agent_attachment`), and the message references the stored file ids. A per-person rate limit (60 messages a minute, counted in memory per instance) stops a runaway script.
+Every member of a chat has a **chat conversation**: their own `agent_conversation` with kind `chat` and the chat's id, made in the transaction that adds them (`EnsureChatConversation(agentId, chatId)`). That needs an `agent` row for everyone, so `EnsureAgent(userId)` makes a switched-off one (`enabled = false`) for a person who never turned theirs on; check that nothing treats a switched-off agent's row as "this person uses the agent" (the usage page, the operator's agent list, the dream scheduler) and filter on `enabled` where it does. The chat conversation is where a member's own agent's working rows go in Milestone 5; in this milestone it holds nothing but its title, archive state and read state.
 
-Live delivery: a new `NOTIFY` channel `ChatEventChannel` in `internal/db/database.go` carrying only `{chatId, messageId, eventKind}` (never a body), and `internal/chat/feed.go`, a per-instance fan-out like the agent's feed. Subscriptions: `ChatEvents(chatId)` (messages, edits, deletions, reactions, read marks, typing) and `ChatListEvents` (any chat of mine changed: new message, unread count), both checked against `chat_member` at subscribe time and on every event, so a person removed from a chat stops receiving it at once.
+When an account is deleted, `chat_member.user_id` and `chat_message.author_user_id` become null by their foreign keys and `removed_at` is set; `member_name` and `author_member_name` keep the name the person had, and the screens show it as "(deleted account)".
 
-Read state: `MarkChatRead(chatId, throughMessageId)` moves `read_through_message_id` forward only. `ListChats` returns each chat with its unread count and last message.
+Reading. `ReadAgentConversation` on a chat conversation returns, newest page first as it does today, the chat's messages interleaved by id with the caller's own rows in their chat conversation. `AgentMessage` in GraphQL gains `authorKind` (`person` or `agent`), `authorUserId`, `authorName`, `authorAvatarUrl`, `authorAgentId` and `isMine`; for today's conversations these say the owner and their agent, so the drawer's code needs one path. `ListAgentConversations` lists chat conversations with the other members (names and avatars), unread counts and the last message, and takes `kind: chat` to filter. `AgentConversationEvents` on a chat conversation adds the chat's events: `said` (a new chat message, carrying the message), `edited`, `unsaid` (deleted), `reacted` (with the reactor's name), `read` (a member's read mark moved) and `typing`. Those reach every member's subscription through a new `NOTIFY` channel, `ChatEventChannel` in `internal/db/database.go`, which carries only `{chatId, messageId, chatEventKind}` (never a body), and a per-instance fan-out, `internal/chat/feed.go`, that rechecks `chat_member` for every subscriber on every event, so a person removed from a chat stops receiving it at once.
 
-Phones: add `push.NotificationKind` `chat`, and make push target a person. `agent_phone` is keyed by agent; rather than move the table, `notifyPersonPhones(userId, content)` in a new `internal/push/person.go` looks up the person's agent and its phones, and a person without an agent row gets one made disabled (an `agent` row with `enabled = false` already holds phones without the agent being on; check `PairPhone` in `internal/api/v1api/apigraph` does not require `enabled`, and make it not require it if it does). A message notifies every member but its author who is not watching the chat (presence, `internal/agent/presence.go`, extended with the chat being viewed) and has not muted it; the notification's thread id is the chat id so iOS groups them.
+Writing. `AskAgent(conversationId, message, ...)` on a chat conversation stores a chat message instead of starting a turn, and publishes it; in Milestone 5 it also starts a turn when the message addresses the sender's agent. Attachments use the existing `agent_attachment` upload, claimed by the chat message (the bytes stay where they are; the row records the chat). `ReactToAgentMessage` reacts to chat messages, one reaction per person. New operations only for what a conversation with an agent never needed: `OpenDirectChat(userId)` (returns the caller's chat conversation), `CreateGroupChat(title, userIds)`, `RenameChat`, `AddChatMember`, `RemoveChatMember`, `LeaveChat`, `EditChatMessage`, `DeleteChatMessage` (own messages; a group chat's admins may delete any), `MarkAgentConversationRead(conversationId, throughMessageId)` (forward only; it gives every conversation an unread count, not only chats), `MuteAgentConversation(conversationId, until)` and `SetChatTyping(conversationId)` (an event, nothing stored). `requireChatMember` joins `authorize.go`. A per-person rate limit (60 messages a minute, counted in memory per instance) stops a runaway script, and `ValidateChatMessageBody` caps a message at 16,000 characters.
 
-GraphQL operations: `ListChats`, `ReadChat` (newest page first, `before` for older, like `ReadAgentConversation`), `OpenDirectChat(userId)`, `CreateGroupChat(title, userIds)`, `RenameChat`, `AddChatMember`, `RemoveChatMember`, `LeaveChat`, `SendChatMessage(chatId, body, attachmentIds, replyToMessageId)`, `EditChatMessage`, `DeleteChatMessage` (own messages; admins of a group chat may delete any), `ReactToChatMessage(messageId, emoji)` (empty emoji removes), `MarkChatRead`, `MuteChat(chatId, until)`, `SetChatTyping(chatId)` (an event only, nothing stored). `requireChatMember` joins `authorize.go`.
+Phones. A chat message notifies every member but its author who has a phone paired, is not watching that conversation (presence, `internal/agent/presence.go`, already reports what a tab or phone is showing) and has not muted it, as a new `push.NotificationKind` `chat` with the conversation id as its thread id so the phone groups them, and the author's name and the first line as its title and body. Tapping it opens the app on that conversation.
 
-Surfaces: dashboard page `web/src/pages/chats.tsx` at `/chats` (a list of chats with avatars, last message and unread count) and `/chats/{id}` (the message list, with each message's author's avatar and name above a run of their messages, read marks, reactions, reply, attach, edit and delete in the hover actions as the drawer has them), and a Chats entry in the side menu with the unread total; command line `internal/cmd/chat.go`: `teanode chat list|show|direct <username>|create|rename|add|remove|leave|send|edit|delete|react|read|mute|watch`, where `watch` follows `ChatEvents` until interrupted; agent tool `internal/agent/tools/chat` with `list`, `read` (the person's chats are the person's to read), and `send` (posts as the agent, marked as the agent's, risk `outward`, so it is a card unless the person allowed outward calls unattended: "tell the family chat I'll be late"); iPhone app: a Chats tab in `AppShell.swift`, `ChatsView.swift` and `ChatView.swift` reusing `PersonBubble`, `ReactionBadges` and `ReplyBar` from `ConversationView.swift`, with the author's avatar on others' messages and notification actions to open the chat.
+The drawer. The drawer opens for a person whose agent is off: it shows their chats, and the main conversation becomes an offer to turn the agent on. The conversation picker lists chats with the other members' avatars (two overlapped for a group), a bold title and an unread count, sorted with the other conversations by last message; the drawer's button shows the total unread. The picker's "New conversation" offers "Message someone" and "New group", choosing from the people the person shares a circle with. A chat's header shows its members' avatars, and its menu holds members, add, leave, mute and rename. Messages from other people are on the left with the author's avatar and name above a run of their messages; the person's own on the right as today; read marks under the last message each member has read. The conversations page (`agentConversations.tsx`) lists chats too, with a filter. The iPhone app's conversation list and `ConversationView.swift` do the same with `PersonBubble` for every person, the author's avatar on others' messages, and the same menu.
 
-Acceptance: A and B share a circle. A runs `teanode chat direct personb` and `teanode chat send <chat> "dinner at 7?"`; B's dashboard shows the chat at the top of `/chats` with one unread, live, without a reload; B's phone, with the app in the background, shows "A: dinner at 7?"; B opens it, and A's `teanode chat show <chat> --json` shows B's read mark on the message. C, who shares no circle with A, gets not found for `OpenDirectChat` with A's id. Removing B from the circle removes them from the circle chat and, in the same transaction, from any group chat whose other members no longer share a circle with them; their direct chat with A stays readable to both but cannot be written to (the send is refused with "you no longer share a circle"). Tests cover each of these in `internal/api/v1api/apigraph/chat_test.go` and the feed's removal on membership change in `internal/chat/feed_test.go`.
+Command line: the conversation commands work on chats: `teanode agent conversation list --kind chat`, `teanode agent conversation show <id>` (with authors), `teanode agent ask --conversation <id> "..."` (posts in the chat), `teanode agent chat --conversation <id>` (follows and writes until the person leaves), `teanode agent react`; and new ones under the same group: `teanode agent conversation direct <username>`, `teanode agent conversation group "<title>" --with <username>,...`, `teanode agent conversation members|add|remove|leave|mute|read <id>`, `teanode agent conversation edit|unsay <message-id>`. Agent tool: the `conversation` tool's `list` and `read` include chats (the person's own to read), and a new action `send` posts into a chat as the agent, marked as the agent's (risk `outward`, so a card unless the person allowed outward calls unattended: "tell the family I'll be late").
+
+Acceptance: A and B share a circle. A runs `teanode agent conversation direct personb` and `teanode agent ask --conversation <id> "dinner at 7?"`; B's drawer shows the chat at the top of the picker with one unread, live, without a reload, and B's button shows 1; B's phone, with the app in the background, shows "A: dinner at 7?"; B opens it, and A's `teanode agent conversation show <id> --json` shows B's read mark. C, who has never turned on their agent, can open the drawer, sees the circle chat and writes in it. D, who shares no circle with A, gets not found for `OpenDirectChat` with A's id. Removing B from the circle removes them from the circle chat and from any group chat whose other members no longer share a circle with them, in the same transaction; their direct chat with A stays readable to both and refuses new messages with "you no longer share a circle". Deleting B's account leaves B's messages shown as "B (deleted account)". Tests cover each of these in `internal/api/v1api/apigraph/chat_test.go`, the interleaved reading (a member never sees another member's chat conversation rows) in `internal/db/database_chat_test.go`, and the feed's removal on membership change in `internal/chat/feed_test.go`.
 
 ### Milestone 4: the agent's face and its activity state
 
-At the end of this milestone every agent has a drawn face, shown in the drawer's header, beside the agent's messages, on the iPhone's conversation screen and Live Activity, and it moves with what the agent is doing. The closest existing feature is the Live Activity's state (`internal/agent/live_activity.go`, `ios/TeaNodeWidgets/TeaNodeWidgets.swift`).
+At the end of this milestone every agent has a drawn face, shown in the drawer's header and conversation list, beside the agent's messages, on the iPhone's conversation screen and Live Activity, and it moves with what the agent is doing. The closest existing feature is the Live Activity's state (`internal/agent/live_activity.go`, `ios/TeaNodeWidgets/TeaNodeWidgets.swift`).
 
 The face description, `models.AgentFace`, stored as `agent.face jsonb null` (migration `NNNN_agent_face.sql`):
 
@@ -251,21 +270,19 @@ Acceptance: turn an agent on; the drawer shows a face within a second (the deter
 
 At the end of this milestone a person can ask their agent in any chat they are in, the agent answers in the chat with its face and name, and the people in the chat see it thinking. The person can let their agent remember the chat, and can let the others in it ask their agent too. The closest existing feature is a turn in a named conversation (`internal/agent/ask.go`) and the way a background wake posts into a conversation (`docs/decisions/20260929-background-work-wakes-the-conversation-that-started-it.md`).
 
-Add `AgentConversationChat` (`"chat"`) to `AgentConversationKind` and `agent_conversation.chat_id varchar(26) null references chat on delete cascade` with a unique index on `(agent_id, chat_id)` (migration `NNNN_agent_chat_conversation.sql`). `ChatConversation(agentId, chatId)` makes it on demand. It is not listed in the drawer's picker; the owner reaches it from the chat ("what my agent did").
+Starting a turn. `AskAgent` on a chat conversation takes `addressedAgentIds`: the drawer and the app fill it from an `@` mention chosen in the composer's completion, or from replying to an agent's message, so an agent's name in ordinary prose never starts a turn; the command line has `--ask-agent` for the sender's own. `internal/chat/agents.go` decides, by these rules and no others. The message's author is a person. For each addressed agent: if the agent's owner is the author, start an **owner turn**; if the owner is a member of the chat and set `is_agent_askable_by_others` for it, start a **member turn**; otherwise start nothing and tell the author, in a note only they see, that only the owner can ask that agent here. An agent's own message never starts anything.
 
-Starting a turn: in `SendChatMessage`, after the message is stored and published, `internal/chat/agents.go` decides which agents to start, by these rules and no others. The message's author is a person. For each agent mentioned in the body by its name (an `@` mention resolved on the client into a structured `mentionedAgentIds` list sent with the message, so a name in ordinary prose never starts a turn) or whose message this one replies to: if the agent's owner is the author, start an **owner turn**; if the owner is a member of the chat and set `is_agent_askable_by_others` for it, start a **member turn**; otherwise post nothing and tell the author, as a note visible to them only, that only the owner can ask that agent here. An agent's own message never starts anything.
+Both turns call `Agent.Ask` with the new surface `chat` (in `internal/agent/surface.go`: no suggested replies, no pages to show, reactions drawn) in the owner's chat conversation. The model sees that conversation as `ReadAgentConversation` would show it to the owner: the chat's messages interleaved with the owner's own agent rows, bounded the way any conversation's history is, with compaction writing its note into the owner's chat conversation (never into the chat). Every chat message not written by the owner or the owner's agent is wrapped in `<untrusted-data>` with its author's name. The conduct's chat section says who is in the room (names, and which is the owner), that the answer will be read by all of them, that it should not bring in anything private the question did not need, and that it speaks as the owner's agent.
 
-Both turns call `Agent.Ask` with the new surface `chat` (in `internal/agent/surface.go`: no suggested replies, no pages to show, reactions drawn), the chat conversation, and a message that carries the recent chat: the newest 40 chat messages before and including the asking one, each as `<name>: <text>`, with every message not written by the owner inside `<untrusted-data>`, and a line saying how many earlier messages there are and that `chat read` with `before` reads them, so nothing is silently cut. The conduct's chat section says who is in the room (names and whether each is the owner), that the answer will be read by all of them, that it should not bring in anything private the question did not need, and that it speaks as the owner's agent.
+An owner turn has the agent's usual tools and cards. Its cards are rows in the owner's chat conversation, so only the owner sees them, inline in the chat on the owner's screens and on the owner's phone. A **member turn** is held: the run gets the read-only tool set of research on mail from strangers, minus mail, memory, files, calendar, finance and every device, plus the conversation tool's `read` for this chat, the shared views of Milestones 6 and 7 restricted to what is shared with every member of the chat, and web search and fetch. It can raise no card; a call that would need one is refused. This reuses the existing "held to reading or to a few named tools" run shape, which already never uses the unattended allowance. Its tool rows are written to the owner's chat conversation, where the owner can see what somebody else's question made their agent do.
 
-An owner turn has the agent's usual tools and cards; its cards appear only to the owner, inline in the chat on the owner's screens and on the owner's phone. A **member turn** is held: the run gets the read-only tool set of research on mail from strangers, minus mail, memory, files, calendar, finance and every device, plus the chat tool's `read` for this chat, the shared views of Milestones 6 and 7 restricted to what is shared with every member of the chat, and web search and fetch. It can raise no card; a call that would need one is refused. This reuses the existing "held to reading or to a few named tools" run shape, which already never uses the unattended allowance.
+Posting. The assistant's answer of each round is written as a `chat_message` with `author_agent_id` and `agent_run_id` instead of an `agent_message`, and published as `said`; tool calls, tool results and notes stay `agent_message` rows in the owner's chat conversation. The streaming `text` deltas go to every member as a provisional message that the stored one replaces, the same replace-not-append rule the drawer already follows. The agent's face in the chat shows its activity state from `AgentActivityEvents` (Milestone 4), the tool's kind only for its owner.
 
-Posting: the turn's final answer of each round that would be shown to the person (`message` events of the assistant's text, not tool rows) is written as a `chat_message` with `author_agent_id`, `agent_run_id`, and published on the chat feed; the streaming `text` deltas are published on `ChatEvents` as a provisional message that the stored one replaces, the same replace-not-append rule the drawer follows. The agent's face in the chat shows its activity state from `AgentActivityEvents`, state only for members who are not its owner.
+Memory. `is_agent_reading`, set by a member for their own agent, makes the chat a source of that agent, kind `chat`, read by the dream like the other chat sources (`internal/agent/ingest_document.go`), from the time it was set. The chat's members panel shows, for every member, whether their agent remembers the chat. Turning it off stops reading at once; what was already learned stays, as with any source, and the Knowledge page shows the chat as those facts' evidence.
 
-Memory: `is_agent_reading` set by the member for their own agent makes the chat a source of that agent, kind `chat`, read by the dream like the other chat sources (`internal/agent/ingest_document.go`), from the time it was set and only messages the member could see. The chat's info panel lists, for every member, whether their agent remembers the chat. Turning it off stops reading at once; what was already learned stays, as with any source, and the Knowledge page shows the chat as that facts' evidence.
+Operations: `SetChatAgentReading(conversationId, isAgentReading)` and `SetChatAgentAskableByOthers(conversationId, isAgentAskableByOthers)`, each for the caller's own membership. Dashboard and app: the composer's `@` completion offers the person's own agent and the agents of members who allowed it; the members panel has the two switches; in the owner's view, the agent's answer is preceded by its tool rows folded into one "what it did" line, as a turn in the main conversation already shows them. Command line: `teanode agent ask --conversation <id> --ask-agent "..."`, `teanode agent conversation remember <id> on|off`, `teanode agent conversation askable <id> on|off`.
 
-Operations: `SetChatAgentReading(chatId, isAgentReading)`, `SetChatAgentAskableByOthers(chatId, isAgentAskableByOthers)` (both for the caller's own membership), `ReadChatAgentTurn(chatId, messageId)` (the owner reads what their agent did for an answer). Dashboard: the chat's composer completes `@` names from the agents of members who allowed it and the person's own; the info panel has the two switches; the owner's answer has "what it did". Command line: `teanode chat send --ask-agent`, `teanode chat agent reading on|off`, `teanode chat agent others on|off`. The agent's `chat` tool's `send` was added in Milestone 3. iPhone: the same composer completion, switches and disclosure.
-
-Acceptance: in the family chat, A writes "@<A's agent> what time is the dentist on Thursday?"; B and C see A's agent's face thinking, then an answer from it; A's own view has "what it did", listing the calendar read; B cannot open it (not found). B writes "@<A's agent> what is in A's inbox?": no turn starts, and B alone sees the note that only A can ask. A turns on "others may ask my agent here"; B asks the same: the turn starts held, answers that it cannot read A's mail, and A's usage shows the turn. A message from A's agent mentioning B's agent starts nothing. Tests: `internal/chat/agents_test.go` for every branch of the decision above; `internal/agent/ask_chat_test.go` that a member turn's tool list contains no mail, memory, calendar, finance or device tool and that other members' messages are inside `<untrusted-data>`; a test that an owner turn's tool result rows never appear in `chat_message`.
+Acceptance: in the family chat, A writes "@<A's agent> what time is the dentist on Thursday?"; B and C see A's agent's face thinking, then an answer from it; A's view has "what it did", listing the calendar read; B's view of the same chat has the answer and no tool rows, and reading A's chat conversation as B is not found. B writes "@<A's agent> what is in A's inbox?": no turn starts, and B alone sees the note that only A can ask. A turns on "others may ask my agent here"; B asks the same: the turn starts held, answers that it cannot read A's mail, and A's usage shows the turn. A message from A's agent naming B's agent starts nothing. Tests: `internal/chat/agents_test.go` for every branch of the decision above; `internal/agent/ask_chat_test.go` that a member turn's tool list contains no mail, memory, calendar, finance or device tool, that other members' messages are inside `<untrusted-data>`, and that no tool result of an owner turn appears in any `chat_message`.
 
 ### Milestone 6: shared calendars and the circle calendar
 
@@ -292,7 +309,7 @@ CalDAV: the person's home set (`internal/dav/caldav.go`, list calendars) adds ea
 
 Agent: the `calendar` tool's `list` and `find` gain `whose` (a username, or `everyone` for every calendar shared with the person), answering at the shared level; a new action `free_together` takes usernames and a window and answers the times all of them are free, using `calendar.Free` over the union of their busy times. Adding an event to a circle calendar is the person's own change; adding to another person's shared calendar at `edit` is risk `outward`.
 
-Operations: `ListCalendarShares(calendarId)`, `ShareCalendar(calendarId, granteeUserId | granteeCircleId, shareLevel)`, `UnshareCalendar(shareId)`, `CreateCircleCalendar(circleId)`, and `ListCalendars` returning shared ones with `ownerName`, `shareLevel` and `isCircleCalendar`. Dashboard: the calendar page's side list shows the person's calendars, circle calendars and shared ones, each with a color and a check to show or hide, and a Share panel on their own; the circle page offers "Make a family calendar". When a person joins a family or work circle, the dashboard and the app suggest a share once ("share your calendar with Home as: busy / titles / details / not now"). Command line: `teanode calendar share <username|circle> --level titles`, `teanode calendar shares`, `teanode calendar unshare <id>`, `teanode calendar list --whose <username>`, `teanode calendar free --with a,b --from ... --until ...` (the existing `free` command gains `--with`). iPhone: `CalendarView.swift` shows the same list and the share panel.
+Operations: `ListCalendarShares(calendarId)`, `ShareCalendar(calendarId, granteeUserId | granteeCircleId, shareLevel)`, `UnshareCalendar(shareId)`, `CreateCircleCalendar(circleId)`, and `ListCalendars` returning shared ones with `ownerName`, `shareLevel` and `isCircleCalendar`. Dashboard: the calendar page's side list shows the person's calendars, circle calendars and shared ones, each with a color and a check to show or hide, and a Share panel on their own; the circle page offers "Make a family calendar". When a person joins a family or colleagues circle, the dashboard and the app suggest a share once ("share your calendar with Home as: busy / titles / details / not now"). Command line: `teanode calendar share <username|circle> --level titles`, `teanode calendar shares`, `teanode calendar unshare <id>`, `teanode calendar list --whose <username>`, `teanode calendar free --with a,b --from ... --until ...` (the existing `free` command gains `--with`). iPhone: `CalendarView.swift` shows the same list and the share panel.
 
 Acceptance: A shares at `titles` with B; B's dashboard shows A's events by title, and A's event with `CLASS:PRIVATE` as "Busy". B's phone, after adding the CalDAV account, lists "A's calendar" and refuses to save an edit to it. A raises B to `edit`; B's phone can now edit an event without guests and is refused for one with guests. B asks their agent "when are A and I both free Saturday afternoon?" and gets times consistent with `teanode calendar free`. A leaves the circle: B no longer sees A's calendar on any surface or over CalDAV.
 
@@ -316,48 +333,58 @@ Never copied: the after-conversation writer and the dream's reading refuse to st
 
 Operations: `ListAgentPageShares` (mine), `ShareAgentPage(path, granteeUserId | granteeCircleId, isQuoteShared)` (risk `granting` for the tool), `UnshareAgentPage(shareId)`, `ListSharedAgentPages` and `ReadSharedAgentPage(ownerUserId, path)` (shared with me), and a preview, `PreviewAgentPageShare(path, grantee)`, which returns exactly what the grantee would see, shown before the owner confirms. Dashboard: a Share action on a page (with the preview), the shares listed on the page, and a "Shared with you" section in the Knowledge sidebar grouped by owner, with an owner badge on every shared page. Command line: `teanode agent memory share <path> <username|circle> [--with-quotes]`, `teanode agent memory shares`, `teanode agent memory unshare <id>`, `teanode agent memory get <path> --owner <username>`. iPhone: `KnowledgeViews.swift` gets the same section and the share sheet.
 
-A child's share with anybody outside their family circles needs an approval (Milestone 8); until Milestone 8 lands, it is refused.
+A child's share with anybody outside their family circles needs a guardian's approval (Milestone 8); until Milestone 8 lands, it is refused.
 
 Acceptance: A shares `people/a-grandparent` with the family circle; B's Knowledge page lists it under A's name with its facts and no quotes; B asks their agent "when is grandma's next appointment?" and the answer cites `people/a-grandparent#N (shared by A)`; B's own graph gains no fact quoting it (`teanode agent memory get people/a-grandparent` as B finds nothing, or B's own page without that fact). A unshares; B's next question gets "I don't know" and the Knowledge page no longer lists it. Tests: `internal/agent/shared_memory_test.go` for prefix matching at `/` boundaries (`people/a` does not share `people/ab`), quote redaction, edge redaction, circle membership changes; the memory tool's refusal of writes with `owner`; the writer's refusal of shared-only evidence.
 
-### Milestone 8: approvals, purchases and allowances
+### Milestone 8: shared payment skills and approvals
 
-At the end of this milestone a child can ask their guardians for a purchase, and for the other things a child may not do alone, from every surface or through their agent; a guardian answers from a card in their drawer, a phone notification, the dashboard's Approvals page, the command line or the app; and a guardian can have their own agent buy it. The closest existing feature is the card (`agent_interaction`, `internal/agent/interaction.go`) and the way an answered card resumes a turn (`Agent.ResumeInteraction`).
+At the end of this milestone a person can share named tools of an installed skill (for payments, the Link skill's `link_pay`) with one person in a circle they share, with limits; the other person's agent pays through it, on the owner's computer; a call above the limits becomes an approval the owner answers; a child's every call is an approval their guardians answer; and the other things a child may not do alone become approvals too. The closest existing features are the skill tool call (`Skill.Run` in `internal/skills/run.go`, which a skill tool of the owner's own agent already goes through, on the owner's computer) and the card (`agent_interaction`, `internal/agent/interaction.go`, `Agent.ResumeInteraction`).
 
-Migration `NNNN_circle_approval.sql`:
+Knowing the amount. A limit can only be checked on an amount the server can read before the call runs. The skill declaration (`internal/skills/skill.go`, `Tool`) gains two optional fields, `amountField` and `currencyField`, naming the parameters that hold the amount in minor units and the currency code, and per action where the tool routes on `actionField` (`amountActions: [card]`). The Link skill in the skills registry is updated to declare them for `link_pay`'s `card` action; that is a signed change in the registry repository and its own pull request there. A call to a shared tool, or an action of it, without a declared amount always needs an approval, which is what `link_pay`'s `url` action (an address whose price only the merchant knows) gets.
 
+Storage. Migration `NNNN_skill_share.sql`:
+
+    skill_share: id, created_at, modified_at, owner_agent_id references agent on delete
+          cascade, skill_name varchar(100) not null, tool_names text[] not null,
+          grantee_user_id references "user" on delete cascade,
+          payment_limit_minor bigint null, monthly_limit_minor bigint null,
+          currency_code varchar(3) null, is_approval_required boolean not null default false,
+          unique (owner_agent_id, skill_name, grantee_user_id)
+    skill_share_call: id, created_at, skill_share_id references skill_share on delete
+          cascade, grantee_run_id varchar(26), tool_name, tool_arguments jsonb,
+          amount_minor bigint null, call_state check in ('ran','failed','refused',
+          'waiting_for_approval'), tool_output jsonb null, approval_id null
     circle_approval: id, created_at, modified_at, circle_id references circle on delete
           cascade, requester_user_id references "user" on delete cascade,
-          approval_kind check in ('purchase','join_circle','leave_circle','share_outside',
+          approver_kind check in ('owner','guardians'), approver_user_id null,
+          approval_kind check in ('payment','join_circle','leave_circle','share_outside',
           'widen_unattended'),
           approval_state check in ('pending','approved','declined','withdrawn','expired',
-          'bought','buy_failed'),
+          'done','failed'),
           approval_title varchar(200) not null, approval_reason text not null default '',
-          amount_minor bigint null, currency_code varchar(3) null, merchant_name
-          varchar(200) null, item_url text null, approval_arguments jsonb not null default
-          '{}',      -- for the non-purchase kinds: the invitation id, the share, the risks
-          requester_conversation_id null, decided_by_user_id null, decided_at null,
-          decision_note text null, buyer_run_id null, expires_at not null
-    circle_allowance: circle_id, child_user_id, amount_minor bigint, currency_code,
-          primary key (circle_id, child_user_id)
+          approval_arguments jsonb not null,   -- the call, or the invitation, the share,
+                                               -- the risks asked for
+          skill_share_call_id null, requester_conversation_id null,
+          decided_by_user_id null, decided_at null, decision_note text null, expires_at
 
-`internal/circle/approval.go`: `RequestApproval`, `AnswerApproval(approvalId, guardianUserId, answer, note)` (a conditional update from `pending`, so two guardians answering at once cannot both win; the loser is told who answered), `WithdrawApproval`, and `ExpireApprovals` (a sweep in the worker; seven days by default). Answering a non-purchase kind performs the thing it asked for in the same transaction (accepts the invitation, makes the share, sets the risks), so an approved request never needs a second step.
+A share with a child (a `child` member of a family circle both are in) is stored with `is_approval_required = true` and cannot be changed to false; its approvals go to the child's guardians (`GuardiansOf`), not to the owner, unless the owner is one of them.
 
-A purchase answered `approved` with `buyer` = `agent` calls `Agent.Ask` on the guardian's agent with surface `approval`, in the guardian's main conversation, with a message built from the approval's fields inside `<untrusted-data>` (the child wrote the title and reason) and a line from the server saying the guardian approved this purchase of this amount at this merchant and that paying goes through the guardian's payment skill, which will ask again. The turn's cards are the guardian's own as usual. When it ends, the approval becomes `bought` or `buy_failed` from the run's outcome as the guardian marks it ("did it go through?" on the card, because only the guardian and Link know); a guardian who buys it themselves marks it `bought` directly.
+Running a shared call. The grantee's agent's catalog gains each shared tool under the name `shared_<tool>_<owner username>` (the owner's username made safe for a tool name), with the skill's description and parameters and a first line saying whose it is and what its limits are. `internal/skills/share.go`, `RunShared(context, share, toolName, arguments, granteeRun)`, is the only path: it checks the share still exists and both people still share a circle, works out the amount from the declared fields, adds the month's `ran` calls, and either runs the call through `Skill.Run` as a call of the owner's agent on the owner's computer (so the owner's command judge, the skill's own rules and the owner's computer being connected all apply exactly as for the owner), or stores a `waiting_for_approval` call and an approval and answers the grantee's agent that it is waiting for a person. The grantee's own card comes first either way: a shared payment tool carries risk `money` for the grantee's agent, so the grantee sees what will be paid before anything is sent, and an unattended turn of the grantee pays only if the grantee allowed money calls unattended.
 
-Telling people: a new `AgentNoteKind` `approval_requested` in each guardian's main conversation, rendered as a card with the approval's fields and the three answers (decline, approve and buy it myself, approve and have my agent buy it), pushed with `NotificationKind` `approval` to each guardian's phones through `notifyPersonPhones`, with Approve and Decline actions that open the app to confirm with Face ID before answering (a lock screen tap must not spend money). The child hears the outcome through a background wake of the conversation the request came from (`requester_conversation_id`), or a note in their main conversation, and a phone notification.
+The output of a call (the spend request's id and state) goes back to the grantee's agent and is kept on `skill_share_call`. `link_spend_requests` may be shared too, and then its `retrieve` and `cancel` are allowed only for a `spend_request_id` that appears in an earlier call's output of the same share; its `active` and `history` listings are never shared, because they list the owner's other spend requests.
 
-The child's agent: the new `approval` tool, `request` (risk `outward`: it is the child asking on their own behalf, so the child sees a card first; never unattended for a child), `list` and `withdraw`. The refusals added in Milestones 2 and 7 for children (accepting an invitation, leaving, sharing outside the family) now say "this needs a guardian's approval" and offer to request one. A child's agent's `set_unattended` becomes an approval of kind `widen_unattended`. A guardian's agent's `approval` tool can `list` the approvals waiting for the guardian and read one, and cannot answer: answering is a person's act, by the same reasoning that keeps the unattended setting on a card the person answered.
+Answering. `internal/circle/approval.go`: `RequestApproval`, `AnswerApproval(approvalId, answererUserId, isApproved, note)` (a conditional update from `pending`, so two guardians answering at once cannot both win; the loser is told who answered), `WithdrawApproval`, and `ExpireApprovals` (a sweep in the worker; a day for payments, seven days for the rest). Approving a payment runs exactly the stored call, with its stored arguments, through `RunShared` with the limits skipped, and records `done` or `failed` from its outcome. Approving any other kind performs what it asked for in the same transaction (accepts the invitation, removes the child from the circle, makes the share, sets the risks). The requester's agent hears the outcome through a background wake of the conversation the request came from (`requester_conversation_id`), or a note in their main conversation, and a phone notification.
 
-Allowance: `SetCircleAllowance(circleId, childUserId, amountMinor, currencyCode)` by a guardian; `ReadCircleAllowance` shows the month's approved total against it to the child and the guardians. It approves nothing in this design.
+An approval is answered by a person and never by an agent. The `approval` tool (`internal/agent/tools/approval`) can `list` and `read` approvals waiting for the person and those the person asked for, and `withdraw` the person's own; it has no answer action, and `AnswerCircleApproval` refuses a caller that is an agent's run token.
 
-Operations: `RequestCircleApproval`, `ListCircleApprovals` (mine as requester, or waiting for me as guardian), `ReadCircleApproval`, `AnswerCircleApproval(approvalId, answer: decline|approve_self|approve_agent, note)`, `WithdrawCircleApproval`, `MarkCircleApprovalBought(approvalId, isBought)`, `SetCircleAllowance`, `ReadCircleAllowance`. Dashboard: `/approvals` (a guardian's waiting list and history, a child's own requests), the card in the drawer, the allowance on the circle page. Command line: `teanode approval list|show|request|approve|decline|withdraw|bought` and `teanode circle allowance set|show`. iPhone: `ApprovalsView.swift`, the notification actions, the card.
+Telling people: a new `AgentNoteKind` `approval_requested` in each approver's main conversation, rendered as a card with the approval's fields and Approve and Decline, pushed with `NotificationKind` `approval` to each approver's phones, with Approve and Decline actions that open the app to confirm with Face ID before answering (a lock screen tap must not spend money).
 
-Acceptance: the end-to-end story in Purpose / Big Picture, plus: a second guardian answering after the first gets "already answered by <name>"; the guardian's agent cannot answer an approval through any tool; a child's `teanode circle leave` returns the approval offer and a guardian's approval removes them; an approval left a week expires and the child is told. Tests in `internal/circle/approval_test.go` for the state machine and the race, `internal/agent/ask_approval_test.go` for the buyer turn's message wrapping, and `internal/api/v1api/apigraph/circle_approval_test.go` for who may read and answer.
+Children's other requests: the refusals added in Milestones 2 and 7 for children (accepting an invitation, leaving, sharing outside the family) now say "this needs a guardian's approval" and offer to request one; a child's `set_unattended` becomes an approval of kind `widen_unattended`.
 
-### Milestone 9 (decision pending): the circle agent
+Operations: `ListSkillShares` (mine, and shared with me), `ShareSkill(skillName, toolNames, granteeUserId, paymentLimitMinor, monthlyLimitMinor, currencyCode, isApprovalRequired)`, `UnshareSkill(shareId)`, `ListSkillShareCalls(shareId)`, `RequestCircleApproval`, `ListCircleApprovals` (waiting for me, and asked by me), `ReadCircleApproval`, `AnswerCircleApproval(approvalId, isApproved, note)`, `WithdrawCircleApproval`. Dashboard: on the agent page's skills tab, a Share action on an installed skill (person, tools, limits; the share's calls listed under it) and, for the grantee, the skills shared with them; approvals as cards in the drawer and a list at `/approvals` reached from the account menu. Command line: `teanode agent skill share <skill> <username> --tools link_pay --payment-limit 100.00 --monthly-limit 400.00 --currency usd [--approve-each]`, `teanode agent skill shares`, `teanode agent skill unshare <id>`, `teanode agent skill calls <share-id>`, `teanode approval list|show|request|approve|decline|withdraw`. Agent tool: sharing a skill is the `skill` tool's `share` action with risk `granting`. iPhone: the services screen's skill row gets Share, `ApprovalsView.swift`, the notification actions and the card.
 
-Not to be started until the maintainer answers the open question in the Decision Log. Sketch, so the earlier milestones do not paint it into a corner: a circle may turn on an agent of its own, with a name and a face, answering any member in the circle chat, holding a graph the members' agents can write to through it, reading the circle calendar and nothing of any member's. Its usage is counted against the admin who turned it on. It needs `agent.user_id` to become nullable with `agent.circle_id` beside it, which touches every place that goes from an agent to its owner (time zone, locale, phones, sources, limits); that audit is the first step of its own plan. Nothing in Milestones 1 to 8 should assume an agent's chat messages always have an owning person beyond what `author_agent_id` already records.
+Acceptance: the end-to-end story in Purpose / Big Picture, plus: the other adult's 140.00 payment becomes an approval for the holder, and approving it runs it; a `url` payment always becomes an approval; with the holder's computer disconnected, a shared call answers that the owner's computer is not connected and nothing is stored as ran; a second guardian answering after the first gets "already answered by <name>"; no tool of any agent can answer an approval; `retrieve` of a spend request id that did not come through the share is refused; unsharing removes the shared tools from the grantee's next turn; a child's `teanode circle leave` returns the approval offer and a guardian's approval removes them. Tests in `internal/skills/share_test.go` (amount reading, limits, the month's total, the id rule), `internal/circle/approval_test.go` (the state machine and the race), and `internal/api/v1api/apigraph/skill_share_test.go` and `circle_approval_test.go` (who may read, share and answer).
 
 ## Concrete Steps
 
@@ -380,18 +407,20 @@ The expected output of the commands is a clean `make lint-ci` ("0 issues"), ever
 
 Each milestone's acceptance paragraph is the bar for that milestone. Across all of them, the plan is done when the story in Purpose / Big Picture works on a running server with three accounts, end to end, on the dashboard and the iPhone app, and these hold:
 
-- Everything shared reaches only people who share a circle with the sharer, and stops reaching them in the same transaction that ends the circle membership. One test per kind of share (chat, calendar, page) removes a member and checks every operation refuses.
-- No other person can ever read a tool result of somebody's agent. A test searches `chat_message` bodies for the tool result text of an owner turn and finds nothing.
+- Everything shared reaches only people who share a circle with the sharer, and stops reaching them in the same transaction that ends the circle membership. One test per kind of share (chat, calendar, page, skill) removes a member and checks every operation refuses.
+- No other person can ever read a tool result of somebody's agent. A test searches `chat_message` bodies for the tool result text of an owner turn and finds nothing, and reads each member's view of a chat to check it holds no other member's chat conversation rows.
 - No agent's message starts a turn, and no member's message starts somebody else's agent unless its owner allowed it for that chat.
-- An approval is answered only by a guardian person, never by an agent and never twice.
+- A guardian reads a child's conversations only read only, every read is audited, and the child's screens say so.
+- An approval is answered only by a person allowed to answer it, never by an agent and never twice, and approving runs exactly the call that was shown.
+- No shared payment runs above its limits without an approval, and none runs anywhere but on the owner's computer.
 - `TestEveryOperationAuthorizes` passes with every new operation, and the parity tests pass with every new command and tool name.
-- The security review (`docs/security/security-review.md`) gains a section for this feature covering: membership checks on every operation and subscription, prompt injection from chat messages and approval text, avatar decoding limits and metadata removal, `NOTIFY` payloads carrying ids only, and the phone payloads sealed as before.
+- The security review (`docs/security/security-review.md`) gains a section for this feature covering: membership checks on every operation and subscription, guardian reads, prompt injection from chat messages and approval text, shared skill calls and their limits, avatar decoding limits and metadata removal, `NOTIFY` payloads carrying ids only, and the phone payloads sealed as before.
 
 ## Idempotence and Recovery
 
 Every migration is additive until Milestone 6 makes `calendar.user_id` nullable; its reverse refuses to run while a circle calendar exists (it deletes nothing on its own), so a rollback after families started using one is a deliberate step: copy the circle calendars out (each event is one file, `teanode calendar show <id> --json` prints it, or a phone's CalDAV account holds a copy), delete them, then roll back. Deploys follow the repository's existing rule for migrations: back up first, and check the build includes every migration already applied on the server.
 
-Sharing operations are idempotent by their unique keys: sharing the same thing with the same grantee again changes its level rather than adding a row. Opening a direct chat twice returns the same chat. Answering an approval twice returns the first answer.
+Sharing operations are idempotent by their unique keys: sharing the same thing with the same grantee again changes its level or limits rather than adding a row. Opening a direct chat twice returns the same chat. Answering an approval twice returns the first answer, and a payment approved twice runs once.
 
 ## Artifacts and Notes
 
@@ -399,30 +428,34 @@ The six decision records under `docs/decisions/` dated 2026-10-16 are the design
 
 ## Interfaces and Dependencies
 
-No new third-party dependency is needed. Avatars are decoded with the standard library's `image/png` and `image/jpeg`; the clients convert other formats first.
+No new third-party dependency is needed. Avatars are decoded with the standard library's `image/png` and `image/jpeg`; the clients convert other formats first. Milestone 8 needs a change to the Link skill in the skills registry (the `amountField`, `currencyField` and `amountActions` declarations), signed and released there before the milestone ships.
 
-New packages: `internal/avatar` (picture normalization and the initial color), `internal/circle` (membership rules, approvals, allowances; the database functions stay in `internal/db/database_circle.go` and `database_chat.go` like every other table), `internal/chat` (the feed, the agent-turn decision, the posting of answers), and agent tools `internal/agent/tools/circle`, `internal/agent/tools/chat`, `internal/agent/tools/approval`, each imported in `internal/agent/tools/all/all.go`.
+New packages: `internal/avatar` (picture normalization and the initial color), `internal/circle` (membership rules and approvals; the database functions stay in `internal/db/database_circle.go`, `database_chat.go` and `database_skill_share.go` like every other table), `internal/chat` (the feed, the agent-turn decision, the posting of answers), and agent tools `internal/agent/tools/circle` and `internal/agent/tools/approval`, imported in `internal/agent/tools/all/all.go`. Chats need no tool of their own: the `conversation` tool gains them.
 
 Types, in `internal/models`:
 
-    type CircleKind string        // "family", "friends", "work"
-    type MemberRole string        // "admin", "member", "child"
-    type ChatKind string          // "direct", "group"
-    type ShareLevel string        // "busy", "titles", "details", "edit"
-    type ApprovalKind string      // "purchase", "join_circle", "leave_circle", "share_outside", "widen_unattended"
-    type ApprovalState string     // "pending", "approved", "declined", "withdrawn", "expired", "bought", "buy_failed"
+    type CircleKind string         // "family", "friends", "colleagues"
+    type MemberRole string         // "admin", "member", "child"
+    type ChatKind string           // "direct", "group"
+    type ChatEventKind string      // "said", "edited", "unsaid", "reacted", "read", "typing"
+    type ShareLevel string         // "busy", "titles", "details", "edit"
+    type ApprovalKind string       // "payment", "join_circle", "leave_circle", "share_outside", "widen_unattended"
+    type ApprovalState string      // "pending", "approved", "declined", "withdrawn", "expired", "done", "failed"
+    type ApproverKind string       // "owner", "guardians"
     type AgentActivityState string // "idle", "thinking", "speaking", "working", "waiting", "failed", "dreaming", "away"
-    type AgentFace struct { ... }  // Milestone 4
+    type AgentFace struct { ... }   // Milestone 4
+    const AgentConversationChat AgentConversationKind = "chat"
 
 Functions other milestones depend on, with these signatures:
 
     // internal/db/database_circle.go
     func (self *Transaction) SharesCircle(userId string, otherUserId string) (bool, error)
     func (self *Transaction) CircleUserIDs(userId string) ([]string, error)
-    func (self *Transaction) GuardiansOf(childUserId string, circleId string) ([]string, error)
+    func (self *Transaction) GuardiansOf(childUserId string) ([]string, error)
 
-    // internal/push/person.go
-    func NotifyPersonPhones(context context.Context, userId string, content Content) error
+    // internal/db/database_chat.go
+    func (self *Transaction) EnsureChatConversation(agentId string, chatId string) (*models.AgentConversation, error)
+    func (self *Transaction) ReadChatConversation(conversationId string, before string, count int) ([]models.ConversationRow, error)
 
     // internal/agent/activity.go
     func ActivityStateOf(event Event) (models.AgentActivityState, string /* tool family */, bool)
@@ -434,4 +467,9 @@ Functions other milestones depend on, with these signatures:
     func (self *Agent) SharedPagesFor(readerUserId string) ([]PageShareView, error)
     func (self *Agent) ReadSharedPage(readerUserId string, ownerAgentId string, path string) (*SharedPage, error)
 
+    // internal/skills/share.go
+    func RunShared(ctx context.Context, share *models.SkillShare, toolName string, arguments map[string]any, granteeRun *Running) (map[string]any, error)
+
 Revision note (2026-10-16): first version, written from a survey of the code before any implementation.
+
+Revision note (2026-10-16, later): revised after the maintainer's answers. Chats are conversations in the drawer and the app through the existing conversation operations, with no chat page and no new navigation; guardians are a flag separate from circle admins and may read their children's conversations; payments are shared as a skill's tools with limits, covering an adult member as well as a child, and approving runs the asked call instead of a turn of the approver's agent; the circle agent is dropped; the kinds are family, friends and colleagues; a deleted account's chat messages are kept under the name it had.

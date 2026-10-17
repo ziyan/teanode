@@ -13,7 +13,7 @@ server knows is the access group, which says what an account may manage,
 not who it lives or works with.
 
 A server is often shared by people who do know each other: a household, a
-few friends, a small team. They want to write to each other without mail,
+few friends, colleagues. They want to write to each other without mail,
 see when the others are busy, let one agent know what another knows, and
 in a family, let a parent answer for a child. Each of those needs the same
 first thing: a list of who belongs together, and in what role.
@@ -22,20 +22,34 @@ Three shapes were considered. Pairwise relationships (a parent of, a
 spouse of, a colleague of) say exactly what is true and make every
 question ("who can see this calendar") a walk over a graph. A server-wide
 directory, where everybody sees everybody, is simplest and wrong for a
-server that hosts two families, or a family and the parents' employer's
-side project. A named group with members and a role each is what people
-already have in their heads ("the family", "the flat", "the team") and
-answers the questions with one lookup.
+server that hosts two families, or a family and the parents' colleagues.
+A named set of people with a role each is what people already have in
+their heads ("the family", "the flat", "the team") and answers the
+questions with one lookup.
 
 The word `group` is taken: it is the access group in `internal/access`.
 
 ## Decision
 
 A **circle** is a named set of accounts on one server, of one **circle
-kind**: `family`, `friends` or `work`. Each member has a **member role**:
-`admin`, `member` or `child`. `child` exists only in a family circle, and
-the admins of a family circle are the **guardians** of its children. An
-account may be in several circles.
+kind**: `family`, `friends` or `colleagues`. The screens say the kind
+where the generic word would be awkward ("your family", "your
+colleagues"). An account may be in several circles.
+
+Each member has a **member role**. `admin` manages the circle: who is in
+it, their roles, its calendar. `member` takes part. `child` exists only in
+a family circle. Separately, an adult member of a family circle may be a
+**guardian**, a flag an admin sets. Being an admin and being a guardian
+are different things: a grandparent may manage the family's calendar
+without answering for the children, and a parent is usually both.
+
+A guardian answers their children's approvals
+(`20261016-a-payment-skill-is-shared-call-by-call.md`) and may read their
+children's conversations, with people and with their agent, read only.
+The operator of a private server can already read any conversation
+(`agent:act`); a guardian is given the same over their own children, and
+no further. A child's screens say plainly that their guardians can read
+their conversations, and every read is in the audit log.
 
 A circle is made by any person who holds the new `circle:use`
 permission, which the Members role has by default. Joining is by
@@ -49,19 +63,22 @@ accept their own family.
 
 A person sees other people only through circles they share: name,
 username and avatar. Everything this design shares (a chat, a calendar, a
-page of memory) is shared with a circle or with one person in a circle
-the sharer is in, and stops when either of them leaves it.
+page of memory, a skill) is shared with a circle or with one person in a
+circle the sharer is in, and stops when either of them leaves it.
 
 A child cannot leave a family circle, cannot accept an invitation to
 another circle, and cannot share anything with somebody outside the
-family, without a guardian's approval
-(`20261016-a-guardian-answers-and-pays-from-their-own-agent.md`).
+family, without a guardian's approval.
+
+When an account is deleted, what it wrote in chats is kept, so the
+others' replies still make sense, and is shown as from a deleted account
+under the name it had. The account's own rows go as they do today.
 
 ## Consequences
 
-Three tables: `circle`, `circle_member` and `circle_invitation`, and one
-authorization helper, `requireCircleMember`, which answers "not found"
-like every other refusal.
+Three tables: `circle`, `circle_member` (with `member_role` and
+`is_guardian`) and `circle_invitation`, and one authorization helper,
+`requireCircleMember`, which answers "not found" like every other refusal.
 
 "Who can see this" is always a circle or a person, and every share row
 names one. Leaving a circle, or being removed from it, ends every share
