@@ -31,6 +31,13 @@ const (
 	// ChatMessagesPerMinute is how many messages one person may send a
 	// minute on one instance, which stops a runaway script and nobody typing.
 	ChatMessagesPerMinute = 60
+
+	// ChatMembersMost is how many people a group chat holds at once.
+	ChatMembersMost = 50
+
+	// GroupChatsMadePerDayMost is how many group chats one person starts in
+	// a day.
+	GroupChatsMadePerDayMost = 20
 )
 
 // ChatAuthorKind says whether a chat message was written by a person or by

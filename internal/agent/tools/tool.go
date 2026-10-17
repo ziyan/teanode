@@ -141,6 +141,13 @@ type Tool struct {
 	// actions differ: mail_act is a write until it is delete_forever.
 	RiskOf func(arguments json.RawMessage) Risk
 
+	// IsPersonsAnswer, when set, says one call gives an answer that is the
+	// person's to give: approving or declining what waits for them. Such a
+	// call always asks, with money as its risk, and no allowance for when
+	// the person is not there covers it
+	// (models.UnattendedRiskPersonsAnswer).
+	IsPersonsAnswer func(arguments json.RawMessage) bool
+
 	// JudgedCall, when set, is what one call would do, written out for a
 	// fast model to judge whether it only reads or changes something on the
 	// person's own machine, and so runs, or speaks for them or destroys
@@ -466,6 +473,9 @@ func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.A
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskGranting)
 	case RiskMoney:
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskMoney)
+	}
+	if tool.IsPersonsAnswer != nil && tool.IsPersonsAnswer(SettledArguments(arguments)) {
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskPersonsAnswer)
 	}
 	if policy != nil && Listed(policy.Confirm, tool) {
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskOperatorListed)

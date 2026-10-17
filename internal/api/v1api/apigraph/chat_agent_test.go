@@ -490,3 +490,63 @@ func TestLeavingAChatSwitchesBothOff(t *testing.T) {
 	// She cannot flip them back on.
 	world.refused(t, world.grace, fmt.Sprintf(`mutation { SetChatAgentReading(conversationId: %q, isAgentReading: true) %s }`, graceChat, chatAgentFields))
 }
+
+// An agent answers somebody else only if its owner's account is enabled and
+// may use agents, and only if the asker may use agents too. Otherwise nothing
+// starts, and the asker is told.
+func TestAskingSomebodyElsesAgentNeedsBothAccountsToUseAgents(t *testing.T) {
+	world := newChatWorld(t)
+	requests := world.withModel(t, []string{dentistRound})
+	world.shareCircle(t, world.frank, "Home", world.grace, world.bob)
+	frankChat := world.openDirect(t, world.frank, world.grace)
+	chatId := world.chatIdOf(t, world.frank, frankChat)
+	graceChat := world.conversationOf(t, world.grace, chatId)
+	frankAgent := world.agentOf(t, world.frank)
+	world.call(t, world.frank, fmt.Sprintf(`mutation { SetChatAgentAskableByOthers(conversationId: %q, isAgentAskableByOthers: true) %s }`, frankChat, chatAgentFields))
+
+	// Bob may chat and may not use agents; he is in a group with Frank.
+	group := world.call(t, world.frank, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q]) %s }`, world.bob.ID, chatTestFields))["CreateGroupChat"].(map[string]any)["id"].(string)
+	groupId := world.chatIdOf(t, world.frank, group)
+	world.call(t, world.frank, fmt.Sprintf(`mutation { SetChatAgentAskableByOthers(conversationId: %q, isAgentAskableByOthers: true) %s }`, group, chatAgentFields))
+	bobGroup := world.conversationOf(t, world.bob, groupId)
+	world.askAgentIn(t, world.bob, bobGroup, "what is in Frank's inbox?", frankAgent.ID)
+	time.Sleep(200 * time.Millisecond)
+	if len(requests()) != 0 {
+		t.Fatal("somebody who may not use agents started a turn of Frank's")
+	}
+	if notes := world.notesIn(t, world.bob, bobGroup); len(notes) != 1 || notes[0] != string(models.NoteChatAgentOwnerOnly) {
+		t.Errorf("Bob's notes are %v", notes)
+	}
+
+	// The owner's account disabled: nothing starts.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.UpdateUser(world.frank.ID, func(user *models.User) error {
+			now := time.Now()
+			user.DisabledAt = &now
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.askAgentIn(t, world.grace, graceChat, "what time is the dentist on Thursday?", frankAgent.ID)
+	time.Sleep(200 * time.Millisecond)
+	if len(requests()) != 0 {
+		t.Fatal("a turn started for an owner whose account is disabled")
+	}
+	if notes := world.notesIn(t, world.grace, graceChat); len(notes) != 1 || notes[0] != string(models.NoteChatAgentOff) {
+		t.Errorf("Grace's notes are %v; want that it is off", notes)
+	}
+	// Enabled again, it answers.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		if _, err := tx.UpdateUser(world.frank.ID, func(user *models.User) error {
+			user.DisabledAt = nil
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.askAgentIn(t, world.grace, graceChat, "what time is the dentist on Thursday?", frankAgent.ID)
+	if answer := world.answerIn(t, world.grace, graceChat); answer["content"] != "Thursday at 3." {
+		t.Errorf("Grace reads %v", answer)
+	}
+}

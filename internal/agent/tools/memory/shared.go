@@ -203,7 +203,7 @@ func sharedPageLine(page *models.SharedPage) string {
 }
 
 // sharedGetAction is one page another person shared, as the person is shown
-// it: the opening, the overview, the facts numbered as the owner numbers them,
+// it: the opening, the facts numbered as the owner numbers them,
 // the links to other shared pages, and the pages under it. A page that is not
 // shared is not there, and the answer names what is.
 func sharedGetAction(ctx context.Context, run tools.Run, item *memoryItem, owner string) (*tools.Result, error) {
@@ -257,13 +257,7 @@ func renderSharedPage(page *models.SharedPage, from int) string {
 	if opening := strings.TrimSpace(page.Opening); opening != "" {
 		builder.WriteString("\n\n" + opening)
 	}
-	if overview := strings.TrimSpace(page.Overview); overview != "" {
-		heading := "Overview"
-		if page.OverviewWrittenAt != nil {
-			heading += ", written " + page.OverviewWrittenAt.Format("2 January 2006")
-		}
-		builder.WriteString("\n\n" + heading + ":\n\n" + overview)
-	}
+	builder.WriteString("\n\n" + models.SharedOverviewNotice)
 	facts := page.Facts
 	more := ""
 	if from > 0 {

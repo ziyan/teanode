@@ -121,3 +121,55 @@ func TestUnattendedLimitsResolveTheirDefaults(t *testing.T) {
 		t.Fatalf("a turn's rounds: %d", config.Default().Agent.Limits.MaxRoundsPerAsk)
 	}
 }
+
+// Approving or declining a call that waits for the person is the person's act.
+// The agent's shell or terminal running the command that does it always asks,
+// as money, and no allowance for when the person is away covers it, even one
+// for every reason a person may allow.
+func TestAnAgentCannotAnswerAWaitingCallAlone(t *testing.T) {
+	catalog := FullCatalog()
+	everything := append([]models.UnattendedRisk{}, models.UnattendedRisks...)
+	person := &models.Agent{ID: "agent01", UnattendedAllowedRisks: everything}
+	for name, arguments := range map[string]string{
+		"shell":    `{"command":"teanode agent skill approve 01abc"}`,
+		"terminal": `{"action":"start","command":"teanode","arguments":["agent","skill","approve","01abc"]}`,
+	} {
+		tool := catalog.Get(name)
+		if got := tool.RiskFor([]byte(arguments)); got != RiskMoney {
+			t.Errorf("%s: the risk is %s, want money", name, got)
+		}
+		reasons := tools.ConfirmationReasons(tool, []byte(arguments), nil, person)
+		if len(reasons) != 2 || reasons[1] != models.UnattendedRiskPersonsAnswer {
+			t.Errorf("%s: the reasons are %v, want money and personsAnswer", name, reasons)
+		}
+		if person.IsAllowedUnattended(reasons) {
+			t.Errorf("%s: an allowance for every reason lets it through", name)
+		}
+	}
+	// An ordinary command is still an ordinary write.
+	if got := catalog.Get("shell").RiskFor([]byte(`{"command":"ls ~"}`)); got != RiskWrite {
+		t.Errorf("an ordinary command is %s", got)
+	}
+	if reasons := tools.ConfirmationReasons(catalog.Get("shell"), []byte(`{"command":"teanode agent skill calls --waiting"}`), nil, person); len(reasons) != 0 {
+		t.Errorf("listing the calls that wait asks: %v", reasons)
+	}
+
+	// In a run with nobody present it is refused rather than run.
+	configuration := config.Default()
+	ran := 0
+	shell := &Tool{Name: "shell", Risk: tools.RiskWrite, IsPersonsAnswer: catalog.Get("shell").IsPersonsAnswer, RiskOf: catalog.Get("shell").RiskOf,
+		Run: func(context.Context, *Call) (*tools.Result, error) { ran++; return &tools.Result{Content: `{}`}, nil }}
+	settings := &AskSettings{
+		Agent: person, Owner: &models.User{Username: "robin"}, Conversation: &models.AgentConversation{ID: "conversation01"}, Headless: true,
+	}
+	turn := &AskRun{agent: &Agent{settings: &Settings{Configuration: func() *config.Configuration { return configuration }}}, settings: settings}
+	said := turn.runTool(context.Background(), configuration, []*Tool{shell}, nil,
+		llm.ToolCall{ID: "call01", Name: "shell", Arguments: `{"command":"teanode agent skill approve 01abc"}`}).content
+	if !strings.Contains(said, "needs_confirmation") || !strings.Contains(said, "personsAnswer") || ran != 0 {
+		t.Errorf("a run with nobody present: %q, %d ran", said, ran)
+	}
+	// The setting cannot hold the reason either.
+	if models.UnattendedRiskPersonsAnswer.IsValid() {
+		t.Error("a person may allow the person's own answer")
+	}
+}

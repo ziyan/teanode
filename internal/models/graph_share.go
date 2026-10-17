@@ -132,9 +132,16 @@ type SharedChild struct {
 	Opening  string        `json:"opening"`
 }
 
+// SharedOverviewNotice is said in every view of a shared page, so that a
+// reader who knows pages have longer overviews does not take the missing one
+// for a page without it. The overview is written by a model from the page's
+// links, children and quotes, so it can name pages that are not shared and
+// repeat quotes the owner did not share; it is not shown to a reader at all.
+const SharedOverviewNotice = "The owner's longer overview of this page is not shared."
+
 // SharedPage is one page the owner shared, as the reader sees it: its name,
-// opening, overview and facts, the links to other shared pages, and the pages
-// under it.
+// opening and facts, the links to other shared pages, and the pages under it.
+// Not its overview: see SharedOverviewNotice.
 type SharedPage struct {
 	OwnerUserID   string `json:"ownerUserId"`
 	OwnerUsername string `json:"ownerUsername"`
@@ -146,10 +153,9 @@ type SharedPage struct {
 	NodeKind AgentNodeKind `json:"nodeKind"`
 	Aliases  []string      `json:"aliases"`
 
-	// Opening is what the page is about, the owner's summary of it.
-	Opening           string     `json:"opening"`
-	Overview          string     `json:"overview,omitempty"`
-	OverviewWrittenAt *time.Time `json:"overviewWrittenAt,omitempty"`
+	// Opening is what the page is about, the owner's summary of it. Empty
+	// when the owner did not share quotes and the summary quotes somebody.
+	Opening string `json:"opening"`
 
 	// IsQuoteShared says at least one share reaching the reader for this
 	// page includes the quotes.

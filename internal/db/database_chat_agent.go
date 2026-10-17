@@ -34,9 +34,11 @@ type ChatAgentOperation interface {
 	// of them; with one, everything from the message it stands in for, which
 	// is kept, and the compaction's note. A message taken back is left out.
 	// With isChatOnly it is the chat's messages alone, the newest limit of
-	// them, with none of the member's own agent's rows and no compaction:
-	// what a turn somebody else asked for may read, since those rows hold what
-	// the member's own agent found.
+	// them, with none of the member's own agent's rows and no compaction, and
+	// only those every current member of the chat could read (created at or
+	// after the latest time any of them joined): what a turn somebody else
+	// asked for may read, since those rows hold what the member's own agent
+	// found, and the answer goes to everybody in the room.
 	ListChatTurnRows(conversation *models.AgentConversation, limit int, isChatOnly bool) ([]*models.AgentMessage, error)
 
 	// ListChatMessagesAfter is the messages of a chat newer than the one
@@ -211,7 +213,17 @@ func (self *transaction) ListChatTurnRows(conversation *models.AgentConversation
 		return []*models.AgentMessage{}, nil
 	}
 	member := memberRows[0]
-	chatQuery := self.tx.Where(`"chat_id" = ? AND "created_at" >= ? AND "deleted_at" IS NULL`, conversation.ChatID, member.JoinedAt)
+	readFrom := member.JoinedAt
+	if isChatOnly {
+		latestJoin, err := self.chatEveryMemberReadFrom(conversation.ChatID)
+		if err != nil {
+			return nil, err
+		}
+		if latestJoin.After(readFrom) {
+			readFrom = latestJoin
+		}
+	}
+	chatQuery := self.tx.Where(`"chat_id" = ? AND "created_at" >= ? AND "deleted_at" IS NULL`, conversation.ChatID, readFrom)
 	if member.RemovedAt != nil {
 		chatQuery = chatQuery.Where(`"created_at" <= ?`, *member.RemovedAt)
 	}

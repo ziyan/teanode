@@ -1,7 +1,10 @@
 package apigraph
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -463,6 +466,41 @@ func TestAMemberNeverReadsAnotherMembersAgentRows(t *testing.T) {
 	}
 	// Not even an operator who may act as other people.
 	world.refused(t, world.operator, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { total } }`, carolChat))
+	// Nor to react in it as them, to what her agent said there or to take
+	// one of her reactions away.
+	var answerId string
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		answer, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: carolChat, Role: "assistant", Content: "here is what I found"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answerId = answer.ID
+	})
+	var actor *models.User
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		var err error
+		if actor, err = tx.CreateUser(&models.User{Username: "chat-actor", Name: "chat-actor"}); err != nil {
+			t.Fatal(err)
+		}
+		role, err := tx.CreateRole(&models.Role{Name: "chat-actor role", Permissions: []models.Permission{models.PermissionCircleUse, models.PermissionAgentUse, models.PermissionAgentAct}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateGroup(&models.Group{Name: "chat-actor group", UserIDs: []string{actor.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateAgent(&models.Agent{UserID: actor.ID, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	world.refused(t, actor, fmt.Sprintf(`query { ReadAgentConversation(conversationId: %q) { total } }`, carolChat))
+	for _, emoji := range []string{"👍", ""} {
+		message := world.refused(t, actor, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: %q) }`, answerId, emoji))
+		if !strings.Contains(strings.ToLower(message), "not found") {
+			t.Errorf("a person who may act as others, reacting in a chat as Carol, was told %q; want not found", message)
+		}
+	}
+	world.call(t, world.carol, fmt.Sprintf(`mutation { ReactToAgentMessage(messageId: %q, emoji: "👍") }`, answerId))
 }
 
 func TestRemovingSomeoneFromACircleRemovesThemFromItsChatsInOneStep(t *testing.T) {
@@ -1101,5 +1139,111 @@ func TestEveryChatOperationAnswersNotFoundToAnOutsider(t *testing.T) {
 		if message := world.refused(t, world.alice, missing); !strings.Contains(message, "not found") {
 			t.Errorf("something that is not there answered %q for %s", message, missing)
 		}
+	}
+}
+
+// A reply shows the words of the message it is to, but not to a member who
+// joined after that was said: not when they read, not in the event they are
+// told, and they cannot reply to it themselves.
+func TestAReplyDoesNotQuoteWhatWasSaidBeforeAMemberJoined(t *testing.T) {
+	world := newChatWorld(t)
+	world.shareCircle(t, world.alice, "Home", world.bob, world.carol)
+	group := world.call(t, world.alice, fmt.Sprintf(`mutation { CreateGroupChat(title: "Trip", userIds: [%q]) %s }`, world.bob.ID, chatTestFields))["CreateGroupChat"].(map[string]any)
+	aliceGroup := group["id"].(string)
+	conversationOf := func(user *models.User) string {
+		for _, each := range world.call(t, user, `query { ListAgentConversations(kind: "chat") { id chat { title } } }`)["ListAgentConversations"].([]any) {
+			if each.(map[string]any)["chat"].(map[string]any)["title"] == "Trip" {
+				return each.(map[string]any)["id"].(string)
+			}
+		}
+		t.Fatalf("%s has no Trip chat", user.Username)
+		return ""
+	}
+	bobGroup := conversationOf(world.bob)
+
+	world.say(t, world.alice, aliceGroup, "the surprise is a boat")
+	surprise := world.read(t, world.alice, aliceGroup)[0]["id"]
+	time.Sleep(5 * time.Millisecond)
+	world.call(t, world.alice, fmt.Sprintf(`mutation { AddChatMembers(conversationId: %q, userIds: [%q]) { id } }`, aliceGroup, world.carol.ID))
+	time.Sleep(5 * time.Millisecond)
+	carolGroup := conversationOf(world.carol)
+
+	aliceFeed, carolFeed := world.follow(aliceGroup), world.follow(carolGroup)
+	defer aliceFeed.stop()
+	defer carolFeed.stop()
+	world.call(t, world.bob, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "a boat!", references: [{agentMessageId: %q}]) { runId } }`, bobGroup, surprise))
+
+	quotedTextOf := func(message *models.AgentMessage) string {
+		t.Helper()
+		if message == nil || len(message.References) != 1 || message.References[0].AgentMessageID != surprise {
+			t.Fatalf("the reply is shown as %+v", message)
+		}
+		return message.References[0].QuotedText
+	}
+	if event := aliceFeed.next(agent.EventSaid); event == nil || quotedTextOf(event.Message) != "the surprise is a boat" {
+		t.Errorf("Alice, who was there, is told %+v", event)
+	}
+	if event := carolFeed.next(agent.EventSaid); event == nil || quotedTextOf(event.Message) != "" {
+		t.Errorf("Carol, who joined after, is told what was said before: %+v", event)
+	}
+	for name, test := range map[string]struct {
+		reader *models.User
+		group  string
+		want   string
+	}{"Alice": {world.alice, aliceGroup, "the surprise is a boat"}, "Carol": {world.carol, carolGroup, ""}} {
+		messages := world.read(t, test.reader, test.group)
+		reply := messages[len(messages)-1]
+		references := reply["references"].([]any)
+		if len(references) != 1 || references[0].(map[string]any)["agentMessageId"] != surprise || references[0].(map[string]any)["quotedText"] != test.want {
+			t.Errorf("%s reads the reply as %v; want the quote %q", name, reply, test.want)
+		}
+	}
+	world.refused(t, world.carol, fmt.Sprintf(`mutation { AskAgent(conversationId: %q, message: "what surprise?", references: [{agentMessageId: %q}]) { runId } }`, carolGroup, surprise))
+}
+
+// A file sent in a chat is kept for a person whose agent is off, but the text
+// read out of it is meant for a model and only a person whose agent is on has
+// one to spend it on.
+func TestAFileSentInAChatIsReadForTheModelOnlyWhenTheUploadersAgentIsOn(t *testing.T) {
+	world := newChatWorld(t)
+	world.router.Path(api.PathAgentAttachments).Methods(http.MethodPost).HandlerFunc(world.graph.agentAttachmentsView)
+	upload := func(as *models.User) []*models.AgentAttachment {
+		t.Helper()
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, err := writer.CreateFormFile("file", "menu.txt")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write([]byte("soup and bread"))
+		_ = writer.Close()
+		request := httptest.NewRequest(http.MethodPost, api.PathAgentAttachments, &body)
+		request.Header.Set("Content-Type", writer.FormDataContentType())
+		request.Header.Set(api.AuthenticatedUsernameHeader, as.Username)
+		response := httptest.NewRecorder()
+		world.router.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s uploading got %d: %s", as.Username, response.Code, response.Body.String())
+		}
+		var result AgentAttachmentUploadResult
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || len(result.Attachments) != 1 {
+			t.Fatalf("the upload answered %s", response.Body.String())
+		}
+		var stored []*models.AgentAttachment
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			var err error
+			if stored, err = tx.GetAgentAttachments([]string{result.Attachments[0].ID}); err != nil || len(stored) != 1 {
+				t.Fatalf("GetAgentAttachments: %v %v", stored, err)
+			}
+		})
+		return stored
+	}
+	// Bob may chat, and his agent is off.
+	if stored := upload(world.bob); stored[0].Text != "" {
+		t.Errorf("text was read for a person whose agent is off: %q", stored[0].Text)
+	}
+	// Frank's is on.
+	if stored := upload(world.frank); stored[0].Text != "soup and bread" {
+		t.Errorf("text for a person whose agent is on: %q", stored[0].Text)
 	}
 }

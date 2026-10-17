@@ -115,6 +115,9 @@ func applyChatSettings(settings *AskSettings) error {
 	if settings.Chat.MessageID == "" || settings.Chat.AskerUserID == "" || settings.Chat.AskerUserID == settings.Owner.ID {
 		return fmt.Errorf("agent: a member turn answers a message of somebody else in the chat")
 	}
+	// How hard the owner's agent thinks is the owner's to choose; somebody
+	// else asking gets the default.
+	settings.Effort = ""
 	settings.ReadOnly = true
 	settings.Allow = maps.Clone(memberTurnTools)
 	settings.isUnattended = true

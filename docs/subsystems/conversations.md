@@ -225,8 +225,13 @@ otherwise be indistinguishable. Every surface names an agent the same way:
 still has the default name (`models.AgentSpeakerLabel` for the command line and
 phone notification titles, `agentSpeakerName` in the dashboard,
 `AgentSpeaker.name` in the app). Nobody reads another member's
-conversation, an operator included. A message taken back keeps its row and
-loses its words and files; an edited one has `editedAt`. A member who left or was
+conversation, an operator included: not to read it, ask in it, or react in it as
+them. A message taken back keeps its row and loses its words and files; an edited
+one has `editedAt`. A reply shows the words of the message it is to, except to a
+member who joined after that was said: the reply still says which message it is
+to, and neither a read nor the `said` event told to that member carries its
+words (`quotedChatMessages`, `withoutQuoteBeforeJoining`), and a member cannot
+reply to a message from before they joined. A member who left or was
 taken out keeps reading what was said while they were there and can write
 nothing more ("you are no longer in this chat"). Coming back starts their
 reading afresh.
@@ -237,6 +242,10 @@ share a circle; once they no longer do it stays readable by both and refuses
 messages ("you no longer share a circle"). A group chat's members must each
 share a circle with whoever adds them, its maker is its first admin, and only
 its admins rename it, add and remove people and take back others' messages. A
+group chat holds at most 50 people at once, and one person starts at most 20 in
+a day (those still there are counted); the refusal says which. People in a chat
+together see each other's pictures for as long as they are both in it, whatever
+circles they share (`canSeeAvatar`), since the chat already shows their names. A
 circle chat is changed only through its circle, in the same transaction: a
 person who joins is added, one who leaves is taken out, and so is a person
 from every group chat in which the leaving left them sharing a circle with
@@ -250,7 +259,9 @@ it and notifies phones. It starts a turn only of an agent it addresses (below),
 and answers the run of the caller's own agent in that case, an empty run id
 otherwise. The
 caller's uploads (`agent_attachment`) are claimed by the message and read by
-the other members through the attachment URL. A person may send 60 messages a
+the other members through the attachment URL. A file sent by a person whose
+agent is off is kept, but the text read out of it for a model is not, because
+there is no model to spend it on. A person may send 60 messages a
 minute on one instance (`ratelimit`), a message is at most 16,000 characters,
 and it needs words or a file. `SayInChatAsAgent`, which the `conversation`
 tool's `send` action calls, writes the same message as the agent: its name, and
@@ -286,9 +297,11 @@ author, the ids and each member's agent, with no database) is the whole rule:
 - Another member's agent, addressed, starts a **member turn** only if its owner
   turned on "others may ask my agent here" for this chat (`chat_member.
   is_agent_askable_by_others`, `SetChatAgentAskableByOthers`) and the agent is
-  on. If the owner did not, nothing starts and the author gets a note that only
-  its owner can ask it; if the owner did but the agent is off, a note that it is
-  off. An id that is nobody's in this chat gets a note that it is not here. At
+  on, which also needs its owner's account to be enabled and to hold agent:use,
+  and the author to hold agent:use themselves. If the owner did not allow it, or
+  the author may not use agents, nothing starts and the author gets a note that
+  only its owner can ask it; if the owner did but the agent is off, a note that
+  it is off. An id that is nobody's in this chat gets a note that it is not here. At
   most four agents are started by one message.
 
 The notes are rows of the author's own conversation (`chat_agent_owner_only`,
@@ -353,9 +366,14 @@ what the agent knows, no recall, no mailboxes, goals or permissions, none of
 their instructions. Nor does the history: it is the chat's messages alone,
 never the rows the owner's agent wrote in the conversation (the results of its
 tools hold what it found in their mail, memory or files) nor the compaction
-notes made from them, and it is never compacted. The `conversation` tool reads
-only this chat in such a turn, and
-only the people's messages, not what the owner's agent did in it. The asker's
+notes made from them, and it is never compacted. It starts at the latest time
+any current member joined: the answer goes to everybody in the room, and what
+was said before one of them came is not theirs to be told of, whoever asks (the
+owner's own turn keeps the owner's window, since the owner chose to speak in
+front of the room). The turn thinks at the default effort whatever the asker
+named, since the budget is the owner's. The `conversation` tool reads only this
+chat in such a turn, from the same time, and only the people's messages, not
+what the owner's agent did in it. The asker's
 words are inside the fence.
 
 *Remembering.* `SetChatAgentReading` makes the chat a knowledge source (kind

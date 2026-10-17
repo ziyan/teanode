@@ -58,6 +58,11 @@ type AgentMessageAuthor struct {
 	// IsAgent says an agent wrote it, speaking for the author. Nothing an
 	// agent writes starts a turn, of any agent.
 	IsAgent bool
+
+	// CanUseAgents says the author holds agent:use. Without it they cannot
+	// ask anybody else's agent, whatever its owner allowed the others, since a
+	// member turn spends the owner's agent on their word.
+	CanUseAgents bool
 }
 
 // AgentTurn is a turn to start.
@@ -99,9 +104,10 @@ const MostAgentsAddressed = 4
 //   - The author's own agent, addressed: an owner turn, unless it is switched
 //     off, which starts nothing and tells the author it is off.
 //   - Another member's agent, addressed: if its owner has not allowed the
-//     others to ask it here, nothing starts and the author is told only its
-//     owner can ask it; if they have and it is switched off, nothing starts
-//     and the author is told so; otherwise a member turn.
+//     others to ask it here, or the author does not hold agent:use, nothing
+//     starts and the author is told only its owner can ask it; if they have
+//     and it is switched off, nothing starts and the author is told so;
+//     otherwise a member turn.
 func DecideAgentTurns(author AgentMessageAuthor, addressedAgentIDs []string, seats []AgentSeat) AgentDecision {
 	decision := AgentDecision{Turns: []AgentTurn{}, Notes: []AgentNote{}}
 	if author.IsAgent || author.UserID == "" || !isInRoom(author.UserID, seats) {
@@ -125,7 +131,7 @@ func DecideAgentTurns(author AgentMessageAuthor, addressedAgentIDs []string, sea
 			decision.Notes = append(decision.Notes, noteFor(seat, models.NoteChatAgentOff))
 		case seat.OwnerUserID == author.UserID:
 			decision.Turns = append(decision.Turns, turnFor(seat, AgentTurnOwner))
-		case !seat.IsAgentAskableByOthers:
+		case !seat.IsAgentAskableByOthers || !author.CanUseAgents:
 			decision.Notes = append(decision.Notes, noteFor(seat, models.NoteChatAgentOwnerOnly))
 		case !seat.IsAgentActive:
 			decision.Notes = append(decision.Notes, noteFor(seat, models.NoteChatAgentOff))

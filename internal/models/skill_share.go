@@ -82,7 +82,7 @@ type SkillShare struct {
 	GranteeUserID string `json:"granteeUserId"`
 
 	// PaymentLimitMinor is the most one payment may be, and MonthlyLimitMinor
-	// the most the ran calls of a calendar month may come to, in the minor
+	// the most the ran and failed calls of a calendar month may come to, in the minor
 	// unit of CurrencyCode (cents). Nil is no limit of that kind. A call above
 	// either waits for the owner.
 	PaymentLimitMinor *int64 `json:"paymentLimitMinor,omitempty"`

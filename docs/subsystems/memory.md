@@ -1077,9 +1077,22 @@ and it is the only code that reads another agent's graph. The memory tool,
 the GraphQL operations, the command line, the dashboard, the iPhone app and
 the prompt all go through it, so what is left out is left out once:
 
-* A fact's quote, unless the owner shared the quotes. Where it was read is
-  said in the owner's terms and no more: "from Ada's mail", "from Ada's
-  mail and conversation", never which mail or which document.
+* A fact's quote, unless the owner shared the quotes, and never the quote of a
+  fact any of whose evidence is a chat (what the owner's agent filed from a
+  chat with other people, or a chat archive or coding session document), since
+  that is the words of the others in it. Where it was read is said in the
+  owner's terms and no more: "from Ada's mail", "from Ada's mail and
+  conversation", "from Ada's chats", never which mail or which document.
+* The page's overview. A model writes it from the page's links, its children
+  and their openings and the quotes, so it can name a page that is not shared or
+  repeat a quote the owner did not share. The view says "The owner's longer
+  overview of this page is not shared." (`models.SharedOverviewNotice`).
+* A summary that quotes somebody, unless the owner shared the quotes: the page's
+  opening is left out of the view, of a listing and of a search hit when it has
+  a span between quotation marks of four words or more (`quotesSomebody`, in
+  straight, curly, angle and corner quotation marks; eight characters for a
+  language written without spaces). The rest of the sentence would be built
+  around the quote, so none of it is kept.
 * A link, unless the page at its other end is shared with the reader too, so
   a link never names a page the reader was not given. The owner's other pages
   are not named anywhere.
@@ -1088,8 +1101,8 @@ the prompt all go through it, so what is left out is left out once:
 * Everything about a page that is not what it says: its importance, its
   contact card, its history, the identifiers of its rows.
 
-The name, the opening, the overview and the facts are shown as they are
-written, with the fact numbers the owner sees, so the same fact is
+The name, the opening and the facts are shown as they are written (the opening
+with the exception above), with the fact numbers the owner sees, so the same fact is
 `people/a-grandparent#3` to both of them. A page that is not shared, a page
 beside one that is, and a page the owner does not have are all answered the
 same way: not found.
@@ -1101,11 +1114,14 @@ words, because the vectors are the owner's. A write that names an owner other
 than the person is refused before it is looked at, and so is every other
 action that is not a read of shared pages. `shared` lists everything shared
 with the person, `share`, `shares` and `unshare` are the person's own, and
-`share` is a granting call, so the person is asked first. The prompt carries
-a "Shared with you" section after the person's own index, in the part that
-changes only when a share does: the shared roots with their openings and
-whose they are, at most twenty, then "N more; memory index owner:<username>
-lists them", so nothing is cut without saying so. It is left out of a run
+`share` is a granting call, so the person is asked first. The prompt
+carries a "Shared with you" section as a block after the history
+(`<shared_with_you>`, `sharedIndexOverlay`), read afresh for every turn and not
+kept in the half-hour snapshot of the front of the prompt, so a share taken back
+or a circle left is gone from the next turn and the cache of the front is not
+touched: the shared roots with their openings and whose they are, at most
+twenty, then "N more; memory index owner:<username> lists them", so nothing is
+cut without saying so. It is left out of a run
 nobody is at, of a chat of several people (whose members were not each given
 the same pages), and of the dream, which never reads shared pages.
 

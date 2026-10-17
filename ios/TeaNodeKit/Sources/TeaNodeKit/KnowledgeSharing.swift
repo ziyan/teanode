@@ -97,8 +97,6 @@ public struct SharedKnowledgePage: Codable, Hashable, Sendable {
     public let nodeKind: String
     public let aliases: [String]
     public let opening: String
-    public let overview: String
-    public let overviewWrittenAt: String?
     public let isQuoteShared: Bool
     public let facts: [SharedKnowledgeFact?]
     public let edges: [SharedKnowledgeEdge?]
@@ -158,7 +156,7 @@ public struct KnowledgeSharePreview: Codable, Hashable, Sendable {
 extension Documents {
     static let sharedKnowledgePageFields = """
         ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
-        path name nodeKind aliases opening overview overviewWrittenAt isQuoteShared
+        path name nodeKind aliases opening isQuoteShared
         facts { number factKind text happenedAt isInferred evidenceSource evidenceQuote }
         edges { fromPath toPath relation note isProposed }
         children { path name opening }

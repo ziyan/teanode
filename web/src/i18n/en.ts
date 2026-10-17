@@ -3690,6 +3690,7 @@ export const en = {
   'knowledge.shared.quotesShown': 'Quotes shown',
   'knowledge.shared.back': 'Your pages',
   'knowledge.shared.noPage': 'This page is not shared with you, or the person stopped sharing it.',
+  'knowledge.shared.overviewNotShared': "The owner's longer overview of this page is not shared.",
   'knowledge.shared.noFacts': 'No facts on this page are shared.',
   'knowledge.shared.factsHint':
     "What the page says, as its owner's agent last wrote it. Each fact is cited with its owner's name, and nothing here is copied into your own pages.",
@@ -3709,7 +3710,7 @@ export const en = {
   'knowledge.share.noPeople': 'You do not share a circle with anybody yet. Make or join a circle to share a page.',
   'knowledge.share.quotes': 'Also show the words each fact was read in',
   'knowledge.share.quotesHint':
-    'Those words are quoted from your mail, chats and documents. Left off, they see what a fact says and what kind of thing it was read in, such as your mail, and not the words.',
+    "Those words are quoted from your mail and documents. Left off, they see what a fact says and what kind of thing it was read in, such as your mail, and not the words. Words from a chat are never shown, since they are other people's too.",
   'knowledge.share.preview': 'What {name} will see',
   'knowledge.share.previewing': 'Looking at what they would see…',
   'knowledge.share.reachesOne': 'This shares {count} page: this one and everything under it.',
@@ -5281,7 +5282,8 @@ export const en = {
   'skillShare.monthlyLimit': 'Most in a calendar month',
   'skillShare.currency': 'Currency',
   'skillShare.currencyHint': 'Three letters, such as usd. The limits are in this currency.',
-  'skillShare.limitsHint': 'Above these limits, or when the amount cannot be read, a use waits for you.',
+  'skillShare.limitsHint':
+    'Above these limits, or when the amount cannot be read, a use waits for you. A use that failed still counts toward the month, because a failure after the command acted looks the same as one before.',
   'skillShare.needsBound': 'A tool that pays is shared with a limit, or with Ask me every time.',
   'skillShare.shared': 'Shared {skill} with {name}.',
   'skillShare.failed': 'The skill could not be shared.',

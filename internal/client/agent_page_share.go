@@ -83,17 +83,15 @@ type SharedAgentPage struct {
 	OwnerAvatarURL        *string `json:"ownerAvatarUrl"`
 	OwnerAvatarColorIndex int     `json:"ownerAvatarColorIndex"`
 
-	Path              string              `json:"path"`
-	Name              string              `json:"name"`
-	NodeKind          string              `json:"nodeKind"`
-	Aliases           []string            `json:"aliases"`
-	Opening           string              `json:"opening"`
-	Overview          string              `json:"overview"`
-	OverviewWrittenAt *time.Time          `json:"overviewWrittenAt"`
-	IsQuoteShared     bool                `json:"isQuoteShared"`
-	Facts             []*SharedAgentFact  `json:"facts"`
-	Edges             []*SharedAgentEdge  `json:"edges"`
-	Children          []*SharedAgentChild `json:"children"`
+	Path          string              `json:"path"`
+	Name          string              `json:"name"`
+	NodeKind      string              `json:"nodeKind"`
+	Aliases       []string            `json:"aliases"`
+	Opening       string              `json:"opening"`
+	IsQuoteShared bool                `json:"isQuoteShared"`
+	Facts         []*SharedAgentFact  `json:"facts"`
+	Edges         []*SharedAgentEdge  `json:"edges"`
+	Children      []*SharedAgentChild `json:"children"`
 }
 
 // AgentPageSharePreview is what a share would show, and how many pages it
@@ -108,7 +106,7 @@ const (
 	agentPageShareFields = `id path pageName granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName isQuoteShared createdAt`
 
 	sharedAgentPageFields = `ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex
-    path name nodeKind aliases opening overview overviewWrittenAt isQuoteShared
+    path name nodeKind aliases opening isQuoteShared
     facts { number factKind text happenedAt happenedPrecision saidAt isInferred evidenceSource evidenceQuote }
     edges { fromPath toPath fromName toName relation note isProposed }
     children { path name nodeKind opening }`

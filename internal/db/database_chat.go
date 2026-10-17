@@ -1,7 +1,9 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -95,12 +97,26 @@ type ChatOperation interface {
 	// message stays, drawn as taken back.
 	DeleteChatMessage(messageId string) (*models.ChatMessage, error)
 
+	// SharesChat says whether two different people are both current members
+	// of one chat, whatever circles they are in: a chat shows each member to
+	// the others by name, so their picture goes with it.
+	SharesChat(userId, otherUserId string) (bool, error)
+
 	// ListChatConversationMessages is the newest page of what a member
 	// reads in their conversation for a chat -- the chat's messages from the
 	// time they joined until the time they left, if they did, and their own
 	// agent's rows in the conversation, by time -- with how many there are
 	// in all. Offset counts back from the newest. A page is oldest first.
 	ListChatConversationMessages(conversation *models.AgentConversation, limit, offset int) ([]*models.AgentMessage, int, error)
+
+	// ListChatMemberTurnMessages is the same page as a turn somebody else
+	// asked the member's agent for may read it: the chat's messages alone,
+	// none of the agent's own rows in the conversation, and only those that
+	// every current member of the chat could read, the ones created at or
+	// after the latest time any current member joined. Whoever asked was
+	// shown the chat from their own joining, which may be later than the
+	// owner's, and what the owner's agent says in answer goes to all of them.
+	ListChatMemberTurnMessages(conversation *models.AgentConversation, limit, offset int) ([]*models.AgentMessage, int, error)
 
 	// SetChatMessageReaction puts a reactor's emoji on a message, replacing
 	// the one they had; an empty emoji takes it away. It says whether
@@ -476,6 +492,24 @@ func (self *transaction) CreateGroupChat(creatorUserId, title string, memberUser
 		return nil, err
 	}
 	now := time.Now()
+	peopleCount := 1
+	for _, userId := range uniqueStrings(memberUserIds) {
+		if userId != creatorUserId {
+			peopleCount++
+		}
+	}
+	if peopleCount > models.ChatMembersMost {
+		return nil, limitReached("a group chat holds at most %d people", models.ChatMembersMost)
+	}
+	var madeCount int64
+	if err := self.tx.Model(&chatModel{}).
+		Where(`"created_by_user_id" = ? AND "chat_kind" = ? AND "circle_id" IS NULL AND "created_at" > ?`, creatorUserId, string(models.ChatKindGroup), now.Add(-24*time.Hour)).
+		Count(&madeCount).Error; err != nil {
+		return nil, err
+	}
+	if madeCount >= models.GroupChatsMadePerDayMost {
+		return nil, limitReached("you have started %d group chats in the last day, the most one person starts; try again tomorrow", models.GroupChatsMadePerDayMost)
+	}
 	model := &chatModel{
 		ID: newID(), CreatedAt: now, ModifiedAt: now, ChatKind: string(models.ChatKindGroup),
 		Title: stringPointer(title), CreatedByUserID: &creatorUserId,
@@ -530,6 +564,19 @@ func (self *transaction) AddChatMembers(chatId string, userIds []string) (*model
 		return nil, err
 	}
 	now := time.Now()
+	var currentUserIds []string
+	if err := self.tx.Model(&chatMemberModel{}).Where(`"chat_id" = ? AND "removed_at" IS NULL AND "user_id" IS NOT NULL`, chatId).Pluck("user_id", &currentUserIds).Error; err != nil {
+		return nil, err
+	}
+	peopleCount := len(currentUserIds)
+	for _, userId := range uniqueStrings(userIds) {
+		if !slices.Contains(currentUserIds, userId) {
+			peopleCount++
+		}
+	}
+	if peopleCount > models.ChatMembersMost {
+		return nil, limitReached("a group chat holds at most %d people", models.ChatMembersMost)
+	}
 	for _, userId := range uniqueStrings(userIds) {
 		if err := self.joinChat(chatId, userId, models.MemberRoleMember, now); err != nil {
 			return nil, err
@@ -1137,6 +1184,28 @@ func (self *transaction) SetChatMuted(chatId, userId string, mutedUntil *time.Ti
 const chatQuotedLength = 200
 
 func (self *transaction) ListChatConversationMessages(conversation *models.AgentConversation, limit, offset int) ([]*models.AgentMessage, int, error) {
+	return self.listChatConversationMessages(conversation, limit, offset, false)
+}
+
+func (self *transaction) ListChatMemberTurnMessages(conversation *models.AgentConversation, limit, offset int) ([]*models.AgentMessage, int, error) {
+	return self.listChatConversationMessages(conversation, limit, offset, true)
+}
+
+// chatEveryMemberReadFrom is the earliest time from which every current
+// member of the chat could read it: the latest time any of them joined. A
+// member who left is not counted, since they read nothing that is said now.
+func (self *transaction) chatEveryMemberReadFrom(chatId string) (time.Time, error) {
+	var latestJoin sql.NullTime
+	if err := self.tx.Model(&chatMemberModel{}).Where(`"chat_id" = ? AND "removed_at" IS NULL`, chatId).
+		Select(`MAX("joined_at")`).Scan(&latestJoin).Error; err != nil {
+		return time.Time{}, err
+	}
+	return latestJoin.Time, nil
+}
+
+// listChatConversationMessages reads the page for ListChatConversationMessages
+// and, with isChatOnly, for ListChatMemberTurnMessages.
+func (self *transaction) listChatConversationMessages(conversation *models.AgentConversation, limit, offset int, isChatOnly bool) ([]*models.AgentMessage, int, error) {
 	if conversation == nil || !conversation.IsChat() || conversation.ChatID == "" {
 		return nil, 0, ErrInvalidArguments
 	}
@@ -1152,7 +1221,17 @@ func (self *transaction) ListChatConversationMessages(conversation *models.Agent
 		return []*models.AgentMessage{}, 0, nil
 	}
 	member := memberRows[0]
-	window := self.tx.Model(&chatMessageModel{}).Where(`"chat_id" = ? AND "created_at" >= ?`, conversation.ChatID, member.JoinedAt)
+	readFrom := member.JoinedAt
+	if isChatOnly {
+		latestJoin, err := self.chatEveryMemberReadFrom(conversation.ChatID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if latestJoin.After(readFrom) {
+			readFrom = latestJoin
+		}
+	}
+	window := self.tx.Model(&chatMessageModel{}).Where(`"chat_id" = ? AND "created_at" >= ?`, conversation.ChatID, readFrom)
 	if member.RemovedAt != nil {
 		window = window.Where(`"created_at" <= ?`, *member.RemovedAt)
 	}
@@ -1160,8 +1239,10 @@ func (self *transaction) ListChatConversationMessages(conversation *models.Agent
 	if err := window.Session(&gorm.Session{}).Count(&chatTotal).Error; err != nil {
 		return nil, 0, err
 	}
-	if err := self.tx.Model(&agentMessageModel{}).Where(`"conversation_id" = ?`, conversation.ID).Count(&ownTotal).Error; err != nil {
-		return nil, 0, err
+	if !isChatOnly {
+		if err := self.tx.Model(&agentMessageModel{}).Where(`"conversation_id" = ?`, conversation.ID).Count(&ownTotal).Error; err != nil {
+			return nil, 0, err
+		}
 	}
 	total := int(chatTotal + ownTotal)
 	// The newest offset+limit of each source hold the newest offset+limit of
@@ -1172,8 +1253,10 @@ func (self *transaction) ListChatConversationMessages(conversation *models.Agent
 		return nil, 0, err
 	}
 	var ownRows []agentMessageModel
-	if err := self.tx.Where(`"conversation_id" = ?`, conversation.ID).Order(`"created_at" DESC, "id" DESC`).Limit(want).Find(&ownRows).Error; err != nil {
-		return nil, 0, err
+	if !isChatOnly {
+		if err := self.tx.Where(`"conversation_id" = ?`, conversation.ID).Order(`"created_at" DESC, "id" DESC`).Limit(want).Find(&ownRows).Error; err != nil {
+			return nil, 0, err
+		}
 	}
 	type entry struct {
 		createdAt time.Time
@@ -1215,7 +1298,7 @@ func (self *transaction) ListChatConversationMessages(conversation *models.Agent
 	if err := self.attachChatReactions(chatMessages); err != nil {
 		return nil, 0, err
 	}
-	quoted, err := self.quotedChatMessages(conversation.ChatID, chatMessages)
+	quoted, err := self.quotedChatMessages(conversation.ChatID, chatMessages, readFrom)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1239,8 +1322,25 @@ func (self *transaction) ListChatConversationMessages(conversation *models.Agent
 	return messages, total, nil
 }
 
-// quotedChatMessages are the messages the given ones reply to, by id.
-func (self *transaction) quotedChatMessages(chatId string, messages []*models.ChatMessage) (map[string]*models.ChatMessage, error) {
+func (self *transaction) SharesChat(userId, otherUserId string) (bool, error) {
+	if userId == "" || otherUserId == "" || userId == otherUserId {
+		return false, nil
+	}
+	var count int64
+	if err := self.tx.Table("chat_member AS mine").
+		Joins("JOIN chat_member AS theirs ON theirs.chat_id = mine.chat_id").
+		Where("mine.user_id = ? AND theirs.user_id = ? AND mine.removed_at IS NULL AND theirs.removed_at IS NULL", userId, otherUserId).
+		Limit(1).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// quotedChatMessages are the messages the given ones reply to, by id. A reply
+// shows the words of the message it is to, and a member is not shown what was
+// said before they could read the chat, so the words of a message made before
+// readFrom are left out; the reply still says which message it is to.
+func (self *transaction) quotedChatMessages(chatId string, messages []*models.ChatMessage, readFrom time.Time) (map[string]*models.ChatMessage, error) {
 	ids := []string{}
 	for _, message := range messages {
 		if message.ReplyToMessageID != "" {
@@ -1259,6 +1359,9 @@ func (self *transaction) quotedChatMessages(chatId string, messages []*models.Ch
 		message, err := chatMessageFromModel(&rows[index])
 		if err != nil {
 			return nil, err
+		}
+		if message.CreatedAt.Before(readFrom) {
+			message.Body = ""
 		}
 		quoted[message.ID] = message
 	}

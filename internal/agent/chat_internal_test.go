@@ -32,3 +32,29 @@ func TestAChatMessageTooLongToTravelSaysItWasCut(t *testing.T) {
 		t.Errorf("a message that cannot be cut to fit was %+v", left)
 	}
 }
+
+// How hard the owner's agent thinks is the owner's to choose: a turn somebody
+// else asked for runs on the default whatever effort the asker named, and the
+// owner's own turn keeps the effort they named.
+func TestATurnSomebodyElseAskedForRunsOnTheDefaultEffort(t *testing.T) {
+	turn := func(isMemberTurn bool) *AskSettings {
+		asker := "ann"
+		if isMemberTurn {
+			asker = "ben"
+		}
+		return &AskSettings{
+			Agent: &models.Agent{ID: "agent-ann", UserID: "ann"}, Owner: &models.User{ID: "ann"},
+			Conversation: &models.AgentConversation{ID: "thread", AgentID: "agent-ann", ChatID: "chat", Kind: models.AgentConversationChat},
+			Effort:       "high",
+			Chat:         &ChatTurn{ChatID: "chat", MessageID: "message", AskerUserID: asker, IsMemberTurn: isMemberTurn},
+		}
+	}
+	member := turn(true)
+	if err := applyChatSettings(member); err != nil || member.Effort != "" {
+		t.Errorf("a member turn thinks at %q (%v); want the default", member.Effort, err)
+	}
+	owner := turn(false)
+	if err := applyChatSettings(owner); err != nil || owner.Effort != "high" {
+		t.Errorf("the owner's turn thinks at %q (%v); want what they chose", owner.Effort, err)
+	}
+}

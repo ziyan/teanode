@@ -24,7 +24,8 @@ func newAgentPageShareCommands() []*cli.Command {
 			ArgsUsage: "<path> <username|circle-id>",
 			Description: "They read your page as it is now, never a copy, and lose it the moment you take\n" +
 				"the share back or one of you leaves the circle you share. What the agent read a\n" +
-				"fact in (your mail, chat, documents) stays private unless you say --with-quotes.\n" +
+				"fact in (your mail, documents) stays private unless you say --with-quotes; what it\n" +
+				"read in a chat is other people's words too, and is never shown.\n" +
 				"Sharing again changes whether the quotes are shared. --preview shows exactly\n" +
 				"what they would see, and shares nothing.",
 			Flags: []cli.Flag{
@@ -216,13 +217,7 @@ func printSharedPage(command *cli.Command, page *client.SharedAgentPage) {
 	if opening := strings.TrimSpace(page.Opening); opening != "" {
 		_, _ = fmt.Fprintf(command.Writer, "\n%s\n", forTerminal(opening))
 	}
-	if overview := strings.TrimSpace(page.Overview); overview != "" {
-		heading := "Overview"
-		if page.OverviewWrittenAt != nil {
-			heading += ", written " + page.OverviewWrittenAt.Local().Format("2 Jan 2006")
-		}
-		_, _ = fmt.Fprintf(command.Writer, "\n%s:\n\n%s\n", heading, forTerminal(overview))
-	}
+	_, _ = fmt.Fprintf(command.Writer, "\n%s\n", models.SharedOverviewNotice)
 	if len(page.Facts) > 0 {
 		_, _ = fmt.Fprintln(command.Writer)
 		for _, fact := range page.Facts {

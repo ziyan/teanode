@@ -1209,6 +1209,11 @@ func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAge
 	if err != nil {
 		return false, err
 	}
+	// A chat is between its people: an operator who may act as somebody does
+	// not read it, ask in it or react in it as them.
+	if conversation.IsChat() && other != nil {
+		return false, api.ErrNotFound
+	}
 	if err := requireConversationUse(principal, found, conversation); err != nil {
 		return false, err
 	}

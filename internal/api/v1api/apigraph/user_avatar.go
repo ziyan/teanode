@@ -33,8 +33,10 @@ func avatarURL(user *models.User) *string {
 }
 
 // canSeeAvatar says whether the caller may be shown this person's picture:
-// the person themselves, anyone who manages accounts, and anyone who shares a
-// circle with them. The one place that decides.
+// the person themselves, anyone who manages accounts, anyone who shares a
+// circle with them, and anyone who is in a chat with them now, since a chat
+// shows each member's name to the others and the picture goes with the name.
+// The one place that decides.
 func canSeeAvatar(tx db.Transaction, principal *api.Principal, userId string) (bool, error) {
 	if principal == nil || userId == "" {
 		return false, nil
@@ -48,7 +50,11 @@ func canSeeAvatar(tx db.Transaction, principal *api.Principal, userId string) (b
 	if principal.User == nil {
 		return false, nil
 	}
-	return tx.SharesCircle(principal.User.ID, userId)
+	isInCircle, err := tx.SharesCircle(principal.User.ID, userId)
+	if err != nil || isInCircle {
+		return isInCircle, err
+	}
+	return tx.SharesChat(principal.User.ID, userId)
 }
 
 // requireAvatarOwner is the account whose picture an operation changes: the

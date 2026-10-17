@@ -356,6 +356,50 @@ func TestCanSeeAvatarIsTheOnePlaceThatDecides(t *testing.T) {
 	}
 }
 
+// A chat shows each member's name to the others, so the picture goes with it:
+// for as long as they are both in it, whatever circles they share.
+func TestPeopleInAChatTogetherSeeEachOthersPicture(t *testing.T) {
+	world := newAvatarWorld(t)
+	own := &api.Principal{User: world.other, Permissions: models.NewEffectivePermissions(nil)}
+	canSee := func() bool {
+		t.Helper()
+		var got bool
+		if err := world.database.Transaction(func(tx db.Transaction) (err error) {
+			got, err = canSeeAvatar(tx, own, world.person.ID)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if canSee() {
+		t.Fatal("strangers see each other's pictures")
+	}
+	var chatId string
+	if err := world.database.Transaction(func(tx db.Transaction) error {
+		chat, err := tx.CreateGroupChat(world.person.ID, "Trip", []string{world.other.ID})
+		if err != nil {
+			return err
+		}
+		chatId = chat.ID
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !canSee() {
+		t.Error("two people in a chat together do not see each other's pictures")
+	}
+	if err := world.database.Transaction(func(tx db.Transaction) error {
+		_, err := tx.RemoveChatMember(chatId, world.person.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if canSee() {
+		t.Error("a person who left the chat is still seen")
+	}
+}
+
 func TestTheSessionAndTheUserListCarryThePicture(t *testing.T) {
 	world := newAvatarWorld(t)
 	if _, errors := world.ask(t, world.person, setAvatar("", picture(t, color.RGBA{R: 90, A: 255}))); len(errors) > 0 {

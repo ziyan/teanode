@@ -10,6 +10,7 @@ import (
 	"github.com/ziyan/teanode/internal/browser"
 	"github.com/ziyan/teanode/internal/computer"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -482,6 +483,11 @@ type AskRun struct {
 	// promptData is the part of the prompt read from the person's data,
 	// kept for the turn's rounds; see systemPrompt.
 	promptData *turnPromptData
+
+	// sharedIndex is the "Shared with you" lines read for this turn, in
+	// the overlay after the history; see sharedIndexOverlay.
+	sharedIndex       []string
+	isSharedIndexRead bool
 
 	// previous is the turn of the same conversation this one waits for;
 	// done closes when this one is over.
@@ -2023,6 +2029,10 @@ func (self *AskRun) runTool(ctx context.Context, configuration *config.Configura
 			// are the runs that read mail from strangers, and what the
 			// person allows the agent to do alone is not theirs to steer.
 			isRestricted := self.ReadOnly() || self.settings.Allow != nil
+			if slices.Contains(unattendedRisks, models.UnattendedRiskPersonsAnswer) {
+				// Not something they can allow for when they are away.
+				return toolOutcome{content: self.toolAnswer(toolCall, `{"error": "needs_confirmation: this answers something that waits for the person, and only the person gives that answer (personsAnswer); tell them it is waiting."}`)}
+			}
 			if isRestricted || !self.settings.Agent.IsAllowedUnattended(unattendedRisks) {
 				return toolOutcome{content: self.toolAnswer(toolCall, fmt.Sprintf(`{"error": "needs_confirmation: nobody is present to confirm this (%s); tell the person what you would have done. They can let you do this kind of thing when they are not there, under When you are not there on their agent's settings."}`, joinUnattendedRisks(unattendedRisks)))}
 			}
@@ -2405,10 +2415,9 @@ func (self *AskRun) personSnapshot(ctx context.Context) (knowledge, selfLines []
 		}
 	}
 	knowledge = self.carryIndex(ctx, indexTokens)
-	// What other people shared goes after the person's own index, in the part
-	// of the prompt that only changes when a share does and is kept with it in
-	// the snapshot.
-	knowledge = append(knowledge, self.sharedKnowledgeLines(ctx)...)
+	// What other people shared is not here: a share taken back would stay in
+	// the prompt for the rest of the half hour. It is read for every turn,
+	// in the overlay after the history (sharedIndexOverlay).
 	selfLines = self.agent.selfLines(ctx, settings.Agent, settings.Owner)
 	if canCacheSnapshot {
 		self.agent.promptSnapshots.Store(conversationID, &promptSnapshot{agentID: settings.Agent.ID, knowledge: knowledge, self: selfLines, takenAt: now})
@@ -2772,6 +2781,9 @@ func (self *AskRun) overlays(ctx context.Context, configuration *config.Configur
 				blocks = append(blocks, block)
 			}
 		}
+	}
+	if block := self.sharedIndexOverlay(ctx); block != "" {
+		blocks = append(blocks, block)
 	}
 	_ = self.agent.settings.Database.Transaction(func(tx db.Transaction) error {
 		budget, err := CheckBudget(tx, configuration, settings.Agent, settings.Owner, time.Now())

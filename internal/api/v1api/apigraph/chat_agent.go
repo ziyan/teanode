@@ -97,12 +97,24 @@ func addressedAgentsOf(session *chatSession, arguments AskAgentArguments) []stri
 func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, session *chatSession, shown *models.AgentMessage, arguments AskAgentArguments, addressed []string) (string, error) {
 	tx := self.transaction(ctx)
 	principal := api.ContextPrincipal(ctx)
-	// An agent answers while its owner may use agents, as well as while it is on.
-	mayUseAgents := map[string]bool{session.User.ID: principal != nil && principal.Permissions.Has(models.PermissionAgentUse)}
+	// An agent answers while its owner's account is enabled and may use
+	// agents, as well as while it is on; and somebody asks another member's
+	// agent only if they may use agents themselves.
+	canUseAgents := principal != nil && principal.Permissions.Has(models.PermissionAgentUse)
+	mayUseAgents := map[string]bool{session.User.ID: canUseAgents && !session.User.Disabled()}
 	var permissionError error
 	seats := chat.SeatsOf(session.Chat.Members, func(member *models.ChatMember) bool {
 		if allowed, known := mayUseAgents[member.UserID]; known {
 			return allowed
+		}
+		owner, err := tx.GetUser(member.UserID)
+		if err != nil {
+			permissionError = err
+			return false
+		}
+		if owner == nil || owner.Disabled() {
+			mayUseAgents[member.UserID] = false
+			return false
 		}
 		permissions, err := tx.EffectivePermissions(member.UserID)
 		if err != nil {
@@ -115,7 +127,7 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 	if permissionError != nil {
 		return "", permissionError
 	}
-	decision := chat.DecideAgentTurns(chat.AgentMessageAuthor{UserID: session.User.ID}, addressed, seats)
+	decision := chat.DecideAgentTurns(chat.AgentMessageAuthor{UserID: session.User.ID, CanUseAgents: canUseAgents}, addressed, seats)
 
 	// What the author is told about the agents that start nothing.
 	hub := self.chatHub()
@@ -178,7 +190,7 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 			Message:      arguments.Message,
 			Attachments:  attachments,
 			Surface:      "chat",
-			Effort:       arguments.Effort,
+			Effort:       effortOf(turn, arguments),
 			Chat: &agent.ChatTurn{
 				ChatID: session.Chat.ID, MessageID: shown.ID,
 				AskerUserID: session.User.ID, AskerName: session.User.DisplayName(),
@@ -204,6 +216,16 @@ func (self *graph) startChatTurns(ctx context.Context, worker *agent.Agent, sess
 		})
 	}
 	return ownRunID, nil
+}
+
+// effortOf is how hard the turn thinks: as the asker chose for their own agent,
+// and the default for anybody else's, since the owner's budget is not theirs
+// to spend more of (applyChatSettings holds the same rule for every caller).
+func effortOf(turn chat.AgentTurn, arguments AskAgentArguments) string {
+	if turn.AgentTurnKind == chat.AgentTurnMember {
+		return ""
+	}
+	return arguments.Effort
 }
 
 func firstError(first, second error) error {

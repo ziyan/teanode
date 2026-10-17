@@ -2,6 +2,8 @@ package db_test
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -276,6 +278,78 @@ func TestDeletingAnAccountLeavesNoCircleWithoutAnAdmin(t *testing.T) {
 		}
 		if gone, err := tx.GetCircle(alone.ID); err != nil || gone != nil {
 			t.Errorf("a circle nobody is in was kept: %v %+v", err, gone)
+		}
+	})
+}
+
+// One person makes only so many circles, counting the ones they made that
+// still exist, and sends only so many invitations an hour.
+func TestCirclesAndInvitationsAreBoundedForOnePerson(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		maker := newCircleTestUser(t, tx, "bound-maker")
+		other := newCircleTestUser(t, tx, "bound-other")
+		var circles []*models.Circle
+		for count := 0; count < models.CirclesMadeMost; count++ {
+			circle, err := tx.CreateCircle(&models.Circle{Name: "Circle", CircleKind: models.CircleKindFriends}, maker.ID)
+			if err != nil {
+				t.Fatalf("circle %d: %s", count+1, err)
+			}
+			circles = append(circles, circle)
+		}
+		_, err := tx.CreateCircle(&models.Circle{Name: "One too many", CircleKind: models.CircleKindFriends}, maker.ID)
+		if !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "20 circles") {
+			t.Fatalf("the twenty-first circle: %v", err)
+		}
+		// Somebody else makes theirs, and deleting one makes room.
+		if _, err := tx.CreateCircle(&models.Circle{Name: "Theirs", CircleKind: models.CircleKindFriends}, other.ID); err != nil {
+			t.Errorf("another person's first circle: %v", err)
+		}
+		if err := tx.DeleteCircle(circles[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.CreateCircle(&models.Circle{Name: "Room again", CircleKind: models.CircleKindFriends}, maker.ID); err != nil {
+			t.Errorf("after deleting one: %v", err)
+		}
+
+		// Invitations, to one circle, from one person.
+		inviting := circles[1]
+		now := time.Now()
+		invite := func(userId string, sentAt time.Time) error {
+			_, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
+				CircleID: inviting.ID, InvitedUserID: userId, InvitedByUserID: maker.ID, MemberRole: models.MemberRoleMember,
+				CreatedAt: sentAt, ExpiresAt: sentAt.Add(models.CircleInvitationLifetime),
+			})
+			return err
+		}
+		var invited []*models.User
+		for count := 0; count < models.CircleInvitationsPerHourMost; count++ {
+			person := newCircleTestUser(t, tx, fmt.Sprintf("bound-invited-%02d", count))
+			invited = append(invited, person)
+			if err := invite(person.ID, now); err != nil {
+				t.Fatalf("invitation %d: %s", count+1, err)
+			}
+		}
+		extra := newCircleTestUser(t, tx, "bound-invited-extra")
+		if err := invite(extra.ID, now); !errors.Is(err, db.ErrLimitReached) || !strings.Contains(err.Error(), "30 invitations") {
+			t.Errorf("the thirty-first invitation: %v", err)
+		}
+		// A renewal is one more card as well.
+		if err := invite(invited[0].ID, now); !errors.Is(err, db.ErrLimitReached) {
+			t.Errorf("renewing one: %v", err)
+		}
+		// An hour later they are not counted.
+		if err := invite(extra.ID, now.Add(61*time.Minute)); err != nil {
+			t.Errorf("an hour on: %v", err)
+		}
+		// Somebody else has their own allowance.
+		fresh := newCircleTestUser(t, tx, "bound-invited-fresh")
+		if _, _, err := tx.CreateCircleInvitation(&models.CircleInvitation{
+			CircleID: inviting.ID, InvitedUserID: fresh.ID, InvitedByUserID: other.ID, MemberRole: models.MemberRoleMember,
+			CreatedAt: now, ExpiresAt: now.Add(models.CircleInvitationLifetime),
+		}); err != nil {
+			t.Errorf("another person's first invitation: %v", err)
 		}
 	})
 }

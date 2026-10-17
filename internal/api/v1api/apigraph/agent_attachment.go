@@ -141,6 +141,23 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 	ctx := db.ContextWithAuditPrincipal(request.Context(), self.auditPrincipal(request, user, impersonator))
 	result := &AgentAttachmentUploadResult{Attachments: []*models.AgentAttachment{}}
 	isTaxDocument := request.URL.Query().Get(api.AgentAttachmentTaxDocumentParameter) == "true"
+	// A file sent in a chat is kept for a person whose agent is off, but what
+	// is read out of it is meant for the model, and there is none for them to
+	// spend.
+	isAgentOn := found.Active()
+	if isAgentOn {
+		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
+			permissions, err := tx.EffectivePermissions(user.ID)
+			if err != nil {
+				return err
+			}
+			isAgentOn = permissions.Has(models.PermissionAgentUse)
+			return nil
+		}); err != nil {
+			writeJSON(response, http.StatusInternalServerError, map[string]string{"error": "the file could not be stored"})
+			return
+		}
+	}
 	for _, upload := range uploads {
 		var created *models.AgentAttachment
 		// Read out of the file before the transaction opens rather than
@@ -151,7 +168,7 @@ func (self *graph) agentAttachmentsView(response http.ResponseWriter, request *h
 		// A paystub's or a tax form's text holds the person's taxpayer
 		// number, and is read from the file each time it is needed.
 		text := ""
-		if !isTaxDocument {
+		if !isTaxDocument && isAgentOn {
 			text = agent.ExtractAttachmentText(ctx, upload.Filename, upload.ContentType, upload.Content)
 		}
 		if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {

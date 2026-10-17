@@ -21,7 +21,7 @@ func room() []AgentSeat {
 }
 
 func TestDecideAgentTurns(t *testing.T) {
-	person := func(userID string) AgentMessageAuthor { return AgentMessageAuthor{UserID: userID} }
+	person := func(userID string) AgentMessageAuthor { return AgentMessageAuthor{UserID: userID, CanUseAgents: true} }
 	cases := []struct {
 		name      string
 		author    AgentMessageAuthor
@@ -79,7 +79,7 @@ func TestDecideAgentTurns(t *testing.T) {
 		},
 		{
 			name:      "an agent's message starts nothing, of any agent",
-			author:    AgentMessageAuthor{UserID: "ann", IsAgent: true},
+			author:    AgentMessageAuthor{UserID: "ann", IsAgent: true, CanUseAgents: true},
 			addressed: []string{"agent-ben", "agent-ann"},
 		},
 		{
@@ -106,6 +106,12 @@ func TestDecideAgentTurns(t *testing.T) {
 			author:    person("ann"),
 			addressed: []string{"agent-ann", "agent-ann"},
 			turns:     []AgentTurn{{AgentID: "agent-ann", AgentName: "Annie", OwnerUserID: "ann", AgentTurnKind: AgentTurnOwner}},
+		},
+		{
+			name:      "somebody without agent:use cannot ask another member's askable agent",
+			author:    AgentMessageAuthor{UserID: "ann"},
+			addressed: []string{"agent-ben"},
+			notes:     []AgentNote{{AgentID: "agent-ben", AgentName: "Benny", NoteKind: models.NoteChatAgentOwnerOnly}},
 		},
 		{
 			name:      "two agents addressed start two turns, in the order named",
@@ -150,7 +156,7 @@ func TestDecideAgentTurnsIgnoresAgentsPastTheMost(t *testing.T) {
 		seats = append(seats, AgentSeat{OwnerUserID: "u-" + id, AgentID: id, IsAgentActive: true, IsAgentAskableByOthers: true})
 		addressed = append(addressed, id)
 	}
-	decision := DecideAgentTurns(AgentMessageAuthor{UserID: "ann"}, addressed, seats)
+	decision := DecideAgentTurns(AgentMessageAuthor{UserID: "ann", CanUseAgents: true}, addressed, seats)
 	if len(decision.Turns) != MostAgentsAddressed {
 		t.Fatalf("got %d turns, want %d", len(decision.Turns), MostAgentsAddressed)
 	}

@@ -44,6 +44,11 @@ func (self *AskRun) judgedReason(ctx context.Context, tool *Tool, arguments json
 	if call == "" {
 		return ""
 	}
+	// Answering a call that waits for the person is theirs to do, and no
+	// model is asked: no allowance for when they are away covers it.
+	if tools.AnswersSkillShareCall(call) {
+		return models.UnattendedRiskPersonsAnswer
+	}
 	self.mutex.Lock()
 	unattendedRisk, isJudged := self.judgedCalls[call]
 	self.mutex.Unlock()
@@ -89,6 +94,9 @@ func (self *AskRun) judgeCall(ctx context.Context, call string) (string, string)
 // the call would do, why, what the judgement cost, and whether a judgement
 // was had at all. Anything that goes wrong is judged destructive.
 func (self *Agent) judgeCallText(ctx context.Context, agentName, person, call string) (string, string, llm.Usage, bool) {
+	if tools.AnswersSkillShareCall(call) {
+		return callRiskMoney, "it answers a call that waits for the person's own approval", llm.Usage{}, true
+	}
 	prompt, err := render("command_judge.txt", map[string]any{
 		"AgentName":  agentName,
 		"PersonName": person,

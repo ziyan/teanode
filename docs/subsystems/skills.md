@@ -323,8 +323,11 @@ takes them from the next turn; and every call is checked again when it is made.
    amount is missing, not a whole number above zero, or not in the share's
    currency (all of which are cases the server cannot price); when it is above
    the limit for one payment; or when it would take the calendar month (UTC)
-   past the monthly limit. The month's total is the calls that ran, in the
-   share's currency, counted from when they ran, and nothing else.
+   past the monthly limit. The month's total is the calls that ran and the calls
+   that failed, in the share's currency, counted from when they ran, and nothing
+   else. A failed call counts because a failure after the command acted cannot be
+   told from one before it, and the limit is the owner's bound on what could have
+   been spent.
 3. A tool with a scoped identifier is never priced. Its call is turned back
    unless it names an identifier that appears, as a whole word, in the output
    of an earlier call of the same share that ran (and has at least six
@@ -366,11 +369,24 @@ update from `waiting_for_approval`, so two answers at once, from the phone and
 the drawer, change the row once and run the call once. A call nobody answers in
 a day expires, in the worker's sweep.
 
-An approval is a person's act. The API refuses `AnswerSkillShareCall` to the
-agent's own operations, which carry the agent as the actor, and to an operator
-signed in as the owner. The `skill` tool has actions to share, unshare, list
-shares and list calls, and none that answers a call; the parity test fails if
-one is added.
+An approval is meant to be the person's act, and what is guaranteed is this.
+The API refuses `AnswerSkillShareCall` to the agent's own operations, which
+carry the agent as the actor, and to an operator signed in as the owner. The
+`skill` tool has actions to share, unshare, list shares and list calls, and none
+that answers a call; the parity test fails if one is added. A request that
+carries the owner's own sign-in is the owner's whoever typed it, so a command
+the agent runs on her computer with her saved sign-in (`teanode agent skill
+approve` or `decline`) arrives as her; no token is minted for an agent run or a
+coding session hook that the API could refuse instead. That path is held in the
+tools: a `shell` call, or a `terminal` start or typed text, whose words look
+like that command (`tools.AnswersSkillShareCall`: the words agent, skill and
+approve or decline in that order, with a few between) always asks her, as
+money, and the reason `personsAnswer`, which nobody can allow, keeps it from
+running in a turn with nobody present even when she allowed every other
+reason. A skill whose command contains those words is held the same way. It is a
+guess over words, not a parse of the shell: a command assembled from pieces, or
+typed into a terminal one key at a time, is not seen, and a request made straight
+to the API with her sign-in is out of its reach.
 
 **Telling the other person.** The conversation the call came from is woken with
 how it came out (approved and ran, approved and failed, declined, expired), the

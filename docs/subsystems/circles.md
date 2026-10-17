@@ -41,6 +41,18 @@ row `FOR UPDATE` first so that two changes at once take turns. Deleting an
 account applies the same rules: it leaves each circle, and if it was the only
 admin the member who joined first becomes one.
 
+Deleting a circle, or its last member leaving, does for each member what leaving
+does, in the same transaction: they leave the circle's chat first (so their
+agents stop reading it), and once the circle is gone, every group chat in which
+they now share a circle with none of the others.
+
+One person makes at most 20 circles (those they made that still exist) and sends
+at most 30 invitations an hour, counting a renewal as one (`models.CirclesMadeMost`,
+`models.CircleInvitationsPerHourMost`, kept in `internal/db/database_circle.go`).
+The refusal says which limit it is. An invitation that stores nothing (an unknown
+username, a person who may not use circles) is not counted and is still answered
+`true`.
+
 ## Joining
 
 Joining is by **invitation**, naming an exact username, made by an admin

@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -276,6 +277,13 @@ func (self *transaction) CreateCircle(circle *models.Circle, creatorUserId strin
 	if creatorUserId == "" {
 		return nil, ErrInvalidArguments
 	}
+	var madeCount int64
+	if err := self.tx.Model(&circleModel{}).Where(`"created_by_user_id" = ?`, creatorUserId).Count(&madeCount).Error; err != nil {
+		return nil, err
+	}
+	if madeCount >= models.CirclesMadeMost {
+		return nil, limitReached("you have made %d circles, the most one person has; delete one you no longer use before making another", models.CirclesMadeMost)
+	}
 	now := time.Now()
 	model := &circleModel{
 		ID:              newID(),
@@ -370,10 +378,34 @@ func (self *transaction) DeleteCircle(circleId string) error {
 	if err := self.tx.Model(&circleMemberModel{}).Where("\"circle_id\" = ?", circleId).Pluck("user_id", &memberIds).Error; err != nil {
 		return err
 	}
-	if err := self.tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error; err != nil {
+	return deleteCircleRow(self.tx, circleId, memberIds)
+}
+
+// deleteCircleRow deletes a circle whose row the caller has locked, and does
+// for each of its members what leaving it does, in the same transaction. They
+// leave the circle's own chat first, while it is there, which switches off
+// their agents' reading of it (deleting the circle would take the chat with it
+// and leave those sources pointing at nothing); and once the circle is gone,
+// the group chats in which they now share a circle with none of the others,
+// which cannot be told before.
+func deleteCircleRow(tx *gorm.DB, circleId string, memberIds []string) error {
+	memberIds = append([]string{}, memberIds...)
+	sort.Strings(memberIds)
+	now := time.Now()
+	for _, userId := range memberIds {
+		if err := leaveCircleChats(tx, circleId, userId, now); err != nil {
+			return err
+		}
+	}
+	if err := tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error; err != nil {
 		return err
 	}
-	return endSharesOutsideCircles(self.tx, memberIds...)
+	for _, userId := range memberIds {
+		if err := leaveCircleChats(tx, circleId, userId, now); err != nil {
+			return err
+		}
+	}
+	return endSharesOutsideCircles(tx, memberIds...)
 }
 
 // endSharesOutsideCircles ends, for each of these people, every direct
@@ -521,11 +553,9 @@ func (self *transaction) RemoveCircleMember(circleId, userId string) (*models.Ci
 		return nil, ErrNotFound
 	}
 	if len(rows) == 1 {
-		// Nobody is left to belong to it.
-		if err := self.tx.Where("\"id\" = ?", circleId).Delete(&circleModel{}).Error; err != nil {
-			return nil, err
-		}
-		return nil, endSharesOutsideCircles(self.tx, userId)
+		// Nobody is left to belong to it, and its last member leaves its
+		// chats as any other member would.
+		return nil, deleteCircleRow(self.tx, circleId, []string{userId})
 	}
 	if found.MemberRole == string(models.MemberRoleAdmin) && countCircleAdmins(rows) == 1 {
 		return nil, ErrCircleNeedsAdmin
@@ -682,6 +712,19 @@ func (self *transaction) CreateCircleInvitation(invitation *models.CircleInvitat
 	}
 	invitationId := waiting.ID
 	isNew := result.RowsAffected == 0
+	// New or renewed, an invitation is one more card for someone, and one
+	// person sends only so many in an hour.
+	if invitation.InvitedByUserID != "" {
+		var sentCount int64
+		if err := self.tx.Model(&circleInvitationModel{}).
+			Where(`"invited_by_user_id" = ? AND "created_at" > ?`, invitation.InvitedByUserID, invitation.CreatedAt.Add(-time.Hour)).
+			Count(&sentCount).Error; err != nil {
+			return nil, false, err
+		}
+		if sentCount >= models.CircleInvitationsPerHourMost {
+			return nil, false, limitReached("you have sent %d invitations in the last hour, the most one person sends; try again later", models.CircleInvitationsPerHourMost)
+		}
+	}
 	if isNew {
 		invitationId = newID()
 		if err := self.tx.Create(&circleInvitationModel{

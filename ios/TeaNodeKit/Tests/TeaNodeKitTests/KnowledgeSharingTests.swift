@@ -35,7 +35,7 @@ final class KnowledgeSharingTests: XCTestCase {
         let json = """
             {"ownerUserId":"u","ownerUsername":"ada","ownerName":"Ada Example","ownerAvatarUrl":null,"ownerAvatarColorIndex":2,
              "path":"people/a-grandparent","name":"A Grandparent","nodeKind":"person","aliases":[],"opening":"Lives by the sea.",
-             "overview":"","overviewWrittenAt":null,"isQuoteShared":false,
+             "isQuoteShared":false,
              "facts":[{"number":3,"factKind":"fact","text":"Next appointment is Tuesday.","happenedAt":null,"isInferred":false,
                        "evidenceSource":"from Ada Example's mail","evidenceQuote":""}, null],
              "edges":[{"fromPath":"people/a-grandparent","toPath":"people/a-grandparent/doctor","relation":"knows","note":"","isProposed":false}],

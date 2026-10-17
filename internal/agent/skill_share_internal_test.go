@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,6 +39,7 @@ type skillShareFixture struct {
 	relay    *fakeRelay
 
 	ada, ben           *models.User
+	agentUsers         *models.Group
 	adaAgent, benAgent *models.Agent
 	adaKey, benKey     []byte
 	circle             *models.Circle
@@ -118,6 +120,14 @@ func newSkillShareFixture(t *testing.T) *skillShareFixture {
 		}
 		if fixture.ben, err = tx.CreateUser(&models.User{Username: "ben", Name: "Ben"}); err != nil {
 			t.Fatalf("CreateUser: %s", err)
+		}
+		// The owner may use agents, which the shared tools run as.
+		role, err := tx.CreateRole(&models.Role{Name: "agent users", Permissions: []models.Permission{models.PermissionAgentUse}})
+		if err != nil {
+			t.Fatalf("CreateRole: %s", err)
+		}
+		if fixture.agentUsers, err = tx.CreateGroup(&models.Group{Name: "agent users", UserIDs: []string{fixture.ada.ID}, RoleIDs: []string{role.ID}}); err != nil {
+			t.Fatalf("CreateGroup: %s", err)
 		}
 		if fixture.adaAgent, err = tx.CreateAgent(&models.Agent{UserID: fixture.ada.ID, Enabled: true, Name: "Tea"}); err != nil {
 			t.Fatalf("CreateAgent: %s", err)
@@ -466,10 +476,11 @@ func TestACallThatNeedsTheOwnerWaitsForHer(t *testing.T) {
 	}
 }
 
-// The month is counted from the calls that ran: two payments inside the month's
-// limit run, the third that would pass it waits, and a call that failed or
-// still waits paid nothing.
-func TestTheMonthsLimitCountsRanCallsOnly(t *testing.T) {
+// The month is counted from the calls that ran and the calls that failed: two
+// payments inside the month's limit run, the third that would pass it waits, a
+// call that still waits paid nothing, and one that failed counts, since a
+// failure after the command acted cannot be told from one before it.
+func TestTheMonthsLimitCountsRanAndFailedCalls(t *testing.T) {
 	fixture := newSkillShareFixture(t)
 	share := fixture.share(t, &models.SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: dollars(20000), MonthlyLimitMinor: dollars(40000), CurrencyCode: "usd"})
 	for index, expected := range []string{"ran", "ran", "waiting_for_approval"} {
@@ -481,7 +492,7 @@ func TestTheMonthsLimitCountsRanCallsOnly(t *testing.T) {
 			t.Errorf("call %d came to %v, want %s", index, answered["callState"], expected)
 		}
 	}
-	// A payment that did not complete leaves the month as it was.
+	// A payment that did not complete still counts toward the month.
 	fixture.worker.DetachComputer(fixture.adaAgent.ID, fixture.computer)
 	fixture.computer = &fakeComputer{agent: fixture.worker, agentId: fixture.adaAgent.ID, answers: func(string, json.RawMessage) (bool, string) {
 		return false, "the program refused"
@@ -493,8 +504,12 @@ func TestTheMonthsLimitCountsRanCallsOnly(t *testing.T) {
 	}
 	fixture.attachComputerAgain()
 	answered, err = fixture.benCalls(t, share, "pay", card(10000, "usd"))
+	if err != nil || answered["callState"] != "waiting_for_approval" {
+		t.Errorf("a failed payment did not count against the month: %v %v", answered, err)
+	}
+	answered, err = fixture.benCalls(t, share, "pay", card(5000, "usd"))
 	if err != nil || answered["callState"] != "ran" {
-		t.Errorf("a failed payment counted against the month: %v %v", answered, err)
+		t.Errorf("what is left of the month after the failed one was refused: %v %v", answered, err)
 	}
 	answered, err = fixture.benCalls(t, share, "pay", card(1, "usd"))
 	if err != nil || answered["callState"] != "waiting_for_approval" {
@@ -913,5 +928,91 @@ func TestArgumentsTooLargeForACardAreTurnedBack(t *testing.T) {
 	}
 	if calls := fixture.callsOf(t, share); len(calls) != 0 {
 		t.Errorf("a call turned back for its size left %+v", calls)
+	}
+}
+
+// A share made while its two people could take part stops working when an
+// operator disables either account or takes agent:use from the owner: the
+// tools are not offered, a call is turned back, and the owner's answer to a
+// call that waits is refused. It works again when they can.
+func TestSharedToolsStopWhileEitherAccountIsDisabledOrTheOwnerMayNotUseAgents(t *testing.T) {
+	fixture := newSkillShareFixture(t)
+	share := fixture.share(t, &models.SkillShare{ToolNames: []string{"pay"}, PaymentLimitMinor: dollars(10000), CurrencyCode: "usd"})
+	waiting, err := fixture.benCalls(t, share, "pay", card(25000, "usd"))
+	if err != nil || waiting["callState"] != "waiting_for_approval" {
+		t.Fatalf("a call above the limit: %v %v", waiting, err)
+	}
+	waitingId, _ := waiting["callId"].(string)
+	if waitingId == "" {
+		t.Fatalf("the waiting call has no id: %v", waiting)
+	}
+	tool := fixture.benTool(t, "pay")
+	if tool == nil {
+		t.Fatal("ben is offered no tool to start from")
+	}
+
+	disable := func(userId string, isDisabled bool) {
+		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+			if _, err := tx.UpdateUser(userId, func(user *models.User) error {
+				user.DisabledAt = nil
+				if isDisabled {
+					now := time.Now()
+					user.DisabledAt = &now
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	setAgentUse := func(isHeld bool) {
+		dbtest.RunTransactionOn(t, fixture.database, func(tx db.Transaction) {
+			if _, err := tx.UpdateGroup(fixture.agentUsers.ID, func(group *models.Group) error {
+				group.UserIDs = nil
+				if isHeld {
+					group.UserIDs = []string{fixture.ada.ID}
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	run := &directRun{agent: fixture.worker, owner: fixture.ben, agentModel: fixture.benAgent}
+	attempt := func(name string) {
+		t.Helper()
+		if got := fixture.worker.SharedSkillTools(context.Background(), fixture.benAgent); len(got) != 0 {
+			t.Errorf("%s: ben is offered %d shared tools", name, len(got))
+		}
+		arguments, _ := json.Marshal(card(2500, "usd"))
+		if _, err := tool.Run(tools.WithRun(context.Background(), run), &tools.Call{ID: "c1", Arguments: arguments, Confirmed: true}); !errors.Is(err, ErrSharedUnavailable) {
+			t.Errorf("%s: a call was not turned back: %v", name, err)
+		}
+		for _, isApproved := range []bool{true, false} {
+			if _, err := fixture.worker.AnswerSharedCall(context.Background(), fixture.ada.ID, waitingId, isApproved, ""); !errors.Is(err, ErrSharedUnavailable) {
+				t.Errorf("%s: the owner's answer (approved %v) was taken: %v", name, isApproved, err)
+			}
+		}
+		if len(fixture.ranCommands()) != 0 {
+			t.Errorf("%s: a command ran on the owner's computer: %v", name, fixture.ranCommands())
+		}
+	}
+
+	disable(fixture.ada.ID, true)
+	attempt("the owner is disabled")
+	disable(fixture.ada.ID, false)
+	setAgentUse(false)
+	attempt("the owner may not use agents")
+	setAgentUse(true)
+	disable(fixture.ben.ID, true)
+	attempt("the grantee is disabled")
+	disable(fixture.ben.ID, false)
+
+	// Back as it was, it works.
+	if got := fixture.worker.SharedSkillTools(context.Background(), fixture.benAgent); len(got) == 0 {
+		t.Error("nothing is offered once both can take part again")
+	}
+	if _, err := fixture.worker.AnswerSharedCall(context.Background(), fixture.ada.ID, waitingId, false, ""); err != nil {
+		t.Errorf("declining once both can take part again: %v", err)
 	}
 }

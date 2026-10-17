@@ -64,10 +64,13 @@ type SkillShareOperation interface {
 	// newest first. A state narrows them; empty is every state.
 	ListSkillShareCalls(shareId string, callState models.SkillShareCallState, limit int) ([]*models.SkillShareCall, error)
 
-	// SkillShareMonthTotal is what the share's ran calls come to, in the
-	// currency, for those that ran from the moment to the moment (a call that
-	// waited ran when it was approved), and no other calls: one that failed,
-	// was refused, declined, expired or still waits has paid nothing.
+	// SkillShareMonthTotal is what the share's ran and failed calls come to,
+	// in the currency, for those that ran from the moment to the moment (a call
+	// that waited ran when it was approved), and no other calls: one that was
+	// refused, declined, expired or still waits has paid nothing. A call that
+	// failed counts, because a failure after the command acted cannot be told
+	// from one before it, and the month's limit is the owner's bound on what
+	// could have been spent.
 	SkillShareMonthTotal(shareId, currencyCode string, from, until time.Time) (int64, error)
 
 	// HasSkillShareOutputWith says whether an earlier call of the share that
@@ -524,7 +527,7 @@ func (self *transaction) ListSkillShareCalls(shareId string, callState models.Sk
 func (self *transaction) SkillShareMonthTotal(shareId, currencyCode string, from, until time.Time) (int64, error) {
 	var total int64
 	if err := self.tx.Raw(`SELECT COALESCE(SUM("amount_minor"), 0) FROM "skill_share_call"
-		WHERE "skill_share_id" = ? AND "call_state" = 'ran' AND "currency_code" = ?
+		WHERE "skill_share_id" = ? AND "call_state" IN ('ran', 'failed') AND "currency_code" = ?
 		  AND "amount_minor" IS NOT NULL AND COALESCE("decided_at", "created_at") >= ? AND COALESCE("decided_at", "created_at") < ?`,
 		shareId, currencyCode, from, until).Scan(&total).Error; err != nil {
 		return 0, err

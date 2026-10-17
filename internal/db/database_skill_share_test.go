@@ -137,9 +137,10 @@ func TestLeavingACircleEndsTheSkillSharesThatNeededIt(t *testing.T) {
 	})
 }
 
-// The month's total counts calls that ran in this currency in this month, and
-// nothing a call that did not run asked for.
-func TestTheMonthTotalCountsRanCallsOnly(t *testing.T) {
+// The month's total counts calls that ran or failed in this currency in this
+// month, a failure after the command acted being no different from one
+// before it, and nothing a call that never ran asked for.
+func TestTheMonthTotalCountsRanAndFailedCallsOnly(t *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(t)
 	defer closeDatabase()
 
@@ -166,8 +167,8 @@ func TestTheMonthTotalCountsRanCallsOnly(t *testing.T) {
 		}
 		start, end := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
 		total, err := tx.SkillShareMonthTotal(share.ID, "usd", start, end)
-		if err != nil || total != 1250 {
-			t.Fatalf("the month's total is %d (%v), want the two calls that ran", total, err)
+		if err != nil || total != 10250 {
+			t.Fatalf("the month's total is %d (%v), want the two calls that ran and the one that failed", total, err)
 		}
 		if total, _ := tx.SkillShareMonthTotal(share.ID, "usd", end, end.Add(time.Hour)); total != 0 {
 			t.Fatalf("another month counts this one's calls: %d", total)

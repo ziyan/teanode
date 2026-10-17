@@ -3550,6 +3550,7 @@ export const zh: Catalog = {
   'knowledge.shared.quotesShown': '含引文',
   'knowledge.shared.back': '你的页面',
   'knowledge.shared.noPage': '这个页面没有与你共享，或者对方已停止共享。',
+  'knowledge.shared.overviewNotShared': '主人对这个页面写的较长概述不会共享。',
   'knowledge.shared.noFacts': '这个页面没有共享任何事实。',
   'knowledge.shared.factsHint':
     '内容是页面主人的智能体最后写下的样子。每条事实都带着主人的名字被引用，不会复制到你自己的页面里。',
@@ -3568,7 +3569,7 @@ export const zh: Catalog = {
   'knowledge.share.noPeople': '你还没有和任何人在同一个圈子里。创建或加入一个圈子后，就可以共享页面了。',
   'knowledge.share.quotes': '同时显示每条事实出处的原文',
   'knowledge.share.quotesHint':
-    '这些原文引自你的邮件、聊天和文档。不勾选时，对方只能看到事实本身和它出自哪一类内容（例如你的邮件），看不到原文。',
+    '这些原文引自你的邮件和文档。不勾选时，对方只能看到事实本身和它出自哪一类内容（例如你的邮件），看不到原文。聊天里的原文永远不会显示，因为那也是别人的话。',
   'knowledge.share.preview': '{name}将会看到',
   'knowledge.share.previewing': '正在查看对方会看到什么…',
   'knowledge.share.reachesOne': '将共享 {count} 个页面：这个页面以及它下面的所有页面。',
@@ -5131,7 +5132,8 @@ export const zh: Catalog = {
   'skillShare.monthlyLimit': '每个日历月上限',
   'skillShare.currency': '币种',
   'skillShare.currencyHint': '三个字母，例如 usd。上限以此币种计算。',
-  'skillShare.limitsHint': '超过上限，或无法读出金额时，使用会等待你的确认。',
+  'skillShare.limitsHint':
+    '超过上限，或无法读出金额时，使用会等待你的确认。失败的使用也计入当月，因为命令已经执行之后的失败与执行之前的失败看起来一样。',
   'skillShare.needsBound': '会付款的工具需要设置上限，或选择“每次都问我”才能共享。',
   'skillShare.shared': '已把{skill}共享给{name}。',
   'skillShare.failed': '无法共享这个技能。',

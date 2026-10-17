@@ -201,8 +201,9 @@ type Weighing struct {
 }
 
 // Weigh holds one call of this tool to a share's limits. monthTotalMinor is
-// what the share's ran calls of this calendar month in the share's currency
-// already come to.
+// what the share's ran and failed calls of this calendar month in the share's
+// currency already come to (a call that failed counts, since a failure after
+// the command acted cannot be told from one before it).
 //
 // A tool that names a scoped identifier pays nothing and is not held to the
 // limits: it is held to the identifier rule, which the caller decides. Every
@@ -239,7 +240,7 @@ func (self *Tool) Weigh(arguments map[string]any, limits ShareLimits, monthTotal
 	case limits.PaymentLimitMinor != nil && amount.Minor > *limits.PaymentLimitMinor:
 		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it is above your limit for one payment"
 	case limits.MonthlyLimitMinor != nil && monthTotalMinor+amount.Minor > *limits.MonthlyLimitMinor:
-		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it would take this month past your monthly limit"
+		weighing.IsApprovalNeeded, weighing.WaitReason = true, "it would take this month past your monthly limit (a use that failed counts toward it)"
 	}
 	return weighing
 }

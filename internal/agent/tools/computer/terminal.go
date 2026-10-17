@@ -92,10 +92,34 @@ func init() {
 					}
 					return ""
 				},
-				Run: runTerminal,
+				RiskOf: func(arguments json.RawMessage) tools.Risk {
+					if answersSkillShareCallInTerminal(arguments) {
+						return tools.RiskMoney
+					}
+					return ""
+				},
+				IsPersonsAnswer: answersSkillShareCallInTerminal,
+				Run:             runTerminal,
 			},
 		}
 	})
+}
+
+// answersSkillShareCallInTerminal is answersSkillShareCall for the terminal:
+// a program started with the command, or text typed that holds it. A command
+// typed a key at a time is not seen.
+func answersSkillShareCallInTerminal(arguments json.RawMessage) bool {
+	var call terminalArguments
+	if json.Unmarshal(arguments, &call) != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(call.Action)) {
+	case "start":
+		return tools.AnswersSkillShareCall(call.Command + " " + strings.Join(call.Arguments, " "))
+	case "type":
+		return tools.AnswersSkillShareCall(call.Text)
+	}
+	return false
 }
 
 type terminalArguments struct {

@@ -114,7 +114,7 @@ func pageSharingServer(test *testing.T) (*httptest.Server, func(string) map[stri
 	var lock sync.Mutex
 	calls := map[string]map[string]any{}
 	const sharedPage = `{"ownerUserId":"u-ada","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","nodeKind":"person",
-		"aliases":["grandma"],"opening":"Lives by the sea.","overview":"","isQuoteShared":false,
+		"aliases":["grandma"],"opening":"Lives by the sea.","isQuoteShared":false,
 		"facts":[{"number":3,"factKind":"fact","text":"Next appointment is Tuesday at three.","isInferred":false,"evidenceSource":"from Ada Example's mail","evidenceQuote":""}],
 		"edges":[],"children":[{"path":"people/a-grandparent/doctor","name":"The doctor","nodeKind":"person","opening":""}]}`
 	answers := map[string]string{
