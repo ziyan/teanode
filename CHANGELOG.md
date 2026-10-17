@@ -6,6 +6,17 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.168.3] - 2026-10-17
+
+### Changed
+
+- When the agent hands over something that is only its best guess at what you asked for, it says so and where it came from. (#525)
+- iOS builds reach TestFlight without waiting for the screenshots, and the screenshots take about a third of the time. (#527)
+
+### Fixed
+
+- The agent's tone and your "how you want me to sound" settings now apply in conversations, not only in messages it sends on its own. (#525)
+
 ## [0.168.2] - 2026-10-16
 
 ### Changed
