@@ -10,6 +10,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/place"
 )
 
 // The location journal: for every person who has reported where they are,
@@ -116,16 +117,37 @@ func placeTextForModel(text string) string {
 	return strings.TrimSpace(cutRunes(strings.Join(strings.Fields(cleaned), " "), placeTextRunesMost))
 }
 
+// locationPresence is what the person's phone has reported, for deciding how
+// long a visit with no departure lasted.
+type locationPresence struct {
+	// latestPoint is the latest position, or nil when there is none.
+	latestPoint *models.LocationPoint
+	// latestReportAt is the latest of a position's measured time and a
+	// visit's arrival or departure, or the zero time when there is none.
+	latestReportAt time.Time
+	now            time.Time
+}
+
+// openVisitSilenceMost is how long after the person's last report of any
+// kind a visit with no departure is still taken to be going on. The app sends
+// no positions while the person stays put (only visits, and moves of about
+// 500 m), so a long quiet is normal at home, but a phone silent for days is
+// not taken as a person still there.
+const openVisitSilenceMost = 72 * time.Hour
+
 // openVisitEnds says when each visit with an arrival and no departure was
-// over: the moment the next visit began. A phone that never delivered a
-// departure would otherwise leave the person at the first place for ever, in
-// the day documents and in the digest's hours, next to the places they really
-// went on to. A visit that nothing followed ends at the latest position the
-// person reported, or at its arrival when that is later or there is none, so
-// that a phone that stopped reporting (the app removed, the location switched
-// off) does not add a day to the place every day after. The key is the visit's
-// ID.
-func openVisitEnds(visits []*models.PlaceVisit, latestPositionAt time.Time) map[string]time.Time {
+// over. A phone that never delivered a departure would otherwise leave the
+// person at the first place for ever, in the day documents and in the
+// digest's hours, next to the places they really went on to, so it ends at
+// the first of these:
+//   - the moment the next visit began;
+//   - the time of the latest position, when that was measured after the
+//     arrival and is outside the place (place.IsStillThere);
+//   - now, but at most openVisitSilenceMost after the latest report of any
+//     kind, and never before the arrival.
+//
+// The key is the visit's ID.
+func openVisitEnds(visits []*models.PlaceVisit, presence locationPresence) map[string]time.Time {
 	starts := make([]time.Time, 0, len(visits))
 	for _, visit := range visits {
 		switch {
@@ -142,14 +164,22 @@ func openVisitEnds(visits []*models.PlaceVisit, latestPositionAt time.Time) map[
 			continue
 		}
 		next := sort.Search(len(starts), func(index int) bool { return starts[index].After(*visit.ArrivedAt) })
-		switch {
-		case next < len(starts):
+		if next < len(starts) {
 			ends[visit.ID] = starts[next]
-		case latestPositionAt.After(*visit.ArrivedAt):
-			ends[visit.ID] = latestPositionAt
-		default:
-			ends[visit.ID] = *visit.ArrivedAt
+			continue
 		}
+		if presence.latestPoint != nil && presence.latestPoint.MeasuredAt.After(*visit.ArrivedAt) && !place.IsStillThere(visit, presence.latestPoint) {
+			ends[visit.ID] = presence.latestPoint.MeasuredAt
+			continue
+		}
+		endedAt := presence.now
+		if silentSince := presence.latestReportAt.Add(openVisitSilenceMost); silentSince.Before(endedAt) {
+			endedAt = silentSince
+		}
+		if endedAt.Before(*visit.ArrivedAt) {
+			endedAt = *visit.ArrivedAt
+		}
+		ends[visit.ID] = endedAt
 	}
 	return ends
 }
@@ -168,9 +198,9 @@ type locationVisitSpan struct {
 
 // locationVisitSpans cuts the visits to the day [dayStart, dayEnd), in order
 // of when they began, leaving out those that do not touch it.
-func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd, latestPositionAt time.Time) []locationVisitSpan {
+func locationVisitSpans(visits []*models.PlaceVisit, dayStart, dayEnd time.Time, presence locationPresence) []locationVisitSpan {
 	spans := []locationVisitSpan{}
-	laterVisitStarts := openVisitEnds(visits, latestPositionAt)
+	laterVisitStarts := openVisitEnds(visits, presence)
 	for _, visit := range visits {
 		span := locationVisitSpan{visit: visit}
 		switch {
@@ -224,9 +254,9 @@ func locationClock(moment, dayEnd time.Time) string {
 // order, and, when they have a place labeled home, how long they were at
 // places other than home. dayStart is the first moment of the day in the
 // person's zone. It is empty when no visit touches the day.
-func locationDayText(visits []*models.PlaceVisit, dayStart, latestPositionAt time.Time, hasHomePlace bool) string {
+func locationDayText(visits []*models.PlaceVisit, dayStart time.Time, presence locationPresence, hasHomePlace bool) string {
 	dayEnd := dayStart.AddDate(0, 0, 1)
-	spans := locationVisitSpans(visits, dayStart, dayEnd, latestPositionAt)
+	spans := locationVisitSpans(visits, dayStart, dayEnd, presence)
 	if len(spans) == 0 {
 		return ""
 	}
@@ -297,6 +327,18 @@ func locationVisitLine(span locationVisitSpan, dayEnd time.Time) string {
 // writeLocationJournal files the days that have ended since the last one
 // written, for one agent, and answers how many it wrote or rewrote. now picks
 // the end of the last day: the start of today in the owner's zone.
+// readLocationPresence reads the person's latest position and latest report
+// of any kind, in the two queries openVisitEnds needs.
+func readLocationPresence(tx db.Transaction, userId string, now time.Time) (locationPresence, error) {
+	presence := locationPresence{now: now}
+	var err error
+	if presence.latestPoint, err = tx.GetLatestLocationPoint(userId); err != nil {
+		return presence, err
+	}
+	presence.latestReportAt, err = tx.GetLatestLocationReportAt(userId)
+	return presence, err
+}
+
 func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent, owner *models.User, now time.Time) (int, error) {
 	zone := Location(owner)
 	local := now.In(zone)
@@ -339,14 +381,12 @@ func (self *Agent) writeLocationJournal(ctx context.Context, agent *models.Agent
 		if err != nil {
 			return err
 		}
-		var latestPositionAt time.Time
-		if latest, err := tx.GetLatestLocationPoint(owner.ID); err != nil {
+		presence, err := readLocationPresence(tx, owner.ID, now)
+		if err != nil {
 			return err
-		} else if latest != nil {
-			latestPositionAt = latest.MeasuredAt
 		}
 		for dayStart := from; dayStart.Before(today); dayStart = dayStart.AddDate(0, 0, 1) {
-			text := locationDayText(visits, dayStart, latestPositionAt, len(homes) > 0)
+			text := locationDayText(visits, dayStart, presence, len(homes) > 0)
 			if text == "" {
 				// A day filed before its visits were erased or its places
 				// forgotten has nothing left to say.

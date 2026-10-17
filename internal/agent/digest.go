@@ -55,7 +55,7 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 	var facts []*models.AgentFact
 	var own []*models.AgentDocument
 	var visits []*models.PlaceVisit
-	var latestPositionAt time.Time
+	var presence locationPresence
 	openings := map[string]string{}
 	pages := map[string]string{}
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
@@ -74,10 +74,8 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 			if visits, err = listVisitsBetween(tx, owner.ID, from, until); err != nil {
 				return err
 			}
-			if latest, err := tx.GetLatestLocationPoint(owner.ID); err != nil {
+			if presence, err = readLocationPresence(tx, owner.ID, time.Now()); err != nil {
 				return err
-			} else if latest != nil {
-				latestPositionAt = latest.MeasuredAt
 			}
 		}
 		// A thread's title is its channel and its day, which says
@@ -187,7 +185,7 @@ func (self *Agent) Digest(ctx context.Context, agent *models.Agent, owner *model
 	}
 
 	// Where they went, as arithmetic over the month's visits.
-	if places := placesTheyWent(visits, from, until, time.Now(), latestPositionAt, Location(owner)); places != "" {
+	if places := placesTheyWent(visits, from, until, presence.now, presence, Location(owner)); places != "" {
 		builder.WriteString("## places they went\n\n" + places + "\n")
 	}
 

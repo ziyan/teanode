@@ -55,8 +55,9 @@ that was sent for either still finds it.
 
 Visits can arrive in any order (a phone that was offline sends a day at once, a
 batch is sent again after the next one). After the visits of a report are
-stored, the server puts the person's visits around those times in order: a visit
-with no departure ends at the arrival of the next visit, a visit whose departure
+stored, the server puts the person's visits around those times in order (storing
+a visit does not end it at a later arrival; this does): a visit
+with no departure ends at the arrival of the next visit at any place, a visit whose departure
 runs past the arrival of the next visit at another place ends at that arrival,
 visits to one place with a visit at another place between them are not joined,
 and a visit that was joined before the visit between its parts was heard of is
@@ -207,10 +208,16 @@ answers carry the untrusted mark.
   hours were spent at which places. Every run looks at the last 14 days again, so
   a day written again after an erase of part of it, a forgotten place or a new
   name or label says what is left. A day whose visits are all erased has no
-  document. A visit with no departure that no later visit followed lasts only
-  until the latest position the person reported (or its arrival, if none), in the
-  days and in the digest, so a phone that stopped reporting does not add hours
-  every day after.
+  document. A visit with no departure lasts until the next visit began. If no visit
+  followed, it ends at the time of the latest position when that position was
+  measured after the arrival and is outside the place; otherwise it lasts until
+  now, but at most 72 hours after the person's last report of any kind (the
+  latest of a position's measured time and a visit's arrival or departure). The
+  phone sends no positions while the person stays put, only visits and moves of
+  about 500 m, so a quiet phone at home is a person at home, and a person at
+  home for three days gets three day documents saying so; a phone silent for
+  longer than 72 hours is not taken as a person still there. A day's text cuts
+  the visit at the day's end.
 - **Only where a turn can ask a browser or phone** does `now` ask for a fresh
   position, once; elsewhere it answers the last one kept, with its age.
 

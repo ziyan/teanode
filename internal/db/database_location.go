@@ -35,6 +35,11 @@ type LocationOperation interface {
 	// when there is none.
 	GetLatestLocationPoint(userId string) (*models.LocationPoint, error)
 
+	// GetLatestLocationReportAt is the latest time the person's phone reported
+	// anything: the latest of a position's measured time and the arrival or
+	// departure of a visit. It is the zero time when there is none.
+	GetLatestLocationReportAt(userId string) (time.Time, error)
+
 	// GetLatestLocationPoints is GetLatestLocationPoint for many people in one
 	// query. A person with no position is not in the answer.
 	GetLatestLocationPoints(userIds []string) (map[string]*models.LocationPoint, error)
@@ -98,7 +103,9 @@ type LocationOperation interface {
 	// stays known, and a report under it completes the visit it became. A
 	// departure before the arrival already stored is the arrival. A new visit
 	// with an arrival ends every other visit of the person that is still open
-	// and began no later, at that arrival. isNew is whether the key was
+	// and began no later, at that arrival. An arrival delivered after the
+	// visits that followed it is ended by NormalizePlaceVisits, which the caller
+	// runs once its report is stored. isNew is whether the key was
 	// unknown. The visit passed in is updated to what is stored. ErrNotFound
 	// unless the place is the person's, ErrInvalidArguments for a visit with
 	// neither time or that ends before it starts.
@@ -525,6 +532,23 @@ func (self *transaction) GetLatestLocationPoint(userId string) (*models.Location
 		return nil, nil
 	}
 	return found[0].toModel(), nil
+}
+
+func (self *transaction) GetLatestLocationReportAt(userId string) (time.Time, error) {
+	var reportedAt struct {
+		LatestReportAt *time.Time `gorm:"column:latest_report_at"`
+	}
+	if err := self.tx.Raw(`SELECT GREATEST(
+			(SELECT max(measured_at) FROM "location_point" WHERE user_id = @user),
+			(SELECT max(arrived_at) FROM "place_visit" WHERE user_id = @user),
+			(SELECT max(departed_at) FROM "place_visit" WHERE user_id = @user)) AS latest_report_at`,
+		sql.Named("user", userId)).Scan(&reportedAt).Error; err != nil {
+		return time.Time{}, err
+	}
+	if reportedAt.LatestReportAt == nil {
+		return time.Time{}, nil
+	}
+	return *reportedAt.LatestReportAt, nil
 }
 
 func (self *transaction) GetLatestLocationPoints(userIds []string) (map[string]*models.LocationPoint, error) {
@@ -1037,25 +1061,11 @@ func (self *transaction) PutPlaceVisit(userId string, visit *models.PlaceVisit) 
 		}
 	}
 
-	// Arrivals can be delivered out of order: a visit that has an arrival and
-	// no departure while the person arrived somewhere else after it is over at
-	// the earliest such arrival.
-	if kept.ArrivedAt != nil && kept.DepartedAt == nil {
-		var laterArrivals []time.Time
-		if err := self.tx.Model(&placeVisitModel{}).
-			Where("\"user_id\" = ? AND \"id\" <> ? AND \"place_id\" <> ? AND \"arrived_at\" > ?", userId, kept.ID, kept.PlaceID, *kept.ArrivedAt).
-			Order("\"arrived_at\" ASC").Limit(1).Pluck("arrived_at", &laterArrivals).Error; err != nil {
-			return false, err
-		}
-		if len(laterArrivals) > 0 {
-			endedAt := laterArrivals[0]
-			kept.DepartedAt = &endedAt
-			if err := self.tx.Model(&placeVisitModel{}).Where("\"id\" = ?", kept.ID).
-				Updates(map[string]any{"departed_at": endedAt, "updated_at": now}).Error; err != nil {
-				return false, err
-			}
-		}
-	}
+	// A visit left open by an arrival delivered after later visits is ended
+	// by NormalizePlaceVisits, which the caller runs once the report is
+	// stored: it ends an open visit at the next arrival at any place and joins
+	// the visits to one place. Ending it here at the next arrival at another
+	// place would skip a later visit to this same place and lose its departure.
 
 	joined, err := self.joinPlaceVisits(&kept)
 	if err != nil {

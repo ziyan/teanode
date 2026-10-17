@@ -61,13 +61,13 @@ type digestPlaceTotals struct {
 // the place names in them were written by strangers, or empty when the stretch
 // has no visits. A visit is counted in the stretch it began in, and its hours
 // are cut to the stretch. A visit with no departure lasts until a later visit
-// began or the latest position the person reported (openVisitEnds), and not
+// began or as openVisitEnds says, and not
 // after now. Places with a label come first, one line
 // for each label, then the places with no label that took the most hours.
-func placesTheyWent(visits []*models.PlaceVisit, from, until, now, latestPositionAt time.Time, zone *time.Location) string {
+func placesTheyWent(visits []*models.PlaceVisit, from, until, now time.Time, presence locationPresence, zone *time.Location) string {
 	byLabel := map[models.PlaceLabel]*digestPlaceTotals{}
 	byPlace := map[string]*digestPlaceTotals{}
-	laterVisitStarts := openVisitEnds(visits, latestPositionAt)
+	laterVisitStarts := openVisitEnds(visits, presence)
 	for _, visit := range visits {
 		place := visit.Place
 		if place == nil {

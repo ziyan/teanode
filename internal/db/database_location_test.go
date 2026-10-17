@@ -1047,11 +1047,15 @@ func TestAnArrivalEndsTheVisitsStillOpenElsewhere(t *testing.T) {
 		if _, err := tx.PutPlaceVisit(userId, locationVisit(park.ID, "park-early", 100, -1)); err != nil {
 			t.Fatalf("PutPlaceVisit: %s", err)
 		}
+		if err := tx.NormalizePlaceVisits(userId, *minutesAfterNine(100), *minutesAfterNine(100)); err != nil {
+			t.Fatalf("NormalizePlaceVisits: %s", err)
+		}
 		libraryVisit, err := tx.GetPlaceVisitByClientKey(userId, "library")
 		if err != nil || libraryVisit.DepartedAt != nil {
 			t.Fatalf("an older arrival delivered late ended the library visit: %+v, %v", libraryVisit, err)
 		}
-		// It is over where the later arrival began, not open for ever.
+		// Once the report is normalized, it is over where the later arrival began,
+		// not open for ever.
 		if parkVisit, err := tx.GetPlaceVisitByClientKey(userId, "park-early"); err != nil || parkVisit.DepartedAt == nil || !parkVisit.DepartedAt.Equal(*minutesAfterNine(200)) {
 			t.Fatalf("the late early visit ends where the library visit began: %+v, %v", parkVisit, err)
 		}
