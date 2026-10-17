@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { graphql, startImpersonation } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { KeyIcon, PencilIcon, PeopleIcon, PlusIcon, TrashIcon, UserIcon } from '../../components/icons'
+import { CheckIcon, KeyIcon, PencilIcon, PeopleIcon, PlusIcon, TrashIcon, UserIcon } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
@@ -27,7 +27,7 @@ const UPDATE_USER = `
 // The circles the signed-in person is in, which is what the row menu offers.
 // Putting an account in one is the operator's AddCircleMember, which the
 // Circles page uses for an account made there.
-const LIST_CIRCLES = `query { ListCircles { id name circleKind } }`
+const LIST_CIRCLES = `query { ListCircles { id name circleKind members { userId } } }`
 const ADD_CIRCLE_MEMBER = `
   mutation ($circleId: String!, $username: String!, $memberRole: String!) {
     AddCircleMember(circleId: $circleId, username: $username, memberRole: $memberRole) { id }
@@ -36,7 +36,7 @@ const ADD_CIRCLE_MEMBER = `
 const SET_PASSWORD = `mutation ($userId: String!, $password: String!) { SetUserPassword(userId: $userId, password: $password) { id } }`
 const DELETE_USER = `mutation ($userId: String!) { DeleteUser(userId: $userId) }`
 
-type CircleChoice = { id: string; name: string; circleKind: string }
+type CircleChoice = { id: string; name: string; circleKind: string; members: { userId: string }[] }
 
 type PersonDraft = { username: string; password: string; name: string; email: string }
 
@@ -221,32 +221,47 @@ export function UsersTab() {
                           {t('access.users.noCircles')}
                         </Link>
                       ) : (
-                        circles.map((circle) => (
-                          <button
-                            key={circle.id}
-                            type="button"
-                            role="menuitem"
-                            disabled={busy}
-                            onClick={() => {
-                              close()
-                              void run(() =>
-                                graphql(ADD_CIRCLE_MEMBER, {
-                                  circleId: circle.id,
-                                  username: user.username,
-                                  memberRole: 'member',
-                                }),
-                              ).then(
-                                (done) =>
-                                  done &&
-                                  toast.done(
-                                    t('access.users.addedToCircle', { username: user.username, circle: circle.name }),
-                                  ),
-                              )
-                            }}
-                          >
-                            {circle.name}
-                          </button>
-                        ))
+                        <>
+                          <div className="menu-header">{t('access.users.addToCircle')}</div>
+                          {circles.map((circle) => {
+                            // Already in it: shown, so the list is the same
+                            // for everybody, and not offered again.
+                            const isInCircle = circle.members.some((member) => member.userId === user.id)
+                            return (
+                              <button
+                                key={circle.id}
+                                type="button"
+                                role="menuitemcheckbox"
+                                aria-checked={isInCircle}
+                                disabled={busy || isInCircle}
+                                onClick={() => {
+                                  close()
+                                  void run(() =>
+                                    graphql(ADD_CIRCLE_MEMBER, {
+                                      circleId: circle.id,
+                                      username: user.username,
+                                      memberRole: 'member',
+                                    }),
+                                  ).then(
+                                    (done) =>
+                                      done &&
+                                      toast.done(
+                                        t('access.users.addedToCircle', {
+                                          username: user.username,
+                                          circle: circle.name,
+                                        }),
+                                      ),
+                                  )
+                                }}
+                              >
+                                <span className="menu-check" aria-hidden="true">
+                                  {isInCircle && <CheckIcon size={14} />}
+                                </span>
+                                {circle.name}
+                              </button>
+                            )
+                          })}
+                        </>
                       )
                     }
                   />

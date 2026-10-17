@@ -45,11 +45,11 @@ func TestAGranteeIsAUsernameOrACircle(test *testing.T) {
 	}
 	for _, with := range []string{"circle-home", "home"} {
 		circle, err := ResolveGrantee(context.Background(), operations, with)
-		if err != nil || circle.CircleID != "circle-home" || circle.UserID != "" || circle.Description != "everyone in Home" {
+		if err != nil || circle.CircleID != "circle-home" || circle.UserID != "" {
 			test.Fatalf("a circle is found by %q: %+v %v", with, circle, err)
 		}
-		if circle.ApprovalDescription != "everyone in Home (4 people)" {
-			test.Errorf("a card says how many people a circle is: %q", circle.ApprovalDescription)
+		if circle.Description != `the circle "Home" (4 people)` {
+			test.Errorf("a result and a card say which circle and how many people it is: %q", circle.Description)
 		}
 	}
 	for _, with := range []string{"", "stranger"} {
@@ -59,9 +59,9 @@ func TestAGranteeIsAUsernameOrACircle(test *testing.T) {
 	}
 }
 
-// Circle names are not unique: a name two circles have, or that is also a
-// username, is refused with the ids and sizes to choose from, and an id still
-// names exactly one.
+// Circle names are not unique: a name two circles have is refused with the
+// ids and sizes to choose from, an id still names exactly one, and a username
+// wins over a circle of the same name, which is reached by its id.
 func TestACircleNameThatIsNotUniqueIsRefused(test *testing.T) {
 	operations := &peopleAndCircles{
 		people: `[{"userId":"user-ben","username":"ben"}]`,
@@ -73,12 +73,16 @@ func TestACircleNameThatIsNotUniqueIsRefused(test *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "circle-one (2 people)") || !strings.Contains(err.Error(), "circle-two (1 person)") {
 		test.Fatalf("two circles with one name are listed with their sizes: %v", err)
 	}
-	_, err = ResolveGrantee(context.Background(), operations, "ben")
-	if err == nil || !strings.Contains(err.Error(), "circle-ben (3 people)") || !strings.Contains(err.Error(), "username") {
-		test.Fatalf("a name that is a username and a circle is refused with the circle: %v", err)
+	person, err := ResolveGrantee(context.Background(), operations, "ben")
+	if err != nil || person.UserID != "user-ben" || person.CircleID != "" {
+		test.Fatalf("a username wins over a circle of that name: %+v %v", person, err)
 	}
 	circle, err := ResolveGrantee(context.Background(), operations, "circle-two")
 	if err != nil || circle.CircleID != "circle-two" {
 		test.Fatalf("an id is never ambiguous: %+v %v", circle, err)
+	}
+	circle, err = ResolveGrantee(context.Background(), operations, "circle-ben")
+	if err != nil || circle.CircleID != "circle-ben" {
+		test.Fatalf("the circle named like a person is reached by its id: %+v %v", circle, err)
 	}
 }

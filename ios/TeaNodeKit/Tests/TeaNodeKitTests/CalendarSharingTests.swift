@@ -127,6 +127,14 @@ final class CalendarSharingTests: XCTestCase {
         XCTAssertEqual(circle.granteeDisplayName, "Home")
     }
 
+    func testACircleToShareWithSaysHowManyPeopleItIs() throws {
+        let circle = try JSONDecoder().decode(
+            CalendarShareCircle.self,
+            from: Data(#"{"id":"c1","name":"Home","members":[{"userId":"a"},{"userId":"b"},{"userId":"c"},{"userId":"d"}]}"#.utf8))
+        XCTAssertEqual(circle.memberCount, 4)
+        XCTAssertTrue(Documents.calendarShareCircles.contains("members"))
+    }
+
     func testTheDocumentsAreInTheSchemaCheck() {
         for name in ["calendarShares", "shareCalendar", "unshareCalendar", "calendarSharePeople", "calendarShareCircles", "createCircleCalendar"] {
             XCTAssertNotNil(Documents.calendarAndContacts[name], name)

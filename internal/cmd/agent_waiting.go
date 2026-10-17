@@ -16,6 +16,8 @@ func newAgentWaitingCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "waiting",
 		Usage: "the questions and approvals your agent waits on, in every conversation, newest first",
+		Description: "Calls other people's agents make through a skill you shared wait for you too, but\n" +
+			"are not listed here: 'teanode agent skill calls <share-id> --waiting' lists them.",
 		Flags: []cli.Flag{
 			JSONFlag(),
 			&cli.IntFlag{Name: "first", Usage: "how many to list, at most 50", Value: 20},
@@ -61,7 +63,7 @@ func runAgentWaitingList(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(waiting)
 	}
 	if waiting.WaitingCount == 0 {
-		fmt.Println("nothing waits for you")
+		fmt.Println("nothing waits for you here; calls through a skill you shared are listed by 'teanode agent skill calls'")
 		return nil
 	}
 	rows := make([][]string, 0, len(waiting.Interactions))

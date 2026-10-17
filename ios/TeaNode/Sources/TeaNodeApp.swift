@@ -851,7 +851,7 @@ struct NotificationKindToggle: View {
         case "answer": String(localized: "Answers that come after you have left")
         case "circle": String(localized: "Invitations to circles")
         case "chat": String(localized: "Messages from people in your chats")
-        case "skill_share_call": String(localized: "Skills you share, when a call waits for you")
+        case "skill_share_call": String(localized: "Skill calls waiting for your approval")
         case "photo": String(localized: "Photos added to albums shared with you")
         default: notificationKind
         }

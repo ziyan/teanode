@@ -386,8 +386,34 @@ td a:hover {
   color: var(--surface);
 }
 
-.menu-impersonated {
+.menu-impersonated,
+.menu-marked {
   position: relative;
+}
+
+/* Invitations to a circle that wait for an answer, on the corner of the
+   account button and of the phone's menu button, in the accent as the number
+   on the drawer's launcher. */
+.circle-invitation-mark {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--background);
+}
+
+.menu-marked > .circle-invitation-mark {
+  top: 2px;
+  right: 0;
 }
 
 .menu {
@@ -431,6 +457,15 @@ td a:hover {
   font-size: 12px;
   color: var(--muted);
   overflow-wrap: anywhere;
+}
+
+/* The slot before a choice in a menu of things that can be ticked, so that
+   the ticked and the unticked line up. */
+.menu-check {
+  display: inline-flex;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
 }
 
 .menu button,
@@ -518,6 +553,14 @@ td a:hover {
    something to stretch; a modifier says what is meant. */
 .page-actions-end {
   justify-content: flex-end;
+}
+
+/* The last row of a page, at the end of the scrolling area, is where the
+   drawer's round button (44 pixels, 20 from the corner) floats. A narrow
+   window keeps room under the content for it; a wide one does not, and an
+   action at the right end of the last row came to rest half under it. */
+.page-actions-foot {
+  margin-bottom: 48px;
 }
 
 /* Room above it when it follows something. At the top of a page this row is
@@ -2783,6 +2826,12 @@ pre.message-text {
     min-height: 40px;
   }
 
+  /* The rows of a menu are one height: its buttons took the 40 above and its
+     links, the ones that go to a page, stayed at the 37 their padding makes. */
+  .menu a {
+    min-height: 40px;
+  }
+
   /* A height was not enough for the ones that are only a picture. Nothing
      gave them a width, so they stayed as wide as the icon inside them: the
      cross that dismisses a toast was 22 pixels across in a 40 pixel row, and
@@ -3403,18 +3452,37 @@ body,
      the body taking the full width, the picture sat alone on a line above
      it. A single control (a menu of what can be done to them) stays on the
      same line; more than one still drops below. */
-  .settings-row:has(> .avatar) > .settings-row-body {
+  .settings-row:has(> .avatar, > .settings-row-mark) > .settings-row-body {
     min-width: 0;
     flex: 1 1 calc(100% - 28px - var(--space-3));
   }
 
-  .settings-row:has(> .avatar):has(> .settings-row-actions > :only-child) {
+  /* A wrapper of several buttons is one child too, so it is excluded: the
+     users page puts five icons in one, and they do not fit beside a name. */
+  .settings-row:has(> .avatar, > .settings-row-mark):has(> .settings-row-actions > :only-child):not(
+      :has(> .settings-row-actions > .row-actions > :nth-child(2))
+    ) {
     flex-wrap: nowrap;
   }
 
-  .settings-row:has(> .avatar):has(> .settings-row-actions > :only-child) > .settings-row-actions {
+  .settings-row:has(> .avatar, > .settings-row-mark):has(> .settings-row-actions > :only-child):not(
+      :has(> .settings-row-actions > .row-actions > :nth-child(2))
+    )
+    > .settings-row-actions {
     width: auto;
   }
+}
+
+/* The mark of a row about a circle stands where a person's picture does, the
+   same size, so the names of a list of both line up. */
+.settings-row-mark {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
 }
 
 /* Having none of something is ordinary, so it is said rather than shown as an
@@ -3513,7 +3581,19 @@ label.checkbox {
 
 label.checkbox input {
   width: auto;
+  /* A tick box, not a text field: the phone's thumb-sized height for inputs
+     made every row of ticks 40 pixels tall. The label is what is tapped. */
+  min-height: 0;
   margin: 0;
+}
+
+/* In a dialog it is a line of the form like the fields' own labels, not a
+   smaller muted one beside them. */
+.dialog label.checkbox {
+  margin-top: var(--space-3);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-body);
+  color: var(--text);
 }
 
 /* A form is read down a column, and a field stretched across a wide screen is
@@ -7375,7 +7455,7 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 /* The question a late answer answers, or the message a reply answers,
    above it and quieter: either may be far up the conversation by now. A
    long one shows its start. */
-.agent-line.user .agent-in-reply-to {
+.agent-line .agent-in-reply-to {
   margin: 0 0 6px;
   padding-left: 8px;
   border-left: 2px solid currentColor;
@@ -7466,6 +7546,15 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 
 .agent-line-actions .icon-action {
   padding: 2px;
+}
+
+/* A bubble on the left keeps the corner at its left end, as the recording's
+   passage does: a short message with five buttons grows the corner into the
+   room beside it, not past the drawer's edge, where the first button was cut
+   off and the person could not react to "OK". */
+.agent-line.assistant .agent-line-actions {
+  right: auto;
+  left: 6px;
 }
 
 /* A recording's passage on the left keeps the corner at its left end, over
@@ -10141,11 +10230,18 @@ button.with-icon {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  /* No label margin: the row's own gap spaces them, and on a phone the
+     margin and a 40 pixel tick box made each chip a row of its own. */
+  margin: 0;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .calendar-chip input {
+  /* A tick box is not a text field, so the phone's thumb-sized height for
+     inputs does not apply to it. */
+  width: auto;
+  min-height: 0;
   margin: 0;
 }
 
@@ -10199,15 +10295,27 @@ button.with-icon {
   font-style: italic;
 }
 
+/* A busy block says whose it is in words that may be longer than the block is
+   wide ("Busy · teen"); when it is tall enough for a second line they wrap
+   instead of being cut to "Busy · t…". */
+.calendar-placed.calendar-busy-block:not(.compact) .calendar-placed-title {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .calendar-placed.calendar-busy-block:hover {
   background: color-mix(in srgb, var(--leaf) 18%, var(--surface));
+}
+
+.calendar-shares-heading {
+  margin: var(--space-3) 0 0;
 }
 
 .calendar-shares {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  margin: 0.5rem 0;
+  margin: 0.5rem 0 var(--space-4);
 }
 
 .calendar-share-row {
@@ -10224,11 +10332,36 @@ button.with-icon {
   white-space: nowrap;
 }
 
+/* A day with its free stretches: the day on its own line, the times under it
+   and wrapping as they need to. In the row of a share the name takes what the
+   rest leaves and is cut, which cut a day to an ellipsis once a day had
+   several stretches. */
+.calendar-free-day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendar-free-day-name {
+  font-weight: 600;
+}
+
 /* Finding a time together: the people who shared a calendar, one to a line,
    then the days and the hours as two columns of fields. */
 .calendar-find-people {
   display: flex;
   flex-direction: column;
+  margin-bottom: var(--space-4);
+}
+
+/* The rows of people are the dialog's own checkbox rows, at the size and the
+   gap of the fields beside them rather than twice the height. */
+.calendar-find-people label.checkbox {
+  margin: var(--space-1) 0 0;
+}
+
+.calendar-find-people > .muted {
+  margin-top: var(--space-2);
 }
 
 .calendar-find-range {
@@ -10979,6 +11112,15 @@ main.content:has(> .knowledge-frame) {
   border-top: 1px solid var(--border);
 }
 
+/* On a phone a card is pulled out to the page's edges and so is a row in it,
+   which is right on a page and 12 pixels too wide inside a pane that already
+   has its own padding: the text was cut at the left once the pane scrolled. */
+.knowledge-pane .settings-section.card,
+.knowledge-pane .settings-row {
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* The same for what is inside them: a fact and a link are lines of a page. */
 .knowledge-pane .settings-row,
 .knowledge-pane .settings-empty {
@@ -11358,6 +11500,21 @@ main.content:has(> .knowledge-frame) {
   text-decoration: none;
 }
 
+/* No result of the search of what is shared: inset like the rows, not a box
+   flush to both edges of the list. */
+.knowledge-shared .settings-empty {
+  margin: var(--space-2) var(--space-3);
+  min-height: 80px;
+}
+
+/* The line a person whose agent is off reads where the list of their own
+   pages would start. */
+.knowledge-agent-off {
+  margin: 0;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
 /* What the other side will see, in the dialog that shares a page: the page as
    they read it, in a box of its own that scrolls so the choice above it and
    the button under it stay in view. */
@@ -11378,6 +11535,23 @@ main.content:has(> .knowledge-frame) {
   border: 0;
   padding: 0;
   margin-top: var(--space-3);
+  /* Not pulled out to the box's edge, as a card is on a phone: the body is
+     inset like the heading above it. */
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.share-preview .settings-section-head {
+  margin-bottom: var(--space-2);
+}
+
+.share-preview .settings-row {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border: 0;
+  background: none;
 }
 
 /* A fact the agent folded into another. Greyed rather than hidden: it is
@@ -17253,8 +17427,10 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   box-shadow: 0 0 0 2px var(--background);
 }
 
+/* Four pixels, of which the ring takes two: at 20 pixels, eight covered the
+   first picture's letter entirely. */
 .chat-avatars .avatar + .avatar {
-  margin-left: -8px;
+  margin-left: -4px;
 }
 
 /* New side chat, Message someone and New group are one block at the top of
@@ -17343,8 +17519,10 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   font-weight: 600;
 }
 
-/* A person's words are shown as they were typed, line breaks and all. */
-.agent-line.assistant.chat-person {
+/* A person's words are shown as they were typed, line breaks and all. Not an
+   agent's: its answer is Markdown, drawn as elements, and the line breaks
+   between its list items would show as empty lines. */
+.agent-line.assistant.chat-person:not(.chat-agent) {
   white-space: pre-wrap;
 }
 
@@ -17364,6 +17542,21 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   opacity: 0.7;
 }
 
+/* The bubble is the accent, so a primary button in it is the bubble's own
+   color and has no shape. Turned over: the page's color with the accent's
+   letters. */
+.agent-line.user .agent-chat-edit button.primary {
+  border-color: var(--background);
+  background: var(--background);
+  color: var(--accent);
+}
+
+.agent-line.user .agent-chat-edit button.primary:hover:not(:disabled) {
+  border-color: var(--background);
+  background: var(--background);
+  opacity: 0.85;
+}
+
 .agent-chat-edit {
   display: flex;
   flex-direction: column;
@@ -17374,6 +17567,21 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 /* Under the newest message each of the others has read: their pictures,
    small. */
+/* What the person's own agent did, one folded row above its answer: under
+   the avatar's column, where the answer's words start. */
+.agent-line.tool.work {
+  align-self: flex-start;
+  max-width: 100%;
+  margin-left: 36px;
+}
+
+.agent-line.tool.work > .agent-tool-toggle {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-chat-reads {
   display: inline-flex;
   align-items: center;
@@ -17430,6 +17638,28 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   font-weight: 600;
 }
 
+/* What a phone is told about: a group of ticks under the name, with a bold
+   heading as the chat's switches have, not the browser's own box with its
+   legend over the border. */
+.phone-kinds {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.phone-kinds legend {
+  padding: 0;
+  font-weight: 600;
+}
+
+.phone-kinds .field-hint {
+  margin: var(--space-1) 0 0;
+}
+
+.phone-kinds label.checkbox {
+  margin: var(--space-3) 0 0;
+}
+
 /* What a member allows their agent in the chat: two switches, each with the
    sentence that says what it means. */
 .chat-agent-switches {
@@ -17444,22 +17674,107 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   font-weight: 600;
 }
 
+.chat-agent-switches label.checkbox {
+  margin-top: var(--space-4);
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.chat-agent-switches legend + label.checkbox {
+  margin-top: var(--space-2);
+}
+
+/* Each sentence sits under its own switch and a gap away from the next. */
+.chat-agent-switches input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
 .chat-agent-switches p {
-  margin: var(--space-1) 0 var(--space-3) 24px;
+  margin: var(--space-1) 0 0 24px;
   max-width: var(--measure);
   font-size: 13px;
 }
 
+.chat-agent-switches p.chat-agent-off {
+  margin-left: 0;
+  font-size: var(--text-body);
+}
+
+.chat-agent-switches p.chat-agent-off + p.chat-agent-off {
+  margin-top: var(--space-2);
+}
+
+/* The people to choose from, in the dialogs for a new group, a message to
+   someone and adding to a group. Taller than the three rows it once was; on
+   a phone, where the dialog is the screen, the list takes the room between
+   the group's name and the buttons. */
 .chat-people {
   display: flex;
   flex-direction: column;
-  max-height: 240px;
+  max-height: min(56dvh, 440px);
   overflow-y: auto;
 }
 
-.chat-person {
-  margin-top: 0;
-  padding: 6px 0;
+@media (max-width: 640px) {
+  .dialog:has(> .chat-people) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog:has(> .chat-people) > .chat-people {
+    flex: 1 1 auto;
+    max-height: none;
+  }
+}
+
+/* One person: a box, a picture, the name and the username. The class is not
+   the message bubble's (.chat-person), which shares the word and not the
+   rules. The dialog styles every label as a field, and every span in a label
+   as its help text, so both are undone here the way a row of any other
+   checkbox list does it. */
+.chat-people label.chat-person-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 5px 0;
+  font-size: var(--text-body);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chat-person-row input {
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+/* The name gives way to the username, which stays whole: a name cut with an
+   ellipsis is still a name, and a username cut in groups of letters is not
+   one. */
+.chat-people .chat-person-row .chat-person-name {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-people .chat-person-row .chat-person-username {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .chat-members {
@@ -17601,6 +17916,55 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 .skill-share-tools legend {
   padding: 0;
   margin-bottom: 4px;
+}
+
+/* A choice of the form that shares a skill: the name in the text's own weight
+   and color, the words about it a muted line under it. The dialog's rule for a
+   span in a label (small, muted, a block) made the name look as disabled as its
+   hint, and the hint went after a dot. Written with the dialog in it to beat
+   that rule and the one for a label with a tick box. */
+.dialog label.skill-share-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.dialog label.skill-share-choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.dialog label.skill-share-choice > input {
+  margin-top: 3px;
+}
+
+.dialog label.skill-share-choice > span > .skill-share-choice-name {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-body);
+}
+
+.dialog label.skill-share-choice > span > .skill-share-choice-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-label);
+}
+
+/* What is wrong with a field, said under it and above the next label, as
+   close to the field as to the label that follows. */
+.dialog label + span.error {
+  display: block;
+  margin: calc(var(--space-2) * -1) 0 var(--space-3);
+}
+
+/* The one after the tools stands apart from them as a field does. */
+.dialog .skill-share-tools + label.skill-share-choice {
+  margin: var(--space-3) 0;
 }
 @media (max-width: 640px) {
   .skill-share-calls {

@@ -123,6 +123,10 @@ interface Shown {
   // Whether the person’s own agent did something to answer: a call and its
   // result, as rows of their own conversation.
   hasWorkRows?: boolean
+  // Whether the chat is muted, and whether the person asked somebody else's
+  // agent that its owner does not let the others ask.
+  isMuted?: boolean
+  hasOwnerOnlyNote?: boolean
 }
 
 // answerWith makes the server: the agent on or off, the chat in the list,
@@ -162,6 +166,14 @@ function answerWith(shown: Shown = {}) {
   const messages = hasNewMessage
     ? [...MESSAGES, chatMessage('01J0000000000000000000004', 'Running late', false), ...work]
     : [...MESSAGES, ...work]
+  if (shown.hasOwnerOnlyNote) {
+    messages.push(
+      chatMessage('01J0000000000000000000007', '{"agentName":"Agent","ownerName":"Person B"}', true, {
+        role: 'note',
+        name: 'chat_agent_owner_only',
+      }),
+    )
+  }
   const chat = {
     id: 'chat-conversation',
     kind: 'chat',
@@ -169,7 +181,7 @@ function answerWith(shown: Shown = {}) {
     summary: '',
     lastAt: hasNewMessage ? '2030-01-01T11:00:00Z' : '2030-01-01T10:00:00Z',
     archivedAt: null,
-    chat: chatOf(unreadCount, readByOther),
+    chat: { ...chatOf(unreadCount, readByOther), isMuted: Boolean(shown.isMuted) },
   }
   const main = {
     id: 'main-conversation',
@@ -218,7 +230,7 @@ function answerWith(shown: Shown = {}) {
       if (id === 'chat-conversation') {
         return {
           ReadAgentConversation: {
-            conversation: { ...chat, chat: chatOf(unreadCount, readByOther) },
+            conversation: chat,
             actingAs: null,
             messages,
             total: messages.length,
@@ -436,7 +448,7 @@ it('sends a message into the chat without waiting on a run, and the chat’s own
   await screen.findByText('Dinner at seven?')
   await waitFor(() => expect(feeds['chat-conversation']).toBeTruthy())
 
-  const box = screen.getByRole('textbox', { name: 'Message Person B…' })
+  const box = screen.getByRole('textbox', { name: 'Message' })
   fireEvent.change(box, { target: { value: 'On my way' } })
   fireEvent.submit(box.closest('form') as HTMLFormElement)
 
@@ -475,7 +487,7 @@ it('opens on the chats when the agent is off, with the offer to turn it on in th
 
   // The newest chat is open, and the box writes to it.
   expect(await screen.findByText('Dinner at seven?')).toBeTruthy()
-  expect(screen.getByRole('textbox', { name: 'Message Person B…' })).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Message' })).toBeTruthy()
 
   fireEvent.click(screen.getByRole('button', { name: 'Person B' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: /Main chat/ }))
@@ -562,7 +574,7 @@ it('says who can be messaged, and links to the circles, when choosing Message so
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Message someone' }))
 
   const dialog = await screen.findByRole('alertdialog', { name: 'Message someone' })
-  expect(within(dialog).getByText(/people who are in a circle with you/)).toBeTruthy()
+  expect(within(dialog).getByText(/Nobody else is in your circles yet/)).toBeTruthy()
   const link = within(dialog).getByRole('link', { name: 'Open Circles' }) as HTMLAnchorElement
   expect(link.getAttribute('href')).toBe('/circles')
   // Nothing to choose, so nothing to send.
@@ -650,7 +662,7 @@ it('opens on the chat spoken in last when the agent is off, whichever the list h
 
   expect(await screen.findByText('Dinner at seven?')).toBeTruthy()
   expect(screen.queryByText(/Your agent is not on yet/)).toBeNull()
-  expect(screen.getByRole('textbox', { name: 'Message Person B…' })).toBeTruthy()
+  expect(screen.getByRole('textbox', { name: 'Message' })).toBeTruthy()
 })
 
 it('shows the usage ring in the main conversation only, and not in a chat or with the agent off', async () => {
@@ -931,4 +943,52 @@ it('does not draw the work of the person’s own agent as something said in the 
   // conversation: neither is a message in the chat, so there are still three.
   expect(container.querySelectorAll('.agent-chat-turn')).toHaveLength(3)
   expect(container.querySelectorAll('.agent-chat-author')).toHaveLength(1)
+})
+
+it('folds what the person’s own agent did into one row above its answer, whatever the setting for tool calls', async () => {
+  answerWith({ hasWorkRows: true })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  const toggle = screen.getByRole('button', { name: /What it did/ })
+  expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  // The row names the tools; the calls themselves are inside the fold.
+  expect(screen.getAllByText(/Calendar/)).toHaveLength(1)
+  fireEvent.click(toggle)
+  await waitFor(() => expect(screen.getAllByText(/Calendar/)).toHaveLength(2))
+  expect(toggle.getAttribute('aria-expanded')).toBe('true')
+})
+
+it('puts the chat away from its row in the list, for a person whose agent is off', async () => {
+  answerWith({ isAgentOn: false })
+  openOnChat()
+  renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  fireEvent.click(screen.getByRole('button', { name: /Person B/ }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Person B: Archive' }))
+  await waitFor(() =>
+    expect(
+      vi.mocked(graphql).mock.calls.some(
+        ([document, variables]) =>
+          document.includes('UpdateAgentConversation') &&
+          (variables as { conversationId: string; archived: boolean }).archived === true &&
+          (variables as { conversationId: string }).conversationId === 'chat-conversation',
+      ),
+    ).toBe(true),
+  )
+})
+
+it('shows a muted chat’s bell in the head, beside its title', async () => {
+  answerWith({ isMuted: true })
+  openOnChat()
+  const { container } = renderDrawer()
+  await screen.findByText('Dinner at seven?')
+  expect(container.ownerDocument.querySelector('.agent-drawer-conversation .chat-muted')).toBeTruthy()
+})
+
+it('words the note about somebody else’s agent by whose it is', async () => {
+  answerWith({ hasOwnerOnlyNote: true })
+  openOnChat()
+  renderDrawer()
+  expect(await screen.findByText("Only Person B can ask Person B's agent in this chat.")).toBeTruthy()
 })

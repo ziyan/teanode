@@ -830,7 +830,7 @@ func (self *graph) ReactInChatAsAgent(ctx context.Context, arguments ReactInChat
 	if err := self.requireChatWritable(tx, session); err != nil {
 		return false, err
 	}
-	reactorName := session.Agent.DisplayName()
+	reactorName := models.AgentSpeakerLabel(session.Agent.DisplayName(), session.User.DisplayName())
 	isChanged, err := tx.SetChatMessageReaction(message.ID, models.ReactorAgent, session.Agent.ID, reactorName, reactionEmoji)
 	if err != nil {
 		return false, translateError(err)

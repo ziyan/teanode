@@ -627,6 +627,30 @@ func SearchSharedPages(tx db.Transaction, readerUserId, query string, limit int)
 	return hits, nil
 }
 
+// InterleaveSharedHits puts hits in the order a list cut short should keep
+// them: one of each owner's in turn, each owner's own order kept. A search
+// gives every owner's hits one owner after another, so cutting that list at a
+// number would fill it with the first owner's and show nothing of the rest.
+func InterleaveSharedHits(hits []*models.SharedHit) []*models.SharedHit {
+	var ownerUserIds []string
+	byOwner := map[string][]*models.SharedHit{}
+	for _, hit := range hits {
+		if _, seen := byOwner[hit.OwnerUserID]; !seen {
+			ownerUserIds = append(ownerUserIds, hit.OwnerUserID)
+		}
+		byOwner[hit.OwnerUserID] = append(byOwner[hit.OwnerUserID], hit)
+	}
+	interleaved := make([]*models.SharedHit, 0, len(hits))
+	for round := 0; len(interleaved) < len(hits); round++ {
+		for _, ownerUserId := range ownerUserIds {
+			if round < len(byOwner[ownerUserId]) {
+				interleaved = append(interleaved, byOwner[ownerUserId][round])
+			}
+		}
+	}
+	return interleaved
+}
+
 // summariesLeftOut are the pages, among those at these roots or under them,
 // whose summary a reader is not shown (see sharedSummaryFor), by identifier.
 // Only a summary with a quotation mark in it can be left out, so only those

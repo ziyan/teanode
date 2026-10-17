@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 
 import { graphql } from '../api'
+import { useTranslation } from '../i18n/i18n'
 import { useSession, hasPermission } from '../session'
 import { useQuery } from './useQuery'
 
@@ -37,4 +38,20 @@ export function useOpenCircleInvitationCount(): number {
   }, [reload])
 
   return data ?? 0
+}
+
+// useLabelWithInvitationCount adds the number of invitations waiting to the
+// name of a button that leads to them, for the people who hear the button
+// rather than see it: the mark on it is hidden from them.
+export function useLabelWithInvitationCount(label: string): string {
+  const { plural } = useTranslation()
+  const openInvitationCount = useOpenCircleInvitationCount()
+  if (openInvitationCount === 0) {
+    return label
+  }
+  return `${label}: ${plural(
+    openInvitationCount,
+    { one: 'circles.waitingOne', other: 'circles.waiting' },
+    { count: openInvitationCount },
+  )}`
 }

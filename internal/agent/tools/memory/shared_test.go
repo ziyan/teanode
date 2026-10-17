@@ -406,7 +406,7 @@ func TestSharingGoesThroughTheAPI(t *testing.T) {
 		t.Errorf("a circle by name: %v", sent)
 	}
 	result, err = callMemory(t, run, `{"action":"shares"}`)
-	if err != nil || !strings.Contains(result.Content, `"with":"everyone in Home"`) || !strings.Contains(result.Content, `"with":"ben"`) {
+	if err != nil || !strings.Contains(result.Content, `"with":"the circle \"Home\""`) || !strings.Contains(result.Content, `"with":"ben"`) {
 		t.Errorf("the shares: %v %v", err, result)
 	}
 	if _, err := callMemory(t, run, `{"action":"unshare","share_id":"share-1"}`); err != nil {
@@ -433,7 +433,7 @@ func TestTheCardForSharingAPageSaysWhatIsGranted(t *testing.T) {
 	memory := find(t, "memory")
 	for arguments, want := range map[string]string{
 		`{"action":"share","path":"people/a","with":"ben"}`:                         `Share "people/a" and everything under it with ben, read only, without the quotes each fact was read from`,
-		`{"action":"share","path":"people/a","with":"home","is_quote_shared":true}`: `Share "people/a" and everything under it with everyone in Home (3 people), read only, with the quotes each fact was read from`,
+		`{"action":"share","path":"people/a","with":"home","is_quote_shared":true}`: `Share "people/a" and everything under it with the circle "Home" (3 people), read only, with the quotes each fact was read from`,
 	} {
 		if got := memory.PreviewLine(ctx, []byte(arguments)); got != want {
 			t.Errorf("%s\n got %q\nwant %q", arguments, got, want)

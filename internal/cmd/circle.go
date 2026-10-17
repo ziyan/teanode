@@ -436,7 +436,13 @@ func runCirclePeople(ctx context.Context, command *cli.Command) error {
 	}
 	rows := make([][]string, 0, len(people))
 	for _, person := range people {
-		rows = append(rows, []string{forTerminal(person.Username), forTerminal(person.Name)})
+		// Somebody with no display name is shown by their username, as the
+		// dashboard shows them.
+		name := person.Name
+		if name == "" {
+			name = person.Username
+		}
+		rows = append(rows, []string{forTerminal(person.Username), forTerminal(name)})
 	}
 	return printTable([]string{"USERNAME", "NAME"}, rows)
 }

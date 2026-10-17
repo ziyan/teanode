@@ -25,7 +25,7 @@ enum SkillSharingWords {
         if let monthlyLimitMinor = share.monthlyLimitMinor {
             parts.append(String(localized: "up to \(SkillShareMoney.format(minor: monthlyLimitMinor, currencyCode: share.currencyCode)) a month"))
         }
-        if parts.isEmpty { return String(localized: "With no limits, every call that says what it costs runs without asking; anything that does not say is asked") }
+        if parts.isEmpty { return String(localized: "No limits: every call waits for approval, except one that only works on something an earlier call through this share made") }
         if share.monthlyLimitMinor != nil {
             parts.append(String(localized: "\(SkillShareMoney.format(minor: share.monthTotalMinor, currencyCode: share.currencyCode)) so far this month"))
         }
@@ -36,7 +36,7 @@ enum SkillSharingWords {
         switch callState {
         case "ran": String(localized: "Ran")
         case "failed": String(localized: "Did not complete")
-        case "refused": String(localized: "Turned back")
+        case "refused": String(localized: "Refused")
         case "waiting_for_approval": String(localized: "Waiting")
         case "declined": String(localized: "Declined")
         case "expired": String(localized: "Expired")
@@ -58,7 +58,7 @@ enum SkillSharingWords {
         switch call.callState {
         case "ran": words = String(localized: "Approved. It ran on the owner’s computer.")
         case "failed": words = String(localized: "It was tried and did not complete.")
-        case "refused": words = String(localized: "It was turned back before it ran.")
+        case "refused": words = String(localized: "It was refused before it ran.")
         case "declined": words = String(localized: "Declined.")
         case "expired": words = String(localized: "Nobody answered in time, so it expired.")
         default: words = String(localized: "Waiting.")
@@ -325,10 +325,18 @@ struct ShareSkillSheet: View {
         let currencyWords = isCurrencyValid ? code.uppercased() : String(localized: "the currency below")
         return String(localized: "Type the amount in \(currencyWords), such as \(SkillShareMoney.typedExample(currencyCode: code))")
     }
+    /// A currency that is typed but is not three letters, said under it.
+    private var isCurrencyBad: Bool { !currency.trimmingCharacters(in: .whitespaces).isEmpty && !isCurrencyValid }
+    /// One payment above what a month may come to is a limit that cannot hold; the
+    /// server refuses it in the same words.
+    private var isPaymentAboveMonthly: Bool {
+        guard let paymentMinor, let monthlyMinor else { return false }
+        return paymentMinor > monthlyMinor
+    }
     private var pays: Bool { skill.tools.contains { chosen.contains($0.name) && $0.isAmountDeclared } }
     private var canShare: Bool {
         !personId.isEmpty && !chosen.isEmpty && (!pays || isAskedEveryTime || hasLimit) && (!hasLimit || isCurrencyValid || isAskedEveryTime)
-            && (isLimitReadable || isAskedEveryTime)
+            && (isLimitReadable || isAskedEveryTime) && (!isCurrencyBad || isAskedEveryTime) && (!isPaymentAboveMonthly || isAskedEveryTime)
     }
 
     var body: some View {
@@ -357,9 +365,9 @@ struct ShareSkillSheet: View {
                                 Text(verbatim: tool.name).fontDesign(.monospaced)
                                 Group {
                                     if tool.isAmountDeclared {
-                                        Text("pays: needs a limit or your approval")
+                                        Text("Spends money. Calls within your limits go ahead; bigger ones wait for you.")
                                     } else if tool.isScoped {
-                                        Text("Used only for the calls this person makes")
+                                        Text("Costs nothing itself. It only works on something an earlier call through this share made, such as checking or cancelling it.")
                                     } else {
                                         Text("This tool does not say what it costs, so you are asked every time")
                                     }
@@ -376,7 +384,7 @@ struct ShareSkillSheet: View {
                     if !isAskedEveryTime {
                         // Titled, so a field that has been typed in still says
                         // what it is for.
-                        LabeledContent("Most for one payment") {
+                        LabeledContent("Per payment") {
                             TextField("100.00", text: $paymentLimit)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
@@ -384,7 +392,10 @@ struct ShareSkillSheet: View {
                         if isPaymentUnreadable {
                             Text(verbatim: unreadableAmountText).font(.footnote).foregroundStyle(.red)
                         }
-                        LabeledContent("Most in a calendar month") {
+                        if isPaymentAboveMonthly {
+                            Text("The limit for one payment cannot be above the monthly limit.").font(.footnote).foregroundStyle(.red)
+                        }
+                        LabeledContent("Per month") {
                             TextField("400.00", text: $monthlyLimit)
                                 .keyboardType(.decimalPad)
                                 .multilineTextAlignment(.trailing)
@@ -397,6 +408,9 @@ struct ShareSkillSheet: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .multilineTextAlignment(.trailing)
+                        }
+                        if isCurrencyBad {
+                            Text("Use the three-letter code, such as usd.").font(.footnote).foregroundStyle(.red)
                         }
                     }
                 } footer: {
@@ -464,7 +478,7 @@ struct SkillShareCallsView: View {
                 Text("Nothing has been asked through this yet.").foregroundStyle(.secondary)
             }
             let waitingCalls = calls.filter(\.isWaiting)
-            let answeredCalls = calls.filter { !$0.isWaiting }
+            let earlierCalls = calls.filter { !$0.isWaiting }
             if !waitingCalls.isEmpty {
                 Section(share.isOwnedByCaller ? LocalizedStringKey("Waiting for you") : LocalizedStringKey("Waiting")) {
                     ForEach(waitingCalls) { call in
@@ -476,9 +490,9 @@ struct SkillShareCallsView: View {
                     }
                 }
             }
-            if !answeredCalls.isEmpty {
-                Section("Answered") {
-                    ForEach(answeredCalls) { call in
+            if !earlierCalls.isEmpty {
+                Section("Earlier") {
+                    ForEach(earlierCalls) { call in
                         VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 8) {
                                 Text(verbatim: call.toolName).fontDesign(.monospaced)

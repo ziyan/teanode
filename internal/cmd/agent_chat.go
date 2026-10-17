@@ -39,7 +39,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: "recording", Usage: "the id of a recording to ask about, as recording list shows them; repeat it for more than one"},
 			&cli.StringSliceFlag{Name: "photo", Usage: "the id of a photo to ask about, as photo list shows them; repeat it for more than one"},
 			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
-			&cli.StringSliceFlag{Name: "address", Usage: "in a chat (--conversation), ask this agent with the message: an agent id, or the username of the person it belongs to, from 'chat members'; repeat it for more than one. Another person's agent answers only if its owner let the chat ask it. Replying to an agent's message (--reply-to) asks that agent as well"},
+			&cli.StringSliceFlag{Name: "address", Usage: "in a chat (--conversation), ask this agent with the message: an agent id, or the username of the person it belongs to, from 'teanode agent conversation members <id>'; repeat it for more than one. Another person's agent answers only if its owner let the chat ask it. Replying to an agent's message (--reply-to) asks that agent as well"},
 			&cli.BoolFlag{Name: "ask-agent", Usage: "in a chat (--conversation), ask your own agent with it: the message goes to the people there and your agent answers them, for everybody to read; its work stays yours. Without it a message in a chat starts no agent"},
 		},
 		Action: runAgentAsk,
@@ -306,7 +306,7 @@ func addressedAgentsNamed(ctx context.Context, command *cli.Command, connection 
 		}
 		if found == "" {
 			return nil, fmt.Errorf("%q is neither the id of an agent in this chat nor the username of somebody whose agent you can ask here; "+
-				"'teanode agent chat members' says whose agents there are, and an agent is listed there only if its owner let the chat ask it", each)
+				"'teanode agent conversation members <id>' says whose agents there are, and an agent is listed there only if its owner let the chat ask it", each)
 		}
 		if !slices.Contains(agentIds, found) {
 			agentIds = append(agentIds, found)

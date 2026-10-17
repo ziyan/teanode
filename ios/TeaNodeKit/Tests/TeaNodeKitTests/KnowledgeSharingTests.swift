@@ -88,15 +88,17 @@ final class KnowledgeSharingTests: XCTestCase {
 
     func testASearchOfWhatIsSharedSaysWhoseEachHitIsAndWhetherItIsAFact() async throws {
         let body = #"""
-            {"data":{"SearchSharedAgentPages":[
+            {"data":{"SearchSharedAgentPages":{"hasMoreHits":true,"hits":[
               {"ownerUserId":"ada-id","ownerUsername":"ada","ownerName":"Ada Example","path":"people/a-grandparent","name":"A Grandparent","opening":"Lives by the sea.","factNumber":0,"text":""},
-              {"ownerUserId":"ada-id","ownerUsername":"ada","ownerName":"","path":"projects/garden","name":"","opening":"","factNumber":3,"text":"Next appointment is Tuesday."}]}}
+              {"ownerUserId":"ada-id","ownerUsername":"ada","ownerName":"","path":"projects/garden","name":"","opening":"","factNumber":3,"text":"Next appointment is Tuesday."}]}}}
             """#
         let fake = FakeServer { _ in (200, body) }
         let account = Account(
             server: try ServerAddress(parsing: "mail.example.com"), clientId: "a-client", accessToken: "tnt_a", refreshToken: "",
             expiresAt: Date().addingTimeInterval(30 * 86400), username: "robin")
-        let hits = try await Connection(account: account, transport: fake).searchSharedKnowledge("appointment", first: 5)
+        let search = try await Connection(account: account, transport: fake).searchSharedKnowledge("appointment", first: 5)
+        let hits = search.hits
+        XCTAssertTrue(search.hasMoreHits)
         XCTAssertEqual(hits.map(\.isFact), [false, true])
         XCTAssertEqual(hits.map(\.shownName), ["A Grandparent", "projects/garden"])
         XCTAssertEqual(hits.map(\.shownOwner), ["Ada Example", "ada"])

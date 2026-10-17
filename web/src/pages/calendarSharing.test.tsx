@@ -182,7 +182,17 @@ beforeEach(() => {
           { userId: 'cora-id', username: 'cora', name: 'Cora', avatarUrl: null, avatarColorIndex: 2 },
         ],
       } as never
-    if (document.includes('ListCircles')) return { ListCircles: [{ id: 'circle-1', name: 'Home' }] } as never
+    if (document.includes('ListCircles'))
+      return {
+        ListCircles: [
+          {
+            id: 'circle-1',
+            name: 'Home',
+            members: [{ userId: 'a' }, { userId: 'b' }, { userId: 'c' }, { userId: 'd' }],
+          },
+          { id: 'circle-2', name: 'Home', members: [{ userId: 'a' }] },
+        ],
+      } as never
     if (document.includes('ShareCalendar')) return { ShareCalendar: { id: 'share-3' } } as never
     if (document.includes('UnshareCalendar')) return { UnshareCalendar: true } as never
     if (document.includes('ListReminders')) return { ListReminders: [] } as never
@@ -237,7 +247,8 @@ it('shows a calendar shared only at busy as a gray Busy block, with nothing to o
   const block = (await screen.findByText('Busy · Cora', { selector: '.calendar-agenda-title' })).closest(
     '.calendar-agenda-row',
   ) as HTMLElement
-  expect(within(block).getByText('Cora')).toBeTruthy()
+  // Whose it is is said once, in the block's own words, and not again under it.
+  expect(within(block).queryByText('Cora')).toBeNull()
   // Nothing to edit or remove in it.
   expect(within(block).queryByRole('button')).toBeNull()
 })
@@ -309,6 +320,51 @@ it('puts a new event in the calendar chosen, and leaves the guests out of a circ
   )
   const saved = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('SaveCalendarEvent'))
   expect(saved?.[1]).toMatchObject({ calendarId: 'family', summary: 'Picnic', attendees: null })
+  // The toast says which calendar it went into, since it was not the person's own.
+  expect(await screen.findByText('Picnic is in The household')).toBeTruthy()
+})
+
+it('lists the agenda in time order across calendars, not one calendar after another', async () => {
+  const later = {
+    ...(eventsOf.own[0] as object),
+    id: 'later',
+    summary: 'Own, a week later',
+    startsAt: '2030-01-09T10:00:00Z',
+  }
+  const earlier = {
+    ...(eventsOf.ben[0] as object),
+    id: 'earlier',
+    summary: "Ben's breakfast",
+    startsAt: '2030-01-03T07:00:00Z',
+  }
+  const wholeDay = {
+    ...(eventsOf.family[0] as object),
+    id: 'whole',
+    summary: 'Family holiday',
+    allDay: true,
+    startsAt: '2030-01-03T00:00:00Z',
+  }
+  const before = { own: eventsOf.own, ben: eventsOf.ben, family: eventsOf.family }
+  eventsOf.own = [...eventsOf.own, later]
+  eventsOf.ben = [...eventsOf.ben, earlier]
+  eventsOf.family = [...eventsOf.family, wholeDay]
+  try {
+    show()
+    await screen.findByText('My dentist')
+    const titles = Array.from(document.querySelectorAll('.calendar-agenda-title')).map((title) => title.textContent)
+    expect(titles).toEqual([
+      // The 3rd: the whole day first, then by the hour whichever calendar it is in.
+      'Family holiday',
+      "Ben's breakfast",
+      'My dentist',
+      'School play',
+      "Ben's lunch",
+      'Busy · Cora',
+      'Own, a week later',
+    ])
+  } finally {
+    Object.assign(eventsOf, before)
+  }
 })
 
 it('shares the calendar with a person at a level, and takes a share back', async () => {
@@ -316,7 +372,8 @@ it('shares the calendar with a person at a level, and takes a share back', async
   await screen.findByText('My dentist')
   fireEvent.click(screen.getByRole('button', { name: 'Share' }))
   const dialog = await screen.findByRole('dialog', { name: 'Share your calendar' })
-  // Who it is shared with already.
+  // Who it is shared with already, under a heading that says so.
+  expect(within(dialog).getByRole('heading', { name: 'Shared with' })).toBeTruthy()
   expect(await within(dialog).findByText('Ben', { selector: '.calendar-share-name' })).toBeTruthy()
   expect(within(dialog).getByText('Everyone in Home', { selector: '.calendar-share-name' })).toBeTruthy()
   const listed = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('ListCalendarShares'))
@@ -378,7 +435,8 @@ it('names each person in the picker with the username in brackets', async () => 
     'Choose a person or a circle',
     'Ben (ben)',
     'Cora (cora)',
-    'Everyone in Home',
+    'Everyone in Home (4 people)',
+    'Everyone in Home (1 person)',
   ])
 })
 

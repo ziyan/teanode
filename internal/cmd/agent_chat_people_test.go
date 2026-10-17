@@ -217,6 +217,24 @@ func TestAChatTranscriptShowsAuthorsAndIsSafeForATerminal(test *testing.T) {
 	}
 }
 
+// Adding somebody who is in the chat adds nobody and says so; somebody who
+// left is added again.
+func TestAddingSomebodyAlreadyInAChatAddsNobody(test *testing.T) {
+	test.Parallel()
+
+	members := []*client.AgentChatMember{
+		{UserID: "u1", Name: "Rowan"},
+		{UserID: "u2", Name: "Sam", IsRemoved: true},
+	}
+	newUserIds, already := splitNewMembers(members, []string{"u1", "u2", "u3"})
+	if !reflect.DeepEqual(newUserIds, []string{"u2", "u3"}) {
+		test.Errorf("the people to add are %v", newUserIds)
+	}
+	if len(already) != 1 || already[0].Name != "Rowan" {
+		test.Errorf("the people already in are %v", already)
+	}
+}
+
 // Saying something in a chat sends it to the people and says so: there is no
 // turn to follow.
 func TestSayingInAChatSaysItWasSent(test *testing.T) {
@@ -299,6 +317,10 @@ func TestAskingOtherPeoplesAgentsFromTheCommandLine(test *testing.T) {
 		err := run("--address", name, "hello")
 		if err == nil || !strings.Contains(err.Error(), "neither the id of an agent in this chat nor the username") {
 			test.Errorf("--address %s: %v", name, err)
+		}
+		// The command it points to is one that exists.
+		if err != nil && !strings.Contains(err.Error(), "'teanode agent conversation members <id>'") {
+			test.Errorf("--address %s points to a command that is not there: %v", name, err)
 		}
 	}
 	lock.Lock()

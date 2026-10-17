@@ -13514,13 +13514,13 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "前へ"
+            "value": "以前"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "往前"
+            "value": "更早"
           }
         }
       }
@@ -54728,22 +54728,6 @@
         }
       }
     },
-    "Skills you share, when a call waits for you": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有しているスキルについて、返事を待つ呼び出しがあるとき"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你共享的技能有调用在等你处理时"
-          }
-        }
-      }
-    },
     "Make a shared calendar for %@": {
       "localizations": {
         "ja": {
@@ -55128,22 +55112,6 @@
         }
       }
     },
-    "Used only for the calls this person makes": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この相手が行う呼び出しにだけ使われます"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只用于这个人发起的调用"
-          }
-        }
-      }
-    },
     "%@ has an account and is in the circle": {
       "localizations": {
         "ja": {
@@ -55204,22 +55172,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@，全天"
-          }
-        }
-      }
-    },
-    "Turned back": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "差し戻し"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已退回"
           }
         }
       }
@@ -55700,22 +55652,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加到圈子"
-          }
-        }
-      }
-    },
-    "Message %@, or type @ to ask an agent…": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@にメッセージ、または @ でエージェントに頼む…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发消息给 %@，或输入 @ 呼叫助手…"
           }
         }
       }
@@ -57048,22 +56984,6 @@
         }
       }
     },
-    "pays: needs a limit or your approval": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "支払い: 上限か承認が必要"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会付款：需要设置上限或经你确认"
-          }
-        }
-      }
-    },
     "Several people are typing": {
       "localizations": {
         "ja": {
@@ -57368,22 +57288,6 @@
         }
       }
     },
-    "With no limits, every call that says what it costs runs without asking; anything that does not say is asked": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上限がない場合、費用が分かる呼び出しは確認なしで実行され、分からないものは確認します"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有设置上限时，说明了费用的调用会直接运行，没有说明的会问你"
-          }
-        }
-      }
-    },
     "Friends": {
       "localizations": {
         "ja": {
@@ -57412,22 +57316,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择一个人"
-          }
-        }
-      }
-    },
-    "Most in a calendar month": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1か月の上限"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每个日历月上限"
           }
         }
       }
@@ -57604,22 +57492,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待到 %@，之后过期。"
-          }
-        }
-      }
-    },
-    "Most for one payment": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1回の支払いの上限"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "单笔付款上限"
           }
         }
       }
@@ -57876,22 +57748,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "群名称"
-          }
-        }
-      }
-    },
-    "It was turned back before it ran.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "実行前に差し戻されました。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "运行前就被退回。"
           }
         }
       }
@@ -62638,6 +62494,326 @@
           "stringUnit": {
             "state": "translated",
             "value": "与你共享的相簿"
+          }
+        }
+      }
+    },
+    "Use the three-letter code, such as usd.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "usd のように3文字のコードで入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用三个字母的代码，例如 usd。"
+          }
+        }
+      }
+    },
+    "Costs nothing itself. It only works on something an earlier call through this share made, such as checking or cancelling it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それ自体に費用はかかりません。この共有の以前の呼び出しが作ったものにだけ使えます（確認や取り消しなど）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本身不花钱。只能用于此共享中先前调用所产生的内容，例如查询或取消它。"
+          }
+        }
+      }
+    },
+    "Only %@ can ask %@, %@'s agent, in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットで%3$@のエージェントの%2$@に頼めるのは%1$@だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这个聊天里，只有 %1$@ 可以呼叫 %3$@ 的助手 %2$@。"
+          }
+        }
+      }
+    },
+    "Spends money. Calls within your limits go ahead; bigger ones wait for you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お金を使います。上限内の呼び出しはそのまま実行され、それを超えるものは承認を待ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会花钱。在上限内的调用直接执行，超过的会等你确认。"
+          }
+        }
+      }
+    },
+    "Your agent remembers this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントがこのチャットを記憶中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手记住了这个聊天"
+          }
+        }
+      }
+    },
+    "The limit for one payment cannot be above the monthly limit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1回の支払いの上限は、1か月の上限を超えられません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单笔付款的上限不能高于每月上限。"
+          }
+        }
+      }
+    },
+    "Refused": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被拦截"
+          }
+        }
+      }
+    },
+    "Only %@ can ask %@'s agent in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットで%2$@のエージェントに頼めるのは%1$@だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这个聊天里，只有 %1$@ 可以呼叫 %2$@ 的助手。"
+          }
+        }
+      }
+    },
+    "There may be more; use more words": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他にもある可能性があります。言葉を増やして絞り込んでください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能还有更多；请多加几个词来缩小范围"
+          }
+        }
+      }
+    },
+    "%@ is in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ を%2$@に追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 已加入%2$@"
+          }
+        }
+      }
+    },
+    "No limits: every call waits for approval, except one that only works on something an earlier call through this share made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限なし：この共有の以前の呼び出しが作ったものにだけ使える呼び出しを除き、すべての呼び出しは承認を待ちます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有上限：除了只作用于此共享中先前调用所产生内容的调用，每次调用都要等待批准"
+          }
+        }
+      }
+    },
+    "%@ saved in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ を%2$@に保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 已保存到%2$@"
+          }
+        }
+      }
+    },
+    "Message, or @ to ask an agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ、または @ でエージェントに頼む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发消息，或输入 @ 呼叫助手"
+          }
+        }
+      }
+    },
+    "Your agent is off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントはオフです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手未开启。"
+          }
+        }
+      }
+    },
+    "Others may ask your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他の人もあなたのエージェントに頼めます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他人可以呼叫你的助手"
+          }
+        }
+      }
+    },
+    "Everyone in %@ (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の全員（%@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的所有人（%@）"
+          }
+        }
+      }
+    },
+    "Per month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1か月あたり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月"
+          }
+        }
+      }
+    },
+    "Skill calls waiting for your approval": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの承認待ちのスキル呼び出し"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你批准的技能调用"
+          }
+        }
+      }
+    },
+    "Per payment": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1回あたり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每笔"
+          }
+        }
+      }
+    },
+    "It was refused before it ran.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行前に拒否されました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行前就被拦截。"
           }
         }
       }

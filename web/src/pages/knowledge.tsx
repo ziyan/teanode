@@ -32,7 +32,7 @@ import { MenuButton } from '../components/menuButton'
 import { Markdown } from '../components/markdown'
 import { Tooltip } from '../components/tooltip'
 import { KnowledgeGraph } from './knowledgeExplore'
-import { PageShares, SharePageDialog, SharedKnowledge, SharedWithYou, useRefreshKey } from './knowledgeShared'
+import { PageShares, SharePageDialog, SharedKnowledge, SharedWithYou, useHasSharedPages, useRefreshKey } from './knowledgeShared'
 import { LinkedRecords } from './knowledgeRecords'
 import { RECORD_LINK_FIELDS, RecordKindIcon, useRecordKindLabel, type RecordLink } from '../memoryLinks'
 // The set of things to tick, the one the access pages tick roles and
@@ -478,7 +478,24 @@ function nameOf(node: Node, me: string): string {
 // only and has nothing of the person's own beside it.
 export function KnowledgePage() {
   const owner = useSearchParams()[0].get('owner')
-  return owner ? <SharedKnowledge owner={owner} /> : <OwnKnowledge />
+  return owner ? <SharedKnowledge owner={owner} /> : <OwnOrSharedKnowledge />
+}
+
+const AGENT_ON = `query { ReadAgent { agent { id enabled } } }`
+
+// OwnOrSharedKnowledge is the person's own pages, or, when their agent is off,
+// only what is shared with them: pages are made by the agent, so there are
+// none of their own and asking for them fails. Where the question itself
+// fails (no agent permission) the page is the usual one.
+function OwnOrSharedKnowledge() {
+  const agent = useQuery(() => graphql<{ ReadAgent: { agent?: { enabled: boolean } | null } }>(AGENT_ON), [], {
+    refresh: false,
+  })
+  if (agent.loading && !agent.data) return <Loading />
+  // Only an answer that says there is no agent on is "off": no answer, or one
+  // that cannot be read, leaves the usual page.
+  const isAgentOff = agent.data?.ReadAgent != null && !agent.data.ReadAgent.agent?.enabled
+  return isAgentOff ? <SharedKnowledge owner="" isAgentOff /> : <OwnKnowledge />
 }
 
 function OwnKnowledge() {
@@ -588,6 +605,7 @@ function OwnKnowledge() {
   const showingDetail = onePane ? showingPage : open !== ''
 
   const searchPages = useSearchPages(search)
+  const hasSharedPages = useHasSharedPages()
 
   // Going somewhere is one move: the address changes, the lookup is put
   // away, and the navigator is told whether the chevron or the name was
@@ -642,13 +660,16 @@ function OwnKnowledge() {
   // toolbar, which left nowhere for the box and forced the two apart. The
   // long wording is still what each dialog is titled, where there is room
   // for it and where a sentence reads better than a noun.
+  // Said as "your" pages once the list below also holds a search of what is
+  // shared with the person, so the two boxes are told apart.
+  const findLabel = hasSharedPages ? t('knowledge.findOwn') : t('knowledge.find')
   const lookup = (
     <div className="list-toolbar">
       <input
         type="search"
         value={filter}
-        placeholder={t('knowledge.find')}
-        aria-label={t('knowledge.find')}
+        placeholder={findLabel}
+        aria-label={findLabel}
         onChange={(event) => setFilter(event.target.value)}
       />
       {/* The other three questions the column answers, and they are alike:

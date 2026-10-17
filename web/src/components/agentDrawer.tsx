@@ -97,6 +97,7 @@ import {
   ChatLineFrame,
   ChatMembersDialog,
   ChatPeopleDialog,
+  DEFAULT_AGENT_NAME,
   DELETE_CHAT_MESSAGE,
   EDIT_CHAT_MESSAGE,
   LEAVE_CHAT,
@@ -1422,6 +1423,21 @@ function noteWords(
       // Not JSON: fall through to the prose.
     }
     return prose
+  }
+  if (noteKind === 'chat_agent_owner_only') {
+    // Whose agent it is, so that the default name "Agent" is not read as a
+    // person; a note written before it was told says only the agent's name.
+    try {
+      const owned = JSON.parse(noteDetail) as { agentName?: string; ownerName?: string }
+      if (owned.ownerName) {
+        const agentName = (owned.agentName ?? '').trim()
+        return agentName && agentName !== DEFAULT_AGENT_NAME
+          ? t('agentDrawer.note.chatAgentOwnerOnlyOwnedNamed', { owner: owned.ownerName, agent: agentName })
+          : t('agentDrawer.note.chatAgentOwnerOnlyOwned', { owner: owned.ownerName })
+      }
+    } catch {
+      // The agent's name alone: the words below.
+    }
   }
   if (noteDetail && words.withDetail) {
     return t(words.withDetail, { detail: noteDetail })
@@ -3843,7 +3859,15 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         // The words of an agent's answer as they are written, told to
         // every member: drawn as a message that the stored one replaces.
         if (!event.authorAgentId) return
-        setLines((previous) => linesWithStreamedText(previous, event))
+        {
+          // The agent's color is its owner's, told by the members.
+          const owner = loaded?.chat?.members.find(
+            (member) => member.agentId && member.agentId === event.authorAgentId,
+          )
+          setLines((previous) =>
+            linesWithStreamedText(previous, { ...event, authorAvatarColorIndex: owner?.avatarColorIndex }),
+          )
+        }
         return
       case 'members': {
         // Somebody was added, taken out or left, or changed what their
@@ -4657,7 +4681,10 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
       }
       toast.done(put ? t('agentDrawer.archivedDone') : t('agentDrawer.unarchivedDone'))
       if (put && conversation.id === conversationId) {
-        await switchTo(remaining[0]?.id ?? '')
+        // With the agent off there is no main conversation to fall back to:
+        // the next chat, or the offer to turn the agent on.
+        if (remaining[0] || available) await switchTo(remaining[0]?.id ?? '')
+        else showOffer()
       }
     } catch (caught) {
       toast.failed(caught instanceof Error ? caught.message : String(caught))
@@ -4758,52 +4785,67 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
           </button>
         </Tooltip>
       )}
-      {conversation.kind !== 'main' && conversation.kind !== 'chat' && renaming?.id !== conversation.id && (
+      {conversation.kind !== 'main' && renaming?.id !== conversation.id && (
         <span className="agent-drawer-list-actions">
-          <Tooltip label={t('agentDrawer.makeMain')}>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('agentDrawer.makeMain')}
-              onClick={() => void makeMain(conversation.id)}
-            >
-              <StarIcon size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip label={t('agentDrawer.rename')}>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={t('agentDrawer.rename')}
-              onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
-            >
-              <PencilIcon size={14} />
-            </button>
-          </Tooltip>
+          {/* A chat is named by its people and left rather than deleted, so
+              of the actions only the one that puts it away is its own. */}
+          {conversation.kind !== 'chat' && (
+            <>
+              <Tooltip label={t('agentDrawer.makeMain')}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t('agentDrawer.makeMain')}
+                  onClick={() => void makeMain(conversation.id)}
+                >
+                  <StarIcon size={14} />
+                </button>
+              </Tooltip>
+              <Tooltip label={t('agentDrawer.rename')}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={t('agentDrawer.rename')}
+                  onClick={() => setRenaming({ id: conversation.id, title: conversation.title })}
+                >
+                  <PencilIcon size={14} />
+                </button>
+              </Tooltip>
+            </>
+          )}
           {/* Not on the main conversation: the server refuses to archive
               it, and an action that is always refused is worse than none. */}
           <Tooltip label={conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}>
             <button
               type="button"
               className="icon-button"
-              aria-label={`${conversation.title || t('agentDrawer.untitled')}: ${
-                conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')
-              }`}
+              aria-label={`${
+                conversation.chat
+                  ? chatTitleOf(
+                      conversation.chat,
+                      ownUserId,
+                      t('chat.deletedAccount'),
+                      conversation.title || t('agentDrawer.untitled'),
+                    )
+                  : conversation.title || t('agentDrawer.untitled')
+              }: ${conversation.archivedAt ? t('agentDrawer.unarchive') : t('agentDrawer.archive')}`}
               onClick={() => void archiveConversation(conversation, !conversation.archivedAt)}
             >
               {conversation.archivedAt ? <InboxIcon size={14} /> : <ArchiveIcon size={14} />}
             </button>
           </Tooltip>
-          <Tooltip label={t('agentDrawer.delete')}>
-            <button
-              type="button"
-              className="icon-button danger"
-              aria-label={t('agentDrawer.delete')}
-              onClick={() => setDeleting(conversation)}
-            >
-              <TrashIcon size={14} />
-            </button>
-          </Tooltip>
+          {conversation.kind !== 'chat' && (
+            <Tooltip label={t('agentDrawer.delete')}>
+              <button
+                type="button"
+                className="icon-button danger"
+                aria-label={t('agentDrawer.delete')}
+                onClick={() => setDeleting(conversation)}
+              >
+                <TrashIcon size={14} />
+              </button>
+            </Tooltip>
+          )}
         </span>
       )}
     </div>
@@ -5000,6 +5042,73 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
     loaded.chat.members.some((member) => member.userId === ownUserId && member.memberRole === 'admin'),
   )
 
+  // toolLineElement is one tool call as a line that opens to what was asked
+  // and what came back, with what the call made under it when asked to.
+  const toolLineElement = (line: Extract<Line, { kind: 'tool' }>, withCards: boolean) => {
+    const artifact = artifactOf(line)
+    const shared = sharedFilesOf(line)
+    return (
+      <div
+        key={line.key}
+        className={['agent-line tool', line.done ? 'done' : '', isToolOpen(line.key) ? 'open' : '']
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
+          {line.done ? '✓' : '…'} {toolWords(line.tool)}
+          {line.note ? <span className="muted"> · {line.note}</span> : null}
+        </button>
+        {isToolOpen(line.key) && (
+          <div className="agent-tool-detail">
+            {line.arguments && <CodeBlock text={line.arguments} tidy />}
+            {line.result && <CodeBlock text={line.result} tidy />}
+          </div>
+        )}
+        {withCards && artifact ? <ArtifactCard artifact={artifact} /> : null}
+        {withCards &&
+          shared.map((file) => (
+            <FileCard key={file.attachment_id} file={file} />
+          ))}
+      </div>
+    )
+  }
+
+  // toolGroupElement is what the person's own agent did to answer them in a
+  // chat, as one folded row above the answer: whatever the setting for tool
+  // calls says, since a chat has no other way to turn them on, and for that
+  // person only, since the rows are in their own conversation of the chat and
+  // nobody else's. What the calls made is under the row and not inside the
+  // fold, as everywhere else.
+  const toolGroupElement = (tools: Extract<Line, { kind: 'tool' }>[]) => {
+    const groupKey = `work-${tools[0].key}`
+    const isOpen = expanded.has(groupKey)
+    const names = tools
+      .map((tool) => toolWords(tool.tool))
+      .filter((name, at, all) => all.indexOf(name) === at)
+      .join(', ')
+    return (
+      <div key={groupKey} className={['agent-line tool work', tools.every((tool) => tool.done) ? 'done' : '', isOpen ? 'open' : ''].filter(Boolean).join(' ')}>
+        <button type="button" className="agent-tool-toggle" aria-expanded={isOpen} onClick={() => toggleExpanded(groupKey)}>
+          {tools.every((tool) => tool.done) ? '✓' : '…'} {t('chat.whatItDid')}
+          <span className="muted"> · {names}</span>
+        </button>
+        {isOpen && <div className="agent-tool-detail agent-work-detail">{tools.map((tool) => toolLineElement(tool, false))}</div>}
+        {tools.map((tool) => {
+          const artifact = artifactOf(tool)
+          const shared = sharedFilesOf(tool)
+          return (
+            <Fragment key={tool.key}>
+              {artifact ? <ArtifactCard artifact={artifact} /> : null}
+              {shared.map((file) => (
+                <FileCard key={file.attachment_id} file={file} />
+              ))}
+            </Fragment>
+          )
+        })}
+      </div>
+    )
+  }
+
   // drawLine is one line of the transcript as the drawer draws it.
   const drawLine = (line: Line, previous?: Line) => {
     switch (line.kind) {
@@ -5020,87 +5129,93 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
         const canDelete = Boolean(line.messageId) && (canEdit || isChatAdmin)
         return (
           <ChatLineFrame key={line.key} line={line} isRunStart={isRunStart} readers={readers}>
-            <Tooltip label={line.at ? formatTime(line.at) : ''}>
-              <SwipeableLine
-                className={[
-                  isOwnWords(line) ? 'agent-line user' : 'agent-line assistant chat-person',
-                  line.isPending ? 'pending' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                replyLabel={t('agentDrawer.reply')}
-                copyLabel={t('common.copy')}
-                onReply={() => replyTo(line)}
-                onCopy={() => copyLine(line)}
-                onCopyFailed={sayCopyFailed}
-                reactLabel={t('agentDrawer.react')}
-                onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
-                extraActions={
-                  <>
-                    {canEdit ? (
-                      <button
-                        type="button"
-                        className="icon-action"
-                        title={t('chat.editMessageFrom', { name: line.authorName })}
-                        aria-label={t('chat.editMessageFrom', { name: line.authorName })}
-                        onClick={() => setEditing({ messageId: line.messageId as string, text: line.text })}
-                      >
-                        <PencilIcon size={14} />
-                      </button>
-                    ) : null}
-                    {canDelete ? (
-                      <button
-                        type="button"
-                        className="icon-action danger"
-                        title={t('chat.deleteMessageFrom', { name: line.authorName })}
-                        aria-label={t('chat.deleteMessageFrom', { name: line.authorName })}
-                        onClick={() => setDeletingMessage(line)}
-                      >
-                        <TrashIcon size={14} />
-                      </button>
-                    ) : null}
-                  </>
-                }
-              >
-                {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
-                {isEditing && editing ? (
-                  <div className="agent-chat-edit">
-                    <textarea
-                      autoFocus
-                      rows={2}
-                      value={editing.text}
+            {/* The time is in the toolbar, where it is read when the pointer
+                is on the bubble: a tooltip over the same bubble opened on top
+                of the toolbar and of the reactions picker. */}
+            <SwipeableLine
+              actionsLabel={line.at ? formatTime(line.at) : undefined}
+              className={[
+                isOwnWords(line)
+                  ? 'agent-line user'
+                  : line.authorKind === 'agent'
+                    ? 'agent-line assistant chat-person chat-agent'
+                    : 'agent-line assistant chat-person',
+                line.isPending ? 'pending' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              replyLabel={t('agentDrawer.reply')}
+              copyLabel={t('common.copy')}
+              onReply={() => replyTo(line)}
+              onCopy={() => copyLine(line)}
+              onCopyFailed={sayCopyFailed}
+              reactLabel={t('agentDrawer.react')}
+              onReact={line.messageId ? () => toggleReactionPicker(line.messageId ?? null) : undefined}
+              extraActions={
+                <>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="icon-action"
+                      title={t('chat.editMessageFrom', { name: line.authorName })}
                       aria-label={t('chat.editMessageFrom', { name: line.authorName })}
-                      onChange={(event) => setEditing({ messageId: editing.messageId, text: event.target.value })}
-                      onKeyDown={(event) => {
-                        if (event.nativeEvent.isComposing || event.keyCode === 229) return
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          setEditing(null)
-                        } else if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault()
-                          void saveEdit()
-                        }
-                      }}
-                    />
-                    <div className="row">
-                      <button type="button" className="primary" onClick={() => void saveEdit()}>
-                        {t('common.save')}
-                      </button>
-                      <button type="button" onClick={() => setEditing(null)}>
-                        {t('common.cancel')}
-                      </button>
-                    </div>
+                      onClick={() => setEditing({ messageId: line.messageId as string, text: line.text })}
+                    >
+                      <PencilIcon size={14} />
+                    </button>
+                  ) : null}
+                  {canDelete ? (
+                    <button
+                      type="button"
+                      className="icon-action danger"
+                      title={t('chat.deleteMessageFrom', { name: line.authorName })}
+                      aria-label={t('chat.deleteMessageFrom', { name: line.authorName })}
+                      onClick={() => setDeletingMessage(line)}
+                    >
+                      <TrashIcon size={14} />
+                    </button>
+                  ) : null}
+                </>
+              }
+            >
+              {repliedTo?.quotedText ? <div className="agent-in-reply-to">{repliedTo.quotedText}</div> : null}
+              {isEditing && editing ? (
+                <div className="agent-chat-edit">
+                  <textarea
+                    autoFocus
+                    rows={2}
+                    value={editing.text}
+                    aria-label={t('chat.editMessageFrom', { name: line.authorName })}
+                    onChange={(event) => setEditing({ messageId: editing.messageId, text: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) return
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        setEditing(null)
+                      } else if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault()
+                        void saveEdit()
+                      }
+                    }}
+                  />
+                  <div className="row">
+                    <button type="button" className="primary" onClick={() => void saveEdit()}>
+                      {t('common.save')}
+                    </button>
+                    <button type="button" onClick={() => setEditing(null)}>
+                      {t('common.cancel')}
+                    </button>
                   </div>
-                ) : line.authorKind === 'agent' ? (
-                  <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
-                ) : (
-                  line.text
-                )}
-                {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
-                {line.editedAt && !isEditing ? <span className="agent-chat-edited">{t('chat.edited')}</span> : null}
-                {reactionsOn(line)}
-              </SwipeableLine>
-            </Tooltip>
+                </div>
+              ) : line.authorKind === 'agent' ? (
+                <Markdown text={line.text} onLeaving={leaving} pictureSource={pictureSource} />
+              ) : (
+                line.text
+              )}
+              {line.attachments && line.attachments.length > 0 && <AttachmentChips attachments={line.attachments} />}
+              {line.editedAt && !isEditing ? <span className="agent-chat-edited">{t('chat.edited')}</span> : null}
+              {reactionsOn(line)}
+            </SwipeableLine>
           </ChatLineFrame>
         )
       }
@@ -5182,29 +5297,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
             </Fragment>
           ) : null
         }
-        return (
-          <div
-            key={line.key}
-            className={['agent-line tool', line.done ? 'done' : '', isToolOpen(line.key) ? 'open' : '']
-              .filter(Boolean)
-              .join(' ')}
-          >
-            <button type="button" className="agent-tool-toggle" onClick={() => toggleExpanded(line.key)}>
-              {line.done ? '✓' : '…'} {toolWords(line.tool)}
-              {line.note ? <span className="muted"> · {line.note}</span> : null}
-            </button>
-            {isToolOpen(line.key) && (
-              <div className="agent-tool-detail">
-                {line.arguments && <CodeBlock text={line.arguments} tidy />}
-                {line.result && <CodeBlock text={line.result} tidy />}
-              </div>
-            )}
-            {artifact ? <ArtifactCard artifact={artifact} /> : null}
-            {shared.map((file) => (
-              <FileCard key={file.attachment_id} file={file} />
-            ))}
-          </div>
-        )
+        return toolLineElement(line, true)
       }
       case 'confirmation':
         return (
@@ -5385,7 +5478,7 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
   const canSend = (draft.trim().length > 0 || pending.length > 0) && !uploading
   // Where an agent can be asked, the box says how.
   const chatPlaceholder =
-    addressable.length > 0 ? t('chat.placeholderWithAgents', { title }) : t('chat.placeholder', { title })
+    addressable.length > 0 ? t('chat.placeholderWithAgents') : t('chat.placeholder')
   // What the agent said it needs, while it is still waiting for it and
   // the person has not yet written back.
   const waitingNote = showingGoalNote && current?.goalState === 'waiting' ? (current.goalNote ?? '').trim() : ''
@@ -5478,6 +5571,11 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 <SparkIcon size={14} />
               )}
               <span className="agent-drawer-title">{title}</span>
+              {chat?.isMuted ? (
+                <span className="chat-muted" role="img" aria-label={t('chat.muted')} title={t('chat.muted')}>
+                  <BellOffIcon size={12} />
+                </span>
+              ) : null}
               <ChevronDownIcon size={14} className="chevron" />
             </button>
             {/* In a goal's own conversation, where the goal stands, and the
@@ -5787,6 +5885,26 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                     {dayLabel(at, t('agentDrawer.today'), t('agentDrawer.yesterday'))}
                   </div>
                 ) : null
+              // In a chat the calls the person's own agent made to answer are
+              // one row, drawn at the first of them.
+              if (isInChat && line.kind === 'tool' && !isCallRecord) {
+                if (lines[index - 1]?.kind === 'tool') return null
+                const tools: Extract<Line, { kind: 'tool' }>[] = []
+                for (let ahead = index; ahead < lines.length; ahead++) {
+                  const following = lines[ahead]
+                  if (following.kind !== 'tool') break
+                  tools.push(following)
+                }
+                const work = toolGroupElement(tools)
+                return divider ? (
+                  <Fragment key={`day-${line.key}`}>
+                    {divider}
+                    {work}
+                  </Fragment>
+                ) : (
+                  work
+                )
+              }
               let drawn = drawLine(line, lines[index - 1])
               // A coding session's question, as the agent said it, takes
               // its options under it while it still waits. Which question
@@ -5846,8 +5964,17 @@ export function AgentDrawer({ standalone = false }: { standalone?: boolean } = {
                 ))}
               </div>
             ) : null}
-            {isInChat ? <TypingLine names={typingNames} agentNames={thinkingNames} /> : null}
+            {isInChat ? (
+              <TypingLine
+                names={typingNames}
+                // The person's own agent is thinking in the same words as
+                // everybody else's: its own events are not the chat's, so
+                // it is added here, once.
+                agentNames={running ? [...thinkingNames, agentSpeakerName(agentName, ownName, t)] : thinkingNames}
+              />
+            ) : null}
             {running &&
+              !isInChat &&
               !(
                 lines[lines.length - 1]?.kind === 'assistant' &&
                 (lines[lines.length - 1] as { streaming?: boolean }).streaming

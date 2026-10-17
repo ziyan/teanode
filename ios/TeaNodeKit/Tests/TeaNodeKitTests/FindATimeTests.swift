@@ -23,7 +23,7 @@ final class FindATimeTests: XCTestCase {
     }
 
     /// The command line's free-together test and the dashboard's expect the
-    /// same stretches of the same busy times.
+    /// same stretches of the same busy times, counted in one zone.
     func testWhatNoneOfThemIsBusyInIsFreeWithOverlapsMadeOne() {
         let free = FreeTime.freeByDay(
             busy: [period(2, 10, to: 11), period(2, 10, 30, to: 12), period(2, 15, to: 16)],

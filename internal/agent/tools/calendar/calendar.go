@@ -133,7 +133,7 @@ func init() {
 					"repeat":     tools.StringProperty("how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO"),
 					"is_private": tools.BooleanProperty("true to mark it private, so that people the calendar is shared with see only that the person is busy"),
 					"invite":     tools.ArrayProperty("addresses to invite; each is sent an invitation they can answer", tools.StringProperty("an address")),
-					"circle":     tools.StringProperty("to put it in a circle's calendar, which everybody in the circle sees, give the circle's name; it cannot have guests"),
+					"circle":     tools.StringProperty("to put it in a circle's calendar, which everybody in the circle sees, give the circle's name, or its id when two circles have that name; it cannot have guests"),
 					"person": tools.StringProperty("to put it in the calendar of somebody who shared theirs with the person at edit, give their username; " +
 						"it lands in front of them, so the person is asked first"),
 				}),
@@ -181,7 +181,7 @@ func init() {
 					"is_private":  tools.BooleanProperty("true to mark it private, so that people the calendar is shared with see only that the person is busy; false takes the mark off"),
 					"invite":      tools.ArrayProperty("the whole guest list as it should now be; everybody on it is sent the change", tools.StringProperty("an address")),
 					"tell_guests": tools.BooleanProperty("true when the people already invited are to be told about this change"),
-					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row"),
+					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row, or its circle_id when the row has one"),
 					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit: the person value of the agenda row"),
 				}, "event"),
 				PreviewIn: eventPreview("Change %s in %s"),
@@ -199,7 +199,7 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"event":       tools.StringProperty("which event, as the identifier the agenda gives"),
 					"tell_guests": tools.BooleanProperty("true when the people invited are to be told it is off"),
-					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row"),
+					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row, or its circle_id when the row has one"),
 					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit: the person value of the agenda row"),
 				}, "event"),
 				// Naming the event, not its identifier: taking a thing out
@@ -381,50 +381,38 @@ func targetCalendar(ctx context.Context, operations tools.Operations, circle, pe
 }
 
 // circleCalendarNamed is the calendar of the circle with this id or name, or
-// nil when there is none. Circle names are not unique, so a name that two of
-// the person's circles with a calendar have is refused with their ids and
-// sizes, in the words every other surface uses.
+// nil when that circle has none. Circle names are not unique, so a name that
+// two of the person's circles have, whether or not they both have a calendar,
+// is refused with their ids and sizes, in the words every other surface uses
+// and among the same circles ResolveShareTarget counts.
 func circleCalendarNamed(ctx context.Context, operations tools.Operations, calendars []*calendarEntry, circle string) (*calendarEntry, error) {
-	var named []*calendarEntry
 	for _, each := range calendars {
-		if !each.IsCircleCalendar || each.isOwn() {
-			continue
-		}
-		if each.CircleID == circle {
+		if each.IsCircleCalendar && !each.isOwn() && each.CircleID == circle {
 			return each, nil
 		}
-		if strings.EqualFold(each.CircleName, circle) {
+	}
+	circles, err := tools.ShareableCircles(ctx, operations)
+	if err != nil {
+		return nil, err
+	}
+	var named []models.ShareableCircle
+	for _, each := range circles {
+		if strings.EqualFold(each.Name, circle) {
 			named = append(named, each)
 		}
 	}
-	if len(named) <= 1 {
-		if len(named) == 1 {
-			return named[0], nil
+	switch len(named) {
+	case 0:
+		return nil, nil
+	case 1:
+		for _, each := range calendars {
+			if each.IsCircleCalendar && !each.isOwn() && each.CircleID == named[0].ID {
+				return each, nil
+			}
 		}
 		return nil, nil
 	}
-	var circles struct {
-		ListCircles []struct {
-			ID      string `json:"id"`
-			Members []struct {
-				UserID string `json:"userId"`
-			} `json:"members"`
-		} `json:"ListCircles"`
-	}
-	if err := operations.Execute(ctx, `query { ListCircles { id members { userId } } }`, nil, &circles); err != nil {
-		return nil, err
-	}
-	choices := make([]models.ShareableCircle, 0, len(named))
-	for _, each := range named {
-		choice := models.ShareableCircle{ID: each.CircleID, Name: each.CircleName}
-		for _, listed := range circles.ListCircles {
-			if listed.ID == each.CircleID {
-				choice.MemberCount = len(listed.Members)
-			}
-		}
-		choices = append(choices, choice)
-	}
-	return nil, models.AmbiguousCircleNameError(circle, choices)
+	return nil, models.AmbiguousCircleNameError(circle, named)
 }
 
 type windowArguments struct {

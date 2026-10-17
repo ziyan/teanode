@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { APIError, graphql } from '../api'
 import { ToastProvider } from '../components/toast'
+import { KnowledgePage } from './knowledge'
 import { TranslationProvider } from '../i18n/i18n'
 import {
   PageShares,
@@ -138,28 +139,31 @@ it('searches what is shared, and lists the pages and facts found with whose they
   vi.mocked(graphql).mockImplementation(async (document: string) => {
     if (document.includes('SearchSharedAgentPages')) {
       return {
-        SearchSharedAgentPages: [
-          {
-            ownerUserId: 'ada-id',
-            ownerUsername: 'ada',
-            ownerName: 'Ada Example',
-            path: 'people/a-grandparent',
-            name: 'A Grandparent',
-            opening: 'Lives by the sea.',
-            factNumber: 0,
-            text: '',
-          },
-          {
-            ownerUserId: 'ada-id',
-            ownerUsername: 'ada',
-            ownerName: 'Ada Example',
-            path: 'people/a-grandparent',
-            name: 'A Grandparent',
-            opening: '',
-            factNumber: 3,
-            text: 'Next appointment is Tuesday at three.',
-          },
-        ],
+        SearchSharedAgentPages: {
+          hasMoreHits: true,
+          hits: [
+            {
+              ownerUserId: 'ada-id',
+              ownerUsername: 'ada',
+              ownerName: 'Ada Example',
+              path: 'people/a-grandparent',
+              name: 'A Grandparent',
+              opening: 'Lives by the sea.',
+              factNumber: 0,
+              text: '',
+            },
+            {
+              ownerUserId: 'ada-id',
+              ownerUsername: 'ada',
+              ownerName: 'Ada Example',
+              path: 'people/a-grandparent',
+              name: 'A Grandparent',
+              opening: '',
+              factNumber: 3,
+              text: 'Next appointment is Tuesday at three.',
+            },
+          ],
+        },
       }
     }
     return { ListSharedAgentPages: [root()] }
@@ -173,12 +177,16 @@ it('searches what is shared, and lists the pages and facts found with whose they
   expect(fact.getAttribute('href')).toBe('/knowledge/people/a-grandparent?owner=ada')
   expect(within(fact).getByText(/Shared by Ada Example: Next appointment is Tuesday at three\./)).toBeTruthy()
   expect(within(section).getByText(/Shared by Ada Example: Lives by the sea\./)).toBeTruthy()
+  // The search left hits out, and says so.
+  expect(within(section).getByText('There may be more; use more words.')).toBeTruthy()
   const searched = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('SearchSharedAgentPages'))
   expect(searched?.[1]).toEqual({ query: 'appointment' })
 
   // Words that match nothing say so, and clearing them brings the people back.
   vi.mocked(graphql).mockImplementation(async (document: string) =>
-    document.includes('SearchSharedAgentPages') ? { SearchSharedAgentPages: [] } : { ListSharedAgentPages: [root()] },
+    document.includes('SearchSharedAgentPages')
+      ? { SearchSharedAgentPages: { hits: [], hasMoreHits: false } }
+      : { ListSharedAgentPages: [root()] },
   )
   fireEvent.change(within(section).getByRole('searchbox'), { target: { value: 'nothing like it' } })
   expect(await within(section).findByText('Nothing shared with you has those words.')).toBeTruthy()
@@ -197,6 +205,48 @@ it('draws nothing when nothing is shared, and nothing when it cannot ask', async
   const failing = inApp(<SharedWithYou />)
   await waitFor(() => expect(graphql).toHaveBeenCalledTimes(2))
   expect(failing.container.querySelector('.knowledge-shared')).toBeNull()
+})
+
+// A person whose agent is off has no pages of their own: the page is only what
+// is shared, says so in a line, opens the first shared page and never asks for
+// pages of their own, which would only fail.
+it('shows a person whose agent is off only what is shared, with the first page open', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ReadAgent')) return { ReadAgent: { agent: { id: 'agent-id', enabled: false } } }
+    if (document.includes('ReadSharedAgentPage')) return { ReadSharedAgentPage: sharedPage() }
+    if (document.includes('ListSharedAgentPages')) return { ListSharedAgentPages: [root()] }
+    throw new Error(`asked for ${document}`)
+  })
+  inApp(
+    <Routes>
+      <Route path="/knowledge/*" element={<KnowledgePage />} />
+    </Routes>,
+  )
+  expect(
+    await screen.findByText(
+      'Your agent is off, so you have no pages of your own. What others share with you is below.',
+    ),
+  ).toBeTruthy()
+  expect(await screen.findByText('#3 Next appointment is Tuesday at three.')).toBeTruthy()
+  expect(screen.queryByText('Recall')).toBeNull()
+  expect(screen.queryByPlaceholderText('Search the pages')).toBeNull()
+  const asked = vi.mocked(graphql).mock.calls.map(([document]) => document)
+  expect(asked.some((document) => document.includes('AgentGraphPage'))).toBe(false)
+  // The heading of the list is said once: the line above it says the rest.
+  expect(screen.getAllByText('Shared with you').length).toBeGreaterThan(0)
+})
+
+it('says nothing is shared yet to a person whose agent is off and who is shared nothing', async () => {
+  vi.mocked(graphql).mockImplementation(async (document: string) => {
+    if (document.includes('ReadAgent')) return { ReadAgent: { agent: null } }
+    return { ListSharedAgentPages: [] }
+  })
+  inApp(
+    <Routes>
+      <Route path="/knowledge/*" element={<KnowledgePage />} />
+    </Routes>,
+  )
+  expect(await screen.findByText('Nothing is shared with you yet.')).toBeTruthy()
 })
 
 function SharedRoute() {
@@ -277,7 +327,10 @@ it('says so when the page is not shared with the person, or the owner shared not
 })
 
 const people = [{ userId: 'ben-id', username: 'ben', name: 'Ben Example', avatarUrl: null, avatarColorIndex: 1 }]
-const circles = [{ id: 'home-id', name: 'Home' }]
+const circles = [
+  { id: 'home-id', name: 'Home', members: [{ userId: 'a' }, { userId: 'b' }, { userId: 'c' }, { userId: 'd' }] },
+  { id: 'solo-id', name: 'Home', members: [{ userId: 'a' }] },
+]
 
 function preview(isQuoteShared: boolean) {
   return {
@@ -356,6 +409,20 @@ it('shows what they will see before the page is shared, with the quotes only whe
   expect(onClose).toHaveBeenCalled()
 })
 
+it('says one thing about what is shared in the dialog, under the box that chooses the quotes', async () => {
+  sharingServer()
+  inApp(<SharePageDialog path="people/a-grandparent" name="A Grandparent" onClose={vi.fn()} onChanged={vi.fn()} />)
+  const dialog = await screen.findByRole('dialog', { name: 'Share A Grandparent' })
+  await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Ben Example (ben)' })).toBeTruthy())
+  fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'user:ben-id' } })
+  await within(dialog).findByText('What Ben Example will see')
+  // The hint on the quotes stays; the explanations of what a reader is shown do not repeat it.
+  expect(within(dialog).getByText(/Those words are quoted from your mail and documents/)).toBeTruthy()
+  expect(within(dialog).queryByText(/They read this page, and every page under it/)).toBeNull()
+  expect(within(dialog).queryByText(/What the page says, as its owner's agent last wrote it/)).toBeNull()
+  expect(within(dialog).queryByText(/longer overview of this page is not shared/)).toBeNull()
+})
+
 it('shares with a circle by its identifier', async () => {
   sharingServer()
   inApp(
@@ -367,7 +434,7 @@ it('shares with a circle by its identifier', async () => {
     />,
   )
   const dialog = await screen.findByRole('dialog', { name: 'Share A Grandparent' })
-  await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Everyone in Home' })).toBeTruthy())
+  await waitFor(() => expect(within(dialog).getByRole('option', { name: 'Everyone in Home (4 people)' })).toBeTruthy())
   fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'circle:home-id' } })
   await within(dialog).findByText('What Everyone in Home will see')
   const previews = vi.mocked(graphql).mock.calls.filter(([document]) => document.includes('PreviewAgentPageShare'))
@@ -483,6 +550,63 @@ it('lists who a page is shared with, including by a page above it, and stops one
         ),
     ).toBe(true),
   )
+})
+
+it('draws a share with the person\'s own picture and color, and a circle with a mark in the same place', async () => {
+  vi.mocked(graphql).mockResolvedValue({
+    ListAgentPageShares: [
+      {
+        id: 'direct',
+        path: 'people/a',
+        pageName: 'A',
+        granteeUserId: 'ben-id',
+        granteeUsername: 'ben',
+        granteeName: 'Ben Example',
+        granteeAvatarUrl: '/api/v1/avatar/user/ben-id?v=1',
+        granteeAvatarColorIndex: 7,
+        granteeCircleId: null,
+        granteeCircleName: '',
+        isQuoteShared: false,
+      },
+      {
+        id: 'plain',
+        path: 'people/a',
+        pageName: 'A',
+        granteeUserId: 'cora-id',
+        granteeUsername: 'cora',
+        granteeName: 'Cora Example',
+        granteeAvatarUrl: null,
+        granteeAvatarColorIndex: 5,
+        granteeCircleId: null,
+        granteeCircleName: '',
+        isQuoteShared: false,
+      },
+      {
+        id: 'circle',
+        path: 'people/a',
+        pageName: 'A',
+        granteeUserId: null,
+        granteeUsername: '',
+        granteeName: '',
+        granteeAvatarUrl: null,
+        granteeAvatarColorIndex: 0,
+        granteeCircleId: 'home-id',
+        granteeCircleName: 'Home',
+        isQuoteShared: false,
+      },
+    ],
+  })
+  const { container } = inApp(<PageShares path="people/a" refreshKey={0} />)
+  await screen.findByText('Ben Example')
+  const rows = Array.from(container.querySelectorAll('.settings-row'))
+  expect(rows).toHaveLength(3)
+  // The picture, where the person has one, as the rest of the dashboard shows it.
+  expect(rows[0].querySelector('img.avatar-picture')?.getAttribute('src')).toContain('/api/v1/avatar/user/ben-id')
+  // The color the server chose, not one made from the name.
+  expect(rows[1].querySelector('.avatar')?.className).toContain('avatar-color-5')
+  // A circle has a mark where the others have a face, so the names line up.
+  expect(rows[2].querySelector('.avatar')).toBeNull()
+  expect(rows[2].querySelector('.settings-row-mark')).not.toBeNull()
 })
 
 it('draws nothing for a page that is shared with nobody', async () => {

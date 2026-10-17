@@ -32,8 +32,10 @@ const (
 // AgentSeat is an agent in a chat, as the decision sees it: the member whose
 // agent it is, and whether it answers and may be asked by the others.
 type AgentSeat struct {
-	// OwnerUserID is the member the agent belongs to.
+	// OwnerUserID is the member the agent belongs to, and OwnerName what they
+	// are called.
 	OwnerUserID string
+	OwnerName   string
 
 	// AgentID and AgentName say which agent it is and what it is called.
 	AgentID   string
@@ -78,6 +80,10 @@ type AgentTurn struct {
 type AgentNote struct {
 	AgentID   string
 	AgentName string
+
+	// OwnerName is what the agent's owner is called, told for the note that
+	// only the owner can ask it.
+	OwnerName string
 
 	// NoteKind is one of the chat notes, and the note's detail is AgentName.
 	NoteKind models.AgentNoteKind
@@ -165,7 +171,7 @@ func turnFor(seat *AgentSeat, agentTurnKind AgentTurnKind) AgentTurn {
 }
 
 func noteFor(seat *AgentSeat, noteKind models.AgentNoteKind) AgentNote {
-	return AgentNote{AgentID: seat.AgentID, AgentName: seat.AgentName, NoteKind: noteKind}
+	return AgentNote{AgentID: seat.AgentID, AgentName: seat.AgentName, OwnerName: seat.OwnerName, NoteKind: noteKind}
 }
 
 // SeatsOf are the agents of a chat's members who are still in it, and of
@@ -179,6 +185,7 @@ func SeatsOf(members []*models.ChatMember, isActive func(member *models.ChatMemb
 		}
 		seats = append(seats, AgentSeat{
 			OwnerUserID:            member.UserID,
+			OwnerName:              member.Name,
 			AgentID:                member.AgentID,
 			AgentName:              member.AgentName,
 			IsAgentActive:          member.IsAgentActive && (isActive == nil || isActive(member)),

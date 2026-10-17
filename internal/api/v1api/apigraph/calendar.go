@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -396,7 +397,43 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 		}
 		views = append(views, self.calendarView(principal, each, count))
 	}
+	spreadCalendarColors(views)
 	return views, nil
+}
+
+// spreadCalendarColors gives each calendar in one person's list a color none
+// of the others has, for as long as there are colors left, so that three
+// calendars on a screen are three colors rather than whatever the hash of
+// their identifiers collided to. A calendar keeps the color its identifier
+// hashes to when that is free; otherwise it takes the next free one after it.
+// The person's own calendars choose first, then the rest by identifier, so
+// the same list is the same colors on the dashboard and the iPhone, which
+// both draw what this says. With more calendars than colors, the ones past
+// the eighth keep the hashed color.
+func spreadCalendarColors(views []*CalendarView) {
+	ordered := make([]*CalendarView, len(views))
+	copy(ordered, views)
+	sort.SliceStable(ordered, func(first, second int) bool {
+		isFirstOwn, isSecondOwn := ordered[first].ShareLevel == string(models.ShareLevelOwner), ordered[second].ShareLevel == string(models.ShareLevelOwner)
+		if isFirstOwn != isSecondOwn {
+			return isFirstOwn
+		}
+		return ordered[first].ID < ordered[second].ID
+	})
+	isTaken := make([]bool, calendarColorCount)
+	takenCount := 0
+	for _, view := range ordered {
+		if takenCount == calendarColorCount {
+			break
+		}
+		colorIndex := view.ColorIndex
+		for isTaken[colorIndex] {
+			colorIndex = (colorIndex + 1) % calendarColorCount
+		}
+		isTaken[colorIndex] = true
+		takenCount++
+		view.ColorIndex = colorIndex
+	}
 }
 
 // calendarView is a calendar as the caller reaches it. What belongs to the

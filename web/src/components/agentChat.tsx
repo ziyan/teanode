@@ -337,7 +337,18 @@ export function streamingKeyOf(runId: string): string {
 // written, to the line for its run or a new one.
 export function linesWithStreamedText<Line extends { kind: string; key: string }>(
   lines: Line[],
-  event: { runId: string; text?: string; name?: string; authorOwnerName?: string; authorAgentId?: string; at?: string },
+  event: {
+    runId: string
+    text?: string
+    name?: string
+    authorOwnerName?: string
+    authorAgentId?: string
+    // The color of the agent's owner, which is the agent's: its stored
+    // messages carry it, and the line drawn while it is written must be the
+    // same color as the message that replaces it.
+    authorAvatarColorIndex?: number | null
+    at?: string
+  },
 ): Line[] {
   const key = streamingKeyOf(event.runId)
   const words = event.text ?? ''
@@ -358,7 +369,7 @@ export function linesWithStreamedText<Line extends { kind: string; key: string }
     authorName: event.name ?? '',
     authorOwnerName: event.authorOwnerName ?? '',
     authorAvatarUrl: null,
-    authorAvatarColorIndex: null,
+    authorAvatarColorIndex: event.authorAvatarColorIndex ?? null,
     authorAgentId: event.authorAgentId ?? '',
     isMine: false,
     editedAt: null,
@@ -702,7 +713,7 @@ export function ReadMarks({ readers, deleted }: { readers: ChatMember[]; deleted
             name={memberNameOf(member, deleted)}
             avatarUrl={member.avatarUrl}
             colorIndex={member.avatarColorIndex}
-            size={14}
+            size={16}
           />
         ))}
         {readers.length > 4 ? <span className="muted">+{readers.length - 4}</span> : null}
@@ -821,7 +832,7 @@ function PeopleList({
         const name = person.name?.trim() || person.username
         const isChosen = chosen.includes(person.userId)
         return (
-          <label key={person.userId} className="chat-person checkbox">
+          <label key={person.userId} className="chat-person-row">
             <input
               type={isSingle ? 'radio' : 'checkbox'}
               name="chat-person"
@@ -837,8 +848,9 @@ function PeopleList({
               }
             />
             <Avatar name={name} avatarUrl={person.avatarUrl} colorIndex={person.avatarColorIndex} size={24} />
-            <span>{name}</span>
-            <span className="muted">{person.username}</span>
+            <span className="chat-person-name">{name}</span>
+            {/* Not repeated when the person has no name: it is the name. */}
+            {person.name?.trim() ? <span className="muted chat-person-username">{person.username}</span> : null}
           </label>
         )
       })}
@@ -1078,8 +1090,12 @@ export function ChatMembersDialog({
                   <Avatar name={name} avatarUrl={member.avatarUrl} colorIndex={member.avatarColorIndex} size={28} />
                   <span className="chat-member-name">{name}</span>
                   {member.memberRole === 'admin' && chat.chatKind === 'group' ? <Tag value={t('chat.admin')} /> : null}
-                  {member.isAgentReading ? <Tag value={t('chat.agentRemembersTag')} /> : null}
-                  {member.isAgentAskableByOthers ? <Tag value={t('chat.agentAskableTag')} /> : null}
+                  {member.isAgentReading ? (
+                    <Tag value={member.userId === ownUserId ? t('chat.agentRemembersOwnTag') : t('chat.agentRemembersTag')} />
+                  ) : null}
+                  {member.isAgentAskableByOthers ? (
+                    <Tag value={member.userId === ownUserId ? t('chat.agentAskableOwnTag') : t('chat.agentAskableTag')} />
+                  ) : null}
                   {canChange && member.userId !== ownUserId ? (
                     <Tooltip label={t('chat.removeMember')}>
                       <button
@@ -1099,28 +1115,43 @@ export function ChatMembersDialog({
           {own && !chat.isRemoved ? (
             <fieldset className="chat-agent-switches" disabled={isBusy}>
               <legend>{t('chat.yourAgent')}</legend>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={own.isAgentReading}
-                  onChange={(event) =>
-                    void switchAgent(SET_CHAT_AGENT_READING, { isAgentReading: event.target.checked })
-                  }
-                />
-                <span>{t('chat.agentRemembers')}</span>
-              </label>
-              <p className="muted">{t('chat.agentRemembersHelp')}</p>
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={own.isAgentAskableByOthers}
-                  onChange={(event) =>
-                    void switchAgent(SET_CHAT_AGENT_ASKABLE, { isAgentAskableByOthers: event.target.checked })
-                  }
-                />
-                <span>{t('chat.agentAskable')}</span>
-              </label>
-              <p className="muted">{t('chat.agentAskableHelp')}</p>
+              {own.isAgentActive ? (
+                <>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={own.isAgentReading}
+                      onChange={(event) =>
+                        void switchAgent(SET_CHAT_AGENT_READING, { isAgentReading: event.target.checked })
+                      }
+                    />
+                    <span>{t('chat.agentRemembers')}</span>
+                  </label>
+                  <p className="muted">{t('chat.agentRemembersHelp')}</p>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={own.isAgentAskableByOthers}
+                      onChange={(event) =>
+                        void switchAgent(SET_CHAT_AGENT_ASKABLE, { isAgentAskableByOthers: event.target.checked })
+                      }
+                    />
+                    <span>{t('chat.agentAskable')}</span>
+                  </label>
+                  <p className="muted">{t('chat.agentAskableHelp')}</p>
+                </>
+              ) : (
+                // Switches for an agent that is off would be accepted and
+                // do nothing: say it is off, and where it is turned on.
+                <>
+                  <p className="chat-agent-off">{t('chat.agentIsOff')}</p>
+                  <p className="chat-agent-off">
+                    <Link to="/settings/agent" onClick={onClose}>
+                      {t('agentConversations.turnOnAction')}
+                    </Link>
+                  </p>
+                </>
+              )}
             </fieldset>
           ) : null}
         </>

@@ -20,7 +20,10 @@ chat to its members), `internal/agent/chat.go`.
 - **goal**: the conversation of one goal, where the agent takes its turns
   toward it out of the person's sight; see A goal below.
 - **chat**: a member's own conversation for a chat with other people in it;
-  see Chats below.
+  see Chats below. A member can archive it, with the agent on or off, and it
+  leaves only their own list: `UpdateAgentConversation` sets `archived_at` on
+  their row, the listing follows it as for a named conversation, and a new
+  message does not bring it back.
 
 A person can make a named conversation the main one, which demotes the old main
 to named; the command line does it with `teanode agent conversation main`.
@@ -56,7 +59,10 @@ taken away by reacting with nothing (`agent_message_reaction`, migration
 0162). The person reacts from the drawer's hover actions, with
 `ReactToAgentMessage`, or with `teanode agent react`; the agent with the
 `react` action of the `conversation` tool, on the person's latest message
-unless it names another, without a card. Every change is a `reacted` event
+unless it names another (`message_id`, a message of the person's own conversations), without a card. A message of a
+chat is named with `chat_message_id` instead, and that is outward, because everybody in the chat sees the reaction
+under the agent's name, so it asks first; a chat message given as a `message_id` is turned back, saying to use
+`chat_message_id`. Every change is a `reacted` event
 on the conversation's feed (`streaming-and-instances.md`).
 
 The agent does not leave the first reaction to its model, which often
@@ -456,9 +462,11 @@ note saying how many earlier messages there are, each with its id and
 reactions; in a chat each message says who wrote it, and the answer is marked as
 other people's words. Its fourth action, `react`, is the agent's reaction
 (above), on a message of a chat too, with the message id `read` gives
-(`ReactInChatAsAgent`, which holds it to the rules of saying something there; the
-server's own quick reaction is only in the drawer, so in a chat the agent's is
-the only one), and its fifth, `send`, says something in a chat under the agent's name
+(`chat_message_id`, which `read` gives for a chat's messages; `ReactInChatAsAgent` holds it to the
+rules of saying something there, and the person is asked first; a message of a chat the
+person cannot read answers exactly like one that does not exist; the server's
+own quick reaction is in the person's conversations with the agent on every
+surface and not in a chat, so in a chat the agent's is the only one), and its fifth, `send`, says something in a chat under the agent's name
 for the person (risk `outward`, so a card unless the person allowed it).
 
 Two rules hold in `read`. Another agent's conversation reads exactly like one

@@ -167,6 +167,8 @@ const VIEWS: View[] = ['month', 'week', 'workweek', 'day', 'agenda', 'reminders'
 // something at six is still there to scroll to, which a grid that started at
 // eight would have hidden.
 const HOUR = 48
+// How far above its line an hour's label reaches (0.55rem, and a margin).
+const HOUR_LABEL_OVERHANG = 12
 const OPENS_AT = 7
 
 // minutesInto is how far into a day a moment falls, clamped to it. An event
@@ -405,6 +407,19 @@ type Translate = ReturnType<typeof useTranslation>['t']
 function calendarLabel(calendar: Calendar, t: Translate): string {
   if (isOwn(calendar) || calendar.isCircleCalendar || !calendar.ownerName) return calendar.name
   return t('calendar.ownersCalendar', { name: calendar.ownerName })
+}
+
+// What the toast says after an event was kept: that it was added or saved, and,
+// when it is in somebody else's calendar or a circle's, which.
+function savedWords(draft: { id?: string; summary: string }, calendar: Calendar | undefined, t: Translate): string {
+  const name = draft.summary.trim()
+  if (!calendar || isOwn(calendar)) {
+    return draft.id ? t('calendar.saidSaved', { name }) : t('calendar.saidAdded', { name })
+  }
+  const calendarName = calendarLabel(calendar, t)
+  return draft.id
+    ? t('calendar.saidSavedIn', { name, calendar: calendarName })
+    : t('calendar.saidAddedIn', { name, calendar: calendarName })
 }
 
 // Whose an event is, for a list that mixes several calendars: the person, or
@@ -684,11 +699,24 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     for (const list of grouped.values()) {
       list.sort((first, second) => {
         if (first.allDay !== second.allDay) return first.allDay ? -1 : 1
-        return first.startsAt.localeCompare(second.startsAt)
+        // By the moment, not the text: calendars in other zones write the
+        // same moment in other offsets.
+        return new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime()
       })
     }
     return grouped
   }, [found])
+
+  // The agenda is one list in time order across every calendar shown: the
+  // answers come one calendar after another, and read like that it was three
+  // lists run together. A day's all-day events come first, as in the grids.
+  const agenda = useMemo(
+    () =>
+      [...byDay.entries()]
+        .sort(([firstDay], [secondDay]) => firstDay.localeCompare(secondDay))
+        .flatMap(([, events]) => events),
+    [byDay],
+  )
 
   const dayFormat = useMemo(
     () => new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
@@ -782,7 +810,10 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // effect that only watched the view found nothing and never ran again.
   useLayoutEffect(() => {
     if (loading || !COLUMNS[view] || !grid.current) return
-    grid.current.scrollTop = OPENS_AT * HOUR
+    // A little above the line of the first hour, since its label is drawn
+    // centered on the line and the line was flush with the header: the label
+    // was half under it.
+    grid.current.scrollTop = OPENS_AT * HOUR - HOUR_LABEL_OVERHANG
     const head = grid.current.querySelector('.calendar-grid-head')
     if (head) {
       grid.current.style.setProperty('--calendar-head', `${head.getBoundingClientRect().height}px`)
@@ -797,9 +828,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     return owner ? t('calendar.busyOf', { name: owner }) : t('calendar.busy')
   }
   const titleWithOwner = (event: CalendarEvent) => {
-    const owner = ownerOfCalendar(calendarsById.get(event.calendarId))
+    const calendar = calendarsById.get(event.calendarId)
+    const owner = ownerOfCalendar(calendar)
     const title = event.summary || t('calendar.untitled')
-    return owner ? `${title} · ${t('calendar.ownersCalendar', { name: owner })}` : title
+    if (!owner) return title
+    // A circle's calendar is the circle's, named as it is, and a person's is
+    // theirs.
+    return `${title} · ${calendar?.isCircleCalendar ? owner : t('calendar.ownersCalendar', { name: owner })}`
   }
 
   const canEditEvent = (event: CalendarEvent) => canWrite(calendarsById.get(event.calendarId) ?? ({} as Calendar))
@@ -1193,8 +1228,8 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
 
       {!loading && view === 'agenda' && (
         <div className="calendar-agenda">
-          {found.length === 0 && <p className="calendar-notice muted">{t('calendar.empty')}</p>}
-          {found.map((event) => (
+          {agenda.length === 0 && <p className="calendar-notice muted">{t('calendar.empty')}</p>}
+          {agenda.map((event) => (
             <div key={event.calendarId + event.id + event.startsAt} className="calendar-agenda-row">
               <div className="calendar-agenda-when">
                 <span>{dayFormat.format(noonOf(event))}</span>
@@ -1209,7 +1244,8 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                 </span>
                 {event.location && <span className="muted">{event.location}</span>}
                 {event.recurring && <span className="muted">{t('calendar.repeats')}</span>}
-                {!isOwn(calendarsById.get(event.calendarId) ?? ({} as Calendar)) && (
+                {/* A busy block already says whose it is, "Busy · name". */}
+                {!event.isBusyOnly && !isOwn(calendarsById.get(event.calendarId) ?? ({} as Calendar)) && (
                   <span className="muted">{whoseCalendar(calendarsById.get(event.calendarId), t)}</span>
                 )}
               </div>
@@ -1318,9 +1354,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                       : null,
                   },
                 }),
-              draft.id
-                ? t('calendar.saidSaved', { name: draft.summary.trim() })
-                : t('calendar.saidAdded', { name: draft.summary.trim() }),
+              // Which calendar it went into, when it is not the person's own:
+              // "in your calendar" was said of a circle's too.
+              savedWords(draft, calendarsById.get(draft.calendarId || calendarId), t),
             ).then((done) => done && setDraft(null))
           }
         >
@@ -1368,7 +1404,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                 />
                 {t('calendar.private')}
               </label>
-              <span className="muted">{t('calendar.privateHint')}</span>
+              <p className="muted field-hint">{t('calendar.privateHint')}</p>
             </>
           )}
           <div className="field-row">

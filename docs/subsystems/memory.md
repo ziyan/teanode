@@ -1152,7 +1152,9 @@ with, and a Share action that shows exactly what the other side will see
 before anything is shared. The "Shared with you" section has a search box, and
 the app's Knowledge search lists a "Shared with you" section of hits: both ask
 `SearchSharedAgentPages`, the search the memory tool makes of shared pages, and
-each hit says whose it is. `teanode agent memory share|shares|unshare|shared`
+each hit says whose it is, and the answer says when more matched than it gives
+back (`hasMoreHits`), taking the owners' hits in turn so that one owner with many
+matches does not fill it. `teanode agent memory share|shares|unshare|shared`
 (`shared --query words` searches) and `memory get --owner` are the same on the command line
 (`docs/reference/command-line.md`).
 

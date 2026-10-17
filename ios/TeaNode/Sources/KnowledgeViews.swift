@@ -80,6 +80,7 @@ struct KnowledgeFolder: View {
     @State private var foundFacts: [KnowledgeSearch.FoundFact] = []
     @State private var sharedGroups: [SharedKnowledgeOwnerGroup] = []
     @State private var sharedHits: [SharedKnowledgeHit] = []
+    @State private var hasMoreSharedHits = false
 
     var body: some View {
         List {
@@ -115,6 +116,7 @@ struct KnowledgeFolder: View {
             guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else {
                 found = nil
                 sharedHits = []
+                hasMoreSharedHits = false
                 return
             }
             try? await Task.sleep(for: .milliseconds(250))
@@ -192,6 +194,10 @@ struct KnowledgeFolder: View {
                 }
             } header: {
                 ListPeriodHeader(title: String(localized: "Shared with you"))
+            } footer: {
+                if hasMoreSharedHits {
+                    Text("There may be more; use more words")
+                }
             }
             .listSectionSeparator(.hidden)
         }
@@ -250,7 +256,9 @@ struct KnowledgeFolder: View {
             // own, at the top level where it is listed; not being able to
             // search it leaves the person's own results as they are.
             if !isMore, folderPath.isEmpty {
-                sharedHits = (try? await connection.searchSharedKnowledge(words)) ?? []
+                let sharedSearch = try? await connection.searchSharedKnowledge(words)
+                sharedHits = sharedSearch?.hits ?? []
+                hasMoreSharedHits = sharedSearch?.hasMoreHits ?? false
             }
             problemText = nil
         } catch {

@@ -702,7 +702,7 @@ private extension CircleKind {
 }
 
 /// CircleWords are the words the circles screens share.
-private enum CircleWords {
+enum CircleWords {
     static func memberCount(_ memberCount: Int) -> String {
         memberCount == 1 ? String(localized: "1 person") : String(localized: "\(memberCount) people")
     }

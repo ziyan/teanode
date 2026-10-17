@@ -124,8 +124,8 @@ func init() {
 				Permissions: []models.Permission{models.PermissionUserManage},
 				Description: "Put an account that exists in a circle at once, without an invitation, for somebody who will not set it " +
 					"up themselves. The circle need not be one the person is in. To make the account first, use user_add; an account made " +
-					"that way has no password the person can sign in with until somebody sets one on the dashboard or the command line, " +
-					"so hand that step to the person: tell them the account still needs a password, and never invent or choose one yourself.",
+					"that way signs in once somebody sets a password or another way is set up, such as a passkey or single sign-on, " +
+					"so hand that step to the person: tell them the account still needs a way to sign in, and never invent or choose a password yourself.",
 				Parameters: tools.Object(map[string]any{
 					"circle_id":   tools.StringProperty("the circle, from list"),
 					"username":    tools.StringProperty("the exact username of the account to put in"),

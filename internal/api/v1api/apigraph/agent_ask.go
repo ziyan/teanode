@@ -612,7 +612,7 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 	tx := self.transaction(ctx)
 
 	chats := []*models.AgentConversation{}
-	if hasChats && (kind == "" || kind == models.AgentConversationChat) && (!arguments.Archived || strings.TrimSpace(arguments.Query) != "") {
+	if hasChats && (kind == "" || kind == models.AgentConversationChat) {
 		if err := tx.SyncChatsOf(principal.User.ID); err != nil {
 			return nil, err
 		}
@@ -661,7 +661,13 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 			}
 		}
 	}
-	rest = append(rest, chats...)
+	// A chat put away is listed with the archived, like a named conversation,
+	// and a chat that is not is listed with the live ones.
+	for _, chat := range chats {
+		if (chat.ArchivedAt != nil) == arguments.Archived {
+			rest = append(rest, chat)
+		}
+	}
 	sortByLastMessage(rest)
 	return append(conversations, rest...), nil
 }
@@ -1421,16 +1427,30 @@ func (self *graph) SetAgentMainConversation(ctx context.Context, arguments SetAg
 }
 
 func (self *graph) UpdateAgentConversation(ctx context.Context, arguments UpdateAgentConversationArguments) (*models.AgentConversation, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
+	// Asked before the main conversation is looked up, which makes it: with
+	// the agent off there is none to change.
+	if strings.TrimSpace(arguments.ConversationID) == "" {
+		if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationMain}); err != nil {
+			return nil, err
+		}
+	}
 	conversation, err := self.ownConversation(tx, found, arguments.ConversationID, false)
 	if err != nil {
 		return nil, err
 	}
-	if conversation.IsChat() {
+	// A chat is put away like any other conversation, by anyone who may use
+	// circles whether or not their agent is on. It is their own row of it, so
+	// it leaves nobody else's list; its name is the people's, and has its own
+	// operation.
+	if err := requireConversationUse(principal, found, conversation); err != nil {
+		return nil, err
+	}
+	if conversation.IsChat() && strings.TrimSpace(arguments.Title) != "" {
 		return nil, fmt.Errorf("%w: a chat is renamed with RenameChat", api.ErrInvalidArguments)
 	}
 	updated, err := tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
@@ -1454,6 +1474,9 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	})
 	if err != nil {
 		return nil, translateError(err)
+	}
+	if updated.IsChat() {
+		return self.chatConversationOf(ctx, principal.User.ID, updated)
 	}
 	return updated, nil
 }

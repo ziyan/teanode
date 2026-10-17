@@ -31,7 +31,7 @@ type Share = {
 }
 
 type Person = { userId: string; username: string; name: string; avatarUrl: string | null; avatarColorIndex: number }
-type CircleChoice = { id: string; name: string }
+type CircleChoice = { id: string; name: string; members: { userId: string }[] }
 
 const LIST_SHARES = `query ($calendarId: String!) {
   ListCalendarShares(calendarId: $calendarId) {
@@ -39,7 +39,7 @@ const LIST_SHARES = `query ($calendarId: String!) {
   }
 }`
 const LIST_PEOPLE = `query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }`
-const LIST_CIRCLES = `query { ListCircles { id name } }`
+const LIST_CIRCLES = `query { ListCircles { id name members { userId } } }`
 const SHARE = `mutation ($calendarId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!) {
   ShareCalendar(calendarId: $calendarId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
 }`
@@ -61,7 +61,7 @@ export function CalendarShareDialog({
   onClose: () => void
   initialLevel?: GrantableLevel
 }) {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const shares = useQuery(
     () => graphql<{ ListCalendarShares: Share[] }>(LIST_SHARES, { calendarId: calendar.id }),
@@ -81,16 +81,27 @@ export function CalendarShareDialog({
   )
   const [choice, setChoice] = useState('')
   const [shareLevel, setShareLevel] = useState<GrantableLevel>(initialLevel)
-  const [busy, setBusy] = useState(false)
+  const [isBusy, setIsBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
   const current = shares.data?.ListCalendarShares ?? []
   const people = choices.data?.people ?? []
   const circles = choices.data?.circles ?? []
   const everyoneIn = (name: string) => t('calendar.shareEveryoneIn', { name })
+  // A choice also says how many people it is, so two circles with one name
+  // can be told apart, as they are on the command line and in the agent's tools.
+  const circleOption = (circle: CircleChoice) =>
+    t('calendar.shareCircleOption', {
+      name: circle.name,
+      people: plural(
+        circle.members.length,
+        { one: 'circles.memberCountOne', other: 'circles.memberCount' },
+        { count: circle.members.length },
+      ),
+    })
 
   async function run(work: () => Promise<unknown>, done: string): Promise<boolean> {
-    setBusy(true)
+    setIsBusy(true)
     setProblem(null)
     try {
       await work()
@@ -103,7 +114,7 @@ export function CalendarShareDialog({
       setProblem(failureText(failure, t('calendar.failed')))
       return false
     } finally {
-      setBusy(false)
+      setIsBusy(false)
     }
   }
 
@@ -134,7 +145,7 @@ export function CalendarShareDialog({
       title={t('calendar.shareTitle')}
       submitLabel={t('calendar.shareAdd')}
       closeLabel={t('common.done')}
-      busy={busy}
+      busy={isBusy}
       error={problem}
       canSubmit={choice !== ''}
       onClose={onClose}
@@ -142,6 +153,7 @@ export function CalendarShareDialog({
     >
       <p className="muted">{t('calendar.shareIntro')}</p>
 
+      <h4 className="calendar-shares-heading">{t('calendar.shareCurrent')}</h4>
       <div className="calendar-shares" aria-label={t('calendar.shareCurrent')}>
         {shares.data && current.length === 0 && <p className="muted">{t('calendar.shareNobody')}</p>}
         {current.map((share) => {
@@ -155,7 +167,7 @@ export function CalendarShareDialog({
                   type="button"
                   className="icon-action danger"
                   aria-label={t('calendar.shareStop', { name })}
-                  disabled={busy}
+                  disabled={isBusy}
                   onClick={() =>
                     void run(() => graphql(UNSHARE, { shareId: share.id }), t('calendar.shareStopped', { name }))
                   }
@@ -196,7 +208,7 @@ export function CalendarShareDialog({
                 <optgroup label={t('calendar.shareCircles')}>
                   {circles.map((circle) => (
                     <option key={circle.id} value={`circle:${circle.id}`}>
-                      {everyoneIn(circle.name)}
+                      {circleOption(circle)}
                     </option>
                   ))}
                 </optgroup>

@@ -63,10 +63,10 @@ func (self *sharingRun) Operations() tools.Operations { return self.operations }
 func TestSharingASkillIsAGrantingCallAndNoActionAnswersOne(t *testing.T) {
 	skill := theSkillTool(t)
 	for arguments, want := range map[string]tools.Risk{
-		`{"action":"share","name":"payments","with":"ben","tool_names":["pay"]}`: tools.RiskGranting,
-		`{"action":"unshare","share_id":"x"}`:                                    tools.RiskWrite,
-		`{"action":"shares"}`:                                                    tools.RiskRead,
-		`{"action":"calls","share_id":"x"}`:                                      tools.RiskRead,
+		`{"action":"share","name":"payments","with":"ben","tool_names":["pay"],"is_approval_required":true}`: tools.RiskGranting,
+		`{"action":"unshare","share_id":"x"}`: tools.RiskWrite,
+		`{"action":"shares"}`:                 tools.RiskRead,
+		`{"action":"calls","share_id":"x"}`:   tools.RiskRead,
 	} {
 		if got := skill.RiskFor([]byte(arguments)); got != want {
 			t.Errorf("%s is %s, want %s", arguments, got, want)
@@ -140,7 +140,7 @@ func TestSharingASkillGoesThroughTheAPI(t *testing.T) {
 		t.Errorf("the shares: %v %v", result, err)
 	}
 
-	result, err = callSkill(t, operations, `{"action":"calls","share_id":"share-1","call_state":"waiting_for_approval"}`)
+	result, err = callSkill(t, operations, `{"action":"calls","share_id":"share-1","call_states":["waiting"]}`)
 	if err != nil || !result.Untrusted || !strings.Contains(result.Content, `"amount":"140.00 USD"`) || !strings.Contains(result.Content, "reason_the_other_agent_gave") ||
 		!strings.Contains(result.Content, "you cannot") {
 		t.Errorf("the calls: %v %v", result, err)
@@ -195,19 +195,65 @@ func TestTheAgentListsTheCallsOfSharesThatEnded(t *testing.T) {
 	}
 }
 
-// The card for lending a skill says exactly what is granted: the tools, the
-// limit for one payment, the monthly limit with its currency, and whether
-// every call waits.
+// The card for lending a skill says what is granted: the tools and whom they
+// are for, and that every call waits, which is the only share this tool makes.
 func TestTheCardForSharingASkillSaysWhatIsGranted(t *testing.T) {
 	skill := theSkillTool(t)
 	for arguments, want := range map[string]string{
-		`{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice","check_status"],"payment_limit":"100","monthly_limit":"400","currency":"usd"}`: `Let "ben" use pay_invoice and check_status of your "payments" skill on your computer, as you: up to 100.00 USD a payment and 400.00 USD a month, anything above waits for you`,
-		`{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"],"monthly_limit":"400","currency":"jpy"}`:                                      `Let "ben" use pay_invoice of your "payments" skill on your computer, as you: up to 400 JPY a month, anything above waits for you`,
-		`{"action":"share","name":"payments","with":"ben","tool_names":["a","b","c"],"is_approval_required":true}`:                                                   `Let "ben" use a, b and c of your "payments" skill on your computer, as you: every call waits for you`,
-		`{"action":"share","name":"payments","with":"ben"}`:                                                                                                          `Let "ben" use some of its tools of your "payments" skill on your computer, as you: no limits, so any call whose cost the skill does not state waits for you`,
+		`{"action":"share","name":"payments","with":"ben","tool_names":["a","b","c"],"is_approval_required":true}`:   `Let "ben" use a, b and c of your "payments" skill on your computer, as you: every call waits for you`,
+		`{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"],"is_approval_required":true}`: `Let "ben" use pay_invoice of your "payments" skill on your computer, as you: every call waits for you`,
 	} {
 		if got := skill.PreviewLine(context.Background(), []byte(arguments)); got != want {
 			t.Errorf("%s\n got %q\nwant %q", arguments, got, want)
 		}
+	}
+}
+
+// A share the tool will turn back is not put to the person: a card for it
+// would have them approve what cannot happen and then read a refusal. It is
+// not asked about, and the tool still refuses it in the same words.
+func TestAShareTheToolWillRefuseIsNotAskedAbout(t *testing.T) {
+	skill := theSkillTool(t)
+	for name, arguments := range map[string]string{
+		"limits":            `{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"],"payment_limit":"100","monthly_limit":"400","currency":"usd"}`,
+		"limits and asking": `{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"],"payment_limit":"100","currency":"usd","is_approval_required":true}`,
+		"not asking":        `{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"]}`,
+		"asking is false":   `{"action":"share","name":"payments","with":"ben","tool_names":["pay_invoice"],"is_approval_required":false}`,
+		"no tools":          `{"action":"share","name":"payments","with":"ben","is_approval_required":true}`,
+	} {
+		if skill.RiskFor([]byte(arguments)) != tools.RiskRead || tools.NeedsConfirmation(skill, []byte(arguments), nil, nil) {
+			t.Errorf("%s: a share that will be refused asks the person first", name)
+		}
+		operations := &sharingOperations{answers: map[string]string{"ListCirclePeople": `[{"userId":"ben-id","username":"ben"}]`, "ShareSkill": `{"id":"share-1"}`}}
+		_, err := callSkill(t, operations, arguments)
+		if err == nil {
+			t.Errorf("%s: was accepted", name)
+		}
+		if name != "no tools" && (err == nil || !strings.Contains(err.Error(), "dashboard") || !strings.Contains(err.Error(), "iPhone app")) {
+			t.Errorf("%s: the refusal says where limits are set: %v", name, err)
+		}
+	}
+}
+
+// A share with no limits is worded as every surface words it, and the calls
+// are filtered by the states the command line takes.
+func TestANoLimitsShareAndTheStatesOfCallsAreWordedAlike(t *testing.T) {
+	operations := &sharingOperations{answers: map[string]string{
+		"ListSkillShares": `[{"id":"share-1","skillName":"payments","toolNames":["check"],"ownerUsername":"ada","ownerName":"Ada","granteeUsername":"ben","granteeName":"Ben",
+			"paymentLimitMinor":null,"monthlyLimitMinor":null,"currencyCode":"","isApprovalRequired":false,"isOwnedByCaller":true,"waitingCallCount":0,"monthTotalMinor":0}]`,
+		"ListSkillShareCalls": `[]`,
+	}}
+	result, err := callSkill(t, operations, `{"action":"shares"}`)
+	if err != nil || !strings.Contains(result.Content, models.SkillShareNoLimitsWords) {
+		t.Errorf("a share with no limits: %v %v", result, err)
+	}
+	if _, err := callSkill(t, operations, `{"action":"calls","share_id":"share-1","call_states":["ran","waiting"]}`); err != nil {
+		t.Errorf("the states the command line takes: %v", err)
+	}
+	if operations.sent["ListSkillShareCalls"]["callState"] != "waiting_for_approval" {
+		t.Errorf("waiting is asked for as the operation names it: %v", operations.sent["ListSkillShareCalls"])
+	}
+	if _, err := callSkill(t, operations, `{"action":"calls","share_id":"share-1","call_states":["nearly"]}`); err == nil {
+		t.Error("a word that is no state was accepted")
 	}
 }

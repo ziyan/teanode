@@ -232,8 +232,12 @@ func TestShareResolvesWhoItIsFor(test *testing.T) {
 		test.Errorf("it says what it did: %q", output)
 	}
 
-	if _, err = runCalendarCommand(test, server, "share", "Home", "--level", "busy"); err != nil {
+	output, err = runCalendarCommand(test, server, "share", "Home", "--level", "busy")
+	if err != nil {
 		test.Fatal(err)
+	}
+	if !strings.Contains(output, `the circle "Home" (`) || strings.Contains(output, "everyone in Home") {
+		test.Errorf("a circle is named as one, with its size: %q", output)
 	}
 	if variables = called("ShareCalendar"); variables["granteeCircleId"] != "c1" || variables["granteeUserId"] != nil || variables["shareLevel"] != "busy" {
 		test.Errorf("a circle is shared with by name: %v", variables)
@@ -252,9 +256,10 @@ func TestShareResolvesWhoItIsFor(test *testing.T) {
 	}
 }
 
-// Circle names are not unique: a name two circles have, or that is also a
-// username, is refused with the ids and sizes of the circles, and nothing is
-// shared; an id still names one circle.
+// Circle names are not unique: a name two circles have is refused with the
+// ids and sizes of the circles, and nothing is shared; an id still names one
+// circle. A username wins over a circle of the same name, which is reached by
+// its id.
 func TestShareRefusesACircleNameThatIsNotUnique(test *testing.T) {
 	var lock sync.Mutex
 	shared := false
@@ -284,15 +289,18 @@ func TestShareRefusesACircleNameThatIsNotUnique(test *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "c1 (2 people)") || !strings.Contains(err.Error(), "c2 (1 person)") {
 		test.Errorf("two circles with one name are listed with their sizes: %v", err)
 	}
-	_, err = runCalendarCommand(test, server, "share", "ben", "--level", "busy")
-	if err == nil || !strings.Contains(err.Error(), "c3 (3 people)") {
-		test.Errorf("a name that is a username and a circle is refused: %v", err)
-	}
 	lock.Lock()
 	wasShared := shared
 	lock.Unlock()
 	if wasShared {
 		test.Fatal("nothing was shared while the name was ambiguous")
+	}
+	output, err := runCalendarCommand(test, server, "share", "ben", "--level", "busy")
+	if err != nil || !strings.Contains(output, "with ben") {
+		test.Errorf("a username wins over a circle of that name: %q %v", output, err)
+	}
+	if _, err = runCalendarCommand(test, server, "share", "c3", "--level", "busy"); err != nil {
+		test.Errorf("the circle named like a person is reached by its id: %v", err)
 	}
 	if _, err = runCalendarCommand(test, server, "share", "c2", "--level", "busy"); err != nil {
 		test.Errorf("an id names one circle: %v", err)
@@ -306,7 +314,7 @@ func TestSharesAndUnshareAndCircleCalendar(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, wanted := range []string{"ben", "titles", "s1", "everyone in Home", "busy", "s2"} {
+	for _, wanted := range []string{"ben", "titles", "s1", `the circle "Home"`, "busy", "s2"} {
 		if !strings.Contains(output, wanted) {
 			test.Errorf("shares lacks %q:\n%s", wanted, output)
 		}
