@@ -605,7 +605,11 @@ struct ServicesLoadingView: View {
             ContentUnavailableView {
                 Label("Cannot reach your server", systemImage: "wifi.exclamationmark")
             } description: {
-                Text("TeaNode could not ask your server what it runs. Check the connection and try again.")
+                if isWaitingForPermissions {
+                    Text("TeaNode could not ask your server what your account may use. Check the connection and try again.")
+                } else {
+                    Text("TeaNode could not ask your server what it runs. Check the connection and try again.")
+                }
             } actions: {
                 Button {
                     isRetrying = true

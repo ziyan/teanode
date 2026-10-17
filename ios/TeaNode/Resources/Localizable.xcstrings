@@ -39381,6 +39381,22 @@
         }
       }
     },
+    "TeaNode could not ask your server what your account may use. Check the connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode はこのアカウントで使える機能をサーバーに確認できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TeaNode 无法向你的服务器查询此账户可以使用的功能。请检查网络连接后重试。"
+          }
+        }
+      }
+    },
     "Term not known": {
       "localizations": {
         "ja": {
