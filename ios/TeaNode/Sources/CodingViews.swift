@@ -470,48 +470,50 @@ struct CodingSessionView: View {
     /// way to open another beside them. The chips scroll sideways, so the
     /// largest text size does not cut any off; the plus stays in place.
     private func tabStrip(_ session: HerdrSession) -> some View {
-        HStack(spacing: 4) {
-            // The chosen tab is kept in view: when the session opens, and
-            // whenever another is chosen or the tabs change.
-            ScrollViewReader { reader in
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(model.siblings(of: session)) { tab in
-                            Button {
-                                selectedId = tab.id
-                            } label: {
-                                CodingTabChip(session: tab, isSelected: tab.id == selectedId)
-                            }
-                            .buttonStyle(.plain)
-                            .id(tab.id)
+        // The chosen tab is kept in view: when the session opens, and
+        // whenever another is chosen or the tabs change. The way to open
+        // another is the strip's last chip, drawn like the tabs and
+        // scrolling with them.
+        ScrollViewReader { reader in
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(model.siblings(of: session)) { tab in
+                        Button {
+                            selectedId = tab.id
+                        } label: {
+                            CodingTabChip(session: tab, isSelected: tab.id == selectedId)
                         }
+                        .buttonStyle(.plain)
+                        .id(tab.id)
                     }
-                    .padding(.horizontal)
-                }
-                .scrollIndicators(.hidden)
-                .onAppear { reader.scrollTo(selectedId) }
-                .onChange(of: selectedId) {
-                    withAnimation { reader.scrollTo(selectedId) }
-                }
-                .onChange(of: model.siblings(of: session).count) { reader.scrollTo(selectedId) }
-            }
-            Menu {
-                Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
-                Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
-            } label: {
-                Group {
-                    if isOpeningTab {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "plus")
+                    Menu {
+                        Button { Task { await openTab(beside: session, codingAgentKind: "claude") } } label: { Text(verbatim: "Claude Code") }
+                        Button { Task { await openTab(beside: session, codingAgentKind: "codex") } } label: { Text(verbatim: "Codex") }
+                    } label: {
+                        Group {
+                            if isOpeningTab {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "plus")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.tertiarySystemFill), in: .circle)
+                        .contentShape(.circle)
                     }
+                    .disabled(isOpeningTab)
+                    .accessibilityLabel("New tab")
                 }
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(.rect)
+                .padding(.horizontal)
             }
-            .disabled(isOpeningTab)
-            .accessibilityLabel("New tab")
-            .padding(.trailing, 8)
+            .scrollIndicators(.hidden)
+            .onAppear { reader.scrollTo(selectedId) }
+            .onChange(of: selectedId) {
+                withAnimation { reader.scrollTo(selectedId) }
+            }
+            .onChange(of: model.siblings(of: session).count) { reader.scrollTo(selectedId) }
         }
         .padding(.vertical, 4)
     }
