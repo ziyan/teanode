@@ -202,7 +202,7 @@
                 }
                 // Everything fits in one page, so a page after it is empty.
                 if isEmpty || variables["beforePhotoId"] is String { chosen = [] }
-                json = #"{"data":{"ListPhotos":["# + chosen.map(photoJSON).joined(separator: ",") + "]}}"
+                json = #"{"data":{"ListPhotos":["# + chosen.map { photoJSON($0) }.joined(separator: ",") + "]}}"
             } else if body.contains("ReadPhoto") {
                 let photoId = variables["photoId"] as? String ?? demoPhotos[0].id
                 let photo = demoPhotos.first { $0.id == photoId } ?? demoPhotos[0]

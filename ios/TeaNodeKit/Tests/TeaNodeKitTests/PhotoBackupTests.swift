@@ -412,7 +412,9 @@ final class PhotoBackupServerTests: XCTestCase {
     func testThePreferencesDefaultToOffAndAreRemembered() throws {
         let suiteName = "photo-backup-tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+        // Removed by the suite's name, so the teardown does not capture the
+        // defaults object, which is not Sendable.
+        addTeardownBlock { UserDefaults().removePersistentDomain(forName: suiteName) }
         let preferences = PhotoBackupPreferences(defaults: defaults)
         XCTAssertNil(preferences.enabledAccountKey)
         XCTAssertFalse(preferences.usesMobileData)
