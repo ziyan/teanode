@@ -149,6 +149,9 @@ export function groupByTrashDay<T extends { trashedAt: string | null }>(
     const last = days[days.length - 1]
     if (last && last.key === key) {
       last.photos.push(photo)
+      // The list runs newest first, so the photo just added is the group's
+      // oldest, which is deleted first: the group has as long as it has.
+      last.daysLeft = trashDaysLeft(photo.trashedAt, retentionDays, now)
     } else {
       days.push({ key, heading: moment, daysLeft: trashDaysLeft(photo.trashedAt, retentionDays, now), photos: [photo] })
     }

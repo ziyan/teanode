@@ -84,6 +84,26 @@ export function MenuButton({
     }
   }, [open, place])
 
+  // A popover holding a form is reached from the keyboard: it is rendered at
+  // the end of the page, so Tab from its button would go everywhere but into
+  // it. Opening it puts the focus on its first field, and closing it gives the
+  // focus back to the button, as a dialog does.
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (popup !== 'dialog') {
+      return
+    }
+    if (open) {
+      const first = menu.current?.querySelector<HTMLElement>(
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      )
+      first?.focus()
+    } else if (wasOpen.current && menu.current === null && document.activeElement === document.body) {
+      trigger.current?.focus()
+    }
+    wasOpen.current = open
+  }, [open, popup])
+
   // Follow the button when anything moves under it, rather than hanging in
   // the wrong place. Capture, so a scroll inside the table counts too.
   useEffect(() => {
@@ -114,6 +134,9 @@ export function MenuButton({
       if (event.key === 'Escape') {
         event.preventDefault()
         setOpen(false)
+        if (popup === 'dialog') {
+          trigger.current?.focus()
+        }
       }
     }
     document.addEventListener('mousedown', onPointerDown)
@@ -124,7 +147,7 @@ export function MenuButton({
       document.removeEventListener('touchstart', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [open])
+  }, [open, popup])
 
   return (
     <div className="menu-button" ref={container}>

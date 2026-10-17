@@ -729,6 +729,13 @@ func (self *transaction) ListPhotos(userId string, filter *PhotoFilter) ([]*mode
 		if !isFound || cursor.PlacedAt == nil {
 			return nil, ErrNotFound
 		}
+		// In the Trash, a photo deleted forever since the last page keeps its row
+		// until cleanup, trashed at the epoch: nothing in the Trash is before it,
+		// and the page after it would be empty, ending the listing early. It is
+		// not found, as a photo restored since is, and the caller starts again.
+		if filter.IsTrashed && !cursor.PlacedAt.After(photoMarkedForDeletion) {
+			return nil, ErrNotFound
+		}
 		query = query.Where("("+orderExpression+", photo.id) < (?, ?)", *cursor.PlacedAt, cursor.ID)
 	}
 	var rows []photoModel

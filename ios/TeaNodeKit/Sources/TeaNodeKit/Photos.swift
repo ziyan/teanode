@@ -1107,7 +1107,8 @@ public enum PhotoTimeline {
     /// The photos of the Trash in groups by the day they were moved there. The
     /// server lists the Trash newest trashed first, so a group is a run of the
     /// list: photos are not moved between groups, and the order is kept. Each
-    /// group says how long it has left, as its first photo does.
+    /// group says how long it has left, as its last photo does: the list runs
+    /// newest first, so that is the oldest, which is deleted first.
     public static func trashDays(_ photos: [Photo], retentionDays: Int, now: Date = Date(), phoneTimeZone: TimeZone = .current) -> [PhotoTrashDay] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = phoneTimeZone
@@ -1115,11 +1116,12 @@ public enum PhotoTimeline {
         var runKey: String?
         var runPhotos: [Photo] = []
         var runTrashedAt: Date?
+        var runOldestTrashedAt: Date?
         func closeRun() {
             guard let key = runKey else { return }
             days.append(
                 PhotoTrashDay(
-                    id: key, trashedAt: runTrashedAt, daysLeft: trashDaysLeft(trashedAt: runTrashedAt, retentionDays: retentionDays, now: now), photos: runPhotos))
+                    id: key, trashedAt: runTrashedAt, daysLeft: trashDaysLeft(trashedAt: runOldestTrashedAt, retentionDays: retentionDays, now: now), photos: runPhotos))
         }
         for photo in photos {
             let trashedAt = ServerTime.date(photo.trashedAt)
@@ -1137,6 +1139,7 @@ public enum PhotoTimeline {
                 runTrashedAt = trashedAt
             }
             runPhotos.append(photo)
+            runOldestTrashedAt = trashedAt
         }
         closeRun()
         return days

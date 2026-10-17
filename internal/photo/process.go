@@ -428,6 +428,12 @@ func (self *Store) settleClaim(photo *models.Photo, claim *processingClaim) bool
 		stored, err = transaction.GetPhoto(photo.UserID, photo.ID)
 		return err
 	}); err != nil {
+		// A photo deleted while it was worked on is not read any more, while
+		// its claim still is: there is nothing to settle and nothing to renew.
+		if errors.Is(err, db.ErrNotFound) {
+			claim.abandonRenewal()
+			return true
+		}
 		log.Warningf("cannot tell whether the claim on photo %s was renewed: %s", photo.ID, err)
 		return false
 	}

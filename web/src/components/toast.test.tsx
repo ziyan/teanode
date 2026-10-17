@@ -63,3 +63,10 @@ it('keeps clear of an open agent drawer while a toast shows', async () => {
   expect(strip.style.getPropertyValue('--toast-edge')).toBe('328px')
   expect(strip.classList.contains('over-rail')).toBe(true)
 })
+
+it('leaves out what is not beside the strip: a tray above a single toast, a drawer dragged to the left', () => {
+  const band = { top: 840, bottom: 884 }
+  expect(toastRoom(1280, 232, [{ left: 900, right: 1260, top: 500, bottom: 824 }], band).edge).toBe(1264)
+  expect(toastRoom(1280, 232, [{ left: 900, right: 1260, top: 500, bottom: 860 }], band).edge).toBe(888)
+  expect(toastRoom(1280, 232, [{ left: 100, right: 540, top: 0, bottom: 900 }], band)).toEqual({ edge: 1264, isOverRail: false })
+})

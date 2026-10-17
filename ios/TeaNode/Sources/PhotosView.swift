@@ -313,7 +313,14 @@ final class PhotosModel {
             guard listings[key]?.pageCursorPhotoId == cursorPhotoId else { return }
             listings[key]?.append(page)
         } catch {
-            if !Task.isCancelled { problemText = describe(error) }
+            if Task.isCancelled { return }
+            // The photo the page was to follow left the list meanwhile (restored
+            // from the Trash, or deleted forever): read the list again from the top.
+            if error.isNotFoundRefusal {
+                await reload(key)
+                return
+            }
+            problemText = describe(error)
         }
     }
 

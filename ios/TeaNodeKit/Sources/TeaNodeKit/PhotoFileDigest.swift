@@ -17,13 +17,24 @@ import Foundation
             guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
             defer { try? handle.close() }
             var hasher = SHA256()
-            do {
-                while let chunk = try handle.read(upToCount: chunkSizeBytes), !chunk.isEmpty {
+            // Each chunk is let go before the next is read: a read can hand back
+            // memory that is only freed when an autorelease pool drains, and
+            // without a pool per chunk a long video's would pile up until the
+            // whole file was read.
+            var isReadable = true
+            while isReadable {
+                let isMore: Bool = autoreleasepool {
+                    guard let chunk = try? handle.read(upToCount: chunkSizeBytes) else {
+                        isReadable = false
+                        return false
+                    }
+                    if chunk.isEmpty { return false }
                     hasher.update(data: chunk)
+                    return true
                 }
-            } catch {
-                return nil
+                if !isMore { break }
             }
+            if !isReadable { return nil }
             return hasher.finalize().map { String(format: "%02x", $0) }.joined()
         }
     }

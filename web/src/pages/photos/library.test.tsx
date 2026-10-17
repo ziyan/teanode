@@ -1018,8 +1018,12 @@ it('opens the filters as a labelled dialog, not a menu, and closes it with Escap
   const popover = await screen.findByRole('dialog', { name: 'Filter' })
   expect(screen.queryByRole('menu')).toBeNull()
   expect(within(popover).getByRole('radio', { name: 'All kinds' })).toBeTruthy()
+  // The keyboard is taken into it, since it is at the end of the page, and
+  // given back to the button when it closes.
+  await waitFor(() => expect(popover.contains(document.activeElement)).toBe(true))
   fireEvent.keyDown(document.body, { key: 'Escape' })
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Filter' })).toBeNull())
+  expect(document.activeElement).toBe(button)
 })
 
 it('offers nothing near here for a photo with no place', async () => {

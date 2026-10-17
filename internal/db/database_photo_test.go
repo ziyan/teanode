@@ -381,6 +381,14 @@ func TestPhotoTrashIsListedNewestTrashedFirstAcrossPages(test *testing.T) {
 		if _, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 3, BeforePhotoID: middle.ID, IsTrashed: true}); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("continuing after a restored photo gave %v", err)
 		}
+		// Nor is one deleted forever since, whose row waits for cleanup: an empty
+		// page after it would read as the end of the Trash.
+		if marked, err := transaction.MarkPhotosForDeletion(ownerId, []string{oldest.ID}); err != nil || marked != 1 {
+			test.Fatalf("marked %d: %v", marked, err)
+		}
+		if page, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 3, BeforePhotoID: oldest.ID, IsTrashed: true}); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("continuing after a photo deleted forever gave %d photos and %v", len(page), err)
+		}
 	})
 }
 

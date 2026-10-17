@@ -383,7 +383,8 @@ func (self *Store) storePart(ctx context.Context, userId string, upload *models.
 // bytes of the account's other uploads that have not finished: those are not
 // photos yet, and counting only photos would let any number of uploads each
 // pass the check and then fill the store. A file that replaces one the photo
-// already has is let through: whether it fits is settled when it arrives, and a
+// already has, or repeats an original the person has, is held only to the bound
+// on unfinished uploads: whether it fits is settled when it arrives, and a
 // client retrying a file that is already stored must not be turned away at the
 // door.
 func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *models.PhotoUploadHeaders, sizeBytes int64) error {

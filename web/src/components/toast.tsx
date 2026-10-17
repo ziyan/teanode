@@ -66,18 +66,26 @@ export type ToastRoom = {
 
 // toastRoom works out where the strip may end. railWidth is where the content
 // begins (0 when the rail is a drawer), and the obstacles are the boxes of
-// whatever stands at the right of the window.
+// whatever stands in the window. Only a box beside the strip counts: one that
+// shares its height on the screen (the tray floats above a single toast), and
+// starts right of where the strip starts (a drawer dragged to the left is not
+// a wall at the right, and treating it as one left a sliver to read in).
 export function toastRoom(
   viewportWidth: number,
   railWidth: number,
-  obstacles: { left: number; right: number }[],
+  obstacles: { left: number; right: number; top?: number; bottom?: number }[],
+  band?: { top: number; bottom: number },
 ): ToastRoom {
   const windowEdge = viewportWidth - MARGIN
+  const contentLeft = railWidth + MARGIN
   let edge = windowEdge
   for (const obstacle of obstacles) {
-    if (obstacle.right > obstacle.left && obstacle.left < edge + GAP) edge = Math.min(edge, obstacle.left - GAP)
+    const isBeside =
+      !band || obstacle.top === undefined || obstacle.bottom === undefined || (obstacle.top < band.bottom && obstacle.bottom > band.top)
+    if (obstacle.right > obstacle.left && isBeside && obstacle.left > contentLeft && obstacle.left < edge + GAP) {
+      edge = Math.min(edge, obstacle.left - GAP)
+    }
   }
-  const contentLeft = railWidth + MARGIN
   return { edge, isOverRail: railWidth > 0 && edge - contentLeft < LEAST_ROOM }
 }
 
@@ -164,7 +172,10 @@ function useToastRoom(strip: React.RefObject<HTMLDivElement | null>, isShowing: 
           ? 0
           : parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rail-width')) || 0
       const boxes = Array.from(document.querySelectorAll(OBSTACLES)).map((each) => each.getBoundingClientRect())
-      const room = toastRoom(window.innerWidth, railWidth, boxes)
+      // A strip not laid out yet has no height to compare with: every box counts.
+      const stripBox = element.getBoundingClientRect()
+      const band = stripBox.height > 0 ? { top: stripBox.top, bottom: stripBox.bottom } : undefined
+      const room = toastRoom(window.innerWidth, railWidth, boxes, band)
       element.style.setProperty('--toast-edge', `${room.edge}px`)
       element.classList.toggle('over-rail', room.isOverRail)
       const account = document.querySelector('.sidebar .account-button')?.getBoundingClientRect()

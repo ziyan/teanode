@@ -134,7 +134,7 @@ final class PhotosTests: XCTestCase {
 
     func testTheTrashIsGroupedByTheDayPhotosWereMovedThereInTheOrderOfTheList() throws {
         // Listed newest trashed first, as the server does. The photos were taken on other days, which the Trash does not group by.
-        let now = try XCTUnwrap(ServerTime.date("2026-03-12T10:00:00Z"))
+        let now = try XCTUnwrap(ServerTime.date("2026-03-13T05:00:00Z"))
         let photos = [
             try photo("a", takenAt: "2020-01-01T00:00:00Z", trashedAt: "2026-03-12T09:00:00Z"),
             try photo("b", takenAt: "2026-03-10T00:00:00Z", trashedAt: "2026-03-12T01:00:00Z"),
@@ -143,8 +143,9 @@ final class PhotosTests: XCTestCase {
         let days = PhotoTimeline.trashDays(photos, retentionDays: 30, now: now, phoneTimeZone: TimeZone(secondsFromGMT: 0)!)
         XCTAssertEqual(days.map(\.id), ["2026-03-12", "2026-03-09"])
         XCTAssertEqual(days.map { $0.photos.map(\.id) }, [["a", "b"], ["c"]])
-        // The days left are the first photo's: 0 whole days since 09:00 on the 12th, and 2 since 20:00 on the 9th.
-        XCTAssertEqual(days.map(\.daysLeft), [30, 28])
+        // The days left are the oldest photo's, which goes first: 1 whole day since 01:00 on the 12th
+        // (not the 0 since 09:00), and 3 since 20:00 on the 9th.
+        XCTAssertEqual(days.map(\.daysLeft), [29, 27])
         XCTAssertEqual(days[0].trashedAt, ServerTime.date("2026-03-12T09:00:00Z"))
     }
 
