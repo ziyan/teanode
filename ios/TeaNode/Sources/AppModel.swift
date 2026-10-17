@@ -330,6 +330,7 @@ final class AppModel {
         let isChanged = account.accountKey != self.account?.accountKey
         if isChanged {
             services = nil
+            hasCodingComputers = false
             openedRecordingLink = nil
             openedRecordingAccountKey = nil
         }

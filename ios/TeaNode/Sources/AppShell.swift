@@ -235,16 +235,19 @@ struct MainView: View {
         }
         // Which computers run herdr is asked in a task of its own, so a slow
         // computer never holds up the mail above.
-        .task(id: scenePhase) {
+        .task(id: "\(scenePhase)-\(app.account?.accountKey ?? "")") {
             await refreshCodingPresenceSlowly()
         }
     }
 
-    /// Asks at launch and when the app comes to the front, then every five
-    /// minutes. Not while the Coding section is on screen: it reads the list
+    /// Asks at launch, when the app comes to the front and when the account
+    /// changes, then every five minutes. Not while the Coding section is on screen: it reads the list
     /// itself and says what it finds.
     private func refreshCodingPresenceSlowly() async {
         guard scenePhase == .active else { return }
+        // Whether the assistant is on decides it, and at launch that is not
+        // known yet.
+        if app.services == nil { await app.refreshServices() }
         repeat {
             if section != .coding { await app.refreshCodingPresence(isKeeping: false) }
             do { try await Task.sleep(for: .seconds(300)) } catch { return }

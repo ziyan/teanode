@@ -287,8 +287,10 @@ struct CodingSessionView: View {
     @State private var turnCount = CodingSessionView.initialTurnCount
     @State private var screenText = ""
     @State private var isRead = false
-    @State private var draft = ""
-    @State private var pendingFiles: [PendingFile] = []
+    // What has been typed into each session's box and not sent, by session,
+    // kept while the person looks at the workspace's other tabs.
+    @State private var drafts: [String: String] = [:]
+    @State private var pendingFilesBySession: [String: [PendingFile]] = [:]
     @State private var isSending = false
     @State private var sentCount = 0
     @State private var isOpeningTab = false
@@ -545,8 +547,11 @@ struct CodingSessionView: View {
     }
 
     private func composer(_ session: HerdrSession) -> some View {
-        CodingComposer(
-            draft: $draft, pendingFiles: $pendingFiles, isSending: isSending, isDisabled: session.isAsking
+        let sessionId = session.id
+        return CodingComposer(
+            draft: Binding(get: { drafts[sessionId] ?? "" }, set: { drafts[sessionId] = $0 }),
+            pendingFiles: Binding(get: { pendingFilesBySession[sessionId] ?? [] }, set: { pendingFilesBySession[sessionId] = $0 }),
+            isSending: isSending, isDisabled: session.isAsking
         ) {
             Task { await send(session) }
         }
@@ -557,6 +562,10 @@ struct CodingSessionView: View {
     private func refresh() async {
         guard let session else { return }
         let reading = session.id
+        let readingPart = part
+        // A read for another tab or the other part, finishing late, says
+        // nothing about what is on screen now.
+        let isCurrent = { reading == selectedId && readingPart == part }
         do {
             switch part {
             // A session that has not said anything yet has no history to
@@ -566,13 +575,13 @@ struct CodingSessionView: View {
                 isTruncated = false
             case .turns:
                 let read = try await connection.readHerdrSession(computer: session.computer, paneId: session.paneId, turnCount: turnCount)
-                guard reading == selectedId else { return }
+                guard isCurrent() else { return }
                 turns = read.turns
                 isTruncated = read.isTruncated
                 model.upsert(read.herdrSession)
             case .screen:
                 let read = try await connection.readHerdrScreen(computer: session.computer, paneId: session.paneId)
-                guard reading == selectedId else { return }
+                guard isCurrent() else { return }
                 screenText = read.screenText
                 model.upsert(read.herdrSession)
             }
@@ -581,8 +590,8 @@ struct CodingSessionView: View {
             await model.load()
         } catch is CancellationError {
         } catch {
-            guard reading == selectedId else { return }
-            if (error as? URLError)?.code != .cancelled { problemText = app.describe(error) }
+            guard isCurrent(), (error as? URLError)?.code != .cancelled else { return }
+            problemText = app.describe(error)
             isRead = true
         }
     }
@@ -590,7 +599,9 @@ struct CodingSessionView: View {
     // MARK: Actions
 
     private func send(_ session: HerdrSession) async {
-        let text = draft.trimmed
+        let sessionId = session.id
+        let text = (drafts[sessionId] ?? "").trimmed
+        let pendingFiles = pendingFilesBySession[sessionId] ?? []
         guard !text.isEmpty || !pendingFiles.isEmpty, !isSending else { return }
         guard pendingFiles.reduce(0, { $0 + $1.data.count }) <= PendingFile.bytesMost else {
             problemText = String(localized: "The files come to more than 25 MB, more than the server takes in one message.")
@@ -607,9 +618,9 @@ struct CodingSessionView: View {
             }
             let sent = try await connection.sendHerdrSession(computer: session.computer, paneId: session.paneId, text: text, attachmentIds: attachmentIds)
             model.upsert(sent)
-            draft = ""
+            drafts[sessionId] = nil
             // Files added while these were sent stay for the next message.
-            pendingFiles.removeAll { sendingIds.contains($0.id) }
+            pendingFilesBySession[sessionId]?.removeAll { sendingIds.contains($0.id) }
             sentCount += 1
             await refresh()
         } catch {
