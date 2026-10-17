@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.171.0] - 2026-10-17
+
+### Added
+
+- Photos and videos, on by default and switched off in the server's services: a library beside mail, contacts and calendars. Upload from the dashboard or `teanode photo upload`, back up an iPhone in the background, browse by date, favorites, albums and people, search by place, file, camera and description, and keep a Trash for 30 days. Albums can be shared with a person or a circle to view or to add to, with or without where photos were taken. People are found in photos on the server and named from contacts; finding them can be turned off for the server or by each person. The agent can find, describe, date and organize photos, and a photo can be asked about in a conversation. Files go into the existing object store, so a backup of it and of the database keeps the photos; the release image carries ffmpeg, `heif-dec` and the face reader. (#531)
+
 ## [0.170.0] - 2026-10-17
 
 ### Added
