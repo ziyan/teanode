@@ -131,16 +131,21 @@ afterEach(cleanup)
 
 it('groups sessions by computer, then workspace in number order, then tab in tab order', () => {
   const groups = groupSessions(list)
-  expect(groups.map((group) => group.computer)).toEqual(['laptop', 'desk'])
-  expect(groups[0].workspaces.map((workspace) => workspace.label)).toEqual(['website', 'notes'])
-  expect(groups[0].workspaces[0].sessions.map((session) => session.tabLabel)).toEqual(['build', 'review'])
+  // Computers by name; their workspaces by number, and tabs in tab order.
+  expect(groups.map((group) => group.computer)).toEqual(['desk', 'laptop'])
+  expect(groups[1].workspaces.map((workspace) => workspace.label)).toEqual(['website', 'notes'])
+  expect(groups[1].workspaces[0].sessions.map((session) => session.tabLabel)).toEqual(['build', 'review'])
 })
 
 it('lists the sessions under their computers and workspaces', async () => {
   renderAt('/coding')
   const rows = await screen.findAllByRole('button', { name: /build|review|drafts|logs/ })
-  expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['build', 'review', 'drafts', 'logs'])
-  expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['laptop', 'desk'])
+  expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['logs', 'build', 'review', 'drafts'])
+  const heads = screen.getAllByRole('heading', { level: 3 })
+  expect(heads.map((heading) => heading.querySelector('.coding-computer-name')?.textContent)).toEqual([
+    'desk',
+    'laptop',
+  ])
 })
 
 it('puts the selected session in the address and reads it', async () => {
@@ -295,4 +300,17 @@ it('keeps the open session while its computer does not answer', async () => {
   expect(screen.queryByText('This session is no longer open.')).toBeNull()
   expect(screen.getByRole('tab', { name: /build/ })).toBeTruthy()
   expect(screen.getByText('hello w1:p1')).toBeTruthy()
+})
+
+it('folds a computer away and keeps it folded in the address', async () => {
+  renderAt('/coding')
+  const desk = await screen.findByRole('button', { name: /^desk/ })
+  expect(desk.getAttribute('aria-expanded')).toBe('true')
+  fireEvent.click(desk)
+  expect(screen.getByTestId('where').textContent).toBe('?closed=desk')
+  expect(screen.getByRole('button', { name: /^desk/ }).getAttribute('aria-expanded')).toBe('false')
+  expect(screen.queryByRole('button', { name: /logs/ })).toBeNull()
+  // Choosing a session keeps the fold.
+  fireEvent.click(screen.getByRole('button', { name: /build/ }))
+  expect(screen.getByTestId('where').textContent).toBe('?computer=laptop&pane=w1%3Ap1&closed=desk')
 })

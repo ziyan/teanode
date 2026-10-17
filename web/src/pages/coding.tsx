@@ -20,7 +20,16 @@ import {
   type HerdrSession,
   type HerdrTurn,
 } from '../components/herdrSessions'
-import { ChevronLeftIcon, ComputerIcon, EyeIcon, PlusIcon, TrashIcon } from '../components/icons'
+import {
+  ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ComputerIcon,
+  EyeIcon,
+  FolderIcon,
+  PlusIcon,
+  TrashIcon,
+} from '../components/icons'
 import { MenuButton } from '../components/menuButton'
 import { SettingsEmpty } from '../components/settingsList'
 import { Tooltip } from '../components/tooltip'
@@ -145,6 +154,8 @@ function byTabOrder(left: HerdrSession, right: HerdrSession): number {
 export function groupSessions(list: HerdrList): ComputerGroup[] {
   const computers = [...list.computerNames]
   for (const session of list.sessions) if (!computers.includes(session.computer)) computers.push(session.computer)
+  // Computers by name, so each stays where the person last saw it.
+  computers.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }))
   return computers
     .map((computer) => {
       const workspaces = new Map<string, WorkspaceGroup & { number: number }>()
@@ -209,7 +220,7 @@ function isSameSession(left: { computer: string; paneId: string }, right: { comp
 }
 
 export function CodingPage() {
-  const { t } = useTranslation()
+  const { t, plural } = useTranslation()
   const toast = useToast()
   const [parameters, setParameters] = useSearchParams()
   const selectedComputer = parameters.get('computer') ?? ''
@@ -250,12 +261,27 @@ export function CodingPage() {
     if (failedKey) toast.failure(null, t('herdr.notAnswering', { computers: failedKey }))
   }, [failedKey, toast, t])
 
+  // The computers folded away in the list, in the address like the rest of
+  // where the person is.
+  const closedComputers = (parameters.get('closed') ?? '').split(',').filter(Boolean)
   const select = (session: HerdrSession | null) => {
+    const changed: Record<string, string> = {}
     if (session) {
-      const changed: Record<string, string> = { computer: session.computer, pane: session.paneId }
+      changed.computer = session.computer
+      changed.pane = session.paneId
       if (parameters.get('view') === 'screen') changed.view = 'screen'
-      setParameters(changed)
-    } else setParameters({})
+    }
+    if (closedComputers.length > 0) changed.closed = closedComputers.join(',')
+    setParameters(changed)
+  }
+  const toggleComputer = (computer: string) => {
+    const closed = closedComputers.includes(computer)
+      ? closedComputers.filter((each) => each !== computer)
+      : [...closedComputers, computer]
+    const changed = new URLSearchParams(parameters)
+    if (closed.length > 0) changed.set('closed', closed.join(','))
+    else changed.delete('closed')
+    setParameters(changed)
   }
   const listed = list.data?.sessions.find(
     (session) => session.computer === selectedComputer && session.paneId === selectedPaneId,
@@ -280,42 +306,80 @@ export function CodingPage() {
   else if (list.data.sessions.length === 0) {
     listColumn = <SettingsEmpty>{t('herdr.none', { computers: computerNames.join(', ') })}</SettingsEmpty>
   } else {
-    listColumn = groupSessions(list.data).map((group) => (
-      <section key={group.computer} className="coding-computer">
-        <h3>{group.computer}</h3>
-        {group.workspaces.map((workspace) => (
-          <div key={workspace.key} className="coding-workspace">
-            {workspace.label ? <h4>{workspace.label}</h4> : null}
-            {workspace.sessions.map((session) => (
-              <button
-                key={session.paneId}
-                type="button"
-                className={
-                  isSameSession(session, { computer: selectedComputer, paneId: selectedPaneId })
-                    ? 'coding-row active'
-                    : 'coding-row'
-                }
-                aria-current={
-                  isSameSession(session, { computer: selectedComputer, paneId: selectedPaneId }) ? 'true' : undefined
-                }
-                onClick={() => select(session)}
-              >
-                <span className="coding-row-text">
-                  <strong>{rowLabelsOf(session).title}</strong>
-                  {rowLabelsOf(session).detail ? <span className="muted">{rowLabelsOf(session).detail}</span> : null}
-                </span>
-                {session.question ? (
-                  <span className="coding-question-mark" role="img" aria-label={t('herdr.hasQuestion')}>
-                    ?
-                  </span>
-                ) : null}
-                <HerdrStateTag session={session} />
-              </button>
-            ))}
-          </div>
-        ))}
-      </section>
-    ))
+    listColumn = groupSessions(list.data).map((group) => {
+      const sessions = group.workspaces.flatMap((workspace) => workspace.sessions)
+      const askingCount = sessions.filter((session) => session.herdrSessionState === 'asking').length
+      const workingCount = sessions.filter((session) => session.herdrSessionState === 'working').length
+      // The open session's computer stays unfolded, so the row is there.
+      const isClosed = closedComputers.includes(group.computer) && group.computer !== selectedComputer
+      return (
+        <section key={group.computer} className="coding-computer">
+          <h3>
+            <button
+              type="button"
+              className="coding-computer-head"
+              aria-expanded={!isClosed}
+              onClick={() => toggleComputer(group.computer)}
+            >
+              {isClosed ? <ChevronRightIcon size={14} /> : <ChevronDownIcon size={14} />}
+              <ComputerIcon size={16} />
+              <span className="coding-computer-name">{group.computer}</span>
+              <span className="coding-computer-counts muted">
+                {[
+                  askingCount > 0 ? t('herdr.askingCount', { count: askingCount }) : '',
+                  workingCount > 0 ? t('herdr.workingCount', { count: workingCount }) : '',
+                  plural(sessions.length, { one: 'herdr.sessionCountOne', other: 'herdr.sessionCountOther' }),
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+            </button>
+          </h3>
+          {isClosed
+            ? null
+            : group.workspaces.map((workspace) => (
+                <div key={workspace.key} className="coding-workspace">
+                  {workspace.label ? (
+                    <h4>
+                      <FolderIcon size={14} />
+                      {workspace.label}
+                    </h4>
+                  ) : null}
+                  {workspace.sessions.map((session) => (
+                    <button
+                      key={session.paneId}
+                      type="button"
+                      className={
+                        isSameSession(session, { computer: selectedComputer, paneId: selectedPaneId })
+                          ? 'coding-row active'
+                          : 'coding-row'
+                      }
+                      aria-current={
+                        isSameSession(session, { computer: selectedComputer, paneId: selectedPaneId })
+                          ? 'true'
+                          : undefined
+                      }
+                      onClick={() => select(session)}
+                    >
+                      <span className="coding-row-text">
+                        <strong>{rowLabelsOf(session).title}</strong>
+                        {rowLabelsOf(session).detail ? (
+                          <span className="muted">{rowLabelsOf(session).detail}</span>
+                        ) : null}
+                      </span>
+                      {session.question ? (
+                        <span className="coding-question-mark" role="img" aria-label={t('herdr.hasQuestion')}>
+                          ?
+                        </span>
+                      ) : null}
+                      <HerdrStateTag session={session} />
+                    </button>
+                  ))}
+                </div>
+              ))}
+        </section>
+      )
+    })
   }
 
   return (
@@ -378,10 +442,8 @@ export function CodingPage() {
           ) : isReading ? (
             <Loading />
           ) : computerNames.length > 0 ? (
-            <div className="coding-nothing">
-              <button type="button" className="primary" onClick={() => setOpening(true)}>
-                {t('herdr.open')}
-              </button>
+            <div className="mailbox-pane-placeholder">
+              <span>{t('herdr.chooseSession')}</span>
             </div>
           ) : null}
         </div>

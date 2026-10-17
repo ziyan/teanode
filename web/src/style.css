@@ -15021,7 +15021,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 .coding-split {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  /* The mailbox's widths, so the two pages read the same. */
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -15048,22 +15049,58 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--space-2);
 }
 
+/* Each computer is a band across the list, as wide as the rows under it,
+   that stays at the top while its sessions scroll and folds them away. */
 .coding-computer h3 {
-  margin: var(--space-3) var(--space-2) var(--space-1);
-  font-size: var(--text-label);
-  color: var(--muted);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  font-size: inherit;
 }
 
-.coding-computer:first-child h3 {
-  margin-top: var(--space-1);
+.coding-computer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--field);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.coding-computer-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coding-computer-counts {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .coding-workspace h4 {
-  margin: var(--space-2) var(--space-2) 2px;
-  font-size: var(--text-label);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .coding-row {
@@ -15072,9 +15109,9 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   gap: var(--space-2);
   width: 100%;
   min-height: 44px;
-  padding: var(--space-2);
+  padding: 8px 10px 8px 30px;
   border: 0;
-  border-radius: var(--radius-1);
+  border-bottom: 1px solid var(--border);
   background: none;
   color: inherit;
   font: inherit;
@@ -15082,9 +15119,12 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   cursor: pointer;
 }
 
-.coding-row:hover,
-.coding-row.active {
+.coding-row:hover {
   background: var(--field);
+}
+
+.coding-row.active {
+  background: var(--sidebar-hover);
 }
 
 .coding-row-text {
@@ -15101,7 +15141,7 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 }
 
 .coding-row-text .muted {
-  font-size: var(--text-label);
+  font-size: 12px;
 }
 
 .coding-question-mark {
@@ -15125,13 +15165,8 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   min-height: 0;
 }
 
-.coding-nothing,
 .coding-gone {
   padding: var(--space-4);
-}
-
-.coding-nothing {
-  margin: auto;
 }
 
 .coding-session {
@@ -15265,7 +15300,7 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   white-space: nowrap;
 }
 
-@container coding (max-width: 720px) {
+@container coding (max-width: 860px) {
   .coding-split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -15280,6 +15315,19 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   }
   .coding-back {
     display: flex;
+  }
+}
+
+/* On a phone the page is the list, as the mailbox is: the frame runs to the
+   screen's edges with no border at the sides, rather than spending the
+   width on the page's padding and a box. */
+@media (max-width: 600px) {
+  .coding-split {
+    margin-left: calc(var(--space-3) * -1);
+    margin-right: calc(var(--space-3) * -1);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
   }
 }
 
