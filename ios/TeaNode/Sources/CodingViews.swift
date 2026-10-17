@@ -84,8 +84,8 @@ final class CodingModel {
         return siblings.sorted { $0.tabNumber < $1.tabNumber }
     }
 
-    /// Every workspace, by computer in the order the server names them, then
-    /// by workspace number.
+    /// Every workspace, by computer in name order, so each stays where the
+    /// person last saw it, then by workspace number.
     var workspaces: [CodingWorkspace] {
         guard let list else { return [] }
         var result: [CodingWorkspace] = []
@@ -93,6 +93,7 @@ final class CodingModel {
         for session in list.sessions where !computers.contains(session.computer) {
             computers.append(session.computer)
         }
+        computers.sort { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         for computer in computers {
             let onComputer = list.sessions.filter { $0.computer == computer }
             var seen: [String] = []
@@ -108,6 +109,31 @@ final class CodingModel {
         }
         return result
     }
+
+    /// The workspaces of each computer, computers in name order.
+    var computers: [CodingComputer] {
+        var result: [CodingComputer] = []
+        for workspace in workspaces {
+            if let last = result.last, last.name == workspace.computer {
+                result[result.count - 1].workspaces.append(workspace)
+            } else {
+                result.append(CodingComputer(name: workspace.computer, workspaces: [workspace]))
+            }
+        }
+        return result
+    }
+}
+
+/// CodingComputer is one computer's workspaces, and what its sessions are
+/// doing, for its heading in the list.
+struct CodingComputer: Identifiable {
+    let name: String
+    var workspaces: [CodingWorkspace]
+
+    var id: String { name }
+    var sessions: [HerdrSession] { workspaces.flatMap(\.sessions) }
+    var askingCount: Int { sessions.filter(\.isAsking).count }
+    var workingCount: Int { sessions.filter(\.isWorking).count }
 }
 
 /// CodingScreen is the Coding section: the coding sessions on the person's
@@ -119,6 +145,8 @@ struct CodingScreen: View {
     @State private var model: CodingModel
     @State private var path = NavigationPath()
     @State private var isOpening = false
+    /// The workspaces the person folded away; the rest stay open.
+    @State private var foldedWorkspaceIds: Set<String> = []
     @State private var doneText: String?
     @State private var problemText: String?
 
@@ -131,15 +159,28 @@ struct CodingScreen: View {
         NavigationStack(path: $path) {
             List {
                 if let list = model.list {
-                    ForEach(model.workspaces) { workspace in
+                    // A section for each computer, and in it each workspace,
+                    // folded open, holding its tabs.
+                    ForEach(model.computers) { computer in
                         Section {
-                            ForEach(workspace.sessions) { session in
-                                NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
-                                    CodingSessionRow(session: session)
+                            ForEach(computer.workspaces) { workspace in
+                                DisclosureGroup(isExpanded: isExpanded(workspace)) {
+                                    ForEach(workspace.sessions) { session in
+                                        NavigationLink(value: CodingTarget(computer: session.computer, paneId: session.paneId)) {
+                                            CodingSessionRow(session: session)
+                                        }
+                                    }
+                                } label: {
+                                    Label {
+                                        Text(verbatim: workspace.title)
+                                    } icon: {
+                                        Image(systemName: "folder")
+                                    }
+                                    .badge(workspace.sessions.count)
                                 }
                             }
                         } header: {
-                            Text(verbatim: "\(workspace.title) · \(workspace.computer)")
+                            CodingComputerHeader(computer: computer)
                         }
                     }
                     if !list.failedComputerNames.isEmpty {
@@ -208,6 +249,42 @@ struct CodingScreen: View {
             #endif
         }
         .toast(done: $doneText, problem: $problemText)
+    }
+}
+
+extension CodingScreen {
+    fileprivate func isExpanded(_ workspace: CodingWorkspace) -> Binding<Bool> {
+        Binding(
+            get: { !foldedWorkspaceIds.contains(workspace.id) },
+            set: { isOpen in
+                if isOpen { foldedWorkspaceIds.remove(workspace.id) } else { foldedWorkspaceIds.insert(workspace.id) }
+            })
+    }
+}
+
+/// CodingComputerHeader heads a computer's section: its name, and how many
+/// of its sessions ask and work. Each workspace's badge counts its tabs.
+struct CodingComputerHeader: View {
+    let computer: CodingComputer
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Label {
+                Text(verbatim: computer.name)
+            } icon: {
+                Image(systemName: "desktopcomputer")
+            }
+            Spacer(minLength: 8)
+            Text(countsText)
+                .textCase(nil)
+        }
+    }
+
+    private var countsText: String {
+        var parts: [String] = []
+        if computer.askingCount > 0 { parts.append(String(localized: "\(computer.askingCount) asking")) }
+        if computer.workingCount > 0 { parts.append(String(localized: "\(computer.workingCount) working")) }
+        return parts.joined(separator: " · ")
     }
 }
 

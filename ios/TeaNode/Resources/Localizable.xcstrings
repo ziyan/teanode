@@ -1201,6 +1201,22 @@
         }
       }
     },
+    "%lld asking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件が質問中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个在提问"
+          }
+        }
+      }
+    },
     "%lld attempts": {
       "localizations": {
         "ja": {
@@ -2913,6 +2929,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 封等待重试"
+          }
+        }
+      }
+    },
+    "%lld working": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 件が作業中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个在工作"
           }
         }
       }
