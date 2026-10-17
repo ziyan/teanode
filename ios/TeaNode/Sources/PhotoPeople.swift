@@ -312,6 +312,7 @@ struct PhotoPersonScreen: View {
     let model: PhotosModel
     let photoFaceGroupId: String
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
     @State private var group: PhotoFaceGroup?
     @State private var opened: OpenedPhoto?
     @State private var isSelecting = false
@@ -363,6 +364,10 @@ struct PhotoPersonScreen: View {
                 Text("Naming people means choosing a contact from your address book, and Contacts is not turned on for you. Ask whoever runs this server to turn on Contacts.")
             }
             .onDisappear { model.dropPhotosNoLongerFavorite() }
+            // "Photos taken near here" is answered by the library, so this screen goes away.
+            .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
+                if photoNearFilter != nil { dismiss() }
+            }
     }
 
     private var selectionTitle: String {

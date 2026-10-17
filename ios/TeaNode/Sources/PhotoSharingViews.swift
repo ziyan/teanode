@@ -37,15 +37,15 @@ enum PhotoWords {
 
     static func title(of photoShareLevel: PhotoShareLevel) -> String {
         switch photoShareLevel {
-        case .view: String(localized: "Can view")
-        case .contribute: String(localized: "Can contribute")
+        case .view: String(localized: "photos.levelView", defaultValue: "View")
+        case .contribute: String(localized: "photos.levelContribute", defaultValue: "Contribute")
         }
     }
 
     static func explanation(of photoShareLevel: PhotoShareLevel) -> String {
         switch photoShareLevel {
-        case .view: String(localized: "They see the photos in the album and can save them to their own library.")
-        case .contribute: String(localized: "They also add photos of their own to the album, and take out the ones they added.")
+        case .view: String(localized: "See the photos and save them.")
+        case .contribute: String(localized: "Also add photos of their own, and take out the ones they added.")
         }
     }
 
@@ -66,7 +66,8 @@ struct PhotoLibrarySummary: View {
     let library: PhotoLibrary
 
     private var contentsText: String {
-        let photos = PhotoAlbumWords.photoCount(library.photoCount)
+        // The videos are among the photos, as the dashboard, the command line and the agent count them.
+        let photos = PhotoAlbumWords.photoCount(library.itemCount)
         guard library.videoCount > 0 else { return photos }
         return String(localized: "\(photos), including \(PhotoWords.videoCount(library.videoCount))")
     }
@@ -118,6 +119,35 @@ struct PhotoFilterMenu: View {
     }
 }
 
+/// PhotoNearChip says the library is narrowed to the photos taken near a
+/// place, and takes that off when pressed.
+struct PhotoNearChip: View {
+    let photoNearFilter: PhotoNearFilter
+    let onRemove: () -> Void
+
+    private var title: String {
+        photoNearFilter.placeName.isEmpty ? String(localized: "Near here") : String(localized: "Near \(photoNearFilter.placeName)")
+    }
+
+    var body: some View {
+        Button(action: onRemove) {
+            HStack(spacing: 6) {
+                Image(systemName: "mappin.and.ellipse")
+                Text(title)
+                    .lineLimit(1)
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityLabel(title)
+        .accessibilityHint(String(localized: "Removes this filter"))
+    }
+}
+
 /// PhotoDateFilterSheet chooses the first and last day the library is narrowed
 /// to. Each end is optional.
 struct PhotoDateFilterSheet: View {
@@ -148,7 +178,7 @@ struct PhotoDateFilterSheet: View {
                     if model.photoFilter.isRangeBackwards {
                         Text("The first day is after the last day, so no photo matches.")
                     } else {
-                        Text("Photos taken on these days, on the clock where they were taken.")
+                        Text("Days are counted on this iPhone's clock, so a photo taken in another time zone can fall on a neighboring day.")
                     }
                 }
                 if model.photoFilter.firstDay != nil || model.photoFilter.lastDay != nil {
@@ -238,6 +268,8 @@ struct PhotoAlbumShareSheet: View {
     @State private var isWorking = false
     @State private var doneText: String?
     @State private var problemText: String?
+    /// The share the person pressed Stop sharing on, to be asked about.
+    @State private var shareToStop: PhotoAlbumShare?
 
     private var connection: Connection { model.connection }
 
@@ -284,6 +316,14 @@ struct PhotoAlbumShareSheet: View {
                 if !isLoaded { ProgressView() }
             }
             .task { await load() }
+            #if DEBUG
+                // `-TeaNodeScreen photos-share-stop` asks the question before the first share is stopped.
+                .task(id: isLoaded) {
+                    guard DemoServer.isRequested, DemoServer.screen == "photos-share-stop", isLoaded, let first = shares.first else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    shareToStop = first
+                }
+            #endif
             .toast(done: $doneText, problem: $problemText)
         }
         .presentationDetents([.large])
@@ -325,6 +365,17 @@ struct PhotoAlbumShareSheet: View {
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Options for \(share.granteeDisplayName)")
+                    // Attached to the menu, not to the row or the list: it points at this button,
+                    // and a touch and hold on the row asks the same question.
+                    .confirmationDialog(
+                        "Stop sharing with \(share.granteeDisplayName)?",
+                        isPresented: Binding(get: { shareToStop?.id == share.id }, set: { if !$0, shareToStop?.id == share.id { shareToStop = nil } }),
+                        titleVisibility: .visible
+                    ) {
+                        Button("Stop sharing", role: .destructive) { Task { await stop(share) } }
+                    } message: {
+                        Text("\(share.granteeDisplayName) can no longer see “\(album.albumTitle)”, and the photos they added to it leave the album.")
+                    }
                 }
                 .accessibilityElement(children: .contain)
                 .contextMenu { shareOptions(share) }
@@ -352,7 +403,7 @@ struct PhotoAlbumShareSheet: View {
             isOn: Binding(
                 get: { share.isLocationIncluded },
                 set: { isOn in Task { await update(share, photoShareLevel: share.knownShareLevel, isLocationIncluded: isOn) } }))
-        Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { Task { await stop(share) } }
+        Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { shareToStop = share }
     }
 
     // MARK: Sharing it with someone
@@ -400,7 +451,10 @@ struct PhotoAlbumShareSheet: View {
         Section {
             Toggle("Include where photos were taken", isOn: $draft.isLocationIncluded)
         } footer: {
-            Text("Without it, they see each picture without its place, and cannot get the original files.")
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Without it, they see each picture without its place, and cannot get the original files.")
+                Text("People in the photos are shown with the names you gave them, with or without places.")
+            }
         }
         Section {
             Button("Share") { Task { await share() } }
@@ -617,6 +671,16 @@ struct PhotoDateChangeSheet: View {
     }
     #Preview("Library summary, dark") {
         PhotoLibrarySummary(library: PhotoLibrary(photoCount: 3_800, videoCount: 112, favoriteCount: 90, trashedCount: 4, usedBytes: 0, trashRetentionDays: 30))
+            .preferredColorScheme(.dark)
+    }
+    #Preview("Near chip, light") {
+        PhotoNearChip(photoNearFilter: PhotoNearFilter(latitudeDegrees: 10.5, longitudeDegrees: 20.5, placeName: "Riverside Park")) {}
+            .padding()
+            .preferredColorScheme(.light)
+    }
+    #Preview("Near chip, dark, no place name") {
+        PhotoNearChip(photoNearFilter: PhotoNearFilter(latitudeDegrees: 10.5, longitudeDegrees: 20.5)) {}
+            .padding()
             .preferredColorScheme(.dark)
     }
     #Preview("Library summary, no videos") {

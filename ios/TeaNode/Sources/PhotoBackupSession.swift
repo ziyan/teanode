@@ -18,10 +18,13 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     private static let bodyLimitBytes = 2048
 
     typealias FinishHandler = @Sendable (PhotoBackupJob, PhotoBackupOutcome) async -> Void
+    /// Writes the backup's index to disk.
+    typealias FlushHandler = @Sendable () async -> Void
 
     private let lock = NSLock()
     private var bodies: [Int: Data] = [:]
     private var finishHandler: FinishHandler?
+    private var flushHandler: FlushHandler?
     /// The tasks reporting finished uploads that have not finished, by an id of
     /// their own; each removes itself when it is done, so a long run with the
     /// app open does not collect one for every file ever sent.
@@ -38,10 +41,14 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
         return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 
-    /// Says who hears of a finished upload, and wakes the session so that it
-    /// reports the ones that finished while the app was closed.
-    func attach(finishHandler: @escaping FinishHandler) {
-        lock.withLock { self.finishHandler = finishHandler }
+    /// Says who hears of a finished upload and who writes the index, and wakes
+    /// the session so that it reports the ones that finished while the app was
+    /// closed.
+    func attach(finishHandler: @escaping FinishHandler, flushHandler: @escaping FlushHandler) {
+        lock.withLock {
+            self.finishHandler = finishHandler
+            self.flushHandler = flushHandler
+        }
         _ = session
     }
 
@@ -96,7 +103,8 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
         let outcome = PhotoBackupOutcome.interpret(
             statusCode: response?.statusCode, photoIdHeader: response?.value(forHTTPHeaderField: PhotoBackupHeader.photoId),
             bodyText: String(data: body, encoding: .utf8), errorDescription: error?.localizedDescription,
-            isConnectivityFailure: error.map(RecordingLibrary.isConnectivityFailure) ?? false, isCancelled: isCancelled)
+            isConnectivityFailure: error.map(RecordingLibrary.isConnectivityFailure) ?? false, isCancelled: isCancelled,
+            retryAfterHeader: response?.value(forHTTPHeaderField: "Retry-After"))
         lock.lock()
         defer { lock.unlock() }
         guard let finishHandler else {
@@ -119,20 +127,22 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     }
 
     /// The system has delivered every event it started the app for. Its
-    /// completion handler is called once they have been dealt with: the system
-    /// takes the app's snapshot and suspends it at that call.
+    /// completion handler is called once they have been dealt with and the
+    /// index is written: the system takes the app's snapshot and suspends it
+    /// at that call, and an index not yet written would be lost with it.
     func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        let (tasks, completion) = lock.withLock {
+        let (tasks, completion, flush) = lock.withLock {
             let tasks = Array(handlerTasks.values)
             handlerTasks = [:]
             let completion = backgroundCompletion
             backgroundCompletion = nil
-            return (tasks, completion)
+            return (tasks, completion, flushHandler)
         }
         guard let completion else { return }
         nonisolated(unsafe) let finish = completion
         Task { @MainActor in
             for task in tasks { await task.value }
+            await flush?()
             finish()
         }
     }
@@ -140,6 +150,6 @@ final class PhotoBackupSession: NSObject, PhotoBackupTransfer, URLSessionDataDel
     /// Deletes the file an upload was read from, which only that upload needed.
     static func removeTemporaryFile(of job: PhotoBackupJob) {
         guard let directory = try? PhotoBackupEngine.outgoingDirectory() else { return }
-        try? FileManager.default.removeItem(at: directory.appendingPathComponent((job.fileName as NSString).lastPathComponent))
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent((job.outgoingFilename as NSString).lastPathComponent))
     }
 }

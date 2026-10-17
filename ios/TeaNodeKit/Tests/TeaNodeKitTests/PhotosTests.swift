@@ -198,13 +198,17 @@ final class PhotoDownloadTests: XCTestCase {
     private let photoJSON =
         #"{"id":"p1","createdAt":"2026-03-01T00:00:00Z","photoKind":"picture","takenAt":null,"takenAtOffsetMinutes":null,"widthPixels":10,"heightPixels":10,"durationMS":0,"latitude":null,"longitude":null,"placeName":"","cameraMake":"","cameraModel":"","originalFilename":"IMG_0001.HEIC","isFavorite":false,"isScreenshot":false,"photoProcessingState":"ready","trashedAt":null,"smallPreviewUrl":"/api/v1/photos/p1/previews/small?v=1","largePreviewUrl":"/api/v1/photos/p1/previews/large?v=1","videoPreviewUrl":""}"#
 
-    private func detailAnswer() -> String {
-        #"{"data":{"ReadPhoto":{"photo":"# + photoJSON
-            + #","photoFiles":[{"photoFileRole":"original","contentType":"image/heic","fileSizeBytes":9,"originalFilename":"IMG_0001.HEIC","fileUrl":"/api/v1/photos/p1/files/original"}],"photoPreviews":[{"photoPreviewSize":"large","contentType":"image/jpeg","previewSizeBytes":5,"previewUrl":"/api/v1/photos/p1/previews/large?v=1"}]}}}"#
+    /// The details of the photo as the server sends them; a reader of a shared album without places gets no files, only previews.
+    private func detailAnswer(hasOriginalFile: Bool = true) -> String {
+        let files =
+            hasOriginalFile
+            ? #"[{"photoFileRole":"original","contentType":"image/heic","fileSizeBytes":9,"originalFilename":"IMG_0001.HEIC","fileUrl":"/api/v1/photos/p1/files/original"}]"# : "[]"
+        return #"{"data":{"ReadPhoto":{"photo":"# + photoJSON
+            + #","photoFiles":"# + files + #","photoPreviews":[{"photoPreviewSize":"large","contentType":"image/jpeg","previewSizeBytes":5,"previewUrl":"/api/v1/photos/p1/previews/large?v=1"}]}}}"#
     }
 
-    private func connection(isOriginalReadable: Bool) throws -> (Connection, FakeServer) {
-        let detail = detailAnswer()
+    private func connection(isOriginalReadable: Bool, hasOriginalFile: Bool = true) throws -> (Connection, FakeServer) {
+        let detail = detailAnswer(hasOriginalFile: hasOriginalFile)
         let fake = FakeServer { request in
             let path = request.url?.path ?? ""
             if path.hasSuffix("/graphql") {
@@ -234,7 +238,7 @@ final class PhotoDownloadTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
         XCTAssertTrue(download.isOriginal)
         XCTAssertEqual(try String(contentsOf: download.fileURL, encoding: .utf8), "original")
-        XCTAssertEqual(download.fileName, "IMG_0001.HEIC")
+        XCTAssertEqual(download.filename, "IMG_0001.HEIC")
         XCTAssertEqual(download.fileURL.lastPathComponent, "IMG_0001.HEIC")
         // It was read from the signed address, which needs no sign-in, not through the token.
         let fileRequest = try XCTUnwrap(fake.sent.first { $0.url?.path.hasSuffix("/files/original") == true })
@@ -248,7 +252,16 @@ final class PhotoDownloadTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
         XCTAssertFalse(download.isOriginal)
         XCTAssertEqual(try String(contentsOf: download.fileURL, encoding: .utf8), "preview")
-        XCTAssertEqual(download.fileName, "IMG_0001.jpg")
+        XCTAssertEqual(download.filename, "IMG_0001.jpg")
+    }
+
+    func testAPhotoWithNoFileForTheReaderIsSavedAsASmallerCopyAndSaysSo() async throws {
+        let (connection, fake) = try connection(isOriginalReadable: true, hasOriginalFile: false)
+        let download = try await connection.downloadPhotoFile(decodedPhoto())
+        defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
+        XCTAssertFalse(download.isOriginal, "a preview standing in for the original says it is not the original")
+        XCTAssertEqual(try String(contentsOf: download.fileURL, encoding: .utf8), "preview")
+        XCTAssertNil(fake.sent.first { $0.url?.path.hasSuffix("/files/original") == true }, "no original is asked for when the photo has none for this reader")
     }
 
     /// The variables of the last document sent, which is where an argument left out is seen to be left out.

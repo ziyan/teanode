@@ -68,11 +68,11 @@ public enum PhotoBackupLibraryError: Error, Equatable, Sendable {
 /// PhotoBackupExportedFile is a file written for an upload.
 public struct PhotoBackupExportedFile: Equatable, Sendable {
     /// The name of the file in the outgoing directory.
-    public let fileName: String
+    public let outgoingFilename: String
     public let sizeBytes: Int64
 
-    public init(fileName: String, sizeBytes: Int64) {
-        self.fileName = fileName
+    public init(outgoingFilename: String, sizeBytes: Int64) {
+        self.outgoingFilename = outgoingFilename
         self.sizeBytes = sizeBytes
     }
 }
@@ -110,14 +110,14 @@ public struct PhotoBackupJob: Codable, Equatable, Sendable {
     public let filename: String
     public let assetModificationDate: Date?
     /// The file to send, by its name in the outgoing directory.
-    public let fileName: String
+    public let outgoingFilename: String
     public let sizeBytes: Int64
 
     public var key: String { PhotoBackupUpload.key(localIdentifier: localIdentifier, role: role) }
 
     public init(
         accountKey: String, localIdentifier: String, role: PhotoBackupFileRole, clientPhotoId: String, filename: String,
-        assetModificationDate: Date?, fileName: String, sizeBytes: Int64
+        assetModificationDate: Date?, outgoingFilename: String, sizeBytes: Int64
     ) {
         self.accountKey = accountKey
         self.localIdentifier = localIdentifier
@@ -125,7 +125,7 @@ public struct PhotoBackupJob: Codable, Equatable, Sendable {
         self.clientPhotoId = clientPhotoId
         self.filename = filename
         self.assetModificationDate = assetModificationDate
-        self.fileName = fileName
+        self.outgoingFilename = outgoingFilename
         self.sizeBytes = sizeBytes
     }
 }
@@ -198,12 +198,37 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     case signInNeeded
     /// The server will not take this file, however often it is sent.
     case refused(failure: PhotoBackupFailure)
-    /// It did not work this time; the file is sent again by a later pass.
-    case retryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool)
+    /// It did not work this time; the file is sent again by a later pass, not
+    /// before `retryAfterSeconds` when the server said how long to wait (the
+    /// Retry-After of a 503, which is how it refuses an upload only because of
+    /// the account's other unfinished uploads).
+    case retryLater(failure: PhotoBackupFailure?, isConnectivityFailure: Bool, retryAfterSeconds: Int? = nil)
     /// The task was cancelled by the app (backup turned off, a setting changed,
     /// a sign-in refused): not an error and not counted, and the file is still
     /// to send, as the index has it.
     case cancelled
+
+    /// The longest wait a Retry-After is believed for: an hour. A server that
+    /// asks for more is asked again after this.
+    public static let longestRetryAfterSeconds = 3600
+
+    /// How long a Retry-After header asks to wait: whole seconds, or an HTTP
+    /// date, which is turned into the seconds from `now`. Nil when there is no
+    /// header, it makes no sense, or the date has passed; never more than
+    /// `longestRetryAfterSeconds`.
+    public static func retryAfterSeconds(fromHeader header: String?, now: Date = Date()) -> Int? {
+        guard let text = header?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        if let seconds = Int(text) {
+            return seconds > 0 ? min(seconds, longestRetryAfterSeconds) : nil
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        guard let date = formatter.date(from: text) else { return nil }
+        let seconds = Int(date.timeIntervalSince(now).rounded(.up))
+        return seconds > 0 ? min(seconds, longestRetryAfterSeconds) : nil
+    }
 
     /// What the server says when the device password is right but was made
     /// without access to photos: the person signs in again for a new one.
@@ -218,10 +243,12 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
     /// file is sent again later. A 404, 409 or 410 is not the file's fault
     /// either (the upload was lost on the way, or the photo is being made): it
     /// is started again. Only a 400, 413, 415 or 422, and any other 4xx, is
-    /// the server refusing the file.
+    /// the server refusing the file. A 503 is the server's trouble, or the
+    /// account's other unfinished uploads being in the way: the file is sent
+    /// again later, after the Retry-After the answer carries, if it has one.
     public static func interpret(
         statusCode: Int?, photoIdHeader: String?, bodyText: String?, errorDescription: String?, isConnectivityFailure: Bool,
-        isCancelled: Bool = false
+        isCancelled: Bool = false, retryAfterHeader: String? = nil, now: Date = Date()
     ) -> PhotoBackupOutcome {
         if isCancelled { return .cancelled }
         if let errorDescription {
@@ -241,7 +268,9 @@ public enum PhotoBackupOutcome: Equatable, Sendable {
             if reason?.lowercased().contains(passwordWithoutPhotosReason) == true { return .signInNeeded }
             return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
         case 404, 408, 409, 410, 425, 429, 500...599:
-            return .retryLater(failure: reason.map { .serverReason($0) }, isConnectivityFailure: false)
+            return .retryLater(
+                failure: reason.map { .serverReason($0) }, isConnectivityFailure: false,
+                retryAfterSeconds: retryAfterSeconds(fromHeader: retryAfterHeader, now: now))
         case 400...499:
             return .refused(failure: .fileRefused(serverReason: reason))
         default:
@@ -468,7 +497,7 @@ public actor PhotoBackupCoordinator {
         let filename: String
         /// The exported file the upload reads, which tells an upload from a
         /// later one of the same file.
-        let fileName: String
+        let outgoingFilename: String
     }
 
     private static let findPhotosBatchSize = 500
@@ -489,6 +518,10 @@ public actor PhotoBackupCoordinator {
     private let idleTimeoutSeconds: TimeInterval
     private let now: @Sendable () -> Date
     private let fileManager: FileManager
+    /// Whether the app is the one the person is using. When it is not, it may
+    /// be suspended at any moment, so what an upload came to is written to
+    /// the index at once.
+    private let isAppActive: @Sendable () -> Bool
 
     private var outstanding: [String: Outstanding] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -508,6 +541,9 @@ public actor PhotoBackupCoordinator {
     /// Uploads in a row the server answered with a failure; any other answer
     /// starts the count again.
     private var consecutiveServerFailureCount = 0
+    /// Nothing is queued before this time: the server said, with a Retry-After,
+    /// how long to wait. Nil when it asked for nothing.
+    private var retryNotBefore: Date?
     /// The size each file had when it was exported in this pass, so that one
     /// held back for want of room is not exported again to find out.
     private var exportedSizes: [String: Int64] = [:]
@@ -517,7 +553,7 @@ public actor PhotoBackupCoordinator {
         index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, lookup: (any PhotoBackupServerLookup)?,
         network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String, credential: PhotoBackupCredential,
         budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, now: @escaping @Sendable () -> Date = { Date() },
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default, isAppActive: @escaping @Sendable () -> Bool = { true }
     ) {
         self.index = index
         self.library = library
@@ -532,6 +568,7 @@ public actor PhotoBackupCoordinator {
         self.idleTimeoutSeconds = idleTimeoutSeconds
         self.now = now
         self.fileManager = fileManager
+        self.isAppActive = isAppActive
     }
 
     public func setStatusHandler(_ handler: (@Sendable (PhotoBackupStatus) -> Void)?) {
@@ -558,6 +595,13 @@ public actor PhotoBackupCoordinator {
     }
 
     public var isPassRunning: Bool { isRunning }
+
+    /// When the server asked a pass to try again, if it did and the time has
+    /// not come: the app starts a pass then.
+    public var pendingRetryTime: Date? {
+        guard let retryNotBefore, retryNotBefore > now() else { return nil }
+        return retryNotBefore
+    }
 
     /// Runs one pass, which ends when every planned file has been queued and
     /// the session has finished them, or when stopped.
@@ -609,9 +653,9 @@ public actor PhotoBackupCoordinator {
         outstanding.removeAll()
         let queuedJobs = await transfer.queuedJobs()
         for job in queuedJobs {
-            outstanding[job.key] = Outstanding(sizeBytes: job.sizeBytes, filename: job.filename, fileName: job.fileName)
+            outstanding[job.key] = Outstanding(sizeBytes: job.sizeBytes, filename: job.filename, outgoingFilename: job.outgoingFilename)
         }
-        removeLeftoverFiles(keeping: Set(queuedJobs.map(\.fileName)))
+        removeLeftoverFiles(keeping: Set(queuedJobs.map(\.outgoingFilename)))
 
         let items: [PhotoBackupItem]
         let totalCount: Int
@@ -645,7 +689,7 @@ public actor PhotoBackupCoordinator {
         var isIdle = false
         while position < uploads.count, !isStopRequested {
             let upload = uploads[position]
-            if consecutiveServerFailureCount >= Self.serverFailureLimit { break }
+            if consecutiveServerFailureCount >= Self.serverFailureLimit || pendingRetryTime != nil { break }
             if !budget.allowsAnother(outstandingCount: outstanding.count, outstandingBytes: outstandingBytes) {
                 phase = .uploading
                 await publish()
@@ -826,24 +870,24 @@ public actor PhotoBackupCoordinator {
         }
         exportedSizes[upload.key] = exported.sizeBytes
         if isStopRequested {
-            removeTemporaryFile(named: exported.fileName)
+            removeTemporaryFile(named: exported.outgoingFilename)
             return .deferred
         }
         if !budget.allowsFile(sizeBytes: exported.sizeBytes, outstandingCount: outstanding.count, outstandingBytes: outstandingBytes) {
-            removeTemporaryFile(named: exported.fileName)
+            removeTemporaryFile(named: exported.outgoingFilename)
             return .mustWait
         }
         let job = PhotoBackupJob(
             accountKey: accountKey, localIdentifier: upload.localIdentifier, role: upload.role, clientPhotoId: upload.clientPhotoId,
-            filename: upload.filename, assetModificationDate: upload.assetModificationDate, fileName: exported.fileName,
+            filename: upload.filename, assetModificationDate: upload.assetModificationDate, outgoingFilename: exported.outgoingFilename,
             sizeBytes: exported.sizeBytes)
         let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: settings.usesMobileData)
-        outstanding[job.key] = Outstanding(sizeBytes: exported.sizeBytes, filename: upload.filename, fileName: exported.fileName)
+        outstanding[job.key] = Outstanding(sizeBytes: exported.sizeBytes, filename: upload.filename, outgoingFilename: exported.outgoingFilename)
         do {
-            try await transfer.start(request: request, job: job, fileURL: outgoingDirectory.appendingPathComponent(exported.fileName))
+            try await transfer.start(request: request, job: job, fileURL: outgoingDirectory.appendingPathComponent(exported.outgoingFilename))
         } catch {
             outstanding[job.key] = nil
-            removeTemporaryFile(named: exported.fileName)
+            removeTemporaryFile(named: exported.outgoingFilename)
             await index.setError(failure: Self.failure(of: error))
             return .deferred
         }
@@ -855,14 +899,15 @@ public actor PhotoBackupCoordinator {
     public func finished(_ job: PhotoBackupJob, outcome: PhotoBackupOutcome) async {
         // Only the entry of this upload: a cancelled task reports late, and by
         // then the same file may have been queued again under the same key.
-        if outstanding[job.key]?.fileName == job.fileName { outstanding[job.key] = nil }
-        removeTemporaryFile(named: job.fileName)
+        if outstanding[job.key]?.outgoingFilename == job.outgoingFilename { outstanding[job.key] = nil }
+        removeTemporaryFile(named: job.outgoingFilename)
         completionCount += 1
         switch outcome {
         case .cancelled:
             break
         case .uploaded(let serverPhotoId):
             consecutiveServerFailureCount = 0
+            retryNotBefore = nil
             await index.markUploaded(
                 localIdentifier: job.localIdentifier, clientPhotoId: job.clientPhotoId, role: job.role, serverPhotoId: serverPhotoId,
                 assetModificationDate: job.assetModificationDate)
@@ -879,8 +924,12 @@ public actor PhotoBackupCoordinator {
             refusedFileCount += 1
             finishedFileCount += 1
             await index.setError(failure: failure)
-        case .retryLater(let failure, let isConnectivityFailure):
+        case .retryLater(let failure, let isConnectivityFailure, let retryAfterSeconds):
             if !isConnectivityFailure { consecutiveServerFailureCount += 1 }
+            if let retryAfterSeconds {
+                let notBefore = now().addingTimeInterval(TimeInterval(retryAfterSeconds))
+                retryNotBefore = max(retryNotBefore ?? notBefore, notBefore)
+            }
             if let failure, !isConnectivityFailure { await index.setError(failure: failure) }
             // The file is still to send and nothing in this pass sends it
             // again: it is counted, so that the pass ends waiting for the
@@ -889,9 +938,10 @@ public actor PhotoBackupCoordinator {
             leftForLaterFileCount += 1
             if !isRunning { phase = .waitingForNetwork }
         }
-        // With no pass running nobody writes the index afterwards, and the app
-        // may be suspended at once: what this upload came to is written now.
-        if !isRunning { await index.flush() }
+        // With no pass running nobody writes the index afterwards, and an app
+        // that is not the one in use may be suspended at once: what this upload
+        // came to is written now.
+        if !isRunning || !isAppActive() { await index.flush() }
         resumeWaiters()
         await publish()
     }

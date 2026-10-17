@@ -21,23 +21,55 @@ public enum PhotoKindFilter: String, CaseIterable, Identifiable, Hashable, Senda
     public var id: String { rawValue }
 }
 
-/// PhotoFilter narrows a list of the library by kind and by the days the
-/// photos were taken on. An empty filter keeps everything.
+/// PhotoNearFilter keeps the photos taken within a distance of a place: the
+/// place of one photo, and a kilometer round it unless said otherwise.
+public struct PhotoNearFilter: Hashable, Sendable {
+    /// How far round a photo "Photos taken near here" looks.
+    public static let defaultDistanceKilometers = 1.0
+
+    public let latitudeDegrees: Double
+    public let longitudeDegrees: Double
+    public let distanceKilometers: Double
+    /// The name of the place, for the filter to say what it is near; empty
+    /// when the photo has coordinates and no name.
+    public let placeName: String
+
+    public init(latitudeDegrees: Double, longitudeDegrees: Double, distanceKilometers: Double = PhotoNearFilter.defaultDistanceKilometers, placeName: String = "") {
+        self.latitudeDegrees = latitudeDegrees
+        self.longitudeDegrees = longitudeDegrees
+        self.distanceKilometers = distanceKilometers
+        self.placeName = placeName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The filter for the place of a photo; nil for a photo that has none, as
+    /// a photo shared without places does.
+    public init?(near photo: Photo, distanceKilometers: Double = PhotoNearFilter.defaultDistanceKilometers) {
+        guard let latitude = photo.latitude, let longitude = photo.longitude else { return nil }
+        self.init(latitudeDegrees: latitude, longitudeDegrees: longitude, distanceKilometers: distanceKilometers, placeName: photo.placeName)
+    }
+}
+
+/// PhotoFilter narrows a list of the library by kind, by the days the photos
+/// were taken on and by how near a place they were taken. An empty filter keeps
+/// everything.
 public struct PhotoFilter: Hashable, Sendable {
     public var photoKindFilter: PhotoKindFilter
     /// The first day to keep, as any moment on that day; nil for no start.
     public var firstDay: Date?
     /// The last day to keep, as any moment on that day; nil for no end.
     public var lastDay: Date?
+    /// The place the photos kept were taken near; nil for anywhere.
+    public var photoNearFilter: PhotoNearFilter?
 
-    public init(photoKindFilter: PhotoKindFilter = .all, firstDay: Date? = nil, lastDay: Date? = nil) {
+    public init(photoKindFilter: PhotoKindFilter = .all, firstDay: Date? = nil, lastDay: Date? = nil, photoNearFilter: PhotoNearFilter? = nil) {
         self.photoKindFilter = photoKindFilter
         self.firstDay = firstDay
         self.lastDay = lastDay
+        self.photoNearFilter = photoNearFilter
     }
 
     /// Whether anything is filtered.
-    public var isActive: Bool { photoKindFilter != .all || firstDay != nil || lastDay != nil }
+    public var isActive: Bool { photoKindFilter != .all || firstDay != nil || lastDay != nil || photoNearFilter != nil }
 
     /// Whether the days are asked for backwards, which no photo is in.
     public var isRangeBackwards: Bool {
@@ -46,14 +78,22 @@ public struct PhotoFilter: Hashable, Sendable {
     }
 
     /// The variables ListPhotos takes for this filter. A day is the phone's
-    /// day: the range starts when the first day starts and ends where the day
-    /// after the last begins, as the dashboard's does.
+    /// calendar day, not the day on the clock where the photo was taken: the
+    /// range starts when the first day starts and ends where the day after the
+    /// last begins, as the dashboard's does, since the server keeps photos
+    /// between two moments.
     public func variables(calendar: Calendar = .current) -> [String: JSONValue] {
         var variables: [String: JSONValue] = [:]
         if photoKindFilter != .all { variables["photoKind"] = .string(photoKindFilter.rawValue) }
         if let firstDay { variables["takenAfter"] = .string(Self.text(of: calendar.startOfDay(for: firstDay))) }
         if let lastDay, let next = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: lastDay)) {
             variables["takenBefore"] = .string(Self.text(of: next))
+        }
+        // The server wants all three of the place or none.
+        if let photoNearFilter {
+            variables["nearLatitude"] = .number(photoNearFilter.latitudeDegrees)
+            variables["nearLongitude"] = .number(photoNearFilter.longitudeDegrees)
+            variables["nearDistanceKilometers"] = .number(photoNearFilter.distanceKilometers)
         }
         return variables
     }

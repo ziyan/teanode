@@ -3103,6 +3103,22 @@
         }
       }
     },
+    "%@ can no longer see “%@”, and the photos they added to it leave the album.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@は「%2$@」を見られなくなり、追加した写真もアルバムから外れます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@将无法再查看“%2$@”，他们添加到其中的照片也会从相簿中移出。"
+          }
+        }
+      }
+    },
     "1 alias": {
       "localizations": {
         "ja": {
@@ -4191,6 +4207,22 @@
         }
       }
     },
+    "Also add photos of their own, and take out the ones they added.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の写真を追加し、追加した写真を外すこともできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还可以添加自己的照片，并移出自己添加的照片。"
+          }
+        }
+      }
+    },
     "Ask your agent": {
       "localizations": {
         "ja": {
@@ -4203,6 +4235,210 @@
           "stringUnit": {
             "state": "translated",
             "value": "问你的助手"
+          }
+        }
+      }
+    },
+    "Cannot save to my library": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のライブラリに保存できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存到我的图库"
+          }
+        }
+      }
+    },
+    "Days are counted on this iPhone's clock, so a photo taken in another time zone can fall on a neighboring day.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日付はこの iPhone の時刻で数えるため、別のタイムゾーンで撮影した写真は前後の日になることがあります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日期按这部 iPhone 的时间计算，因此在其他时区拍摄的照片可能会落在相邻的一天。"
+          }
+        }
+      }
+    },
+    "Near %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の近く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@附近"
+          }
+        }
+      }
+    },
+    "Near here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この近く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这附近"
+          }
+        }
+      }
+    },
+    "People in the photos are shown with the names you gave them, with or without places.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真に写っている人物は、場所を含めても含めなくても、あなたが付けた名前で表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无论是否包含地点，照片中的人物都会以你为他们起的名称显示。"
+          }
+        }
+      }
+    },
+    "Photos taken near here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この近くで撮った写真"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这附近拍的照片"
+          }
+        }
+      }
+    },
+    "photos.levelContribute": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contribute"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加も可能"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "参与"
+          }
+        }
+      }
+    },
+    "photos.levelView": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閲覧"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看"
+          }
+        }
+      }
+    },
+    "Removes this filter": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このフィルタを解除します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除此筛选条件"
+          }
+        }
+      }
+    },
+    "See the photos and save them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を見て、保存できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看照片并保存。"
+          }
+        }
+      }
+    },
+    "Stop sharing with %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@との共有をやめますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止与%@共享？"
+          }
+        }
+      }
+    },
+    "The photos stay in their owners' libraries.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真はそれぞれの持ち主のライブラリに残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片仍保留在各自所有者的图库中。"
           }
         }
       }
@@ -5605,22 +5841,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "已恢复到图库"
-          }
-        }
-      }
-    },
-    "Save to Photos": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "写真に保存"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存到“照片”"
           }
         }
       }
@@ -59792,54 +60012,6 @@
         }
       }
     },
-    "Can contribute": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "写真を追加可"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可添加照片"
-          }
-        }
-      }
-    },
-    "Can view": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "表示のみ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "可查看"
-          }
-        }
-      }
-    },
-    "Cannot save to Photos": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "写真に保存できません"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无法保存到“照片”"
-          }
-        }
-      }
-    },
     "Change date": {
       "localizations": {
         "ja": {
@@ -59968,23 +60140,7 @@
         }
       }
     },
-    "Empty trash": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ゴミ箱を空にする"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清空废纸篓"
-          }
-        }
-      }
-    },
-    "Empty trash?": {
+    "Empty the Trash?": {
       "localizations": {
         "ja": {
           "stringUnit": {
@@ -60252,22 +60408,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "有人向与你共享的相簿添加了照片"
-          }
-        }
-      }
-    },
-    "Photos taken on these days, on the clock where they were taken.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "これらの日に撮影された写真。撮影地の時刻で数えます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在这些日期拍摄的照片，按拍摄地点的时间计算。"
           }
         }
       }
@@ -60652,38 +60792,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "第一天晚于最后一天，因此没有照片符合。"
-          }
-        }
-      }
-    },
-    "They also add photos of their own to the album, and take out the ones they added.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自分の写真をアルバムに追加したり、自分が追加した写真を削除したりもできます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "他们还可以向相簿添加自己的照片，并移除自己添加的照片。"
-          }
-        }
-      }
-    },
-    "They see the photos in the album and can save them to their own library.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アルバムの写真を見たり、自分のライブラリに保存したりできます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "他们可以查看相簿中的照片，并将其保存到自己的图库。"
           }
         }
       }

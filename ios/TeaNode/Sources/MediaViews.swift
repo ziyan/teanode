@@ -339,7 +339,7 @@ struct FileCard: View {
                         if isSavingToLibrary {
                             ProgressView()
                         } else {
-                            Label("Save to Photos", systemImage: "photo.badge.plus")
+                            Label("Save to my library", systemImage: "photo.badge.plus")
                         }
                     }
                     .buttonStyle(.bordered)
@@ -354,7 +354,7 @@ struct FileCard: View {
             }
         }
         .sensoryFeedback(.success, trigger: savedPhotoId)
-        .alert("Cannot save to Photos", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
+        .alert("Cannot save to my library", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
             Button("OK", role: .cancel) {}
         } message: { text in
             Text(text)

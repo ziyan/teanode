@@ -28,7 +28,7 @@ final class PhotoPreviewCacheTests: XCTestCase {
     }
 
     private func setAge(_ seconds: TimeInterval, ofFileFor path: String, accountKey: String) throws {
-        let name = PhotoPreviewCache.fileName(accountKey: accountKey, path: path)
+        let name = PhotoPreviewCache.cacheFilename(accountKey: accountKey, path: path)
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-seconds)], ofItemAtPath: directory.appendingPathComponent(name).path)
     }
 
@@ -75,9 +75,9 @@ final class PhotoPreviewCacheTests: XCTestCase {
         try setAge(1_000, ofFileFor: paths[0], accountKey: connection.accountKey)
         try setAge(500, ofFileFor: paths[1], accountKey: connection.accountKey)
         _ = try await cache.data(for: paths[2], using: connection)
-        let names = Set(paths.map { PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: $0) })
+        let names = Set(paths.map { PhotoPreviewCache.cacheFilename(accountKey: connection.accountKey, path: $0) })
         let kept = Set(try files())
-        XCTAssertEqual(kept, [PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: paths[1]), PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: paths[2])])
+        XCTAssertEqual(kept, [PhotoPreviewCache.cacheFilename(accountKey: connection.accountKey, path: paths[1]), PhotoPreviewCache.cacheFilename(accountKey: connection.accountKey, path: paths[2])])
         XCTAssertTrue(kept.isSubset(of: names))
         let size = await cache.sizeBytes()
         XCTAssertEqual(size, 120)
@@ -98,7 +98,7 @@ final class PhotoPreviewCacheTests: XCTestCase {
         XCTAssertEqual(fake.sent.count, 2)
         _ = try await later.data(for: paths[2], using: connection)
         let kept = Set(try files())
-        XCTAssertEqual(kept, [PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: paths[0]), PhotoPreviewCache.fileName(accountKey: connection.accountKey, path: paths[2])])
+        XCTAssertEqual(kept, [PhotoPreviewCache.cacheFilename(accountKey: connection.accountKey, path: paths[0]), PhotoPreviewCache.cacheFilename(accountKey: connection.accountKey, path: paths[2])])
     }
 
     func testGoingOverTheLimitMakesRoomForTheNextWritesWithoutReadingTheDirectoryAgain() async throws {
@@ -143,10 +143,10 @@ final class PhotoPreviewCacheTests: XCTestCase {
     }
 
     func testFileNamesAreStableAndTellAddressesApart() {
-        let name = PhotoPreviewCache.fileName(accountKey: "a", path: "/p?v=1")
-        XCTAssertEqual(name, PhotoPreviewCache.fileName(accountKey: "a", path: "/p?v=1"))
+        let name = PhotoPreviewCache.cacheFilename(accountKey: "a", path: "/p?v=1")
+        XCTAssertEqual(name, PhotoPreviewCache.cacheFilename(accountKey: "a", path: "/p?v=1"))
         XCTAssertEqual(name.count, 32)
-        XCTAssertNotEqual(name, PhotoPreviewCache.fileName(accountKey: "a", path: "/p?v=2"))
-        XCTAssertNotEqual(name, PhotoPreviewCache.fileName(accountKey: "b", path: "/p?v=1"))
+        XCTAssertNotEqual(name, PhotoPreviewCache.cacheFilename(accountKey: "a", path: "/p?v=2"))
+        XCTAssertNotEqual(name, PhotoPreviewCache.cacheFilename(accountKey: "b", path: "/p?v=1"))
     }
 }

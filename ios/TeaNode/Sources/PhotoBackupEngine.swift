@@ -5,6 +5,22 @@ import Observation
 import TeaNodeKit
 import UIKit
 
+/// PhotoBackupAppActivity says whether the app is the one the person is using,
+/// readable from any thread, for the coordinator to decide when to write the
+/// index. It starts as not active, which only makes the index written more
+/// often.
+final class PhotoBackupAppActivity: @unchecked Sendable {
+    static let shared = PhotoBackupAppActivity()
+
+    private let lock = NSLock()
+    private var isActiveNow = false
+
+    var isActive: Bool {
+        get { lock.withLock { isActiveNow } }
+        set { lock.withLock { isActiveNow = newValue } }
+    }
+}
+
 /// PhotoBackupEngine backs up this iPhone's photo library to the server. The
 /// screens read its `status` and turn it on and off; the work is done by a
 /// PhotoBackupCoordinator (TeaNodeKit), which reads the library, queues the
@@ -83,6 +99,8 @@ final class PhotoBackupEngine {
     @ObservationIgnored private var coordinator: PhotoBackupCoordinator?
     @ObservationIgnored private var coordinatorAccountKey: String?
     @ObservationIgnored private var passTask: Task<Void, Never>?
+    /// Waits for the time the server asked for before the files are sent again.
+    @ObservationIgnored private var retryTask: Task<Void, Never>?
     /// Counts the passes started, so that a pass that ends late does not clear
     /// the task of the one that replaced it.
     @ObservationIgnored private var passGeneration = 0
@@ -105,6 +123,16 @@ final class PhotoBackupEngine {
         // background writes what is left, as the app may be suspended at once.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { PhotoBackupEngine.shared.sceneWentToBackground() }
+        }
+        // The coordinator writes the index at once after an upload that
+        // finishes while the app is not the one in use, since it may be
+        // suspended right after.
+        PhotoBackupAppActivity.shared.isActive = UIApplication.shared.applicationState == .active
+        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            PhotoBackupAppActivity.shared.isActive = true
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
+            PhotoBackupAppActivity.shared.isActive = false
         }
     }
 
@@ -183,9 +211,19 @@ final class PhotoBackupEngine {
     /// wherever a pass can start, the launch of a background task included,
     /// or an upload that finishes with nobody attached is not recorded.
     private func attachSession() {
-        PhotoBackupSession.shared.attach { job, outcome in
-            await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
-        }
+        PhotoBackupSession.shared.attach(
+            finishHandler: { job, outcome in
+                await PhotoBackupEngine.shared.sessionFinished(job, outcome: outcome)
+            },
+            flushHandler: {
+                await PhotoBackupEngine.shared.flushIndex()
+            })
+    }
+
+    /// Writes the index, if there is one yet. The background session asks for
+    /// it before it tells the system it is done with its events.
+    func flushIndex() async {
+        await index?.flush()
     }
 
     /// The app has gone to the background: writes the index.
@@ -513,6 +551,20 @@ final class PhotoBackupEngine {
         if generation == passGeneration { passTask = nil }
         await refresh()
         scheduleOvernightPass()
+        await scheduleRetryPass()
+    }
+
+    /// When the server asked for the files to be sent again later (a
+    /// Retry-After), a pass starts then, if the app is still running.
+    private func scheduleRetryPass() async {
+        retryTask?.cancel()
+        retryTask = nil
+        guard isEnabled, let retryTime = await coordinator?.pendingRetryTime else { return }
+        retryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(1, retryTime.timeIntervalSinceNow)))
+            guard !Task.isCancelled else { return }
+            self?.startPasses()
+        }
     }
 
     func stopPasses() {
@@ -549,7 +601,8 @@ final class PhotoBackupEngine {
         let connection = Self.makeConnection(accountKey: accountKey)
         let made = PhotoBackupCoordinator(
             index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, lookup: connection, network: DeviceNetwork(),
-            outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential)
+            outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential,
+            isAppActive: { PhotoBackupAppActivity.shared.isActive })
         coordinator = made
         coordinatorAccountKey = accountKey
         // A pass started by a background task launch has not come through the
@@ -638,7 +691,10 @@ final class PhotoBackupEngine {
         private func applyDemo() {
             let isWaiting = DemoServer.screen == "photos-backup-waiting"
             let isOn = DemoServer.screen == "photos-backup-on" || isWaiting
-            enabledAccountKey = isOn ? "demo.example.com|robin" : nil
+            // `settings-photo-backup-other-account` and `photos-backup-other-account` have backup on for a
+            // different account than the one signed in.
+            let isOnForOtherAccount = DemoServer.screen == "settings-photo-backup-other-account" || DemoServer.screen == "photos-backup-other-account"
+            enabledAccountKey = isOn ? "demo.example.com|robin" : (isOnForOtherAccount ? "photos.example.org|sam" : nil)
             credentialName = isOn ? "Robin's iPhone photo backup" : nil
             accessProblem = nil
             if isWaiting {
@@ -652,7 +708,9 @@ final class PhotoBackupEngine {
                 ? PhotoBackupStatus(
                     phase: .uploading, backedUpItemCount: 1284, libraryItemCount: 3912, plannedFileCount: 2891, finishedFileCount: 1284,
                     queuedFileCount: 4, currentFilename: "IMG_2041.MOV", lastPassFinishedAt: Date(timeIntervalSinceNow: -86_400))
-                : PhotoBackupStatus(phase: .off)
+                : (isOnForOtherAccount
+                    ? PhotoBackupStatus(phase: .idle, backedUpItemCount: 3_912, libraryItemCount: 3_912, lastPassFinishedAt: Date(timeIntervalSinceNow: -3_600))
+                    : PhotoBackupStatus(phase: .off))
         }
     #endif
 }

@@ -103,9 +103,9 @@ extension Connection {
     }
 
     /// Reads what a signed address serves, which needs no sign-in, into a
-    /// file named fileName in a folder of its own, with a download task so
+    /// file named filename in a folder of its own, with a download task so
     /// that the bytes never sit in memory. The caller removes the folder.
-    func downloadFile(from address: URL, fileName: String) async throws -> URL {
+    func downloadFile(from address: URL, filename: String) async throws -> URL {
         let (temporaryURL, response) = try await transport.download(URLRequest(url: address))
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
@@ -115,7 +115,7 @@ extension Connection {
                 throw [403, 404, 410].contains(response.statusCode) ? PhotoError.fileNotAvailable : PhotoError.fileCouldNotBeRead
             }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let safeName = fileName.isEmpty ? "photo" : fileName.replacingOccurrences(of: "/", with: "-")
+            let safeName = filename.isEmpty ? "photo" : filename.replacingOccurrences(of: "/", with: "-")
             let fileURL = folder.appendingPathComponent(safeName)
             try FileManager.default.moveItem(at: temporaryURL, to: fileURL)
             return fileURL

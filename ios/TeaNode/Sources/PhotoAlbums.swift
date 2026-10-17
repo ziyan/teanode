@@ -141,20 +141,49 @@ struct PhotoSelectionToolbar: ToolbarContent {
     let selectedPhotos: [Photo]
     let listKey: PhotoListKey
     let scope: AlbumTitleRequest.Scope
+    /// The album whose photos are listed, if the list is one; read by the
+    /// screen that shows it, since the albums are the model's to say.
+    var album: PhotoAlbum?
     @Binding var isConfirmingTrash: Bool
     let onEnd: () -> Void
 
     private var isEmpty: Bool { selectedPhotos.isEmpty }
-    private var areAllFavorites: Bool { !selectedPhotos.isEmpty && selectedPhotos.allSatisfy(\.isFavorite) }
+    private var isEveryPhotoFavorite: Bool { !selectedPhotos.isEmpty && selectedPhotos.allSatisfy(\.isFavorite) }
     /// Whether the photos chosen are all the person's own. Somebody else's
     /// photo, seen through a shared album, can be kept or shared, not changed.
-    private var areAllOwn: Bool { selectedPhotos.allSatisfy(\.isOwnedByCaller) }
+    private var isEveryPhotoOwn: Bool { selectedPhotos.allSatisfy(\.isOwnedByCaller) }
+    /// Whether the album lets the person take any photo out of it: their own
+    /// when they may contribute, others' when they manage it.
+    private var isRemovalOffered: Bool { album.map { $0.canCallerContribute || $0.canCallerManage } ?? false }
+    /// Whether every photo chosen is one the person may take out of the album.
+    private var isEveryPhotoRemovable: Bool {
+        guard let album, !selectedPhotos.isEmpty else { return false }
+        return selectedPhotos.allSatisfy { album.canCallerRemove($0) }
+    }
 
     var body: some ToolbarContent {
-        if areAllOwn {
+        if isEveryPhotoOwn {
             ownBar
         } else {
             othersBar
+        }
+    }
+
+    /// Takes the photos chosen out of the album; they stay chosen if the
+    /// server refused.
+    @ToolbarContentBuilder
+    private var removeFromAlbumItem: some ToolbarContent {
+        if isRemovalOffered, let albumId = listKey.albumId {
+            ToolbarItem(placement: .bottomBar) {
+                Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
+                    let chosen = selectedPhotos
+                    Task {
+                        if await model.remove(chosen, fromAlbum: albumId) { onEnd() }
+                    }
+                }
+                .disabled(!isEveryPhotoRemovable)
+            }
+            ToolbarSpacer(.flexible, placement: .bottomBar)
         }
     }
 
@@ -170,6 +199,7 @@ struct PhotoSelectionToolbar: ToolbarContent {
             }
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
+        removeFromAlbumItem
         ToolbarItem(placement: .bottomBar) {
             PhotosShareLink(photos: selectedPhotos, connection: model.connection)
         }
@@ -182,26 +212,14 @@ struct PhotoSelectionToolbar: ToolbarContent {
                 .disabled(isEmpty)
         }
         ToolbarSpacer(.flexible, placement: .bottomBar)
-        if let albumId = listKey.albumId {
-            ToolbarItem(placement: .bottomBar) {
-                Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
-                    let chosen = selectedPhotos
-                    Task {
-                        // The photos stay chosen if the server refused.
-                        if await model.remove(chosen, fromAlbum: albumId) { onEnd() }
-                    }
-                }
-                .disabled(isEmpty)
-            }
-            ToolbarSpacer(.flexible, placement: .bottomBar)
-        }
+        removeFromAlbumItem
         ToolbarItem(placement: .bottomBar) {
             Button(
-                areAllFavorites ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"),
-                systemImage: areAllFavorites ? "heart.slash" : "heart"
+                isEveryPhotoFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"),
+                systemImage: isEveryPhotoFavorite ? "heart.slash" : "heart"
             ) {
                 let chosen = selectedPhotos
-                let isFavorite = !areAllFavorites
+                let isFavorite = !isEveryPhotoFavorite
                 Task {
                     await model.setFavorite(chosen, isFavorite: isFavorite, in: listKey)
                     onEnd()
@@ -522,14 +540,19 @@ struct PhotoAlbumScreen: View {
             }
             .albumTitleAlert(model: model, scope: .album, isActive: opened == nil)
             .onDisappear { model.dropPhotosNoLongerFavorite() }
+            // "Photos taken near here" is answered by the library, so this screen goes away.
+            .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
+                if photoNearFilter != nil { dismiss() }
+            }
             #if DEBUG
-                // `-TeaNodeScreen photos-share` opens the share sheet over the first album, and
+                // `-TeaNodeScreen photos-share` opens the share sheet over the first album, `photos-share-stop`
+                // the same with the question asked on its first share, and
                 // `photos-shared-viewer` the viewer over the first photo of a shared one.
                 .task(id: album?.id) {
-                    if DemoServer.isRequested, DemoServer.screen == "photos-share", album?.canCallerShare == true { isSharing = true }
+                    if DemoServer.isRequested, ["photos-share", "photos-share-stop"].contains(DemoServer.screen ?? ""), album?.canCallerShare == true { isSharing = true }
                 }
                 .task(id: photos.first?.id) {
-                    if DemoServer.isRequested, DemoServer.screen == "photos-shared-viewer", let first = photos.first, opened == nil {
+                    if DemoServer.isRequested, ["photos-shared-viewer", "photos-shared-info"].contains(DemoServer.screen ?? ""), let first = photos.first, opened == nil {
                         opened = OpenedPhoto(id: first.id)
                     }
                 }
@@ -552,7 +575,8 @@ struct PhotoAlbumScreen: View {
                 Button("Done") { endSelection() }
             }
             PhotoSelectionToolbar(
-                model: model, selectedPhotos: selectedPhotos, listKey: key, scope: .album, isConfirmingTrash: $isConfirmingTrashOfSelection, onEnd: endSelection)
+                model: model, selectedPhotos: selectedPhotos, listKey: key, scope: .album, album: album, isConfirmingTrash: $isConfirmingTrashOfSelection,
+                onEnd: endSelection)
         } else {
             if !photos.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
@@ -584,7 +608,12 @@ struct PhotoAlbumScreen: View {
                             }
                         }
                     } message: {
-                        Text("The photos stay in your library.")
+                        // Photos other people added stay in their owners' libraries, not in the person's.
+                        if album.isCircleAlbum || photos.contains(where: { !$0.isOwnedByCaller }) {
+                            Text("The photos stay in their owners' libraries.")
+                        } else {
+                            Text("The photos stay in your library.")
+                        }
                     }
                 }
             }

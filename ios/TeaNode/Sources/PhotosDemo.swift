@@ -8,8 +8,11 @@
     /// `photos-empty`, `photos-select`, `photos-trash-select`, `photos-search`, `photos-viewer-failed`,
     /// `photos-albums`, `photos-album`, `photos-people`, `photos-person`,
     /// `photos-shared-albums`, `photos-share`, `photos-shared-album`, `photos-shared-viewer`,
-    /// `photos-filter`, `photos-filter-dates` or `photos-change-date`
-    /// (and `photos-faces`, in Settings). The photos are invented, and their pictures are drawn
+    /// `photos-filter`, `photos-filter-dates`, `photos-near`, `photos-change-date`,
+    /// `photos-shared-info` (Info over a photo another person shared), `photos-share-stop` (the question
+    /// before a share is stopped) or `photos-new-circle-album` (the question for the title of a circle's album)
+    /// (and `photos-faces`, `photos-conversation-card`, `photos-backup-other-account` and
+    /// `settings-photo-backup-other-account`, in Settings). The photos are invented, and their pictures are drawn
     /// here: a gradient and a few shapes in a color taken from the photo's id.
     extension DemoServer {
         private struct DemoPhoto {
@@ -23,6 +26,9 @@
             var isTrashed = false
             var placeName = ""
             var isPortrait = false
+            /// Where it was taken, if the server tells the reader.
+            var latitude: Double?
+            var longitude: Double?
             /// The files the server holds for the photo, such as "edited".
             var fileRoles = ["original"]
             var failureMessage = ""
@@ -32,19 +38,42 @@
             var isForeign: Bool { !ownerName.isEmpty }
         }
 
+        /// An invented place for the photos of Riverside Park.
+        static let demoRiversideLatitude = 10.5
+        static let demoRiversideLongitude = 20.5
+        private static var riversideLatitude: Double { demoRiversideLatitude }
+        private static var riversideLongitude: Double { demoRiversideLongitude }
+
+        /// The distance in kilometers between two places, near enough for a demo.
+        private static func kilometers(fromLatitude: Double, fromLongitude: Double, toLatitude: Double, toLongitude: Double) -> Double {
+            let radians = Double.pi / 180
+            let latitudeSpan = (toLatitude - fromLatitude) * radians
+            let longitudeSpan = (toLongitude - fromLongitude) * radians
+            let haversine =
+                pow(sin(latitudeSpan / 2), 2) + cos(fromLatitude * radians) * cos(toLatitude * radians) * pow(sin(longitudeSpan / 2), 2)
+            return 2 * 6371 * asin(min(1, sqrt(haversine)))
+        }
+
         private static let demoPhotos: [DemoPhoto] = [
-            DemoPhoto(id: "demo-01", kind: "picture", takenAt: "2026-10-15T18:42:00Z", offsetMinutes: -240, isFavorite: true, placeName: "Riverside Park", isPortrait: true),
-            DemoPhoto(id: "demo-02", kind: "picture", takenAt: "2026-10-15T18:40:00Z", offsetMinutes: -240, placeName: "Riverside Park", fileRoles: ["original", "edited"]),
+            DemoPhoto(id: "demo-01", kind: "picture", takenAt: "2026-10-15T18:42:00Z", offsetMinutes: -240, isFavorite: true, placeName: "Riverside Park", isPortrait: true,
+                latitude: riversideLatitude, longitude: riversideLongitude),
+            DemoPhoto(
+                id: "demo-02", kind: "picture", takenAt: "2026-10-15T18:40:00Z", offsetMinutes: -240, placeName: "Riverside Park", latitude: riversideLatitude,
+                longitude: riversideLongitude, fileRoles: ["original", "edited"]),
             DemoPhoto(id: "demo-03", kind: "video", takenAt: "2026-10-15T12:05:00Z", offsetMinutes: -240, durationMS: 23_000),
             DemoPhoto(id: "demo-04", kind: "picture", takenAt: "2026-10-15T09:30:00Z", offsetMinutes: -240, processingState: "waiting"),
             DemoPhoto(id: "demo-05", kind: "picture", takenAt: "2026-10-14T21:10:00Z", offsetMinutes: -240, isPortrait: true),
-            DemoPhoto(id: "demo-06", kind: "picture", takenAt: "2026-10-14T15:00:00Z", offsetMinutes: -240, isFavorite: true),
+            DemoPhoto(
+                id: "demo-06", kind: "picture", takenAt: "2026-10-14T15:00:00Z", offsetMinutes: -240, isFavorite: true, placeName: "Riverside Park",
+                latitude: riversideLatitude + 0.003, longitude: riversideLongitude + 0.003),
             DemoPhoto(id: "demo-07", kind: "video", takenAt: "2026-10-14T14:00:00Z", offsetMinutes: -240, durationMS: 83_000),
             DemoPhoto(
                 id: "demo-08", kind: "picture", takenAt: "2026-10-14T10:00:00Z", offsetMinutes: -240, processingState: "failed",
                 failureMessage: "The picture could not be read, so no preview was made."),
-            DemoPhoto(id: "demo-09", kind: "picture", takenAt: "2026-10-12T08:00:00Z", offsetMinutes: 540, isFavorite: true, placeName: "Harbor Market"),
-            DemoPhoto(id: "demo-10", kind: "picture", takenAt: "2026-10-12T05:20:00Z", offsetMinutes: 540, placeName: "Harbor Market", isPortrait: true),
+            DemoPhoto(id: "demo-09", kind: "picture", takenAt: "2026-10-12T08:00:00Z", offsetMinutes: 540, isFavorite: true, placeName: "Harbor Market", latitude: 10.9, longitude: 20.9),
+            DemoPhoto(
+                id: "demo-10", kind: "picture", takenAt: "2026-10-12T05:20:00Z", offsetMinutes: 540, placeName: "Harbor Market", isPortrait: true, latitude: 10.9,
+                longitude: 20.9),
             DemoPhoto(id: "demo-11", kind: "picture", takenAt: "2026-10-12T03:45:00Z", offsetMinutes: 540),
             DemoPhoto(id: "demo-12", kind: "video", takenAt: "2026-10-11T22:10:00Z", offsetMinutes: 540, durationMS: 3_725_000),
             DemoPhoto(id: "demo-13", kind: "picture", takenAt: "2026-10-02T16:00:00Z", offsetMinutes: -240),
@@ -101,6 +130,9 @@
         private static let demoSharesJSON =
             #"[{"id":"share-1","photoAlbumId":"demo-album-1","granteeUserId":"user-sam","granteeUsername":"sam","granteeName":"Sam Placeholder","granteeAvatarUrl":null,"granteeAvatarColorIndex":4,"granteeCircleId":null,"granteeCircleName":"","shareLevel":"contribute","isLocationIncluded":true,"createdAt":"2026-10-12T10:00:00Z"},{"id":"share-2","photoAlbumId":"demo-album-1","granteeUserId":null,"granteeUsername":"","granteeName":"","granteeAvatarUrl":null,"granteeAvatarColorIndex":0,"granteeCircleId":"circle-family","granteeCircleName":"Family","shareLevel":"view","isLocationIncluded":false,"createdAt":"2026-10-12T10:05:00Z"}]"#
 
+        /// The names in the photos of other people, by photo.
+        private static let demoForeignNames: [String: [String]] = ["demo-s1": ["Sam Placeholder", "Robin Example"]]
+
         /// A person the demo server has found in the photos, with the photos they
         /// are in. Invented, like everything here; an empty name is a person
         /// nobody has named.
@@ -128,7 +160,14 @@
 
         /// The faces the demo server found in one photo.
         private static func facesJSON(photoId: String) -> String {
-            demoPeople.filter { $0.photoIds.contains(photoId) }.enumerated().map { index, person in
+            // The people in a photo another person shared are named as that person named them, and the
+            // reader gets no group to open and no face picture.
+            if let names = demoForeignNames[photoId] {
+                return names.enumerated().map { index, name in
+                    #"{"id":"face-shared-\#(photoId)-\#(index)","photoId":"\#(photoId)","boxLeftFraction":\#(0.2 + 0.3 * Double(index)),"boxTopFraction":0.3,"boxWidthFraction":0.2,"boxHeightFraction":0.2,"photoFaceGroupId":"","contactId":"","contactName":"\#(name)","facePictureUrl":""}"#
+                }.joined(separator: ",")
+            }
+            return demoPeople.filter { $0.photoIds.contains(photoId) }.enumerated().map { index, person in
                 let contactId = person.name.isEmpty ? "" : "contact-" + person.id
                 return #"{"id":"\#(person.coverFaceId)","photoId":"\#(photoId)","boxLeftFraction":\#(0.2 + 0.3 * Double(index)),"boxTopFraction":0.3,"boxWidthFraction":0.2,"boxHeightFraction":0.2,"photoFaceGroupId":"\#(person.id)","contactId":"\#(contactId)","contactName":"\#(person.name)","facePictureUrl":"/api/v1/photos/faces/\#(person.coverFaceId)/picture"}"#
             }.joined(separator: ",")
@@ -169,8 +208,13 @@
             let largePreviewUrl = isReady ? previewPath + "large?v=1" : ""
             let videoPreviewUrl = isReady && isVideo ? previewPath + "video?v=1" : ""
             let trashedAt = photo.isTrashed ? #""2026-10-12T10:00:00Z""# : "null"
-            let fileRoles = photo.fileRoles.map { "\"" + $0 + "\"" }.joined(separator: ",")
-            return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":null,"longitude":null,"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)","photoFileRoles":[\#(fileRoles)],"processingErrorMessage":"\#(photo.failureMessage)","isOwnedByCaller":\#(!photo.isForeign),"ownerName":"\#(photo.ownerName)"\#(extraFields)}"#
+            // A photo another person shared without places reaches the reader with no file name and
+            // no files of its own, only previews, as the server sends it.
+            let fileRoles = (photo.isForeign ? [] : photo.fileRoles).map { "\"" + $0 + "\"" }.joined(separator: ",")
+            let originalFilename = photo.isForeign ? "" : "IMG_\(photo.id.suffix(2)).\(isVideo ? "MOV" : "HEIC")"
+            let latitude = photo.latitude.map { String($0) } ?? "null"
+            let longitude = photo.longitude.map { String($0) } ?? "null"
+            return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":\#(latitude),"longitude":\#(longitude),"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"\#(originalFilename)","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)","photoFileRoles":[\#(fileRoles)],"processingErrorMessage":"\#(photo.failureMessage)","isOwnedByCaller":\#(!photo.isForeign),"ownerName":"\#(photo.ownerName)"\#(extraFields)}"#
         }
 
         /// The answer to a request about photos: a GraphQL document, or a
@@ -178,6 +222,10 @@
         static func photoAnswer(_ request: URLRequest) -> Data? {
             if let url = request.url, url.path.hasPrefix("/api/v1/photos/") {
                 return photoPicture(path: url.path)
+            }
+            // The picture on the card of `photos-conversation-card`.
+            if let url = request.url, url.path == "/api/v1/agent/attachments/demo-picture" {
+                return photoPicture(path: "/api/v1/photos/demo-09/previews/large")
             }
             let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
             let variables = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any])?["variables"] as? [String: Any] ?? [:]
@@ -262,6 +310,14 @@
                     let members = demoPeople.first { $0.id == faceGroupId }?.photoIds ?? []
                     chosen = chosen.filter { members.contains($0.id) }
                 }
+                if let latitude = variables["nearLatitude"] as? Double, let longitude = variables["nearLongitude"] as? Double,
+                    let distance = variables["nearDistanceKilometers"] as? Double
+                {
+                    chosen = chosen.filter { photo in
+                        guard let photoLatitude = photo.latitude, let photoLongitude = photo.longitude else { return false }
+                        return kilometers(fromLatitude: latitude, fromLongitude: longitude, toLatitude: photoLatitude, toLongitude: photoLongitude) <= distance
+                    }
+                }
                 if let after = variables["takenAfter"] as? String { chosen = chosen.filter { $0.takenAt >= after } }
                 if let before = variables["takenBefore"] as? String { chosen = chosen.filter { $0.takenAt < before } }
                 // A search keeps the photos whose place or file name has the words.
@@ -278,7 +334,7 @@
                 let file =
                     #"{"photoFileRole":"original","contentType":"\#(isVideo ? "video/quicktime" : "image/heic")","fileSizeBytes":\#(isVideo ? 48_200_000 : 2_345_678),"originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","fileUrl":"/api/v1/photos/\#(photo.id)/files/original"}"#
                 let albums = demoAlbums.filter { $0.photoIds.contains(photo.id) }.map { #"{"id":"\#($0.id)","albumTitle":"\#($0.title)"}"# }.joined(separator: ",")
-                json = #"{"data":{"ReadPhoto":{"photo":\#(photoJSON(photo, extraFields: describedFields(photoId: photo.id))),"photoFiles":[\#(file)],"photoPreviews":[],"albums":[\#(albums)],"faces":[\#(facesJSON(photoId: photo.id))]}}}"#
+                json = #"{"data":{"ReadPhoto":{"photo":\#(photoJSON(photo, extraFields: describedFields(photoId: photo.id))),"photoFiles":[\#(photo.isForeign ? "" : file)],"photoPreviews":[],"albums":[\#(albums)],"faces":[\#(facesJSON(photoId: photo.id))]}}}"#
             } else if body.contains("UpdatePhoto") {
                 var photo = demoPhotos.first { $0.id == (variables["photoId"] as? String) } ?? demoPhotos[0]
                 photo.isFavorite = variables["isFavorite"] as? Bool ?? photo.isFavorite
@@ -349,6 +405,23 @@
                 UIColor(hue: hue, saturation: 0.6, brightness: 0.28, alpha: 0.95).setFill()
                 context.cgContext.fillEllipse(in: CGRect(x: canvas.width * 0.3, y: canvas.height * 0.72, width: canvas.width * 1.1, height: canvas.height * 0.9))
             }
+        }
+    }
+
+    /// PhotoConversationCardDemo is the card a picture gets in a conversation, with its Save to my
+    /// library button, on its own: `-TeaNodeScreen photos-conversation-card`. The picture is drawn by
+    /// the demo server.
+    struct PhotoConversationCardDemo: View {
+        private let file = AgentFile.of(
+            toolResult:
+                #"{"attachment_id":"demo-picture","url":"/api/v1/agent/attachments/demo-picture","name":"harbor-market.jpg","content_type":"image/jpeg","size":2345678,"caption":"The market by the harbor."}"#
+        ).first
+
+        var body: some View {
+            ScrollView {
+                if let file { FileCard(file: file).padding() }
+            }
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 #endif

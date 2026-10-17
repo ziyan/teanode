@@ -86,12 +86,21 @@ struct PhotoListing {
     /// are laid out in that order in one group, not in days.
     let isRanked: Bool
     var isLoadingPage = false
+    /// The photo the next page is asked for after. It is the last photo of the
+    /// page read last, which is not the last of `photos` once a photo has been
+    /// given another date (see `place`).
+    private(set) var pageCursorPhotoId: String?
+    /// Whether a photo was placed after every photo held while more are still
+    /// to be read, so the photos are put in order again when the next page
+    /// is added.
+    private var isOutOfOrder = false
 
     init(photos: [Photo], hasMore: Bool, isRanked: Bool = false) {
         self.photos = photos
         self.isRanked = isRanked
         self.days = isRanked ? PhotoTimeline.rankedDay(photos) : PhotoTimeline.days(photos)
         self.hasMore = hasMore
+        self.pageCursorPhotoId = photos.last?.id
     }
 
     private mutating func layOut() {
@@ -100,6 +109,11 @@ struct PhotoListing {
 
     mutating func append(_ page: [Photo]) {
         photos = PhotoPaging.appending(page, to: photos)
+        if isOutOfOrder {
+            photos = PhotoTimeline.sorted(photos)
+            isOutOfOrder = false
+        }
+        if let last = page.last { pageCursorPhotoId = last.id }
         layOut()
         hasMore = PhotoPaging.hasMore(afterPageOf: page.count)
     }
@@ -108,6 +122,22 @@ struct PhotoListing {
     mutating func replace(_ photo: Photo) {
         guard let index = photos.firstIndex(where: { $0.id == photo.id }) else { return }
         photos[index] = photo
+        layOut()
+    }
+
+    /// Puts a photo whose date was changed, as the server now has it, where
+    /// that date puts it among the photos held, and regroups the days. The
+    /// list is not read again: that would lose the photo from the page it was
+    /// on, and the viewer paging through it with it.
+    mutating func place(_ photo: Photo) {
+        guard !isRanked else {
+            replace(photo)
+            return
+        }
+        let placement = PhotoPlacement.place(photo, in: photos, pageCursorPhotoId: pageCursorPhotoId, hasMore: hasMore)
+        photos = placement.photos
+        pageCursorPhotoId = placement.pageCursorPhotoId
+        if placement.isBeyondHeldPhotos { isOutOfOrder = true }
         layOut()
     }
 
@@ -120,6 +150,12 @@ struct PhotoListing {
     }
 
     mutating func remove(_ photoIds: Set<String>) {
+        // The next page cannot be asked for after a photo that is gone: it
+        // follows the last photo before it that is left.
+        if let cursor = pageCursorPhotoId, photoIds.contains(cursor) {
+            let cursorIndex = photos.firstIndex { $0.id == cursor } ?? photos.count
+            pageCursorPhotoId = photos[..<cursorIndex].last { !photoIds.contains($0.id) }?.id
+        }
         photos.removeAll { photoIds.contains($0.id) }
         layOut()
     }
@@ -176,6 +212,26 @@ final class PhotosModel {
     }
 
     func listing(_ key: PhotoListKey) -> PhotoListing? { listings[key] }
+
+    /// The album whose photos a list holds, if it is one and the albums have
+    /// been read.
+    func album(in key: PhotoListKey) -> PhotoAlbum? {
+        guard let albumId = key.albumId else { return nil }
+        return albums?.first { $0.id == albumId }
+    }
+
+    /// Whether the person may take this photo out of the album a list holds:
+    /// their own photo when they may contribute to the album, somebody else's
+    /// only when they manage it.
+    func canRemove(_ photo: Photo, fromAlbumIn key: PhotoListKey) -> Bool {
+        album(in: key)?.canCallerRemove(photo) ?? false
+    }
+
+    /// Shows the library narrowed to the photos taken near a place.
+    func showPhotos(near photoNearFilter: PhotoNearFilter) {
+        section = .library
+        photoFilter = PhotoFilter(photoNearFilter: photoNearFilter)
+    }
 
     /// Forgets a list that has been read, so that it is read again when it is
     /// next shown.
@@ -245,15 +301,16 @@ final class PhotosModel {
     /// on screen.
     func loadMoreIfNeeded(showing photoId: String, in key: PhotoListKey) async {
         guard let listing = listings[key], listing.hasMore, !listing.isLoadingPage,
-            PhotoPaging.shouldLoadMore(whenShowing: photoId, in: listing.photos), let last = listing.photos.last
+            PhotoPaging.shouldLoadMore(whenShowing: photoId, in: listing.photos)
         else { return }
+        let cursorPhotoId = listing.pageCursorPhotoId
         listings[key]?.isLoadingPage = true
         defer { listings[key]?.isLoadingPage = false }
         do {
-            let page = try await fetchPage(key, beforePhotoId: last.id)
+            let page = try await fetchPage(key, beforePhotoId: cursorPhotoId)
             // The list may have been read again meanwhile; this page then
             // follows something that is no longer its end.
-            guard listings[key]?.photos.last?.id == last.id else { return }
+            guard listings[key]?.pageCursorPhotoId == cursorPhotoId else { return }
             listings[key]?.append(page)
         } catch {
             if !Task.isCancelled { problemText = describe(error) }
@@ -466,15 +523,16 @@ final class PhotosModel {
         }
     }
 
-    /// Places a photo at another date. The lists are read again, since the
-    /// photo has moved in them; the one the viewer is paging through is read
-    /// first so the viewer stays on the photo.
+    /// Places a photo at another date. In the list the viewer is paging
+    /// through the photo is moved to its new place and the days are grouped
+    /// again, so the viewer stays on the photo even when the new date puts it
+    /// far from where it was; the other lists are forgotten and read again
+    /// when next shown.
     func changeDate(of photo: Photo, to date: Date, in key: PhotoListKey) async -> Bool {
         do {
             let text = PhotoDateChange.takenAtText(for: date, photo: photo)
             let changed = try await connection.changePhotoDate(photo.id, takenAtText: text)
-            for listKey in Array(listings.keys) { listings[listKey]?.replace(changed) }
-            await reload(key)
+            listings[key]?.place(changed)
             for listKey in Array(listings.keys) where listKey != key { forgetListing(listKey) }
             if albums != nil { await reloadAlbums() }
             doneText = String(localized: "Changed the date")
@@ -658,6 +716,21 @@ final class PhotosModel {
     }
 }
 
+/// PhotoLoadID is what the screen loads for: the section, and the list it shows,
+/// which a kind, a date or a place filter changes without the section changing.
+/// Loading is started again whenever either changes.
+private struct PhotoLoadID: Equatable {
+    let section: PhotoSection
+    let key: PhotoListKey?
+}
+
+/// PhotoFollowID is what a screen follows waiting photos for: the list, and
+/// whether any photo of it is still being made ready.
+private struct PhotoFollowID: Equatable {
+    let key: PhotoListKey?
+    let hasWaitingPhotos: Bool
+}
+
 /// OpenedPhoto is the photo the viewer was opened on.
 struct OpenedPhoto: Identifiable {
     let id: String
@@ -691,8 +764,14 @@ struct PhotosScreen: View {
             if DemoServer.isRequested, DemoServer.screen == "photos-trash" || DemoServer.screen == "photos-trash-select" { model.section = .trash }
             if DemoServer.isRequested, DemoServer.screen == "photos-albums" || DemoServer.screen == "photos-album" { model.section = .albums }
             if DemoServer.isRequested, DemoServer.screen == "photos-people" || DemoServer.screen == "photos-person" { model.section = .people }
-            if DemoServer.isRequested, ["photos-shared-albums", "photos-share", "photos-shared-album", "photos-shared-viewer"].contains(DemoServer.screen ?? "") {
+            if DemoServer.isRequested, ["photos-shared-albums", "photos-share", "photos-share-stop", "photos-shared-album", "photos-shared-viewer", "photos-shared-info", "photos-new-circle-album"]
+                .contains(DemoServer.screen ?? "")
+            {
                 model.section = .albums
+            }
+            // `photos-near` is the library narrowed to the photos taken near the place of the first photo.
+            if DemoServer.isRequested, DemoServer.screen == "photos-near" {
+                model.photoFilter = PhotoFilter(photoNearFilter: PhotoNearFilter(latitudeDegrees: DemoServer.demoRiversideLatitude, longitudeDegrees: DemoServer.demoRiversideLongitude, placeName: "Riverside Park"))
             }
             // `photos-filter` is the library narrowed to videos, and `photos-filter-dates` has the days to choose over it.
             if DemoServer.isRequested, DemoServer.screen == "photos-filter" || DemoServer.screen == "photos-filter-dates" {
@@ -736,13 +815,20 @@ struct PhotosScreen: View {
                 .modifier(LibrarySearch(isActive: model.section == .library, text: $searchText))
                 .navigationTitle(isSelecting ? selectionTitle : String(localized: "Photos"))
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Picker("Show", selection: $model.section) {
-                        ForEach(model.sections) { section in
-                            Text(section.title).tag(section)
+                    VStack(spacing: 8) {
+                        Picker("Show", selection: $model.section) {
+                            ForEach(model.sections) { section in
+                                Text(section.title).tag(section)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        if let photoNearFilter = model.photoFilter.photoNearFilter, model.section.collection != nil {
+                            PhotoNearChip(photoNearFilter: photoNearFilter) {
+                                model.photoFilter.photoNearFilter = nil
+                            }
                         }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                     .padding(.horizontal)
                     .padding(.bottom, 8)
                 }
@@ -769,9 +855,12 @@ struct PhotosScreen: View {
                     model.forgetListings { $0.isSearch && $0 != .search(searchWords) }
                     await model.load(.search(searchWords))
                 }
-                .task(id: model.section) {
+                // Reads the list on show, and again when a filter changes which list
+                // that is: the section alone would leave a narrowed list unread.
+                .task(id: PhotoLoadID(section: model.section, key: key)) {
                     if let key {
-                        await model.load(key)
+                        // A search is asked for by the task above, after a pause.
+                        if !key.isSearch { await model.load(key) }
                     } else if model.section == .people {
                         await model.loadFaceGroups()
                     } else {
@@ -782,13 +871,17 @@ struct PhotosScreen: View {
                 // The albums the Add to Album menus list, and the circles an album can be for.
                 .task { await model.loadAlbums() }
                 .task { await model.loadCircles() }
-                .task(id: key.map { model.hasWaitingPhotos(in: $0) }) {
+                .task(id: PhotoFollowID(key: key, hasWaitingPhotos: key.map { model.hasWaitingPhotos(in: $0) } ?? false)) {
                     if let key, model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
                 }
                 .onChange(of: model.section) { _, _ in endSelection() }
                 // Typing in the search field changes the list under the chosen photos.
                 .onChange(of: searchWords) { _, _ in endSelection() }
                 .onChange(of: model.photoFilter) { _, _ in endSelection() }
+                // "Photos taken near here" shows the library, so words typed in its search are put away.
+                .onChange(of: model.photoFilter.photoNearFilter) { _, photoNearFilter in
+                    if photoNearFilter != nil { searchText = "" }
+                }
                 .sheet(isPresented: $isChoosingDates) { PhotoDateFilterSheet(model: model) }
                 .albumTitleAlert(model: model, scope: .library, isActive: opened == nil)
                 #if DEBUG
@@ -806,11 +899,20 @@ struct PhotosScreen: View {
         .toast(done: $model.doneText, problem: $model.problemText)
         #if DEBUG
             // `-TeaNodeScreen photos-album` opens the first album, `photos-share` the same with its
-            // share sheet over it, and `photos-shared-album` and `photos-shared-viewer` the first
-            // album another person shared (the viewer over its first photo).
+            // share sheet over it (`photos-share-stop` with the question before a share is stopped), and
+            // `photos-shared-album`, `photos-shared-viewer` and `photos-shared-info` the first album
+            // another person shared (the viewer over its first photo, and Info over that).
             .task(id: model.albums?.map(\.id)) {
-                if DemoServer.isRequested, ["photos-album", "photos-share", "photos-shared-album", "photos-shared-viewer"].contains(DemoServer.screen ?? ""), demoAlbum != nil {
+                if DemoServer.isRequested, ["photos-album", "photos-share", "photos-share-stop", "photos-shared-album", "photos-shared-viewer", "photos-shared-info"].contains(DemoServer.screen ?? ""),
+                    demoAlbum != nil
+                {
                     isDemoAlbumOpened = true
+                }
+            }
+            // `-TeaNodeScreen photos-new-circle-album` asks for the title of an album for the first circle.
+            .task(id: model.circles.map(\.id)) {
+                if DemoServer.isRequested, DemoServer.screen == "photos-new-circle-album", let circle = model.circles.first {
+                    model.requestAlbumTitle(.newForCircle(circle), scope: .library)
                 }
             }
             // `-TeaNodeScreen photos-person` opens the first person.
@@ -835,7 +937,7 @@ struct PhotosScreen: View {
     #if DEBUG
         /// The album the demo screens open on: another person's for the shared ones.
         private var demoAlbum: PhotoAlbum? {
-            if ["photos-shared-album", "photos-shared-viewer"].contains(DemoServer.screen ?? "") { return model.albums?.first { !$0.isOwnedByCaller } }
+            if ["photos-shared-album", "photos-shared-viewer", "photos-shared-info"].contains(DemoServer.screen ?? "") { return model.albums?.first { !$0.isOwnedByCaller } }
             return model.albums?.first
         }
     #endif
@@ -898,11 +1000,11 @@ struct PhotosScreen: View {
             if model.section == .trash, !photos.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button("Empty trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
+                        Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
-                    .confirmationDialog("Empty trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
+                    .confirmationDialog("Empty the Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
                         Button("Delete forever", role: .destructive) { Task { await model.emptyTrash() } }
                     } message: {
                         Text("These photos will be deleted forever. This cannot be undone.")
@@ -1253,6 +1355,12 @@ struct PhotoCell: View {
             Button("Save to my library", systemImage: "photo.badge.plus") { Task { await model.saveToLibrary([photo]) } }
             Button("Save to the Photos app", systemImage: "square.and.arrow.down") { Task { await model.saveToPhotos(photo) } }
             PhotoShareLink(photo: photo, connection: model.connection)
+            // Another person's photo comes out of an album only for whoever manages it.
+            if let albumId = listKey.albumId, model.canRemove(photo, fromAlbumIn: listKey) {
+                Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
+                    Task { await model.remove([photo], fromAlbum: albumId) }
+                }
+            }
         } else {
             if photo.isFailed {
                 Button("Try again", systemImage: "arrow.clockwise") { Task { await model.retryProcessing([photo]) } }
@@ -1264,7 +1372,8 @@ struct PhotoCell: View {
                 Task { await model.toggleFavorite(photo, in: listKey) }
             }
             AddToAlbumMenu(model: model, photos: [photo], scope: scope, hiddenAlbumId: listKey.albumId)
-            if let albumId = listKey.albumId {
+            // The person's own photo comes out of an album they may contribute to.
+            if let albumId = listKey.albumId, model.canRemove(photo, fromAlbumIn: listKey) {
                 Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
                     Task { await model.remove([photo], fromAlbum: albumId) }
                 }

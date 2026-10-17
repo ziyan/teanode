@@ -46,7 +46,7 @@ public actor PhotoPreviewCache {
     /// The bytes at this address on the server: from memory, from a file, or
     /// else fetched through the connection, so the request is signed, and kept.
     public func data(for path: String, using connection: Connection) async throws -> Data {
-        let name = Self.fileName(accountKey: connection.accountKey, path: path)
+        let name = Self.cacheFilename(accountKey: connection.accountKey, path: path)
         if let held = memory.object(forKey: name as NSString) {
             return Data(referencing: held)
         }
@@ -100,7 +100,7 @@ public actor PhotoPreviewCache {
     /// (Swift's own hash is not) and that two different addresses will not
     /// share by accident; it has no one to defend against, so a cryptographic
     /// digest, which CryptoKit gives on the phone only, is not needed.
-    nonisolated static func fileName(accountKey: String, path: String) -> String {
+    nonisolated static func cacheFilename(accountKey: String, path: String) -> String {
         accountPrefix(accountKey: accountKey) + String(format: "%016llx", hash("\(accountKey)\n\(path)"))
     }
 

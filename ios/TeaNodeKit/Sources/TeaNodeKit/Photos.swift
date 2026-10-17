@@ -122,7 +122,7 @@ public struct Photo: Codable, Identifiable, Hashable, Sendable {
     public var videoPath: String? { videoPreviewUrl.isEmpty ? nil : videoPreviewUrl }
 
     /// The name to give the file when it is shared or saved.
-    public var fileName: String {
+    public var filename: String {
         originalFilename.isEmpty ? (isVideo ? "video.mp4" : "photo.jpg") : originalFilename
     }
 }
@@ -341,7 +341,7 @@ public struct PhotoDetail: Codable, Hashable, Sendable {
         try container.encode(faces, forKey: .faces)
     }
 
-    /// The file Save to Photos and Share hand on: the original.
+    /// The file Save to the Photos app and Share hand on: the original.
     public var originalFile: PhotoFile? { photoFiles.first { $0.photoFileRole == "original" } }
 
     /// The file of one role, such as "edited" or "liveVideo".
@@ -360,6 +360,9 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
     public let maximumFileBytes: Int
     public let maximumAccountBytes: Int
     public let trashRetentionDays: Int
+    /// What the library holds, as the dashboard, the command line and the agent
+    /// count it: the videos are counted among the photos, not beside them.
+    public var itemCount: Int { photoCount + videoCount }
     /// Whether this server and this person can have a photo described, and
     /// when not, why, in the server's words.
     public let isDescriptionAvailable: Bool
@@ -524,6 +527,13 @@ public struct PhotoAlbum: Codable, Identifiable, Hashable, Sendable {
     /// shared, since every member of a circle has a circle's already.
     public var canCallerShare: Bool { canCallerManage && circleId == nil }
 
+    /// Whether the person may take this photo out of the album: their own when
+    /// they may contribute to it, and another person's only when they manage
+    /// the album (its owner, or an admin of its circle).
+    public func canCallerRemove(_ photo: Photo) -> Bool {
+        photo.isOwnedByCaller ? canCallerContribute : canCallerManage
+    }
+
     /// What to call whose the album is: the owner's name, or their username
     /// when they have no name.
     public var ownerDisplayName: String { ownerName.isEmpty ? ownerUsername : ownerName }
@@ -669,8 +679,8 @@ extension Documents {
         photoFileRoles processingErrorMessage isOwnedByCaller ownerName
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText) { \(photoFields) }
+        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String, $nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float) {
+          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText, nearLatitude: $nearLatitude, nearLongitude: $nearLongitude, nearDistanceKilometers: $nearDistanceKilometers) { \(photoFields) }
         }
         """
     static let photoDescriptionFields = """
@@ -969,6 +979,39 @@ public enum PhotoPaging {
     }
 }
 
+/// PhotoPlacement is a list of photos after one of them was given another
+/// date: the photo is in its new place among those held, and the page that
+/// follows is still asked for from the right photo.
+public struct PhotoPlacement: Equatable, Sendable {
+    /// The photos held, with the changed one where its new date puts it.
+    public let photos: [Photo]
+    /// The photo the next page is asked for after, which is not the changed
+    /// photo when that was the one: the server would continue from its new date.
+    public let pageCursorPhotoId: String?
+    /// Whether the photo now comes after every photo held while more are still
+    /// to be read: its true place is among them, so the list is put in order
+    /// again when the next page is added.
+    public let isBeyondHeldPhotos: Bool
+
+    /// Puts a photo, as the server now has it, in its place among `photos`,
+    /// which are the first of a list that has `hasMore` pages to follow.
+    /// `pageCursorPhotoId` is the photo the next page is asked after; nil for
+    /// the last of `photos`. A photo that is not held leaves the list as it was.
+    public static func place(_ photo: Photo, in photos: [Photo], pageCursorPhotoId: String?, hasMore: Bool) -> PhotoPlacement {
+        let cursor = pageCursorPhotoId ?? photos.last?.id
+        guard let oldIndex = photos.firstIndex(where: { $0.id == photo.id }) else {
+            return PhotoPlacement(photos: photos, pageCursorPhotoId: cursor, isBeyondHeldPhotos: false)
+        }
+        var nextCursor = cursor
+        if cursor == photo.id { nextCursor = oldIndex > 0 ? photos[oldIndex - 1].id : nil }
+        var others = photos
+        others.remove(at: oldIndex)
+        let newIndex = others.firstIndex { PhotoTimeline.isListedBefore(photo, $0) } ?? others.count
+        others.insert(photo, at: newIndex)
+        return PhotoPlacement(photos: others, pageCursorPhotoId: nextCursor, isBeyondHeldPhotos: hasMore && others.count > 1 && newIndex == others.count - 1)
+    }
+}
+
 /// PhotoMoment is the time a photo is placed at, with the time zone to read it
 /// in.
 public struct PhotoMoment: Equatable, Sendable {
@@ -1052,6 +1095,25 @@ public enum PhotoTimeline {
         }
     }
 
+    /// Whether the first photo is listed before the second: the later moment
+    /// first, and for the same moment the larger id first, as the server lists.
+    /// A photo with no moment is listed last.
+    public static func isListedBefore(_ first: Photo, _ second: Photo) -> Bool {
+        let firstDate = moment(of: first)?.date
+        let secondDate = moment(of: second)?.date
+        if firstDate != secondDate {
+            guard let firstDate else { return false }
+            guard let secondDate else { return true }
+            return firstDate > secondDate
+        }
+        return first.id > second.id
+    }
+
+    /// The photos in the order the server lists them.
+    public static func sorted(_ photos: [Photo]) -> [Photo] {
+        photos.sorted(by: isListedBefore)
+    }
+
     /// The date and time of a photo as the viewer's Info shows them, read in
     /// the zone the photo was taken in when it says one. Nil for no date.
     public static func takenText(of photo: Photo, phoneTimeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
@@ -1098,7 +1160,7 @@ public struct PhotoDownload: Sendable {
     public let fileURL: URL
     /// The name the file has, with an extension the phone's Photos knows the
     /// kind of file by.
-    public let fileName: String
+    public let filename: String
     /// Whether this is the file the photo was made from. False when that file
     /// could not be read and a preview stands in for it.
     public let isOriginal: Bool
@@ -1160,8 +1222,8 @@ extension Connection {
         let detail = try await photoDetail(photo.id)
         if let file = detail.originalFile {
             do {
-                let fileURL = try await downloadSigned(photo.id, source: .file(file.photoFileRole), fileName: file.originalFilename.isEmpty ? photo.fileName : file.originalFilename)
-                return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: true)
+                let fileURL = try await downloadSigned(photo.id, source: .file(file.photoFileRole), filename: file.originalFilename.isEmpty ? photo.filename : file.originalFilename)
+                return PhotoDownload(fileURL: fileURL, filename: fileURL.lastPathComponent, isOriginal: true)
             } catch PhotoError.fileNotAvailable {
                 // The one case a preview stands in.
             }
@@ -1172,9 +1234,9 @@ extension Connection {
             throw PhotoError.nothingToSaveYet
         }
         let fileExtension = preview.flatMap { PhotoDownload.fileExtension(forContentType: $0.contentType) } ?? (photo.isVideo ? "mp4" : "jpg")
-        let baseName = (photo.fileName as NSString).deletingPathExtension
-        let fileURL = try await downloadSigned(photo.id, source: .preview(previewSize), fileName: "\(baseName).\(fileExtension)")
-        return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: false)
+        let baseName = (photo.filename as NSString).deletingPathExtension
+        let fileURL = try await downloadSigned(photo.id, source: .preview(previewSize), filename: "\(baseName).\(fileExtension)")
+        return PhotoDownload(fileURL: fileURL, filename: fileURL.lastPathComponent, isOriginal: false)
     }
 
     /// One file of a photo, such as its edited version or a Live Photo's
@@ -1183,15 +1245,15 @@ extension Connection {
     public func downloadPhotoFile(_ photo: Photo, role photoFileRole: String) async throws -> PhotoDownload {
         let detail = try await photoDetail(photo.id)
         guard let file = detail.file(withRole: photoFileRole) else { throw PhotoError.nothingToSaveYet }
-        let fileURL = try await downloadSigned(photo.id, source: .file(photoFileRole), fileName: file.originalFilename.isEmpty ? photo.fileName : file.originalFilename)
-        return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: photoFileRole == "original")
+        let fileURL = try await downloadSigned(photo.id, source: .file(photoFileRole), filename: file.originalFilename.isEmpty ? photo.filename : file.originalFilename)
+        return PhotoDownload(fileURL: fileURL, filename: fileURL.lastPathComponent, isOriginal: photoFileRole == "original")
     }
 
-    /// Mints an address and reads what it serves into a file named fileName,
+    /// Mints an address and reads what it serves into a file named filename,
     /// in a folder of its own so that the file can keep its name.
-    private func downloadSigned(_ photoId: String, source: PhotoPlaybackSource, fileName: String) async throws -> URL {
+    private func downloadSigned(_ photoId: String, source: PhotoPlaybackSource, filename: String) async throws -> URL {
         let address = try await photoPlaybackAddress(photoId, source: source)
-        return try await downloadFile(from: address, fileName: fileName)
+        return try await downloadFile(from: address, filename: filename)
     }
 }
 

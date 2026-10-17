@@ -490,6 +490,7 @@ struct SettingsForm: View {
     @Environment(MailModel.self) private var mail: MailModel?
     @State private var isConfirmingSignOut = false
     private static let signOutRowId = "sign-out"
+    private static let photoBackupRowId = "photo-backup"
     /// Whether the account may open the management pages, as the dashboard
     /// shows its Manage side.
     @State private var isOperator = false
@@ -566,6 +567,7 @@ struct SettingsForm: View {
                         } label: {
                             PhotoBackupSettingsRow()
                         }
+                        .id(Self.photoBackupRowId)
                         NavigationLink {
                             PhotoFacesSettingsView(connection: connection)
                         } label: {
@@ -674,6 +676,15 @@ struct SettingsForm: View {
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
                     // `-TeaNodeScreen settings-sign-out`: the sign-out confirmation open, to show where it points.
+                    // `settings-photo-backup-other-account`: the Photo backup row as it reads when backup is on for another account.
+                    if DemoServer.screen == "settings-photo-backup-other-account", !hasShownDemoScreen {
+                        hasShownDemoScreen = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(1))
+                            withAnimation { scroller.scrollTo(Self.photoBackupRowId, anchor: .center) }
+                        }
+                        return
+                    }
                     if DemoServer.screen == "settings-sign-out", !hasShownDemoScreen {
                         hasShownDemoScreen = true
                         Task {
@@ -716,8 +727,9 @@ struct SettingsForm: View {
                 case "server": ServerSettingsView(connection: connection)
                 case "sessions": SessionsView(connection: connection)
                 case "phones": PhonesView(connection: connection)
-                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting": PhotoBackupView(connection: connection)
+                case "photos-backup-off", "photos-backup-on", "photos-backup-waiting", "photos-backup-other-account": PhotoBackupView(connection: connection)
                 case "photos-faces": PhotoFacesSettingsView(connection: connection)
+                case "photos-conversation-card": PhotoConversationCardDemo()
                 case "devices": DevicesView(connection: connection)
                 case "rules":
                     if let mail {

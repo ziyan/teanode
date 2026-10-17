@@ -196,8 +196,8 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
     // MARK: Exporting
 
     func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool, includesHidden: Bool) async throws -> PhotoBackupExportedFile {
-        let fileName = UUID().uuidString
-        let fileURL = directory.appendingPathComponent(fileName)
+        let outgoingFilename = UUID().uuidString
+        let fileURL = directory.appendingPathComponent(outgoingFilename)
         do {
             try await Self.write(upload, to: fileURL, mayUseExpensiveNetwork: mayUseExpensiveNetwork, includesHidden: includesHidden)
         } catch let error as PhotoBackupLibraryError {
@@ -218,7 +218,7 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
                 try? FileManager.default.removeItem(at: fileURL)
                 throw PhotoBackupLibraryError.failed(.fileIsEmpty)
             }
-            return PhotoBackupExportedFile(fileName: fileName, sizeBytes: sizeBytes)
+            return PhotoBackupExportedFile(outgoingFilename: outgoingFilename, sizeBytes: sizeBytes)
         } catch let error as PhotoBackupLibraryError {
             throw error
         } catch {

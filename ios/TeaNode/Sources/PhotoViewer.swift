@@ -25,8 +25,11 @@ struct PhotoViewer: View {
         self.listKey = listKey
         _currentPhotoId = State(initialValue: openedPhotoId)
         #if DEBUG
-            // `-TeaNodeScreen photos-viewer-described` and `photos-viewer-failed` open Info over the viewer.
-            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-failed" || DemoServer.screen == "photos-change-date" {
+            // `-TeaNodeScreen photos-viewer-described`, `photos-viewer-failed` and `photos-shared-info` open Info over the viewer.
+            if DemoServer.isRequested,
+                DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-failed" || DemoServer.screen == "photos-change-date"
+                    || DemoServer.screen == "photos-shared-info"
+            {
                 _isShowingInfo = State(initialValue: true)
             }
         #endif
@@ -44,7 +47,7 @@ struct PhotoViewer: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $isShowingInfo) {
-                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent) }
+                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent, onShowNearby: showNearby) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
@@ -97,13 +100,15 @@ struct PhotoViewer: View {
                     if current.isOwnedByCaller {
                         AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
                     }
-                    if let albumId = listKey.albumId, let album = model.albums?.first(where: { $0.id == albumId }) {
+                    if let albumId = listKey.albumId, let album = model.album(in: listKey) {
                         if album.canCallerManage {
                             Button("Use as album cover", systemImage: "rectangle.stack.badge.person.crop") {
                                 Task { await model.setCover(of: album, to: current) }
                             }
                         }
-                        if current.isOwnedByCaller || album.canCallerManage {
+                        // The person's own photo comes out when they may contribute to the album,
+                        // somebody else's only when they manage it.
+                        if album.canCallerRemove(current) {
                             Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
                                 let next = neighbor(of: current)
                                 Task {
@@ -215,8 +220,8 @@ struct PhotoViewer: View {
     /// add it to, or the album it is shown in to take it out of.
     private func moreMenuHasItems(for photo: Photo) -> Bool {
         if photo.isOwnedByCaller { return true }
-        guard let albumId = listKey.albumId, let album = model.albums?.first(where: { $0.id == albumId }) else { return false }
-        return album.canCallerManage
+        guard let album = model.album(in: listKey) else { return false }
+        return album.canCallerManage || album.canCallerRemove(photo)
     }
 
     /// Adds the photo to the phone's own Photos app: one button, or a menu when
@@ -250,6 +255,15 @@ struct PhotoViewer: View {
     private func askAgent(about photo: Photo) {
         app.askingAbout = AgentReference(photoId: photo.id, photoTitle: PhotoTimeline.referenceTitle(of: photo))
         isShowingInfo = false
+        dismiss()
+    }
+
+    /// Shows the library narrowed to the photos taken near the place of the
+    /// photo on screen: the viewer and Info close, and the library under them
+    /// shows the filter.
+    private func showNearby(_ photoNearFilter: PhotoNearFilter) {
+        isShowingInfo = false
+        model.showPhotos(near: photoNearFilter)
         dismiss()
     }
 
@@ -329,7 +343,9 @@ struct PhotoPage: View {
         }
 
         .overlay(alignment: .topLeading) {
-            if photo.isLivePhoto, isCurrent, !isZoomed {
+            // Only a Live Photo whose video the reader can have: a photo shared without
+            // places comes with its picture only.
+            if photo.isLivePhoto, photo.hasLiveVideoFile, isCurrent, !isZoomed {
                 liveButton
             }
         }
@@ -465,6 +481,8 @@ struct PhotoInfoView: View {
     /// The list the viewer pages through, which a changed date reads again.
     let listKey: PhotoListKey
     let onAskAgent: (Photo) -> Void
+    /// Shows the library narrowed to the photos taken near this photo's place.
+    let onShowNearby: (PhotoNearFilter) -> Void
     @State private var isChangingDate = false
     @State private var detail: PhotoDetail?
     /// Why the photo's details could not be read; nil when they could, or have
@@ -482,6 +500,16 @@ struct PhotoInfoView: View {
     private var description: PhotoDescription { detail?.photoDescription ?? PhotoDescription() }
     private var isDescriptionAvailable: Bool { model.library?.isDescriptionAvailable == true }
     private var people: [PhotoFace] { (detail?.faces ?? []).filter(\.isGrouped) }
+    /// The names of the people in somebody else's photo, each once: all that
+    /// is theirs to see, since the people are the owner's to open and correct.
+    private var namesOfPeopleInSharedPhoto: [String] {
+        var names: [String] = []
+        for face in detail?.faces ?? [] {
+            let name = face.contactName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty, !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
 
     var body: some View {
         NavigationStack {
@@ -508,14 +536,18 @@ struct PhotoInfoView: View {
                 if !shownPhoto.placeName.isEmpty {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
                 }
+                // A photo shared without places has no coordinates, so it has nothing to be near.
+                if !shownPhoto.isTrashed, let photoNearFilter = PhotoNearFilter(near: shownPhoto) {
+                    Button("Photos taken near here", systemImage: "mappin.and.ellipse") { onShowNearby(photoNearFilter) }
+                }
                 if !cameraText.isEmpty {
                     LabeledContent("Camera") { Text(cameraText) }
                 }
                 LabeledContent("Size") {
                     Text(sizeText)
                 }
-                if !fileName.isEmpty {
-                    LabeledContent("File name") { Text(fileName).monospaced() }
+                if !filename.isEmpty {
+                    LabeledContent("File name") { Text(filename).monospaced() }
                 }
                 if let albums = detail?.albums, !albums.isEmpty {
                     Section("Albums") {
@@ -528,8 +560,10 @@ struct PhotoInfoView: View {
                         }
                     }
                 }
-                if !people.isEmpty {
+                if shownPhoto.isOwnedByCaller, !people.isEmpty {
                     peopleSection
+                } else if !shownPhoto.isOwnedByCaller, !namesOfPeopleInSharedPhoto.isEmpty {
+                    sharedPeopleSection
                 }
                 if shownPhoto.isOwnedByCaller, !shownPhoto.isFailed, !shownPhoto.isWaiting, !shownPhoto.isTrashed {
                     makePreviewsSection
@@ -659,6 +693,18 @@ struct PhotoInfoView: View {
         }
     }
 
+    /// The people in somebody else's photo: their names as plain text. The
+    /// person cannot open or correct them, so nothing here is pressed.
+    private var sharedPeopleSection: some View {
+        Section {
+            ForEach(namesOfPeopleInSharedPhoto, id: \.self) { name in
+                Text(name)
+            }
+        } header: {
+            Text("photos.people")
+        }
+    }
+
     private func shownName(of face: PhotoFace) -> String {
         let name = face.contactName.trimmingCharacters(in: .whitespacesAndNewlines)
         return name.isEmpty ? String(localized: "Unnamed person") : name
@@ -695,21 +741,24 @@ struct PhotoInfoView: View {
                         .foregroundStyle(.secondary)
                 }
                 .accessibilityElement(children: .combine)
-            } else if description.isDescribed {
-                if isDescriptionAvailable {
-                    Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
+            } else if shownPhoto.isOwnedByCaller {
+                // Describing is the owner's: the server refuses it for a photo shared with the person.
+                if description.isDescribed {
+                    if isDescriptionAvailable {
+                        Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
+                    }
+                } else if isDescriptionAvailable {
+                    Button("Describe this photo", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
+                } else if let library = model.library {
+                    Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
+                        .foregroundStyle(.secondary)
                 }
-            } else if isDescriptionAvailable {
-                Button("Describe this photo", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
-            } else if let library = model.library {
-                Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
-                    .foregroundStyle(.secondary)
             }
             Button(askAgentText, systemImage: "bubble.left") { onAskAgent(photo) }
         } header: {
             Text("Description")
         } footer: {
-            if !description.isDescribed, !description.isDescriptionRequested, isDescriptionAvailable {
+            if shownPhoto.isOwnedByCaller, !description.isDescribed, !description.isDescriptionRequested, isDescriptionAvailable {
                 Text("\(app.agentTitle) looks at the picture and writes what it shows, so a search can find it.")
             }
         }
@@ -766,7 +815,7 @@ struct PhotoInfoView: View {
         [shownPhoto.cameraMake, shownPhoto.cameraModel].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    private var fileName: String {
+    private var filename: String {
         if let name = detail?.originalFile?.originalFilename, !name.isEmpty { return name }
         return shownPhoto.originalFilename
     }
@@ -799,12 +848,12 @@ struct PhotoShareLink: View {
             Menu {
                 originalLink(label: "Share original")
                 if photo.hasEditedFile {
-                    ShareLink(item: PhotoShareFile(connection: connection, photo: photo, role: "edited"), preview: SharePreview(photo.fileName)) {
+                    ShareLink(item: PhotoShareFile(connection: connection, photo: photo, role: "edited"), preview: SharePreview(photo.filename)) {
                         Label("Share edited version", systemImage: "slider.horizontal.3")
                     }
                 }
                 if photo.hasLiveVideoFile {
-                    ShareLink(item: PhotoShareFile(connection: connection, photo: photo, role: "liveVideo"), preview: SharePreview(photo.fileName)) {
+                    ShareLink(item: PhotoShareFile(connection: connection, photo: photo, role: "liveVideo"), preview: SharePreview(photo.filename)) {
                         Label("Share Live Photo video", systemImage: "livephoto")
                     }
                 }
@@ -819,11 +868,11 @@ struct PhotoShareLink: View {
     @ViewBuilder
     private func originalLink(label: LocalizedStringKey) -> some View {
         if photo.isVideo {
-            ShareLink(item: PhotoShareMovie(connection: connection, photo: photo), preview: SharePreview(photo.fileName)) {
+            ShareLink(item: PhotoShareMovie(connection: connection, photo: photo), preview: SharePreview(photo.filename)) {
                 Label(label, systemImage: "square.and.arrow.up")
             }
         } else {
-            ShareLink(item: PhotoShareImage(connection: connection, photo: photo), preview: SharePreview(photo.fileName)) {
+            ShareLink(item: PhotoShareImage(connection: connection, photo: photo), preview: SharePreview(photo.filename)) {
                 Label(label, systemImage: "square.and.arrow.up")
             }
         }
@@ -839,7 +888,7 @@ struct PhotosShareLink: View {
     var body: some View {
         ShareLink(
             items: photos.map { PhotoShareFile(connection: connection, photo: $0) },
-            preview: { SharePreview($0.photo.fileName) }
+            preview: { SharePreview($0.photo.filename) }
         ) {
             Label("Share", systemImage: "square.and.arrow.up")
         }

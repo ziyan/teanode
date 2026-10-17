@@ -120,7 +120,7 @@ final class PhotoClientTests: XCTestCase {
         let download = try await connection.downloadPhotoFile(photo, role: "liveVideo")
         defer { try? FileManager.default.removeItem(at: download.fileURL.deletingLastPathComponent()) }
         XCTAssertFalse(download.isOriginal)
-        XCTAssertEqual(download.fileName, "IMG_0001.MOV")
+        XCTAssertEqual(download.filename, "IMG_0001.MOV")
         XCTAssertEqual(try String(contentsOf: download.fileURL, encoding: .utf8), "video bytes")
         let playbackRequest = try XCTUnwrap(fake.sent.first { String(decoding: $0.httpBody ?? Data(), as: UTF8.self).contains("PhotoPlaybackAddress") })
         XCTAssertEqual(try sentVariables(of: playbackRequest)["photoFileRole"] as? String, "liveVideo")
@@ -138,7 +138,7 @@ final class PhotoClientTests: XCTestCase {
     func testAFileTheServerDoesNotServeIsATypedErrorWithNoStatusCode() async throws {
         let (gone, _) = try connection { _ in (404, "gone") }
         do {
-            _ = try await gone.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, fileName: "a.jpg")
+            _ = try await gone.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, filename: "a.jpg")
             XCTFail("a refused file was returned")
         } catch {
             XCTAssertEqual(error as? PhotoError, .fileNotAvailable)
@@ -147,7 +147,7 @@ final class PhotoClientTests: XCTestCase {
         // A server that failed is not "no such file": nothing stands in for it.
         let (failing, _) = try connection { _ in (500, "oops") }
         do {
-            _ = try await failing.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, fileName: "a.jpg")
+            _ = try await failing.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, filename: "a.jpg")
             XCTFail("a failed read was returned")
         } catch {
             XCTAssertEqual(error as? PhotoError, .fileCouldNotBeRead)
@@ -183,7 +183,7 @@ final class PhotoClientTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let old =
             #"{"version":1,"accountKey":"photos.example.com|robin","records":{"a":{"clientPhotoId":"local:a","roles":{"original":{"isOnServer":true,"serverPhotoId":"p1","assetModificationDate":"1970-01-01T00:01:30Z","refusalCount":0}}}},"libraryItemCount":4,"lastErrorMessage":"The disk is full.","isSignInNeeded":false}"#
-        try Data(old.utf8).write(to: directory.appendingPathComponent(PhotoBackupIndex.fileName))
+        try Data(old.utf8).write(to: directory.appendingPathComponent(PhotoBackupIndex.indexFilename))
         let index = try PhotoBackupIndex(directory: directory)
         let wasStartedOver = await index.wasStartedOver
         XCTAssertFalse(wasStartedOver, "the file is read, not started over")
@@ -252,7 +252,7 @@ final class PhotoPreviewCacheAccountTests: XCTestCase {
         let sizeAfter = await cache.sizeBytes()
         XCTAssertEqual(sizeAfter, 25, "only the other account's preview is left on disk")
         let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        XCTAssertEqual(files, [PhotoPreviewCache.fileName(accountKey: staying.accountKey, path: "/api/v1/photos/p1/previews/small?v=1")])
+        XCTAssertEqual(files, [PhotoPreviewCache.cacheFilename(accountKey: staying.accountKey, path: "/api/v1/photos/p1/previews/small?v=1")])
         XCTAssertTrue(files.allSatisfy { !$0.hasPrefix(PhotoPreviewCache.accountPrefix(accountKey: leaving.accountKey)) })
     }
 

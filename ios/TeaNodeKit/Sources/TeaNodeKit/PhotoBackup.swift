@@ -390,7 +390,7 @@ public actor PhotoBackupIndex {
         var lastPassFinishedAt: Date?
     }
 
-    public static let fileName = "index.json"
+    public static let indexFilename = "index.json"
 
     /// Changes are written at most this often while a pass runs, and `flush`
     /// writes what is left when it ends. Rewriting a library's worth of
@@ -419,7 +419,7 @@ public actor PhotoBackupIndex {
         self.now = now
         lastWriteAt = now()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        fileURL = directory.appendingPathComponent(Self.fileName)
+        fileURL = directory.appendingPathComponent(Self.indexFilename)
         if fileManager.fileExists(atPath: fileURL.path) {
             do {
                 let decoder = JSONDecoder()

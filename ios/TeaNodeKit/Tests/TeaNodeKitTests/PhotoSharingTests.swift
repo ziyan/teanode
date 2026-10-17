@@ -223,6 +223,86 @@ final class PhotoSharingTests: XCTestCase {
         XCTAssertTrue(Documents.listPhotos.contains("$photoKind: String"))
     }
 
+    func testAFilterNearAPlaceAsksForAllThreeOfItAndIsActive() throws {
+        let located = #""latitude":48.5,"longitude":-12.25,"placeName":" Harbor ""#
+        let json = photoJSON().replacingOccurrences(of: #""latitude":null,"longitude":null,"placeName":"""#, with: located)
+        let photo = try JSONDecoder().decode(Photo.self, from: Data(json.utf8))
+        let near = try XCTUnwrap(PhotoNearFilter(near: photo))
+        XCTAssertEqual(near.placeName, "Harbor")
+        XCTAssertEqual(near.distanceKilometers, 1)
+        let filter = PhotoFilter(photoNearFilter: near)
+        XCTAssertTrue(filter.isActive)
+        XCTAssertEqual(filter.variables(), ["nearLatitude": .number(48.5), "nearLongitude": .number(-12.25), "nearDistanceKilometers": .number(1)])
+        XCTAssertNil(PhotoFilter().variables()["nearLatitude"])
+        XCTAssertTrue(Documents.listPhotos.contains("$nearLatitude: Float, $nearLongitude: Float, $nearDistanceKilometers: Float"))
+    }
+
+    func testAPhotoWithNoPlaceHasNothingToBeNear() throws {
+        let photo = try JSONDecoder().decode(Photo.self, from: Data(photoJSON().utf8))
+        XCTAssertNil(PhotoNearFilter(near: photo))
+    }
+
+    func testAPhotoCanBeTakenOutOfAnAlbumByItsOwnerOrByAManager() throws {
+        let othersPhoto = try JSONDecoder().decode(Photo.self, from: Data(photoJSON("p2", extraFields: #","isOwnedByCaller":false,"ownerName":"Sam""#).utf8))
+        let ownPhoto = try JSONDecoder().decode(Photo.self, from: Data(photoJSON("p1").utf8))
+        let contributor = PhotoAlbum(id: "a1", albumTitle: "Picnic", isOwnedByCaller: false, shareLevel: "contribute", canCallerContribute: true, canCallerManage: false)
+        XCTAssertTrue(contributor.canCallerRemove(ownPhoto))
+        XCTAssertFalse(contributor.canCallerRemove(othersPhoto), "somebody else's photo is theirs to take out unless the person manages the album")
+        let viewer = PhotoAlbum(id: "a1", albumTitle: "Picnic", isOwnedByCaller: false, shareLevel: "view", canCallerContribute: false, canCallerManage: false)
+        XCTAssertFalse(viewer.canCallerRemove(ownPhoto))
+        XCTAssertFalse(viewer.canCallerRemove(othersPhoto))
+        let owner = PhotoAlbum(id: "a1", albumTitle: "Picnic")
+        XCTAssertTrue(owner.canCallerRemove(ownPhoto))
+        XCTAssertTrue(owner.canCallerRemove(othersPhoto))
+        let circleAdmin = PhotoAlbum(id: "a1", albumTitle: "Picnic", circleId: "c1", isOwnedByCaller: false, canCallerContribute: true, canCallerManage: true)
+        XCTAssertTrue(circleAdmin.canCallerRemove(othersPhoto))
+    }
+
+    func testTheLibraryCountsItsVideosAmongItsPhotos() {
+        let library = PhotoLibrary(photoCount: 120, videoCount: 4, favoriteCount: 0, trashedCount: 0, usedBytes: 0, trashRetentionDays: 30)
+        XCTAssertEqual(library.itemCount, 124)
+    }
+
+    // MARK: Placing a photo whose date changed
+
+    private func photo(_ id: String, takenAt: String) throws -> Photo {
+        let json = photoJSON(id).replacingOccurrences(of: #""takenAt":"2026-03-10T14:42:00Z""#, with: #""takenAt":"\#(takenAt)""#)
+        return try JSONDecoder().decode(Photo.self, from: Data(json.utf8))
+    }
+
+    func testAPhotoIsListedNewestFirstAndALargerIdFirstAtTheSameMoment() throws {
+        let newer = try photo("a", takenAt: "2026-03-11T00:00:00Z")
+        let older = try photo("b", takenAt: "2026-03-10T00:00:00Z")
+        let sameMomentLargerId = try photo("c", takenAt: "2026-03-10T00:00:00Z")
+        XCTAssertEqual(PhotoTimeline.sorted([older, sameMomentLargerId, newer]).map(\.id), ["a", "c", "b"])
+    }
+
+    func testAPhotoWithANewDateGoesToItsPlaceAmongThoseHeld() throws {
+        let held = try [photo("a", takenAt: "2026-03-14T00:00:00Z"), photo("b", takenAt: "2026-03-13T00:00:00Z"), photo("c", takenAt: "2026-03-12T00:00:00Z")]
+        let moved = try photo("c", takenAt: "2026-03-15T00:00:00Z")
+        let placement = PhotoPlacement.place(moved, in: held, pageCursorPhotoId: nil, hasMore: true)
+        XCTAssertEqual(placement.photos.map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(placement.pageCursorPhotoId, "b", "the last photo held, which was c, is no longer the one the next page follows")
+        XCTAssertFalse(placement.isBeyondHeldPhotos)
+    }
+
+    func testAPhotoMovedPastTheEndOfAListWithMorePagesWaitsForThePageItBelongsTo() throws {
+        let held = try [photo("a", takenAt: "2026-03-14T00:00:00Z"), photo("b", takenAt: "2026-03-13T00:00:00Z"), photo("c", takenAt: "2026-03-12T00:00:00Z")]
+        let moved = try photo("a", takenAt: "2020-01-01T00:00:00Z")
+        let placement = PhotoPlacement.place(moved, in: held, pageCursorPhotoId: nil, hasMore: true)
+        XCTAssertEqual(placement.photos.map(\.id), ["b", "c", "a"])
+        XCTAssertEqual(placement.pageCursorPhotoId, "c", "the next page still follows the photo the server has last among those read")
+        XCTAssertTrue(placement.isBeyondHeldPhotos)
+        XCTAssertFalse(PhotoPlacement.place(moved, in: held, pageCursorPhotoId: nil, hasMore: false).isBeyondHeldPhotos)
+    }
+
+    func testAPhotoThatIsNotHeldLeavesTheListAsItWas() throws {
+        let held = try [photo("a", takenAt: "2026-03-14T00:00:00Z")]
+        let placement = PhotoPlacement.place(try photo("z", takenAt: "2026-03-15T00:00:00Z"), in: held, pageCursorPhotoId: nil, hasMore: true)
+        XCTAssertEqual(placement.photos, held)
+        XCTAssertEqual(placement.pageCursorPhotoId, "a")
+    }
+
     // MARK: Changing a date
 
     func testADateIsWrittenWithTheOffsetThePhotoIsShownAt() throws {
@@ -357,7 +437,7 @@ final class PhotoSharingTests: XCTestCase {
         try manager.createDirectory(at: folder, withIntermediateDirectories: true)
         let file = folder.appendingPathComponent("IMG.jpg")
         try Data("x".utf8).write(to: file)
-        PhotoTemporaryFiles.removeLater(PhotoDownload(fileURL: file, fileName: "IMG.jpg", isOriginal: true), afterSeconds: 0)
+        PhotoTemporaryFiles.removeLater(PhotoDownload(fileURL: file, filename: "IMG.jpg", isOriginal: true), afterSeconds: 0)
         for _ in 0..<50 where manager.fileExists(atPath: folder.path) { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertFalse(manager.fileExists(atPath: folder.path))
     }
