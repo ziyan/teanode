@@ -255,17 +255,19 @@ struct CodingComputerHeader: View {
     let computer: CodingComputer
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Label {
-                Text(verbatim: computer.name)
-            } icon: {
-                Image(systemName: "desktopcomputer")
-            }
+        // The symbol close to the name, as the knowledge rows have theirs;
+        // a Label sets it in a column of its own, far from the words.
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "desktopcomputer")
+                .foregroundStyle(.secondary)
+            Text(verbatim: computer.name)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
             Spacer(minLength: 8)
             Text(countsText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(.secondary)
         .textCase(nil)
         .accessibilityElement(children: .combine)
     }
@@ -284,14 +286,13 @@ struct CodingWorkspaceHeader: View {
     let workspace: CodingWorkspace
 
     var body: some View {
-        Label {
-            Text(verbatim: workspace.title)
-        } icon: {
+        HStack(spacing: 4) {
             Image(systemName: "folder")
+            Text(verbatim: workspace.title)
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.secondary)
-        .padding(.top, 6)
+        .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
 }
