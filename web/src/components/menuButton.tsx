@@ -24,12 +24,17 @@ export function MenuButton({
   // the foot of the rail, where a menu opening downwards would open off the
   // bottom of the window.
   placement = 'below',
+  // What opens: a menu of things to choose from, or a small dialog-like
+  // popover holding a form (radios, date fields), which a screen reader must
+  // not announce as a list of menu items.
+  popup = 'menu',
   render,
 }: {
   label: string
   icon: React.ReactNode
   className?: string
   placement?: 'below' | 'above'
+  popup?: 'menu' | 'dialog'
   render: (close: () => void) => React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -79,6 +84,29 @@ export function MenuButton({
     }
   }, [open, place])
 
+  // A popover holding a form is reached from the keyboard: it is rendered at
+  // the end of the page, so Tab from its button would go everywhere but into
+  // it. Opening it puts the focus on its first field, and closing it gives the
+  // focus back to the button, as a dialog does.
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (popup !== 'dialog') {
+      return
+    }
+    if (open) {
+      // The chosen option of a group first, as a radio group is entered.
+      const first =
+        menu.current?.querySelector<HTMLElement>('input:checked:not([disabled])') ??
+        menu.current?.querySelector<HTMLElement>(
+          'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        )
+      first?.focus()
+    } else if (wasOpen.current && menu.current === null && document.activeElement === document.body) {
+      trigger.current?.focus()
+    }
+    wasOpen.current = open
+  }, [open, popup])
+
   // Follow the button when anything moves under it, rather than hanging in
   // the wrong place. Capture, so a scroll inside the table counts too.
   useEffect(() => {
@@ -109,6 +137,9 @@ export function MenuButton({
       if (event.key === 'Escape') {
         event.preventDefault()
         setOpen(false)
+        if (popup === 'dialog') {
+          trigger.current?.focus()
+        }
       }
     }
     document.addEventListener('mousedown', onPointerDown)
@@ -119,7 +150,7 @@ export function MenuButton({
       document.removeEventListener('touchstart', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [open])
+  }, [open, popup])
 
   return (
     <div className="menu-button" ref={container}>
@@ -127,7 +158,7 @@ export function MenuButton({
         type="button"
         ref={trigger}
         className={className}
-        aria-haspopup="menu"
+        aria-haspopup={popup}
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         aria-label={label}
@@ -137,7 +168,14 @@ export function MenuButton({
       </button>
       {open &&
         createPortal(
-          <div className="menu" id={id} role="menu" ref={menu} style={position}>
+          <div
+            className="menu"
+            id={id}
+            role={popup}
+            aria-label={popup === 'dialog' ? label : undefined}
+            ref={menu}
+            style={position}
+          >
             {render(() => setOpen(false))}
           </div>,
           document.body,

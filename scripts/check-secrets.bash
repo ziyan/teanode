@@ -110,6 +110,11 @@ readonly ALLOWED_HOSTS=(
   console.anthropic.com
   aistudio.google.com
 
+  # Where the table of cities that names a photo's place comes from: a public
+  # data service, which its license asks to be credited, and which the script
+  # that rebuilds the table downloads from.
+  .geonames.org
+
   # Apple's public services, which the iPhone app's plan and README name:
   # the developer site, App Store Connect, and the push service the relay
   # sends to.

@@ -119,7 +119,7 @@ type AgentAttachment struct {
 }
 
 // AgentReference is what the person pointed at with a turn: a thread, a
-// recording, or a message of the conversation they are replying to.
+// recording, a photo, or a message of the conversation they are replying to.
 type AgentReference struct {
 	ItemID   string `json:"itemId,omitempty"`
 	ThreadID string `json:"threadId,omitempty"`
@@ -130,6 +130,11 @@ type AgentReference struct {
 	// its title into RecordingTitle, and refuses one that is not theirs.
 	RecordingID    string `json:"recordingId,omitempty"`
 	RecordingTitle string `json:"recordingTitle,omitempty"`
+
+	// PhotoID is a photo the person asks about; the server reads its place,
+	// date or file name into PhotoTitle, and refuses one that is not theirs.
+	PhotoID    string `json:"photoId,omitempty"`
+	PhotoTitle string `json:"photoTitle,omitempty"`
 
 	// AgentMessageID is the message replied to; the server reads its words
 	// into QuotedRole and QuotedText.

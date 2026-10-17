@@ -206,6 +206,9 @@ func (self *s3Storage) PutFileStream(ctx context.Context, id string, content io.
 	if err := rewindFileSource(content, sizeBytes); err != nil {
 		return err
 	}
+	if sizeBytes > s3MultipartThresholdBytes {
+		return self.putObjectInParts(ctx, self.fileKey(id), content, sizeBytes)
+	}
 	_, err := self.client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(self.settings.Bucket), Key: aws.String(self.fileKey(id)), Body: content, ContentLength: aws.Int64(sizeBytes)})
 	return err
 }

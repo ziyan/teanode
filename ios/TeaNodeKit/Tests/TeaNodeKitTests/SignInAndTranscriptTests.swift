@@ -397,6 +397,19 @@ final class MediaTests: XCTestCase {
         XCTAssertTrue(AgentFile.of(toolResult: elsewhere).isEmpty)
     }
 
+    func testAPhotoTheAgentShowedKeepsItsIdOnlyFromThePhotoTool() {
+        let shown = #"{"files":[{"photo_id":"photo-1_A","attachment_id":"a1","name":"IMG_0001.jpg","content_type":"image/jpeg","size":12,"url":"/api/v1/agent/attachments/a1"}]}"#
+        XCTAssertEqual(AgentFile.of(toolResult: shown, tool: "photo").first?.photoId, "photo-1_A")
+        XCTAssertNil(AgentFile.of(toolResult: shown, tool: "share_file").first?.photoId)
+        XCTAssertNil(AgentFile.of(toolResult: shown).first?.photoId)
+        for badId in ["../settings", "a/b", "a?b", "", String(repeating: "x", count: 65)] {
+            let result = #"{"files":[{"photo_id":"\#(badId)","attachment_id":"a1","name":"x.jpg","url":"/api/v1/agent/attachments/a1"}]}"#
+            let files = AgentFile.of(toolResult: result, tool: "photo")
+            XCTAssertEqual(files.count, 1)
+            XCTAssertNil(files.first?.photoId, badId)
+        }
+    }
+
     func testAPictureOnItsOwnLineIsABlock() {
         XCTAssertEqual(MarkdownBlock.parse("Here it is:\n\n![The park](https://example.com/park.jpg)"), [
             .paragraph("Here it is:"), .image(alt: "The park", address: "https://example.com/park.jpg", link: nil),

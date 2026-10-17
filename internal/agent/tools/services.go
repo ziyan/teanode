@@ -25,6 +25,8 @@ func RequiredServices(tool *Tool) []models.Service {
 			service = models.ServiceCalendar
 		case models.PermissionContactsUse:
 			service = models.ServiceContacts
+		case models.PermissionPhotosUse:
+			service = models.ServicePhotos
 		case models.PermissionMailRead, models.PermissionMailWrite, models.PermissionMailSend, models.PermissionMailboxManage:
 			service = models.ServiceMailboxes
 		case models.PermissionMailAudit, models.PermissionMailAuditAll, models.PermissionDomainManage, models.PermissionDomainManageAll, models.PermissionQueueManage, models.PermissionReportRead:

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -464,6 +465,17 @@ func (self *Configuration) validateIntegrations(validator *validator) {
 	}
 	if self.Storage.SpoolRetention <= 0 {
 		validator.add("storage.spoolRetention", "must be positive, for example 30d")
+	}
+	if self.Services.IsEnabled(models.ServicePhotos) {
+		if self.Photos.MaxFileBytes == 0 || self.Photos.MaxFileBytes > math.MaxInt64 {
+			validator.add("photos.maxFileBytes", "must be positive, for example 8GB")
+		}
+		if self.Photos.MaxAccountBytes > math.MaxInt64 {
+			validator.add("photos.maxAccountBytes", "is too large; leave it 0 for no limit")
+		}
+		if self.Photos.TrashRetention <= 0 {
+			validator.add("photos.trashRetention", "must be positive, for example 30d")
+		}
 	}
 }
 

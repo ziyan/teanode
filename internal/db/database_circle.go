@@ -454,6 +454,9 @@ func endSharesOutsideCircles(tx *gorm.DB, userIds ...string) error {
 		if err := endSkillSharesOutsideCircles(tx, userId); err != nil {
 			return err
 		}
+		if err := releasePhotoAlbumsOutsideCircles(tx, userId); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { graphql } from '../api'
@@ -9,6 +9,24 @@ import { CheckIcon } from '../components/icons'
 import { restartServer } from '../components/serverRestart'
 import { useToast } from '../components/toast'
 import { useTranslation } from '../i18n/i18n'
+
+// Which hosted services already run, and whether chosen ones wait for a
+// restart: what the second way in offers. Asked apart from everything else
+// and allowed to fail, since it only changes what that block says.
+const RUNNING = `{ GetServiceCapabilities { isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled hasPendingServiceRestart } }`
+
+type RunningServices = {
+  isMailboxEnabled: boolean
+  isCalendarEnabled: boolean
+  isRemindersEnabled: boolean
+  isContactsEnabled: boolean
+  isPhotosEnabled: boolean
+  hasPendingServiceRestart: boolean
+}
+
+// Where the second way in leads when nothing runs yet: service setup with
+// Photos already ticked.
+const CHOOSE_PHOTOS = '/manage/server/setup?choose=photos'
 
 const SET_UP = `
   mutation ($kind: String!, $apiKey: String, $baseUrl: String) {
@@ -62,6 +80,25 @@ export function WelcomePage() {
   const [stage, setStage] = useState<Stage>('form')
   const [setup, setSetup] = useState<AssistantSetup | null>(null)
   const [problem, setProblem] = useState<unknown>(null)
+  const [running, setRunning] = useState<RunningServices | null>(null)
+  useEffect(() => {
+    graphql<{ GetServiceCapabilities: RunningServices }>(RUNNING)
+      .then((answer) => setRunning(answer.GetServiceCapabilities))
+      .catch(() => undefined)
+  }, [])
+  // The services that run now, in the order a person who did not come for an
+  // assistant is most likely to want them: Photos first, since it runs on a
+  // new server without being chosen.
+  const openable = running
+    ? [
+        running.isPhotosEnabled && { path: '/photos', name: t('nav.photos') },
+        running.isMailboxEnabled && { path: '/mailbox', name: t('nav.mail') },
+        running.isCalendarEnabled && { path: '/calendar', name: t('nav.calendar') },
+        running.isRemindersEnabled && { path: '/reminders', name: t('services.remindersLabel') },
+        running.isContactsEnabled && { path: '/contacts', name: t('nav.contacts') },
+      ].filter((each) => each !== false)
+    : []
+  const isWaitingForRestart = running?.hasPendingServiceRestart === true
   const service = SERVICES.find((each) => each.id === serviceId)!
   const isOwnServer = serviceId === 'own'
   const isReady = isOwnServer ? address.trim() !== '' : apiKey.trim() !== ''
@@ -233,6 +270,29 @@ export function WelcomePage() {
       <button className="primary auth-button" type="submit" disabled={!isReady}>
         {t('welcome.start')}
       </button>
+      {/* For somebody who came for their photos, mail, calendar or contacts
+          and has no use for an assistant yet: what already runs, one click
+          away, or the setup where it is chosen when nothing does. Links that
+          look like buttons, since they go to another page. */}
+      <div className="welcome-other">
+        {openable.length > 0 ? (
+          <>
+            <p className="muted">{t('welcome.servicesRunning')}</p>
+            {openable.map((each) => (
+              <Link key={each.path} className="button auth-button" to={each.path}>
+                {t('welcome.openService', { service: each.name })}
+              </Link>
+            ))}
+          </>
+        ) : (
+          <>
+            <p className="muted">{t(isWaitingForRestart ? 'welcome.servicesWaiting' : 'welcome.servicesPrompt')}</p>
+            <Link className="button auth-button" to={CHOOSE_PHOTOS}>
+              {t(isWaitingForRestart ? 'welcome.servicesContinue' : 'welcome.servicesButton')}
+            </Link>
+          </>
+        )}
+      </div>
     </AuthCard>
   )
 }
