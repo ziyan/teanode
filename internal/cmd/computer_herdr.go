@@ -557,7 +557,7 @@ func runComputerHerdrFocus(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(session)
 	}
-	_, _ = fmt.Fprintf(command.Writer, "showing %s on the computer\n", herdrPaneWords(session))
+	_, _ = fmt.Fprintf(command.Writer, "showing %s\n", herdrPaneWords(session))
 	return nil
 }
 

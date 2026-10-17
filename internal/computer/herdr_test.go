@@ -1075,3 +1075,15 @@ func TestAPaneIsStartedOnceItsShellIsUpAndClosedWhenItNeverIs(t *testing.T) {
 		t.Errorf("did %q, want %q", created, want)
 	}
 }
+
+// TestEveryHerdrActionReachesHerdr checks that the program hands every herdr
+// action the server sends to RunHerdr, rather than refusing one it does not
+// list: without herdr watched, each is refused by RunHerdr itself.
+func TestEveryHerdrActionReachesHerdr(t *testing.T) {
+	for _, action := range []string{"herdr_list", "herdr_read", "herdr_screen", "herdr_send", "herdr_wait", "herdr_answer", "herdr_watch", "herdr_acknowledge", "herdr_setup", "herdr_open", "herdr_close", "herdr_focus"} {
+		_, err := handle(context.Background(), &Options{}, action, json.RawMessage(`{}`), nil, nil, nil, nil)
+		if err == nil || !strings.Contains(err.Error(), "does not watch herdr") {
+			t.Errorf("%s: %v", action, err)
+		}
+	}
+}
