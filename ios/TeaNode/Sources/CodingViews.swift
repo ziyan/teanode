@@ -504,6 +504,9 @@ struct CodingSessionView: View {
                         .contentShape(.circle)
                     }
                     .disabled(isOpeningTab)
+                    // Grey like the tabs' words, not the accent a menu
+                    // takes on its own.
+                    .tint(.secondary)
                     .accessibilityLabel("New tab")
                 }
                 .padding(.horizontal)
@@ -855,6 +858,9 @@ struct CodingTabChip: View {
                 }
             }
             .frame(width: 16, height: 16)
+            // The slot is a fixed size, so its mark stops growing where it
+            // would spill out of it.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .accessibilityHidden(true)
         }
         .foregroundStyle(isSelected ? .primary : .secondary)
