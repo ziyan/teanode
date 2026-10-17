@@ -171,9 +171,25 @@ func claudeTurnsOfLine(line []byte) []*HerdrTurn {
 		Message          struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"message"`
+		// Attachment is how Claude Code records a prompt typed while a turn
+		// was running: queued, then handed to the turn, never written as a
+		// message of its own.
+		Attachment struct {
+			Type        string          `json:"type"`
+			IsHumanTurn bool            `json:"humanTurn"`
+			Prompt      json.RawMessage `json:"prompt"`
+		} `json:"attachment"`
 	}
 	if err := json.Unmarshal(line, &record); err != nil || record.IsMeta || record.IsSidechain || record.IsCompactSummary {
 		return nil
+	}
+	if record.Type == "attachment" {
+		// Only what the person typed: a task's notice and another
+		// session's message are queued the same way.
+		if record.Attachment.Type != "queued_command" || !record.Attachment.IsHumanTurn {
+			return nil
+		}
+		record.Type, record.Message.Content = "user", record.Attachment.Prompt
 	}
 	if record.Type != "user" && record.Type != "assistant" {
 		return nil
@@ -208,6 +224,12 @@ func claudeTurnsOfLine(line []byte) []*HerdrTurn {
 			turns = append(turns, oneTurn(role, block.Text, record.Timestamp)...)
 		case "tool_use":
 			turns = append(turns, oneTurn(HerdrTurnRoleTool, block.Name+": "+toolInputLine(block.Input), record.Timestamp)...)
+		case "image":
+			// The picture itself stays on the computer; the turn says one
+			// was there, so a prompt about it still reads.
+			if role == HerdrTurnRolePerson {
+				turns = append(turns, oneTurn(role, "(a picture)", record.Timestamp)...)
+			}
 		}
 	}
 	return turns
