@@ -65,12 +65,16 @@ func init() {
 					case "read", "list":
 						return tools.RiskRead
 					}
+					if answersSkillShareCall(arguments) {
+						return tools.RiskMoney
+					}
 					// Stopping is of a command the agent may have started
 					// itself, and ends nothing a run could not.
 					return tools.RiskWrite
 				},
-				Run:     runShell,
-				Overlay: computerOverlay,
+				IsPersonsAnswer: answersSkillShareCall,
+				Run:             runShell,
+				Overlay:         computerOverlay,
 			},
 			{
 				Name: "filesystem", Family: tools.FamilyComputer, Risk: tools.RiskWrite,
@@ -142,6 +146,23 @@ func init() {
 			},
 		}
 	})
+}
+
+// answersSkillShareCall says a shell call runs the command that approves or
+// declines a call waiting on the person (tools.AnswersSkillShareCall). That
+// is the person's act, so the call asks, whatever the person allowed the agent
+// to do alone. A courtesy: the server is what refuses an approval that is not a
+// person's tap.
+func answersSkillShareCall(arguments json.RawMessage) bool {
+	var call shellArguments
+	if json.Unmarshal(arguments, &call) != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(call.Action)) {
+	case "", "run":
+		return tools.AnswersSkillShareCall(call.Command)
+	}
+	return false
 }
 
 type shellArguments struct {

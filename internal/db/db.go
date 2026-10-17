@@ -4,6 +4,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/ziyan/teanode/internal/util/aggregate"
 
 	"github.com/op/go-logging"
@@ -24,7 +25,26 @@ var (
 	// alternative -- the first hundred thousand, silently -- answers "when
 	// is this person busy" with a window that stops in the middle.
 	ErrTooMuchAsked = errors.New("db: more was asked for than this server answers at once")
+
+	// ErrLimitReached is a bound on what one person may make or do, such as
+	// how many circles they made or how many people a group chat holds. The
+	// error says which in words the person can act on, and is shown to them.
+	ErrLimitReached = errors.New("db: a limit is reached")
 )
+
+// limitError is ErrLimitReached with the words that say which limit.
+type limitError struct {
+	limitMessage string
+}
+
+func (self *limitError) Error() string { return self.limitMessage }
+
+func (self *limitError) Is(target error) bool { return target == ErrLimitReached }
+
+// limitReached is a refusal that names a limit, in words for the person.
+func limitReached(format string, arguments ...any) error {
+	return &limitError{limitMessage: fmt.Sprintf(format, arguments...)}
+}
 
 type Options struct {
 	// if supplied, limit the number of rows to return
@@ -81,6 +101,11 @@ type Database interface {
 	// misses is not kept.
 	NotifyAgentEvent(payload string) error
 	ListenAgentEvents(ctx context.Context) (<-chan string, error)
+
+	// NotifyChatEvent and ListenChatEvents are the same for what happens in a
+	// chat, which exists whether or not the server runs an agent.
+	NotifyChatEvent(payload string) error
+	ListenChatEvents(ctx context.Context) (<-chan string, error)
 
 	// NotifyAgentCommand and ListenAgentCommands are the same for a word
 	// to a turn — stop, an answer, a decision on a card — from an instance
@@ -153,6 +178,12 @@ type Transaction interface {
 	UserOperation
 	RoleOperation
 	GroupOperation
+	CircleOperation
+	CalendarShareOperation
+	PageShareOperation
+	SkillShareOperation
+	ChatOperation
+	ChatAgentOperation
 	AuditOperation
 	SyncOperation
 	MailboxOperation

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/access"
 	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/models"
 )
 
 type contextKey int
@@ -26,6 +27,11 @@ const AuthenticatedUsernameHeader = "X-TeaNode-Authenticated-User"
 // that account when the request is an impersonation. Stripped from every
 // incoming request first, like the username.
 const ImpersonatorUsernameHeader = "X-TeaNode-Impersonator"
+
+// CredentialKindHeader carries, beside them, what the request signed in with
+// (models.CredentialKind). Stripped from every incoming request first, like
+// the username.
+const CredentialKindHeader = "X-TeaNode-Credential-Kind"
 
 func ContextWithRequest(ctx context.Context, request *http.Request) context.Context {
 	return context.WithValue(ctx, requestKey, request)
@@ -99,6 +105,15 @@ func ImpersonatorUsernameFromRequest(request *http.Request) string {
 		return ""
 	}
 	return request.Header.Get(ImpersonatorUsernameHeader)
+}
+
+// CredentialKindFromRequest is what the request signed in with, as the
+// authentication middleware established it, or empty.
+func CredentialKindFromRequest(request *http.Request) models.CredentialKind {
+	if request == nil {
+		return ""
+	}
+	return models.CredentialKind(request.Header.Get(CredentialKindHeader))
 }
 
 // Principal is the authenticated identity shared with application commands.

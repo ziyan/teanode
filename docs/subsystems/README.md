@@ -27,6 +27,7 @@ change with it.
 | `mcp.md` | The Model Context Protocol both ways: servers the agent connects to, and harnesses that use its tools |
 | `contacts.md` | The address book, CardDAV, and what a phone may do to a card |
 | `calendar.md` | The calendar, CalDAV, free-busy, and invitations by mail |
+| `circles.md` | Circles of people on one server, their admins and members, invitations, and who sees whom |
 | `notes.md` | Notes from a phone's Notes app, kept in the mailbox over IMAP |
 | `finance.md` | Linked institutions, transactions, exchange rates, net worth, budgets and savings targets |
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/web"
 )
@@ -96,6 +97,15 @@ type SessionState struct {
 	// ImpersonatorUsername is the operator signed in as this account, when
 	// they are; the dashboard marks the avatar.
 	ImpersonatorUsername string `json:"impersonatorUsername,omitempty"`
+
+	// Address of the caller's picture, or null when they have none or are
+	// nobody. Told here with the name, so the shell draws the account menu
+	// with its picture on the first paint.
+	AvatarURL *string `json:"avatarUrl"`
+
+	// Which of the twelve avatar colors the caller's initial is drawn on
+	// when they have no picture; zero for nobody
+	AvatarColorIndex int `json:"avatarColorIndex"`
 }
 
 func (self *graph) sessionState(ctx context.Context) *SessionState {
@@ -119,6 +129,10 @@ func (self *graph) sessionState(ctx context.Context) *SessionState {
 		state.UserID = principal.UserID()
 		state.Permissions = principal.Permissions
 		state.Manages = principal.Permissions.Manages()
+		if principal.User != nil {
+			state.AvatarURL = avatarUrl(principal.User)
+			state.AvatarColorIndex = avatar.InitialColorIndex(principal.User.ID)
+		}
 	}
 	return state
 }
@@ -148,6 +162,8 @@ func (self *graph) signedInAs(ctx context.Context, username string) *SessionStat
 				state.UserID = principal.UserID()
 				state.Permissions = principal.Permissions
 				state.Manages = principal.Permissions.Manages()
+				state.AvatarURL = avatarUrl(user)
+				state.AvatarColorIndex = avatar.InitialColorIndex(user.ID)
 			}
 		}
 	}

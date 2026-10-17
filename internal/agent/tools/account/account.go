@@ -4,6 +4,7 @@ package account
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -13,6 +14,8 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/agent/tools/operator"
 	"github.com/ziyan/teanode/internal/agent/tools/phone"
+	"github.com/ziyan/teanode/internal/avatar"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -23,7 +26,7 @@ func init() {
 				Name: "account_get", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Description: "The person's own account: name, username, notification address, language, zone, and their sessions, API tokens and passkeys.",
 				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
-					result, err := operator.Execute(ctx, `query { GetCurrentUser { id username name email locale timezone timezoneMode } ListTokens { id name created expires lastUsed revoked } ListSessions { id current created expires lastUsed ip userAgent } ListPasskeys { id name createdAt } }`, nil)
+					result, err := operator.Execute(ctx, `query { GetCurrentUser { id username name email locale timezone timezoneMode avatarUrl } ListTokens { id name created expires lastUsed revoked } ListSessions { id current created expires lastUsed ip userAgent } ListPasskeys { id name createdAt } }`, nil)
 					if err != nil {
 						return nil, err
 					}
@@ -82,6 +85,68 @@ func init() {
 						return nil, err
 					}
 					return tools.TextResult("changed the account"), nil
+				},
+			},
+			{
+				Name: "account_set_avatar", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				Description: "Use a picture from this conversation as the person's own picture, the one other people and their own screens show beside their name. A PNG or JPEG; it is cropped to a square. It replaces the picture they have.",
+				Parameters:  tools.Object(map[string]any{"attachment_id": tools.StringProperty("the picture's attachment id in this conversation")}, "attachment_id"),
+				Preview: tools.PreviewOf(func(call struct {
+					AttachmentID string `json:"attachment_id"`
+				}) string {
+					return "Use a picture from this conversation as your picture"
+				}),
+				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+					arguments, err := tools.DecodeArguments[struct {
+						AttachmentID string `json:"attachment_id"`
+					}](call)
+					if err != nil {
+						return nil, err
+					}
+					run, err := tools.RunFrom(ctx)
+					if err != nil {
+						return nil, err
+					}
+					attachmentId := strings.TrimSpace(arguments.AttachmentID)
+					if attachmentId == "" {
+						return nil, fmt.Errorf("the attachment_id is needed")
+					}
+					var attachment *models.AgentAttachment
+					if err := run.Database().TransactionContext(ctx, func(tx db.Transaction) (err error) {
+						attachment, err = tx.GetAgentAttachment(attachmentId)
+						return err
+					}); err != nil {
+						return nil, err
+					}
+					// This conversation's own file, as share_file requires: the
+					// ids of files in other conversations are readable.
+					if attachment == nil || attachment.AgentID != run.Agent().ID ||
+						(attachment.ConversationID != "" && attachment.ConversationID != tools.ConversationIDOf(run)) {
+						return nil, fmt.Errorf("there is no attachment %q in this conversation", attachmentId)
+					}
+					if attachment.Size > avatar.MaxInputBytes {
+						return nil, fmt.Errorf("the picture is %d bytes; a picture may be at most %d", attachment.Size, avatar.MaxInputBytes)
+					}
+					content, err := run.Storage().GetFile(ctx, attachment.ID)
+					if err != nil {
+						return nil, err
+					}
+					if _, err := operator.Execute(ctx, `mutation ($userId: String, $content: String!) { SetUserAvatar(userId: $userId, content: $content) { id } }`,
+						map[string]any{"userId": run.Owner().ID, "content": base64.StdEncoding.EncodeToString(content)}); err != nil {
+						return nil, err
+					}
+					return tools.TextResult("changed the picture"), nil
+				},
+			},
+			{
+				Name: "account_remove_avatar", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				Description: "Take the person's own picture away, so they are shown as their initial on a color.",
+				Run: func(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+					if _, err := operator.Execute(ctx, `mutation ($userId: String) { RemoveUserAvatar(userId: $userId) { id } }`,
+						map[string]any{"userId": tools.MustRun(ctx).Owner().ID}); err != nil {
+						return nil, err
+					}
+					return tools.TextResult("removed the picture"), nil
 				},
 			},
 			{
@@ -338,10 +403,12 @@ func init() {
 			// phones signed in to it are part of it.
 			tools.Group{
 				Name: "account", Family: tools.FamilyAccount,
-				Description: "The person's own account on this server: who they are, how they are reached, what they have chosen, and their phones running the TeaNode app.",
+				Description: "The person's own account on this server: who they are, how they are reached, what they have chosen, their picture, and their phones running the TeaNode app.",
 				Members: []tools.Member{
 					{Action: "get", Tool: "account_get"},
 					{Action: "update", Tool: "account_update"},
+					{Action: "set_avatar", Tool: "account_set_avatar"},
+					{Action: "remove_avatar", Tool: "account_remove_avatar"},
 					{Action: "phones", Tool: "phone_list"},
 					{Action: "pair_phone", Tool: "phone_pair"},
 					{Action: "set_up_phone_mail", Tool: "phone_setup_profile"},

@@ -666,6 +666,14 @@ type AgentLimits struct {
 	// MaxAttachmentBytes bounds one upload to a conversation, across its files.
 	MaxAttachmentBytes ByteSize `yaml:"maxAttachmentBytes"`
 
+	// MaxChatAttachmentAccountBytes bounds the files one person has sent in
+	// chats and that are still kept, which is every file of a message nobody
+	// has deleted. A message with files stays until somebody deletes it,
+	// and every member of the chat reads them, so unlike a file handed to the
+	// agent they are not swept. Zero resolves to 1GB. Apart from
+	// MaxAttachmentBytes, which bounds one upload.
+	MaxChatAttachmentAccountBytes ByteSize `yaml:"maxChatAttachmentAccountBytes,omitempty"`
+
 	// MaxScannedAttachmentBytes bounds one file a knowledge source
 	// carries off a person's machine: a picture or a document a record
 	// came with, kept in object storage so that something can read it
@@ -1214,6 +1222,19 @@ func (self *AgentMCPOAuth) ResolvedRedirect() string {
 		return AgentMCPOAuthRedirectComputer
 	}
 	return AgentMCPOAuthRedirectServer
+}
+
+// MaxChatAttachmentAccountBytesDefault is what MaxChatAttachmentAccountBytes
+// resolves to when it is zero.
+const MaxChatAttachmentAccountBytesDefault = 1 << 30
+
+// EffectiveMaxChatAttachmentAccountBytes resolves the zero value: the most
+// chat files one person may keep, in bytes.
+func (self *AgentLimits) EffectiveMaxChatAttachmentAccountBytes() uint64 {
+	if self.MaxChatAttachmentAccountBytes == 0 {
+		return MaxChatAttachmentAccountBytesDefault
+	}
+	return self.MaxChatAttachmentAccountBytes.Bytes()
 }
 
 // defaultAgent is what a new server starts with: off, and every limit at a

@@ -72,6 +72,12 @@ export function PhonesPage() {
         return t('phones.kind.question')
       case 'answer':
         return t('phones.kind.answer')
+      case 'circle':
+        return t('phones.kind.circle')
+      case 'chat':
+        return t('phones.kind.chat')
+      case 'skill_share_call':
+        return t('phones.kind.skillShareCall')
     }
     return kind
   }

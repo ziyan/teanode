@@ -43,6 +43,8 @@ and a person turns it on. See `docs/subsystems/` for how it works.
       imap/                 the IMAP server over those mailboxes
       contacts/             the vCard format: parsing a card, writing one out,
                             and naming a version of one with an ETag
+      avatar/               a person's picture: any PNG or JPEG made into one
+                            square PNG with no metadata in it
       calendar/             the iCalendar format: reading an event, working out
                             when a repeat happens, building a file from boxes
                             somebody filled in, and free-busy
@@ -65,6 +67,9 @@ and a person turns it on. See `docs/subsystems/` for how it works.
                             Ask loop. Knows mail, not HTTP
       agent/tools/          the tool kit, and one package per tool beside it;
                             a new tool is a new directory, imported in tools/all
+      chat/                 what happens in a chat, carried to its people: the
+                            feed of each member's conversation, the other
+                            instances, and phones. Needs no language model
       skills/               skills: files of declarations fetched from a signed
                             registry, whose tools join the catalog at run time
       mcp/                  a client for connected servers (Model Context

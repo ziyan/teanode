@@ -48,17 +48,23 @@ const (
 
 	// SourceRecording is retained passive meeting evidence, created when a transcript completes.
 	SourceRecording AgentKnowledgeKind = "recording"
+
+	// SourceChat is a chat with other people that a member has let their
+	// agent remember, read from the time they did. It is made only by the
+	// member's switch on that chat (SetChatAgentReading); Specification.ChatID
+	// names the chat.
+	SourceChat AgentKnowledgeKind = "chat"
 )
 
 // AgentKnowledgeKinds is every kind.
-var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance, SourceRecording}
+var AgentKnowledgeKinds = []AgentKnowledgeKind{SourceComputer, SourceArchive, SourceSkill, SourceWeb, SourceSent, SourceFinance, SourceRecording, SourceChat}
 
 // IsMadeByLinking says a source of this kind is made only by the
 // operations that link it, never by the generic source creation: a finance
 // source needs a credential the provider hands over at the end of a link,
 // and a row without one would be a source that can never sync.
 func (self AgentKnowledgeKind) IsMadeByLinking() bool {
-	return self == SourceFinance || self == SourceRecording
+	return self == SourceFinance || self == SourceRecording || self == SourceChat
 }
 
 // IsDocumentKind says a source of this kind files documents into the
@@ -152,6 +158,9 @@ type AgentKnowledgeSpecification struct {
 
 	// MailboxID is which mailbox a sent source reads.
 	MailboxID string `json:"mailboxId,omitempty"`
+
+	// ChatID is which chat a chat source reads.
+	ChatID string `json:"chatId,omitempty"`
 
 	// ReadEveryCheckout reads the files of every checkout under this
 	// source's path, including the ones barely any of whose history is
@@ -298,6 +307,10 @@ func (self *AgentKnowledgeSource) Validate() error {
 		if strings.TrimSpace(self.Specification.Type) == "" {
 			errors.add("specification.type", "required: which provider")
 		}
+	case SourceChat:
+		if strings.TrimSpace(self.Specification.ChatID) == "" {
+			errors.add("specification.chatId", "required: which chat")
+		}
 	}
 	// A format the daemon cannot read used to be found only by the daemon,
 	// hours later, as a scan that failed on a word nobody could see any
@@ -341,6 +354,8 @@ func (self *AgentKnowledgeSource) Describe() string {
 		return self.Specification.Start
 	case SourceSent:
 		return "their own sent mail"
+	case SourceChat:
+		return "a chat with other people, from when it was switched on"
 	case SourceFinance:
 		settings, _ := self.FinanceSourceSettings()
 		if settings.InstitutionName != "" {

@@ -26,7 +26,7 @@ const SAVE_CONTACT = `
       organization: $organization, title: $title, emails: $emails, phones: $phones, note: $note) { id }
   }`
 
-const CALENDARS = `query { ListCalendars { id name calendarKind } }`
+const CALENDARS = `query { ListCalendars { id name calendarKind shareLevel } }`
 const BOOKS = `query { ListAddressBooks { id name } }`
 
 const SET_STATUS = `
@@ -130,11 +130,15 @@ function ProposalCard({
       if (event && isOwnPending) {
         await submission.execute()
       } else if (event) {
-        const calendars = await graphql<{ ListCalendars: { id: string; name: string; calendarKind: string }[] }>(
-          CALENDARS,
+        const calendars = await graphql<{
+          ListCalendars: { id: string; name: string; calendarKind: string; shareLevel?: string }[]
+        }>(CALENDARS)
+        // The person's own events calendar, not the reminders list beside it
+        // and not one a circle keeps or somebody shared with them: an offer to
+        // put something in the diary goes in theirs.
+        const calendar = calendars.ListCalendars.find(
+          (each) => each.calendarKind === 'events' && (!each.shareLevel || each.shareLevel === 'owner'),
         )
-        // The events calendar, not the reminders list beside it.
-        const calendar = calendars.ListCalendars.find((each) => each.calendarKind === 'events')
         if (!calendar) {
           throw new Error(t('proposal.noCalendar'))
         }

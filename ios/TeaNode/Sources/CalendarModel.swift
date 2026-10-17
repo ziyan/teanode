@@ -11,9 +11,10 @@ final class MonthEvents {
 }
 
 /// CalendarModel is the calendar as the dashboard's Calendar page shows it:
-/// the events calendar, its events read a month at a time and kept by day,
-/// and a change in flight that must be finished or stopped before another
-/// is made.
+/// the calendars of events the person reaches (their own, their circles' and
+/// the ones shared with them), their events read a month at a time and kept
+/// by day, and a change in flight that must be finished or stopped before
+/// another is made.
 @MainActor
 @Observable
 final class CalendarModel {
@@ -22,13 +23,25 @@ final class CalendarModel {
         var id: String { rawValue }
     }
 
+    /// The person's own calendar of events, which a new event goes in unless
+    /// they choose another.
     private(set) var calendar: AgentCalendar?
+    /// Every calendar of events the person reaches, their own first, then
+    /// their circles', then the ones shared with them.
+    private(set) var calendars: [AgentCalendar] = []
+    /// The calendars hidden on this phone. Remembered here and nowhere else:
+    /// whether the family's calendar is in the way on this screen is not
+    /// something to carry to the dashboard.
+    private(set) var hiddenIds: Set<String> = []
     /// The events of every month read so far. The month view reads each
     /// month as it scrolls into view, and every other view reads the months
     /// its days are in, so moving about asks for nothing twice.
     @ObservationIgnored private var monthEventsByMonth: [CalendarMonth: MonthEvents] = [:]
     private(set) var loadedMonths: Set<CalendarMonth> = []
     private(set) var loadingMonths: Set<CalendarMonth> = []
+    /// The calendars that could not be read, which later months leave out
+    /// rather than ask again on every scroll. A refresh asks again.
+    @ObservationIgnored private var unreadableCalendarIds: Set<String> = []
     var problemText: String?
     var doneText: String?
 
@@ -43,7 +56,7 @@ final class CalendarModel {
     }
     /// The months the month view has on screen, read again on a refresh.
     @ObservationIgnored var visibleMonths: Set<CalendarMonth> = []
-    @ObservationIgnored private var calendarTask: Task<AgentCalendar?, Never>?
+    @ObservationIgnored private var calendarTask: Task<[AgentCalendar]?, Never>?
 
     /// A change sent whose answer did not come back, kept on the phone until
     /// it is finished or stopped.
@@ -51,10 +64,13 @@ final class CalendarModel {
 
     let connection: Connection
     private let pendingKey: String
+    private let hiddenKey: String
 
     init(connection: Connection, username: String) {
         self.connection = connection
         pendingKey = "calendar-pending-change.\(username)"
+        hiddenKey = "calendar-hidden.\(username)"
+        hiddenIds = Set(UserDefaults.standard.stringArray(forKey: hiddenKey) ?? [])
         if let data = UserDefaults.standard.data(forKey: pendingKey) {
             pending = try? JSONDecoder().decode(CalendarChange.self, from: data)
         }
@@ -79,6 +95,7 @@ final class CalendarModel {
         guard viewMode != .reminders else { return }
         let months = neededMonths
         loadedMonths.formIntersection(months)
+        unreadableCalendarIds = []
         await loadMonths(months, isForced: true)
     }
 
@@ -105,30 +122,50 @@ final class CalendarModel {
         guard !wanted.isEmpty else { return }
         loadingMonths.formUnion(wanted)
         defer { loadingMonths.subtract(wanted) }
-        guard let calendar = await eventsCalendar() else { return }
+        guard await eventsCalendar() != nil else { return }
         let dates = self.dates
+        let read = shownCalendars
         for month in wanted.sorted() {
             guard let monthWindow = month.window(in: dates) else { continue }
-            do {
-                let events = try await connection.calendarEvents(calendarId: calendar.id, from: monthWindow.from, until: monthWindow.until)
-                monthEvents(month).eventsByDay = CalendarDates.eventsByDay(events, in: month, calendar: dates)
-                loadedMonths.insert(month)
-                problemText = nil
-            } catch {
-                problemText = error.localizedDescription
+            // Every calendar shown, one after another. One that cannot be
+            // read (it was shared, and has just been taken back) does not
+            // take the rest of the month with it: it is remembered, and the
+            // person is told once, by its name.
+            var events: [CalendarEvent] = []
+            var failures: [(calendar: AgentCalendar, error: Error)] = []
+            let attempted = read.filter { !unreadableCalendarIds.contains($0.id) }
+            for each in attempted {
+                do {
+                    events += try await connection.calendarEvents(calendarId: each.id, from: monthWindow.from, until: monthWindow.until)
+                } catch {
+                    failures.append((each, error))
+                }
             }
+            // Every one failing is the connection and not a calendar: nothing
+            // is remembered, and the month is read again when it is next
+            // asked for.
+            if !attempted.isEmpty, failures.count == attempted.count, let first = failures.first {
+                problemText = first.error.localizedDescription
+                continue
+            }
+            for failure in failures {
+                unreadableCalendarIds.insert(failure.calendar.id)
+                problemText = String(localized: "The calendar “\(failure.calendar.name)” could not be read: \(failure.error.localizedDescription)")
+            }
+            monthEvents(month).eventsByDay = CalendarDates.eventsByDay(events, in: month, calendar: dates)
+            loadedMonths.insert(month)
         }
     }
 
-    /// The events calendar, read once however many months ask for it at once.
+    /// The calendars, read once however many months ask for them at once.
+    /// Answers the person's own calendar of events.
     private func eventsCalendar() async -> AgentCalendar? {
         if let calendar { return calendar }
         if calendarTask == nil {
             let connection = self.connection
             calendarTask = Task {
                 do {
-                    let calendars = try await connection.calendars()
-                    return calendars.first { $0.calendarKind == "events" } ?? calendars.first
+                    return try await connection.calendars()
                 } catch {
                     problemText = error.localizedDescription
                     return nil
@@ -136,12 +173,47 @@ final class CalendarModel {
             }
         }
         let found = await calendarTask?.value
-        if found == nil {
+        guard let found else {
             // Asked again next time, rather than remembered as having none.
             calendarTask = nil
+            return nil
         }
-        calendar = found
-        return found
+        let events = found.filter { $0.calendarKind != "reminders" }
+        calendars = events
+        calendar = events.first(where: \.isOwn) ?? events.first ?? found.first
+        return calendar
+    }
+
+    /// The calendars whose events are on the screen.
+    var shownCalendars: [AgentCalendar] { calendars.filter { !hiddenIds.contains($0.id) } }
+
+    /// The calendars an event can be put in: the person's own, a circle's,
+    /// and any shared with them at edit.
+    var writableCalendars: [AgentCalendar] { calendars.filter(\.canWrite) }
+
+    /// The calendar with this identifier, if the person reaches it.
+    func calendar(withId calendarId: String) -> AgentCalendar? { calendars.first { $0.id == calendarId } ?? (calendar?.id == calendarId ? calendar : nil) }
+
+    /// Shows a calendar, or hides it, and reads the months again without it.
+    func setShown(_ calendarId: String, isShown: Bool) async {
+        if isShown {
+            hiddenIds.remove(calendarId)
+        } else {
+            hiddenIds.insert(calendarId)
+        }
+        UserDefaults.standard.set(Array(hiddenIds), forKey: hiddenKey)
+        loadedMonths = []
+        await reload()
+    }
+
+    /// Reads the calendars again: after the person shares theirs or a
+    /// circle's is made, or when a refresh is asked for.
+    func reloadCalendars() async {
+        calendar = nil
+        calendarTask = nil
+        _ = await eventsCalendar()
+        loadedMonths = []
+        await reload()
     }
 
     /// The days a view covers: the month, a week, five days
@@ -280,7 +352,13 @@ struct EventDraft: Identifiable {
     var endsAt = Date().addingTimeInterval(3600)
     var recurrence = ""
     var status = ""
+    /// Whether the owner marked it private, so that people the calendar is
+    /// shared with see only that they are busy.
+    var isPrivate = false
     var invited = ""
+    /// The calendar it is in or goes in: the person's own unless they chose
+    /// another. Nil until the calendars are read.
+    var calendarId: String?
 
     /// The repeat choices the editor offers; any other rule is kept as it is.
     static let repeats = ["", "FREQ=DAILY", "FREQ=WEEKLY", "FREQ=MONTHLY", "FREQ=YEARLY"]
@@ -290,25 +368,27 @@ struct EventDraft: Identifiable {
         endsAt = start.addingTimeInterval(3600)
     }
 
-    init(_ detail: CalendarEventDetail) {
-        eventId = detail.id
-        summary = detail.summary ?? ""
-        location = detail.location ?? ""
-        notes = detail.description ?? ""
-        isAllDay = detail.allDay
-        recurrence = detail.recurrence ?? ""
-        status = detail.status ?? ""
-        invited = (detail.attendees ?? []).map(\.address).joined(separator: "\n")
-        if detail.allDay {
+    init(_ eventDetail: CalendarEventDetail, calendarId: String? = nil) {
+        eventId = eventDetail.id
+        self.calendarId = calendarId
+        summary = eventDetail.summary ?? ""
+        location = eventDetail.location ?? ""
+        notes = eventDetail.description ?? ""
+        isAllDay = eventDetail.allDay
+        recurrence = eventDetail.recurrence ?? ""
+        status = eventDetail.status ?? ""
+        isPrivate = eventDetail.isPrivate ?? false
+        invited = (eventDetail.attendees ?? []).map(\.address).joined(separator: "\n")
+        if eventDetail.allDay {
             var local = Calendar.current
             local.timeZone = .current
-            let start = CalendarDates.day(ofAllDay: detail.startsAt)
-            let last = CalendarDates.lastDay(startsAt: detail.startsAt, endsAt: detail.endsAt)
+            let start = CalendarDates.day(ofAllDay: eventDetail.startsAt)
+            let last = CalendarDates.lastDay(startsAt: eventDetail.startsAt, endsAt: eventDetail.endsAt)
             startsAt = start.flatMap { local.date(from: $0) } ?? Date()
             endsAt = last.flatMap { local.date(from: $0) } ?? startsAt
         } else {
-            startsAt = ServerTime.date(detail.startsAt) ?? Date()
-            endsAt = ServerTime.date(detail.endsAt) ?? startsAt.addingTimeInterval(3600)
+            startsAt = ServerTime.date(eventDetail.startsAt) ?? Date()
+            endsAt = ServerTime.date(eventDetail.endsAt) ?? startsAt.addingTimeInterval(3600)
         }
     }
 
@@ -323,7 +403,16 @@ struct EventDraft: Identifiable {
             "allDay": .bool(isAllDay),
             "recurrence": .string(recurrence.trimmingCharacters(in: .whitespacesAndNewlines)),
             "status": .string(status),
-            "attendees": .array(invited.split(whereSeparator: \.isNewline).map { .string($0.trimmingCharacters(in: .whitespaces)) }.filter { $0 != .string("") }),
+            // Only in the person's own calendar: in a circle's, or one shared
+            // with them at edit, every reader is an editor and sees the event
+            // whatever it says.
+            "isPrivate": calendar.isOwn ? .bool(isPrivate) : .null,
+            // Only in the person's own calendar: the invitations go out from,
+            // and the answers come back to, the owner, so a circle's calendar
+            // or one shared with them has none.
+            "attendees": calendar.isOwn
+                ? .array(invited.split(whereSeparator: \.isNewline).map { .string($0.trimmingCharacters(in: .whitespaces)) }.filter { $0 != .string("") })
+                : .null,
         ]
         variables["id"] = eventId.map { .string($0) } ?? .null
         if isAllDay {

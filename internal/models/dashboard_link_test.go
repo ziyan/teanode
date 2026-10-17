@@ -15,6 +15,13 @@ func TestDashboardPath(t *testing.T) {
 		{"memory", "projects/example-app#3", "/knowledge/projects/example-app"},
 		{"memory", "people/zoë", "/knowledge/people/zo%C3%AB"},
 		{"memory", "self", "/knowledge/self"},
+		// A page another person shared opens as theirs.
+		{"memory", "people/a-grandparent#3@ada", "/knowledge/people/a-grandparent?owner=ada"},
+		{"memory", "people/a-grandparent@ada.example", "/knowledge/people/a-grandparent?owner=ada.example"},
+		{"memory", "people/a-grandparent#3@ada?x=1", ""},
+		{"memory", "people/a-grandparent#3@", ""},
+		{"memory", "people/a-grandparent#3@ada/../x", ""},
+		{"memory", "people/a-grandparent@ada@ben", ""},
 		// What a model could put together to go somewhere else.
 		{"mail", "item42/../../settings", ""},
 		{"memory", "../settings/tokens", ""},

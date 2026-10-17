@@ -25,6 +25,12 @@ type AgentSkillTool struct {
 	Description   string `json:"description"`
 	Kind          string `json:"kind"`
 	NeedsComputer bool   `json:"needsComputer"`
+
+	// IsAmountDeclared says the skill says what a call costs, so that the tool
+	// can be shared with limits; IsScoped that it works only on a request a
+	// share made.
+	IsAmountDeclared bool `json:"isAmountDeclared"`
+	IsScoped         bool `json:"isScoped"`
 }
 
 // AgentSkillOffer is one skill the registry publishes.
@@ -40,7 +46,7 @@ type AgentSkillOffer struct {
 const (
 	documentListAgentSkills = `query {
   ListAgentSkills { name description version publisher enabled readable problem scope secrets personalSecrets
-    tools { name description kind needsComputer } }
+    tools { name description kind needsComputer isAmountDeclared isScoped } }
 }`
 
 	documentSearchAgentSkills = `query ($query: String) {

@@ -362,6 +362,38 @@ jobs:
           shoot alerts-following-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen alerts-following
           shoot alerts-following-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen alerts-following
 
+          # The circles feature (docs/planning/circles-and-chats-execplan.md),
+          # each screen in light, dark and the largest text. Circles, a
+          # circle's page as its admin, the picture on the profile, and the
+          # sheet and the card of a shared skill: Settings pushes them.
+          for circles_screen in circles circle-detail settings-picture skill-share-sheet skill-share-call; do
+            shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
+            shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
+            shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
+          done
+          # The conversation list with two chats among the agent's, and the
+          # chats: a direct one, a circle's, and its members sheet.
+          shoot conversations-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
+          shoot conversations-dark dark large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
+          shoot conversations-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
+          for chat_screen in chat-direct chat-group chat-members; do
+            shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
+            shoot "$chat_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
+            shoot "$chat_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
+          done
+          # Calendars other people shared, the screen that shares the person's own, and the one that finds a time they are all free.
+          for calendar_screen in calendar-shared calendar-share-sheet calendar-find-time; do
+            shoot "$calendar_screen-light" light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
+            shoot "$calendar_screen-dark" dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
+            shoot "$calendar_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
+          done
+          # Pages other people shared: the list by owner, and one page read only.
+          for knowledge_screen in knowledge-shared knowledge-shared-page; do
+            shoot "$knowledge_screen-light" light large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen "$knowledge_screen"
+            shoot "$knowledge_screen-dark" dark large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen "$knowledge_screen"
+            shoot "$knowledge_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab knowledge -TeaNodeScreen "$knowledge_screen"
+          done
+
           # The App Store's set: the largest iPhone, which its listing needs,
           # with the status bar Apple's own screenshots show. The fourth
           # machine's, every screen of it.

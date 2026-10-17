@@ -59,10 +59,11 @@ type oauthAuthorizationModel struct {
 	ClientID string `gorm:"column:client_id;size:32"`
 	UserID   string `gorm:"column:user_id;size:32"`
 
-	RedirectURI   string `gorm:"column:redirect_uri;type:text"`
-	CodeChallenge string `gorm:"column:code_challenge;size:128"`
-	Resource      string `gorm:"type:text"`
-	KeyHash       string `gorm:"column:key_hash;size:64"`
+	RedirectURI   string  `gorm:"column:redirect_uri;type:text"`
+	CodeChallenge string  `gorm:"column:code_challenge;size:128"`
+	Resource      string  `gorm:"type:text"`
+	KeyHash       string  `gorm:"column:key_hash;size:64"`
+	ClientKind    *string `gorm:"column:client_kind;size:16"`
 
 	ExpiresAt time.Time
 }
@@ -72,11 +73,12 @@ func (self *oauthAuthorizationModel) TableName() string {
 }
 
 type oauthConnectCodeModel struct {
-	ID        string `gorm:"primary_key:true;size:32"`
-	CreatedAt time.Time
-	UserID    string `gorm:"column:user_id;size:32"`
-	CodeHash  string `gorm:"column:code_hash;size:64"`
-	ExpiresAt time.Time
+	ID         string `gorm:"primary_key:true;size:32"`
+	CreatedAt  time.Time
+	UserID     string  `gorm:"column:user_id;size:32"`
+	CodeHash   string  `gorm:"column:code_hash;size:64"`
+	ClientKind *string `gorm:"column:client_kind;size:16"`
+	ExpiresAt  time.Time
 }
 
 func (self *oauthConnectCodeModel) TableName() string {
@@ -85,10 +87,11 @@ func (self *oauthConnectCodeModel) TableName() string {
 
 func oauthConnectCodeFromModel(model *oauthConnectCodeModel) *models.OAuthConnectCode {
 	return &models.OAuthConnectCode{
-		ID:        model.ID,
-		CreatedAt: model.CreatedAt.In(time.Local),
-		UserID:    model.UserID,
-		ExpiresAt: model.ExpiresAt.In(time.Local),
+		ID:         model.ID,
+		CreatedAt:  model.CreatedAt.In(time.Local),
+		UserID:     model.UserID,
+		ClientKind: models.TokenClientKind(stringOrEmpty(model.ClientKind)),
+		ExpiresAt:  model.ExpiresAt.In(time.Local),
 	}
 }
 
@@ -174,6 +177,7 @@ func (self *database) CreateOAuthAuthorization(authorization *models.OAuthAuthor
 		CodeChallenge: authorization.CodeChallenge,
 		Resource:      authorization.Resource,
 		KeyHash:       keyHash,
+		ClientKind:    stringOrNil(string(authorization.ClientKind)),
 		ExpiresAt:     authorization.ExpiresAt,
 	}
 	if err := self.db.Create(model).Error; err != nil {
@@ -187,6 +191,7 @@ func (self *database) CreateOAuthAuthorization(authorization *models.OAuthAuthor
 		RedirectURI:   model.RedirectURI,
 		CodeChallenge: model.CodeChallenge,
 		Resource:      model.Resource,
+		ClientKind:    authorization.ClientKind,
 		ExpiresAt:     model.ExpiresAt.In(time.Local),
 	}, nil
 }
@@ -217,17 +222,19 @@ func (self *database) SpendOAuthAuthorization(authorizationId string, now time.T
 		RedirectURI:   model.RedirectURI,
 		CodeChallenge: model.CodeChallenge,
 		Resource:      model.Resource,
+		ClientKind:    models.TokenClientKind(stringOrEmpty(model.ClientKind)),
 		ExpiresAt:     model.ExpiresAt.In(time.Local),
 	}, model.KeyHash, nil
 }
 
 func (self *database) CreateOAuthConnectCode(code *models.OAuthConnectCode, codeHash string) (*models.OAuthConnectCode, error) {
 	model := &oauthConnectCodeModel{
-		ID:        code.ID,
-		CreatedAt: time.Now(),
-		UserID:    code.UserID,
-		CodeHash:  codeHash,
-		ExpiresAt: code.ExpiresAt,
+		ID:         code.ID,
+		CreatedAt:  time.Now(),
+		UserID:     code.UserID,
+		CodeHash:   codeHash,
+		ClientKind: stringOrNil(string(code.ClientKind)),
+		ExpiresAt:  code.ExpiresAt,
 	}
 	if err := self.db.Create(model).Error; err != nil {
 		return nil, err

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ziyan/teanode/internal/access"
+	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -210,6 +212,9 @@ func translateError(err error) error {
 		return api.ErrAlreadyExists
 	case errors.Is(err, db.ErrInvalidArguments):
 		return api.ErrInvalidArguments
+	case errors.Is(err, db.ErrLimitReached):
+		// A bound on what one person makes, with the words that say which.
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	case errors.Is(err, db.ErrTooMuchAsked):
 		// The caller's to narrow, so the caller is told rather than shown
 		// a server that looks broken.
@@ -245,4 +250,221 @@ func (self *graph) requireReadableMail(ctx context.Context, mailId string) (*mod
 		return nil, api.ErrNotFound
 	}
 	return mail, nil
+}
+
+// requireCirclePerson checks that the caller is an account that may use
+// circles, and returns it. The console is not an account and is in no circle.
+func (self *graph) requireCirclePerson(ctx context.Context) (*models.User, error) {
+	principal, err := self.requirePermission(ctx, models.PermissionCircleUse)
+	if err != nil {
+		return nil, err
+	}
+	if principal.User == nil {
+		return nil, api.ErrNotFound
+	}
+	return principal.User, nil
+}
+
+// requireCircleMember checks that the caller may use circles and is in this
+// one, and returns the circle with its members and the caller's own row. A
+// circle the caller is not in reads as not found, which is also what a
+// circle that was deleted since they last looked reads as.
+func (self *graph) requireCircleMember(ctx context.Context, circleId string) (*models.Circle, *models.CircleMember, error) {
+	user, err := self.requireCirclePerson(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	circle, err := self.transaction(ctx).GetCircle(circleId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if circle == nil {
+		return nil, nil, api.ErrNotFound
+	}
+	member := circle.Member(user.ID)
+	if member == nil {
+		return nil, nil, api.ErrNotFound
+	}
+	return circle, member, nil
+}
+
+// requireCircleAdmin is requireCircleMember for something only an admin of
+// the circle may do. A member who is not an admin can see the circle, so they
+// are told in words rather than shown a circle that does not exist.
+func (self *graph) requireCircleAdmin(ctx context.Context, circleId string) (*models.Circle, *models.CircleMember, error) {
+	circle, member, err := self.requireCircleMember(ctx, circleId)
+	if err != nil {
+		return nil, nil, err
+	}
+	if member.MemberRole != models.MemberRoleAdmin {
+		return nil, nil, fmt.Errorf("%w: only an admin of this circle can do that", api.ErrPermissionDenied)
+	}
+	return circle, member, nil
+}
+
+// requireChatPerson checks that the caller is an account that may use
+// circles, and returns it with its agent, made switched off when there is none:
+// a person can chat with their agent off, and their conversations and phones
+// hang from the agent's row. The agent being on is not asked.
+func (self *graph) requireChatPerson(ctx context.Context) (*models.User, *models.Agent, error) {
+	user, err := self.requireCirclePerson(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	found, err := self.transaction(ctx).EnsureAgent(user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return user, found, nil
+}
+
+// chatSession is a chat as one of its members reaches it: who they are, their
+// own conversation for it, and the chat with their place in it.
+type chatSession struct {
+	User         *models.User
+	Agent        *models.Agent
+	Conversation *models.AgentConversation
+	Chat         *models.Chat
+	Member       *models.ChatMember
+}
+
+// requireChatMember checks that the caller may chat and that the conversation
+// is their own conversation for a chat they are, or were, in, and returns
+// the chat. Anything else, including another person's conversation and an
+// operator asking for one, is not found: a chat is between its people.
+func (self *graph) requireChatMember(ctx context.Context, conversationId string) (*chatSession, error) {
+	user, found, err := self.requireChatPerson(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	conversation, err := tx.GetAgentConversation(strings.TrimSpace(conversationId))
+	if err != nil {
+		return nil, err
+	}
+	if conversation == nil || !conversation.IsChat() || conversation.AgentID != found.ID {
+		return nil, api.ErrNotFound
+	}
+	return chatSessionOf(tx, user, found, conversation)
+}
+
+// chatSessionOf is the caller's place in the chat their conversation is for,
+// or not found when they have none.
+func chatSessionOf(tx db.Transaction, user *models.User, found *models.Agent, conversation *models.AgentConversation) (*chatSession, error) {
+	chat, err := tx.GetChat(conversation.ChatID)
+	if err != nil {
+		return nil, err
+	}
+	if chat == nil {
+		return nil, api.ErrNotFound
+	}
+	member := chat.Member(user.ID)
+	if member == nil {
+		return nil, api.ErrNotFound
+	}
+	return &chatSession{User: user, Agent: found, Conversation: conversation, Chat: chat, Member: member}, nil
+}
+
+// requireChatMessage is requireChatMember for a message: it must be one the
+// caller can read, which is one written while they were in the chat.
+func (self *graph) requireChatMessage(ctx context.Context, messageId string) (*chatSession, *models.ChatMessage, error) {
+	user, found, err := self.requireChatPerson(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	tx := self.transaction(ctx)
+	message, err := tx.GetChatMessage(strings.TrimSpace(messageId))
+	if err != nil {
+		return nil, nil, err
+	}
+	if message == nil {
+		return nil, nil, api.ErrNotFound
+	}
+	chat, err := tx.GetChat(message.ChatID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if chat == nil {
+		return nil, nil, api.ErrNotFound
+	}
+	member := chat.Member(user.ID)
+	if member == nil || !isReadableByMember(message, member) {
+		return nil, nil, api.ErrNotFound
+	}
+	conversation, err := tx.EnsureChatConversation(found.ID, chat.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &chatSession{User: user, Agent: found, Conversation: conversation, Chat: chat, Member: member}, message, nil
+}
+
+// isReadableByMember says whether a message was written while the member
+// was in the chat: after they joined, and before they left if they did.
+func isReadableByMember(message *models.ChatMessage, member *models.ChatMember) bool {
+	if message.CreatedAt.Before(member.JoinedAt) {
+		return false
+	}
+	return member.RemovedAt == nil || !message.CreatedAt.After(*member.RemovedAt)
+}
+
+// requireConversationPerson is the caller for the operations on conversations,
+// which a chat shares with a conversation with the agent. It lets in a person
+// who may use circles, whose agent need not be on, and one who may use the
+// agent, whose agent must be: which of them it takes is settled once the
+// conversation is known, by requireConversationUse. The agent is the caller's,
+// made switched off for a person who can chat and has none.
+func (self *graph) requireConversationPerson(ctx context.Context) (*api.Principal, *models.Agent, error) {
+	principal, err := self.requireSignedIn(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if principal.User == nil {
+		return nil, nil, api.ErrNotLoggedIn
+	}
+	canChat := principal.Permissions.Has(models.PermissionCircleUse)
+	if !canChat && !principal.Permissions.Has(models.PermissionAgentUse) {
+		return nil, nil, api.ErrNotFound
+	}
+	tx := self.transaction(ctx)
+	found, err := tx.GetAgentByUser(principal.User.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	// A person who can chat and has no agent row gets one switched off, but
+	// only once they are in a circle to chat with: opening the drawer is not
+	// a reason to make a row for everybody on the server.
+	if found == nil && canChat {
+		circles, err := tx.ListCircles(principal.User.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(circles) > 0 {
+			if found, err = tx.EnsureAgent(principal.User.ID); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	if found == nil {
+		return nil, nil, agent.ErrUnavailable
+	}
+	return principal, found, nil
+}
+
+// requireConversationUse says whether the caller may use the conversation:
+// a chat needs circle:use, and any other conversation the agent permission
+// and an agent that is on.
+func requireConversationUse(principal *api.Principal, found *models.Agent, conversation *models.AgentConversation) error {
+	if conversation.IsChat() {
+		if !principal.Permissions.Has(models.PermissionCircleUse) {
+			return api.ErrNotFound
+		}
+		return nil
+	}
+	if !principal.Permissions.Has(models.PermissionAgentUse) {
+		return api.ErrNotFound
+	}
+	if !found.Active() {
+		return agent.ErrUnavailable
+	}
+	return nil
 }

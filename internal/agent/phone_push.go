@@ -2,13 +2,9 @@ package agent
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -47,124 +43,27 @@ const (
 	phonePushTimeout = 30 * time.Second
 )
 
-// phoneSenders builds, and rebuilds when the settings change, what sends a
-// notification: this server's own relay when it is one, or the relay over
-// HTTP.
-type phoneSenders struct {
-	mutex       sync.Mutex
-	sender      push.Sender
-	fingerprint string
-
-	// override replaces the sender in a test, which stands in for the relay.
-	override push.Sender
+// Phones is what sends this agent's notifications, which is the chat hub's as
+// well on a running server.
+func (self *Agent) Phones() *PhoneNotifier {
+	return self.phones
 }
 
 // phoneSender is how this server sends to phones now, or nil while
 // notifications are off.
 func (self *Agent) phoneSender() (push.Sender, error) {
-	configuration := self.settings.Configuration()
-	settings := configuration.Agent.Push
-	if !settings.IsEnabled() {
-		return nil, nil
-	}
-	relay := settings.Relay
-	isLocal := relay.Enabled && relay.HasKey()
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%t\x00%s\x00%s\x00%s\x00%s\x00%s", isLocal, settings.ResolvedRelayURL(),
-		relay.APNSKeyID, relay.APNSTeamID, relay.ResolvedTopic(), relay.APNSKey)))
-	fingerprint := hex.EncodeToString(sum[:])
-
-	self.phones.mutex.Lock()
-	defer self.phones.mutex.Unlock()
-	if self.phones.override != nil {
-		return self.phones.override, nil
-	}
-	if self.phones.sender != nil && self.phones.fingerprint == fingerprint {
-		return self.phones.sender, nil
-	}
-	if isLocal {
-		apns, err := push.NewAPNs(relay.APNSKeyID, relay.APNSTeamID, relay.ResolvedTopic(), relay.APNSKey)
-		if err != nil {
-			return nil, err
-		}
-		relay, err := push.NewRelay(apns)
-		if err != nil {
-			return nil, err
-		}
-		self.phones.sender = relay
-	} else {
-		self.phones.sender = push.NewRelayClient(settings.ResolvedRelayURL())
-	}
-	self.phones.fingerprint = fingerprint
-	return self.phones.sender, nil
+	return self.phones.Sender()
 }
 
 // NotifyPhone sends one notification to one phone and records how it went.
 func (self *Agent) NotifyPhone(ctx context.Context, phone *models.AgentPhone, content *push.Content) error {
-	sender, err := self.phoneSender()
-	if err != nil {
-		return err
-	}
-	if sender == nil {
-		return fmt.Errorf("agent: notifications to phones are off on this server")
-	}
-	if !phone.CanBeNotified() {
-		return fmt.Errorf("agent: the phone has not registered for notifications; open the TeaNode app on it")
-	}
-	opened, err := self.OpenSecret(phone.PayloadKey)
-	if err != nil {
-		return err
-	}
-	key, err := base64.StdEncoding.DecodeString(opened)
-	if err != nil {
-		return fmt.Errorf("agent: the phone's notification key cannot be read: %w", err)
-	}
-	delivery, err := push.EncryptContent(key, content)
-	if err != nil {
-		return err
-	}
-	sendContext, cancel := context.WithTimeout(ctx, phonePushTimeout)
-	defer cancel()
-	sendError := sender.Send(sendContext, phone.PushRegistration, delivery)
-
-	isGone := errors.Is(sendError, push.ErrGone)
-	errorText := ""
-	if sendError != nil {
-		errorText = sendError.Error()
-	}
-	if err := self.settings.Database.TransactionContext(context.WithoutCancel(ctx), func(tx db.Transaction) error {
-		return tx.NoteAgentPhoneDelivery(phone.ID, time.Now(), errorText, isGone)
-	}); err != nil {
-		log.Warningf("cannot record a notification to phone %s: %s", phone.ID, err)
-	}
-	return sendError
+	return self.phones.NotifyPhone(ctx, phone, content)
 }
 
 // notifyPhones sends a notification to each of the person's phones that
 // wants its kind, in the background: nothing that raises one waits on Apple.
 func (self *Agent) notifyPhones(agentId, notificationKind string, content *push.Content) {
-	if sender, err := self.phoneSender(); err != nil || sender == nil {
-		return
-	}
-	var phones []*models.AgentPhone
-	if err := self.settings.Database.TransactionContext(self.ctx, func(tx db.Transaction) (err error) {
-		phones, err = tx.ListAgentPhones(agentId)
-		return err
-	}); err != nil {
-		log.Warningf("cannot list the phones to notify: %s", err)
-		return
-	}
-	for _, phone := range phones {
-		if !phone.Wants(notificationKind) || !phone.CanBeNotified() {
-			continue
-		}
-		self.waitGroup.Add(1)
-		go func(phone *models.AgentPhone) {
-			defer self.waitGroup.Done()
-			if err := self.NotifyPhone(self.ctx, phone, content); err != nil {
-				log.Noticef("a notification did not reach phone %s: %s", phone.ID, err)
-			}
-		}(phone)
-	}
+	self.phones.NotifyPhones(agentId, notificationKind, content)
 }
 
 // startPhonePushes starts the loop that sends the agent's own turns.
@@ -213,7 +112,7 @@ func (self *Agent) pushOwnTurns(ctx context.Context, now time.Time) {
 				NotificationKind: models.NotificationMessage,
 				ConversationID:   answer.ConversationID,
 				Title:            agentName,
-				Body:             phoneBody(answer.Content),
+				Body:             PhoneBody(answer.Content),
 				ThreadID:         answer.ConversationID,
 				Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 			}
@@ -288,7 +187,7 @@ func (self *AskRun) notifyInteraction(interaction *models.AgentInteraction) {
 		RunID:          interaction.RunID,
 		CallID:         interaction.CallID,
 		Title:          "Waiting for you",
-		Body:           phoneBody(interaction.InteractionText),
+		Body:           PhoneBody(interaction.InteractionText),
 		ThreadID:       interaction.ConversationID,
 	}
 	notificationKind := models.NotificationQuestion
@@ -332,7 +231,7 @@ func (self *AskRun) notifyAnswer(answer string) {
 		ConversationID:   self.settings.Conversation.ID,
 		RunID:            self.ID,
 		Title:            agentName,
-		Body:             phoneBody(answer),
+		Body:             PhoneBody(answer),
 		ThreadID:         self.settings.Conversation.ID,
 		Buttons:          []push.Button{{Label: "Reply", ButtonAction: "reply"}, {Label: "Open", ButtonAction: "open"}},
 	})
@@ -375,17 +274,4 @@ func (self *AskRun) isAnswerForPhone() bool {
 		return true
 	}
 	return false
-}
-
-// phoneBody is text as a notification shows it: plain, and short enough that
-// a lock screen is not the place it is read in full. A notification is
-// plain text, so the suggested replies and any other hidden marker, a
-// link's target and the Markdown marks are taken off first.
-func phoneBody(text string) string {
-	text = strings.Join(strings.Fields(models.PlainText(text)), " ")
-	runes := []rune(text)
-	if len(runes) > 600 {
-		return string(runes[:600]) + "…"
-	}
-	return text
 }

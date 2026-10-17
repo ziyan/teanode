@@ -298,7 +298,9 @@ func TestTheCatalogStaysShort(t *testing.T) {
 	// 65 since location, which asks the person's browser where it is and has
 	// no other tool's verbs to join.
 	// Recording is one new noun with all retained-media verbs grouped together.
-	if count := len(catalog.All()); count > 66 {
+	// 67 since circle, which is one noun with its verbs and has no other
+	// tool's to join: a circle is a set of people, which nothing else is.
+	if count := len(catalog.All()); count > 67 {
 		t.Fatalf("the catalog is %d tools; merge the verbs of something before adding another name", count)
 	}
 

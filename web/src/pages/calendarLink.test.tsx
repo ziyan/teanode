@@ -107,7 +107,7 @@ it('opens the event a link from memory names, with the pages it is in, and forge
   expect((within(dialog).getAllByRole('textbox')[0] as HTMLInputElement).value).toBe('Fixture planning')
   expect(await within(dialog).findByRole('link', { name: 'Fixture Project' })).toBeTruthy()
   // A guess says so.
-  expect(within(dialog).getByText('Perhaps')).toBeTruthy()
+  expect(within(dialog).getByText("The agent's guess")).toBeTruthy()
   const getCall = vi.mocked(graphql).mock.calls.find(([document]) => document.includes('GetCalendarEvent'))
   expect(getCall?.[1]).toEqual({ calendarId: 'calendar-1', id: 'event-1' })
   fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))

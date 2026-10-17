@@ -104,8 +104,8 @@ it('groups the records by kind, each opening the record, a guess marked and a lo
   expect(screen.getByRole('link', { name: 'Fixture subject' }).getAttribute('href')).toBe('/mailbox/starred/item-1')
   expect(screen.getByRole('link', { name: 'Fixture planning' }).getAttribute('href')).toBe('/calendar?event=event-1')
   expect(screen.getByRole('link', { name: 'Fixture Guest' }).getAttribute('href')).toBe('/contacts?contact=card-1')
-  // Only the guess says Perhaps, and only it can be confirmed.
-  expect(screen.getAllByText('Perhaps')).toHaveLength(1)
+  // Only the guess says it is the agent's guess, and only it can be confirmed.
+  expect(screen.getAllByText("The agent's guess")).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: /Confirm link/ })).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: /Remove link/ })).toHaveLength(4)
   expect(screen.getByText('No longer available').closest('a')).toBeNull()

@@ -31,6 +31,12 @@ type graphRequest struct {
 // with files goes through its own route, which has its own cap.
 const maximumRequestSize = 1 << 20
 
+// maximumSignedInRequestSize is the bound once the authentication middleware
+// has established who is asking. A person's picture goes up inside the
+// mutation as base64, and eight megabytes of picture is eleven of text; a
+// stranger still gets the small bound.
+const maximumSignedInRequestSize = 12 << 20
+
 // readableAsJSON refuses a request that is not declared as JSON, when the
 // thing authorizing it is a cookie.
 //
@@ -68,7 +74,11 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		return
 	}
 	var data graphRequest
-	request.Body = http.MaxBytesReader(response, request.Body, maximumRequestSize)
+	bodyLimit := int64(maximumRequestSize)
+	if api.UsernameFromRequest(request) != "" {
+		bodyLimit = maximumSignedInRequestSize
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, bodyLimit)
 	if err := json.NewDecoder(request.Body).Decode(&data); err != nil {
 		http.Error(response, fmt.Sprintf("failed to decode request: %s", err), http.StatusBadRequest)
 		return
@@ -142,6 +152,7 @@ func (self *graph) graphView(response http.ResponseWriter, request *http.Request
 		}
 		if principal != nil {
 			principal.Impersonator = impersonator
+			principal.CredentialKind = api.CredentialKindFromRequest(request)
 		}
 		ctx = api.ContextWithPrincipal(ctx, principal)
 

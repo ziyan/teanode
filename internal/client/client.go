@@ -74,6 +74,18 @@ type Options struct {
 // same path (internal/web.FinanceLinkPagePath).
 const FinanceLinkPagePath = "/finance/link"
 
+// SkillSharingPagePath is the dashboard page where the skills a person shared
+// and the calls waiting for them are, and where they are approved (the agent
+// page's Connections tab). The command line prints it, because approving is
+// done there and in the iPhone app, not from a command line.
+const SkillSharingPagePath = "/settings/agent/connections"
+
+// IsTapRequired says the server refused a request because only a person's tap
+// on the dashboard or in the iPhone app may make it.
+func IsTapRequired(err error) bool {
+	return err != nil && strings.Contains(err.Error(), api.TapRequiredPhrase)
+}
+
 // NormalizeURL is how a server is named everywhere the client remembers one:
 // trimmed, without a trailing slash, and https unless a scheme was given.
 func NormalizeURL(url string) string {

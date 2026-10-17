@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,8 +14,8 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent"
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/db"
-	"github.com/ziyan/teanode/internal/llm"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -26,14 +28,20 @@ import (
 
 // AgentAskQuery is the conversations and their turns.
 type AgentAskQuery interface {
-	// The caller's conversations with their agent: the main one first, then
-	// the named ones by last use; archived ones only when asked. Needs
-	// agent:use.
+	// The caller's conversations: the main one with their agent first, then
+	// the named ones and their chats with other people by last message;
+	// archived ones only when asked. A chat comes with the people in it, how
+	// many messages the caller has not read, and whether they silenced it.
+	// Needs agent:use, or circle:use for the chats alone: a person whose
+	// agent is off is listed their chats and nothing else.
 	ListAgentConversations(ctx context.Context, arguments ListAgentConversationsArguments) ([]*models.AgentConversation, error)
 
 	// One conversation and its messages, oldest first; the main
-	// conversation when no id is given (made if it does not exist yet).
-	// Needs agent:use.
+	// conversation when no id is given (made if it does not exist yet). A
+	// chat's messages are what the people and their agents said, from when
+	// the caller joined until they left if they did, with the caller's own
+	// agent's rows among them by time. Needs agent:use, or circle:use for a
+	// chat.
 	ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error)
 
 	// What happened in a turn so far, from a sequence number on; waits up
@@ -56,7 +64,9 @@ type AgentAskQuery interface {
 // AgentAskMutation is a turn, its confirmations, and the conversations.
 type AgentAskMutation interface {
 	// Say something to the agent. Starts a turn in the conversation given,
-	// or in the main one, and returns the run to follow. Needs agent:use.
+	// or in the main one, and returns the run to follow. In a chat it says
+	// the words to the people instead, starts no turn and returns no run.
+	// Needs agent:use, or circle:use for a chat.
 	AskAgent(ctx context.Context, arguments AskAgentArguments) (*AgentTurnView, error)
 
 	// Answer a confirmation card: approve or decline what the agent asked
@@ -74,7 +84,8 @@ type AgentAskMutation interface {
 	// React to a message of a conversation with an emoji, as the person:
 	// one or two emoji, replacing the person's reaction on it; an empty
 	// emoji takes it away. Whoever has the conversation open is told with
-	// a "reacted" event. Needs agent:use.
+	// a "reacted" event. In a chat, to any message there, one reaction for
+	// each person. Needs agent:use, or circle:use for a chat.
 	ReactToAgentMessage(ctx context.Context, arguments ReactToAgentMessageArguments) (bool, error)
 
 	// Have a running turn push its state (working, waiting, done, failed)
@@ -110,7 +121,9 @@ type AgentSubscription interface {
 	// started — this drawer, a phone, a terminal, a chat app, another
 	// instance: the turns in flight are replayed, then it is live until
 	// the subscription ends. A turn begins with an "asked" event carrying
-	// what was said. Needs agent:use.
+	// what was said. A chat's feed carries what the people do in it: said,
+	// edited, deleted, reacted, read and typing. Needs agent:use, or
+	// circle:use for a chat.
 	AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error)
 }
 
@@ -122,6 +135,10 @@ type ReadAgentConversationEventsArguments struct {
 // ListAgentConversationsArguments say whether archived ones are wanted.
 type ListAgentConversationsArguments struct {
 	Archived bool `json:"archived" graphapi:"nullable"`
+
+	// Kind narrows the list to one kind: main, named or chat. Empty is all
+	// of them.
+	Kind string `json:"kind" graphapi:"nullable"`
 
 	// Query finds conversations by words in the title or in what was said;
 	// with it, Archived is ignored and every match is listed.
@@ -222,6 +239,16 @@ type AskAgentArguments struct {
 	// DrawerID names the open drawer that sent the turn, for the browser a
 	// location call asks (agent.AskSettings.DrawerID).
 	DrawerID string `json:"drawerId" graphapi:"nullable"`
+
+	// AddressedAgentIDs are, in a chat, the agents the message is for: those
+	// the composer's @ chose, and the agent of a message it replies to. An
+	// agent's name in the words addresses nothing. Elsewhere it is ignored.
+	AddressedAgentIDs []string `json:"addressedAgentIds" graphapi:"nullable"`
+
+	// ShouldAddressOwnAgent addresses the caller's own agent in a chat, for a
+	// client that does not know its id, such as the command line's
+	// --ask-agent.
+	ShouldAddressOwnAgent bool `json:"shouldAddressOwnAgent" graphapi:"nullable"`
 }
 
 // AgentTurnView is the run to follow.
@@ -554,42 +581,111 @@ func (self *graph) ListAgentRuns(ctx context.Context, arguments ListAgentRunsArg
 }
 
 func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAgentConversationsArguments) ([]*models.AgentConversation, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		if errors.Is(err, agent.ErrUnavailable) {
 			return []*models.AgentConversation{}, nil
 		}
 		return nil, err
 	}
+	kind := models.AgentConversationKind(strings.TrimSpace(arguments.Kind))
+	switch kind {
+	case "", models.AgentConversationMain, models.AgentConversationNamed, models.AgentConversationChat:
+	default:
+		return nil, fmt.Errorf("%w: the kind is main, named or chat", api.ErrInvalidArguments)
+	}
+	// What the caller may have: the conversations with their agent while it
+	// is on and they may use it, and their chats while they may use circles.
+	// A person whose agent is off is listed their chats and nothing else.
+	hasAgent := principal.Permissions.Has(models.PermissionAgentUse) && found.Active()
+	hasChats := principal.Permissions.Has(models.PermissionCircleUse)
 	tx := self.transaction(ctx)
-	if query := strings.TrimSpace(arguments.Query); query != "" {
-		return tx.SearchAgentConversations(found.ID, query, 50)
-	}
-	main, err := self.mainConversation(tx, found)
-	if err != nil {
-		return nil, err
-	}
-	named, err := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationNamed}, &db.Options{Limit: 200})
-	if err != nil {
-		return nil, err
-	}
-	conversations := []*models.AgentConversation{main}
-	for _, conversation := range named {
-		if (conversation.ArchivedAt != nil) == arguments.Archived {
-			conversations = append(conversations, conversation)
+
+	chats := []*models.AgentConversation{}
+	if hasChats && (kind == "" || kind == models.AgentConversationChat) && (!arguments.Archived || strings.TrimSpace(arguments.Query) != "") {
+		if err := tx.SyncChatsOf(principal.User.ID); err != nil {
+			return nil, err
+		}
+		if chats, err = tx.ListChatConversations(found.ID); err != nil {
+			return nil, err
+		}
+		if err := describeChatConversations(tx, principal.User.ID, chats); err != nil {
+			return nil, err
 		}
 	}
-	return conversations, nil
+	if query := strings.TrimSpace(arguments.Query); query != "" {
+		matched := []*models.AgentConversation{}
+		if hasAgent && (kind == "" || kind != models.AgentConversationChat) {
+			if matched, err = tx.SearchAgentConversations(found.ID, query, 50); err != nil {
+				return nil, err
+			}
+			if kind != "" {
+				matched = slices.DeleteFunc(matched, func(conversation *models.AgentConversation) bool { return conversation.Kind != kind })
+			}
+		}
+		for _, chat := range chats {
+			if chat.HasChatWords(query) {
+				matched = append(matched, chat)
+			}
+		}
+		sortByLastMessage(matched)
+		return matched, nil
+	}
+	conversations := []*models.AgentConversation{}
+	if hasAgent && (kind == "" || kind == models.AgentConversationMain) {
+		main, err := self.mainConversation(tx, found)
+		if err != nil {
+			return nil, err
+		}
+		conversations = append(conversations, main)
+	}
+	rest := []*models.AgentConversation{}
+	if hasAgent && (kind == "" || kind == models.AgentConversationNamed) {
+		named, err := tx.ListAgentConversations(found.ID, []models.AgentConversationKind{models.AgentConversationNamed}, &db.Options{Limit: 200})
+		if err != nil {
+			return nil, err
+		}
+		for _, conversation := range named {
+			if (conversation.ArchivedAt != nil) == arguments.Archived {
+				rest = append(rest, conversation)
+			}
+		}
+	}
+	rest = append(rest, chats...)
+	sortByLastMessage(rest)
+	return append(conversations, rest...), nil
+}
+
+// sortByLastMessage puts the conversation with the newest message first.
+func sortByLastMessage(conversations []*models.AgentConversation) {
+	sort.SliceStable(conversations, func(left, right int) bool {
+		return conversations[left].LastAt.After(conversations[right].LastAt)
+	})
 }
 
 func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
+	// The main conversation is made on demand, which is for an agent that is
+	// on; a chat is named by its id.
+	if strings.TrimSpace(arguments.ConversationID) == "" {
+		if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationMain}); err != nil {
+			return nil, err
+		}
+	}
 	conversation, other, owner, err := self.conversationFor(tx, principal, found, arguments.ConversationID, true)
 	if err != nil {
+		return nil, err
+	}
+	// A chat is between its people: an operator with agent:act reads none of
+	// them but their own.
+	if conversation.IsChat() && other != nil {
+		return nil, api.ErrNotFound
+	}
+	if err := requireConversationUse(principal, found, conversation); err != nil {
 		return nil, err
 	}
 	actingAs := ""
@@ -597,11 +693,6 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 		actingAs = owner.Username
 		log.Noticef("%s read a conversation of %s's agent", operatorName(ctx), owner.Username)
 	}
-	messages, err := tx.ListAgentMessages(conversation.ID, nil)
-	if err != nil {
-		return nil, err
-	}
-	total := len(messages)
 	// The newest page by default: a drawer opens on the end of a
 	// conversation, not its beginning.
 	limit := arguments.First
@@ -609,6 +700,14 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 		limit = 100
 	}
 	offset := max(arguments.Offset, 0)
+	if conversation.IsChat() {
+		return self.readChatConversation(ctx, principal.User, conversation, limit, offset)
+	}
+	messages, err := tx.ListAgentMessages(conversation.ID, nil)
+	if err != nil {
+		return nil, err
+	}
+	total := len(messages)
 	start := len(messages) - limit - offset
 	end := len(messages) - offset
 	if start < 0 {
@@ -621,7 +720,85 @@ func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgen
 	if err != nil {
 		return nil, err
 	}
-	return &AgentConversationView{Conversation: conversation, Messages: messages[start:end], Total: total, Todos: todos, ActingAs: actingAs}, nil
+	page := messages[start:end]
+	speaker, speakingAgent := principal.User, found
+	if other != nil {
+		speaker, speakingAgent = owner, other
+	}
+	describeOwnMessages(page, speaker, speakingAgent)
+	return &AgentConversationView{Conversation: conversation, Messages: page, Total: total, Todos: todos, ActingAs: actingAs}, nil
+}
+
+// describeOwnMessages gives the messages of a conversation with the agent the
+// author a chat's have, so a client draws every conversation one way: what the
+// person said is theirs and the rest is their agent's, and all of it is the
+// reader's.
+func describeOwnMessages(messages []*models.AgentMessage, owner *models.User, speakingAgent *models.Agent) {
+	for _, message := range messages {
+		message.IsMine = true
+		message.AuthorAvatarColorIndex = avatar.InitialColorIndex(owner.ID)
+		if message.Role == "user" {
+			message.AuthorKind = models.ChatAuthorPerson
+			message.AuthorUserID = owner.ID
+			message.AuthorName = owner.DisplayName()
+			message.AuthorAvatarURL = avatarUrl(owner)
+		} else {
+			message.AuthorKind = models.ChatAuthorAgent
+			message.AuthorAgentID = speakingAgent.ID
+			message.AuthorName = speakingAgent.DisplayName()
+		}
+		for index := range message.Reactions {
+			if message.Reactions[index].ReactorKind == models.ReactorAgent {
+				message.Reactions[index].ReactorName = speakingAgent.DisplayName()
+			} else {
+				message.Reactions[index].ReactorUserID = owner.ID
+				message.Reactions[index].ReactorName = owner.DisplayName()
+			}
+		}
+	}
+}
+
+// readChatConversation is a page of a chat as one member reads it.
+func (self *graph) readChatConversation(ctx context.Context, user *models.User, conversation *models.AgentConversation, limit, offset int) (*AgentConversationView, error) {
+	tx := self.transaction(ctx)
+	messages, total, err := tx.ListChatConversationMessages(conversation, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	authorIds := []string{}
+	for _, message := range messages {
+		if message.AuthorUserID != "" {
+			authorIds = append(authorIds, message.AuthorUserID)
+		}
+	}
+	users, err := tx.GetUsersByID(authorIds)
+	if err != nil {
+		return nil, err
+	}
+	describeChatAuthors(messages, users, user.ID)
+	// A message of the member's own agent in the conversation is drawn as in
+	// any other, and as the reader's.
+	own := []*models.AgentMessage{}
+	for _, message := range messages {
+		if message.AuthorKind == "" {
+			own = append(own, message)
+		}
+	}
+	if len(own) > 0 {
+		found, err := tx.GetAgent(conversation.AgentID)
+		if err != nil {
+			return nil, err
+		}
+		describeOwnMessages(own, user, found)
+		for _, message := range own {
+			message.IsAgentWork = true
+		}
+	}
+	view, err := self.chatConversationOf(ctx, user.ID, conversation)
+	if err != nil {
+		return nil, err
+	}
+	return &AgentConversationView{Conversation: view, Messages: messages, Total: total, Todos: []*models.AgentTodo{}}, nil
 }
 
 func (self *graph) ListAllAgentRuns(ctx context.Context, arguments ListAgentRunsArguments) (*AgentRunPage, error) {
@@ -740,15 +917,42 @@ func leadSentence(description string) string {
 }
 
 func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*AgentTurnView, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
+		return nil, err
+	}
+	tx := self.transaction(ctx)
+	// A turn in the main conversation is for an agent that is on; a chat is
+	// named by its id.
+	if strings.TrimSpace(arguments.ConversationID) == "" {
+		if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationMain}); err != nil {
+			return nil, err
+		}
+	}
+	// A chat is between its people and starts no turn: what the caller says
+	// goes to them. An operator with agent:act speaks into none but their own.
+	if chat, err := tx.GetAgentConversation(strings.TrimSpace(arguments.ConversationID)); err != nil {
+		return nil, err
+	} else if chat != nil && chat.IsChat() {
+		if chat.AgentID != found.ID {
+			return nil, api.ErrNotFound
+		}
+		if err := requireConversationUse(principal, found, chat); err != nil {
+			return nil, err
+		}
+		session, err := chatSessionOf(tx, principal.User, found, chat)
+		if err != nil {
+			return nil, err
+		}
+		return self.sayInChat(ctx, session, arguments)
+	}
+	if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationNamed}); err != nil {
 		return nil, err
 	}
 	worker := self.agentWorker()
 	if worker == nil {
 		return nil, agent.ErrUnavailable
 	}
-	tx := self.transaction(ctx)
 	// A run's transcript can be talked into: the person reading what the
 	// agent did on its own — sorted a message, wrote a reply — asks about
 	// it right there, with the message and the decision as the history.
@@ -777,10 +981,8 @@ func (self *graph) AskAgent(ctx context.Context, arguments AskAgentArguments) (*
 	if len(drawerId) > drawerIdLength {
 		return nil, fmt.Errorf("%w: a drawer id is at most %d characters", api.ErrInvalidArguments, drawerIdLength)
 	}
-	switch arguments.Effort {
-	case "", llm.EffortLow, llm.EffortMedium, llm.EffortHigh:
-	default:
-		return nil, fmt.Errorf("%w: effort is low, medium or high", api.ErrInvalidArguments)
+	if err := checkEffort(arguments.Effort); err != nil {
+		return nil, err
 	}
 	// The files, which must be this agent's own and not yet another
 	// turn's.
@@ -963,7 +1165,7 @@ func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArgum
 // reacts as that person and is logged doing so. A message of anybody else
 // is not found, as their conversation is not.
 func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAgentMessageArguments) (bool, error) {
-	principal, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -979,10 +1181,18 @@ func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAge
 		return false, err
 	}
 	if message == nil {
-		return false, api.ErrNotFound
+		return self.reactToChatMessage(ctx, principal, found, strings.TrimSpace(arguments.MessageID), reactionEmoji)
 	}
 	conversation, other, owner, err := self.conversationFor(tx, principal, found, message.ConversationID, true)
 	if err != nil {
+		return false, err
+	}
+	// A chat is between its people: an operator who may act as somebody does
+	// not read it, ask in it or react in it as them.
+	if conversation.IsChat() && other != nil {
+		return false, api.ErrNotFound
+	}
+	if err := requireConversationUse(principal, found, conversation); err != nil {
 		return false, err
 	}
 	// Taking a reaction away is always allowed; putting one on is only for
@@ -1001,6 +1211,53 @@ func (self *graph) ReactToAgentMessage(ctx context.Context, arguments ReactToAge
 	}
 	if worker := self.agentWorker(); worker != nil && isChanged {
 		tx.AfterCommit(func() { worker.PublishReaction(conversation.ID, message.ID, reactionEmoji, models.ReactorPerson) })
+	}
+	return true, nil
+}
+
+// reactToChatMessage is a reaction on a message of a chat the caller is in:
+// one reaction for each person, on anything said while they were there, and
+// told to everybody in the chat. A message that is not a chat's is not found.
+func (self *graph) reactToChatMessage(ctx context.Context, principal *api.Principal, found *models.Agent, messageId, reactionEmoji string) (bool, error) {
+	if !principal.Permissions.Has(models.PermissionCircleUse) {
+		return false, api.ErrNotFound
+	}
+	tx := self.transaction(ctx)
+	message, err := tx.GetChatMessage(messageId)
+	if err != nil {
+		return false, err
+	}
+	if message == nil {
+		return false, api.ErrNotFound
+	}
+	chat, err := tx.GetChat(message.ChatID)
+	if err != nil {
+		return false, err
+	}
+	var member *models.ChatMember
+	if chat != nil {
+		member = chat.Member(principal.User.ID)
+	}
+	if member == nil || !isReadableByMember(message, member) {
+		return false, api.ErrNotFound
+	}
+	// A reaction is said to the others like a message: not by someone who
+	// left, nor between two who no longer share a circle.
+	if err := self.requireChatWritable(tx, &chatSession{User: principal.User, Agent: found, Chat: chat, Member: member}); err != nil {
+		return false, err
+	}
+	reactorName := principal.User.DisplayName()
+	isChanged, err := tx.SetChatMessageReaction(message.ID, models.ReactorPerson, principal.User.ID, reactorName, reactionEmoji)
+	if err != nil {
+		return false, translateError(err)
+	}
+	if isChanged {
+		self.publishChatMessageEvents(ctx, message, func(*models.ChatMember) agent.Event {
+			return agent.Event{
+				Kind: agent.EventReacted, MessageID: message.ID, Emoji: reactionEmoji, ReactorKind: string(models.ReactorPerson),
+				ReactorUserID: principal.User.ID, ReactorName: reactorName,
+			}
+		})
 	}
 	return true, nil
 }
@@ -1061,6 +1318,9 @@ func (self *graph) DeleteAgentConversation(ctx context.Context, arguments Delete
 	}
 	if conversation.Kind == models.AgentConversationMain {
 		return false, fmt.Errorf("%w: the main conversation is never deleted", api.ErrInvalidArguments)
+	}
+	if conversation.IsChat() {
+		return false, fmt.Errorf("%w: a chat is left, not deleted", api.ErrInvalidArguments)
 	}
 	if worker := self.agentWorker(); worker != nil {
 		worker.StopConversation(conversation.ID)
@@ -1147,6 +1407,9 @@ func (self *graph) UpdateAgentConversation(ctx context.Context, arguments Update
 	if err != nil {
 		return nil, err
 	}
+	if conversation.IsChat() {
+		return nil, fmt.Errorf("%w: a chat is renamed with RenameChat", api.ErrInvalidArguments)
+	}
 	updated, err := tx.UpdateAgentConversation(conversation.ID, func(conversation *models.AgentConversation) error {
 		if title := strings.TrimSpace(arguments.Title); title != "" {
 			// Named by the person: the model stops renaming it.
@@ -1227,34 +1490,62 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 	// The lookup needs a transaction of its own, as AgentRunEvents does.
 	var conversation *models.AgentConversation
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
-		principal, found, err := self.requireAgentPerson(api.ContextWithTransaction(ctx, tx))
+		principal, found, err := self.requireConversationPerson(api.ContextWithTransaction(ctx, tx))
 		if err != nil {
 			return err
 		}
-		conversation, _, _, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
-		return err
+		if strings.TrimSpace(arguments.ConversationID) == "" {
+			if err := requireConversationUse(principal, found, &models.AgentConversation{Kind: models.AgentConversationMain}); err != nil {
+				return err
+			}
+		}
+		var other *models.Agent
+		conversation, other, _, err = self.conversationFor(tx, principal, found, arguments.ConversationID, true)
+		if err != nil {
+			return err
+		}
+		// Nobody follows a chat but its people.
+		if conversation.IsChat() && other != nil {
+			return api.ErrNotFound
+		}
+		return requireConversationUse(principal, found, conversation)
 	}); err != nil {
 		return nil, err
 	}
-	worker := self.agentWorker()
-	if worker == nil {
-		return nil, agent.ErrUnavailable
+	workerEvents, hubEvents, unsubscribe, err := self.followConversation(conversation)
+	if err != nil {
+		return nil, err
 	}
-	events, unsubscribe := worker.SubscribeConversation(conversation.ID)
 	channel := make(chan *agent.Event)
 	go func() {
 		defer close(channel)
 		defer unsubscribe()
-		// An event replayed and then published again is told by its
-		// sequence: the feed delivers each of a run's events once. One of
-		// no run -- the conversation's title, written after its first turn
-		// ended -- is never replayed, and is delivered as it comes.
+		// An event of the worker's feed replayed and then published again is
+		// told by its sequence: that feed delivers each of a run's events
+		// once. One of no run -- the conversation's title, written after its
+		// first turn ended -- is never replayed, and is delivered as it comes.
+		//
+		// The chat hub's events are not held to it. A chat turn tells the
+		// room its words and that it is thinking with the run's identifier on
+		// every one and no sequence, so counting them would drop every one
+		// after the first: the words stopped streaming and the typing line
+		// came once.
 		delivered := map[string]int{}
-		for {
+		send := func(event agent.Event) bool {
+			copied := event
 			select {
-			case event, ok := <-events:
+			case channel <- &copied:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+		for workerEvents != nil || hubEvents != nil {
+			select {
+			case event, ok := <-workerEvents:
 				if !ok {
-					return
+					workerEvents = nil
+					continue
 				}
 				if event.RunID != "" {
 					if last, seen := delivered[event.RunID]; seen && event.Sequence <= last {
@@ -1262,10 +1553,15 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 					}
 					delivered[event.RunID] = event.Sequence
 				}
-				copied := event
-				select {
-				case channel <- &copied:
-				case <-ctx.Done():
+				if !send(event) {
+					return
+				}
+			case event, ok := <-hubEvents:
+				if !ok {
+					hubEvents = nil
+					continue
+				}
+				if !send(event) {
 					return
 				}
 			case <-ctx.Done():
@@ -1274,6 +1570,38 @@ func (self *graph) AgentConversationEvents(ctx context.Context, arguments ReadAg
 		}
 	}()
 	return channel, nil
+}
+
+// followConversation is the feeds of a conversation and the function that ends
+// them. A chat's events are the chat hub's, which exists whether or not the
+// server has an agent: its people do not need one to hear each other. The
+// agent's own turns in a chat conversation are on the worker's feed, followed
+// as well when there is a worker. Any other conversation is the worker's
+// alone, and refused as unavailable without one. The two are returned apart
+// because only the worker's feed replays events (see AgentConversationEvents);
+// a feed that is not followed is nil.
+func (self *graph) followConversation(conversation *models.AgentConversation) (workerEvents, hubEvents <-chan agent.Event, unsubscribe func(), err error) {
+	worker := self.agentWorker()
+	if !conversation.IsChat() {
+		if worker == nil {
+			return nil, nil, nil, agent.ErrUnavailable
+		}
+		events, unsubscribeWorker := worker.SubscribeConversation(conversation.ID)
+		return events, nil, unsubscribeWorker, nil
+	}
+	hub := self.chatHub()
+	if hub == nil {
+		return nil, nil, nil, agent.ErrUnavailable
+	}
+	hubEvents, unsubscribeHub := hub.Subscribe(conversation.ID)
+	if worker == nil {
+		return nil, hubEvents, unsubscribeHub, nil
+	}
+	workerEvents, unsubscribeWorker := worker.SubscribeConversation(conversation.ID)
+	return workerEvents, hubEvents, func() {
+		unsubscribeHub()
+		unsubscribeWorker()
+	}, nil
 }
 
 // agentWorker is the worker as the API reaches it, or nil when agents are

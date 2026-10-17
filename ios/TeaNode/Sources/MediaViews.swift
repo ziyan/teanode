@@ -223,7 +223,15 @@ struct AttachmentView: View {
     private var path: String { "/api/v1/agent/attachments/\(attachment.id)" }
 
     var body: some View {
-        if attachment.contentType.hasPrefix("image/") {
+        if attachment.isRemoved == true {
+            // The message is kept and its file went with the account.
+            Label("A file that was removed with the account", systemImage: "paperclip")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color(.tertiarySystemFill), in: .capsule)
+        } else if attachment.contentType.hasPrefix("image/") {
             RemotePicture(path: path, name: attachment.name, maxHeight: 160)
                 .frame(maxWidth: 200)
         } else {

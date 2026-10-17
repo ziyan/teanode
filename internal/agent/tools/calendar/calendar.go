@@ -22,10 +22,14 @@ func init() {
 				Name: "calendar_agenda", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "What is on between two dates. One entry per time something happens, " +
-					"so an event that repeats weekly appears once for each week in the window.",
+					"so an event that repeats weekly appears once for each week in the window. " +
+					"With 'owner', what other people have shared with the person instead: one person's, or everybody's.",
 				Parameters: tools.Object(map[string]any{
 					"from":  tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
 					"until": tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
+					"owner": tools.StringProperty("a username to read the calendar they shared with the person, or 'everyone' for every calendar shared with the person " +
+						"and their circles' calendars; leave out for the person's own. Each entry says whose it is and shows only as much as was shared: " +
+						"a title, everything, or just 'busy'"),
 				}),
 				Run: runAgenda,
 			},
@@ -33,7 +37,8 @@ func init() {
 				Name: "calendar_free", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 				Permissions: []models.Permission{models.PermissionCalendarUse},
 				Description: "When they are free between two dates, as the stretches nothing is booked in. " +
-					"Use this to propose a time rather than reading the agenda and working it out.",
+					"Use this to propose a time rather than reading the agenda and working it out. " +
+					"For when several people are free at once, use free_together.",
 				Parameters: tools.Object(map[string]any{
 					"from":     tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
 					"until":    tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
@@ -41,6 +46,64 @@ func init() {
 					"latest":   tools.StringProperty("the latest, as HH:MM; 17:00 by default"),
 				}),
 				Run: runFree,
+			},
+			{
+				// Free-busy of everybody asked about: the busy times of people
+				// who shared their calendar, whatever level they chose, and
+				// never more.
+				Name: "calendar_free_together", Family: tools.FamilyAccount, Risk: tools.RiskRead,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "When the person and the people named are all free, as the stretches none of them has anything booked in. " +
+					"Only people who shared their calendar with the person can be asked; it says who has not. " +
+					"Use it to propose a time for several people rather than reading each agenda.",
+				Parameters: tools.Object(map[string]any{
+					"with":     tools.ArrayProperty("the other people, by username; the person is always included", tools.StringProperty("a username")),
+					"from":     tools.StringProperty("the first day, as YYYY-MM-DD; today by default"),
+					"until":    tools.StringProperty("the day after the last, as YYYY-MM-DD; a week after 'from' by default"),
+					"earliest": tools.StringProperty("the earliest hour of the day to offer, as HH:MM; 09:00 by default"),
+					"latest":   tools.StringProperty("the latest, as HH:MM; 17:00 by default"),
+				}, "with"),
+				Run: runFreeTogether,
+			},
+			{
+				Name: "calendar_shares", Family: tools.FamilyAccount, Risk: tools.RiskRead,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Who the person's own calendar is shared with, and at what level, with the identifier unshare takes.",
+				Run:         runShares,
+			},
+			{
+				// Granting: sharing lets somebody else read the diary, at
+				// the level chosen, from then on.
+				Name: "calendar_share", Family: tools.FamilyAccount, Risk: tools.RiskGranting,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Share the person's own calendar with a person they share a circle with, or with a whole circle, at a level: " +
+					"'busy' (when they are busy and nothing else), 'titles' (the time, title and place), 'details' (everything, guests included) " +
+					"or 'edit' (details, and they may add, change and remove events that have no guests). Sharing again changes the level. " +
+					"Events marked private are only ever shown as busy.",
+				Parameters: tools.Object(map[string]any{
+					"with":        tools.StringProperty("who to share with: the username of somebody the person shares a circle with, from circle_people, or a circle they are in by its name or id, from circle list; a name that more than one circle has is refused with their ids"),
+					"share_level": tools.EnumProperty("how much to show", "busy", "titles", "details", "edit"),
+				}, "with", "share_level"),
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						With       string `json:"with"`
+						ShareLevel string `json:"share_level"`
+					}
+					if err := json.Unmarshal(arguments, &call); err != nil {
+						return ""
+					}
+					return "Share your calendar with " + tools.GranteeWords(ctx, call.With) + ", at " + tools.Named(call.ShareLevel, "a level")
+				},
+				Run: runShare,
+			},
+			{
+				Name: "calendar_unshare", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Stop sharing the person's calendar with someone, by the share identifier shares gives.",
+				Parameters: tools.Object(map[string]any{
+					"share_id": tools.StringProperty("the share, as the identifier shares gives"),
+				}, "share_id"),
+				Run: runUnshare,
 			},
 			{
 				// A write, so the person is asked before anything is put in
@@ -61,21 +124,27 @@ func init() {
 					"listing anybody under 'invite' sends them an invitation, so leave it out unless asked to. " +
 					"The answer carries the event's identifier, which is what calendar_edit and calendar_remove take.",
 				Parameters: tools.Object(map[string]any{
-					"summary":  tools.StringProperty("what it is"),
-					"starts":   tools.StringProperty("when it starts, as YYYY-MM-DDTHH:MM, in their own time zone"),
-					"ends":     tools.StringProperty("when it ends, the same way; an hour after it starts by default"),
-					"location": tools.StringProperty("where, if anywhere"),
-					"notes":    tools.StringProperty("anything else worth writing down"),
-					"all_day":  tools.BooleanProperty("true for something that belongs to the day rather than a time"),
-					"repeat":   tools.StringProperty("how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO"),
-					"invite":   tools.ArrayProperty("addresses to invite; each is sent an invitation they can answer", tools.StringProperty("an address")),
+					"summary":    tools.StringProperty("what it is"),
+					"starts":     tools.StringProperty("when it starts, as YYYY-MM-DDTHH:MM, in their own time zone"),
+					"ends":       tools.StringProperty("when it ends, the same way; an hour after it starts by default"),
+					"location":   tools.StringProperty("where, if anywhere"),
+					"notes":      tools.StringProperty("anything else worth writing down"),
+					"all_day":    tools.BooleanProperty("true for something that belongs to the day rather than a time"),
+					"repeat":     tools.StringProperty("how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO"),
+					"is_private": tools.BooleanProperty("true to mark it private, so that people the calendar is shared with see only that the person is busy"),
+					"invite":     tools.ArrayProperty("addresses to invite; each is sent an invitation they can answer", tools.StringProperty("an address")),
+					"circle":     tools.StringProperty("to put it in a circle's calendar, which everybody in the circle sees, give the circle's name; it cannot have guests"),
+					"person": tools.StringProperty("to put it in the calendar of somebody who shared theirs with the person at edit, give their username; " +
+						"it lands in front of them, so the person is asked first"),
 				}),
 				Preview: tools.PreviewOf(func(call struct {
 					Summary string   `json:"summary"`
 					Starts  string   `json:"starts"`
 					Invite  []string `json:"invite"`
+					Circle  string   `json:"circle"`
+					Person  string   `json:"person"`
 				}) string {
-					said := "Put " + tools.Named(call.Summary, "something") + " in your calendar"
+					said := "Put " + tools.Named(call.Summary, "something") + " in " + whichCalendar(call.Circle, call.Person)
 					if call.Starts != "" {
 						said += " on " + call.Starts
 					}
@@ -109,10 +178,13 @@ func init() {
 					"all_day":     tools.BooleanProperty("true to make it belong to the day rather than a time"),
 					"repeat":      tools.StringProperty("how it repeats, as a rule such as FREQ=WEEKLY;BYDAY=MO; empty stops it repeating"),
 					"status":      tools.StringProperty("confirmed, tentative or cancelled"),
+					"is_private":  tools.BooleanProperty("true to mark it private, so that people the calendar is shared with see only that the person is busy; false takes the mark off"),
 					"invite":      tools.ArrayProperty("the whole guest list as it should now be; everybody on it is sent the change", tools.StringProperty("an address")),
 					"tell_guests": tools.BooleanProperty("true when the people already invited are to be told about this change"),
+					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row"),
+					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit: the person value of the agenda row"),
 				}, "event"),
-				PreviewIn: eventPreview("Change %s"),
+				PreviewIn: eventPreview("Change %s in %s"),
 				Run:       runEdit,
 			},
 			{
@@ -127,25 +199,32 @@ func init() {
 				Parameters: tools.Object(map[string]any{
 					"event":       tools.StringProperty("which event, as the identifier the agenda gives"),
 					"tell_guests": tools.BooleanProperty("true when the people invited are to be told it is off"),
+					"circle":      tools.StringProperty("the circle's name, when the event is in a circle's calendar: the circle value of the agenda row"),
+					"person":      tools.StringProperty("the username, when the event is in a calendar somebody shared at edit: the person value of the agenda row"),
 				}, "event"),
 				// Naming the event, not its identifier: taking a thing out
 				// of somebody's diary is not a decision they can make about
 				// "01m2ep...".
-				PreviewIn: eventPreview("Take %s out of your calendar"),
+				PreviewIn: eventPreview("Take %s out of %s"),
 				Run:       runRemove,
 			},
 		},
-			// One calendar tool. Reading the diary, finding a free hour,
-			// putting something in it and taking it out again are one thing
-			// with four verbs, and the risk of each is the action's own: the
-			// agenda is a read, an event with guests on it is outward, and
-			// removing one cannot be undone.
+			// One calendar tool, whose actions are the members below: reading
+			// the diary, finding a free hour alone or with others, sharing it
+			// and listing or taking back those shares, and putting something in
+			// it, changing it and taking it out. The risk of each is the
+			// action's own: the agenda is a read, sharing is granting, an event
+			// with guests on it is outward, and removing one cannot be undone.
 			tools.Group{
 				Name: "calendar", Family: tools.FamilyAccount,
-				Description: "The person's own calendar, which their phone and computer synchronize over CalDAV.",
+				Description: "The person's own calendar (synchronized over CalDAV), the calendars other people and their circles share with them, and sharing the person's own.",
 				Members: []tools.Member{
 					{Action: "agenda", Tool: "calendar_agenda"},
 					{Action: "free", Tool: "calendar_free"},
+					{Action: "free_together", Tool: "calendar_free_together"},
+					{Action: "shares", Tool: "calendar_shares"},
+					{Action: "share", Tool: "calendar_share"},
+					{Action: "unshare", Tool: "calendar_unshare"},
 					{Action: "add", Tool: "calendar_add"},
 					{Action: "edit", Tool: "calendar_edit"},
 					{Action: "remove", Tool: "calendar_remove"},
@@ -165,11 +244,63 @@ func outwardWhenAnybodyIsTold(arguments json.RawMessage) tools.Risk {
 	var asked struct {
 		Invite     []string `json:"invite"`
 		TellGuests bool     `json:"tell_guests"`
+		Person     string   `json:"person"`
 	}
-	if err := json.Unmarshal(arguments, &asked); err == nil && (asked.TellGuests || len(asked.Invite) > 0) {
+	// Outward too when it is put in front of somebody else: a change to a
+	// calendar another person shared at edit is something they will find in
+	// their own diary. A circle's calendar is the person's own change, as it
+	// is everybody's in the circle.
+	if err := json.Unmarshal(arguments, &asked); err == nil &&
+		(asked.TellGuests || len(asked.Invite) > 0 || strings.TrimSpace(asked.Person) != "") {
 		return tools.RiskOutward
 	}
 	return ""
+}
+
+// calendarEntry is one calendar the person reaches: their own, a circle's, or
+// another person's shared with them, with the level they reach it at.
+type calendarEntry struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Timezone         string `json:"timezone"`
+	AgentGranted     bool   `json:"agentGranted"`
+	CalendarKind     string `json:"calendarKind"`
+	ShareLevel       string `json:"shareLevel"`
+	OwnerUserID      string `json:"ownerUserId"`
+	OwnerUsername    string `json:"ownerUsername"`
+	OwnerName        string `json:"ownerName"`
+	CircleID         string `json:"circleId"`
+	CircleName       string `json:"circleName"`
+	IsCircleCalendar bool   `json:"isCircleCalendar"`
+}
+
+// isOwn says the calendar is the person's own. A level left out is their own,
+// which is what a server that does not know about sharing says.
+func (self *calendarEntry) isOwn() bool {
+	return self.ShareLevel == "" || self.ShareLevel == "owner"
+}
+
+// whose is who the calendar belongs to, in words: the person, or the circle.
+func (self *calendarEntry) whose() string {
+	if self.IsCircleCalendar {
+		return self.CircleName
+	}
+	if self.OwnerName != "" {
+		return self.OwnerName
+	}
+	return self.OwnerUsername
+}
+
+func calendarsOf(ctx context.Context, operations tools.Operations) ([]*calendarEntry, error) {
+	var result struct {
+		ListCalendars []*calendarEntry `json:"ListCalendars"`
+	}
+	if err := operations.Execute(ctx,
+		`query { ListCalendars { id name timezone agentGranted calendarKind shareLevel ownerUserId ownerUsername
+		   ownerName circleId circleName isCircleCalendar } }`, nil, &result); err != nil {
+		return nil, err
+	}
+	return result.ListCalendars, nil
 }
 
 // theCalendar is the first calendar the person has given the agent, and the
@@ -180,30 +311,120 @@ func outwardWhenAnybodyIsTold(arguments json.RawMessage) tools.Risk {
 // agent granted a mailbox has not thereby been shown the diary. The refusal
 // is worded for the model to relay, because "there is no calendar" would be
 // a lie -- there is one, and it is not the agent's to read.
+//
+// Only the person's own. The calendars others share with them, and their
+// circles', are read through this one's grant: an agent that has not been given
+// the diary has not been given what their family put in it either.
 func theCalendar(ctx context.Context, operations tools.Operations) (string, string, error) {
-	var result struct {
-		ListCalendars []struct {
-			ID           string `json:"id"`
-			Name         string `json:"name"`
-			Timezone     string `json:"timezone"`
-			AgentGranted bool   `json:"agentGranted"`
-			CalendarKind string `json:"calendarKind"`
-		} `json:"ListCalendars"`
-	}
-	if err := operations.Execute(ctx,
-		`query { ListCalendars { id name timezone agentGranted calendarKind } }`, nil, &result); err != nil {
+	calendars, err := calendarsOf(ctx, operations)
+	if err != nil {
 		return "", "", err
 	}
-	if len(result.ListCalendars) == 0 {
+	if len(calendars) == 0 {
 		return "", "", fmt.Errorf("there is no calendar")
 	}
-	for _, calendar := range result.ListCalendars {
+	for _, calendar := range calendars {
 		// The events calendar: the reminders list is the reminder tool's.
-		if calendar.AgentGranted && calendar.CalendarKind != string(models.CalendarReminders) {
+		if calendar.isOwn() && calendar.AgentGranted && calendar.CalendarKind != string(models.CalendarReminders) {
 			return calendar.ID, calendar.Timezone, nil
 		}
 	}
 	return "", "", fmt.Errorf("they have not given you their calendar; it is a switch on their agent's page, beside the mailboxes")
+}
+
+// targetCalendar is the calendar a call works on: the person's own, or when it
+// names a circle, that circle's, or when it names a person, theirs. Another
+// person's has to be shared with them at edit to be written to, and a circle's
+// calendar is written by every member.
+//
+// The call names a circle or a person in separate arguments rather than one,
+// because they are different acts: adding to the family's calendar is the
+// person's own change, and adding to somebody else's is mail-sized: it lands in
+// front of them, and is outward.
+func targetCalendar(ctx context.Context, operations tools.Operations, circle, person string) (string, string, error) {
+	circle, person = strings.TrimSpace(circle), strings.TrimSpace(person)
+	if circle == "" && person == "" {
+		return theCalendar(ctx, operations)
+	}
+	// The diary has to have been given for any of it, as everywhere here.
+	if _, _, err := theCalendar(ctx, operations); err != nil {
+		return "", "", err
+	}
+	calendars, err := calendarsOf(ctx, operations)
+	if err != nil {
+		return "", "", err
+	}
+	if circle != "" {
+		found, err := circleCalendarNamed(ctx, operations, calendars, circle)
+		if err != nil {
+			return "", "", err
+		}
+		if found != nil {
+			return found.ID, found.Timezone, nil
+		}
+	}
+	for _, each := range calendars {
+		switch {
+		case each.isOwn():
+		case person != "" && !each.IsCircleCalendar && strings.EqualFold(each.OwnerUsername, person):
+			if each.ShareLevel != string(models.ShareLevelEdit) {
+				return "", "", fmt.Errorf("%s has shared their calendar with the person at %s, and it can only be changed when it is shared at edit",
+					each.whose(), each.ShareLevel)
+			}
+			return each.ID, each.Timezone, nil
+		}
+	}
+	if circle != "" {
+		return "", "", fmt.Errorf("none of the person's circles called %q has a calendar; a circle admin can make one", circle)
+	}
+	return "", "", fmt.Errorf("%s has not shared their calendar with the person", person)
+}
+
+// circleCalendarNamed is the calendar of the circle with this id or name, or
+// nil when there is none. Circle names are not unique, so a name that two of
+// the person's circles with a calendar have is refused with their ids and
+// sizes, in the words every other surface uses.
+func circleCalendarNamed(ctx context.Context, operations tools.Operations, calendars []*calendarEntry, circle string) (*calendarEntry, error) {
+	var named []*calendarEntry
+	for _, each := range calendars {
+		if !each.IsCircleCalendar || each.isOwn() {
+			continue
+		}
+		if each.CircleID == circle {
+			return each, nil
+		}
+		if strings.EqualFold(each.CircleName, circle) {
+			named = append(named, each)
+		}
+	}
+	if len(named) <= 1 {
+		if len(named) == 1 {
+			return named[0], nil
+		}
+		return nil, nil
+	}
+	var circles struct {
+		ListCircles []struct {
+			ID      string `json:"id"`
+			Members []struct {
+				UserID string `json:"userId"`
+			} `json:"members"`
+		} `json:"ListCircles"`
+	}
+	if err := operations.Execute(ctx, `query { ListCircles { id members { userId } } }`, nil, &circles); err != nil {
+		return nil, err
+	}
+	choices := make([]models.ShareableCircle, 0, len(named))
+	for _, each := range named {
+		choice := models.ShareableCircle{ID: each.CircleID, Name: each.CircleName}
+		for _, listed := range circles.ListCircles {
+			if listed.ID == each.CircleID {
+				choice.MemberCount = len(listed.Members)
+			}
+		}
+		choices = append(choices, choice)
+	}
+	return nil, models.AmbiguousCircleNameError(circle, choices)
 }
 
 type windowArguments struct {
@@ -211,6 +432,13 @@ type windowArguments struct {
 	Until    string `json:"until"`
 	Earliest string `json:"earliest"`
 	Latest   string `json:"latest"`
+
+	// Owner is a username or "everyone": which shared calendars the agenda
+	// reads instead of the person's own.
+	Owner string `json:"owner"`
+
+	// With are the people free_together asks about, by username.
+	With []string `json:"with"`
 }
 
 // window is the stretch a caller asked about, in the zone the person keeps
@@ -261,6 +489,13 @@ type occurrence struct {
 	EndsAt   string `json:"endsAt"`
 	AllDay   bool   `json:"allDay"`
 	Status   string `json:"status"`
+
+	// IsBusyOnly marks an entry the person was told nothing about but that the
+	// owner is busy then.
+	IsBusyOnly bool `json:"isBusyOnly"`
+
+	// IsPrivate marks one of the person's own events they made private.
+	IsPrivate bool `json:"isPrivate"`
 }
 
 func readAgenda(ctx context.Context, run tools.Run, calendarId string, from, until time.Time) ([]occurrence, error) {
@@ -270,7 +505,7 @@ func readAgenda(ctx context.Context, run tools.Run, calendarId string, from, unt
 	if err := run.Operations().Execute(ctx,
 		`query ($calendarId: String!, $from: String!, $until: String!) {
 		   ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
-		     id summary location startsAt endsAt allDay status
+		     id summary location startsAt endsAt allDay status isBusyOnly isPrivate
 		   }
 		 }`,
 		map[string]any{
@@ -300,6 +535,9 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(arguments.Owner) != "" {
+		return runSharedAgenda(ctx, run, arguments, from, until, where)
+	}
 	found, err := readAgenda(ctx, run, calendarId, from, until)
 	if err != nil {
 		return nil, err
@@ -325,6 +563,9 @@ func runAgenda(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		}
 		if entry.Status == "CANCELLED" {
 			row["cancelled"] = true
+		}
+		if entry.IsPrivate {
+			row["private"] = true
 		}
 		rows = append(rows, row)
 	}
@@ -398,40 +639,37 @@ func runFree(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		return nil, err
 	}
 
-	// Day by day, because "when am I free" means free during a day rather
-	// than free at three in the morning. An all-day entry does not block
-	// the day: a birthday is something to know about, not an appointment,
-	// and counting it would make the week look unbookable.
-	var free []map[string]any
-	for day := from; day.Before(until); day = day.AddDate(0, 0, 1) {
-		opens := day.Add(earliest)
-		closes := day.Add(latest)
-		busy := make([]calendar.Occurrence, 0, 4)
-		for _, entry := range found {
-			// A whole-day entry does not block the day: a birthday is
-			// something to know about rather than an appointment, and
-			// counting it makes the week look unbookable.
-			if entry.AllDay || entry.Status == "CANCELLED" {
-				continue
-			}
-			starts, ends := moments(entry, where)
-			busy = append(busy, calendar.Occurrence{StartsAt: starts, EndsAt: ends})
+	// Day by day, because "when am I free" means free during a day rather than
+	// free at three in the morning. An all-day entry does not block the day: a
+	// birthday is something to know about, not an appointment, and counting it
+	// would make the week look unbookable.
+	busy := make([]calendar.Occurrence, 0, len(found))
+	for _, entry := range found {
+		if entry.AllDay || entry.Status == "CANCELLED" {
+			continue
 		}
-		// The same two functions the calendar itself answers free-busy
-		// with, so that what the agent offers and what a phone is told
-		// cannot drift apart.
-		for _, gap := range calendar.Free(calendar.FreeBusy(busy, opens, closes), opens, closes) {
-			free = append(free, map[string]any{
-				"day":   day.Format("2006-01-02"),
-				"from":  gap.StartsAt.In(where).Format("15:04"),
-				"until": gap.EndsAt.In(where).Format("15:04"),
-			})
-		}
+		starts, ends := moments(entry, where)
+		busy = append(busy, calendar.Occurrence{StartsAt: starts, EndsAt: ends})
 	}
+	// The same functions the calendar itself answers free-busy with, so that
+	// what the agent offers and what a phone is told cannot drift apart.
 	return tools.JSONResult(map[string]any{
 		"timezone": where.String(),
-		"free":     free,
+		"free":     freeRows(calendar.FreeByDay(busy, from, until, earliest, latest), where),
 	})
+}
+
+// freeRows are the stretches somebody is free, written for the model.
+func freeRows(stretches []calendar.FreeStretch, where *time.Location) []map[string]any {
+	free := make([]map[string]any, 0, len(stretches))
+	for _, gap := range stretches {
+		free = append(free, map[string]any{
+			"day":   gap.Day.Format("2006-01-02"),
+			"from":  gap.StartsAt.In(where).Format("15:04"),
+			"until": gap.EndsAt.In(where).Format("15:04"),
+		})
+	}
+	return free
 }
 
 // hourOf reads a time of day, as the length from midnight.
@@ -456,6 +694,13 @@ type addArguments struct {
 	AllDay   bool     `json:"all_day"`
 	Repeat   string   `json:"repeat"`
 	Invite   []string `json:"invite"`
+
+	IsPrivate bool `json:"is_private"`
+
+	// Circle and Person say whose calendar it goes in, when not the person's
+	// own: a circle's, or one somebody shared at edit.
+	Circle string `json:"circle"`
+	Person string `json:"person"`
 }
 
 // changeArguments are the boxes an edit fills in. A field left out is left
@@ -471,13 +716,18 @@ type changeArguments struct {
 	AllDay     *bool     `json:"all_day"`
 	Repeat     *string   `json:"repeat"`
 	Status     *string   `json:"status"`
+	IsPrivate  *bool     `json:"is_private"`
 	Invite     *[]string `json:"invite"`
 	TellGuests bool      `json:"tell_guests"`
+	Circle     string    `json:"circle"`
+	Person     string    `json:"person"`
 }
 
 type removeArguments struct {
 	Event      string `json:"event"`
 	TellGuests bool   `json:"tell_guests"`
+	Circle     string `json:"circle"`
+	Person     string `json:"person"`
 }
 
 func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
@@ -492,7 +742,7 @@ func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if strings.TrimSpace(arguments.Summary) == "" {
 		return nil, fmt.Errorf("an event needs a title")
 	}
-	calendarId, zone, err := theCalendar(ctx, run.Operations())
+	calendarId, zone, err := targetCalendar(ctx, run.Operations(), arguments.Circle, arguments.Person)
 	if err != nil {
 		return nil, err
 	}
@@ -537,11 +787,11 @@ func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err := run.Operations().Execute(ctx,
 		`mutation ($calendarId: String!, $summary: String, $location: String, $description: String,
 		           $startsAt: String, $endsAt: String, $allDay: Boolean, $recurrence: String,
-		           $timezone: String, $attendees: [String!]) {
+		           $timezone: String, $isPrivate: Boolean, $attendees: [String!]) {
 		   SaveCalendarEvent(calendarId: $calendarId, summary: $summary, location: $location,
 		                     description: $description, startsAt: $startsAt, endsAt: $endsAt,
 		                     allDay: $allDay, recurrence: $recurrence, timezone: $timezone,
-		                     attendees: $attendees) { id summary }
+		                     isPrivate: $isPrivate, attendees: $attendees) { id summary }
 		 }`,
 		map[string]any{
 			"calendarId":  calendarId,
@@ -553,6 +803,7 @@ func runAdd(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 			"allDay":      arguments.AllDay,
 			"recurrence":  strings.TrimSpace(arguments.Repeat),
 			"timezone":    zone,
+			"isPrivate":   arguments.IsPrivate,
 			"attendees":   invited,
 		}, &result); err != nil {
 		return nil, err
@@ -601,7 +852,7 @@ func runEdit(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if event == "" {
 		return nil, fmt.Errorf("say which event, by the identifier the agenda gives")
 	}
-	calendarId, zone, err := theCalendar(ctx, run.Operations())
+	calendarId, zone, err := targetCalendar(ctx, run.Operations(), arguments.Circle, arguments.Person)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +888,9 @@ func runEdit(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	}
 	if arguments.AllDay != nil {
 		fields["allDay"] = allDay
+	}
+	if arguments.IsPrivate != nil {
+		fields["isPrivate"] = *arguments.IsPrivate
 	}
 	for name, given := range map[string]*string{"startsAt": arguments.Starts, "endsAt": arguments.Ends} {
 		if given == nil {
@@ -680,11 +934,12 @@ func runEdit(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if err := run.Operations().Execute(ctx,
 		`mutation ($calendarId: String!, $id: String, $summary: String, $location: String,
 		           $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
-		           $recurrence: String, $status: String, $timezone: String, $attendees: [String!]) {
+		           $recurrence: String, $status: String, $timezone: String, $isPrivate: Boolean,
+		           $attendees: [String!]) {
 		   SaveCalendarEvent(calendarId: $calendarId, id: $id, summary: $summary, location: $location,
 		                     description: $description, startsAt: $startsAt, endsAt: $endsAt,
 		                     allDay: $allDay, recurrence: $recurrence, status: $status,
-		                     timezone: $timezone, attendees: $attendees) {
+		                     timezone: $timezone, isPrivate: $isPrivate, attendees: $attendees) {
 		     id summary startsAt allDay attendees { address }
 		   }
 		 }`, fields, &result); err != nil {
@@ -723,7 +978,7 @@ func runRemove(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	if event == "" {
 		return nil, fmt.Errorf("say which event, by the identifier the agenda gives")
 	}
-	calendarId, _, err := theCalendar(ctx, run.Operations())
+	calendarId, _, err := targetCalendar(ctx, run.Operations(), arguments.Circle, arguments.Person)
 	if err != nil {
 		return nil, err
 	}
@@ -809,6 +1064,19 @@ func zoneOf(zone string) *time.Location {
 	return time.UTC
 }
 
+// whichCalendar says in words which calendar a call writes to, for the card
+// the person answers: a circle's, which everybody in it sees, another
+// person's, which lands in front of them, or the person's own.
+func whichCalendar(circle, person string) string {
+	switch {
+	case strings.TrimSpace(circle) != "":
+		return "the circle calendar " + tools.Named(circle, "")
+	case strings.TrimSpace(person) != "":
+		return tools.Named(person, "") + "'s calendar, which they will see"
+	}
+	return "your calendar"
+}
+
 // eventPreview is the card for a call that names an event by identifier:
 // the event's own title, looked up, because "01m2ep..." is not something a
 // person can decide about. Whether the guests are told is said too — that
@@ -818,19 +1086,21 @@ func eventPreview(shape string) func(context.Context, json.RawMessage) string {
 		var call struct {
 			Event      string `json:"event"`
 			TellGuests bool   `json:"tell_guests"`
+			Circle     string `json:"circle"`
+			Person     string `json:"person"`
 		}
 		if err := json.Unmarshal(arguments, &call); err != nil || strings.TrimSpace(call.Event) == "" {
 			return ""
 		}
 		named := "an event"
 		if run, err := tools.RunFrom(ctx); err == nil {
-			if calendarId, _, err := theCalendar(ctx, run.Operations()); err == nil {
+			if calendarId, _, err := targetCalendar(ctx, run.Operations(), call.Circle, call.Person); err == nil {
 				if held, err := readEvent(ctx, run, calendarId, strings.TrimSpace(call.Event)); err == nil {
 					named = tools.Named(held.Summary, "an event")
 				}
 			}
 		}
-		said := fmt.Sprintf(shape, named)
+		said := fmt.Sprintf(shape, named, whichCalendar(call.Circle, call.Person))
 		if call.TellGuests {
 			said += ", and tell the guests"
 		}

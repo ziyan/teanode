@@ -16,6 +16,185 @@ public struct AgentCalendar: Codable, Identifiable, Hashable, Sendable {
     public let weekStart: String?
     /// "events" or "reminders".
     public let calendarKind: String?
+    /// What the person may do with it: owner for their own, busy, titles,
+    /// details or edit for one shared with them, and edit for a circle's.
+    /// Nil from a server that does not know about sharing, which is their own.
+    public let shareLevel: String?
+    /// Whose it is, for one shared with them; nil for a circle's, which
+    /// belongs to the circle.
+    public let ownerUserId: String?
+    public let ownerName: String?
+    /// Where the owner's picture is, a path read with the app's token, and
+    /// which of the twelve colors their initial is drawn on without one.
+    public let ownerAvatarUrl: String?
+    public let ownerAvatarColorIndex: Int?
+    public let circleId: String?
+    public let circleName: String?
+    public let isCircleCalendar: Bool?
+    /// Which of eight colors it is painted in when it has none of its own,
+    /// the same one the dashboard uses.
+    public let colorIndex: Int?
+
+    /// Whether it is the person's own calendar.
+    public var isOwn: Bool { shareLevel == nil || shareLevel == CalendarShareLevel.owner.rawValue }
+
+    /// How much of it the person may do. A server that does not say means
+    /// their own; a level this app does not know is the least, because
+    /// guessing more would offer to change what the server refuses.
+    public var level: CalendarShareLevel {
+        guard let shareLevel else { return .owner }
+        return CalendarShareLevel(rawValue: shareLevel) ?? .busy
+    }
+
+    /// Whether its events may be added to, changed and removed from here.
+    public var canWrite: Bool { level.canWrite }
+
+    /// Whether it is listed with events to read, rather than only the times
+    /// its owner is busy.
+    public var canRead: Bool { level.canRead }
+
+    /// What a list calls it: its own name for the person's and for a
+    /// circle's, and whose it is for another person's, since everybody's is
+    /// called "Calendar". The possessive is the screen's to write.
+    public var isNamedForOwner: Bool { !isOwn && isCircleCalendar != true && !(ownerName ?? "").isEmpty }
+
+    /// Whose it is, to be said beside an event of it when several calendars
+    /// are on one screen: the owner's name for one shared with the person, the
+    /// circle's name for a circle's, and nil for their own.
+    public var whoseName: String? {
+        if isOwn { return nil }
+        let name = isCircleCalendar == true ? (circleName ?? self.name) : (ownerName ?? "")
+        return name.isEmpty ? nil : name
+    }
+
+    public init(
+        id: String, name: String, colour: String? = nil, timezone: String? = nil, weekStart: String? = nil, calendarKind: String? = nil,
+        shareLevel: String? = nil, ownerUserId: String? = nil, ownerName: String? = nil, ownerAvatarUrl: String? = nil,
+        ownerAvatarColorIndex: Int? = nil, circleId: String? = nil, circleName: String? = nil, isCircleCalendar: Bool? = nil,
+        colorIndex: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.colour = colour
+        self.timezone = timezone
+        self.weekStart = weekStart
+        self.calendarKind = calendarKind
+        self.shareLevel = shareLevel
+        self.ownerUserId = ownerUserId
+        self.ownerName = ownerName
+        self.ownerAvatarUrl = ownerAvatarUrl
+        self.ownerAvatarColorIndex = ownerAvatarColorIndex
+        self.circleId = circleId
+        self.circleName = circleName
+        self.isCircleCalendar = isCircleCalendar
+        self.colorIndex = colorIndex
+    }
+}
+
+/// CalendarShareLevel is how much of a calendar somebody may see, and whether
+/// they may change it; the dashboard, the command line and the agent use the
+/// same four words (docs/decisions/20261016-a-calendar-is-shared-at-a-level.md).
+public enum CalendarShareLevel: String, CaseIterable, Sendable {
+    /// When the owner is busy, and nothing else.
+    case busy
+    /// The time, title and place of each event.
+    case titles
+    /// Everything in each event, guests included.
+    case details
+    /// Details, and the reader may add, change and remove events.
+    case edit
+    /// The person's own calendar; nobody is given this.
+    case owner
+
+    /// The levels a calendar can be shared at, least to most.
+    public static var grantable: [CalendarShareLevel] { [.busy, .titles, .details, .edit] }
+
+    /// Whether events are listed, rather than only busy time.
+    public var canRead: Bool { self != .busy }
+
+    /// Whether events may be added, changed and removed.
+    public var canWrite: Bool { self == .edit || self == .owner }
+}
+
+/// CalendarShare is one share of the person's calendar, with one person or
+/// every member of one circle.
+public struct CalendarShare: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let calendarId: String
+    public let granteeUserId: String?
+    public let granteeUsername: String?
+    public let granteeName: String?
+    public let granteeCircleId: String?
+    public let granteeCircleName: String?
+    /// busy, titles, details or edit.
+    public let shareLevel: String
+
+    public var level: CalendarShareLevel? { CalendarShareLevel(rawValue: shareLevel) }
+
+    /// Whether it is with a circle rather than a person.
+    public var isWithCircle: Bool { granteeCircleId != nil }
+
+    /// Who it is with: the person's name, or the username when they have no
+    /// name, or the circle's name.
+    public var granteeDisplayName: String {
+        if isWithCircle { return granteeCircleName ?? "" }
+        if let granteeName, !granteeName.isEmpty { return granteeName }
+        return granteeUsername ?? ""
+    }
+}
+
+/// CalendarSharePerson is somebody the person shares a circle with, and so
+/// may share their calendar with.
+public struct CalendarSharePerson: Codable, Identifiable, Hashable, Sendable {
+    public let userId: String
+    public let username: String
+    public let name: String?
+    public let avatarUrl: String?
+    public let avatarColorIndex: Int?
+
+    public var id: String { userId }
+    public var displayName: String {
+        guard let name, !name.isEmpty else { return username }
+        return name
+    }
+
+    /// How a picker names them: the name and, in brackets, the username, so two
+    /// people with one name can be told apart.
+    public var pickerLabel: String { PersonWords.pickerLabel(name: name, username: username) }
+}
+
+/// PersonWords are the words for a person that more than one screen shares.
+public enum PersonWords {
+    /// "Ada Example (ada)": the name and the username; the username alone for a
+    /// person with no name, or whose name is their username.
+    public static func pickerLabel(name: String?, username: String) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty || trimmed == username ? username : "\(trimmed) (\(username))"
+    }
+}
+
+/// ShareTarget is who a calendar or a page is shared with, as one choice: a
+/// person, or a whole circle. The server takes one of the two.
+public enum ShareTarget: Hashable, Sendable {
+    case person(String)
+    case circle(String)
+
+    public var granteeUserId: String? {
+        if case .person(let userId) = self { return userId }
+        return nil
+    }
+
+    public var granteeCircleId: String? {
+        if case .circle(let circleId) = self { return circleId }
+        return nil
+    }
+}
+
+/// CalendarShareCircle is a circle the person is in, which their calendar can
+/// be shared with whole.
+public struct CalendarShareCircle: Codable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let name: String
 }
 
 /// CalendarEvent is one occurrence of an event in a window.
@@ -32,9 +211,24 @@ public struct CalendarEvent: Codable, Identifiable, Hashable, Sendable {
     /// Whether this is one time of a repeating event.
     public let occurrence: Bool?
     public let status: String?
+    /// Whether all the person is told of it is that the owner is busy: a
+    /// calendar shared at busy, or an event its owner marked private. Its
+    /// title is empty and the screen says "Busy" in the person's language.
+    public let isBusyOnly: Bool?
+    /// Whether the owner marked it private, which the server only says of
+    /// the person's own events: everyone the calendar is shared with sees
+    /// only that they are busy. Absent from an older server.
+    public let isPrivate: Bool?
 
-    /// A stable identity for one occurrence of a repeating event.
-    public var occurrenceId: String { "\(id)-\(startsAt)" }
+    /// A stable identity for one occurrence of a repeating event. The
+    /// calendar is part of it: a busy block has no identifier of its own.
+    public var occurrenceId: String { "\(calendarId)-\(id)-\(startsAt)" }
+
+    /// Whether there is nothing in it to open.
+    public var isBusy: Bool { isBusyOnly == true }
+
+    /// Whether to draw the lock beside it.
+    public var isMarkedPrivate: Bool { isPrivate == true }
 
     /// Whether it was called off; the server writes the iCalendar status,
     /// "CANCELLED".
@@ -64,6 +258,8 @@ public struct CalendarEventDetail: Codable, Hashable, Sendable {
     public let recurrence: String?
     public let status: String?
     public let timezone: String?
+    /// Whether the owner marked it private; absent from an older server.
+    public let isPrivate: Bool?
     public let organizer: String?
     public let attendees: [Attendee]?
 }
@@ -193,12 +389,17 @@ public struct ContactDetail: Codable, Hashable, Sendable {
 
 extension Documents {
     public static let calendars = """
-        query { ListCalendars { id name colour timezone weekStart calendarKind } }
+        query {
+          ListCalendars {
+            id name colour timezone weekStart calendarKind
+            shareLevel ownerUserId ownerName ownerAvatarUrl ownerAvatarColorIndex circleId circleName isCircleCalendar colorIndex
+          }
+        }
         """
     public static let calendarEvents = """
         query ($calendarId: String!, $from: String!, $until: String!) {
           ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
-            id calendarId summary location startsAt endsAt allDay recurring occurrence status
+            id calendarId summary location startsAt endsAt allDay recurring occurrence status isBusyOnly isPrivate
           }
         }
         """
@@ -206,17 +407,17 @@ extension Documents {
         query ($calendarId: String!, $id: String!) {
           GetCalendarEvent(calendarId: $calendarId, id: $id) {
             id summary location description startsAt endsAt allDay
-            recurring recurrence status timezone organizer attendees { address name participation role }
+            recurring recurrence status timezone isPrivate organizer attendees { address name participation role }
           }
         }
         """
     public static let saveCalendarEvent = """
         mutation ($requestId: String!, $calendarId: String!, $id: String, $summary: String, $location: String,
           $description: String, $startsAt: String, $endsAt: String, $allDay: Boolean,
-          $timezone: String, $recurrence: String, $status: String, $attendees: [String!]) {
+          $timezone: String, $recurrence: String, $status: String, $isPrivate: Boolean, $attendees: [String!]) {
           SaveCalendarEvent(requestId: $requestId, calendarId: $calendarId, id: $id, summary: $summary, location: $location,
             description: $description, startsAt: $startsAt, endsAt: $endsAt, allDay: $allDay,
-            timezone: $timezone, recurrence: $recurrence, status: $status, attendees: $attendees) { id }
+            timezone: $timezone, recurrence: $recurrence, status: $status, isPrivate: $isPrivate, attendees: $attendees) { id }
         }
         """
     public static let deleteCalendarEvent = """
@@ -229,6 +430,30 @@ extension Documents {
         """
     public static let cancelCalendarRequest = """
         mutation ($requestId: String!) { CancelCalendarRequest(requestId: $requestId) { requestId isMissing } }
+        """
+    public static let calendarShares = """
+        query ($calendarId: String!) {
+          ListCalendarShares(calendarId: $calendarId) {
+            id calendarId granteeUserId granteeUsername granteeName granteeCircleId granteeCircleName shareLevel
+          }
+        }
+        """
+    public static let shareCalendar = """
+        mutation ($calendarId: String!, $granteeUserId: String, $granteeCircleId: String, $shareLevel: String!) {
+          ShareCalendar(calendarId: $calendarId, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, shareLevel: $shareLevel) { id }
+        }
+        """
+    public static let unshareCalendar = """
+        mutation ($shareId: String!) { UnshareCalendar(shareId: $shareId) }
+        """
+    public static let calendarSharePeople = """
+        query { ListCirclePeople { userId username name avatarUrl avatarColorIndex } }
+        """
+    public static let calendarShareCircles = """
+        query { ListCircles { id name } }
+        """
+    public static let createCircleCalendar = """
+        mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }
         """
     public static let reminders = """
         query ($isDone: Boolean) { ListReminders(isDone: $isDone) { id title notes dueAt isDueDate isDone doneAt priority isRepeating } }
@@ -284,6 +509,9 @@ extension Documents {
         "calendars": calendars, "calendarEvents": calendarEvents, "calendarEvent": calendarEvent,
         "saveCalendarEvent": saveCalendarEvent, "deleteCalendarEvent": deleteCalendarEvent,
         "calendarRequest": calendarRequest, "cancelCalendarRequest": cancelCalendarRequest,
+        "calendarShares": calendarShares, "shareCalendar": shareCalendar, "unshareCalendar": unshareCalendar,
+        "calendarSharePeople": calendarSharePeople, "calendarShareCircles": calendarShareCircles,
+        "createCircleCalendar": createCircleCalendar,
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
         "deleteReminder": deleteReminder, "addressBooks": addressBooks, "contacts": contacts, "contact": contact,
         "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "myContact": myContact, "setMyContact": setMyContact,
@@ -313,6 +541,55 @@ extension Connection {
     public func calendars() async throws -> [AgentCalendar] {
         struct Answer: Decodable, Sendable { let ListCalendars: [AgentCalendar] }
         return try await execute(Documents.calendars, as: Answer.self).ListCalendars
+    }
+
+    /// Who the person's own calendar is shared with, and at what level.
+    public func calendarShares(calendarId: String) async throws -> [CalendarShare] {
+        struct Answer: Decodable, Sendable { let ListCalendarShares: [CalendarShare] }
+        return try await execute(Documents.calendarShares, variables: ["calendarId": .string(calendarId)], as: Answer.self).ListCalendarShares
+    }
+
+    /// Shares the person's calendar with a person or a circle (one of the two
+    /// identifiers), or changes the level of a share already made.
+    public func shareCalendar(calendarId: String, granteeUserId: String?, granteeCircleId: String?, level: CalendarShareLevel) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Shared: Decodable, Sendable { let id: String }
+            let ShareCalendar: Shared
+        }
+        _ = try await execute(
+            Documents.shareCalendar,
+            variables: [
+                "calendarId": .string(calendarId), "granteeUserId": granteeUserId.map { .string($0) } ?? .null,
+                "granteeCircleId": granteeCircleId.map { .string($0) } ?? .null, "shareLevel": .string(level.rawValue),
+            ], as: Answer.self)
+    }
+
+    /// Takes a share back.
+    public func unshareCalendar(shareId: String) async throws {
+        struct Answer: Decodable, Sendable { let UnshareCalendar: Bool? }
+        _ = try await execute(Documents.unshareCalendar, variables: ["shareId": .string(shareId)], as: Answer.self)
+    }
+
+    /// The people the person shares a circle with, who their calendar can be
+    /// shared with.
+    public func calendarSharePeople() async throws -> [CalendarSharePerson] {
+        struct Answer: Decodable, Sendable { let ListCirclePeople: [CalendarSharePerson] }
+        return try await execute(Documents.calendarSharePeople, as: Answer.self).ListCirclePeople
+    }
+
+    /// The circles the person is in, which their calendar can be shared with.
+    public func calendarShareCircles() async throws -> [CalendarShareCircle] {
+        struct Answer: Decodable, Sendable { let ListCircles: [CalendarShareCircle] }
+        return try await execute(Documents.calendarShareCircles, as: Answer.self).ListCircles
+    }
+
+    /// Makes the calendar a circle keeps for itself. Admins only.
+    public func createCircleCalendar(circleId: String) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Made: Decodable, Sendable { let id: String }
+            let CreateCircleCalendar: Made
+        }
+        _ = try await execute(Documents.createCircleCalendar, variables: ["circleId": .string(circleId)], as: Answer.self)
     }
 
     public func calendarEvents(calendarId: String, from: Date, until: Date) async throws -> [CalendarEvent] {

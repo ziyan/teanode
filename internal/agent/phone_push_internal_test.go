@@ -175,26 +175,79 @@ func TestASignedOutPhoneIsNotSentTo(t *testing.T) {
 	}
 }
 
+// A report names the conversation its tab or phone shows, and keeps it apart
+// from the person's other reporters: the person is watching a conversation
+// while a shown, recently used reporter has it on screen, and not while that
+// reporter moved on, went to the background, was left untouched, or has no
+// conversation to name.
+func TestPresenceKeepsTheConversationPerReporter(t *testing.T) {
+	presence := NewPresence()
+	now := time.Now()
+	presence.Report("u", "phone", true, 0, "chat-one", now)
+	presence.Report("u", "tab", true, 0, "chat-two", now)
+	if !presence.IsWatchingConversation("u", "chat-one", now) || !presence.IsWatchingConversation("u", "chat-two", now) {
+		t.Error("a person with two reporters on two chats was not watching both")
+	}
+	if presence.IsWatchingConversation("u", "chat-three", now) {
+		t.Error("a person was taken as watching a chat no reporter shows")
+	}
+	if presence.IsWatchingConversation("u", "", now) || presence.IsWatchingConversation("someone-else", "chat-one", now) {
+		t.Error("an empty conversation, or another person's, was taken as watched")
+	}
+
+	// The tab moves to the chat the phone shows: the chat it left is not
+	// watched any more, and the report on the phone is untouched.
+	presence.Report("u", "tab", true, 0, "chat-one", now.Add(time.Second))
+	if presence.IsWatchingConversation("u", "chat-two", now.Add(2*time.Second)) {
+		t.Error("a chat the only reporter moved away from was still watched")
+	}
+	if !presence.IsWatchingConversation("u", "chat-one", now.Add(2*time.Second)) {
+		t.Error("two reporters on one chat were not watching it")
+	}
+
+	// A reporter with no conversation, as the app on another screen, shows
+	// none, and does not stand in for the others.
+	presence.Report("u", "phone", true, 0, "", now.Add(3*time.Second))
+	presence.Report("u", "tab", false, 0, "chat-one", now.Add(3*time.Second))
+	if presence.IsWatchingConversation("u", "chat-one", now.Add(4*time.Second)) {
+		t.Error("a hidden tab and a phone on another screen were taken as watching a chat")
+	}
+	if isPresent, _ := presence.isPresent("u", now.Add(4*time.Second)); !isPresent {
+		t.Error("the phone on another screen no longer counted as the person being there")
+	}
+
+	// A tab left untouched on a chat, or one that stopped reporting, is not
+	// reading it.
+	presence.Report("u", "tab", true, 300, "chat-one", now.Add(5*time.Second))
+	if presence.IsWatchingConversation("u", "chat-one", now.Add(6*time.Second)) {
+		t.Error("a tab untouched for five minutes was taken as watching")
+	}
+	presence.Report("u", "tab", true, 0, "chat-one", now.Add(7*time.Second))
+	if presence.IsWatchingConversation("u", "chat-one", now.Add(7*time.Second+presenceFresh+time.Second)) {
+		t.Error("a tab that stopped reporting was still taken as watching")
+	}
+}
+
 // The app going to the background hides the app at once, whatever it said a
 // moment before, while another tab still shown keeps the person present; and
 // a dashboard left untouched on a desk does not keep the phone quiet.
 func TestPresenceIsKeptPerTabAndPhone(t *testing.T) {
-	worker := &Agent{}
+	worker := &Agent{presence: NewPresence()}
 	now := time.Now()
-	worker.ReportPresence("u", "phone", true, 0, now)
+	worker.ReportPresence("u", "phone", true, 0, "", now)
 	if !worker.isWatching("u", time.Time{}, now) {
 		t.Fatal("the app in front was not taken as watching")
 	}
-	worker.ReportPresence("u", "phone", false, 0, now.Add(time.Second))
+	worker.ReportPresence("u", "phone", false, 0, "", now.Add(time.Second))
 	if worker.isWatching("u", time.Time{}, now.Add(2*time.Second)) {
 		t.Error("the app in the background was still taken as watching")
 	}
-	worker.ReportPresence("u", "tab", true, 0, now)
-	worker.ReportPresence("u", "other-tab", false, 0, now.Add(time.Second))
+	worker.ReportPresence("u", "tab", true, 0, "", now)
+	worker.ReportPresence("u", "other-tab", false, 0, "", now.Add(time.Second))
 	if !worker.isWatching("u", time.Time{}, now.Add(2*time.Second)) {
 		t.Error("a hidden tab hid a shown one")
 	}
-	worker.ReportPresence("u", "tab", true, 300, now.Add(3*time.Second))
+	worker.ReportPresence("u", "tab", true, 300, "", now.Add(3*time.Second))
 	if worker.isWatching("u", time.Time{}, now.Add(4*time.Second)) {
 		t.Error("a tab untouched for five minutes kept the phone quiet")
 	}
@@ -236,9 +289,9 @@ func TestThePhoneIsToldOfAnswersNobodyIsThereToRead(t *testing.T) {
 // moment ago counts as their latest input: a report from before they typed
 // that already says they were idle does not send the answer to the phone.
 func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
-	worker := &Agent{}
+	worker := &Agent{presence: NewPresence()}
 	now := time.Now()
-	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
+	worker.ReportPresence("u", "tab", true, 110, "", now.Add(-50*time.Second))
 	asked := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
 		Agent:   &models.Agent{UserID: "u"},
 		Surface: "drawer",
@@ -253,12 +306,12 @@ func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
 	if asked.isWatched(now.Add(3 * time.Minute)) {
 		t.Error("a question asked minutes ago kept a tab that stopped reporting as watched")
 	}
-	worker.ReportPresence("u", "tab", false, 0, now)
+	worker.ReportPresence("u", "tab", false, 0, "", now)
 	if asked.isWatched(now.Add(time.Second)) {
 		t.Error("a question just asked kept a hidden tab as watched")
 	}
 
-	worker.ReportPresence("u", "tab", true, 110, now.Add(-50*time.Second))
+	worker.ReportPresence("u", "tab", true, 110, "", now.Add(-50*time.Second))
 	ownTurn := &AskRun{agent: worker, lastWroteAt: now.Add(-10 * time.Second), settings: &AskSettings{
 		Agent:   &models.Agent{UserID: "u"},
 		Surface: "drawer",
@@ -272,10 +325,10 @@ func TestAskingInTheDrawerCountsAsBeingThere(t *testing.T) {
 // Each tab names itself afresh when it loads, so a person reloading over and
 // over keeps at most presenceReportersAtMost reporters, losing the oldest.
 func TestPresenceKeepsABoundedNumberOfReporters(t *testing.T) {
-	worker := &Agent{}
+	worker := &Agent{presence: NewPresence()}
 	now := time.Now()
 	for index := range presenceReportersAtMost + 10 {
-		worker.ReportPresence("u", fmt.Sprintf("tab-%d", index), index == 0, 0, now.Add(time.Duration(index)*time.Millisecond))
+		worker.ReportPresence("u", fmt.Sprintf("tab-%d", index), index == 0, 0, "", now.Add(time.Duration(index)*time.Millisecond))
 	}
 	reporters := worker.presence.reports["u"]
 	if len(reporters) != presenceReportersAtMost {
@@ -287,7 +340,7 @@ func TestPresenceKeepsABoundedNumberOfReporters(t *testing.T) {
 	if _, isKept := reporters[fmt.Sprintf("tab-%d", presenceReportersAtMost+9)]; !isKept {
 		t.Error("the newest reporter was dropped")
 	}
-	worker.ReportPresence("u", "tab-20", true, 0, now.Add(time.Second))
+	worker.ReportPresence("u", "tab-20", true, 0, "", now.Add(time.Second))
 	if len(worker.presence.reports["u"]) != presenceReportersAtMost {
 		t.Error("a known reporter reporting again pushed another out")
 	}
@@ -311,8 +364,8 @@ func TestAPhoneBodyLeavesOutWhatIsHidden(t *testing.T) {
 		"a picture":                 {"Here it is: ![the driveway](https://example.org/a.jpg)", "Here it is: the driveway"},
 		"bold and code":             {"**Paid** `INV-1`", "Paid INV-1"},
 	} {
-		if got := phoneBody(testCase.text); got != testCase.want {
-			t.Errorf("%s: phoneBody(%q) = %q, want %q", name, testCase.text, got, testCase.want)
+		if got := PhoneBody(testCase.text); got != testCase.want {
+			t.Errorf("%s: PhoneBody(%q) = %q, want %q", name, testCase.text, got, testCase.want)
 		}
 	}
 }

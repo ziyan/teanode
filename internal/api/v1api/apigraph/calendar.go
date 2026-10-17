@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ziyan/teanode/internal/api"
+	"github.com/ziyan/teanode/internal/avatar"
 	"github.com/ziyan/teanode/internal/calendar"
 	calendarcommands "github.com/ziyan/teanode/internal/calendar/commands"
 	"github.com/ziyan/teanode/internal/db"
@@ -39,6 +40,18 @@ type CalendarQuery interface {
 
 	// Completion of a retained request, including when its event no longer exists.
 	GetCalendarRequest(ctx context.Context, arguments CalendarRequestArguments) (*CalendarRequestView, error)
+
+	// Who a calendar is shared with, and at what level. Only the calendar's
+	// owner is told. Needs calendar:use.
+	ListCalendarShares(ctx context.Context, arguments ListCalendarSharesArguments) ([]*CalendarShareView, error)
+
+	// When each of these people is busy between two moments, for the ones
+	// whose calendar is shared with the caller at busy or above, and the
+	// caller's own. A person who has shared nothing with the caller is
+	// answered as not shared, the same as one who does not exist. Merged, so
+	// that the caller can take the union of several people's and ask when they
+	// are all free. Needs calendar:use.
+	ListCalendarFreeBusy(ctx context.Context, arguments ListCalendarFreeBusyArguments) ([]*CalendarFreeBusyView, error)
 }
 
 // CalendarMutation changes it.
@@ -58,6 +71,19 @@ type CalendarMutation interface {
 
 	// Rename a calendar, or change how it is shown. Needs calendar:use.
 	SaveCalendar(ctx context.Context, arguments SaveCalendarArguments) (*CalendarView, error)
+
+	// Share the caller's own calendar with one person or one circle at a
+	// level, or change the level of a share already made. The person must
+	// share a circle with the caller, and the caller must be in the circle.
+	// Needs calendar:use.
+	ShareCalendar(ctx context.Context, arguments ShareCalendarArguments) (*CalendarShareView, error)
+
+	// Take a share back. Only the calendar's owner can. Needs calendar:use.
+	UnshareCalendar(ctx context.Context, arguments UnshareCalendarArguments) (bool, error)
+
+	// Make a circle's calendar, which every member reads and writes. A circle
+	// has one. Needs the caller to be an admin of the circle.
+	CreateCircleCalendar(ctx context.Context, arguments CreateCircleCalendarArguments) (*CalendarView, error)
 }
 
 // CalendarView is one calendar and how much is in it.
@@ -80,6 +106,29 @@ type CalendarView struct {
 	// CalendarKind is what it holds: events, or reminders. A person has one
 	// of each, and whatever works on "the calendar" means the events one.
 	CalendarKind string `json:"calendarKind"`
+
+	// ShareLevel is what the caller may do with it: owner for their own,
+	// busy, titles, details or edit for one shared with them, and edit for a
+	// circle's. Below edit it is read only, and at busy it shows no events,
+	// only when the owner is busy.
+	ShareLevel string `json:"shareLevel"`
+
+	// Whose it is: their account, and what to call them. Null and empty for a
+	// circle's calendar, which belongs to the circle.
+	OwnerUserID           *string `json:"ownerUserId"`
+	OwnerUsername         string  `json:"ownerUsername"`
+	OwnerName             string  `json:"ownerName"`
+	OwnerAvatarURL        *string `json:"ownerAvatarUrl"`
+	OwnerAvatarColorIndex int     `json:"ownerAvatarColorIndex"`
+
+	// The circle a circle calendar belongs to; null for any other.
+	CircleID         *string `json:"circleId"`
+	CircleName       string  `json:"circleName"`
+	IsCircleCalendar bool    `json:"isCircleCalendar"`
+
+	// Which of eight colors to paint it in when it has no colour of its own,
+	// the same on every screen for the same calendar.
+	ColorIndex int `json:"colorIndex"`
 }
 
 // CalendarEventView is one event, and when it happens.
@@ -112,6 +161,16 @@ type CalendarEventView struct {
 
 	Status   string `json:"status,omitempty"`
 	Timezone string `json:"timezone,omitempty"`
+
+	// IsBusyOnly says this is all the caller is told of it: that the owner is
+	// busy. Its title is empty and screens say "Busy" in the caller's
+	// language.
+	IsBusyOnly bool `json:"isBusyOnly"`
+
+	// IsPrivate says the owner marked this event private (CLASS:PRIVATE or
+	// CLASS:CONFIDENTIAL): everybody the calendar is shared with sees it as
+	// busy. Only the owner and editors ever read an event for which it is true.
+	IsPrivate bool `json:"isPrivate"`
 
 	Organizer string              `json:"organizer,omitempty"`
 	Attendees []*CalendarAttendee `json:"attendees"`
@@ -186,6 +245,12 @@ type SaveCalendarEventArguments struct {
 
 	Status *string `json:"status" graphapi:"nullable"`
 
+	// IsPrivate marks the event private, so that those the calendar is shared
+	// with see only that the owner is busy; false takes the mark away.
+	// Omitted when empty, like the proposal fields, so that the digest of a
+	// request that does not mention it is what it was before this field.
+	IsPrivate *bool `json:"isPrivate,omitempty" graphapi:"nullable"`
+
 	// Attendees are the people to ask, as addresses. Setting them makes
 	// the event a meeting and sends each of them an invitation; a list
 	// given empty takes everybody off it, which is not the same as calling
@@ -237,25 +302,53 @@ func (self *graph) requireCalendarPerson(ctx context.Context) (*api.Principal, e
 	return principal, nil
 }
 
-// requireOwnCalendar is one calendar, if it is the caller's. A calendar
-// belonging to somebody else is not found, rather than refused, because whose
-// it is is not the caller's business.
-func (self *graph) requireOwnCalendar(ctx context.Context, calendarId string) (*models.Calendar, error) {
-	principal, err := self.requireCalendarPerson(ctx)
+// calendarReach is a calendar and what the caller may do with it.
+type calendarReach struct {
+	Calendar   *models.Calendar
+	ShareLevel models.ShareLevel
+	IsOwner    bool
+}
+
+// reachCalendar is one calendar, if the caller reaches it at the level
+// asked for or better: their own, a circle's they are in, or another person's
+// shared with them. Anything else, and a level that falls short, is not found,
+// rather than refused, because whether a calendar exists and whose it is is not
+// the caller's business.
+//
+// This is the one question "may this person read or write this calendar, and
+// at what level", and the answer is the database's CalendarAccess. Nothing
+// here compares a calendar's UserID with the caller, which a circle's calendar
+// does not have.
+func (self *graph) reachCalendar(ctx context.Context, principal *api.Principal, calendarId string, atLeast models.ShareLevel) (*calendarReach, error) {
+	tx := self.transaction(ctx)
+	found, err := tx.GetCalendar(strings.TrimSpace(calendarId))
 	if err != nil {
 		return nil, err
 	}
-	found, err := self.transaction(ctx).GetCalendar(strings.TrimSpace(calendarId))
+	if found == nil {
+		return nil, api.ErrNotFound
+	}
+	shareLevel, isOwner, err := tx.CalendarAccess(principal.User.ID, found)
 	if err != nil {
 		return nil, err
 	}
-	if found == nil || found.UserID != principal.User.ID {
+	if !shareLevel.AtLeast(atLeast) {
 		return nil, api.ErrNotFound
 	}
 	if err := self.requireService(calendarService(found.CalendarKind)); err != nil {
 		return nil, err
 	}
-	return found, nil
+	return &calendarReach{Calendar: found, ShareLevel: shareLevel, IsOwner: isOwner}, nil
+}
+
+// translateCalendarError is translateError, and keeps the words of a refusal
+// the caller can act on: this calendar is read only to them, or an event with
+// guests is the owner's to change.
+func translateCalendarError(err error) error {
+	if errors.Is(err, calendarcommands.ErrRefused) {
+		return fmt.Errorf("%w: %s", api.ErrInvalidArguments, strings.TrimPrefix(err.Error(), calendarcommands.ErrRefused.Error()+": "))
+	}
+	return translateError(err)
 }
 
 func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
@@ -263,7 +356,7 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 	if err != nil {
 		return nil, err
 	}
-	var calendars []*models.Calendar
+	var reachable []*models.ReachableCalendar
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// Nobody should have to make a calendar before they can put
 		// something in it, and the CalDAV layout needs one to exist
@@ -280,30 +373,80 @@ func (self *graph) ListCalendars(ctx context.Context) ([]*CalendarView, error) {
 				return err
 			}
 		}
-		found, err := tx.ListCalendars(principal.User.ID)
-		calendars = found
+		// The caller's own, then their circles', then the ones shared with
+		// them, each with the level the caller reaches it at.
+		found, err := tx.ListReachableCalendars(principal.User.ID)
+		reachable = found
 		return err
 	}); err != nil {
 		return nil, err
 	}
-	views := make([]*CalendarView, 0, len(calendars))
-	for _, found := range calendars {
-		if !self.isServiceEnabled(calendarService(found.CalendarKind)) {
+	views := make([]*CalendarView, 0, len(reachable))
+	for _, each := range reachable {
+		if !self.isServiceEnabled(calendarService(each.Calendar.CalendarKind)) {
 			continue
 		}
-		count, err := self.transaction(ctx).CountCalendarObjects(found.ID)
-		if err != nil {
-			return nil, err
+		// How much is in it is told to whoever may read the events, and not
+		// to somebody who is only told when the owner is busy.
+		var count int64
+		if each.ShareLevel.CanRead() {
+			if count, err = self.transaction(ctx).CountCalendarObjects(each.Calendar.ID); err != nil {
+				return nil, err
+			}
 		}
-		views = append(views, &CalendarView{
-			ID: found.ID, Name: found.Name, Description: found.Description,
-			Colour: found.Colour, Timezone: found.Timezone,
-			WeekStart: weekStartOf(found), Events: int(count),
-			AgentGranted: found.AgentGranted, CalendarKind: string(found.CalendarKind),
-		})
+		views = append(views, self.calendarView(principal, each, count))
 	}
 	return views, nil
 }
+
+// calendarView is a calendar as the caller reaches it. What belongs to the
+// owner alone (the agent's switch) is false for anyone else, and the zone the
+// owner keeps their day in is not told to someone who sees only when they are
+// busy.
+func (self *graph) calendarView(principal *api.Principal, each *models.ReachableCalendar, count int64) *CalendarView {
+	found := each.Calendar
+	view := &CalendarView{
+		ID: found.ID, Name: found.Name, Description: found.Description,
+		Colour: found.Colour, Timezone: found.Timezone,
+		WeekStart: weekStartOf(found), Events: int(count),
+		AgentGranted: found.AgentGranted && each.ShareLevel == models.ShareLevelOwner,
+		CalendarKind: string(found.CalendarKind),
+		ShareLevel:   string(each.ShareLevel),
+		ColorIndex:   calendarColorIndex(found.ID),
+	}
+	if each.ShareLevel != models.ShareLevelOwner && !each.ShareLevel.CanRead() {
+		view.Timezone, view.Description = "", ""
+	}
+	owner := each.Owner
+	if each.ShareLevel == models.ShareLevelOwner {
+		owner = principal.User
+	}
+	if found.CircleID != "" {
+		view.IsCircleCalendar = true
+		view.CircleID = &found.CircleID
+		view.CircleName = each.CircleName
+		return view
+	}
+	view.OwnerUserID = &found.UserID
+	if owner != nil {
+		view.OwnerUsername = owner.Username
+		view.OwnerName = owner.DisplayName()
+		view.OwnerAvatarURL = avatarUrl(owner)
+	}
+	view.OwnerAvatarColorIndex = avatar.InitialColorIndex(found.UserID)
+	return view
+}
+
+// calendarColorIndex is which of eight colors a calendar is painted in when it
+// has none of its own. The dashboard and the iPhone app compute the same
+// number from the same identifier, so a calendar is the same color on every
+// screen; the hash is the one avatars use, spelled out in internal/avatar.
+func calendarColorIndex(calendarId string) int {
+	return avatar.InitialColorIndex(calendarId) % calendarColorCount
+}
+
+// calendarColorCount is how many colors the screens paint calendars in.
+const calendarColorCount = 8
 
 // zoneFor is the zone a new calendar is written in: the person's own, if the
 // account records one, and otherwise none, which means times are written in
@@ -317,15 +460,37 @@ func (self *graph) zoneFor(principal *api.Principal) string {
 }
 
 func (self *graph) ListCalendarEvents(ctx context.Context, arguments ListCalendarEventsArguments) ([]*CalendarEventView, error) {
-	found, err := self.requireOwnCalendar(ctx, arguments.CalendarID)
+	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
+	reach, err := self.reachCalendar(ctx, principal, arguments.CalendarID, models.ShareLevelBusy)
+	if err != nil {
+		return nil, err
+	}
+	found := reach.Calendar
 	from, until, err := window(arguments.From, arguments.Until)
 	if err != nil {
 		return nil, err
 	}
 	tx := self.transaction(ctx)
+	if !reach.ShareLevel.CanRead() {
+		// Shared at busy: when the owner is busy, by the same judgments and
+		// the same merging as their own free-busy, and not one word of what
+		// any of it is.
+		periods, err := self.busyPeriods(ctx, found, from, until)
+		if err != nil {
+			return nil, err
+		}
+		views := make([]*CalendarEventView, 0, len(periods))
+		for _, period := range periods {
+			views = append(views, &CalendarEventView{
+				CalendarID: found.ID, IsBusyOnly: true, Attendees: []*CalendarAttendee{},
+				StartsAt: period.StartsAt.UTC().Format(time.RFC3339), EndsAt: period.EndsAt.UTC().Format(time.RFC3339),
+			})
+		}
+		return views, nil
+	}
 	occurrences, err := tx.ListOccurrences(found.ID, from, until)
 	if err != nil {
 		return nil, translateError(err)
@@ -336,7 +501,8 @@ func (self *graph) ListCalendarEvents(ctx context.Context, arguments ListCalenda
 	for _, occurrence := range occurrences {
 		object, already := objects[occurrence.ObjectID]
 		if !already {
-			if object, err = tx.GetCalendarObject(found.ID, occurrence.ObjectID); err != nil {
+			// As the caller's level lets them see it.
+			if object, err = tx.ReadCalendarObject(found.ID, occurrence.ObjectID, reach.ShareLevel); err != nil {
 				return nil, err
 			}
 			objects[occurrence.ObjectID] = object
@@ -361,6 +527,22 @@ func (self *graph) ListCalendarEvents(ctx context.Context, arguments ListCalenda
 		views = append(views, view)
 	}
 	return views, nil
+}
+
+// busyPeriods is when the owner of a calendar is busy, merged: the events that
+// make them busy by calendar.MakesBusy, as calendar.FreeBusy merges them. The
+// owner's own free-busy over CalDAV is the same computation.
+func (self *graph) busyPeriods(ctx context.Context, found *models.Calendar, from, until time.Time) ([]calendar.Period, error) {
+	tx := self.transaction(ctx)
+	theirs, err := calendarcommands.OwnerAddresses(tx, found.UserID)
+	if err != nil {
+		log.Warningf("cannot read the addresses of a calendar's owner: %s", err)
+	}
+	busy, err := calendarcommands.BusyOccurrences(tx, found.ID, theirs, from, until)
+	if err != nil {
+		return nil, translateError(err)
+	}
+	return calendar.FreeBusy(busy, from, until), nil
 }
 
 // window reads the two moments a caller asked about, and refuses a span this
@@ -388,11 +570,17 @@ func window(from, until string) (time.Time, time.Time, error) {
 }
 
 func (self *graph) GetCalendarEvent(ctx context.Context, arguments CalendarEventArguments) (*CalendarEventView, error) {
-	found, err := self.requireOwnCalendar(ctx, arguments.CalendarID)
+	principal, err := self.requireCalendarPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
-	object, err := self.transaction(ctx).GetCalendarObject(found.ID, strings.TrimSpace(arguments.ID))
+	// At titles or above: shared at busy, a calendar has no events to fetch,
+	// only the owner's busy time.
+	reach, err := self.reachCalendar(ctx, principal, arguments.CalendarID, models.ShareLevelTitles)
+	if err != nil {
+		return nil, err
+	}
+	object, err := self.transaction(ctx).ReadCalendarObject(reach.Calendar.ID, strings.TrimSpace(arguments.ID), reach.ShareLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -422,6 +610,13 @@ func eventView(object *models.CalendarObject, whole bool) (*CalendarEventView, e
 		// caller's, and what is known about it is still worth showing.
 		return view, nil
 	}
+	if parsed.IsBusyOnly {
+		// All the caller is told of it. The label is the screens' to
+		// translate, so the title is empty rather than the word "Busy".
+		view.IsBusyOnly = true
+		view.Summary, view.Location = "", ""
+	}
+	view.IsPrivate = parsed.IsPrivate
 	view.Description = parsed.Description
 	view.Recurrence = parsed.Recurrence
 	view.Timezone = parsed.Timezone
@@ -465,13 +660,23 @@ func (self *graph) SaveCalendarEvent(ctx context.Context, arguments SaveCalendar
 		return calendarcommands.RequestResult{ObjectID: saved.ID, IsMailSendRequired: isMailSendRequired, IsMailWriteRequired: arguments.ProposalItemID != ""}, nil
 	})
 	if err != nil {
-		return nil, translateError(err)
+		return nil, translateCalendarError(err)
 	}
 	if !outcome.IsReplay {
 		return saved, nil
 	}
-	// Return current content, never an old snapshot or a recreated deleted event.
-	object, err := self.transaction(ctx).GetCalendarObject(outcome.Receipt.CalendarID, outcome.Receipt.ObjectID)
+	// Return current content, never an old snapshot or a recreated deleted
+	// event, and as the caller's level now lets them see it.
+	reach, err := self.reachCalendar(ctx, principal, outcome.Receipt.CalendarID, models.ShareLevelTitles)
+	if errors.Is(err, api.ErrNotFound) {
+		// The calendar is gone, or the caller can no longer see it: the
+		// event cannot be handed back, and the receipt says what happened.
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	object, err := self.transaction(ctx).ReadCalendarObject(reach.Calendar.ID, outcome.Receipt.ObjectID, reach.ShareLevel)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -518,7 +723,7 @@ func (self *graph) saveCalendarEvent(ctx context.Context, arguments SaveCalendar
 		return nil, false, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	if err != nil {
-		return nil, false, translateError(err)
+		return nil, false, translateCalendarError(err)
 	}
 	if proposalInsight != nil {
 		if err := self.transaction(ctx).SetMailProposalStatus(proposalInsight.MailboxID, proposalInsight.MailID, *arguments.ProposalIndex, models.MailProposalAccepted); err != nil {
@@ -658,7 +863,7 @@ func buildSaved(arguments *SaveCalendarEventArguments, existing *models.Calendar
 		Summary: arguments.Summary, Location: arguments.Location,
 		Description: arguments.Description, AllDay: arguments.AllDay,
 		Timezone: strings.TrimSpace(arguments.Timezone), Recurrence: arguments.Recurrence,
-		Status: arguments.Status, Organizer: organizer,
+		Status: arguments.Status, IsPrivate: arguments.IsPrivate, Organizer: organizer,
 	}
 	if arguments.Attendees != nil {
 		asked := make([]calendar.Attendee, 0, len(*arguments.Attendees))
@@ -727,7 +932,7 @@ func (self *graph) DeleteCalendarEvent(ctx context.Context, arguments DeleteCale
 		_, err = calendarcommands.New(self.transaction(ctx)).ExecuteRequest(ctx, principal, calendarcommands.RequestIdentity{RequestID: arguments.RequestID, CalendarID: arguments.CalendarID, Operation: "delete", Content: requestContent}, removeEvent)
 	}
 	if err != nil {
-		return false, translateError(err)
+		return false, translateCalendarError(err)
 	}
 	return true, nil
 }
@@ -782,14 +987,12 @@ func (self *graph) SaveCalendar(ctx context.Context, arguments SaveCalendarArgum
 		return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 	}
 	if err != nil {
-		return nil, translateError(err)
+		return nil, translateCalendarError(err)
 	}
 	kept := outcome.Calendar
-	return &CalendarView{
-		ID: kept.ID, Name: kept.Name, Description: kept.Description,
-		Colour: kept.Colour, Timezone: kept.Timezone, WeekStart: weekStartOf(kept),
-		Events: int(outcome.EventCount), AgentGranted: kept.AgentGranted,
-	}, nil
+	return self.calendarView(principal, &models.ReachableCalendar{
+		Calendar: kept, ShareLevel: models.ShareLevelOwner, OwnerUserID: principal.User.ID, Owner: principal.User,
+	}, outcome.EventCount), nil
 }
 
 // sendCalendarMessage puts an invitation or a cancellation in the post.

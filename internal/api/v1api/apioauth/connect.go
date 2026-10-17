@@ -79,7 +79,9 @@ func (self *oauth) collectConnectCode(response http.ResponseWriter, request *htt
 
 	deviceName := api.DisplayName(request.PostForm.Get("device_name"), deviceNameLongest)
 	log.Noticef("%s connected the client %s (%q) on %q", user.Username, client.ID, client.Name, deviceName)
-	self.issue(response, user.ID, connectedTokenName(client.Name, deviceName), client.ID, "")
+	// The code carries whether it was made where a person was tapping; a
+	// code a command line token made yields an app token with no marker.
+	self.issue(response, user.ID, connectedTokenName(client.Name, deviceName), client.ID, "", connected.ClientKind)
 }
 
 // connectedTokenName is how a connected phone's token is listed: the program,

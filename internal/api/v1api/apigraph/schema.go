@@ -29,6 +29,7 @@ type Query interface {
 	MailboxDirectoryQuery
 	AddressBookQuery
 	CalendarQuery
+	CircleQuery
 	ReminderQuery
 	NoteQuery
 	CalendarInvitationQuery
@@ -44,6 +45,7 @@ type Query interface {
 	AgentAskQuery
 	AgentMemoryQuery
 	AgentGraphQuery
+	AgentPageShareQuery
 	AgentRecordLinkQuery
 	AgentCodingQuery
 	AgentEvaluationQuery
@@ -53,6 +55,7 @@ type Query interface {
 	AgentConnectionQuery
 	AgentReachQuery
 	AgentSkillQuery
+	AgentSkillShareQuery
 	AgentSourceTypeQuery
 	AgentSourceSecretQuery
 	AgentChannelQuery
@@ -102,6 +105,8 @@ type Mutation interface {
 	MailboxSetupProfileMutation
 	AddressBookMutation
 	CalendarMutation
+	CircleMutation
+	ChatMutation
 	ReminderMutation
 	NoteMutation
 	CalendarInvitationMutation
@@ -124,6 +129,7 @@ type Mutation interface {
 	AgentAskMutation
 	AgentMemoryMutation
 	AgentGraphMutation
+	AgentPageShareMutation
 	AgentRecordLinkMutation
 	AgentCodingMutation
 	AgentSpeakFirstMutation
@@ -133,6 +139,7 @@ type Mutation interface {
 	AgentConnectionMutation
 	AgentReachMutation
 	AgentSkillMutation
+	AgentSkillShareMutation
 	AgentProviderSignInMutation
 	AgentBillingMutation
 	AgentSourceTypeMutation

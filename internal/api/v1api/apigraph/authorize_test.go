@@ -63,7 +63,26 @@ var authorizing = map[string]bool{
 	// through its calendar, so there is no third helper here: an event is
 	// named within a calendar and the calendar is checked first.
 	"requireCalendarPerson": true,
-	"requireOwnCalendar":    true,
+	// requireSignedIn, then the account whose picture it is: the caller's own,
+	// or another's only with user:manage.
+	"requireAvatarOwner": true,
+	// requirePermission(circle:use), plus the caller's account; the circle,
+	// refused unless the caller is in it; and the same for an admin of it.
+	"requireCirclePerson": true,
+	"requireCircleMember": true,
+	"requireCircleAdmin":  true,
+	// requirePermission(circle:use), plus the caller's account and its agent,
+	// made switched off for a person who has none; the chat their
+	// conversation is for, refused unless the caller is, or was, in it; and
+	// the same for a message of one.
+	"requireChatPerson":  true,
+	"requireChatMember":  true,
+	"requireChatMessage": true,
+	// The caller for the operations on conversations, which a chat shares with
+	// a conversation with the agent: circle:use for a chat, agent:use and an
+	// agent that is on for any other, settled once the conversation is known
+	// by requireConversationUse.
+	"requireConversationPerson": true,
 	// requireItems(mail:read), plus the invitation the message carried --
 	// which is nothing at all unless the caller may read that mailbox.
 	"invitationFor": true,

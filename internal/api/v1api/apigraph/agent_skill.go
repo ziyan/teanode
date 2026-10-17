@@ -95,6 +95,13 @@ type AgentSkillToolView struct {
 	// NeedsComputer says whether carrying it out runs a command, which
 	// only happens on a computer the person attached.
 	NeedsComputer bool `json:"needsComputer"`
+
+	// IsAmountDeclared says the skill says where the tool's amount is, so
+	// that it can be shared with limits; such a tool is what a person
+	// shares to let someone pay. IsScoped says it works only on something
+	// an earlier call of a share made, such as a payment request.
+	IsAmountDeclared bool `json:"isAmountDeclared"`
+	IsScoped         bool `json:"isScoped"`
 }
 
 // AgentSkillOffer is one skill the registry publishes.
@@ -162,6 +169,7 @@ func (self *graph) skillView(row *models.AgentSkill) *AgentSkillView {
 		view.Tools = append(view.Tools, &AgentSkillToolView{
 			Name: declared.Name, Description: declared.Description,
 			Kind: declared.Type, NeedsComputer: agent.SkillRunsCommands(declared),
+			IsAmountDeclared: declared.DoesDeclareAmount(), IsScoped: declared.ScopedIDName() != "",
 		})
 	}
 	for _, secret := range parsed.Secrets {
@@ -274,6 +282,7 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 		return nil, fmt.Errorf("skills: the registry calls this %q and the file calls itself %q", entry.Name, parsed.Name)
 	}
 	var stored *models.AgentSkill
+	var nowAsk []*models.SkillShare
 	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) error {
 		// A skill an operator switched off stays off when it is updated;
 		// only a new one arrives switched on.
@@ -306,12 +315,56 @@ func (self *graph) InstallAgentSkill(ctx context.Context, arguments InstallAgent
 			URL: entry.URL, SHA256: entry.SHA256, Description: entry.Description,
 			Content: string(content), Enabled: enabled, Scope: settled,
 		})
+		if err != nil {
+			return err
+		}
+		nowAsk, err = holdSharesToSkill(tx, parsed)
 		return err
 	}); err != nil {
 		return nil, err
 	}
 	self.forgetSkills()
+	if len(nowAsk) > 0 {
+		if worker := self.agentWorker(); worker != nil {
+			worker.TellSkillSharesNowAsk(entry.Name, nowAsk)
+		}
+	}
 	return self.skillView(stored), nil
+}
+
+// holdSharesToSkill checks the shares of a skill that was just saved against
+// the version saved, by the rule that applied when they were made
+// (Skill.CheckShareable), and makes every share that no longer meets it ask
+// the owner before every call. An update may give a tool an amount that it did
+// not declare when it was shared, or take a tool away; a share with no limit
+// and no asking would otherwise let the new version spend without bound. It
+// returns the shares it changed, for the owners to be told.
+func holdSharesToSkill(tx db.Transaction, saved *skills.Skill) ([]*models.SkillShare, error) {
+	shares, err := tx.ListSkillSharesOf(saved.Name)
+	if err != nil {
+		return nil, err
+	}
+	changed := []*models.SkillShare{}
+	for _, share := range shares {
+		if share.IsApprovalRequired {
+			continue
+		}
+		if err := saved.CheckShareable(share.ToolNames, skills.ShareLimits{
+			PaymentLimitMinor: share.PaymentLimitMinor, MonthlyLimitMinor: share.MonthlyLimitMinor,
+			CurrencyCode: share.CurrencyCode, IsApprovalRequired: share.IsApprovalRequired,
+		}); err == nil {
+			continue
+		}
+		isChanged, err := tx.RequireSkillShareApproval(share.ID)
+		if err != nil {
+			return nil, err
+		}
+		if isChanged {
+			share.IsApprovalRequired = true
+			changed = append(changed, share)
+		}
+	}
+	return changed, nil
 }
 
 func (self *graph) RemoveAgentSkill(ctx context.Context, arguments AgentSkillArguments) (bool, error) {

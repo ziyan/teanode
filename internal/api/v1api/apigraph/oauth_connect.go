@@ -65,12 +65,21 @@ func (self *graph) CreateOAuthConnectCode(ctx context.Context) (*OAuthConnectCod
 	if !api.IsSecure(request, self.config.Current().Server.TrustedProxies) && !api.IsLoopbackHost(hostOnly(request.Host)) {
 		return nil, fmt.Errorf("%w: open the dashboard over https to connect a phone; a code sent over plain http could be read on the way", api.ErrInvalidArguments)
 	}
+	// What the code signs in is marked as the app's own only when the code was
+	// made where a person was tapping. A code made with a command line token
+	// could have been made, and scanned, by a program on the person's
+	// computer, which would then hold an app's token.
+	var clientKind models.TokenClientKind
+	if principal.IsPersonsTap() {
+		clientKind = models.ClientKindApp
+	}
 	secret := security.GenerateRandomString(40, security.LowerAlphaNumeric)
 	sum := sha256.Sum256([]byte(secret))
 	created, err := self.database.CreateOAuthConnectCode(&models.OAuthConnectCode{
-		ID:        security.NewULID(),
-		UserID:    principal.User.ID,
-		ExpiresAt: time.Now().Add(connectCodeLifetime),
+		ID:         security.NewULID(),
+		UserID:     principal.User.ID,
+		ClientKind: clientKind,
+		ExpiresAt:  time.Now().Add(connectCodeLifetime),
 	}, hex.EncodeToString(sum[:]))
 	if err != nil {
 		return nil, err

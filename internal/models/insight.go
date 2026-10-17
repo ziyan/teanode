@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -126,13 +127,16 @@ type ThreadSummary struct {
 type AgentConversationKind string
 
 // The kinds: the one continuous conversation, a named one kept apart, the
-// transcript of a run with nobody present, and a goal's own conversation,
-// where the turns the agent takes toward it run out of the person's sight.
+// transcript of a run with nobody present, a goal's own conversation, where
+// the turns the agent takes toward it run out of the person's sight, and a
+// chat: a member's own conversation for a chat with people in it, which
+// shows what they said and holds only what the member's own agent did there.
 const (
 	AgentConversationMain  AgentConversationKind = "main"
 	AgentConversationNamed AgentConversationKind = "named"
 	AgentConversationRun   AgentConversationKind = "run"
 	AgentConversationGoal  AgentConversationKind = "goal"
+	AgentConversationChat  AgentConversationKind = "chat"
 )
 
 // AgentConversation is a conversation or a run transcript.
@@ -214,6 +218,14 @@ type AgentConversation struct {
 	// finished background work have woken here since the person last
 	// wrote, which bounds a chain of them.
 	BackgroundWakeCount int `json:"backgroundWakeCount,omitempty"`
+
+	// ChatID is the chat a conversation of the kind chat is the member's
+	// own for; empty for every other.
+	ChatID string `json:"-"`
+
+	// Chat is the chat as this member sees it, filled in by the operations
+	// that list and read conversations; null unless the kind is chat.
+	Chat *ChatView `json:"chat,omitempty"`
 }
 
 // AgentGoalState is where a conversation's goal stands.
@@ -236,6 +248,31 @@ func IsAgentGoalState(goalState AgentGoalState) bool {
 	switch goalState {
 	case GoalWorking, GoalWaiting, GoalMet, GoalDropped:
 		return true
+	}
+	return false
+}
+
+// IsChat says whether a conversation is a member's own for a chat.
+func (self *AgentConversation) IsChat() bool {
+	return self != nil && self.Kind == AgentConversationChat
+}
+
+// HasChatWords says whether a chat's title or one of its members' names or
+// usernames holds the words, in any case: how a chat is found by a search,
+// since what was said in it is not searched. It is false for anything that is
+// not a chat, or a chat whose title and members have not been described.
+func (self *AgentConversation) HasChatWords(words string) bool {
+	if !self.IsChat() || self.Chat == nil {
+		return false
+	}
+	words = strings.ToLower(words)
+	if strings.Contains(strings.ToLower(self.Chat.Title), words) {
+		return true
+	}
+	for _, member := range self.Chat.Members {
+		if strings.Contains(strings.ToLower(member.Name), words) || strings.Contains(strings.ToLower(member.Username), words) {
+			return true
+		}
 	}
 	return false
 }
@@ -395,8 +432,44 @@ type AgentMessage struct {
 	References  []AgentReference  `json:"references,omitempty"`
 
 	// Reactions are the emoji the person and the agent put on the
-	// message, at most one each, read with the page the message is on.
+	// message, at most one each, read with the page the message is on. In a
+	// chat, one for each person who reacted.
 	Reactions []AgentMessageReaction `json:"reactions,omitempty"`
+
+	// The author, so that a client draws a message from the owner, their
+	// agent or another person on one path. AuthorKind is person or agent.
+	// For a conversation with an agent the person is the owner and the agent
+	// theirs; in a chat they are whoever wrote it. An agent has no picture:
+	// its AuthorAvatarURL is null and the color is its owner's.
+	AuthorKind   ChatAuthorKind `json:"authorKind,omitempty"`
+	AuthorUserID string         `json:"authorUserId,omitempty"`
+	AuthorName   string         `json:"authorName,omitempty"`
+	// AuthorOwnerName is, on an agent's message in a chat, its owner's
+	// name; see ChatMessage.AuthorOwnerName and AgentSpeakerLabel.
+	AuthorOwnerName        string  `json:"authorOwnerName,omitempty"`
+	AuthorAvatarURL        *string `json:"authorAvatarUrl,omitempty"`
+	AuthorAvatarColorIndex int     `json:"authorAvatarColorIndex,omitempty"`
+	AuthorAgentID          string  `json:"authorAgentId,omitempty"`
+
+	// AgentRunID is, on a chat message an agent wrote, the run of the turn
+	// that wrote it, so that a client replaces the text it drew while that
+	// turn was still being written with this message.
+	AgentRunID string `json:"agentRunId,omitempty"`
+
+	// IsMine says the message was written by the person reading it or by
+	// their agent.
+	IsMine bool `json:"isMine,omitempty"`
+
+	// IsAgentWork says that, in a chat, the row is what the reader's own
+	// agent did to answer (a call, its result, a note, a card) and not
+	// something said in the chat. Only they read it; the chat's messages are
+	// the rows without it.
+	IsAgentWork bool `json:"isAgentWork,omitempty"`
+
+	// EditedAt is when its author last changed what it says, and IsDeleted
+	// says they took it back: its content is then empty.
+	EditedAt  *time.Time `json:"editedAt,omitempty"`
+	IsDeleted bool       `json:"isDeleted,omitempty"`
 }
 
 // AgentAttachment is a file a person handed their agent: the row, with the
@@ -421,6 +494,11 @@ type AgentAttachment struct {
 	// form: it is kept while it waits to be read, and its text, which
 	// holds the person's taxpayer number, is never kept in Text.
 	IsTaxDocument bool `json:"isTaxDocument,omitempty"`
+
+	// IsRemoved says the file went with the account that held it: the chat
+	// message it came with is kept, the file is not, and a screen says so
+	// where the file was.
+	IsRemoved bool `json:"isRemoved,omitempty"`
 }
 
 // AgentReference is a thread or message the person pointed the agent at
@@ -518,17 +596,25 @@ type AgentNoteKind string
 
 // The kinds of note a conversation carries.
 const (
-	NoteQueued          AgentNoteKind = "queued"           // the turn waits behind the one before it
-	NoteStopped         AgentNoteKind = "stopped"          // stopped, by the person or for the detail's reason
-	NoteFailed          AgentNoteKind = "failed"           // the turn failed: the error
-	NoteCallUnreadable  AgentNoteKind = "call_unreadable"  // a tool call the server could not read
-	NoteRepeatedFailure AgentNoteKind = "repeated_failure" // the same call failed three times
-	NoteRoundLimit      AgentNoteKind = "round_limit"      // the most rounds a turn may take
-	NoteCompacting      AgentNoteKind = "compacting"       // the earlier conversation is being folded into a note
-	NoteCompacted       AgentNoteKind = "compacted"        // it was: the detail is the note
-	NoteDepth           AgentNoteKind = "depth"            // looked into carefully: the detail is why
-	NoteHerdrAsked      AgentNoteKind = "herdr_asked"      // a coding session's question, for the drawer to draw: JSON
-	NoteHerdrAnswered   AgentNoteKind = "herdr_answered"   // it went, and what it was answered with: JSON
+	NoteQueued                AgentNoteKind = "queued"                   // the turn waits behind the one before it
+	NoteStopped               AgentNoteKind = "stopped"                  // stopped, by the person or for the detail's reason
+	NoteFailed                AgentNoteKind = "failed"                   // the turn failed: the error
+	NoteCallUnreadable        AgentNoteKind = "call_unreadable"          // a tool call the server could not read
+	NoteRepeatedFailure       AgentNoteKind = "repeated_failure"         // the same call failed three times
+	NoteRoundLimit            AgentNoteKind = "round_limit"              // the most rounds a turn may take
+	NoteCompacting            AgentNoteKind = "compacting"               // the earlier conversation is being folded into a note
+	NoteCompacted             AgentNoteKind = "compacted"                // it was: the detail is the note
+	NoteDepth                 AgentNoteKind = "depth"                    // looked into carefully: the detail is why
+	NoteHerdrAsked            AgentNoteKind = "herdr_asked"              // a coding session's question, for the drawer to draw: JSON
+	NoteHerdrAnswered         AgentNoteKind = "herdr_answered"           // it went, and what it was answered with: JSON
+	NoteCircleInvited         AgentNoteKind = "circle_invited"           // somebody invited the person to a circle: JSON of the inviter's name and the circle's
+	NoteSkillShareCallWaiting AgentNoteKind = "skill_share_call_waiting" // a call of a shared skill waits for the person's approval: JSON naming the call
+
+	// What only the person who addressed an agent in a chat is told, when
+	// no turn of it started: the detail is the agent's name.
+	NoteChatAgentOwnerOnly AgentNoteKind = "chat_agent_owner_only" // only its owner can ask that agent in this chat
+	NoteChatAgentOff       AgentNoteKind = "chat_agent_off"        // its owner has switched it off
+	NoteChatAgentAbsent    AgentNoteKind = "chat_agent_absent"     // its owner is not in this chat
 	// The goal notes below are written no longer, since goals have their
 	// own conversations and activity; they are kept so that transcripts
 	// written before still read.
@@ -543,23 +629,28 @@ const (
 // noteEnglish is each kind in English, for whoever reads a note without
 // the kinds: the command line, a chat channel, an old client.
 var noteEnglish = map[AgentNoteKind]string{
-	NoteQueued:          "queued behind the turn before it",
-	NoteStopped:         "stopped",
-	NoteFailed:          "failed",
-	NoteCallUnreadable:  "a tool call the server could not read; asked again",
-	NoteRepeatedFailure: "stopped: the same call failed three times",
-	NoteRoundLimit:      "stopped after the most rounds a turn may take",
-	NoteCompacting:      "compacting the earlier conversation into a note",
-	NoteCompacted:       "the earlier conversation was compacted into a note",
-	NoteDepth:           "looking into this carefully",
-	NoteHerdrAsked:      "a coding session asked a question",
-	NoteHerdrAnswered:   "a coding session's question was answered",
-	NoteGoalSet:         "Goal set",
-	NoteGoalSetAgain:    "Goal set again",
-	NoteGoalChanged:     "Goal changed",
-	NoteGoalCleared:     "Goal cleared",
-	NoteGoalMet:         "Goal met",
-	NoteGoalStalled:     "Goal stalled",
+	NoteQueued:                "queued behind the turn before it",
+	NoteStopped:               "stopped",
+	NoteFailed:                "failed",
+	NoteCallUnreadable:        "a tool call the server could not read; asked again",
+	NoteRepeatedFailure:       "stopped: the same call failed three times",
+	NoteRoundLimit:            "stopped after the most rounds a turn may take",
+	NoteCompacting:            "compacting the earlier conversation into a note",
+	NoteCompacted:             "the earlier conversation was compacted into a note",
+	NoteDepth:                 "looking into this carefully",
+	NoteHerdrAsked:            "a coding session asked a question",
+	NoteHerdrAnswered:         "a coding session's question was answered",
+	NoteCircleInvited:         "invited you to a circle",
+	NoteSkillShareCallWaiting: "a call of a skill you shared is waiting for your approval",
+	NoteChatAgentOwnerOnly:    "only its owner can ask that agent in this chat",
+	NoteChatAgentOff:          "that agent is switched off",
+	NoteChatAgentAbsent:       "that agent's owner is not in this chat",
+	NoteGoalSet:               "Goal set",
+	NoteGoalSetAgain:          "Goal set again",
+	NoteGoalChanged:           "Goal changed",
+	NoteGoalCleared:           "Goal cleared",
+	NoteGoalMet:               "Goal met",
+	NoteGoalStalled:           "Goal stalled",
 }
 
 // NoteText is a note in English: the kind's words, then its detail. The
@@ -572,10 +663,53 @@ func NoteText(kind AgentNoteKind, detail string) string {
 	switch {
 	case kind == NoteGoalStalled:
 		return fmt.Sprintf("Goal stalled: %s turns since you last wrote and it is not met. Write to keep going, or clear or change it.", detail)
+	case kind == NoteCircleInvited:
+		if invitation := ParseCircleInvitedNote(detail); invitation != nil {
+			return invitation.InvitedByName + " invited you to " + invitation.CircleName
+		}
+		return english
+	case kind == NoteSkillShareCallWaiting:
+		if waiting := ParseSkillShareCallNote(detail); waiting != nil {
+			return waiting.GranteeName + " asked to use a skill you shared, and it is waiting for your approval"
+		}
+		return english
+	case kind == NoteChatAgentOwnerOnly && detail != "":
+		return "Only " + detail + "'s owner can ask it in this chat."
+	case kind == NoteChatAgentOff && detail != "":
+		return detail + " is switched off."
+	case kind == NoteChatAgentAbsent && detail != "":
+		return detail + "'s owner is not in this chat."
 	case detail == "" || kind == NoteCompacted:
 		return english
 	}
 	return english + ": " + detail
+}
+
+// CircleInvitedNote is the detail of a circle_invited note: who asked and
+// to what. Two names cannot share one plain string without a separator that
+// a name may contain, so the detail is this as JSON and each client words it.
+type CircleInvitedNote struct {
+	InvitedByName string `json:"invitedByName"`
+	CircleName    string `json:"circleName"`
+}
+
+// CircleInvitedDetail is the detail of a circle_invited note.
+func CircleInvitedDetail(invitedByName, circleName string) string {
+	encoded, err := json.Marshal(CircleInvitedNote{InvitedByName: invitedByName, CircleName: circleName})
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+// ParseCircleInvitedNote reads the detail of a circle_invited note, or
+// returns nil when it is not one.
+func ParseCircleInvitedNote(detail string) *CircleInvitedNote {
+	var note CircleInvitedNote
+	if err := json.Unmarshal([]byte(detail), &note); err != nil || note.CircleName == "" {
+		return nil
+	}
+	return &note
 }
 
 // NewAgentNote is a note of a kind for a conversation.

@@ -62,6 +62,21 @@ type Settings struct {
 	// Instance names this server instance on the jobs it claims.
 	Instance string
 
+	// Presence is who has a dashboard or the app open. The server hands the
+	// same one to the chat hub, which has no agent to ask; nil makes the
+	// agent its own, as tests do.
+	Presence *Presence
+
+	// Phones sends a notification to a person's phones. The server hands the
+	// chat hub the same one; nil makes the agent its own, as tests do.
+	Phones *PhoneNotifier
+
+	// ChatEvents is where the events of a chat go when the agent has one to
+	// tell: its answer posted in a chat, its typing. It is the chat hub,
+	// which exists whether or not an agent does. Nil in tests that have no
+	// chats.
+	ChatEvents ChatPublisher
+
 	// Tick is how often the worker looks for work. Zero means five seconds.
 	Tick time.Duration
 }
@@ -142,10 +157,10 @@ type Agent struct {
 	checkingPrices  atomic.Bool
 
 	// presence is who has a dashboard open; see presence.go.
-	presence presence
+	presence *Presence
 
 	// phones is what sends notifications to the person's phones.
-	phones phoneSenders
+	phones *PhoneNotifier
 
 	// connections are the sessions with connected servers, per server and
 	// person.
@@ -205,6 +220,9 @@ type Agent struct {
 	backgroundWakes     map[string]*backgroundWake
 	runningWork         map[string]context.CancelCauseFunc
 	lastBackgroundSweep time.Time
+	// lastSkillShareSweep is when the calls of shared skills that waited
+	// out their day were last looked for.
+	lastSkillShareSweep time.Time
 	// startedAt is when Start ran, and hasResumedCutTurns that the
 	// conversations a restart cut short have been looked at; see
 	// resume.go.
@@ -275,8 +293,19 @@ func New(settings *Settings) *Agent {
 	if settings.Tick <= 0 {
 		settings.Tick = 5 * time.Second
 	}
-	self := &Agent{settings: settings, handlers: map[models.AgentJobKind]Handler{}}
+	self := &Agent{settings: settings, handlers: map[models.AgentJobKind]Handler{}, presence: settings.Presence}
+	if self.presence == nil {
+		self.presence = NewPresence()
+	}
 	self.ctx, self.cancel = context.WithCancel(context.Background())
+	if self.phones = settings.Phones; self.phones == nil {
+		self.phones = NewPhoneNotifier(&PhoneNotifierSettings{
+			Database:      settings.Database,
+			Configuration: settings.Configuration,
+			Context:       self.ctx,
+			WaitGroup:     &self.waitGroup,
+		})
+	}
 	concurrency := settings.Configuration().Agent.Limits.Concurrency
 	if concurrency <= 0 {
 		concurrency = 1
@@ -329,6 +358,9 @@ func FullCatalog() *Catalog {
 // OperationsFor is what a run made for a person outside a request — a
 // scheduled run, a turn from a chat app — may do: what the person may.
 func (self *Agent) OperationsFor(ctx context.Context, owner *models.User) (Operations, error) {
+	if self.operations == nil {
+		return nil, fmt.Errorf("agent: no way to act as the person")
+	}
 	return self.operations(ctx, owner)
 }
 
@@ -512,6 +544,7 @@ func (self *Agent) tickAt(ctx context.Context, now time.Time) error {
 	self.queueNearbyRuns(ctx, now)
 	self.queueEvaluating(ctx, now)
 	self.sweepBackgroundWork(ctx, now)
+	self.sweepSkillShareCalls(ctx, now)
 	self.sweepBrowsers()
 	self.sweepSessions()
 

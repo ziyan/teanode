@@ -36,6 +36,11 @@ type Identity struct {
 	SessionID string
 
 	ImpersonatorUsername string
+
+	// CredentialKind is what the request signed in with: the dashboard's
+	// session, the phone app's token, or any other token. Empty for the
+	// console and for a server with no accounts yet.
+	CredentialKind models.CredentialKind
 }
 
 var (
@@ -130,7 +135,8 @@ type Authenticator interface {
 
 	// IssueAuthorizedToken mints the token a program collects after somebody
 	// approved it, returning the row, the token and the refresh secret.
-	IssueAuthorizedToken(userId, name, clientId, resource string, lifetime time.Duration) (*models.Token, string, string, error)
+	// The client kind marks the phone app's own sign-in (models.ClientKindApp).
+	IssueAuthorizedToken(userId, name, clientId, resource string, clientKind models.TokenClientKind, lifetime time.Duration) (*models.Token, string, string, error)
 
 	// RedeemRefresh checks a refresh secret and returns the token it renews,
 	// without minting the replacement.
@@ -299,8 +305,7 @@ func (self *authenticator) authenticate(request *http.Request) (Identity, bool) 
 	// one meant to use it, and falling back to an ambient session would hide
 	// a revoked or mistyped token behind whoever happens to be logged in.
 	if header := request.Header.Get("Authorization"); header != "" {
-		username, ok := self.authenticateBearer(header, request)
-		return Identity{Username: username}, ok
+		return self.authenticateBearer(header, request)
 	}
 
 	if !self.Required() {
@@ -328,7 +333,7 @@ func (self *authenticator) authenticate(request *http.Request) (Identity, bool) 
 	if models.IsReservedUsername(user.Username) {
 		return Identity{}, false
 	}
-	identity := Identity{Username: user.Username, SessionID: session.ID}
+	identity := Identity{Username: user.Username, SessionID: session.ID, CredentialKind: models.CredentialSession}
 	if session.IsImpersonation() {
 		impersonator, ok := self.liveImpersonator(session)
 		if !ok {
@@ -413,30 +418,30 @@ func (self *authenticator) touch(
 // accepted: one belonging to an account and stored in the token table, and one
 // minted on the fly by a client that can read the server secret, which is how
 // the command line client authenticates on the server itself.
-func (self *authenticator) authenticateBearer(header string, request *http.Request) (string, bool) {
+func (self *authenticator) authenticateBearer(header string, request *http.Request) (Identity, bool) {
 	value, ok := bearerToken(header)
 	if !ok {
-		return "", false
+		return Identity{}, false
 	}
 
 	if strings.HasPrefix(value, config.LocalTokenPrefix) {
 		if !self.config.Current().VerifyLocalToken(value) {
-			return "", false
+			return Identity{}, false
 		}
-		return config.LocalUsername, true
+		return Identity{Username: config.LocalUsername}, true
 	}
 
 	id, key, ok := parse(kindToken, TokenPrefix, value, self.tokenKey())
 	if !ok {
-		return "", false
+		return Identity{}, false
 	}
 	token, keyHash, err := self.database.GetToken(id)
 	if err != nil {
 		log.Errorf("could not read token %q: %s", id, err)
-		return "", false
+		return Identity{}, false
 	}
 	if token == nil || !matches(keyHash, key) || !token.Active(time.Now()) {
-		return "", false
+		return Identity{}, false
 	}
 	// A token issued for one thing is refused everywhere else.
 	//
@@ -448,18 +453,22 @@ func (self *authenticator) authenticateBearer(header string, request *http.Reque
 	// meaning what it meant.
 	if token.Resource != "" && !allowsResource(token.Resource, request) {
 		log.Warningf("token %s was offered at %s but was issued for %s", token.ID, request.URL.Path, token.Resource)
-		return "", false
+		return Identity{}, false
 	}
 
 	// A token acts as the account it belongs to, so removing the account
 	// takes its tokens with it.
 	user := self.findUserById(token.UserID)
 	if user == nil || user.Disabled() {
-		return "", false
+		return Identity{}, false
 	}
 
 	self.touch(token.ID, token.UsedAt, request, self.database.TouchToken)
-	return user.Username, true
+	credentialKind := models.CredentialToken
+	if token.ClientKind == models.ClientKindApp {
+		credentialKind = models.CredentialApp
+	}
+	return Identity{Username: user.Username, CredentialKind: credentialKind}, true
 }
 
 // allowsResource says whether a request is for the thing a token was issued
@@ -975,13 +984,14 @@ func (self *authenticator) Scavenge() error {
 // IssueAuthorizedToken mints the token a program collects after somebody
 // approved it, and the secret it renews with.
 //
-// An ordinary token, with two things added: the client that holds it, so a
-// person reading their list sees a program rather than a row, and the resource
-// it is good for, so it is refused anywhere else. Everything that already
+// An ordinary token, with three things added: the client that holds it, so a
+// person reading their list sees a program rather than a row, the resource
+// it is good for, so it is refused anywhere else, and whether it is the phone
+// app's own sign-in (see models.Token.ClientKind). Everything that already
 // works for a token minted by hand -- expiry, revocation, acting as the
 // account, appearing in the audit log -- works for this one, because it is the
 // same kind of thing.
-func (self *authenticator) IssueAuthorizedToken(userId, name, clientId, resource string, lifetime time.Duration) (*models.Token, string, string, error) {
+func (self *authenticator) IssueAuthorizedToken(userId, name, clientId, resource string, clientKind models.TokenClientKind, lifetime time.Duration) (*models.Token, string, string, error) {
 	id, value, keyHash := issue(kindToken, TokenPrefix, self.tokenKey())
 	// The refresh secret is signed with the same key but a different kind, so
 	// it verifies only where a refresh is expected. It carries the access
@@ -989,7 +999,7 @@ func (self *authenticator) IssueAuthorizedToken(userId, name, clientId, resource
 	refreshKey := security.GenerateRandomString(16, security.LowerAlphaNumeric)
 	refreshValue := RefreshPrefix + security.EncodeToken(kindRefresh, id, refreshKey, self.tokenKey())
 
-	token := &models.Token{ID: id, UserID: userId, Name: name, ClientID: clientId, Resource: resource}
+	token := &models.Token{ID: id, UserID: userId, Name: name, ClientID: clientId, Resource: resource, ClientKind: clientKind}
 	if lifetime > 0 {
 		token.ExpiresAt = time.Now().Add(lifetime)
 	}

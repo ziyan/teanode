@@ -32,6 +32,10 @@ final class AccessDirectory {
     private(set) var groups: [AccessGroup] = []
     private(set) var roles: [AccessRole] = []
     private(set) var domains: [AccessDomain] = []
+    /// The circles the reader is in, which an account can be put in from the
+    /// people list. Read for somebody who manages accounts, and empty when they
+    /// cannot use circles.
+    private(set) var circles: [PeopleCircle] = []
     private(set) var permissionCatalog: [AccessPermission] = []
     /// Whether the page's own list has been read once.
     private(set) var isLoaded = false
@@ -88,6 +92,11 @@ final class AccessDirectory {
             }
             roles = await rolesRead ?? []
             domains = await domainsRead ?? []
+            if page == .people, canManageUsers {
+                circles = (try? await connection.circles()) ?? []
+            } else {
+                circles = []
+            }
         case .roles:
             do {
                 async let rolesRead = connection.accessRoles()
@@ -175,6 +184,9 @@ struct PeopleView: View {
                             Text("Their sessions, tokens, passkeys and memberships go with them. Mail they received stays.")
                         }
                         .swipeActions { rowActions(user) }
+                        .contextMenu {
+                            if directory.canManageUsers { AddToCircleMenu(user: user, directory: directory) }
+                        }
                     }
                 } footer: {
                     if hasMembersGroup {
@@ -231,10 +243,40 @@ struct PeopleView: View {
     }
 }
 
+/// AddToCircleMenu puts an existing account in one of the circles the reader is
+/// in, with no invitation to accept: the other order of making somebody's way
+/// into a circle, for the operator who knows the account is there already.
+private struct AddToCircleMenu: View {
+    let user: AccessUser
+    let directory: AccessDirectory
+
+    var body: some View {
+        Menu {
+            if directory.circles.isEmpty {
+                Button("You are not in a circle yet. Make one under Circles.") {}
+                    .disabled(true)
+            }
+            ForEach(directory.circles) { circle in
+                Button(circle.name) {
+                    Task { await PersonActions.addToCircle(user, circle, in: directory) }
+                }
+            }
+        } label: {
+            Label("Add to a circle", systemImage: "person.2")
+        }
+    }
+}
+
 /// PersonActions are the changes to a person that more than one screen
 /// makes.
 @MainActor
 private enum PersonActions {
+    static func addToCircle(_ user: AccessUser, _ circle: PeopleCircle, in directory: AccessDirectory) async {
+        await directory.act(saying: String(localized: "\(user.username) is now in \(circle.name).")) {
+            try await directory.connection.addCircleMember(circle.id, username: user.username, memberRole: .member)
+        }
+    }
+
     static func setDisabled(_ user: AccessUser, isDisabled: Bool, in directory: AccessDirectory) async {
         await directory.act(saying: isDisabled ? String(localized: "Disabled") : String(localized: "Enabled")) {
             _ = try await directory.connection.setAccessUserDisabled(user.id, isDisabled: isDisabled)
@@ -250,6 +292,13 @@ private struct PersonRow: View {
     let isCurrentUser: Bool
 
     var body: some View {
+        HStack(spacing: 12) {
+            AvatarView(name: user.displayName, avatarUrl: user.avatarUrl, colorIndex: user.avatarColorIndex, size: 36)
+            details
+        }
+    }
+
+    private var details: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(verbatim: user.displayName)
@@ -308,6 +357,7 @@ struct PersonDetailView: View {
                 if directory.canManageUsers {
                     Section {
                         Button("Set password", systemImage: "key") { isSettingPassword = true }
+                        AddToCircleMenu(user: user, directory: directory)
                         if !isCurrentUser {
                             Button("Remove this person", systemImage: "trash", role: .destructive) { isRemoving = true }
                                 .confirmationDialog("Remove \(user.username)?", isPresented: $isRemoving, titleVisibility: .visible) {
@@ -1616,6 +1666,7 @@ private enum AccessWords {
         case "agent:use": String(localized: "Have an agent, grant it own mailboxes, and talk to it")
         case "contacts:use": String(localized: "Keep an address book, and sync it to a device")
         case "calendar:use": String(localized: "Keep a calendar, and sync it to a device")
+        case "circle:use": String(localized: "Make circles of people on this server, and join them")
         case "agent:audit": String(localized: "See every person's agent: what it may reach, its usage and limits, never its content")
         case "agent:act": String(localized: "Read every person's agent conversations and runs, and speak to their agent as them")
         default: permissionKey

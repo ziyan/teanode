@@ -22,6 +22,11 @@ var mailItemPattern = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 // factNumberPattern is the fact a memory: link may point at.
 var factNumberPattern = regexp.MustCompile(`^[0-9]{1,6}$`)
 
+// ownerPattern is the username a memory: link may end with, "@ada", to name
+// whose shared page it is. Only the characters that need no escaping in an
+// address: a username with others cannot be linked, and is left as its words.
+var ownerPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{1,64}$`)
+
 // DashboardPath is the path in the dashboard a link of its own schemes
 // opens, or "" when what follows the scheme is not one it could be. It is
 // strict because the text is a model's: a memory: path is only a path the
@@ -29,6 +34,11 @@ var factNumberPattern = regexp.MustCompile(`^[0-9]{1,6}$`)
 //
 // A fact's number is accepted and not carried: the Knowledge page opens a
 // page, not a place in it.
+//
+// A page another person shared with the person is cited as
+// [name](memory:PATH#N@username), the username last, and opens in the
+// Knowledge page's "Shared with you" with ?owner=username. Spoken, the
+// citation is "people/a-grandparent#3 (shared by Ada)".
 func DashboardPath(scheme, target string) string {
 	switch scheme {
 	case "mail":
@@ -38,6 +48,10 @@ func DashboardPath(scheme, target string) string {
 		// Starred opens any item by id, whichever folder it is in.
 		return "/mailbox/starred/" + target
 	case "memory":
+		target, owner, hasOwner := strings.Cut(target, "@")
+		if hasOwner && !ownerPattern.MatchString(owner) {
+			return ""
+		}
 		path, fact, hasFact := strings.Cut(target, "#")
 		if hasFact && !factNumberPattern.MatchString(fact) {
 			return ""
@@ -49,7 +63,11 @@ func DashboardPath(scheme, target string) string {
 		for index, segment := range segments {
 			segments[index] = url.PathEscape(segment)
 		}
-		return "/knowledge/" + strings.Join(segments, "/")
+		address := "/knowledge/" + strings.Join(segments, "/")
+		if hasOwner {
+			address += "?owner=" + url.QueryEscape(owner)
+		}
+		return address
 	}
 	return ""
 }

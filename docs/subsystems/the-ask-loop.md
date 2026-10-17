@@ -127,6 +127,12 @@ the turn as before.
   named …`.
 - **Read-only.** Re-checked per call, because a tool's risk can depend on its
   arguments.
+- **A chat.** On the surface `chat` (a turn an agent takes in a chat with
+  other people; `conversations.md`, Chats) the answer of each round is posted
+  to the chat and the calls stay with the owner. A turn the owner allowed
+  another member to start is held: read only, five named tools, and nobody to
+  confirm, so a call that would need a card is refused (`isUnattended`, like a
+  run held to a few tools, and it never uses the unattended allowance).
 - **Confirmation.** `NeedsConfirmation` is true when the risk for these
   arguments is `destructive` or `outward`, or when the operator's policy or
   the person's own `confirm` list names the tool or its family. A run with

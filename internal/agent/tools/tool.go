@@ -33,7 +33,9 @@ type Risk string
 // The risk classes. Read changes nothing; write changes something the
 // person can change back; destructive cannot be undone; outward leaves the
 // server — a message sent, a request made on the person's behalf; granting
-// hands out a way in, or changes who may do what.
+// hands out a way in, or changes who may do what; money spends or moves
+// somebody's money, which is how a tool of a skill another person shared is
+// held: the person whose agent calls it is shown what will be paid first.
 //
 // Granting is its own class because it is neither of the two it kept being
 // filed under. Minting an API token is not destructive -- nothing is lost --
@@ -48,6 +50,7 @@ const (
 	RiskDestructive Risk = "destructive"
 	RiskOutward     Risk = "outward"
 	RiskGranting    Risk = "granting"
+	RiskMoney       Risk = "money"
 )
 
 // Family is a tool's group, which is also what the operator's policy can
@@ -137,6 +140,13 @@ type Tool struct {
 	// RiskOf, when set, says what one call would cost, for a tool whose
 	// actions differ: mail_act is a write until it is delete_forever.
 	RiskOf func(arguments json.RawMessage) Risk
+
+	// IsPersonsAnswer, when set, says one call gives an answer that is the
+	// person's to give: approving or declining what waits for them. Such a
+	// call always asks, with money as its risk, and no allowance for when
+	// the person is not there covers it
+	// (models.UnattendedRiskPersonsAnswer).
+	IsPersonsAnswer func(arguments json.RawMessage) bool
 
 	// JudgedCall, when set, is what one call would do, written out for a
 	// fast model to judge whether it only reads or changes something on the
@@ -461,6 +471,11 @@ func ConfirmationReasons(tool *Tool, arguments json.RawMessage, policy *config.A
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskDestructive)
 	case RiskGranting:
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskGranting)
+	case RiskMoney:
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskMoney)
+	}
+	if tool.IsPersonsAnswer != nil && tool.IsPersonsAnswer(SettledArguments(arguments)) {
+		unattendedRisks = append(unattendedRisks, models.UnattendedRiskPersonsAnswer)
 	}
 	if policy != nil && Listed(policy.Confirm, tool) {
 		unattendedRisks = append(unattendedRisks, models.UnattendedRiskOperatorListed)

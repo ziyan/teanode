@@ -44,6 +44,11 @@ type AgentWaitingView struct {
 
 func (self *graph) ReadAgentWaiting(ctx context.Context, arguments ReadAgentWaitingArguments) (*AgentWaitingView, error) {
 	_, found, err := self.requireAgentPerson(ctx)
+	if errors.Is(err, agent.ErrUnavailable) {
+		// An agent that is off is waiting for nothing; the drawer asks
+		// anyway, since it opens for chats with the agent off.
+		return &AgentWaitingView{Interactions: []*models.AgentInteraction{}}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -72,6 +77,11 @@ const interactionForwardWait = 3 * time.Second
 
 func (self *graph) ListAgentInteractions(ctx context.Context, arguments ListAgentInteractionsArguments) ([]*models.AgentInteraction, error) {
 	_, found, err := self.requireAgentPerson(ctx)
+	if errors.Is(err, agent.ErrUnavailable) {
+		// Read beside every conversation the drawer opens, a chat among
+		// them, which it opens with the agent off: no agent, no cards.
+		return []*models.AgentInteraction{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}

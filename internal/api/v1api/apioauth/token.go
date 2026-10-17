@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ziyan/teanode/internal/models"
 )
 
 // How long a token from this flow lasts.
@@ -127,7 +129,7 @@ func (self *oauth) exchangeCode(response http.ResponseWriter, request *http.Requ
 		name = client.Name
 	}
 
-	self.issue(response, user.ID, name, authorization.ClientID, authorization.Resource)
+	self.issue(response, user.ID, name, authorization.ClientID, authorization.Resource, authorization.ClientKind)
 }
 
 // refreshToken replaces a token with a fresh one and retires the old.
@@ -167,7 +169,8 @@ func (self *oauth) refreshToken(response http.ResponseWriter, request *http.Requ
 			"that refresh token has been used, has expired, or was not issued here")
 		return
 	}
-	self.issue(response, previous.UserID, previous.Name, previous.ClientID, previous.Resource)
+	// The renewal is the same sign-in, so it is the same kind of token.
+	self.issue(response, previous.UserID, previous.Name, previous.ClientID, previous.Resource, previous.ClientKind)
 }
 
 // clientIdOf is the client a token request names, in the body or in an HTTP
@@ -191,9 +194,9 @@ func clientIdOf(request *http.Request) string {
 }
 
 // issue mints the token and answers with it.
-func (self *oauth) issue(response http.ResponseWriter, userId, name, clientId, resource string) {
+func (self *oauth) issue(response http.ResponseWriter, userId, name, clientId, resource string, clientKind models.TokenClientKind) {
 	_, value, refresh, err := self.authenticator.IssueAuthorizedToken(
-		userId, name, clientId, resource, authorizedTokenLifetime)
+		userId, name, clientId, resource, clientKind, authorizedTokenLifetime)
 	if err != nil {
 		log.Errorf("could not issue an authorized token: %s", err)
 		writeOAuthError(response, http.StatusInternalServerError, "server_error", "the token could not be issued")

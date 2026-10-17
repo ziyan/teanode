@@ -15,6 +15,7 @@ import (
 	"errors"
 	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/models"
+	"time"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/util/aggregate"
@@ -45,6 +46,13 @@ var (
 	ErrConflict = errors.New("api: conflict")
 )
 
+// TapRequiredPhrase is how the refusal of a request that only a person's tap
+// may make begins: approving a call that spends the owner's money, or lending
+// it. A command line token is refused these, because an agent can drive the
+// person's command line, and says where to do it instead. The command line
+// recognizes this phrase to explain the refusal in its own words.
+const TapRequiredPhrase = "approve it on the dashboard or in the iPhone app"
+
 // Settings are the server-wide values the API needs.
 type Settings struct {
 	// RunningServices is the immutable set constructed by this process.
@@ -71,6 +79,23 @@ type Settings struct {
 	// rather than queues: work a person is waiting on. Nil when agents are
 	// off, in which case the API says so.
 	Agent AgentService
+
+	// Chat is what carries a chat to the people in it: the feed of their
+	// conversations, the other instances, their phones. Unlike the agent it
+	// is there whatever the agent configuration is, nil only in a test with
+	// no chats.
+	Chat ChatService
+}
+
+// ChatService is what the API tells the chat hub in the request: who has the
+// dashboard or the app in front of them, so that a phone is not told what a
+// person is looking at. The rest of the hub, which speaks in the agent's
+// events, is reached through the hub itself by the packages that know it.
+type ChatService interface {
+	// ReportPresence records one tab's or one phone's report for a person:
+	// whether it is shown, how long since the person last used it, and which
+	// conversation it has on screen, empty when none.
+	ReportPresence(userId, reporterId string, isVisible bool, idleSeconds int, conversationId string, now time.Time)
 }
 
 // AgentService is what the API asks the agent to do at once.

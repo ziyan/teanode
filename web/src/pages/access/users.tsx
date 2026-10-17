@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { graphql, startImpersonation } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { KeyIcon, PencilIcon, PlusIcon, TrashIcon, UserIcon } from '../../components/icons'
+import { KeyIcon, PencilIcon, PeopleIcon, PlusIcon, TrashIcon, UserIcon } from '../../components/icons'
+import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
@@ -22,8 +24,19 @@ const UPDATE_USER = `
     UpdateUser(userId: $userId, username: $username, name: $name, email: $email, disabled: $disabled) ${USER_FIELDS}
   }`
 
+// The circles the signed-in person is in, which is what the row menu offers.
+// Putting an account in one is the operator's AddCircleMember, which the
+// Circles page uses for an account made there.
+const LIST_CIRCLES = `query { ListCircles { id name circleKind } }`
+const ADD_CIRCLE_MEMBER = `
+  mutation ($circleId: String!, $username: String!, $memberRole: String!) {
+    AddCircleMember(circleId: $circleId, username: $username, memberRole: $memberRole) { id }
+  }`
+
 const SET_PASSWORD = `mutation ($userId: String!, $password: String!) { SetUserPassword(userId: $userId, password: $password) { id } }`
 const DELETE_USER = `mutation ($userId: String!) { DeleteUser(userId: $userId) }`
+
+type CircleChoice = { id: string; name: string; circleKind: string }
 
 type PersonDraft = { username: string; password: string; name: string; email: string }
 
@@ -43,8 +56,18 @@ export function UsersTab() {
   const managesUsers = hasPermission(session.permissions, 'user:manage')
 
   const { data, error, loading, reload } = useQuery(async () => {
-    const [users, groups] = await Promise.all([listUsers().catch(() => [] as User[]), listGroups()])
-    return { users, groups }
+    const [users, groups, circles] = await Promise.all([
+      listUsers().catch(() => [] as User[]),
+      listGroups(),
+      // Without circle:use there are none to offer, and that is not a failure
+      // of this page.
+      managesUsers
+        ? graphql<{ ListCircles: CircleChoice[] }>(LIST_CIRCLES)
+            .then((response) => response.ListCircles ?? [])
+            .catch(() => [] as CircleChoice[])
+        : Promise.resolve([] as CircleChoice[]),
+    ])
+    return { users, groups, circles }
   }, [])
 
   const [addingPerson, setAddingPerson] = useState(false)
@@ -76,6 +99,7 @@ export function UsersTab() {
 
   const users = data?.users ?? []
   const groups: Group[] = data?.groups ?? []
+  const circles = data?.circles ?? []
 
   // The group a new person joins by default — when it is still there. It can
   // be renamed or deleted like any other, and nothing puts it back, so this
@@ -127,6 +151,8 @@ export function UsersTab() {
           <SettingsRow
             key={user.id}
             avatar={user.name || user.username}
+            avatarUrl={user.avatarUrl}
+            avatarColorIndex={user.avatarColorIndex}
             title={
               <>
                 {/* What to call them, then what they sign in with. A list of
@@ -183,6 +209,47 @@ export function UsersTab() {
                       <KeyIcon size={16} />
                     </button>
                   </Tooltip>
+                  {/* The other order of making somebody's way into a circle:
+                      the account is there already, so no invitation. */}
+                  <MenuButton
+                    className="icon-action"
+                    label={`${user.username}: ${t('access.users.addToCircle')}`}
+                    icon={<PeopleIcon size={16} />}
+                    render={(close) =>
+                      circles.length === 0 ? (
+                        <Link to="/circles" role="menuitem" onClick={close}>
+                          {t('access.users.noCircles')}
+                        </Link>
+                      ) : (
+                        circles.map((circle) => (
+                          <button
+                            key={circle.id}
+                            type="button"
+                            role="menuitem"
+                            disabled={busy}
+                            onClick={() => {
+                              close()
+                              void run(() =>
+                                graphql(ADD_CIRCLE_MEMBER, {
+                                  circleId: circle.id,
+                                  username: user.username,
+                                  memberRole: 'member',
+                                }),
+                              ).then(
+                                (done) =>
+                                  done &&
+                                  toast.done(
+                                    t('access.users.addedToCircle', { username: user.username, circle: circle.name }),
+                                  ),
+                              )
+                            }}
+                          >
+                            {circle.name}
+                          </button>
+                        ))
+                      )
+                    }
+                  />
                   {/* Not as oneself, not as somebody who may not sign in,
                       and not from inside somebody else's account already. */}
                   {user.id !== session.userId && !user.disabledAt && !session.impersonatorUsername && (
