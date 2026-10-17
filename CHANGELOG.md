@@ -6,6 +6,13 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.170.0] - 2026-10-17
+
+### Added
+
+- Circles of people on one server, chats between them (with or without their agents) in the drawer, and sharing of calendars, memory pages and paying skills within a circle. See "People on one server" in the getting-started guide. (#528)
+- A profile picture for each account. (#528)
+
 ## [0.169.2] - 2026-10-17
 
 ### Fixed
