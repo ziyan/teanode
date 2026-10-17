@@ -1,0 +1,483 @@
+package photo_test
+
+import (
+	"bytes"
+	"encoding/binary"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ziyan/teanode/internal/db"
+	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/place"
+)
+
+// exifEntry is one entry of a TIFF directory built by hand.
+type exifEntry struct {
+	tag   uint16
+	kind  uint16
+	count uint32
+	value []byte
+}
+
+func exifText(tag uint16, text string) exifEntry {
+	value := append([]byte(text), 0)
+	return exifEntry{tag: tag, kind: 2, count: uint32(len(value)), value: value}
+}
+
+func exifShort(tag, number uint16) exifEntry {
+	return exifEntry{tag: tag, kind: 3, count: 1, value: binary.LittleEndian.AppendUint16(nil, number)}
+}
+
+func exifRationals(tag uint16, pairs ...[2]uint32) exifEntry {
+	var value []byte
+	for _, pair := range pairs {
+		value = binary.LittleEndian.AppendUint32(value, pair[0])
+		value = binary.LittleEndian.AppendUint32(value, pair[1])
+	}
+	return exifEntry{tag: tag, kind: 5, count: uint32(len(pairs)), value: value}
+}
+
+// buildExif is a little endian EXIF block with the three directories a
+// camera writes: the main one, the EXIF one and the GPS one.
+func buildExif(main, exif, gps []exifEntry) []byte {
+	const (
+		tagExifDirectory = 0x8769
+		tagGpsDirectory  = 0x8825
+	)
+	main = append(main, exifEntry{tag: tagExifDirectory, kind: 4, count: 1}, exifEntry{tag: tagGpsDirectory, kind: 4, count: 1})
+	directories := [][]exifEntry{main, exif, gps}
+	offsets := make([]uint32, len(directories))
+	position := uint32(8)
+	for index, entries := range directories {
+		offsets[index] = position
+		position += uint32(2 + len(entries)*12 + 4)
+	}
+	main[len(main)-2].value = binary.LittleEndian.AppendUint32(nil, offsets[1])
+	main[len(main)-1].value = binary.LittleEndian.AppendUint32(nil, offsets[2])
+	block := []byte{'I', 'I'}
+	block = binary.LittleEndian.AppendUint16(block, 42)
+	block = binary.LittleEndian.AppendUint32(block, 8)
+	var data []byte
+	for _, entries := range directories {
+		sort.Slice(entries, func(first, second int) bool { return entries[first].tag < entries[second].tag })
+		block = binary.LittleEndian.AppendUint16(block, uint16(len(entries)))
+		for _, entry := range entries {
+			block = binary.LittleEndian.AppendUint16(block, entry.tag)
+			block = binary.LittleEndian.AppendUint16(block, entry.kind)
+			block = binary.LittleEndian.AppendUint32(block, entry.count)
+			if len(entry.value) <= 4 {
+				block = append(block, append(append([]byte(nil), entry.value...), 0, 0, 0, 0)[:4]...)
+				continue
+			}
+			block = binary.LittleEndian.AppendUint32(block, position+uint32(len(data)))
+			data = append(data, entry.value...)
+			if len(data)%2 == 1 {
+				data = append(data, 0)
+			}
+		}
+		block = binary.LittleEndian.AppendUint32(block, 0)
+	}
+	return append(block, data...)
+}
+
+// quadrants is a picture whose four quarters are different colors, so that
+// where each one ends up says how the picture was turned: red top left,
+// green top right, blue bottom left, yellow bottom right.
+func quadrants(widthPixels, heightPixels int) *image.RGBA {
+	picture := image.NewRGBA(image.Rect(0, 0, widthPixels, heightPixels))
+	for row := range heightPixels {
+		for column := range widthPixels {
+			shade := color.RGBA{R: 230, G: 30, B: 30, A: 255}
+			switch {
+			case column >= widthPixels/2 && row < heightPixels/2:
+				shade = color.RGBA{R: 30, G: 200, B: 30, A: 255}
+			case column < widthPixels/2 && row >= heightPixels/2:
+				shade = color.RGBA{R: 30, G: 30, B: 230, A: 255}
+			case column >= widthPixels/2 && row >= heightPixels/2:
+				shade = color.RGBA{R: 230, G: 220, B: 30, A: 255}
+			}
+			picture.SetRGBA(column, row, shade)
+		}
+	}
+	return picture
+}
+
+// quadrantAt names the quarter a pixel is nearest to in color.
+func quadrantAt(test *testing.T, picture image.Image, column, row int) string {
+	test.Helper()
+	red, green, blue, _ := picture.At(column, row).RGBA()
+	candidates := map[string][3]int{"red": {230, 30, 30}, "green": {30, 200, 30}, "blue": {30, 30, 230}, "yellow": {230, 220, 30}}
+	best, bestDistance := "", 1<<30
+	for name, want := range candidates {
+		distance := 0
+		for index, got := range []uint32{red >> 8, green >> 8, blue >> 8} {
+			difference := int(got) - want[index]
+			distance += difference * difference
+		}
+		if distance < bestDistance {
+			best, bestDistance = name, distance
+		}
+	}
+	return best
+}
+
+// exifJpeg is a JPEG of quadrants with an EXIF block that says it was taken
+// at an invented date, offset and place, by an invented camera, and turned
+// the way orientation says.
+func exifJpeg(test *testing.T, widthPixels, heightPixels int, orientation uint16) []byte {
+	test.Helper()
+	exif := buildExif(
+		[]exifEntry{exifText(0x010F, "Example Camera Co"), exifText(0x0110, "Model 1"), exifShort(0x0112, orientation)},
+		[]exifEntry{exifText(0x9003, "2024:05:06 07:08:09"), exifText(0x9011, "+02:00")},
+		[]exifEntry{
+			exifText(0x0001, "N"), exifRationals(0x0002, [2]uint32{10, 1}, [2]uint32{0, 1}, [2]uint32{0, 1}),
+			exifText(0x0003, "E"), exifRationals(0x0004, [2]uint32{20, 1}, [2]uint32{0, 1}, [2]uint32{0, 1}),
+		})
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, quadrants(widthPixels, heightPixels), &jpeg.Options{Quality: 95}); err != nil {
+		test.Fatal(err)
+	}
+	segment := append([]byte("Exif\x00\x00"), exif...)
+	spliced := []byte{0xFF, 0xD8, 0xFF, 0xE1}
+	spliced = binary.BigEndian.AppendUint16(spliced, uint16(len(segment)+2))
+	spliced = append(spliced, segment...)
+	return append(spliced, encoded.Bytes()[2:]...)
+}
+
+// uploadAndProcess sends a file and runs the processing pass over it,
+// returning the photo as it is afterwards.
+func (self *fixture) uploadAndProcess(clientPhotoId string, headers map[string]string, content []byte) *models.Photo {
+	self.test.Helper()
+	got := self.send(http.MethodPost, self.collectionUrl(), headers, content)
+	self.expect(got, http.StatusCreated)
+	if err := self.store.Process(self.test.Context(), 4); err != nil {
+		self.test.Fatal(err)
+	}
+	return self.photoByClientId(clientPhotoId)
+}
+
+func (self *fixture) previewOf(photoId string, photoPreviewSize models.PhotoPreviewSize) (*models.PhotoPreview, []byte) {
+	self.test.Helper()
+	var found *models.PhotoPreview
+	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
+		previews, err := transaction.ListPhotoPreviews(self.userId, []string{photoId})
+		if err != nil {
+			self.test.Fatal(err)
+		}
+		for _, preview := range previews {
+			if preview.PhotoPreviewSize == photoPreviewSize {
+				found = preview
+			}
+		}
+	})
+	if found == nil {
+		return nil, nil
+	}
+	content := self.files.get(models.PhotoPreviewFileID(photoId, photoPreviewSize))
+	if int64(len(content)) != found.PreviewSizeBytes {
+		self.test.Fatalf("the %s preview is recorded as %d bytes and stored as %d", photoPreviewSize, found.PreviewSizeBytes, len(content))
+	}
+	return found, content
+}
+
+func TestAJpegWithExifBecomesReadyWithItsDateAndPlaceAndUprightPreviews(test *testing.T) {
+	fixture := newFixture(test)
+	// Stored 800 wide and 400 high and marked as lying on its side (6: the
+	// top of the picture is on the right), so it is shown 400 wide and 800 high.
+	found := fixture.uploadAndProcess("exif", jpegHeaders("exif", "X-Photo-Filename", "IMG_0001.JPG"), exifJpeg(test, 800, 400, 6))
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.ProcessingClaimedAt != nil || found.ProcessingErrorMessage != "" {
+		test.Fatalf("%+v", found)
+	}
+	wantTakenAt := time.Date(2024, 5, 6, 5, 8, 9, 0, time.UTC)
+	if found.TakenAt == nil || !found.TakenAt.Equal(wantTakenAt) || found.TakenAtOffsetMinutes == nil || *found.TakenAtOffsetMinutes != 120 {
+		test.Fatalf("taken at %v, offset %v", found.TakenAt, found.TakenAtOffsetMinutes)
+	}
+	if found.Latitude == nil || *found.Latitude != 10.0 || found.Longitude == nil || *found.Longitude != 20.0 {
+		test.Fatalf("place %v %v", found.Latitude, found.Longitude)
+	}
+	if wantPlace, _ := place.Nearest(10.0, 20.0); found.PlaceName != wantPlace {
+		test.Fatalf("the place is %q, the table says %q", found.PlaceName, wantPlace)
+	}
+	if found.CameraMake != "Example Camera Co" || found.CameraModel != "Model 1" {
+		test.Fatalf("camera %q %q", found.CameraMake, found.CameraModel)
+	}
+	if found.PhotoKind != models.PhotoKindPicture || found.WidthPixels != 400 || found.HeightPixels != 800 {
+		test.Fatalf("kind %s, size %d by %d", found.PhotoKind, found.WidthPixels, found.HeightPixels)
+	}
+
+	large, largeBytes := fixture.previewOf(found.ID, models.PhotoPreviewLarge)
+	small, smallBytes := fixture.previewOf(found.ID, models.PhotoPreviewSmall)
+	if large == nil || small == nil {
+		test.Fatalf("previews: large %v, small %v", large, small)
+	}
+	// Nothing is made larger than it is: the large one is the whole picture,
+	// and the small one has 400 pixels on its long side.
+	if large.WidthPixels != 400 || large.HeightPixels != 800 || small.WidthPixels != 200 || small.HeightPixels != 400 {
+		test.Fatalf("large %d by %d, small %d by %d", large.WidthPixels, large.HeightPixels, small.WidthPixels, small.HeightPixels)
+	}
+	for name, content := range map[string][]byte{"large": largeBytes, "small": smallBytes} {
+		decoded, err := jpeg.Decode(bytes.NewReader(content))
+		if err != nil {
+			test.Fatalf("the %s preview is not a JPEG: %v", name, err)
+		}
+		// Turned a quarter turn clockwise, the left half of the stored
+		// picture's top (red, green) is on the right, top first.
+		bounds := decoded.Bounds()
+		width, height := bounds.Dx(), bounds.Dy()
+		for corner, want := range map[string]string{"top left": "blue", "top right": "red", "bottom left": "yellow", "bottom right": "green"} {
+			column, row := width/4, height/4
+			if strings.Contains(corner, "right") {
+				column = width * 3 / 4
+			}
+			if strings.Contains(corner, "bottom") {
+				row = height * 3 / 4
+			}
+			if got := quadrantAt(test, decoded, column, row); got != want {
+				test.Errorf("the %s preview's %s is %s, want %s", name, corner, got, want)
+			}
+		}
+		if bytes.Contains(content, []byte("Exif\x00\x00")) {
+			test.Errorf("the %s preview carries the picture's EXIF block, with its place", name)
+		}
+	}
+}
+
+func TestWhatTheUploaderSaidWinsOverWhatTheFileSays(test *testing.T) {
+	fixture := newFixture(test)
+	found := fixture.uploadAndProcess("told", jpegHeaders("told",
+		"X-Photo-Taken-At", "2020-01-02T03:04:05-05:00", "X-Photo-Latitude", "1.5", "X-Photo-Longitude", "2.5"),
+		exifJpeg(test, 80, 40, 1))
+	if found.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("%+v", found)
+	}
+	if found.TakenAt == nil || !found.TakenAt.Equal(time.Date(2020, 1, 2, 8, 4, 5, 0, time.UTC)) || found.TakenAtOffsetMinutes == nil || *found.TakenAtOffsetMinutes != -300 {
+		test.Fatalf("the date was replaced by the file's: %v %v", found.TakenAt, found.TakenAtOffsetMinutes)
+	}
+	if found.Latitude == nil || *found.Latitude != 1.5 || found.Longitude == nil || *found.Longitude != 2.5 {
+		test.Fatalf("the place was replaced by the file's: %v %v", found.Latitude, found.Longitude)
+	}
+	// What the headers did not say still comes from the file.
+	if found.CameraMake != "Example Camera Co" || found.WidthPixels != 80 || found.HeightPixels != 40 {
+		test.Fatalf("%+v", found)
+	}
+}
+
+func TestAPngWithoutMetadataGetsASizeAndPreviewsAndNoDate(test *testing.T) {
+	fixture := newFixture(test)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, quadrants(30, 20)); err != nil {
+		test.Fatal(err)
+	}
+	found := fixture.uploadAndProcess("plain", map[string]string{"Content-Type": "image/png", "X-Photo-Client-ID": "plain"}, encoded.Bytes())
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.TakenAt != nil || found.TakenAtOffsetMinutes != nil || found.Latitude != nil || found.PlaceName != "" {
+		test.Fatalf("%+v", found)
+	}
+	if found.WidthPixels != 30 || found.HeightPixels != 20 || found.PhotoKind != models.PhotoKindPicture {
+		test.Fatalf("%+v", found)
+	}
+	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
+		if preview, content := fixture.previewOf(found.ID, photoPreviewSize); preview == nil || preview.ContentType != "image/jpeg" || len(content) == 0 {
+			test.Fatalf("the %s preview: %v", photoPreviewSize, preview)
+		}
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewVideo); preview != nil {
+		test.Fatal("a picture has a video preview")
+	}
+}
+
+func TestAVideoGetsItsLengthAPosterAndAPlayableCopy(test *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		test.Skip("ffmpeg is not installed")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		test.Skip("ffprobe is not installed")
+	}
+	path := filepath.Join(test.TempDir(), "generated.mp4")
+	command := exec.Command("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=15",
+		"-pix_fmt", "yuv420p", "-c:v", "libx264", path)
+	if output, err := command.CombinedOutput(); err != nil {
+		test.Skipf("ffmpeg cannot make a test video: %v: %s", err, output)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		test.Fatal(err)
+	}
+	// Work is done in a directory of its own, which must be gone afterwards.
+	// The directory is the test's, because /tmp is shared with whatever else
+	// is running.
+	temporaryDirectory := test.TempDir()
+	test.Setenv("TMPDIR", temporaryDirectory)
+	fixture := newFixture(test)
+	found := fixture.uploadAndProcess("clip", map[string]string{"Content-Type": "video/mp4", "X-Photo-Client-ID": "clip"}, content)
+	if found.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("%+v", found)
+	}
+	if found.PhotoKind != models.PhotoKindVideo || found.WidthPixels != 320 || found.HeightPixels != 240 || found.DurationMS < 1900 || found.DurationMS > 2200 {
+		test.Fatalf("kind %s, size %d by %d, %d ms", found.PhotoKind, found.WidthPixels, found.HeightPixels, found.DurationMS)
+	}
+	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
+		preview, previewBytes := fixture.previewOf(found.ID, photoPreviewSize)
+		if preview == nil || preview.ContentType != "image/jpeg" || preview.WidthPixels != 320 || preview.HeightPixels != 240 {
+			test.Fatalf("the %s poster: %+v", photoPreviewSize, preview)
+		}
+		if _, err := jpeg.Decode(bytes.NewReader(previewBytes)); err != nil {
+			test.Fatalf("the %s poster is not a JPEG: %v", photoPreviewSize, err)
+		}
+	}
+	playable, playableBytes := fixture.previewOf(found.ID, models.PhotoPreviewVideo)
+	if playable == nil || playable.ContentType != "video/mp4" || len(playableBytes) < 100 || string(playableBytes[4:8]) != "ftyp" {
+		test.Fatalf("the video preview: %+v", playable)
+	}
+	if entries, err := os.ReadDir(temporaryDirectory); err != nil || len(entries) != 0 {
+		test.Fatalf("the work directory was left behind: %v %v", entries, err)
+	}
+}
+
+func TestACorruptFileFailsAfterItsAttemptsWithTheReason(test *testing.T) {
+	fixture := newFixture(test)
+	fixture.uploadAndProcess("corrupt", jpegHeaders("corrupt"), append([]byte{0xFF, 0xD8, 0xFF}, randomBytes(200, 41)...))
+	for attempt := 1; attempt < 5; attempt++ {
+		found := fixture.photoByClientId("corrupt")
+		if found.PhotoProcessingState != models.PhotoProcessingWaiting || found.ProcessingAttemptCount != attempt || found.ProcessingErrorMessage == "" || found.ProcessingClaimedAt != nil {
+			test.Fatalf("after %d attempts: %+v", attempt, found)
+		}
+		if err := fixture.store.Process(test.Context(), 4); err != nil {
+			test.Fatal(err)
+		}
+	}
+	found := fixture.photoByClientId("corrupt")
+	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 5 || !strings.Contains(found.ProcessingErrorMessage, "picture") {
+		test.Fatalf("after the attempts: %+v", found)
+	}
+	// A failed photo is not tried again.
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if again := fixture.photoByClientId("corrupt"); again.ProcessingAttemptCount != 5 {
+		test.Fatalf("a failed photo was tried again: %+v", again)
+	}
+	if found.PhotoKind != models.PhotoKindPicture {
+		test.Fatalf("a failed photo lost its kind: %s", found.PhotoKind)
+	}
+}
+
+func TestAKindOfPictureThatCannotBeReadFailsAtOnce(test *testing.T) {
+	fixture := newFixture(test)
+	found := fixture.uploadAndProcess("webp", map[string]string{"Content-Type": "image/webp", "X-Photo-Client-ID": "webp"}, append([]byte("RIFF\x10\x00\x00\x00WEBPVP8 "), randomBytes(100, 42)...))
+	if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 1 || !strings.Contains(found.ProcessingErrorMessage, "kind of file is not supported") {
+		test.Fatalf("%+v", found)
+	}
+	if found.PhotoKind != models.PhotoKindPicture {
+		test.Fatalf("kind %s", found.PhotoKind)
+	}
+}
+
+func TestAStaleClaimIsTakenAgainAfterTenMinutes(test *testing.T) {
+	fixture := newFixture(test)
+	got := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("claimed"), smallJpeg(test, 80))
+	fixture.expect(got, http.StatusCreated)
+	// Another instance took it a moment ago and is working on it.
+	fixture.age("UPDATE photo SET processing_claimed_at = now() WHERE client_photo_id = 'claimed'")
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if fixture.photoByClientId("claimed").PhotoProcessingState != models.PhotoProcessingWaiting {
+		test.Fatal("a photo another instance is working on was taken")
+	}
+	fixture.store.SetNow(func() time.Time { return time.Now().Add(9 * time.Minute) })
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if fixture.photoByClientId("claimed").PhotoProcessingState != models.PhotoProcessingWaiting {
+		test.Fatal("a claim of nine minutes was taken")
+	}
+	fixture.store.SetNow(func() time.Time { return time.Now().Add(11 * time.Minute) })
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if found := fixture.photoByClientId("claimed"); found.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("a stale claim was not taken again: %+v", found)
+	}
+}
+
+func TestAReadyPhotoWithoutPreviewsIsProcessedAgain(test *testing.T) {
+	fixture := newFixture(test)
+	got := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("stub"), exifJpeg(test, 40, 20, 1))
+	fixture.expect(got, http.StatusCreated)
+	// Marked ready by the version that made no previews.
+	fixture.age("UPDATE photo SET photo_processing_state = 'ready' WHERE client_photo_id = 'stub'")
+	found := fixture.photoByClientId("stub")
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewSmall); preview != nil {
+		test.Fatal("the photo already has a preview")
+	}
+	// The first pass finds nothing waiting and puts it back; the second
+	// does the work.
+	for range 2 {
+		if err := fixture.store.Process(test.Context(), 4); err != nil {
+			test.Fatal(err)
+		}
+	}
+	found = fixture.photoByClientId("stub")
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.TakenAt == nil {
+		test.Fatalf("%+v", found)
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewSmall); preview == nil {
+		test.Fatal("the photo still has no small preview")
+	}
+}
+
+func TestAPhotoWhoseEditedFileArrivesIsShownFromTheEditedFile(test *testing.T) {
+	fixture := newFixture(test)
+	original := fixture.uploadAndProcess("edited", jpegHeaders("edited"), exifJpeg(test, 80, 40, 1))
+	if original.WidthPixels != 80 {
+		test.Fatalf("%+v", original)
+	}
+	got := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("edited", "X-Photo-File-Role", "edited"), exifJpeg(test, 60, 60, 1))
+	fixture.expect(got, http.StatusCreated)
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	edited := fixture.photoByClientId("edited")
+	if edited.WidthPixels != 60 || edited.HeightPixels != 60 || !edited.UpdatedAt.After(original.UpdatedAt) {
+		test.Fatalf("%+v", edited)
+	}
+}
+
+func TestAHeicIsDecodedByHeifDecAndItsPreviewsComeFromThatPicture(test *testing.T) {
+	// heif-dec is a program the image carries and a developer machine may
+	// not, so a stand-in writes the picture it is given as the decoded one.
+	// What is checked is that processing asks for it and uses what it wrote.
+	directory := test.TempDir()
+	script := "#!/bin/sh\ncp \"$2\" \"$3\"\n"
+	if err := os.WriteFile(filepath.Join(directory, "heif-dec"), []byte(script), 0o755); err != nil {
+		test.Fatal(err)
+	}
+	test.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	fixture := newFixture(test)
+	found := fixture.uploadAndProcess("heic", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic"}, exifJpeg(test, 64, 32, 1))
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.WidthPixels != 64 || found.HeightPixels != 32 {
+		test.Fatalf("%+v", found)
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewSmall); preview == nil || preview.WidthPixels != 64 {
+		test.Fatalf("the small preview: %+v", preview)
+	}
+
+	// Without heif-dec the photo is not lost: it waits, with the reason, and
+	// its size and kind are known from the file.
+	test.Setenv("PATH", test.TempDir())
+	missing := fixture.uploadAndProcess("heic-missing", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic-missing"}, exifJpeg(test, 48, 24, 1))
+	if missing.PhotoProcessingState != models.PhotoProcessingWaiting || !strings.Contains(missing.ProcessingErrorMessage, "heif-dec") || missing.WidthPixels != 48 {
+		test.Fatalf("%+v", missing)
+	}
+}

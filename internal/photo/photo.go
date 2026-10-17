@@ -24,6 +24,14 @@ type Store struct {
 	files         storage.StreamFiles
 	configuration func() *config.Configuration
 
+	// now is the clock, so that a test can let ten minutes pass.
+	now func() time.Time
+
+	// lastRequeueAt is when an idle processing pass last looked for ready
+	// photos without previews, so that it does not ask every pass.
+	requeueMutex  sync.Mutex
+	lastRequeueAt time.Time
+
 	// writingUploads holds the uploads a request in this process is writing
 	// to. Two requests appending to one upload would write the same part
 	// names; the second is told to wait instead. An upload written through
@@ -36,7 +44,7 @@ type Store struct {
 // configuration is a function so that a limit changed in the dashboard
 // applies to the next request.
 func New(database db.Database, files storage.StreamFiles, configuration func() *config.Configuration) *Store {
-	return &Store{database: database, files: files, configuration: configuration}
+	return &Store{database: database, files: files, configuration: configuration, now: time.Now}
 }
 
 // How long things wait before cleanup takes them.

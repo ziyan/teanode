@@ -36,22 +36,34 @@ type PhotoOperation interface {
 	TrashPhotos(userId string, photoIds []string) (int, error)
 	RestorePhotos(userId string, photoIds []string) (int, error)
 
-	// ListTrashedPhotos lists photos already in the trash, those named or,
-	// with none named, any, so a deletion can find their previews first.
-	ListTrashedPhotos(userId string, photoIds []string, limit int) ([]*models.Photo, error)
+	// MarkPhotosForDeletion deletes forever the named photos that are in the
+	// trash, as far as the person can tell: they leave the trash and every
+	// listing at once, and their name is freed for an upload of the same file.
+	// The rows and the previews' bytes are deleted by cleanup, in batches, so
+	// that a trash of thousands is not one request's transaction. It says
+	// how many photos there were.
+	MarkPhotosForDeletion(userId string, photoIds []string) (int, error)
 
-	// DeletePhotos deletes forever the named photos that are in the trash and
-	// says how many there were. Their blobs are deleted by cleanup.
-	DeletePhotos(userId string, photoIds []string) (int, error)
+	// MarkTrashForDeletion does the same to everything in the person's trash.
+	MarkTrashForDeletion(userId string) (int, error)
 
-	// ListPhotosTrashedBefore is the photos of every account that have been in
-	// the trash since before the time, for the deletion that follows retention.
-	ListPhotosTrashedBefore(trashedBefore time.Time, limit int) ([]*models.Photo, error)
+	// ClaimPhotosForDeletion takes up to limit photos for cleanup to delete:
+	// those marked, and those of any account that have been in the trash since
+	// before expiredBefore, which it marks. A zero expiredBefore takes only
+	// the marked. The photos stay readable by cleanup alone, so a crash in the
+	// middle of deleting them is found and finished by the next pass.
+	ClaimPhotosForDeletion(expiredBefore time.Time, limit int) ([]*models.Photo, error)
+
+	// DeleteMarkedPhotos deletes the rows of marked photos, with their files
+	// and previews, and says how many there were. A photo that is not marked is
+	// left alone. The files' blobs are deleted by cleanup once nothing refers
+	// to them.
+	DeleteMarkedPhotos(photoIds []string) (int, error)
 
 	ReadPhotoLibraryCounts(userId string) (*PhotoLibraryCounts, error)
 
 	// PhotoUsedBytes is the size of every file of every photo the account
-	// has, those in the trash included.
+	// has, those in the trash included and those being deleted not.
 	PhotoUsedBytes(userId string) (int64, error)
 
 	// SetPhotoFile records a file of a photo, replacing the one in that role.
@@ -87,11 +99,29 @@ type PhotoOperation interface {
 	ListPhotoPreviews(userId string, photoIds []string) ([]*models.PhotoPreview, error)
 	DeletePhotoPreview(userId, photoId string, photoPreviewSize models.PhotoPreviewSize) error
 
+	// UpdatePhotoMetadata records what reading a photo's file found. What the
+	// photo already has wins over what the file says, because the uploader's
+	// headers and the person's corrections were put there first, and the
+	// answer to that is decided here, in the one statement that writes, so
+	// that a correction made while the file was being read is not undone.
+	UpdatePhotoMetadata(photoId string, metadata *PhotoMetadata) error
+
 	// ClaimPhotosForProcessing takes up to limit photos that wait for their
 	// previews: those nobody has claimed, and those whose claim is older than
 	// the time, which the instance that made it did not finish.
 	ClaimPhotosForProcessing(limit int, staleBefore time.Time) ([]*models.Photo, error)
 	MarkPhotoReady(photoId string) error
+
+	// TouchPhotoProcessingClaims renews the claims on photos an instance is
+	// still working on, so that a long video is not taken by another
+	// instance while it is being made.
+	TouchPhotoProcessingClaims(photoIds []string) error
+
+	// RequeuePhotosWithoutPreviews puts up to limit photos that are ready
+	// and have no small preview back to waiting, and says how many there
+	// were: photos marked ready before previews were made, or whose previews
+	// were lost.
+	RequeuePhotosWithoutPreviews(limit int) (int, error)
 
 	// MarkPhotoProcessingFailed counts one failure. After the maximum, the
 	// photo is failed and stays so; before it, the photo waits to be tried
@@ -138,6 +168,22 @@ type PhotoFilter struct {
 type PhotoUpdate struct {
 	IsFavorite *bool
 	TakenAt    *time.Time
+}
+
+// PhotoMetadata is what is read from a photo's file. Zero values say the file
+// did not say: the photo keeps what it has.
+type PhotoMetadata struct {
+	PhotoKind            models.PhotoKind
+	WidthPixels          int
+	HeightPixels         int
+	DurationMS           int64
+	TakenAt              *time.Time
+	TakenAtOffsetMinutes *int
+	Latitude             *float64
+	Longitude            *float64
+	PlaceName            string
+	CameraMake           string
+	CameraModel          string
 }
 
 // PhotoLibraryCounts are the totals a library page shows.
@@ -205,6 +251,17 @@ func utcTime(value *time.Time) *time.Time {
 // from a tool's output and can be long.
 const photoErrorMessageBytes = 4096
 
+// photoMarkedForDeletion is the time a photo in the trash is given when it is
+// deleted forever. No photo was taken before 1970, so it can never be a time
+// a photo was trashed at, and "in the trash" is "trashed after it".
+// Keeping the mark in a column that is there avoids a second column every
+// query would have to agree about.
+var photoMarkedForDeletion = time.Unix(0, 0).UTC()
+
+// photoIsReadable keeps the photos that are in the library or in the trash,
+// not those on their way to deletion.
+const photoIsReadable = "(photo.trashed_at IS NULL OR photo.trashed_at > ?)"
+
 // photoTimelineExpression is the date a photo sits at in the timeline.
 const photoTimelineExpression = "COALESCE(photo.taken_at, photo.created_at)"
 
@@ -249,7 +306,7 @@ func (self *transaction) GetPhoto(userId, photoId string) (*models.Photo, error)
 		return nil, ErrNotFound
 	}
 	var row photoModel
-	if err := self.tx.Where("id = ? AND user_id = ?", photoId, userId).Take(&row).Error; err != nil {
+	if err := self.tx.Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, photoId, userId, photoMarkedForDeletion).Take(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
@@ -274,7 +331,7 @@ func (self *transaction) photosMatching(userId string, filter *PhotoFilter) (*go
 	}
 	query := self.tx.Model(&photoModel{}).Where("photo.user_id = ?", userId)
 	if filter.IsTrashed {
-		query = query.Where("photo.trashed_at IS NOT NULL")
+		query = query.Where("photo.trashed_at > ?", photoMarkedForDeletion)
 	} else {
 		query = query.Where("photo.trashed_at IS NULL")
 	}
@@ -407,59 +464,88 @@ func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate
 }
 
 func (self *transaction) TrashPhotos(userId string, photoIds []string) (int, error) {
-	return self.changePhotoTrash(userId, photoIds, "trashed_at IS NULL", map[string]any{"trashed_at": photoNow(), "updated_at": photoNow()})
+	return self.changePhotoTrash(userId, photoIds, "trashed_at IS NULL", nil, map[string]any{"trashed_at": photoNow(), "updated_at": photoNow()})
 }
 
 func (self *transaction) RestorePhotos(userId string, photoIds []string) (int, error) {
-	return self.changePhotoTrash(userId, photoIds, "trashed_at IS NOT NULL", map[string]any{"trashed_at": nil, "updated_at": photoNow()})
+	return self.changePhotoTrash(userId, photoIds, "trashed_at > ?", []any{photoMarkedForDeletion}, map[string]any{"trashed_at": nil, "updated_at": photoNow()})
 }
 
-func (self *transaction) changePhotoTrash(userId string, photoIds []string, condition string, changes map[string]any) (int, error) {
+func (self *transaction) changePhotoTrash(userId string, photoIds []string, condition string, conditionArguments []any, changes map[string]any) (int, error) {
 	if userId == "" || len(photoIds) > 500 {
 		return 0, ErrInvalidArguments
 	}
 	if len(photoIds) == 0 {
 		return 0, nil
 	}
-	updated := self.tx.Model(&photoModel{}).Where("user_id = ? AND id IN ? AND "+condition, userId, photoIds).Updates(changes)
+	updated := self.tx.Model(&photoModel{}).Where("user_id = ? AND id IN ? AND "+condition, append([]any{userId, photoIds}, conditionArguments...)...).Updates(changes)
 	return int(updated.RowsAffected), updated.Error
 }
 
-func (self *transaction) ListTrashedPhotos(userId string, photoIds []string, limit int) ([]*models.Photo, error) {
-	if userId == "" || limit < 1 || limit > 500 || len(photoIds) > 500 {
-		return nil, ErrInvalidArguments
-	}
-	query := self.tx.Where("user_id = ? AND trashed_at IS NOT NULL", userId)
-	if len(photoIds) > 0 {
-		query = query.Where("id IN ?", photoIds)
-	}
-	var rows []photoModel
-	if err := query.Order("id").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	return photosFromModels(rows), nil
+// markedForDeletionChanges is what a photo is given when it is deleted
+// forever. Its name for the uploader is freed, so that sending the same file
+// again makes a new photo instead of finding one that is about to go; it
+// cannot be found by the old name or restored.
+func markedForDeletionChanges() map[string]any {
+	return map[string]any{"trashed_at": photoMarkedForDeletion, "client_photo_id": gorm.Expr("'deleting-' || id"), "updated_at": photoNow()}
 }
 
-func (self *transaction) DeletePhotos(userId string, photoIds []string) (int, error) {
+func (self *transaction) MarkPhotosForDeletion(userId string, photoIds []string) (int, error) {
 	if userId == "" || len(photoIds) > 500 {
 		return 0, ErrInvalidArguments
 	}
 	if len(photoIds) == 0 {
 		return 0, nil
 	}
-	deleted := self.tx.Where("user_id = ? AND id IN ? AND trashed_at IS NOT NULL", userId, photoIds).Delete(&photoModel{})
-	return int(deleted.RowsAffected), deleted.Error
+	marked := self.tx.Model(&photoModel{}).Where("user_id = ? AND id IN ? AND trashed_at > ?", userId, photoIds, photoMarkedForDeletion).Updates(markedForDeletionChanges())
+	return int(marked.RowsAffected), marked.Error
 }
 
-func (self *transaction) ListPhotosTrashedBefore(trashedBefore time.Time, limit int) ([]*models.Photo, error) {
+func (self *transaction) MarkTrashForDeletion(userId string) (int, error) {
+	if userId == "" {
+		return 0, ErrInvalidArguments
+	}
+	marked := self.tx.Model(&photoModel{}).Where("user_id = ? AND trashed_at > ?", userId, photoMarkedForDeletion).Updates(markedForDeletionChanges())
+	return int(marked.RowsAffected), marked.Error
+}
+
+func (self *transaction) ClaimPhotosForDeletion(expiredBefore time.Time, limit int) ([]*models.Photo, error) {
 	if limit < 1 || limit > 500 {
 		return nil, ErrInvalidArguments
 	}
+	query := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"})
+	if expiredBefore.IsZero() {
+		query = query.Where("trashed_at = ?", photoMarkedForDeletion)
+	} else {
+		query = query.Where("trashed_at = ? OR (trashed_at > ? AND trashed_at < ?)", photoMarkedForDeletion, photoMarkedForDeletion, expiredBefore)
+	}
 	var rows []photoModel
-	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Where("trashed_at IS NOT NULL AND trashed_at < ?", trashedBefore).Order("trashed_at").Limit(limit).Find(&rows).Error; err != nil {
+	if err := query.Order("trashed_at, id").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	expiredIds := make([]string, 0, len(rows))
+	for index := range rows {
+		if rows[index].TrashedAt != nil && rows[index].TrashedAt.After(photoMarkedForDeletion) {
+			expiredIds = append(expiredIds, rows[index].ID)
+		}
+	}
+	if len(expiredIds) > 0 {
+		if err := self.tx.Model(&photoModel{}).Where("id IN ?", expiredIds).Updates(markedForDeletionChanges()).Error; err != nil {
+			return nil, err
+		}
+	}
 	return photosFromModels(rows), nil
+}
+
+func (self *transaction) DeleteMarkedPhotos(photoIds []string) (int, error) {
+	if len(photoIds) > 500 {
+		return 0, ErrInvalidArguments
+	}
+	if len(photoIds) == 0 {
+		return 0, nil
+	}
+	deleted := self.tx.Where("id IN ? AND trashed_at = ?", photoIds, photoMarkedForDeletion).Delete(&photoModel{})
+	return int(deleted.RowsAffected), deleted.Error
 }
 
 func (self *transaction) ReadPhotoLibraryCounts(userId string) (*PhotoLibraryCounts, error) {
@@ -471,7 +557,7 @@ func (self *transaction) ReadPhotoLibraryCounts(userId string) (*PhotoLibraryCou
 		COUNT(*) FILTER (WHERE trashed_at IS NULL AND photo_kind <> ?) AS photo_count,
 		COUNT(*) FILTER (WHERE trashed_at IS NULL AND photo_kind = ?) AS video_count,
 		COUNT(*) FILTER (WHERE trashed_at IS NULL AND is_favorite) AS favorite_count,
-		COUNT(*) FILTER (WHERE trashed_at IS NOT NULL) AS trashed_count`, models.PhotoKindVideo, models.PhotoKindVideo).Scan(&counts).Error
+		COUNT(*) FILTER (WHERE trashed_at > ?) AS trashed_count`, models.PhotoKindVideo, models.PhotoKindVideo, photoMarkedForDeletion).Scan(&counts).Error
 	return &counts, err
 }
 
@@ -480,7 +566,7 @@ func (self *transaction) PhotoUsedBytes(userId string) (int64, error) {
 		return 0, ErrNotFound
 	}
 	var usedBytes int64
-	err := self.tx.Table("photo_file").Select("COALESCE(SUM(photo_file.file_size_bytes), 0)").Joins("JOIN photo ON photo.id = photo_file.photo_id").Where("photo.user_id = ?", userId).Scan(&usedBytes).Error
+	err := self.tx.Table("photo_file").Select("COALESCE(SUM(photo_file.file_size_bytes), 0)").Joins("JOIN photo ON photo.id = photo_file.photo_id").Where("photo.user_id = ? AND "+photoIsReadable, userId, photoMarkedForDeletion).Scan(&usedBytes).Error
 	return usedBytes, err
 }
 
@@ -679,7 +765,15 @@ func (self *transaction) UpsertPhotoPreview(userId string, preview *models.Photo
 	if preview == nil || !preview.PhotoPreviewSize.IsValid() || preview.PreviewSizeBytes < 0 || preview.WidthPixels < 0 || preview.HeightPixels < 0 || len(preview.ContentType) > 128 {
 		return nil, ErrInvalidArguments
 	}
-	if _, err := self.GetPhoto(userId, preview.PhotoID); err != nil {
+	// The photo is locked against being marked for deletion while the
+	// preview's row is written, so that cleanup, which lists the previews of
+	// a photo after marking it, cannot miss one written in between and leave
+	// its bytes with no row to name them.
+	var owned photoModel
+	if err := self.tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("photo.id = ? AND photo.user_id = ? AND "+photoIsReadable, preview.PhotoID, userId, photoMarkedForDeletion).Take(&owned).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	row := photoPreviewModel(*preview)
@@ -744,8 +838,9 @@ func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Ti
 	var rows []photoModel
 	if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where(`photo_processing_state = ? AND (processing_claimed_at IS NULL OR processing_claimed_at < ?)
+			AND `+photoIsReadable+`
 			AND EXISTS (SELECT 1 FROM photo_file WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role IN ?)`,
-			models.PhotoProcessingWaiting, staleBefore, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}).
+			models.PhotoProcessingWaiting, staleBefore, photoMarkedForDeletion, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}).
 		Order("created_at, id").Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -794,4 +889,68 @@ func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string,
 		"processing_claimed_at":    nil,
 		"updated_at":               photoNow(),
 	}).Error
+}
+
+func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMetadata) error {
+	if metadata == nil || (metadata.PhotoKind != "" && !metadata.PhotoKind.IsValid()) || metadata.WidthPixels < 0 || metadata.HeightPixels < 0 || metadata.DurationMS < 0 ||
+		len(metadata.PlaceName) > 255 || len(metadata.CameraMake) > 128 || len(metadata.CameraModel) > 128 ||
+		(metadata.Latitude != nil && (*metadata.Latitude < -90 || *metadata.Latitude > 90)) || (metadata.Longitude != nil && (*metadata.Longitude < -180 || *metadata.Longitude > 180)) {
+		return ErrInvalidArguments
+	}
+	// A column is only replaced where the photo has nothing. The size and the
+	// length describe the file itself, so they are replaced whenever the file
+	// said, and the kind is whatever the caller settled on.
+	changes := map[string]any{
+		"updated_at":              photoNow(),
+		"taken_at_offset_minutes": gorm.Expr("CASE WHEN taken_at IS NULL THEN ? ELSE taken_at_offset_minutes END", metadata.TakenAtOffsetMinutes),
+		"taken_at":                gorm.Expr("COALESCE(taken_at, ?)", utcTime(metadata.TakenAt)),
+		"latitude":                gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE latitude END", metadata.Latitude),
+		"longitude":               gorm.Expr("CASE WHEN latitude IS NULL OR longitude IS NULL THEN ? ELSE longitude END", metadata.Longitude),
+		"place_name":              gorm.Expr("CASE WHEN place_name = '' THEN ? ELSE place_name END", metadata.PlaceName),
+		"camera_make":             gorm.Expr("CASE WHEN camera_make = '' THEN ? ELSE camera_make END", metadata.CameraMake),
+		"camera_model":            gorm.Expr("CASE WHEN camera_model = '' THEN ? ELSE camera_model END", metadata.CameraModel),
+	}
+	if metadata.PhotoKind != "" {
+		changes["photo_kind"] = metadata.PhotoKind
+	}
+	if metadata.WidthPixels > 0 && metadata.HeightPixels > 0 {
+		changes["width_pixels"], changes["height_pixels"] = metadata.WidthPixels, metadata.HeightPixels
+	}
+	if metadata.DurationMS > 0 {
+		changes["duration_ms"] = metadata.DurationMS
+	}
+	updated := self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(changes)
+	if updated.Error != nil {
+		return updated.Error
+	}
+	if updated.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (self *transaction) TouchPhotoProcessingClaims(photoIds []string) error {
+	if len(photoIds) == 0 {
+		return nil
+	}
+	if len(photoIds) > 100 {
+		return ErrInvalidArguments
+	}
+	return self.tx.Model(&photoModel{}).Where("id IN ? AND photo_processing_state = ? AND processing_claimed_at IS NOT NULL", photoIds, models.PhotoProcessingWaiting).Update("processing_claimed_at", photoNow()).Error
+}
+
+func (self *transaction) RequeuePhotosWithoutPreviews(limit int) (int, error) {
+	if limit < 1 || limit > 100 {
+		return 0, ErrInvalidArguments
+	}
+	requeued := self.tx.Exec(`UPDATE photo SET photo_processing_state = ?, processing_attempt_count = 0, processing_error_message = '', processing_claimed_at = NULL, updated_at = ?
+		WHERE id IN (
+			SELECT id FROM photo
+			WHERE photo_processing_state = ? AND (trashed_at IS NULL OR trashed_at > ?)
+				AND NOT EXISTS (SELECT 1 FROM photo_preview WHERE photo_preview.photo_id = photo.id AND photo_preview.photo_preview_size = ?)
+				AND EXISTS (SELECT 1 FROM photo_file WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role IN ?)
+			ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED)`,
+		models.PhotoProcessingWaiting, photoNow(), models.PhotoProcessingReady, photoMarkedForDeletion, models.PhotoPreviewSmall,
+		[]models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}, limit)
+	return int(requeued.RowsAffected), requeued.Error
 }

@@ -1,12 +1,17 @@
 package photo_test
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/ziyan/teanode/internal/config"
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/photo"
 )
 
 // age moves rows back in time, which is how a test makes an hour pass.
@@ -66,7 +71,10 @@ func TestCleanupDeletesAMarkedBlobsBytesAgainWhenAFileArrivesBeforeItsRowIsGone(
 		if _, err := transaction.TrashPhotos(fixture.userId, []string{photoId}); err != nil {
 			test.Fatal(err)
 		}
-		if _, err := transaction.DeletePhotos(fixture.userId, []string{photoId}); err != nil {
+		if _, err := transaction.MarkPhotosForDeletion(fixture.userId, []string{photoId}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.DeleteMarkedPhotos([]string{photoId}); err != nil {
 			test.Fatal(err)
 		}
 	})
@@ -150,41 +158,6 @@ func TestCleanupDeletesTheStoredPartsOfFailedAndIdleUploads(test *testing.T) {
 	fixture.expect(fixture.send(http.MethodHead, moving.header.Get("Location"), nil, nil), http.StatusNoContent)
 }
 
-func TestProcessMarksWaitingPhotosReadyOnceAndTakesBackAStaleClaim(test *testing.T) {
-	fixture := newFixture(test)
-	got := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("waiting"), smallJpeg(test, 70))
-	fixture.expect(got, http.StatusCreated)
-	if fixture.photoByClientId("waiting").PhotoProcessingState != models.PhotoProcessingWaiting {
-		test.Fatal("a new photo is not waiting")
-	}
-	if err := fixture.store.Process(test.Context(), 4); err != nil {
-		test.Fatal(err)
-	}
-	found := fixture.photoByClientId("waiting")
-	if found.PhotoProcessingState != models.PhotoProcessingReady || found.ProcessingClaimedAt != nil {
-		test.Fatalf("%+v", found)
-	}
-
-	// A claim made a moment ago is another instance's work in progress, and
-	// one made eleven minutes ago is the work of an instance that has gone.
-	second := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("claimed"), smallJpeg(test, 80))
-	fixture.expect(second, http.StatusCreated)
-	fixture.age("UPDATE photo SET processing_claimed_at = now() WHERE client_photo_id = 'claimed'")
-	if err := fixture.store.Process(test.Context(), 4); err != nil {
-		test.Fatal(err)
-	}
-	if fixture.photoByClientId("claimed").PhotoProcessingState != models.PhotoProcessingWaiting {
-		test.Fatal("a photo another instance is working on was taken")
-	}
-	fixture.age("UPDATE photo SET processing_claimed_at = now() - interval '11 minutes' WHERE client_photo_id = 'claimed'")
-	if err := fixture.store.Process(test.Context(), 4); err != nil {
-		test.Fatal(err)
-	}
-	if fixture.photoByClientId("claimed").PhotoProcessingState != models.PhotoProcessingReady {
-		test.Fatal("a stale claim was not taken again")
-	}
-}
-
 func TestAnAttachmentIsSavedAsAPhotoNamedByItsDigest(test *testing.T) {
 	fixture := newFixture(test)
 	picture := smallJpeg(test, 90)
@@ -214,7 +187,7 @@ func TestAnAttachmentIsSavedAsAPhotoNamedByItsDigest(test *testing.T) {
 	}
 }
 
-func TestDeletingPhotosRemovesOnlyThoseInTheTrashWithTheirPreviews(test *testing.T) {
+func TestDeletingForeverHidesAtOnceAndCleanupDeletesInBatchesWithThePreviews(test *testing.T) {
 	fixture := newFixture(test)
 	trashed := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("trashed"), smallJpeg(test, 100))
 	library := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("library"), smallJpeg(test, 110))
@@ -222,47 +195,114 @@ func TestDeletingPhotosRemovesOnlyThoseInTheTrashWithTheirPreviews(test *testing
 	if err := fixture.files.PutFileStream(test.Context(), models.PhotoPreviewFileID(trashedId, models.PhotoPreviewLarge), readSeeker([]byte("large")), 5); err != nil {
 		test.Fatal(err)
 	}
-	err := fixture.database.Transaction(func(transaction db.Transaction) error {
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
 		if _, err := transaction.UpsertPhotoPreview(fixture.userId, &models.PhotoPreview{PhotoID: trashedId, PhotoPreviewSize: models.PhotoPreviewLarge, ContentType: "image/jpeg", PreviewSizeBytes: 5}); err != nil {
-			return err
+			test.Fatal(err)
 		}
 		if _, err := transaction.TrashPhotos(fixture.userId, []string{trashedId}); err != nil {
-			return err
+			test.Fatal(err)
 		}
-		deletedCount, err := fixture.store.DeletePhotos(test.Context(), transaction, fixture.userId, []string{trashedId, libraryId})
+		deletedCount, err := transaction.MarkPhotosForDeletion(fixture.userId, []string{trashedId, libraryId})
 		if err != nil || deletedCount != 1 {
 			test.Fatalf("deleted %d: %v", deletedCount, err)
 		}
-		return nil
 	})
-	if err != nil {
+	// The request only marks: the row and the preview's bytes are still
+	// there, and nobody can see the photo.
+	if fixture.count("photo") != "2" || !fixture.files.has(models.PhotoPreviewFileID(trashedId, models.PhotoPreviewLarge)) {
+		test.Fatal("the request deleted rows or bytes")
+	}
+	if fixture.photoByClientId("trashed") != nil {
+		test.Fatal("a photo deleted forever is still found by the name its uploader gave it")
+	}
+	if err := fixture.store.Cleanup(test.Context(), 10); err != nil {
 		test.Fatal(err)
 	}
-	if fixture.photoByClientId("trashed") != nil || fixture.photoByClientId("library") == nil || fixture.files.has(models.PhotoPreviewFileID(trashedId, models.PhotoPreviewLarge)) {
-		test.Fatal("deleting forever did not keep to the trash")
+	if fixture.count("photo") != "1" || fixture.photoByClientId("library") == nil || fixture.files.has(models.PhotoPreviewFileID(trashedId, models.PhotoPreviewLarge)) {
+		test.Fatal("cleanup did not keep to what was deleted")
 	}
+}
 
-	// Emptying the trash takes everything in it and nothing else, however many.
-	err = fixture.database.Transaction(func(transaction db.Transaction) error {
-		for index := range 5 {
-			created, _, err := transaction.CreatePhoto(&models.Photo{UserID: fixture.userId, ClientPhotoID: "bulk-" + string(rune('a'+index)), PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceDashboard})
+func TestEmptyingAHugeTrashTakesSeveralCleanupPasses(test *testing.T) {
+	fixture := newFixture(test)
+	kept := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("kept"), smallJpeg(test, 120))
+	fixture.expect(kept, http.StatusCreated)
+	const trashedCount = 250
+	var previewFileIds []string
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		for index := range trashedCount {
+			created, _, err := transaction.CreatePhoto(&models.Photo{UserID: fixture.userId, ClientPhotoID: fmt.Sprintf("bulk-%d", index), PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceDashboard})
 			if err != nil {
-				return err
+				test.Fatal(err)
 			}
+			if _, err := transaction.UpsertPhotoPreview(fixture.userId, &models.PhotoPreview{PhotoID: created.ID, PhotoPreviewSize: models.PhotoPreviewSmall, ContentType: "image/jpeg", PreviewSizeBytes: 5}); err != nil {
+				test.Fatal(err)
+			}
+			previewFileIds = append(previewFileIds, models.PhotoPreviewFileID(created.ID, models.PhotoPreviewSmall))
 			if _, err := transaction.TrashPhotos(fixture.userId, []string{created.ID}); err != nil {
-				return err
+				test.Fatal(err)
 			}
 		}
-		emptiedCount, err := fixture.store.EmptyTrash(test.Context(), transaction, fixture.userId)
-		if err != nil || emptiedCount != 5 {
+	})
+	for _, fileId := range previewFileIds {
+		if err := fixture.files.PutFileStream(test.Context(), fileId, readSeeker([]byte("small")), 5); err != nil {
+			test.Fatal(err)
+		}
+	}
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		emptiedCount, err := transaction.MarkTrashForDeletion(fixture.userId)
+		if err != nil || emptiedCount != trashedCount {
 			test.Fatalf("emptied %d: %v", emptiedCount, err)
 		}
-		return nil
 	})
-	if err != nil {
-		test.Fatal(err)
+	// One batch a pass, so the trash goes in three passes, and the photo that
+	// was never in the trash is still there at the end.
+	for pass, wantLeft := range []string{"151", "51", "1"} {
+		if err := fixture.store.Cleanup(test.Context(), 1); err != nil {
+			test.Fatalf("pass %d: %v", pass, err)
+		}
+		if left := fixture.count("photo"); left != wantLeft {
+			test.Fatalf("after pass %d, %s photos are left, want %s", pass, left, wantLeft)
+		}
+	}
+	for _, fileId := range previewFileIds {
+		if fixture.files.has(fileId) {
+			test.Fatalf("%s was not deleted", fileId)
+		}
+	}
+	if fixture.photoByClientId("kept") == nil {
+		test.Fatal("a photo that was not in the trash was deleted")
+	}
+}
+
+func TestACleanupThatCannotDeleteBytesLeavesThePhotoMarkedForTheNextPass(test *testing.T) {
+	fixture := newFixture(test)
+	got := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("stuck"), smallJpeg(test, 130))
+	photoId := got.header.Get("X-Photo-ID")
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.TrashPhotos(fixture.userId, []string{photoId}); err != nil {
+			test.Fatal(err)
+		}
+		if _, err := transaction.MarkTrashForDeletion(fixture.userId); err != nil {
+			test.Fatal(err)
+		}
+	})
+	failing := &failingDeleteFiles{memoryFiles: fixture.files}
+	broken := photo.New(fixture.database, failing, func() *config.Configuration { return fixture.configuration })
+	if err := broken.Cleanup(test.Context(), 10); err == nil {
+		test.Fatal("a failed deletion was not reported")
 	}
 	if fixture.count("photo") != "1" {
-		test.Fatalf("%s photos are left", fixture.count("photo"))
+		test.Fatal("the row was deleted though its previews' bytes could not be")
 	}
+	if err := fixture.store.Cleanup(test.Context(), 10); err != nil || fixture.count("photo") != "0" {
+		test.Fatalf("the next pass did not finish it: %v", err)
+	}
+}
+
+// failingDeleteFiles is a store whose deletions fail.
+type failingDeleteFiles struct{ *memoryFiles }
+
+func (self *failingDeleteFiles) DeleteFileEverywhere(ctx context.Context, id string) error {
+	return errors.New("the object store is down")
 }

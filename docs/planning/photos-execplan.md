@@ -20,7 +20,8 @@ To see it working: switch Photos on in the server's services, drop a few picture
 - [x] (2026-10-16 22:40 EDT) Decision records 20261016-photos-are-rows-and-their-bytes-are-blobs, -uploads-follow-the-resumable-upload-draft, -the-iphone-backs-up-and-teanode-keeps, -a-photo-is-described-when-somebody-looks-at-it, -faces-are-found-on-the-server-and-named-from-contacts, -an-album-is-shared-at-a-level.
 - [x] (2026-10-16 23:20 EDT) Milestone 0: prototypes. The face reader works (0.2 s a picture, 42 MB of libraries and 39 MB of models when it reads raw pixels); ffmpeg cannot assemble tiled HEIC, libheif's `heif-dec` can; a 104 passes the middleware chain. See Surprises & Discoveries.
 - [x] (2026-10-16 23:40 EDT) Milestone 1, part one: service switch (off until chosen), `photos:use`, the `photos` settings, migration 0220, models and queries, the resumable upload endpoint with device password sign-in, S3 multipart, serving, cleanup, operations including `offset` and `CountPhotos`.
-- [ ] Milestone 1, part two: processing (metadata, places, previews).
+- [x] (2026-10-16 23:50 EDT) Milestone 1, part two: processing (metadata, places, previews) without faces, which wait for Milestone 5; deleting forever by marking and cleanup in batches; the allow-list of file types; a ready photo without a small preview is processed again.
+- [x] (2026-10-16 23:50 EDT) Milestone 2, command line (`teanode photo`) and the agent's `photo` tool. The dashboard and the iPhone are still to do.
 - [ ] Milestone 2: the library on every surface (dashboard, command line, agent tool, iPhone app), with the service switch and setup.
 - [ ] Milestone 3: albums.
 - [ ] Milestone 4: descriptions and search.
@@ -87,6 +88,12 @@ To see it working: switch Photos on in the server's services, drop a few picture
   Date/Author: 2026-10-16, Claude.
 - Decision: an omitted `services.photos` switch means off, unlike the services that came before the switches.
   Rationale: the other services' omitted switches mean on so an upgrade keeps what a server already did; no server had a photo library before, so turning one on by upgrading would hand every member a library and its disk use nobody chose. Setup and the services page turn it on.
+  Date/Author: 2026-10-16, Claude.
+- Decision: deleting forever only marks a photo, and `photo:cleanup` deletes the rows and the previews' bytes in batches of 100.
+  Rationale: emptying a trash of thousands inside the request's one transaction timed out, and a rollback left previews deleted under rows that remained. The mark is `trashed_at` set to the epoch (no photo is trashed before 1970), plus the photo's client name changed to `deleting-<id>` so that sending the same file again makes a new photo; every query that reads a photo treats a marked one as gone, and the quota stops counting its files at once. The bytes go before the rows and outside any transaction, which is safe because a marked photo can no longer be seen or restored.
+  Date/Author: 2026-10-16, Claude.
+- Decision: the library keeps only the picture and video types phones and cameras write (JPEG, PNG, GIF, WebP, HEIC and HEIF, AVIF, TIFF, common camera raw files, MP4, QuickTime, WebM, 3GPP, M4V, Matroska), and refuses the rest naming the type.
+  Rationale: anything starting with `image/` let in SVG, a document that can carry script, and the library serves what it keeps to a browser.
   Date/Author: 2026-10-16, Claude.
 - Decision: faces are on by default for every person, who can switch them off; switching off deletes their faces and groups.
   Rationale: the maintainer wants faces; a person who does not can remove them entirely.

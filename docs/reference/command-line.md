@@ -144,6 +144,7 @@ so one command serves a person and a script.
 | `report` | DMARC aggregate reports received about your domains |
 | `template` | a domain's message templates, with `render` |
 | `layout` | the frames templates are rendered inside |
+| `photo` | your library of photos and videos: `list`, `show`, `upload`, `download`, `favorite`, `trash`, `restore`, `delete`, `empty-trash`, `library`; see below |
 | `finance` | linked institutions, transactions, trades, net worth, budgets and savings targets; see below |
 | `api` | everything else, straight from the schema |
 
@@ -454,6 +455,34 @@ takes `--json`.
 | `teanode recording speaker-separate --recording-id ID --speaker-label "Speaker 9"` | give a label that was merged into an earlier speaker's voice back to itself: the label is the passage's `mergedTemporarySpeakerLabel`. Its passages read as its own label again, and the names that naming the earlier speaker wrote for it are taken off; naming the earlier speaker meanwhile named both. It takes no generation, since the capture keeps going |
 | `teanode recording speaker-confirm\|speaker-rename\|speaker-reset` | the same for a finished recording, by a passage or by a speaker of one transcription request; these check `--expected-source-generation` |
 | `teanode recording speaker-undo` | takes a naming back whole, given any one of its corrections: every passage it named goes back to the speaker's label (`speaker-reset` takes back one passage); checks `--expected-source-generation` |
+
+### teanode photo
+
+Your library of photos and videos: the same operations as the dashboard's
+Photos page and the agent's `photo` tool, and named after them. It needs the
+Photos service switched on and the `photos:use` permission. Each command that
+prints data takes `--json`.
+
+| Command | What it does |
+| --- | --- |
+| `teanode photo list [--favorites] [--trash] [--search WORDS] [--after DATE] [--before DATE] [--kind picture\|video\|livePhoto] [--limit N] [--continue-after ID]` | the library, newest first: id, when it was taken (in the camera's zone, where the file says), kind, place, size, length, state and file name. `--search` keeps photos where every word is in the place, the file name or the camera; a date is `2025-07-12` (that day in your zone) or an RFC 3339 time. A full page says on standard error how many photos match, and the id to continue after |
+| `teanode photo show ID` | everything known about a photo: its date, place, camera, size, files and how its previews are going |
+| `teanode photo upload FILE-OR-FOLDER...` | add pictures and videos. A folder is walked, leaving out names that start with a dot and files that are not pictures or videos; a file named on the command line is always sent. Each file is hashed (SHA-256, which is the name the library knows the photo by), the library is asked which of the first 200 it already has, and only the rest are sent. One line a file says `uploaded`, `already there` or `failed`, then a summary such as `12 uploaded, 3 already there, 1 failed`; the command fails if any file did |
+| `teanode photo download ID [--file original\|edited\|liveVideo] [--output PATH] [--force]` | save one of a photo's files, under its own name here by default, or at the path given, or in the folder given. It never replaces a file that is there unless `--force` says so, and a file that arrives short is not kept |
+| `teanode photo favorite ID [--off]` | make a photo a favorite, or take it back |
+| `teanode photo trash ID...` / `restore ID...` | move photos to the trash and back; the trash is emptied after the days `library` shows |
+| `teanode photo delete ID...` / `empty-trash` | delete forever the photos in the trash, or all of them; both ask first, or take `--force`. The photos leave the trash at once and their files are deleted by the server within minutes |
+| `teanode photo library` | how many photos and videos there are, how much room they take, the largest file and the account's limit |
+
+Uploads speak the server's resumable upload endpoint, in parts of 8 MiB: a
+photo that fits in one part is one request, and a larger one starts the
+upload, then appends each part at the offset the server has. A part is tried
+three times, asking the server how much it has stored (`HEAD`) after each
+failure, so a dropped connection costs at most the part in flight and a
+lost answer is not sent twice. The command keeps nothing on disk. Run again
+after it was interrupted, it starts the interrupted file over (the library
+does not list a half-sent upload), and the server deletes the part it was left
+with after a week of silence.
 
 ### teanode hook
 

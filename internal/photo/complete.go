@@ -22,8 +22,9 @@ import (
 // step is done again, this time storing the bytes.
 var errBlobGone = errors.New("photo: the blob was deleted while the file was being recorded")
 
-// ErrNotAPhoto is a file that is neither a picture nor a video.
-var ErrNotAPhoto = errors.New("photo: the file is neither a picture nor a video")
+// ErrNotAPhoto is a file that is not a picture or a video that phones and
+// cameras write.
+var ErrNotAPhoto = errors.New("photo: the file is not a picture or a video of a kind a camera writes")
 
 // ErrDigestMismatch is a file whose bytes are not the ones the uploader said.
 var ErrDigestMismatch = errors.New("photo: the uploaded bytes do not match the declared SHA-256")
@@ -228,19 +229,43 @@ func (self *Store) readSegment(ctx context.Context, entry segment, wholeDigest i
 	return hex.EncodeToString(partDigest.Sum(nil)), nil
 }
 
-// extensionContentTypes covers the types a phone's files have that the
-// standard library's table does not know.
+// extensionContentTypes covers the types a phone's or a camera's files have
+// that the standard library's table does not know.
 var extensionContentTypes = map[string]string{
-	".heic": "image/heic", ".heif": "image/heif", ".dng": "image/x-adobe-dng",
-	".mov": "video/quicktime", ".mp4": "video/mp4", ".m4v": "video/x-m4v",
+	".heic": "image/heic", ".heif": "image/heif", ".avif": "image/avif", ".webp": "image/webp",
+	".tif": "image/tiff", ".tiff": "image/tiff",
+	".dng": "image/x-adobe-dng", ".nef": "image/x-nikon-nef", ".cr2": "image/x-canon-cr2", ".cr3": "image/x-canon-cr3",
+	".arw": "image/x-sony-arw", ".raf": "image/x-fuji-raf", ".orf": "image/x-olympus-orf", ".rw2": "image/x-panasonic-rw2",
+	".mov": "video/quicktime", ".mp4": "video/mp4", ".m4v": "video/x-m4v", ".3gp": "video/3gpp", ".3g2": "video/3gpp2",
+	".webm": "video/webm", ".mkv": "video/x-matroska",
 }
+
+// allowedContentTypes are the pictures and videos that phones and cameras
+// write. A library keeps what a person made with a camera, and serves it back
+// to their browser, so what is kept is listed and not "anything that starts
+// with image/": an SVG is a document that can carry script, and a type the
+// previews cannot read is better refused where the person is told than kept
+// where nothing can be done with it.
+var allowedContentTypes = map[string]bool{
+	"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true,
+	"image/heic": true, "image/heif": true, "image/heic-sequence": true, "image/heif-sequence": true,
+	"image/avif": true, "image/tiff": true,
+	"image/x-adobe-dng": true, "image/x-nikon-nef": true, "image/x-canon-cr2": true, "image/x-canon-cr3": true,
+	"image/x-sony-arw": true, "image/x-fuji-raf": true, "image/x-olympus-orf": true, "image/x-panasonic-rw2": true,
+	"video/mp4": true, "video/quicktime": true, "video/webm": true,
+	"video/3gpp": true, "video/3gpp2": true, "video/x-m4v": true, "video/x-matroska": true,
+}
+
+// contentTypeSpellings are the other names uploaders give a type on the list.
+var contentTypeSpellings = map[string]string{"image/jpg": "image/jpeg", "image/pjpeg": "image/jpeg", "video/x-quicktime": "video/quicktime"}
 
 // settleContentType is the type to keep for a file. An uploader that says
 // nothing, or says what a form says by default, is taken at its file name
-// and then at the bytes. What is neither a picture nor a video is refused:
-// this is a photo library.
+// and then at the bytes. What is not a picture or a video that phones and
+// cameras write is refused, with its type in the message: this is a photo
+// library.
 func settleContentType(declared, filename string, firstBytes []byte) (string, error) {
-	contentType := declared
+	contentType := strings.ToLower(declared)
 	if contentType == "" || contentType == "application/octet-stream" || contentType == "application/x-www-form-urlencoded" {
 		extension := strings.ToLower(path.Ext(filename))
 		if known, isKnown := extensionContentTypes[extension]; isKnown {
@@ -251,8 +276,11 @@ func settleContentType(declared, filename string, firstBytes []byte) (string, er
 			contentType, _, _ = strings.Cut(http.DetectContentType(firstBytes), ";")
 		}
 	}
-	if !strings.HasPrefix(contentType, "image/") && !strings.HasPrefix(contentType, "video/") {
-		return "", ErrNotAPhoto
+	if spelling, isRespelled := contentTypeSpellings[contentType]; isRespelled {
+		contentType = spelling
+	}
+	if !allowedContentTypes[contentType] {
+		return "", fmt.Errorf("%w: files of type %s are not kept", ErrNotAPhoto, contentType)
 	}
 	return contentType, nil
 }

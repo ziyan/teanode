@@ -2481,6 +2481,11 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		}
 		granted = append(granted, fmt.Sprintf("- the address book %q, with %d people in it", book.Name, book.Contacts))
 	}
+	if self.settings.Operations != nil {
+		if line := photoLibraryLine(configuration, self.settings.Operations.Permissions()); line != "" {
+			granted = append(granted, line)
+		}
+	}
 	if calendars > 0 {
 		withheld = append(withheld, "their calendar")
 	}
@@ -2491,6 +2496,16 @@ func (self *AskRun) collections(ctx context.Context) (granted []string, withheld
 		withheld = append(withheld, "their address book")
 	}
 	return granted, withheld
+}
+
+// photoLibraryLine says the person keeps a photo library, when the server
+// offers one and they may use it: a model that does not know it is there
+// does not look in it. Empty when they have none.
+func photoLibraryLine(configuration *config.Configuration, permissions *models.EffectivePermissions) string {
+	if !configuration.Services.IsEnabled(models.ServicePhotos) || permissions == nil || !permissions.Has(models.PermissionPhotosUse) {
+		return ""
+	}
+	return "- their photo library of pictures and videos, through the photo tool, which finds photos by date, place, camera and file name"
 }
 
 // sources lists the mailboxes, granted and not, as the situation says them.

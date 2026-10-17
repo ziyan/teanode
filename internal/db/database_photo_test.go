@@ -236,7 +236,7 @@ func TestPhotoTrashRestoreAndDeleteOnlyTrashed(test *testing.T) {
 	first := newTestPhoto(test, database, ownerId, "first", nil)
 	second := newTestPhoto(test, database, ownerId, "second", nil)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		deleted, err := transaction.DeletePhotos(ownerId, []string{first.ID})
+		deleted, err := transaction.MarkPhotosForDeletion(ownerId, []string{first.ID})
 		if err != nil || deleted != 0 {
 			test.Fatalf("a photo that is not in the trash was deleted: %d %v", deleted, err)
 		}
@@ -268,24 +268,47 @@ func TestPhotoTrashRestoreAndDeleteOnlyTrashed(test *testing.T) {
 		if err != nil || restored != 1 {
 			test.Fatalf("restored %d: %v", restored, err)
 		}
-		deleted, err = transaction.DeletePhotos(ownerId, []string{first.ID, second.ID})
+		deleted, err = transaction.MarkPhotosForDeletion(ownerId, []string{first.ID, second.ID})
 		if err != nil || deleted != 1 {
 			test.Fatalf("deleted %d: %v", deleted, err)
 		}
+		// Deleting forever is at once as far as anybody can tell: the photo
+		// is neither readable, listed, counted, restorable nor findable by
+		// the uploader's name, and does not count against the quota.
 		if _, err := transaction.GetPhoto(ownerId, second.ID); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a deleted photo is still there: %v", err)
+		}
+		if inTrash, err := transaction.ListPhotos(ownerId, &db.PhotoFilter{PageSize: 10, IsTrashed: true}); err != nil || len(inTrash) != 0 {
+			test.Fatalf("the trash shows %v %v", inTrash, err)
+		}
+		if counts, err := transaction.ReadPhotoLibraryCounts(ownerId); err != nil || counts.TrashedCount != 0 {
+			test.Fatalf("counts %+v %v", counts, err)
+		}
+		if restored, err := transaction.RestorePhotos(ownerId, []string{second.ID}); err != nil || restored != 0 {
+			test.Fatalf("a deleted photo was restored: %d %v", restored, err)
+		}
+		if found, err := transaction.FindPhotosByClientIDs(ownerId, []string{"second"}); err != nil || len(found) != 0 {
+			test.Fatalf("a deleted photo is found by its name: %v %v", found, err)
+		}
+		if usedBytes, err := transaction.PhotoUsedBytes(ownerId); err != nil || usedBytes != 100 {
+			test.Fatalf("the account holds %d bytes after one photo was deleted: %v", usedBytes, err)
+		}
+		// Cleanup deletes the rows later, and only those marked.
+		claimed, err := transaction.ClaimPhotosForDeletion(time.Time{}, 10)
+		if err != nil || len(claimed) != 1 || claimed[0].ID != second.ID {
+			test.Fatalf("claimed %v %v", claimed, err)
+		}
+		if gone, err := transaction.DeleteMarkedPhotos([]string{first.ID, second.ID}); err != nil || gone != 1 {
+			test.Fatalf("deleted %d rows: %v", gone, err)
 		}
 		files, err := transaction.ListPhotoFiles(ownerId, []string{second.ID})
 		if err != nil || len(files) != 0 {
 			test.Fatalf("the files of a deleted photo are still there: %v %v", files, err)
 		}
-		if usedBytes, err := transaction.PhotoUsedBytes(ownerId); err != nil || usedBytes != 100 {
-			test.Fatalf("the account holds %d bytes after one photo was deleted: %v", usedBytes, err)
-		}
 	})
 }
 
-func TestPhotosTrashedBeforeATime(test *testing.T) {
+func TestPhotosForDeletionAreThoseMarkedAndThoseTrashedBeforeATime(test *testing.T) {
 	database, closeDatabase := dbtest.AcquireDatabase(test)
 	defer closeDatabase()
 	ownerId := dbtest.CreateUser(test, database, "photo-retention-owner")
@@ -298,9 +321,19 @@ func TestPhotosTrashedBeforeATime(test *testing.T) {
 	})
 	dbtest.Exec(test, database, "UPDATE photo SET trashed_at = now() - interval '40 days' WHERE id = '"+old.ID+"'")
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		expired, err := transaction.ListPhotosTrashedBefore(time.Now().Add(-30*24*time.Hour), 10)
+		none, err := transaction.ClaimPhotosForDeletion(time.Time{}, 10)
+		if err != nil || len(none) != 0 {
+			test.Fatalf("without a time, only the marked are taken: %v %v", none, err)
+		}
+		expired, err := transaction.ClaimPhotosForDeletion(time.Now().Add(-30*24*time.Hour), 10)
 		if err != nil || len(expired) != 1 || expired[0].ID != old.ID {
 			test.Fatalf("expired %v %v", expired, err)
+		}
+		// Taking an expired photo marks it, so that a crash before its rows
+		// are deleted is found again without the clock.
+		again, err := transaction.ClaimPhotosForDeletion(time.Time{}, 10)
+		if err != nil || len(again) != 1 || again[0].ID != old.ID {
+			test.Fatalf("the claimed photo is not marked: %v %v", again, err)
 		}
 	})
 }
@@ -522,7 +555,10 @@ func TestPhotoBlobDeletionAfterTheLastFileGoes(test *testing.T) {
 		if _, err := transaction.TrashPhotos(ownerId, []string{photo.ID}); err != nil {
 			test.Fatal(err)
 		}
-		if deleted, err := transaction.DeletePhotos(ownerId, []string{photo.ID}); err != nil || deleted != 1 {
+		if deleted, err := transaction.MarkPhotosForDeletion(ownerId, []string{photo.ID}); err != nil || deleted != 1 {
+			test.Fatalf("%d %v", deleted, err)
+		}
+		if deleted, err := transaction.DeleteMarkedPhotos([]string{photo.ID}); err != nil || deleted != 1 {
 			test.Fatalf("%d %v", deleted, err)
 		}
 	})
@@ -622,4 +658,106 @@ func TestPhotoMigrationReverses(test *testing.T) {
 	if granted := dbtest.QueryString(test, database, `SELECT string_agg(role_id, ',' ORDER BY role_id) FROM role_permission WHERE permission_key = 'photos:use'`); granted != "role-administrator,role-member,role-operator" {
 		test.Fatalf("photos:use is granted to %q", granted)
 	}
+}
+
+func TestPhotoMetadataKeepsWhatThePhotoAlreadyHas(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-metadata-owner")
+	given := time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
+	givenOffsetMinutes := 120
+	givenLatitude, givenLongitude := 1.5, 2.5
+	var photo *models.Photo
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		var err error
+		photo, _, err = transaction.CreatePhoto(&models.Photo{
+			UserID: ownerId, ClientPhotoID: "given", PhotoKind: models.PhotoKindPicture, PhotoSource: models.PhotoSourceIPhone,
+			TakenAt: &given, TakenAtOffsetMinutes: &givenOffsetMinutes, Latitude: &givenLatitude, Longitude: &givenLongitude,
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+	})
+	fileTakenAt := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	fileOffsetMinutes := -300
+	fileLatitude, fileLongitude := 10.0, 20.0
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		err := transaction.UpdatePhotoMetadata(photo.ID, &db.PhotoMetadata{
+			PhotoKind: models.PhotoKindVideo, WidthPixels: 30, HeightPixels: 40, DurationMS: 2000,
+			TakenAt: &fileTakenAt, TakenAtOffsetMinutes: &fileOffsetMinutes, Latitude: &fileLatitude, Longitude: &fileLongitude,
+			PlaceName: "Somewhere", CameraMake: "Make", CameraModel: "Model",
+		})
+		if err != nil {
+			test.Fatal(err)
+		}
+		found, err := transaction.GetPhoto(ownerId, photo.ID)
+		if err != nil {
+			test.Fatal(err)
+		}
+		if !found.TakenAt.Equal(given) || *found.TakenAtOffsetMinutes != 120 || *found.Latitude != 1.5 || *found.Longitude != 2.5 {
+			test.Fatalf("what the uploader said was replaced: %+v", found)
+		}
+		if found.PhotoKind != models.PhotoKindVideo || found.WidthPixels != 30 || found.HeightPixels != 40 || found.DurationMS != 2000 ||
+			found.PlaceName != "Somewhere" || found.CameraMake != "Make" || found.CameraModel != "Model" {
+			test.Fatalf("what the file said was not kept: %+v", found)
+		}
+		// Saying nothing about the size leaves the size.
+		if err := transaction.UpdatePhotoMetadata(photo.ID, &db.PhotoMetadata{PlaceName: "Elsewhere"}); err != nil {
+			test.Fatal(err)
+		}
+		found, _ = transaction.GetPhoto(ownerId, photo.ID)
+		if found.WidthPixels != 30 || found.PlaceName != "Somewhere" {
+			test.Fatalf("an empty reading replaced what was known: %+v", found)
+		}
+		if err := transaction.UpdatePhotoMetadata("no-such-photo", &db.PhotoMetadata{}); !errors.Is(err, db.ErrNotFound) {
+			test.Fatalf("a photo that is not there took metadata: %v", err)
+		}
+	})
+	// A photo with nothing takes the file's date with its offset and place.
+	empty := newTestPhoto(test, database, ownerId, "empty", nil)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if err := transaction.UpdatePhotoMetadata(empty.ID, &db.PhotoMetadata{TakenAt: &fileTakenAt, TakenAtOffsetMinutes: &fileOffsetMinutes, Latitude: &fileLatitude, Longitude: &fileLongitude}); err != nil {
+			test.Fatal(err)
+		}
+		found, _ := transaction.GetPhoto(ownerId, empty.ID)
+		if found.TakenAt == nil || !found.TakenAt.Equal(fileTakenAt) || found.TakenAtOffsetMinutes == nil || *found.TakenAtOffsetMinutes != -300 || found.Latitude == nil || *found.Latitude != 10.0 {
+			test.Fatalf("the file's reading was not taken: %+v", found)
+		}
+	})
+}
+
+func TestReadyPhotosWithoutASmallPreviewAreQueuedAgain(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-requeue-owner")
+	without := newTestPhoto(test, database, ownerId, "without", nil)
+	with := newTestPhoto(test, database, ownerId, "with", nil)
+	waiting := newTestPhoto(test, database, ownerId, "waiting", nil)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		for _, photoId := range []string{without.ID, with.ID} {
+			if err := transaction.MarkPhotoReady(photoId); err != nil {
+				test.Fatal(err)
+			}
+		}
+		if _, err := transaction.UpsertPhotoPreview(ownerId, &models.PhotoPreview{PhotoID: with.ID, PhotoPreviewSize: models.PhotoPreviewSmall, ContentType: "image/jpeg", PreviewSizeBytes: 3}); err != nil {
+			test.Fatal(err)
+		}
+		requeued, err := transaction.RequeuePhotosWithoutPreviews(10)
+		if err != nil || requeued != 1 {
+			test.Fatalf("requeued %d: %v", requeued, err)
+		}
+		found, _ := transaction.GetPhoto(ownerId, without.ID)
+		if found.PhotoProcessingState != models.PhotoProcessingWaiting {
+			test.Fatalf("the photo is %s", found.PhotoProcessingState)
+		}
+		if found, _ = transaction.GetPhoto(ownerId, with.ID); found.PhotoProcessingState != models.PhotoProcessingReady {
+			test.Fatal("a photo with its preview was queued again")
+		}
+		if found, _ = transaction.GetPhoto(ownerId, waiting.ID); found.PhotoProcessingState != models.PhotoProcessingWaiting {
+			test.Fatal("a waiting photo changed")
+		}
+		if again, err := transaction.RequeuePhotosWithoutPreviews(10); err != nil || again != 0 {
+			test.Fatalf("queued again %d: %v", again, err)
+		}
+	})
 }

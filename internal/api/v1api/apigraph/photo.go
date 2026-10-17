@@ -344,30 +344,26 @@ func (self *graph) RestorePhotos(ctx context.Context, arguments PhotoIDsArgument
 }
 
 // DeletePhotos deletes forever photos that are already in the trash; the
-// rest of those named are left where they are. The files go in cleanup.
+// rest of those named are left where they are. The photos are marked here and
+// leave every listing at once; the cleanup job deletes their rows and files in
+// batches, so that a large trash is not one request's transaction.
 func (self *graph) DeletePhotos(ctx context.Context, arguments PhotoIDsArguments) (int, error) {
 	principal, err := self.requirePhotosPerson(ctx)
 	if err != nil {
 		return 0, err
 	}
-	store, err := self.photoStore()
-	if err != nil {
-		return 0, err
-	}
-	deletedCount, err := store.DeletePhotos(ctx, self.transaction(ctx), principal.User.ID, arguments.PhotoIDs)
+	deletedCount, err := self.transaction(ctx).MarkPhotosForDeletion(principal.User.ID, arguments.PhotoIDs)
 	return deletedCount, translateError(err)
 }
 
+// EmptyPhotoTrash deletes forever everything in the person's trash, the same
+// way DeletePhotos does, and says how many photos that was.
 func (self *graph) EmptyPhotoTrash(ctx context.Context) (int, error) {
 	principal, err := self.requirePhotosPerson(ctx)
 	if err != nil {
 		return 0, err
 	}
-	store, err := self.photoStore()
-	if err != nil {
-		return 0, err
-	}
-	deletedCount, err := store.EmptyTrash(ctx, self.transaction(ctx), principal.User.ID)
+	deletedCount, err := self.transaction(ctx).MarkTrashForDeletion(principal.User.ID)
 	return deletedCount, translateError(err)
 }
 

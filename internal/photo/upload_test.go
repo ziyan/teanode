@@ -458,6 +458,28 @@ func TestAFileThatIsNeitherAPictureNorAVideoIsRefused(test *testing.T) {
 	}
 }
 
+func TestAnSvgIsRefusedWhateverItIsCalled(test *testing.T) {
+	// An SVG is a document that can carry script, and a library serves what it
+	// keeps back to a browser.
+	fixture := newFixture(test)
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
+	declared := fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": "image/svg+xml", "X-Photo-Client-ID": "declared"}, svg)
+	fixture.expect(declared, http.StatusUnsupportedMediaType)
+	if !strings.Contains(declared.body, "image/svg+xml") {
+		test.Fatalf("the refusal does not name the type: %s", declared.body)
+	}
+	named := fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": "application/octet-stream", "X-Photo-Client-ID": "named", "X-Photo-Filename": "picture.svg"}, svg)
+	fixture.expect(named, http.StatusUnsupportedMediaType)
+	if fixture.count("photo") != "0" {
+		test.Fatal("a photo was made of an SVG")
+	}
+	// The types a camera writes are kept, however they are spelled.
+	for index, contentType := range []string{"image/png", "image/webp", "image/heic", "image/x-adobe-dng", "video/quicktime", "video/webm", "video/3gpp", "image/jpg"} {
+		got := fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": contentType, "X-Photo-Client-ID": "camera-" + contentType}, randomBytes(64, int64(60+index)))
+		fixture.expect(got, http.StatusCreated)
+	}
+}
+
 func TestDeletingAnUploadEndsItAndNothingMoreIsAcceptedForIt(test *testing.T) {
 	fixture := newFixture(test)
 	created := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("cancelled", "Upload-Complete", "?0"), randomBytes(500, 14))

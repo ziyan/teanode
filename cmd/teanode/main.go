@@ -91,6 +91,7 @@ func main() {
 			cmd.NewNoteCommand(),
 			cmd.NewFinanceCommand(),
 			cmd.NewRecordingCommand(),
+			cmd.NewPhotoCommand(),
 			cmd.NewAgentCommand(),
 			cmd.NewHookCommand(),
 			cmd.NewComputerCommand(),
