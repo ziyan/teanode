@@ -156,19 +156,21 @@ struct CirclesView: View {
         Section {
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: invitation.circleName)
-                HStack(spacing: 6) {
-                    if let kind = invitation.knownCircleKind {
-                        Text(kind.title).font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                        Text(verbatim: "·").font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                    }
-                    Text("Invited by \(invitation.invitedByName)").font(.footnote).foregroundStyle(Color(.secondaryLabel))
-                }
+                // One line of words, so that at the largest text it wraps as
+                // a sentence rather than in columns.
+                Text(verbatim: invitationDetails(invitation)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             }
             Button("Accept", systemImage: "checkmark") { answer(invitation, isAccepted: true) }
             Button("Decline", systemImage: "xmark") { answer(invitation, isAccepted: false) }
         } header: {
             if isFirst { Text("Invitations") }
         }
+    }
+
+    private func invitationDetails(_ invitation: CircleInvitation) -> String {
+        let invitedBy = String(localized: "Invited by \(invitation.invitedByName)")
+        guard let kind = invitation.knownCircleKind else { return invitedBy }
+        return "\(kind.title) · \(invitedBy)"
     }
 
     private func answer(_ invitation: CircleInvitation, isAccepted: Bool) {
@@ -191,11 +193,15 @@ struct CirclesView: View {
 /// many people are in it, beside a few of their pictures.
 private struct CircleRow: View {
     let circle: PeopleCircle
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private static let mostAvatars = 3
 
     var body: some View {
-        HStack(spacing: 12) {
+        // At the largest text the pictures go above the words, which would
+        // otherwise be squeezed to a letter a line beside them.
+        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             avatars
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: circle.name)

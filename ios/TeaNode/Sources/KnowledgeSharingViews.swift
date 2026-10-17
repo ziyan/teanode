@@ -253,8 +253,6 @@ struct KnowledgeShareSheet: View {
                 } else if isLoaded {
                     Section {
                         ShareTargetPicker(people: people, circles: circles, chosen: $chosen)
-                    } header: {
-                        Text("Share with")
                     } footer: {
                         Text("Choose a person, or a whole circle. They read this page and everything under it as it is now, and cannot change it.")
                     }

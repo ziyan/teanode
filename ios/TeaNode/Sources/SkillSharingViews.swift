@@ -551,15 +551,15 @@ struct SkillShareCallCard: View {
     @State private var problemText: String?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    /// The two buttons side by side, or one above the other once the text is
-    /// too large for both words to fit on a line.
-    private var buttonLayout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+    /// A fact's name beside its value, and above it at the largest text.
+    private func factLayout(spacing: CGFloat) -> AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: spacing / 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: spacing))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+            (dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 10))) {
                 AvatarView(name: call.shownGrantee, avatarUrl: call.granteeAvatarUrl, colorIndex: call.granteeAvatarColorIndex, size: 32)
                 Text(isOwner ? String(localized: "\(call.shownGrantee)’s agent asked to run \(call.toolName) with your \(call.skillName) skill") : String(localized: "Your agent asked to run \(call.toolName) with \(call.ownerName)’s \(call.skillName) skill"))
                     .font(.subheadline.weight(.semibold))
@@ -589,19 +589,11 @@ struct SkillShareCallCard: View {
                 TextField("A word for \(call.shownGrantee) (optional)", text: $note)
                     .textFieldStyle(.roundedBorder)
                     .disabled(isAnswering)
-                buttonLayout {
-                    Button {
-                        Task { await answer(isApproved: true) }
-                    } label: {
-                        Text("Approve and run it").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Button {
-                        Task { await answer(isApproved: false) }
-                    } label: {
-                        Text("Decline").frame(maxWidth: .infinity).foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.bordered)
+                // The two buttons side by side while both words fit on one
+                // line each, and one above the other once they do not.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { answerButtons(isOneLine: true) }
+                    VStack(spacing: 10) { answerButtons(isOneLine: false) }
                 }
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
@@ -623,12 +615,40 @@ struct SkillShareCallCard: View {
         .accessibilityElement(children: .contain)
     }
 
+    @ViewBuilder
+    private func answerButtons(isOneLine: Bool) -> some View {
+        Button {
+            Task { await answer(isApproved: true) }
+        } label: {
+            answerLabel("Approve and run it", isOneLine: isOneLine)
+        }
+        .buttonStyle(.borderedProminent)
+        Button {
+            Task { await answer(isApproved: false) }
+        } label: {
+            answerLabel("Decline", isOneLine: isOneLine).foregroundStyle(.primary)
+        }
+        .buttonStyle(.bordered)
+    }
+
+    /// A button's words. Side by side they keep their whole width, so that the
+    /// pair no longer fits, and is stacked, before a word would be cut.
+    @ViewBuilder
+    private func answerLabel(_ words: LocalizedStringKey, isOneLine: Bool) -> some View {
+        if isOneLine {
+            Text(words).fixedSize().frame(maxWidth: .infinity)
+        } else {
+            Text(words).frame(maxWidth: .infinity)
+        }
+    }
+
     private func fact(_ name: String, _ value: String, isProminent: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(verbatim: name).font(.footnote).foregroundStyle(.secondary).frame(minWidth: 70, alignment: .leading)
+        (factLayout(spacing: 8)) {
+            Text(verbatim: name).font(.footnote).foregroundStyle(.secondary)
+                .frame(minWidth: dynamicTypeSize.isAccessibilitySize ? nil : 70, alignment: .leading)
             // Whole, and wrapped: the owner approves exactly this call.
             Text(verbatim: value).font(isProminent ? .headline : .callout).fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 0) }
         }
     }
 

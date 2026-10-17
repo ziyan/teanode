@@ -45,8 +45,8 @@ type ChatRecipient struct {
 	// they have not asked for any.
 	MutedUntil *time.Time
 
-	// IsConversationArchived says the member put the chat away: it is as quiet for them as
-	// a muted one.
+	// IsConversationArchived says the member put the chat away: it is as
+	// quiet for them as a muted one.
 	IsConversationArchived bool
 }
 
