@@ -5651,7 +5651,7 @@ export const ja: Catalog = {
   'photos.describeHintNamed': '{name}が写真を見て内容を書き出すので、検索で見つけられるようになります。',
   'services.photosOnlyPassword':
     'この名前のデバイスが写真をバックアップして読み取れるようにします。それ以外はできません。',
-  'serverSettings.photosFaces': '写真から顔を見つける',
+  'serverSettings.photosFaces': '写真から人物を見つける',
   'serverSettings.photosFacesHint': '写真に写っている人を見つけてグループにします。オフにすると、このサーバーの全員について顔を見つけなくなります。',
   'serverSettings.photosTitle': '写真',
   'serverSettings.photosIntro': '各ユーザーの写真ライブラリの上限です。変更は次のアップロードから有効になります。',

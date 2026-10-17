@@ -17251,6 +17251,9 @@ body.has-recording-bar .content {
 }
 
 .welcome-other {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   margin-top: var(--space-5);
   text-align: center;
 }
@@ -17519,6 +17522,7 @@ body.has-recording-bar .content {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  min-height: 34px;
   padding: 4px 12px;
   border-radius: var(--radius-round);
   font-size: var(--text-label);
@@ -17805,4 +17809,28 @@ label.checkbox.is-plain > span > .muted {
   display: inline-flex;
   flex-wrap: nowrap;
   gap: var(--space-2);
+}
+
+/* On a phone every Photos control is a 44px target, the small ones in lists
+   and trays too, and the page ends clear of the floating assistant button,
+   which would otherwise sit over its last line. */
+@media (max-width: 600px) {
+  .photos-page {
+    padding-bottom: 88px;
+  }
+
+  .photo-viewer-albums a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .photo-person-head-body button {
+    min-height: 44px;
+  }
+
+  .photo-tray-item .icon-action {
+    width: 44px;
+    height: 44px;
+  }
 }

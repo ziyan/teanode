@@ -28,7 +28,7 @@ it('turns finding faces off for everybody, and says that is what it does', async
       </ToastProvider>
     </TranslationProvider>,
   )
-  const faces = screen.getByRole('checkbox', { name: 'Find faces in photos' }) as HTMLInputElement
+  const faces = screen.getByRole('checkbox', { name: 'Find people in photos' }) as HTMLInputElement
   expect(faces.checked).toBe(true)
   expect(screen.getByText(/stops finding faces for everybody on this server/)).toBeTruthy()
   fireEvent.click(faces)

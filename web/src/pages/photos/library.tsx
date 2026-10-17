@@ -158,7 +158,10 @@ function AccountPhotosPage() {
   const displayedName = useDisplayedPersonName()
   const canNamePeople =
     session.services?.isContactsEnabled === true && hasPermission(session.permissions, 'contacts:use')
-  const isAssistantOn = session.services?.isAssistantEnabled === true
+  // Asking about a photo needs an assistant on the server and one this person
+  // may use, as the sidebar's assistant links do.
+  const isAssistantOn =
+    session.services?.isAssistantEnabled === true && hasPermission(session.permissions, 'agent:use')
   const circleChoices = useCircleChoices()
 
   const listKind: PhotoListKind = isInsideCollection

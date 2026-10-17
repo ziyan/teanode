@@ -12,14 +12,15 @@ vi.mock('../../api', async (importOriginal) => ({
   graphql: vi.fn(),
   askAgentAbout: vi.fn(),
 }))
-// Whether the session has an assistant to ask.
+// Whether the session has an assistant to ask, and may use one.
 let isAssistantEnabled = false
+let sessionPermissions = ['photos:use', 'agent:use']
 vi.mock('../../session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session')>()),
   useSession: () => ({
     userId: 'person-1',
     services: { isPhotosEnabled: true, isAssistantEnabled },
-    permissions: { everywhere: ['photos:use'], byDomain: [] },
+    permissions: { everywhere: sessionPermissions, byDomain: [] },
   }),
 }))
 // Files whose names start with "hang" are never read to the end.
@@ -1030,4 +1031,36 @@ it('offers nothing near here for a photo with no place', async () => {
   show('/photos/photo-1')
   await screen.findByRole('button', { name: 'Details' })
   expect(screen.queryByRole('button', { name: 'Photos taken near here' })).toBeNull()
+})
+
+it('offers no asking about a photo to a person who may not use an assistant', async () => {
+  isAssistantEnabled = true
+  sessionPermissions = ['photos:use']
+  library = library.map((photo) => (photo.id === 'photo-1' ? { ...photo, placeName: 'Harbor Town' } : photo))
+  readPhotoAnswer = async (photoId) => ({
+    ReadPhoto: {
+      photo: {
+        ...photoFixture(photoId, { placeName: 'Harbor Town' }),
+        photoDescription: '',
+        descriptionVisibleText: '',
+        describedAt: null,
+        isDescriptionRequested: false,
+      },
+      photoFiles: [],
+      albums: [],
+      faces: [],
+    },
+  })
+  try {
+    show('/photos/photo-1')
+    // The details have loaded: the place is shown, and nothing offers asking.
+    await screen.findByText('Harbor Town')
+    // Asking is offered once the picture shown is known, a moment after the
+    // details: long enough for it to have come if it were going to.
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(screen.queryByRole('button', { name: /about this photo/ })).toBeNull()
+  } finally {
+    isAssistantEnabled = false
+    sessionPermissions = ['photos:use', 'agent:use']
+  }
 })
