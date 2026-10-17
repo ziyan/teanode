@@ -994,6 +994,7 @@ export const zh: Catalog = {
   'phones.kind.circle': '圈子邀请',
   'phones.kind.chat': '聊天里其他人发来的消息',
   'phones.kind.skillShareCall': '你共享的技能有调用在等你处理时',
+  'phones.kind.photo': '有人向与你共享的相簿添加了照片',
   'agent.chatApps': '聊天应用',
   'agent.chatAppsHint':
     '通过你自己的机器人，在 Telegram 或 Discord 中与助手的主聊天交谈。在应用里创建机器人，把它的令牌粘贴到这里，然后把显示的代码发给机器人以关联该聊天。只有关联的聊天能联系到你的助手；它工作时会显示正在输入，发送它制作的内容，接收文件和照片，并用抽屉里同样的卡片向你确认。',
@@ -5314,7 +5315,7 @@ export const zh: Catalog = {
   'photos.trayFinished': '已完成 {count} 个',
   'photos.trayMoreWaiting': '还有 {count} 个在等待',
   'photos.trayMoreFailed': '另有 {count} 个失败',
-  'photos.uploadInLibrary': '请在图库中上传照片，然后再把它们添加到相册。',
+  'photos.uploadInLibrary': '请在图库中上传照片，然后再把它们添加到相簿。',
   'photos.noAddressBook': '没有可保存此联系人的通讯录。请先打开“联系人”创建一个。',
   'photos.emptyFiltered': '没有符合搜索和筛选条件的照片。',
   'photos.filterKind': '类型',
