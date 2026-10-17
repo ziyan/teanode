@@ -622,6 +622,36 @@ final class PhotoBackupServerTests: XCTestCase {
         XCTAssertTrue(PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: true).allowsCellularAccess)
     }
 
+    func testTheRequestDeclaresTheFilesDigestInLowercaseOnlyWhenItIsSixtyFourHexadecimalDigits() throws {
+        let server = try ServerAddress(parsing: "photos.example.com")
+        let credential = PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret")
+        let upload = try XCTUnwrap(PhotoBackupPlanner.plan(items: [makeItem("a", cloudIdentifier: "cloud-a")], records: [:]).first)
+        let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        let declared = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: false, sha256: digest.uppercased())
+        XCTAssertEqual(declared.value(forHTTPHeaderField: "X-Photo-Declared-SHA256"), digest)
+        for notADigest in [nil, "", "abc", String(digest.dropLast()), digest + "0", String(repeating: "g", count: 64)] {
+            let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: false, sha256: notADigest)
+            XCTAssertNil(request.value(forHTTPHeaderField: "X-Photo-Declared-SHA256"), "\(notADigest ?? "nil") is not sent")
+        }
+    }
+
+    func testTheDigestOfTheExportedFileIsSentOnTheUploadsRequest() async throws {
+        let rig = try makeRig(self, items: [makeItem("a"), makeItem("b", secondsSince2026: 50)])
+        let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        rig.library.set(sha256: digest, for: PhotoBackupUpload.key(localIdentifier: "a", role: .original))
+        let coordinator = rig.coordinator
+        rig.transfer.onStart = { job in
+            rig.transfer.release(job)
+            Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-" + job.localIdentifier)) }
+        }
+        _ = await coordinator.runPass(settings: settings)
+        let requests = rig.transfer.startedRequests
+        XCTAssertEqual(requests.count, 2)
+        let sent = requests.map { $0.value(forHTTPHeaderField: "X-Photo-Declared-SHA256") }
+        XCTAssertTrue(sent.contains(digest), "the file with a digest declares it")
+        XCTAssertTrue(sent.contains(nil), "a file whose digest could not be worked out is sent without one")
+    }
+
     func testTheBudgetKeepsFourUploadsAndTwoGigabytesButAlwaysTakesTheFirst() {
         let budget = PhotoBackupBudget.standard
         let gigabyte: Int64 = 1024 * 1024 * 1024
@@ -715,6 +745,7 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     private let lock = NSLock()
     private var allItems: [PhotoBackupItem]
     private var exportedBytes: [String: Int64] = [:]
+    private var exportedDigests: [String: String] = [:]
     private var unavailableKeys: Set<String> = []
     private var unavailableFailures: [String: PhotoBackupFailure] = [:]
     private var failedKeys: Set<String> = []
@@ -735,6 +766,7 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
 
     func set(access: PhotoBackupAccess) { lock.withLock { accessLevel = access } }
     func set(bytes: Int64, for key: String) { lock.withLock { exportedBytes[key] = bytes } }
+    func set(sha256: String, for key: String) { lock.withLock { exportedDigests[key] = sha256 } }
     func set(unavailable key: String, _ isUnavailable: Bool, failure: PhotoBackupFailure = .systemDescription("in iCloud")) {
         lock.withLock {
             if isUnavailable {
@@ -777,9 +809,9 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
     }
 
     func export(_ upload: PhotoBackupUpload, to directory: URL, mayUseExpensiveNetwork: Bool, includesHidden: Bool) async throws -> PhotoBackupExportedFile {
-        let (bytes, isUnavailable, isFailed) = lock.withLock {
+        let (bytes, digest, isUnavailable, isFailed) = lock.withLock {
             exportedIncludesHidden.append(includesHidden)
-            return (exportedBytes[upload.key] ?? 10, unavailableKeys.contains(upload.key), failedKeys.contains(upload.key))
+            return (exportedBytes[upload.key] ?? 10, exportedDigests[upload.key], unavailableKeys.contains(upload.key), failedKeys.contains(upload.key))
         }
         if isUnavailable {
             throw PhotoBackupLibraryError.unavailable(lock.withLock { unavailableFailures[upload.key] } ?? .systemDescription("in iCloud"))
@@ -787,7 +819,7 @@ private final class FakeLibrary: PhotoBackupLibrary, @unchecked Sendable {
         if isFailed { throw PhotoBackupLibraryError.failed(.systemDescription("cannot be read")) }
         let outgoingFilename = UUID().uuidString
         try Data(count: Int(min(bytes, 1000))).write(to: directory.appendingPathComponent(outgoingFilename))
-        return PhotoBackupExportedFile(outgoingFilename: outgoingFilename, sizeBytes: bytes)
+        return PhotoBackupExportedFile(outgoingFilename: outgoingFilename, sizeBytes: bytes, sha256: digest)
     }
 }
 
@@ -870,8 +902,7 @@ private struct Rig {
 
 private func makeRig(
     _ test: XCTestCase, items: [PhotoBackupItem], lookup: FakeLookup? = nil, network: FakeNetwork = FakeNetwork(), budget: PhotoBackupBudget = .standard,
-    index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300,
-    isAppActive: @escaping @Sendable () -> Bool = { true }
+    index existingIndex: PhotoBackupIndex? = nil, directory existingDirectory: URL? = nil, idleTimeoutSeconds: TimeInterval = 300
 ) throws -> Rig {
     let directory = try existingDirectory ?? temporaryDirectory(test)
     let outgoing = directory.appendingPathComponent("outgoing")
@@ -883,7 +914,7 @@ private func makeRig(
         index: index, library: library, transfer: transfer, lookup: lookup, network: network, outgoingDirectory: outgoing,
         server: try ServerAddress(parsing: "photos.example.com"), accountKey: "photos.example.com|robin",
         credential: PhotoBackupCredential(credentialId: "c1", credentialName: "backup", username: "robin", password: "sync-secret"),
-        budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, now: { Date(timeIntervalSince1970: 1_800_000_000) }, isAppActive: isAppActive)
+        budget: budget, idleTimeoutSeconds: idleTimeoutSeconds, now: { Date(timeIntervalSince1970: 1_800_000_000) })
     return Rig(directory: directory, outgoing: outgoing, index: index, library: library, transfer: transfer, coordinator: coordinator)
 }
 
@@ -1293,8 +1324,8 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
         XCTAssertEqual(retryTime, Date(timeIntervalSince1970: 1_800_000_060))
     }
 
-    func testAnUploadThatFinishesWhileTheAppIsNotActiveIsWrittenAtOnceEvenDuringAPass() async throws {
-        let rig = try makeRig(self, items: [makeItem("a", secondsSince2026: 100), makeItem("b", secondsSince2026: 90)], isAppActive: { false })
+    func testAnUploadThatFinishesDuringAPassIsNotWrittenAtOnceButWhenThePassEnds() async throws {
+        let rig = try makeRig(self, items: [makeItem("a", secondsSince2026: 100), makeItem("b", secondsSince2026: 90)])
         let coordinator = rig.coordinator
         rig.transfer.onStart = { job in
             // The first file goes up; the second stays with the session, so the pass is still running.
@@ -1303,15 +1334,18 @@ final class PhotoBackupCoordinatorTests: XCTestCase {
             Task { await coordinator.finished(job, outcome: .uploaded(serverPhotoId: "p-a")) }
         }
         let pass = Task { await coordinator.runPass(settings: settings) }
-        let indexFile = rig.directory.appendingPathComponent(PhotoBackupIndex.indexFilename)
-        try await waitUntil("the index on disk has the upload") {
-            ((try? String(contentsOf: indexFile, encoding: .utf8)) ?? "").contains("p-a")
-        }
+        try await waitUntil("the index holds the upload") { await rig.index.record(forLocalIdentifier: "a")?.serverPhotoId == "p-a" }
         let isRunning = await coordinator.isPassRunning
-        XCTAssertTrue(isRunning, "the index was written while the pass was still running")
+        XCTAssertTrue(isRunning, "the pass is still running")
+        // The clock does not move, so the thirty seconds between writes have not passed: the file is not rewritten for this upload.
+        let indexFile = rig.directory.appendingPathComponent(PhotoBackupIndex.indexFilename)
+        let textDuringPass = (try? String(contentsOf: indexFile, encoding: .utf8)) ?? ""
+        XCTAssertFalse(textDuringPass.contains("p-a"), "a pass does not rewrite the index for every upload")
         await coordinator.stop()
         for job in rig.transfer.startedJobs { rig.transfer.release(job) }
         _ = await pass.value
+        let textAfterPass = try String(contentsOf: indexFile, encoding: .utf8)
+        XCTAssertTrue(textAfterPass.contains("p-a"), "the end of the pass writes what is left")
     }
 
     func testTheHiddenAlbumSettingIsUsedWhenAFileIsExported() async throws {
@@ -1666,3 +1700,19 @@ private final class StatusLog: @unchecked Sendable {
     func add(_ status: PhotoBackupStatus) { lock.withLock { statuses.append(status) } }
     var all: [PhotoBackupStatus] { lock.withLock { statuses } }
 }
+
+#if canImport(CryptoKit)
+    final class PhotoFileDigestTests: XCTestCase {
+        func testTheDigestIsTheLowercaseSha256OfTheWholeFileReadInPieces() throws {
+            let directory = try temporaryDirectory(self)
+            let small = directory.appendingPathComponent("small")
+            try Data("abc".utf8).write(to: small)
+            XCTAssertEqual(PhotoFileDigest.sha256(ofFileAt: small), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+            // More than one piece long: a million 'a' is a published test vector.
+            let large = directory.appendingPathComponent("large")
+            try Data(repeating: UInt8(ascii: "a"), count: 1_000_000).write(to: large)
+            XCTAssertEqual(PhotoFileDigest.sha256(ofFileAt: large), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
+            XCTAssertNil(PhotoFileDigest.sha256(ofFileAt: directory.appendingPathComponent("missing")))
+        }
+    }
+#endif

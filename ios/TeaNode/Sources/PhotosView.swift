@@ -1050,7 +1050,8 @@ struct PhotosScreen: View {
                                 .padding(.bottom, 4)
                         }
                         PhotoGrid(
-                            listing: listing, listKey: key, model: model, scope: .library, isSelecting: isSelecting, selectedPhotoIds: $selectedPhotoIds
+                            listing: listing, listKey: key, model: model, scope: .library, isSelecting: isSelecting, selectedPhotoIds: $selectedPhotoIds,
+                            trashRetentionDays: model.library?.trashRetentionDays
                         ) { photo in
                             opened = OpenedPhoto(id: photo.id)
                         }
@@ -1089,7 +1090,11 @@ private struct LibrarySearch: ViewModifier {
 
     func body(content: Content) -> some View {
         if isActive {
-            content.searchable(text: $text, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("Search places, files, cameras, descriptions"))
+            // The field is narrow: it says "Search photos", as the dashboard's
+            // does, and VoiceOver reads what it looks through.
+            content.searchable(
+                text: $text, placement: .navigationBarDrawer(displayMode: .always),
+                prompt: Text("Search photos").accessibilityLabel(Text("Search places, files, cameras, descriptions")))
         } else {
             content
         }
@@ -1144,27 +1149,31 @@ struct PhotoGrid: View {
     /// Whether a touch and hold on a photo opens its menu. A picker that only
     /// chooses leaves it out.
     var isMenuAvailable = true
+    /// How long the server keeps a photo in the Trash, for the Trash's groups to
+    /// say when each goes; nil or zero when it does not say.
+    var trashRetentionDays: Int?
     let onOpen: (Photo) -> Void
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
-            ForEach(listing.days) { day in
-                Section {
-                    ForEach(day.photos) { photo in
-                        PhotoCell(
-                            photo: photo, model: model, listKey: listKey, scope: scope, isSelecting: isSelecting, isSelected: selectedPhotoIds.contains(photo.id),
-                            isMenuAvailable: isMenuAvailable
-                        ) {
-                            if isSelecting {
-                                if selectedPhotoIds.contains(photo.id) { selectedPhotoIds.remove(photo.id) } else { selectedPhotoIds.insert(photo.id) }
-                            } else {
-                                onOpen(photo)
-                            }
-                        }
+            if listKey.photoCollection == .trash {
+                // The Trash is listed by when photos were moved there, so its
+                // groups are the days they were moved on, each with when it goes.
+                ForEach(PhotoTimeline.trashDays(listing.photos, retentionDays: trashRetentionDays ?? 0)) { day in
+                    Section {
+                        cells(of: day.photos)
+                    } header: {
+                        PhotoTrashDayHeader(day: day)
                     }
-                } header: {
-                    // A search lists the best match first, in one group.
-                    if !listing.isRanked { PhotoDayHeader(day: day) }
+                }
+            } else {
+                ForEach(listing.days) { day in
+                    Section {
+                        cells(of: day.photos)
+                    } header: {
+                        // A search lists the best match first, in one group.
+                        if !listing.isRanked { PhotoDayHeader(day: day) }
+                    }
                 }
             }
         }
@@ -1172,6 +1181,61 @@ struct PhotoGrid: View {
             ProgressView()
                 .padding()
         }
+    }
+
+    @ViewBuilder
+    private func cells(of photos: [Photo]) -> some View {
+        ForEach(photos) { photo in
+            PhotoCell(
+                photo: photo, model: model, listKey: listKey, scope: scope, isSelecting: isSelecting, isSelected: selectedPhotoIds.contains(photo.id),
+                isMenuAvailable: isMenuAvailable
+            ) {
+                if isSelecting {
+                    if selectedPhotoIds.contains(photo.id) { selectedPhotoIds.remove(photo.id) } else { selectedPhotoIds.insert(photo.id) }
+                } else {
+                    onOpen(photo)
+                }
+            }
+        }
+    }
+}
+
+/// PhotoTrashDayHeader is above the photos moved to the Trash on one day: the
+/// day, and when they are deleted forever, as the dashboard says it.
+struct PhotoTrashDayHeader: View {
+    let day: PhotoTrashDay
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let dayText {
+                Text("Moved to the Trash on \(dayText)")
+                    .font(.headline)
+            }
+            if let daysLeftText {
+                Text(daysLeftText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The day on the phone's clock, with the year only when it is not this year.
+    private var dayText: String? {
+        guard let trashedAt = day.trashedAt else { return nil }
+        var style = Date.FormatStyle().weekday(.abbreviated).month(.abbreviated).day()
+        if Calendar.current.component(.year, from: trashedAt) != Calendar.current.component(.year, from: Date()) { style = style.year() }
+        return trashedAt.formatted(style)
+    }
+
+    private var daysLeftText: String? {
+        guard let daysLeft = day.daysLeft else { return nil }
+        return daysLeft == 0 ? String(localized: "Deleted forever today") : String(localized: "Deleted forever in \(daysLeft) days")
     }
 }
 

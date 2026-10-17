@@ -407,7 +407,7 @@ struct AgentPhotoViewer: View {
     var body: some View {
         switch readiness {
         case .ready:
-            PhotoViewer(model: model, listKey: .library, openedPhotoId: photoId)
+            PhotoViewer(model: model, listKey: .library, openedPhotoId: photoId, canShowNearby: false)
         case .reading:
             ProgressView()
                 .task { await read() }

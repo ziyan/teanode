@@ -24,6 +24,9 @@
             var isFavorite = false
             var processingState = "ready"
             var isTrashed = false
+            /// How long ago it was moved to the Trash, so that the Trash's groups and the days left do not
+            /// depend on the day the screenshots are taken.
+            var trashedDaysAgo = 2
             var placeName = ""
             var isPortrait = false
             /// Where it was taken, if the server tells the reader.
@@ -92,7 +95,7 @@
             DemoPhoto(id: "demo-s6", kind: "picture", takenAt: "2026-09-27T16:00:00Z", offsetMinutes: -240, isPortrait: true, ownerName: "Casey Example"),
             DemoPhoto(id: "demo-t1", kind: "picture", takenAt: "2026-10-09T10:00:00Z", offsetMinutes: -240, isTrashed: true),
             DemoPhoto(id: "demo-t2", kind: "picture", takenAt: "2026-10-09T09:00:00Z", offsetMinutes: -240, isTrashed: true, isPortrait: true),
-            DemoPhoto(id: "demo-t3", kind: "video", takenAt: "2026-10-08T17:00:00Z", offsetMinutes: -240, durationMS: 9_000, isTrashed: true),
+            DemoPhoto(id: "demo-t3", kind: "video", takenAt: "2026-10-08T17:00:00Z", offsetMinutes: -240, durationMS: 9_000, isTrashed: true, trashedDaysAgo: 9),
         ]
 
         private struct DemoAlbum {
@@ -207,7 +210,7 @@
             let smallPreviewUrl = isReady ? previewPath + "small?v=1" : ""
             let largePreviewUrl = isReady ? previewPath + "large?v=1" : ""
             let videoPreviewUrl = isReady && isVideo ? previewPath + "video?v=1" : ""
-            let trashedAt = photo.isTrashed ? #""2026-10-12T10:00:00Z""# : "null"
+            let trashedAt = photo.isTrashed ? "\"" + ISO8601DateFormatter().string(from: Date().addingTimeInterval(-Double(photo.trashedDaysAgo) * 86_400)) + "\"" : "null"
             // A photo another person shared without places reaches the reader with no file name and
             // no files of its own, only previews, as the server sends it.
             let fileRoles = (photo.isForeign ? [] : photo.fileRoles).map { "\"" + $0 + "\"" }.joined(separator: ",")

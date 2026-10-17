@@ -218,7 +218,10 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
                 try? FileManager.default.removeItem(at: fileURL)
                 throw PhotoBackupLibraryError.failed(.fileIsEmpty)
             }
-            return PhotoBackupExportedFile(outgoingFilename: outgoingFilename, sizeBytes: sizeBytes)
+            // Read once more, in pieces, for the digest the upload declares: a
+            // picture the server already has (kept from a conversation, say) is
+            // then recognized and does not need room again.
+            return PhotoBackupExportedFile(outgoingFilename: outgoingFilename, sizeBytes: sizeBytes, sha256: PhotoFileDigest.sha256(ofFileAt: fileURL))
         } catch let error as PhotoBackupLibraryError {
             throw error
         } catch {

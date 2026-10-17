@@ -70,10 +70,15 @@ public struct PhotoBackupExportedFile: Equatable, Sendable {
     /// The name of the file in the outgoing directory.
     public let outgoingFilename: String
     public let sizeBytes: Int64
+    /// The SHA-256 of the file's bytes in lowercase hexadecimal, sent with the
+    /// upload; nil when it could not be worked out, and then the file is sent
+    /// without it.
+    public let sha256: String?
 
-    public init(outgoingFilename: String, sizeBytes: Int64) {
+    public init(outgoingFilename: String, sizeBytes: Int64, sha256: String? = nil) {
         self.outgoingFilename = outgoingFilename
         self.sizeBytes = sizeBytes
+        self.sha256 = sha256
     }
 }
 
@@ -377,10 +382,19 @@ public enum PhotoBackupRequest {
     /// separately. It does not carry the resumable-upload headers: URLSession
     /// adds its own for a server that answers with the 104, and a second,
     /// differently written, set would only confuse the server.
-    public static func make(server: ServerAddress, credential: PhotoBackupCredential, upload: PhotoBackupUpload, usesMobileData: Bool) -> URLRequest {
+    ///
+    /// `sha256` is the digest of the file, which the server holds the upload to
+    /// (a file that does not hash to it is refused) and uses to recognize a
+    /// picture it already has. Only 64 hexadecimal digits are sent.
+    public static func make(
+        server: ServerAddress, credential: PhotoBackupCredential, upload: PhotoBackupUpload, usesMobileData: Bool, sha256: String? = nil
+    ) -> URLRequest {
         var request = URLRequest(url: server.endpoint(uploadPath))
         request.httpMethod = "POST"
         for (name, value) in upload.headers { request.setValue(value, forHTTPHeaderField: name) }
+        if let digest = sha256?.lowercased(), digest.count == 64, digest.allSatisfy({ $0.isASCII && $0.isHexDigit }) {
+            request.setValue(digest, forHTTPHeaderField: PhotoBackupHeader.declaredSha256)
+        }
         request.setValue(credential.authorizationHeader, forHTTPHeaderField: "Authorization")
         request.allowsCellularAccess = usesMobileData
         #if !canImport(FoundationNetworking)
@@ -518,10 +532,6 @@ public actor PhotoBackupCoordinator {
     private let idleTimeoutSeconds: TimeInterval
     private let now: @Sendable () -> Date
     private let fileManager: FileManager
-    /// Whether the app is the one the person is using. When it is not, it may
-    /// be suspended at any moment, so what an upload came to is written to
-    /// the index at once.
-    private let isAppActive: @Sendable () -> Bool
 
     private var outstanding: [String: Outstanding] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -553,7 +563,7 @@ public actor PhotoBackupCoordinator {
         index: PhotoBackupIndex, library: any PhotoBackupLibrary, transfer: any PhotoBackupTransfer, lookup: (any PhotoBackupServerLookup)?,
         network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String, credential: PhotoBackupCredential,
         budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, now: @escaping @Sendable () -> Date = { Date() },
-        fileManager: FileManager = .default, isAppActive: @escaping @Sendable () -> Bool = { true }
+        fileManager: FileManager = .default
     ) {
         self.index = index
         self.library = library
@@ -568,7 +578,6 @@ public actor PhotoBackupCoordinator {
         self.idleTimeoutSeconds = idleTimeoutSeconds
         self.now = now
         self.fileManager = fileManager
-        self.isAppActive = isAppActive
     }
 
     public func setStatusHandler(_ handler: (@Sendable (PhotoBackupStatus) -> Void)?) {
@@ -881,7 +890,7 @@ public actor PhotoBackupCoordinator {
             accountKey: accountKey, localIdentifier: upload.localIdentifier, role: upload.role, clientPhotoId: upload.clientPhotoId,
             filename: upload.filename, assetModificationDate: upload.assetModificationDate, outgoingFilename: exported.outgoingFilename,
             sizeBytes: exported.sizeBytes)
-        let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: settings.usesMobileData)
+        let request = PhotoBackupRequest.make(server: server, credential: credential, upload: upload, usesMobileData: settings.usesMobileData, sha256: exported.sha256)
         outstanding[job.key] = Outstanding(sizeBytes: exported.sizeBytes, filename: upload.filename, outgoingFilename: exported.outgoingFilename)
         do {
             try await transfer.start(request: request, job: job, fileURL: outgoingDirectory.appendingPathComponent(exported.outgoingFilename))
@@ -938,10 +947,13 @@ public actor PhotoBackupCoordinator {
             leftForLaterFileCount += 1
             if !isRunning { phase = .waitingForNetwork }
         }
-        // With no pass running nobody writes the index afterwards, and an app
-        // that is not the one in use may be suspended at once: what this upload
-        // came to is written now.
-        if !isRunning || !isAppActive() { await index.flush() }
+        // With no pass running nobody writes the index afterwards (an upload
+        // the system finished while the app was suspended): what this upload
+        // came to is written now. During a pass the index is written at most
+        // every `PhotoBackupIndex.secondsBetweenWrites`, when the pass ends,
+        // and when the session has delivered its events or the app goes to the
+        // background, so a pass does not rewrite it for every file.
+        if !isRunning { await index.flush() }
         resumeWaiters()
         await publish()
     }

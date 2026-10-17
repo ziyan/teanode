@@ -5,22 +5,6 @@ import Observation
 import TeaNodeKit
 import UIKit
 
-/// PhotoBackupAppActivity says whether the app is the one the person is using,
-/// readable from any thread, for the coordinator to decide when to write the
-/// index. It starts as not active, which only makes the index written more
-/// often.
-final class PhotoBackupAppActivity: @unchecked Sendable {
-    static let shared = PhotoBackupAppActivity()
-
-    private let lock = NSLock()
-    private var isActiveNow = false
-
-    var isActive: Bool {
-        get { lock.withLock { isActiveNow } }
-        set { lock.withLock { isActiveNow = newValue } }
-    }
-}
-
 /// PhotoBackupEngine backs up this iPhone's photo library to the server. The
 /// screens read its `status` and turn it on and off; the work is done by a
 /// PhotoBackupCoordinator (TeaNodeKit), which reads the library, queues the
@@ -123,16 +107,6 @@ final class PhotoBackupEngine {
         // background writes what is left, as the app may be suspended at once.
         NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated { PhotoBackupEngine.shared.sceneWentToBackground() }
-        }
-        // The coordinator writes the index at once after an upload that
-        // finishes while the app is not the one in use, since it may be
-        // suspended right after.
-        PhotoBackupAppActivity.shared.isActive = UIApplication.shared.applicationState == .active
-        NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            PhotoBackupAppActivity.shared.isActive = true
-        }
-        NotificationCenter.default.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
-            PhotoBackupAppActivity.shared.isActive = false
         }
     }
 
@@ -601,8 +575,7 @@ final class PhotoBackupEngine {
         let connection = Self.makeConnection(accountKey: accountKey)
         let made = PhotoBackupCoordinator(
             index: try makeIndex(), library: PhotoKitLibrary(), transfer: PhotoBackupSession.shared, lookup: connection, network: DeviceNetwork(),
-            outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential,
-            isAppActive: { PhotoBackupAppActivity.shared.isActive })
+            outgoingDirectory: outgoing, server: account.server, accountKey: accountKey, credential: credential)
         coordinator = made
         coordinatorAccountKey = accountKey
         // A pass started by a background task launch has not come through the
