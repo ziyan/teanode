@@ -184,7 +184,8 @@ struct CirclesView: View {
             // about the family's location.
             if isDone, isAccepted {
                 let own = CircleCalendarOffer.ownCalendar(among: (try? await directory.connection.calendars()) ?? [])
-                calendarOffer = CircleCalendarOffer(accepting: invitation, calendarId: own?.id)
+                calendarOffer = CircleCalendarOffer(
+                    accepting: invitation, calendarId: own?.id, canShareLocation: AppModel.shared.canUseLocation)
             }
         }
     }

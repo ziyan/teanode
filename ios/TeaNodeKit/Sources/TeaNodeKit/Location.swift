@@ -1,9 +1,9 @@
 import Foundation
 
 // Where the person goes, the places they name and the visits they make, as
-// the server keeps them (docs/planning/location-execplan.md). The phone
-// reports points and visits (LocationOutbox.swift holds what waits to be
-// reported); the screens read them back here.
+// the server keeps them. The phone reports points (one reported position
+// each) and visits (LocationOutbox.swift holds what waits to be reported);
+// the screens read them back here.
 
 /// PlaceLabel is what a place is to the person: the fixed list the server
 /// checks, which the agent reads for "at home" and "at work".
@@ -67,7 +67,7 @@ public struct LocationPoint: Codable, Hashable, Sendable {
     }
 }
 
-/// LocationPlace is a spot with a name and a radius, belonging to one person.
+/// LocationPlace is a place with a name and a radius, belonging to one person.
 public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let userId: String
@@ -129,7 +129,7 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-/// PlaceVisit is one stay at a place.
+/// PlaceVisit is one visit to a place: from arriving to leaving.
 public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let place: LocationPlace
@@ -155,8 +155,8 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
     /// arrival was not seen.
     public var anchorDate: Date? { arrivedDate ?? departedDate }
 
-    /// How long the stay was, when both ends are known.
-    public var stayDuration: Duration? {
+    /// How long the visit was, when both ends are known.
+    public var visitDuration: Duration? {
         if let durationSeconds { return .seconds(durationSeconds) }
         guard let arrivedDate, let departedDate else { return nil }
         return .seconds(max(0, departedDate.timeIntervalSince(arrivedDate)))
@@ -179,8 +179,7 @@ public struct PlaceVisit: Codable, Identifiable, Hashable, Sendable {
 }
 
 /// PersonLocation is where one person is: the latest point and the visit in
-/// progress. The person's own, or from milestone 4 somebody sharing with
-/// them.
+/// progress. The person's own, or somebody sharing with them.
 public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
     public let userId: String
     public let username: String
@@ -188,12 +187,12 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
     public let avatarUrl: String?
     public let avatarColorIndex: Int?
     /// "owner" for the person's own, else current or history.
-    public let locationShareLevel: String
+    public let shareLevel: String
     public let latestPoint: LocationPoint?
     public let openVisit: PlaceVisit?
 
     public var id: String { userId }
-    public var level: LocationShareLevel { LocationShareLevel(rawValue: locationShareLevel) ?? .current }
+    public var level: LocationShareLevel { LocationShareLevel(rawValue: shareLevel) ?? .current }
     public var displayName: String {
         guard let name, !name.isEmpty else { return username }
         return name
@@ -201,20 +200,20 @@ public struct PersonLocation: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         userId: String, username: String, name: String? = nil, avatarUrl: String? = nil, avatarColorIndex: Int? = nil,
-        locationShareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil
+        shareLevel: String = "owner", latestPoint: LocationPoint? = nil, openVisit: PlaceVisit? = nil
     ) {
         self.userId = userId
         self.username = username
         self.name = name
         self.avatarUrl = avatarUrl
         self.avatarColorIndex = avatarColorIndex
-        self.locationShareLevel = locationShareLevel
+        self.shareLevel = shareLevel
         self.latestPoint = latestPoint
         self.openVisit = openVisit
     }
 }
 
-/// FoundPlace is a named thing near a point, from OpenStreetMap, which a
+/// FoundPlace is a named place near a position, from OpenStreetMap, which a
 /// check-in can be made at.
 public struct FoundPlace: Codable, Hashable, Sendable, Identifiable {
     public let placeName: String
@@ -231,7 +230,7 @@ public struct FoundPlace: Codable, Hashable, Sendable, Identifiable {
     /// OpenStreetMap's own identity for it.
     public var id: String { "\(osmType)/\(osmId)" }
 
-    /// The kind of thing it is, from the OpenStreetMap tag ("amenity=cafe" is
+    /// The kind of place it is, from the OpenStreetMap tag ("amenity=cafe" is
     /// "cafe"); empty when there is none. The screen puts it in words.
     public var categoryValue: String { LocationWords.categoryValue(osmCategory) }
 
@@ -274,15 +273,15 @@ public struct ReportLocationResult: Codable, Hashable, Sendable {
     public let updatedVisitCount: Int
 }
 
-/// ForgetLocationHistoryResult is what an erase removed.
-public struct ForgetLocationHistoryResult: Codable, Hashable, Sendable {
+/// EraseLocationHistoryResult is what an erase removed.
+public struct EraseLocationHistoryResult: Codable, Hashable, Sendable {
     public let pointCount: Int
     public let visitCount: Int
     public let placeCount: Int
 }
 
 /// LocationShare is one share of the person's location, with one person or
-/// every member of one circle (milestone 4).
+/// every member of one circle.
 public struct LocationShare: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let granteeUserId: String?
@@ -313,34 +312,42 @@ public struct LocationEvent: Codable, Hashable, Sendable {
 }
 
 /// LocationSetup is how far the person has got with setting Location up the
-/// first time: allowing it, labeling the place they live as home, and, when
-/// they are in a family circle, sharing where they are with it. It is worked
-/// out from what the server and the phone say and never stored; only the
-/// person's "Not now" is kept.
+/// first time: allowing it, labeling the place they live as home, and, for
+/// each family circle they are in, sharing where they are with it. It is
+/// worked out from what the server and the phone say and never stored; only
+/// the person's "Not now" is kept.
 public struct LocationSetup: Equatable, Sendable {
     /// Whether the phone may record while the app is closed (Always).
     public let isPermissionDone: Bool
     /// Whether a place labeled home exists.
     public let isHomeDone: Bool
-    /// The family circle to offer sharing with, if the person is in one.
-    public let familyCircle: PeopleCircle?
-    /// Whether the person's location is already shared with that circle.
-    public let isShareDone: Bool
+    /// The family circles to offer sharing with, every one the person is in.
+    public let familyCircles: [PeopleCircle]
+    /// The identifiers of the family circles the person's location is
+    /// already shared with.
+    public let sharedFamilyCircleIds: Set<String>
 
     public init(isPermissionDone: Bool, homePlaces: [LocationPlace], circles: [PeopleCircle], shares: [LocationShare]) {
         self.isPermissionDone = isPermissionDone
         isHomeDone = homePlaces.contains { $0.label == .home }
-        let family = circles.first { $0.knownCircleKind == .family }
-        familyCircle = family
-        isShareDone = family.map { circle in shares.contains { $0.granteeCircleId == circle.id } } ?? false
+        let families = circles.filter { $0.knownCircleKind == .family }
+        familyCircles = families
+        let sharedCircleIds = Set(shares.compactMap(\.granteeCircleId))
+        sharedFamilyCircleIds = Set(families.map(\.id)).intersection(sharedCircleIds)
     }
 
-    /// Whether the share row is part of the setup: the person is in a family
-    /// circle.
-    public var isShareOffered: Bool { familyCircle != nil }
+    /// Whether the person's location is already shared with this circle.
+    public func isShared(with circle: PeopleCircle) -> Bool { sharedFamilyCircleIds.contains(circle.id) }
+
+    /// Whether the share rows are part of the setup: the person is in a
+    /// family circle.
+    public var isShareOffered: Bool { !familyCircles.isEmpty }
+
+    /// Whether the location is shared with every family circle.
+    public var isShareDone: Bool { familyCircles.allSatisfy { sharedFamilyCircleIds.contains($0.id) } }
 
     /// Whether every row that applies is done.
-    public var isFinished: Bool { isPermissionDone && isHomeDone && (!isShareOffered || isShareDone) }
+    public var isFinished: Bool { isPermissionDone && isHomeDone && isShareDone }
 
     /// Whether the setup is shown in place of the lists: the server has no
     /// position for the person yet, they have not said "Not now", and
@@ -386,7 +393,7 @@ public struct PlaceChange: Sendable, Equatable {
 }
 
 /// CheckInTarget is where a check-in is made: a place of the person's own,
-/// or a thing found nearby.
+/// or a place found nearby.
 public enum CheckInTarget: Sendable, Equatable {
     case place(String)
     case found(FoundPlace)
@@ -423,7 +430,7 @@ extension Documents {
         }
         """
     static let personLocationFields = """
-        userId username name avatarUrl avatarColorIndex locationShareLevel
+        userId username name avatarUrl avatarColorIndex shareLevel
         latestPoint { latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource }
         openVisit {
           id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
@@ -496,15 +503,14 @@ extension Documents {
           }
         }
         """
-    public static let forgetLocationHistory = """
+    public static let eraseLocationHistory = """
         mutation ($from: DateTime, $until: DateTime) {
-          ForgetLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
+          EraseLocationHistory(from: $from, until: $until) { pointCount visitCount placeCount }
         }
         """
 
-    // Milestone 4: sharing where the person is with a circle or a person, and
-    // seeing the people who share with them. Written here so the documents are
-    // checked against the server's schema from the start.
+    // Sharing where the person is with a circle or a person, and seeing the
+    // people who share with them.
     public static let sharedLocations = """
         query { ListSharedLocations { \(personLocationFields) } }
         """
@@ -531,7 +537,7 @@ extension Documents {
     public static let locationDocuments: [String: String] = [
         "location": location, "locationVisits": locationVisits, "locationPlaces": locationPlaces, "nearbyPlaces": nearbyPlaces,
         "searchPlaces": searchPlaces, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
-        "forgetPlace": forgetPlace, "checkIn": checkIn, "forgetLocationHistory": forgetLocationHistory,
+        "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
         "unshareLocation": unshareLocation, "locationEvents": locationEvents,
     ]
@@ -578,7 +584,8 @@ extension Connection {
         return try await execute(Documents.locationPlaces, variables: variables, as: Answer.self).ListPlaces
     }
 
-    /// Named things near a point, nearest first, for a check-in.
+    /// Named places near a position, nearest first, for a check-in. With the
+    /// place provider off the server answers the person's own places there.
     public func nearbyPlaces(latitudeDegrees: Double, longitudeDegrees: Double, radiusMeters: Double? = nil) async throws -> [FoundPlace] {
         struct Answer: Decodable, Sendable { let ListNearbyPlaces: [FoundPlace] }
         var variables: [String: JSONValue] = ["latitudeDegrees": .number(latitudeDegrees), "longitudeDegrees": .number(longitudeDegrees)]
@@ -586,8 +593,8 @@ extension Connection {
         return try await execute(Documents.nearbyPlaces, variables: variables, as: Answer.self).ListNearbyPlaces
     }
 
-    /// Places matching words near a point, from OpenStreetMap. With no point
-    /// and no place, near where the person is now.
+    /// Places matching words near a position, from OpenStreetMap. With no
+    /// position and no place, near where the person is now.
     public func searchPlaces(
         query: String, latitudeDegrees: Double? = nil, longitudeDegrees: Double? = nil, placeId: String? = nil, radiusMeters: Double? = nil,
         offset: Int = 0, limitCount: Int? = nil
@@ -641,17 +648,19 @@ extension Connection {
         return try await execute(Documents.checkIn, variables: target.variables, as: Answer.self).CheckIn
     }
 
-    /// Deletes points and visits in a range; with neither end, all of them.
+    /// Erases positions and visits in a range (with neither end, all of
+    /// them), and the places that leaves with no visit that the person did
+    /// not name or label. Places they named or labeled stay.
     @discardableResult
-    public func forgetLocationHistory(from: Date? = nil, until: Date? = nil) async throws -> ForgetLocationHistoryResult {
-        struct Answer: Decodable, Sendable { let ForgetLocationHistory: ForgetLocationHistoryResult }
+    public func eraseLocationHistory(from: Date? = nil, until: Date? = nil) async throws -> EraseLocationHistoryResult {
+        struct Answer: Decodable, Sendable { let EraseLocationHistory: EraseLocationHistoryResult }
         var variables: [String: JSONValue] = [:]
         if let from { variables["from"] = .string(CalendarDates.text(from)) }
         if let until { variables["until"] = .string(CalendarDates.text(until)) }
-        return try await execute(Documents.forgetLocationHistory, variables: variables, as: Answer.self).ForgetLocationHistory
+        return try await execute(Documents.eraseLocationHistory, variables: variables, as: Answer.self).EraseLocationHistory
     }
 
-    // MARK: Milestone 4: sharing
+    // MARK: Sharing
 
     /// Every person sharing their location with the caller.
     public func sharedLocations() async throws -> [PersonLocation] {

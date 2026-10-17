@@ -490,11 +490,19 @@ struct CircleCalendarOfferSheet: View {
     let onShared: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     /// nil is "Not now", offered for the calendar only beside the location.
-    @State private var calendarLevel: CalendarShareLevel? = .busy
+    /// With no calendar to share it starts as nil: nothing is chosen there.
+    @State private var calendarLevel: CalendarShareLevel?
     @State private var locationLevel: LocationShareLevel?
     @State private var isWorking = false
     @State private var problemText: String?
     @State private var doneText: String?
+
+    init(connection: Connection, offer: CircleCalendarOffer, onShared: @escaping (String) -> Void) {
+        self.connection = connection
+        self.offer = offer
+        self.onShared = onShared
+        _calendarLevel = State(initialValue: offer.isCalendarOffered ? .busy : nil)
+    }
 
     var body: some View {
         NavigationStack {
@@ -549,7 +557,7 @@ struct CircleCalendarOfferSheet: View {
                         ProgressView()
                     } else {
                         Button("Share") { Task { await share() } }
-                            .disabled(calendarLevel == nil && locationLevel == nil)
+                            .disabled((offer.isCalendarOffered ? calendarLevel : nil) == nil && locationLevel == nil)
                     }
                 }
             }

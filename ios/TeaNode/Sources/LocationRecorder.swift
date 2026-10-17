@@ -77,8 +77,8 @@ struct VisitReading: Sendable {
 /// launching.
 private final class LocationManagerDelegate: NSObject, CLLocationManagerDelegate, @unchecked Sendable {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
-        Task { @MainActor in LocationRecorder.shared.authorizationDidChange(status) }
+        let authorizationStatus = manager.authorizationStatus
+        Task { @MainActor in LocationRecorder.shared.authorizationDidChange(authorizationStatus) }
     }
 
     /// A significant change of location: about 500 meters.
@@ -115,7 +115,7 @@ private final class BackgroundTaskHolder {
 }
 
 /// LocationRecorder records where the person goes, if they let it, and hands
-/// it to the server (docs/planning/location-execplan.md, Milestone 2).
+/// it to the server.
 ///
 /// While the app is open it follows the person live. While it is closed it
 /// relies on what iOS wakes it for: a visit (arriving somewhere, leaving),
@@ -123,8 +123,8 @@ private final class BackgroundTaskHolder {
 /// place they named or labeled. There is no continuous tracking in the
 /// background and no `location` background mode.
 ///
-/// Everything noticed goes into an outbox kept in a file (LocationOutbox),
-/// and leaves it only after the server answered.
+/// Everything noticed goes into an outbox kept in a file for each account
+/// (LocationOutbox), and leaves it only after the server answered.
 @MainActor
 @Observable
 final class LocationRecorder {
@@ -138,6 +138,11 @@ final class LocationRecorder {
     private(set) var isRecordingOn = false
     /// How many readings and visits wait to be sent.
     private(set) var unsentCount = 0
+    /// What the server said when it refused to take what the phone noticed
+    /// (the account may not use Location, or the batch is not valid), while
+    /// that is why recording has stopped. Nil otherwise. Recording starts
+    /// again when the person turns the switch off and on, or changes account.
+    private(set) var refusalText: String?
 
     /// Whether Core Location may be asked where the phone is, at least
     /// while the app is open.
@@ -155,7 +160,7 @@ final class LocationRecorder {
     var isAuthorizationUndecided: Bool { authorizationStatus == .notDetermined }
 
     @ObservationIgnored private var manager: CLLocationManager?
-    @ObservationIgnored private let delegate = LocationManagerDelegate()
+    private let delegate = LocationManagerDelegate()
     @ObservationIgnored private var serviceSession: CLServiceSession?
     @ObservationIgnored private var liveTask: Task<Void, Never>?
     @ObservationIgnored private var liveTaskId: UUID?
@@ -164,15 +169,23 @@ final class LocationRecorder {
     /// How many screens that show the person's position are open, which
     /// keeps the live position coming with the switch off.
     @ObservationIgnored private var viewerCount = 0
-    @ObservationIgnored private var outbox: LocationOutbox
+    /// The outbox of the account in use. The others wait in their own files.
+    @ObservationIgnored private var outbox = LocationOutbox()
     @ObservationIgnored private var isFlushing = false
     @ObservationIgnored private var isFlushRequestedAgain = false
+    /// Set while the history is being erased, so that nothing is sent that
+    /// the erase would then have to take back.
+    @ObservationIgnored private var isReportingHeld = false
+    @ObservationIgnored private var retryGate = LocationRetryGate()
+    @ObservationIgnored private var isOutboxUnwritten = false
+    @ObservationIgnored private var outboxWrittenAt = Date.distantPast
+    @ObservationIgnored private var outboxWriteTask: Task<Void, Never>?
     @ObservationIgnored private var monitorStartup: Task<CLMonitor, Never>?
     @ObservationIgnored private var placeMonitorTask: Task<Void, Never>?
     @ObservationIgnored private var watchedPlaces: [String: WatchedPlace] = [:]
     @ObservationIgnored private var placeWatchRefreshedAt = Date.distantPast
-    @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let outboxURL: URL?
+    private let defaults: UserDefaults
+    private let outboxDirectory: URL?
 
     private static let isRecordingOnKey = "locationIsRecordingOn"
     private static let hasAskedForAlwaysKey = "locationHasAskedForAlways"
@@ -180,6 +193,10 @@ final class LocationRecorder {
     /// How often the watched places are read again from the server because
     /// the person moved a long way: no more than this.
     private static let placeWatchRefreshSeconds = 60.0
+    /// How long the outbox may go unwritten while positions keep coming: a
+    /// full one is megabytes of JSON, and a write for every position would
+    /// cost the battery. Visits are written at once.
+    private static let outboxWriteSeconds = 1.0
 
     private init() {
         let group = Bundle.main.object(forInfoDictionaryKey: "TeaNodeAppGroup") as? String
@@ -190,10 +207,9 @@ final class LocationRecorder {
             ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         let directory = container?.appendingPathComponent("Location", isDirectory: true)
         if let directory { try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true) }
-        outboxURL = directory?.appendingPathComponent("outbox.json")
-        let kept = outboxURL.flatMap { try? Data(contentsOf: $0) }.flatMap { try? LocationOutbox.decoded(from: $0) } ?? LocationOutbox()
-        outbox = kept
-        unsentCount = kept.points.count + kept.visits.count
+        outboxDirectory = directory
+        // Which account is in use is told by the model while it is made
+        // (accountDidChange), which reads that account's outbox then.
     }
 
     // MARK: Starting
@@ -232,12 +248,26 @@ final class LocationRecorder {
             pointFilter.reset()
             startLiveUpdates()
             Task {
-                await flush()
+                await flush(isForced: true)
                 await refreshPlaceWatch()
             }
         } else {
             stopLiveUpdates()
+            writeOutbox()
+            // A place named, labeled or resized while the app was open is
+            // watched from here on, not from the next time it is opened.
+            Task {
+                await flush(isForced: true)
+                await refreshPlaceWatch(isForced: true)
+            }
         }
+    }
+
+    /// The person named, labeled, moved, resized or forgot a place, or
+    /// checked in at one: the places watched are read again at once, not
+    /// when the app is next opened.
+    func placesDidChange() {
+        Task { await refreshPlaceWatch(isForced: true) }
     }
 
     /// A screen that shows the person's position appeared or went away.
@@ -256,12 +286,43 @@ final class LocationRecorder {
     func accountDidChange(accountKey: String?) {
         // Told by the model while it is being made, so it does not ask the
         // model which account is in use.
-        if outbox.accountKey != accountKey, outbox.accountKey != nil || !outbox.isEmpty {
-            outbox = LocationOutbox()
-            saveOutbox()
+        if outbox.accountKey != accountKey {
+            useOutbox(accountKey: accountKey)
+            refusalText = nil
+            retryGate = LocationRetryGate()
         }
         applyMonitoring()
-        Task { await flush() }
+        Task { await flush(isForced: true) }
+    }
+
+    /// An account was removed from the phone: what it had not sent can never
+    /// be sent, so its outbox file goes.
+    func accountWasRemoved(accountKey: String) {
+        if outbox.accountKey == accountKey {
+            outbox = LocationOutbox()
+            unsentCount = 0
+        }
+        if let url = outboxURL(accountKey: accountKey) { try? FileManager.default.removeItem(at: url) }
+    }
+
+    /// Stops sending, and waits for a batch on its way to be answered. Used
+    /// around erasing the history: nothing is sent between the person
+    /// pressing Erase and the server having erased.
+    func holdReporting() async {
+        isReportingHeld = true
+        while isFlushing { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    /// Lets sending go on. After an erase that worked, what was noticed in
+    /// the erased range and not yet sent goes with it (with no range, all of
+    /// it); after one that did not, nothing is lost.
+    func releaseReporting(discardingFrom from: Date?, until: Date?, isErased: Bool) {
+        isReportingHeld = false
+        if isErased {
+            outbox.discardUnsent(from: from, until: until)
+            saveOutbox(isUrgent: true)
+        }
+        Task { await flush(isForced: true) }
     }
 
     // MARK: What the person chose
@@ -270,7 +331,12 @@ final class LocationRecorder {
     func setRecording(_ isOn: Bool) {
         defaults.set(isOn, forKey: Self.isRecordingOnKey)
         isRecordingOn = isOn
-        if isOn { askForAuthorizationIfUndecided() }
+        if isOn {
+            // Turning it on again is how a refusal is tried again.
+            refusalText = nil
+            retryGate = LocationRetryGate()
+            askForAuthorizationIfUndecided()
+        }
         applyMonitoring()
         startLiveUpdates()
         if !isOn, viewerCount == 0 { stopLiveUpdates() }
@@ -328,11 +394,11 @@ final class LocationRecorder {
 
     // MARK: Authorization
 
-    func authorizationDidChange(_ status: CLAuthorizationStatus) {
-        authorizationStatus = status
+    func authorizationDidChange(_ newAuthorizationStatus: CLAuthorizationStatus) {
+        authorizationStatus = newAuthorizationStatus
         // Until the person has chosen, recording follows whether Always is
         // allowed: on once it is.
-        if defaults.object(forKey: Self.isRecordingOnKey) == nil { isRecordingOn = status == .authorizedAlways }
+        if defaults.object(forKey: Self.isRecordingOnKey) == nil { isRecordingOn = newAuthorizationStatus == .authorizedAlways }
         applyMonitoring()
         startServiceSession()
         startLiveUpdates()
@@ -344,7 +410,7 @@ final class LocationRecorder {
     /// Whether to listen for visits, significant changes and places while the
     /// app is closed.
     private var isMonitoringWanted: Bool {
-        isRecordingOn && authorizationStatus == .authorizedAlways && AppModel.shared.account != nil
+        isRecordingOn && authorizationStatus == .authorizedAlways && AppModel.shared.account != nil && refusalText == nil
     }
 
     /// Starts or stops everything iOS wakes the app for.
@@ -363,6 +429,10 @@ final class LocationRecorder {
             manager.stopMonitoringSignificantLocationChanges()
             serviceSession?.invalidate()
             serviceSession = nil
+            // Nothing will say the person left a place once it is not
+            // watched, and a visit left open hides every later arrival
+            // there. Ended here, while the account is still known.
+            endOpenVisits()
             Task { await stopWatchingPlaces() }
         }
     }
@@ -424,14 +494,14 @@ final class LocationRecorder {
                 latitudeDegrees: reading.latitudeDegrees, longitudeDegrees: reading.longitudeDegrees,
                 speedMetersPerSecond: reading.speedMetersPerSecond, measuredAt: reading.measuredAt, isStationary: isStationary)
         else { return }
-        enqueue { $0.addPoint(reading.reportedPoint) }
+        enqueue(isUrgent: false) { $0.addPoint(reading.reportedPoint) }
     }
 
     // MARK: What iOS wakes the app for
 
     func significantChangesArrived(_ readings: [LocationReading]) {
         guard isRecordingOn else { return }
-        enqueue { outbox in
+        enqueue(isUrgent: false) { outbox in
             for reading in readings { outbox.addPoint(reading.reportedPoint) }
         }
         Task { await refreshPlaceWatch() }
@@ -439,7 +509,7 @@ final class LocationRecorder {
 
     func visitArrived(_ reading: VisitReading) {
         guard isRecordingOn else { return }
-        enqueue { $0.addVisit(reading.reportedVisit) }
+        enqueue(isUrgent: true) { $0.addVisit(reading.reportedVisit) }
     }
 
     // MARK: Places the person named
@@ -448,7 +518,7 @@ final class LocationRecorder {
     /// last were: iOS allows twenty at a time. Entering one becomes a visit
     /// reported with its place, and leaving it the same visit with its end.
     private func refreshPlaceWatch(isForced: Bool = false) async {
-        guard isMonitoringWanted, let connection = AppModel.shared.connection else { return }
+        guard manager != nil, isMonitoringWanted, let connection = AppModel.shared.connection else { return }
         if !isForced, Date().timeIntervalSince(placeWatchRefreshedAt) < Self.placeWatchRefreshSeconds { return }
         placeWatchRefreshedAt = Date()
         var places: [LocationPlace] = []
@@ -547,7 +617,9 @@ final class LocationRecorder {
                     radiusMeters: condition.radius)
             }
             guard let place else { return }
-            enqueue { $0.arrive(placeId: place.placeId, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, at: date) }
+            enqueue(isUrgent: true) {
+                $0.arrive(placeId: place.placeId, latitudeDegrees: place.latitudeDegrees, longitudeDegrees: place.longitudeDegrees, at: date)
+            }
         } else {
             closeOpenVisit(placeId: identifier, at: date)
         }
@@ -555,57 +627,166 @@ final class LocationRecorder {
 
     private func closeOpenVisit(placeId: String, at date: Date) {
         guard outbox.openRegionVisits[placeId] != nil else { return }
-        enqueue { $0.depart(placeId: placeId, at: date) }
+        enqueue(isUrgent: true) { $0.depart(placeId: placeId, at: date) }
+    }
+
+    /// Ends every visit to a place that is still open, in the outbox of the
+    /// account in use. Not held back by a refusal: the visit was begun, so
+    /// its end is recorded too.
+    private func endOpenVisits() {
+        guard outbox.accountKey != nil, !outbox.openRegionVisits.isEmpty else { return }
+        outbox.departEverywhere(at: Date())
+        saveOutbox(isUrgent: true)
+        Task { await flush() }
     }
 
     // MARK: The outbox
 
     /// Changes the outbox, keeps it in its file, and sends it. What was
     /// noticed under another account is not reported as the one signed in.
-    private func enqueue<Result>(_ change: (inout LocationOutbox) -> Result) {
-        guard let accountKey = AppModel.shared.account?.accountKey else { return }
-        if outbox.accountKey != accountKey { outbox = LocationOutbox(accountKey: accountKey) }
+    /// While the server is refusing what the phone notices, nothing new is
+    /// kept.
+    private func enqueue<Result>(isUrgent: Bool, _ change: (inout LocationOutbox) -> Result) {
+        guard refusalText == nil, let accountKey = AppModel.shared.account?.accountKey else { return }
+        if outbox.accountKey != accountKey { useOutbox(accountKey: accountKey) }
         _ = change(&outbox)
-        saveOutbox()
+        saveOutbox(isUrgent: isUrgent)
         Task { await flush() }
     }
 
-    private func saveOutbox() {
+    private func outboxURL(accountKey: String) -> URL? {
+        outboxDirectory?.appendingPathComponent(LocationOutbox.fileName(accountKey: accountKey))
+    }
+
+    /// Puts the outbox of another account (or of none) in use. The one in use
+    /// is kept in its file first, with the visits it had open ended: the
+    /// phone does not record for it any more.
+    private func useOutbox(accountKey: String?) {
+        if outbox.accountKey != nil {
+            outbox.departEverywhere(at: Date())
+            writeOutbox()
+        }
+        var next = LocationOutbox()
+        if let accountKey {
+            if let url = outboxURL(accountKey: accountKey),
+                let kept = (try? Data(contentsOf: url)).flatMap({ try? LocationOutbox.decoded(from: $0) })
+            {
+                next = kept
+            } else if let legacyURL = outboxDirectory?.appendingPathComponent("outbox.json"),
+                let legacy = (try? Data(contentsOf: legacyURL)).flatMap({ try? LocationOutbox.decoded(from: $0) }), legacy.accountKey == accountKey
+            {
+                // The single file kept before there was one for each account.
+                next = legacy
+                try? FileManager.default.removeItem(at: legacyURL)
+                isOutboxUnwritten = true
+            }
+            next.accountKey = accountKey
+        }
+        outbox = next
+        unsentCount = next.points.count + next.visits.count
+        if isOutboxUnwritten { writeOutbox() }
+    }
+
+    /// Notes that the outbox changed, and writes it: at once when the change
+    /// is urgent (a visit), else at most once a second.
+    private func saveOutbox(isUrgent: Bool) {
         unsentCount = outbox.points.count + outbox.visits.count
-        guard let outboxURL, let data = try? outbox.encoded() else { return }
+        isOutboxUnwritten = true
+        if isUrgent || Date().timeIntervalSince(outboxWrittenAt) >= Self.outboxWriteSeconds {
+            writeOutbox()
+            return
+        }
+        guard outboxWriteTask == nil else { return }
+        outboxWriteTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.outboxWriteSeconds))
+            guard !Task.isCancelled else { return }
+            self?.outboxWriteTask = nil
+            self?.writeOutbox()
+        }
+    }
+
+    /// Writes the outbox to the file of its account, if it changed since.
+    private func writeOutbox() {
+        outboxWriteTask?.cancel()
+        outboxWriteTask = nil
+        guard isOutboxUnwritten else { return }
+        isOutboxUnwritten = false
+        outboxWrittenAt = Date()
+        guard let accountKey = outbox.accountKey, let url = outboxURL(accountKey: accountKey), let outboxData = try? outbox.encoded() else { return }
         // Readable after the first unlock, so a phone relaunched the moment
         // an app is woken in a pocket can still keep what it noticed.
-        try? data.write(to: outboxURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try? outboxData.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     /// Sends what waits, a batch at a time, until the outbox is empty or a
     /// call fails. A batch leaves the outbox only after the server answered:
     /// no connection or a refused sign-in keeps it for the next try, which is
-    /// the next event, the next launch and the next return to the foreground.
-    func flush() async {
+    /// the next return to the foreground or leaving it, the next launch and,
+    /// after the wait that follows a failure, the next event. `isForced`
+    /// skips that wait.
+    ///
+    /// Only the account in use is sent, over its own connection: the check
+    /// and the batch are taken with no suspension between them, and a batch
+    /// is taken out only if the outbox is still that account's.
+    func flush(isForced: Bool = false) async {
         if isFlushing {
             isFlushRequestedAgain = true
             return
         }
-        guard !outbox.isEmpty, let connection = AppModel.shared.connection, connection.accountKey == outbox.accountKey else { return }
+        guard refusalText == nil, !isReportingHeld, !outbox.isEmpty, isForced || retryGate.canTry(at: Date()) else { return }
+        guard let connection = AppModel.shared.connection, connection.accountKey == outbox.accountKey else { return }
         isFlushing = true
         let background = BackgroundTaskHolder(name: "Report location")
         defer {
             isFlushing = false
             background.end()
+            writeOutbox()
         }
         repeat {
             isFlushRequestedAgain = false
-            while !outbox.isEmpty {
+            guard !isReportingHeld, let connection = AppModel.shared.connection, connection.accountKey == outbox.accountKey else { return }
+            let accountKey = connection.accountKey
+            while outbox.accountKey == accountKey, AppModel.shared.connection === connection, !outbox.isEmpty, !isReportingHeld {
                 let batch = outbox.nextBatch()
                 do {
-                    _ = try await connection.reportLocation(batch, agentPhoneId: AppModel.shared.phone?.id)
+                    try await send(batch, over: connection)
                 } catch {
+                    switch LocationReportFailure.classify(error) {
+                    case .refused(let reason):
+                        if outbox.accountKey == accountKey { stopBecauseRefused(reason) }
+                    case .retryLater, .phoneNotFound:
+                        retryGate.didFail(at: Date())
+                    }
                     return
                 }
+                retryGate.didSucceed()
+                // The account was changed while the call was on its way: the
+                // batch stays in that account's file and is sent again, which
+                // the server takes as the same points and visits.
+                guard outbox.accountKey == accountKey else { break }
                 outbox.remove(batch)
-                saveOutbox()
+                saveOutbox(isUrgent: false)
             }
         } while isFlushRequestedAgain
+    }
+
+    /// Sends one batch. A phone the server does not know (the person deleted
+    /// it) is left out of the call and the batch sent again, since the phone
+    /// only tells the agent which device the position came from.
+    private func send(_ batch: LocationBatch, over connection: Connection) async throws {
+        let phoneId = AppModel.shared.phone?.id
+        do {
+            _ = try await connection.reportLocation(batch, agentPhoneId: phoneId)
+        } catch {
+            guard phoneId != nil, LocationReportFailure.classify(error) == .phoneNotFound else { throw error }
+            _ = try await connection.reportLocation(batch, agentPhoneId: nil)
+        }
+    }
+
+    /// The server will not take what the phone notices, and asking again
+    /// cannot change that: say why, and stop listening for more.
+    private func stopBecauseRefused(_ reason: String) {
+        refusalText = reason
+        applyMonitoring()
     }
 }

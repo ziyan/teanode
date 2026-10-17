@@ -30,7 +30,7 @@ extension LocationPlace {
         return String(localized: "A place")
     }
 
-    /// The symbol that stands for it: its label's, else a pin.
+    /// The symbol that stands for it: its label's, else a map marker.
     var symbolName: String { label?.symbolName ?? "mappin" }
 
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: latitudeDegrees, longitude: longitudeDegrees) }
@@ -49,8 +49,8 @@ extension LocationShareLevel {
     /// What somebody a location is shared at this level can see.
     var explanation: String {
         switch self {
-        case .current: String(localized: "They see where you are now, and nothing before it.")
-        case .history: String(localized: "They see where you are now, and the places you have been and when.")
+        case .current: String(localized: "They see where you are now and the place you are at.")
+        case .history: String(localized: "They also see your visits and the places they were at.")
         case .owner: ""
         }
     }
@@ -71,7 +71,7 @@ extension LocationPoint {
 }
 
 enum LocationText {
-    /// How long a stay was, such as "1 hr, 25 min".
+    /// How long a visit was, such as "1 hr, 25 min".
     static func duration(_ duration: Duration) -> String {
         if duration < .seconds(60) { return String(localized: "Under a minute") }
         return duration.formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
@@ -103,8 +103,8 @@ enum LocationText {
     /// The times of a visit and, when it is over, how long it was.
     static func summary(of visit: PlaceVisit) -> String {
         let timesText = times(of: visit)
-        guard let stay = visit.stayDuration else { return timesText }
-        return String(localized: "\(timesText) · \(duration(stay))")
+        guard let visitDuration = visit.visitDuration else { return timesText }
+        return String(localized: "\(timesText) · \(duration(visitDuration))")
     }
 
     /// One person sharing, in a line: "Sam · at Hillside School since 14:05",
@@ -140,16 +140,16 @@ enum LocationText {
 
     /// "3 visits, last yesterday" for a place's row.
     static func visits(of place: LocationPlace) -> String {
-        let count = String(localized: "\(place.visitCount) visits")
-        guard let last = place.lastVisitDate else { return count }
-        return String(localized: "\(count), last \(last.formatted(.relative(presentation: .named)))")
+        let visitCountText = String(localized: "\(place.visitCount) visits")
+        guard let last = place.lastVisitDate else { return visitCountText }
+        return String(localized: "\(visitCountText), last \(last.formatted(.relative(presentation: .named)))")
     }
 
     /// The kind of thing an OpenStreetMap tag names, in plain words: "cafe"
     /// for "amenity=cafe". Empty when there is none worth saying.
     static func category(_ osmCategory: String) -> String {
-        let value = LocationWords.categoryValue(osmCategory)
-        switch value {
+        let categoryKey = LocationWords.categoryValue(osmCategory)
+        switch categoryKey {
         case "": return ""
         case "cafe": return String(localized: "Cafe")
         case "restaurant": return String(localized: "Restaurant")
@@ -178,7 +178,7 @@ enum LocationText {
         case "hotel", "guest_house": return String(localized: "Hotel")
         default:
             // A kind this app has no word for: OpenStreetMap's own, spelled out.
-            let spelled = value.replacingOccurrences(of: "_", with: " ")
+            let spelled = categoryKey.replacingOccurrences(of: "_", with: " ")
             return spelled.prefix(1).uppercased() + spelled.dropFirst()
         }
     }

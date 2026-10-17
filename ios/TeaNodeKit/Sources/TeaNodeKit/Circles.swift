@@ -104,7 +104,8 @@ public struct CircleCalendarOffer: Hashable, Sendable, Identifiable {
     /// The person's own calendar of events, which is what would be shared; nil
     /// when they have none, and then only a family's location is offered.
     public let calendarId: String?
-    /// Whether where the person is can be shared too: a family only.
+    /// Whether where the person is can be shared too: a family, to a person
+    /// who may use Location.
     public let isLocationOffered: Bool
 
     public var id: String { circleId }
@@ -121,16 +122,18 @@ public struct CircleCalendarOffer: Hashable, Sendable, Identifiable {
     public static let locationLevels: [LocationShareLevel] = [.history, .current]
 
     /// The offer for an invitation just accepted, or nil for a circle of
-    /// friends, and for a circle that is not a family when the person has no
-    /// calendar to share.
-    public init?(accepting invitation: CircleInvitation, calendarId: String?) {
+    /// friends, and when there is nothing to offer: the person has no
+    /// calendar to share and the location is not offered. The location is
+    /// offered for a family, to a person who holds location:use
+    /// (`canShareLocation`); one who does not would be refused when sharing.
+    public init?(accepting invitation: CircleInvitation, calendarId: String?, canShareLocation: Bool) {
         guard invitation.circleKind != CircleKind.friends.rawValue else { return nil }
-        let isFamily = invitation.circleKind == CircleKind.family.rawValue
-        guard calendarId != nil || isFamily else { return nil }
+        let isLocationOffered = invitation.circleKind == CircleKind.family.rawValue && canShareLocation
+        guard calendarId != nil || isLocationOffered else { return nil }
         circleId = invitation.circleId
         circleName = invitation.circleName
         self.calendarId = calendarId
-        isLocationOffered = isFamily
+        self.isLocationOffered = isLocationOffered
     }
 
     /// The calendar a share would be of: the person's own calendar of events,

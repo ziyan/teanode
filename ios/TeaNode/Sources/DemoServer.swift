@@ -687,7 +687,8 @@
               "sso":{"providers":[]},
               "identity":{"name":"demo.example.com","mailServers":["mx.example.com"],"externalAddresses":["203.0.113.10"],"logLevel":"info","dataDirectory":"/var/lib/teanode"},
               "storage":{"directory":"/var/lib/teanode/messages","spoolRetention":"168h"},
-              "geoip":{"enabled":false,"databaseFile":null}}}}
+              "geoip":{"enabled":false,"databaseFile":null},
+              "places":{"providerKind":"nominatim","providerUrl":"https://nominatim.openstreetmap.org","mapStyleUrl":"https://tiles.openfreemap.org/styles/liberty"}}}}
             """#
     }
 #endif

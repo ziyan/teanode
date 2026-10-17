@@ -30,18 +30,19 @@ struct LocationSetupList: View {
                 ) {
                     run { await model.markHome() }
                 }
-                if let circle = setup.familyCircle {
+                ForEach(setup.familyCircles) { circle in
+                    let isShared = setup.isShared(with: circle)
                     LocationSetupRow(
-                        title: setup.isShareDone ? String(localized: "Shared with \(circle.name)") : String(localized: "Share with \(circle.name)"),
-                        detail: LocationShareLevel.history.title, symbolName: "person.2", isDone: setup.isShareDone, isEnabled: !isWorking
+                        title: isShared ? String(localized: "Shared with \(circle.name)") : String(localized: "Share with \(circle.name)"),
+                        detail: LocationShareLevel.history.title, symbolName: "person.2", isDone: isShared, isEnabled: !isWorking
                     ) {
-                        run { await model.shareWithFamily(at: .history) }
+                        run { await model.shareWithFamily(circle, at: .history) }
                     }
-                    if !setup.isShareDone {
+                    if !isShared {
                         Button {
-                            run { await model.shareWithFamily(at: .current) }
+                            run { await model.shareWithFamily(circle, at: .current) }
                         } label: {
-                            Label("Only where I am now", systemImage: "location.circle")
+                            Label("Only where I am now, with \(circle.name)", systemImage: "location.circle")
                         }
                         .disabled(isWorking)
                         .frame(minHeight: 44)
@@ -49,6 +50,8 @@ struct LocationSetupList: View {
                 }
             } header: {
                 Text("Set up Location").font(.headline).textCase(nil)
+            } footer: {
+                Text("Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name.")
             }
             Section {
                 Button("Not now") { model.dismissSetup() }

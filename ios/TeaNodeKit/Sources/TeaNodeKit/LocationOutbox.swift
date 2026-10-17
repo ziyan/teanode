@@ -55,7 +55,7 @@ public enum LocationVisitKey {
         return "visit:\(place):d\(Int((departedAt ?? Date()).timeIntervalSince1970))"
     }
 
-    /// A stay at a place the person named, begun when they came in.
+    /// A visit to a place the person named, begun when they came in.
     public static func region(placeId: String, arrivedAt: Date) -> String {
         "region:\(placeId):a\(Int(arrivedAt.timeIntervalSince1970))"
     }
@@ -196,7 +196,7 @@ public struct LocationBatch: Sendable, Equatable {
     }
 }
 
-/// OpenRegionVisit is a stay at a place the person named that has begun and
+/// OpenRegionVisit is a visit to a place the person named that has begun and
 /// not ended, kept so a departure after the app was closed finds its arrival.
 public struct OpenRegionVisit: Codable, Hashable, Sendable {
     public let clientVisitKey: String
@@ -228,7 +228,7 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     private var nextSequence = 1
     public private(set) var points: [ReportedPoint] = []
     public private(set) var visits: [ReportedVisit] = []
-    /// The stays begun and not ended, by the place they are at.
+    /// The visits begun and not ended, by the place they are at.
     public private(set) var openRegionVisits: [String: OpenRegionVisit] = [:]
 
     public init(accountKey: String? = nil) { self.accountKey = accountKey }
@@ -259,10 +259,13 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     }
 
     /// Notes that the person came into a place they named, and queues the
-    /// arrival. Does nothing if they are already counted as there.
+    /// arrival. If they are already counted as there, the departure was not
+    /// seen (monitoring was off, or the phone was off), so that visit is
+    /// ended at this arrival and a new one begins; leaving it open would
+    /// hide every later arrival.
     @discardableResult
     public mutating func arrive(placeId: String, latitudeDegrees: Double, longitudeDegrees: Double, at date: Date) -> Bool {
-        guard openRegionVisits[placeId] == nil else { return false }
+        depart(placeId: placeId, at: date)
         let key = LocationVisitKey.region(placeId: placeId, arrivedAt: date)
         openRegionVisits[placeId] = OpenRegionVisit(
             clientVisitKey: key, latitudeDegrees: latitudeDegrees, longitudeDegrees: longitudeDegrees, arrivedAt: date)
@@ -286,8 +289,30 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
         return true
     }
 
-    /// Forgets the stays begun, for a place that is no longer watched.
+    /// Forgets the visits begun, for a place that is no longer watched.
     public mutating func forgetOpenRegionVisit(placeId: String) { openRegionVisits[placeId] = nil }
+
+    /// Ends every visit begun, as of a date: when monitoring stops, nothing
+    /// will say the person left.
+    public mutating func departEverywhere(at date: Date) {
+        for placeId in openRegionVisits.keys.sorted() { depart(placeId: placeId, at: date) }
+    }
+
+    /// Throws away what waits to be sent in a range (with neither end, all of
+    /// it), keeping the visits begun: the person is still where they are. For
+    /// after the history is erased on the server, so that nothing erased is
+    /// sent back. A visit is in the range by when it began, or when it ended
+    /// if the beginning was not seen.
+    public mutating func discardUnsent(from: Date? = nil, until: Date? = nil) {
+        func isInRange(_ date: Date?) -> Bool {
+            guard let date else { return from == nil && until == nil }
+            if let from, date < from { return false }
+            if let until, date >= until { return false }
+            return true
+        }
+        points.removeAll { isInRange($0.measuredAt) }
+        visits.removeAll { isInRange($0.arrivedAt ?? $0.departedAt) }
+    }
 
     /// The oldest points and visits, as many as one call takes.
     public func nextBatch() -> LocationBatch {
@@ -301,6 +326,15 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
     public mutating func remove(_ batch: LocationBatch) {
         if let last = batch.points.last?.sequence { points.removeAll { $0.sequence <= last } }
         if let last = batch.visits.last?.sequence { visits.removeAll { $0.sequence <= last } }
+    }
+
+    /// The name of the file an account's outbox is kept in: one file for each
+    /// account, so that switching accounts neither sends one person's
+    /// positions as another nor loses what has not been sent. The key is
+    /// percent-encoded, so no key can name another file or a directory.
+    public static func fileName(accountKey: String) -> String {
+        let safe = accountKey.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        return "outbox-\(safe).json"
     }
 
     static func makeEncoder() -> JSONEncoder {
@@ -321,6 +355,50 @@ public struct LocationOutbox: Codable, Sendable, Equatable {
 
     /// An outbox read from a file's contents.
     public static func decoded(from data: Data) throws -> LocationOutbox { try makeDecoder().decode(LocationOutbox.self, from: data) }
+}
+
+/// LocationReportFailure is what the phone does about a batch the server did
+/// not take.
+public enum LocationReportFailure: Equatable, Sendable {
+    /// The call did not get through, or the sign-in needs renewing: keep the
+    /// batch and try again later.
+    case retryLater
+    /// The server named no phone of the person's with the identifier given:
+    /// send the batch again without it.
+    case phoneNotFound
+    /// The server refused the batch itself (not allowed to use Location, or
+    /// the batch is not valid): retrying cannot change the answer. Carries
+    /// the server's reason.
+    case refused(String)
+
+    public static func classify(_ error: Error) -> LocationReportFailure {
+        guard let known = error as? TeaNodeError, case .refused(let reason) = known else { return .retryLater }
+        if known.isNotFound { return .phoneNotFound }
+        if reason.contains("permission denied") || reason.contains("invalid arguments") { return .refused(reason) }
+        return .retryLater
+    }
+}
+
+/// LocationRetryGate keeps the phone from asking a server that just failed
+/// once for every position noticed: after a failure, events wait this long
+/// before they try again. Leaving the app, coming back to it, and signing in
+/// are tried at once.
+public struct LocationRetryGate: Sendable, Equatable {
+    public static let waitSeconds = 30.0
+
+    private var lastFailedAt: Date?
+
+    public init() {}
+
+    /// Whether an event may start a request now.
+    public func canTry(at date: Date) -> Bool {
+        guard let lastFailedAt else { return true }
+        return date.timeIntervalSince(lastFailedAt) >= Self.waitSeconds
+    }
+
+    public mutating func didFail(at date: Date) { lastFailedAt = date }
+
+    public mutating func didSucceed() { lastFailedAt = nil }
 }
 
 /// WatchedPlace is a place the phone asks iOS to tell it about the person

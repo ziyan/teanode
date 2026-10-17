@@ -12,6 +12,17 @@ struct LocationSettingsView: View {
 
     var body: some View {
         Form {
+            if let refusalText = recorder.refusalText {
+                Section {
+                    Label {
+                        Text("The server did not take what this phone noticed, so recording has stopped: \(refusalText)")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                    }
+                } footer: {
+                    Text("Turn Record where I go off and on again to try once more.")
+                }
+            }
             if let missing = missingPermission {
                 Section {
                     Label {
@@ -36,12 +47,12 @@ struct LocationSettingsView: View {
                     "TeaNode notes where you stop and when you leave, even when the app is closed. Turned off, it records nothing new. What is already recorded stays until you erase it.")
             }
             Section {
-                Button("Erase history", systemImage: "trash", role: .destructive) {
+                Button("Erase positions and visits", systemImage: "trash", role: .destructive) {
                     isConfirmingErase = true
                 }
                 .disabled(isErasing)
-                .confirmationDialog("Erase everything recorded of where you have been?", isPresented: $isConfirmingErase, titleVisibility: .visible) {
-                    Button("Erase history", role: .destructive) {
+                .confirmationDialog("Erase your positions and visits?", isPresented: $isConfirmingErase, titleVisibility: .visible) {
+                    Button("Erase positions and visits", role: .destructive) {
                         Task {
                             isErasing = true
                             await model.eraseHistory()
@@ -49,10 +60,12 @@ struct LocationSettingsView: View {
                         }
                     }
                 } message: {
-                    Text("Every visit, place and position is deleted from your server. This cannot be undone.")
+                    Text(
+                        "Erases your positions and visits, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from those days stays in its memory until you remove it. This cannot be undone."
+                    )
                 }
             } footer: {
-                Text("Your agent and the people you share with can no longer see what is erased.")
+                Text("The people you share with can no longer see what is erased.")
             }
         }
         .navigationTitle("Location settings")
@@ -97,6 +110,9 @@ struct MissingLocationPermission {
 /// AlwaysExplanationSheet says why TeaNode asks for Always, before iOS asks.
 struct AlwaysExplanationSheet: View {
     @Environment(\.dismiss) private var dismiss
+    /// Whether the person pressed one of the two buttons. Swiping the sheet
+    /// away is a "Not now" too: it would otherwise come back every time.
+    @State private var isAnswered = false
 
     var body: some View {
         ScrollView {
@@ -114,6 +130,7 @@ struct AlwaysExplanationSheet: View {
                 )
                 .multilineTextAlignment(.center)
                 Button {
+                    isAnswered = true
                     LocationRecorder.shared.requestAlways()
                     dismiss()
                 } label: {
@@ -122,6 +139,7 @@ struct AlwaysExplanationSheet: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 Button {
+                    isAnswered = true
                     LocationRecorder.shared.declineAlwaysExplanation()
                     dismiss()
                 } label: {
@@ -133,5 +151,8 @@ struct AlwaysExplanationSheet: View {
             .padding()
         }
         .presentationDetents([.medium, .large])
+        .onDisappear {
+            if !isAnswered { LocationRecorder.shared.declineAlwaysExplanation() }
+        }
     }
 }

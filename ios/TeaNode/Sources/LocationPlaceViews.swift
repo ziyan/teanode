@@ -59,7 +59,7 @@ struct LocationPlaceScreen: View {
                     if !isEditing { Task { await saveRadius() } }
                 }
             } footer: {
-                Text("A visit counts as here when you are within this distance of the pin.")
+                Text("A visit counts as here when you are within this distance of the center of the place.")
             }
             Section {
                 ForEach(visits) { visit in
@@ -159,32 +159,56 @@ struct LocationPlaceScreen: View {
     }
 }
 
-/// CheckInSheet lists the named things near the phone and records that the
-/// person is at the one they tap.
+/// CheckInSheet lists the named places near the phone and records that the
+/// person is at the one they tap. A search finds a place by its name instead.
 struct CheckInSheet: View {
     let model: LocationModel
     @Environment(\.dismiss) private var dismiss
-    @State private var found: [FoundPlace]?
+    @State private var nearbyPlaces: [FoundPlace]?
+    @State private var position: (latitudeDegrees: Double, longitudeDegrees: Double)?
     @State private var loadFailedText: String?
+    @State private var searchText = ""
+    /// What the last search found, for the words in `searchedWords`.
+    @State private var searchedPlaces: [FoundPlace]?
+    @State private var searchedWords = ""
+    @State private var searchNextOffset: Int?
+    @State private var isSearching = false
     @State private var isCheckingIn = false
+    /// Said inside the sheet: the toast of the screen behind it is hidden.
+    @State private var problemText: String?
+    @State private var doneText: String?
+
+    private var trimmedSearchText: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The places listed: what the search found while words are typed, else
+    /// the places near the phone.
+    private var listedPlaces: [FoundPlace]? {
+        trimmedSearchText.isEmpty ? nearbyPlaces : searchedPlaces
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                if let found {
+                if let listedPlaces {
                     Section {
-                        ForEach(found) { thing in
+                        ForEach(listedPlaces) { foundPlace in
                             Button {
-                                Task { await checkIn(at: thing) }
+                                Task { await checkIn(at: foundPlace) }
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(verbatim: thing.placeName).foregroundStyle(.primary)
-                                    Text(verbatim: details(of: thing))
+                                    Text(verbatim: foundPlace.placeName).foregroundStyle(.primary)
+                                    Text(verbatim: details(of: foundPlace))
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                 }
+                                .frame(minHeight: 44, alignment: .leading)
                             }
                             .disabled(isCheckingIn)
+                        }
+                        if !trimmedSearchText.isEmpty, searchNextOffset != nil {
+                            Button("More places") { Task { await search(isNextPage: true) } }
+                                .disabled(isSearching)
+                                .frame(minHeight: 44)
                         }
                     } footer: {
                         OpenStreetMapCredit()
@@ -194,11 +218,17 @@ struct CheckInSheet: View {
             .overlay {
                 if let loadFailedText {
                     LoadFailedView(problemText: loadFailedText) { await load() }
-                } else if let found {
-                    if found.isEmpty {
+                } else if !trimmedSearchText.isEmpty {
+                    if isSearching, searchedPlaces == nil {
+                        ProgressView()
+                    } else if searchedPlaces?.isEmpty == true, searchedWords == trimmedSearchText {
+                        ContentUnavailableView.search(text: trimmedSearchText)
+                    }
+                } else if let nearbyPlaces {
+                    if nearbyPlaces.isEmpty {
                         ContentUnavailableView(
                             "Nothing with a name nearby", systemImage: "mappin.slash",
-                            description: Text("Try again from a place with a shop, park or building on the map."))
+                            description: Text("Try again from a place with a shop, park or building on the map, or find a place by its name."))
                     }
                 } else {
                     ProgressView()
@@ -206,41 +236,76 @@ struct CheckInSheet: View {
             }
             .navigationTitle("Check in")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $searchText, prompt: Text("Find a place"))
+            .onSubmit(of: .search) { Task { await search(isNextPage: false) } }
+            .onChange(of: searchText) {
+                // Words changed: what was found for the old ones is not the answer.
+                if trimmedSearchText != searchedWords {
+                    searchedPlaces = nil
+                    searchNextOffset = nil
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .toast(done: $doneText, problem: $problemText)
             .task { await load() }
         }
     }
 
-    /// The kind of thing it is and how far away, such as "Cafe · 40 m".
-    private func details(of thing: FoundPlace) -> String {
-        let kind = LocationText.category(thing.osmCategory)
-        let distance = LocationText.distance(thing.distanceMeters)
-        return kind.isEmpty ? distance : String(localized: "\(kind) · \(distance)")
+    /// The kind of place it is and how far away, such as "Cafe · 40 m".
+    private func details(of foundPlace: FoundPlace) -> String {
+        let categoryName = LocationText.category(foundPlace.osmCategory)
+        let distanceText = LocationText.distance(foundPlace.distanceMeters)
+        return categoryName.isEmpty ? distanceText : String(localized: "\(categoryName) · \(distanceText)")
     }
 
     private func load() async {
         loadFailedText = nil
-        guard let position = await model.currentPosition() else {
+        guard let current = await model.currentPosition() else {
             // Said in a toast by the model; the sheet says it too, so it is
             // not left spinning.
             loadFailedText = model.problemText ?? String(localized: "The phone could not tell where it is.")
             return
         }
+        position = current
         do {
-            found = try await model.nearby(latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees)
+            nearbyPlaces = try await model.nearby(latitudeDegrees: current.latitudeDegrees, longitudeDegrees: current.longitudeDegrees)
         } catch {
             loadFailedText = error.loadProblemText
         }
     }
 
-    private func checkIn(at thing: FoundPlace) async {
+    /// Looks for the words typed among the places near the phone; the next
+    /// page when asked.
+    private func search(isNextPage: Bool) async {
+        let words = trimmedSearchText
+        guard !words.isEmpty, let position else { return }
+        isSearching = true
+        defer { isSearching = false }
+        do {
+            let page = try await model.searchPlaces(words: words, near: position, offset: isNextPage ? searchNextOffset ?? 0 : 0)
+            // Other words were typed while this was read.
+            guard words == trimmedSearchText else { return }
+            let known = isNextPage ? searchedPlaces ?? [] : []
+            searchedPlaces = known + page.foundPlaces
+            searchedWords = words
+            searchNextOffset = page.nextOffset
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
+    }
+
+    private func checkIn(at foundPlace: FoundPlace) async {
         isCheckingIn = true
         defer { isCheckingIn = false }
-        let target: CheckInTarget = thing.placeId.map { .place($0) } ?? .found(thing)
-        if await model.checkIn(target, placeName: thing.placeName) { dismiss() }
+        let target: CheckInTarget = foundPlace.placeId.map { .place($0) } ?? .found(foundPlace)
+        if let refusalText = await model.checkIn(target, placeName: foundPlace.placeName) {
+            problemText = refusalText
+        } else {
+            dismiss()
+        }
     }
 }

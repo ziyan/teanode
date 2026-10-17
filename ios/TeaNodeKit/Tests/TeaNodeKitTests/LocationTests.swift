@@ -52,7 +52,7 @@ final class LocationTests: XCTestCase {
         let (connection, fake) = connection(
             answering: #"""
                 {"data":{"GetLocation":{"userId":"user-1","username":"robin","name":null,"avatarUrl":null,"avatarColorIndex":3,
-                 "locationShareLevel":"owner",
+                 "shareLevel":"owner",
                  "latestPoint":{"latitudeDegrees":10.5,"longitudeDegrees":20.5,"accuracyMeters":12.5,"altitudeMeters":null,
                   "speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"2030-01-02T09:30:00Z","locationSource":"phone"},
                  "openVisit":\#(visitAnswer)}}}
@@ -64,7 +64,7 @@ final class LocationTests: XCTestCase {
         XCTAssertNotNil(location.latestPoint?.measuredDate)
         let open = try XCTUnwrap(location.openVisit)
         XCTAssertTrue(open.isOpen)
-        XCTAssertNil(open.stayDuration)
+        XCTAssertNil(open.visitDuration)
         XCTAssertEqual(open.place.osmId, 123_456_789_012)
         XCTAssertEqual(open.place.visitCount, 3)
         XCTAssertNotNil(open.place.lastVisitDate)
@@ -76,9 +76,9 @@ final class LocationTests: XCTestCase {
         let text = visitAnswer.replacingOccurrences(of: #""departedAt":null"#, with: #""departedAt":"2030-01-02T10:25:00Z""#)
         let visit = try JSONDecoder().decode(PlaceVisit.self, from: Data(text.utf8))
         XCTAssertFalse(visit.isOpen)
-        XCTAssertEqual(visit.stayDuration, .seconds(85 * 60))
+        XCTAssertEqual(visit.visitDuration, .seconds(85 * 60))
         let told = visitAnswer.replacingOccurrences(of: #""durationSeconds":null"#, with: #""durationSeconds":60.5"#)
-        XCTAssertEqual(try JSONDecoder().decode(PlaceVisit.self, from: Data(told.utf8)).stayDuration, .seconds(60.5))
+        XCTAssertEqual(try JSONDecoder().decode(PlaceVisit.self, from: Data(told.utf8)).visitDuration, .seconds(60.5))
     }
 
     func testPagesOfVisitsAskForTheOffsetTheLastOneGave() async throws {
@@ -96,7 +96,7 @@ final class LocationTests: XCTestCase {
             ])
     }
 
-    func testReadsPlacesAndNearbyThings() async throws {
+    func testReadsPlacesAndNearbyPlaces() async throws {
         let (placesConnection, _) = connection(answering: #"{"data":{"ListPlaces":{"places":[\#(placeAnswer)],"nextOffset":null}}}"#)
         let page = try await placesConnection.locationPlaces()
         XCTAssertEqual(page.places.map(\.id), ["place-1"])
@@ -129,7 +129,7 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake.sent[3]), ["placeId": .string("place-1")])
     }
 
-    func testChecksInAtAPlaceOrAFoundThing() async throws {
+    func testChecksInAtAPlaceOrAFoundPlace() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
         try await connection.checkIn(.place("place-1"))
         let found = FoundPlace(
@@ -147,8 +147,8 @@ final class LocationTests: XCTestCase {
     }
 
     func testErasesEverythingWithNoRange() async throws {
-        let (connection, fake) = connection(answering: #"{"data":{"ForgetLocationHistory":{"pointCount":10,"visitCount":2,"placeCount":1}}}"#)
-        let result = try await connection.forgetLocationHistory()
+        let (connection, fake) = connection(answering: #"{"data":{"EraseLocationHistory":{"pointCount":10,"visitCount":2,"placeCount":1}}}"#)
+        let result = try await connection.eraseLocationHistory()
         XCTAssertEqual(result.pointCount, 10)
         XCTAssertEqual(try sentVariables(fake.sent[0]), [:])
     }
@@ -307,7 +307,6 @@ final class LocationTests: XCTestCase {
         var outbox = LocationOutbox(accountKey: "account")
         let arrived = date("2030-01-02T09:00:00Z")
         XCTAssertTrue(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived))
-        XCTAssertFalse(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived.addingTimeInterval(60)))
         outbox.remove(outbox.nextBatch())
 
         var reread = try LocationOutbox.decoded(from: try outbox.encoded())
@@ -319,6 +318,88 @@ final class LocationTests: XCTestCase {
         XCTAssertNil(departure.arrivedAt)
         XCTAssertEqual(departure.departedAt, arrived.addingTimeInterval(3600))
         XCTAssertEqual(departure.placeId, "place-1")
+    }
+
+    func testAnArrivalAtAPlaceWithAnOpenVisitEndsThatVisitFirst() {
+        var outbox = LocationOutbox(accountKey: "account")
+        let first = date("2030-01-02T09:00:00Z")
+        let second = first.addingTimeInterval(3 * 3600)
+        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: first)
+        XCTAssertTrue(outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: second))
+        XCTAssertEqual(outbox.visits.count, 3)
+        // The first visit is ended at the second arrival, under its own key.
+        XCTAssertEqual(outbox.visits[1].clientVisitKey, LocationVisitKey.region(placeId: "place-1", arrivedAt: first))
+        XCTAssertEqual(outbox.visits[1].departedAt, second)
+        XCTAssertEqual(outbox.visits[2].clientVisitKey, LocationVisitKey.region(placeId: "place-1", arrivedAt: second))
+        XCTAssertNotNil(outbox.openRegionVisits["place-1"])
+    }
+
+    func testEndingEveryVisitWhenMonitoringStopsLeavesNoneOpen() {
+        var outbox = LocationOutbox(accountKey: "account")
+        let arrived = date("2030-01-02T09:00:00Z")
+        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: arrived)
+        outbox.arrive(placeId: "place-2", latitudeDegrees: 10.6, longitudeDegrees: 20.5, at: arrived)
+        outbox.departEverywhere(at: arrived.addingTimeInterval(600))
+        XCTAssertTrue(outbox.openRegionVisits.isEmpty)
+        XCTAssertEqual(outbox.visits.filter { $0.departedAt != nil }.count, 2)
+    }
+
+    func testDiscardingWhatIsUnsentKeepsTheVisitsBegun() {
+        var outbox = LocationOutbox(accountKey: "account")
+        outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: Date()))
+        outbox.arrive(placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, at: Date())
+        outbox.discardUnsent()
+        XCTAssertTrue(outbox.isEmpty)
+        XCTAssertNotNil(outbox.openRegionVisits["place-1"])
+        XCTAssertEqual(outbox.accountKey, "account")
+    }
+
+    func testDiscardingARangeKeepsWhatWasNoticedOutsideIt() {
+        var outbox = LocationOutbox(accountKey: "account")
+        let day = date("2030-01-02T00:00:00Z")
+        for hour in [1.0, 30.0] {
+            outbox.addPoint(ReportedPoint(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, measuredAt: day.addingTimeInterval(hour * 3600)))
+        }
+        outbox.addVisit(
+            ReportedVisit(
+                clientVisitKey: "inside", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, arrivedAt: day.addingTimeInterval(3600),
+                departedAt: nil, visitSource: "visit"))
+        outbox.addVisit(
+            ReportedVisit(
+                clientVisitKey: "outside", latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 5, arrivedAt: nil,
+                departedAt: day.addingTimeInterval(30 * 3600), visitSource: "visit"))
+        outbox.discardUnsent(from: day, until: day.addingTimeInterval(86_400))
+        XCTAssertEqual(outbox.points.count, 1)
+        XCTAssertEqual(outbox.visits.map(\.clientVisitKey), ["outside"])
+    }
+
+    func testEachAccountHasAnOutboxFileOfItsOwn() {
+        let first = LocationOutbox.fileName(accountKey: "mail.example.com/robin")
+        let second = LocationOutbox.fileName(accountKey: "mail.example.com/sam")
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(first, LocationOutbox.fileName(accountKey: "mail.example.com/robin"))
+        XCTAssertFalse(LocationOutbox.fileName(accountKey: "../../elsewhere").contains("/"))
+        XCTAssertFalse(LocationOutbox.fileName(accountKey: "../../elsewhere").contains(".."))
+    }
+
+    func testAFailedBatchIsRetriedOnlyForACallThatDidNotGetThrough() {
+        XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.refused("api: permission denied")), .refused("api: permission denied"))
+        XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.refused("api: invalid arguments: bad point")), .refused("api: invalid arguments: bad point"))
+        XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.refused("api: not found")), .phoneNotFound)
+        XCTAssertEqual(LocationReportFailure.classify(TeaNodeError.signedOut), .retryLater)
+        XCTAssertEqual(LocationReportFailure.classify(URLError(.notConnectedToInternet)), .retryLater)
+    }
+
+    func testEventsWaitHalfAMinuteAfterAFailureButNotAfterASuccess() {
+        var gate = LocationRetryGate()
+        let now = date("2030-01-02T09:00:00Z")
+        XCTAssertTrue(gate.canTry(at: now))
+        gate.didFail(at: now)
+        XCTAssertFalse(gate.canTry(at: now.addingTimeInterval(10)))
+        XCTAssertTrue(gate.canTry(at: now.addingTimeInterval(30)))
+        gate.didFail(at: now)
+        gate.didSucceed()
+        XCTAssertTrue(gate.canTry(at: now.addingTimeInterval(1)))
     }
 
     // MARK: Watching places
@@ -387,6 +468,7 @@ final class LocationTests: XCTestCase {
 
     func testTheSetupIsWorkedOutFromTheServerAndThePermission() {
         let begun = LocationSetup(isPermissionDone: false, homePlaces: [], circles: [fixtureCircle(circleKind: "family")], shares: [])
+        XCTAssertEqual(begun.familyCircles.map(\.id), ["circle-1"])
         XCTAssertTrue(begun.isShareOffered)
         XCTAssertFalse(begun.isFinished)
         XCTAssertTrue(begun.isShown(isDismissed: false, hasLatestPoint: false))
@@ -411,6 +493,25 @@ final class LocationTests: XCTestCase {
             isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: [fixtureCircle(circleKind: "family")],
             shares: [fixtureShare(circleId: "circle-other")])
         XCTAssertFalse(shareElsewhere.isShareDone)
+    }
+
+    func testTheSetupListsEveryFamilyCircleAndIsDoneOnlyWhenAllAreShared() {
+        let second = PeopleCircle(
+            id: "circle-2", name: "Fixture Cousins", circleKind: "family", createdAt: "2030-01-01T00:00:00Z", memberRole: "member", members: [])
+        let friends = PeopleCircle(
+            id: "circle-3", name: "Fixture Friends", circleKind: "friends", createdAt: "2030-01-01T00:00:00Z", memberRole: "member", members: [])
+        let circles = [fixtureCircle(circleKind: "family"), second, friends]
+        let half = LocationSetup(
+            isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: circles, shares: [fixtureShare(circleId: "circle-1")])
+        XCTAssertEqual(half.familyCircles.map(\.id), ["circle-1", "circle-2"])
+        XCTAssertTrue(half.isShared(with: circles[0]))
+        XCTAssertFalse(half.isShared(with: second))
+        XCTAssertFalse(half.isShareDone)
+        XCTAssertFalse(half.isFinished)
+        let all = LocationSetup(
+            isPermissionDone: true, homePlaces: [fixturePlace(label: "home")], circles: circles,
+            shares: [fixtureShare(circleId: "circle-1"), fixtureShare(circleId: "circle-2")])
+        XCTAssertTrue(all.isFinished)
     }
 
     func testALocationNotificationCarriesTheUserWhoMoved() throws {

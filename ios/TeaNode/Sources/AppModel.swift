@@ -361,6 +361,11 @@ final class AppModel {
     /// on it (the server's location:use), as far as the server has said.
     private(set) var canUseLocation = false
 
+    /// Whether the permissions of the account in use have been read once
+    /// (`canUseLocation` and `canChat` are only true after that). Until
+    /// then, a screen that needs one of them is not known to be refused.
+    private(set) var hasReadPermissions = false
+
     /// Reads whether the person can chat, and how much is waiting for them
     /// in their chats.
     func refreshChats() async {
@@ -368,7 +373,10 @@ final class AppModel {
         let session = try? await connection.accessSession()
         guard !Task.isCancelled, self.connection === connection else { return }
         if let userId = session?.userId { ownUserId = userId }
-        if let session { canUseLocation = session.holds("location:use") }
+        if let session {
+            canUseLocation = session.holds("location:use")
+            hasReadPermissions = true
+        }
         let canUseCircles = session?.holds("circle:use") ?? false
         canChat = canUseCircles
         guard canUseCircles else {
@@ -402,6 +410,7 @@ final class AppModel {
                 account = DemoServer.account
                 connection = Connection(account: DemoServer.account, transport: transport)
                 canUseLocation = true
+                hasReadPermissions = true
                 return
             }
         #endif
@@ -426,6 +435,7 @@ final class AppModel {
         ownUserId = nil
         canChat = false
         canUseLocation = false
+        hasReadPermissions = false
         unreadChatCount = 0
         isAgentEnabledByPerson = true
         hasAgent = true
@@ -767,6 +777,7 @@ final class AppModel {
         if let account {
             try? PayloadKey.keyring.forget(for: account.accountKey)
             ConversationDraft.forget(accountKey: account.accountKey)
+            LocationRecorder.shared.accountWasRemoved(accountKey: account.accountKey)
         }
         try? store.delete()
         phone = nil
@@ -811,6 +822,7 @@ final class AppModel {
         otherConnections[other.accountKey] = nil
         try? PayloadKey.keyring.forget(for: other.accountKey)
         ConversationDraft.forget(accountKey: other.accountKey)
+        LocationRecorder.shared.accountWasRemoved(accountKey: other.accountKey)
         try? store.remove(other.accountKey)
         accounts = (try? store.accounts().accounts) ?? accounts
     }

@@ -51,21 +51,21 @@ import Foundation
             while !Task.isCancelled {
                 let frame = try await socket.receive()
                 watched.heard()
-                guard case .string(let text) = frame, let message = try? GraphQLWebSocketMessage(decoding: text) else {
+                guard case .string(let text) = frame, let socketMessage = try? GraphQLWebSocketMessage(decoding: text) else {
                     continue
                 }
-                switch message {
-                case .connectionError(let reason):
-                    throw TeaNodeError.refused(reason)
+                switch socketMessage {
+                case .connectionError(let errorMessage):
+                    throw TeaNodeError.refused(errorMessage)
                 case .error(_, let errors):
                     throw TeaNodeError.refused(errors.first?.message ?? "The server stopped the location feed.")
                 case .complete:
                     return
-                case .data(_, let data, let errors):
+                case .data(_, let eventData, let errors):
                     if let error = errors.first {
                         throw TeaNodeError.refused(error.message)
                     }
-                    guard let event = data?["LocationEvents"] else { continue }
+                    guard let event = eventData?["LocationEvents"] else { continue }
                     yield(try JSONDecoder().decode(LocationEvent.self, from: JSONEncoder().encode(event)))
                 default:
                     continue

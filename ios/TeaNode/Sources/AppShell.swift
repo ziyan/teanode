@@ -183,7 +183,8 @@ struct MainView: View {
             }
         }
         .onChange(of: app.services) {
-            if !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
+            // Location is judged when the permissions have been read, not by services.
+            if section != .location, !app.isSectionAvailable(section) { section = AppSection.allCases.first(where: { app.isSectionAvailable($0) }) ?? .settings }
         }
         .onChange(of: mail.currentMailboxId) {
             if let inbox = mail.folder(kind: "inbox") { mailPlace = .folder(inbox.id) }
@@ -297,6 +298,19 @@ struct MainView: View {
                         // when the server cannot be reached.
                         if app.hasServicesFailedToLoad { MenuButton() }
                     }
+            }
+        } else if section == .location, !app.hasReadPermissions {
+            // Whether the account may use Location is read with the chats; a
+            // Location link opened at launch waits for it rather than being
+            // told it is refused.
+            NavigationStack {
+                ServicesLoadingView()
+                    .toolbar { MenuButton() }
+            }
+        } else if section == .location, !app.canUseLocation {
+            NavigationStack {
+                LocationNotAllowedView()
+                    .toolbar { MenuButton() }
             }
         } else if !app.isSectionAvailable(section) {
             NavigationStack {
@@ -558,6 +572,18 @@ struct ServiceOffView: View {
         }
         .task(id: section) {
             canManageServer = (try? await connection.operatorAccess())?.canManageServer ?? false
+        }
+    }
+}
+
+/// LocationNotAllowedView is what Location says to an account that may not
+/// use it: that is a permission, not a service the server has turned off.
+struct LocationNotAllowedView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("Location is not available to you", systemImage: AppSection.location.systemImage)
+        } description: {
+            Text("Your account is not allowed to record or share where you go. Whoever manages your TeaNode server can allow it.")
         }
     }
 }

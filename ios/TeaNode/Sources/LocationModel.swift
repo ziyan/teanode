@@ -10,7 +10,8 @@ import TeaNodeKit
 @Observable
 final class LocationModel {
     nonisolated static let visitPageSize = 50
-    nonisolated static let placePageSize = 100
+    nonisolated static let placePageSize = 50
+    nonisolated static let searchPageSize = 20
 
     let connection: Connection
 
@@ -28,6 +29,17 @@ final class LocationModel {
     private(set) var loadFailedText: String?
     var problemText: String?
     var doneText: String?
+
+    // MARK: What the lists are filtered by
+
+    /// Only visits to places with this label, when one is chosen.
+    private(set) var visitLabelFilter: PlaceLabel?
+    /// Only places with this label, when one is chosen.
+    private(set) var placeLabelFilter: PlaceLabel?
+    /// Words the places' names are searched for, as typed.
+    var placeSearchText = ""
+    /// The words the places shown were read for.
+    private var readPlaceQuery = ""
 
     // MARK: People sharing, the person's own shares and the setup
 
@@ -84,6 +96,14 @@ final class LocationModel {
     /// The visits grouped by day, newest first.
     var days: [LocationVisitDay] { LocationDays.group(visits) }
 
+    /// Whether the visits shown are narrowed by a label.
+    var isFilteringVisits: Bool { visitLabelFilter != nil }
+
+    /// Whether the places shown are narrowed by a label or by words.
+    var isFilteringPlaces: Bool { placeLabelFilter != nil || !trimmedPlaceSearchText.isEmpty }
+
+    private var trimmedPlaceSearchText: String { placeSearchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     /// The places in the order the server gives them: labeled first, then
     /// named by the person, then by the last visit.
     var sortedPlaces: [LocationPlace] { places }
@@ -106,9 +126,14 @@ final class LocationModel {
             hasLoaded = true
         }
         let connection = self.connection
+        let visitLabel = visitLabelFilter?.rawValue
+        let placeLabel = placeLabelFilter?.rawValue
+        let placeQuery = trimmedPlaceSearchText
         async let readLocation = attempt { try await connection.location() }
-        async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
-        async let readPlaces = attempt { try await connection.locationPlaces(limitCount: LocationModel.placePageSize) }
+        async let readVisits = attempt { try await connection.locationVisits(placeLabel: visitLabel, limitCount: LocationModel.visitPageSize) }
+        async let readPlaces = attempt {
+            try await connection.locationPlaces(placeLabel: placeLabel, query: placeQuery, limitCount: LocationModel.placePageSize)
+        }
         async let readPeople = attempt { try await connection.sharedLocations() }
         async let readShares = attempt { try await connection.locationShares() }
         async let readCircles = attempt { try await connection.circles() }
@@ -131,6 +156,7 @@ final class LocationModel {
         case .success(let page):
             places = page.places
             nextPlaceOffset = page.nextOffset
+            readPlaceQuery = placeQuery
         case .failure(let error): failure = failure ?? error
         }
         if let failure {
@@ -176,7 +202,7 @@ final class LocationModel {
         isLoadingMoreVisits = true
         defer { isLoadingMoreVisits = false }
         do {
-            let page = try await connection.locationVisits(offset: offset, limitCount: Self.visitPageSize)
+            let page = try await connection.locationVisits(placeLabel: visitLabelFilter?.rawValue, offset: offset, limitCount: Self.visitPageSize)
             let known = Set(visits.map(\.id))
             visits += page.placeVisits.filter { !known.contains($0.id) }
             nextVisitOffset = page.nextOffset
@@ -190,7 +216,8 @@ final class LocationModel {
         isLoadingMorePlaces = true
         defer { isLoadingMorePlaces = false }
         do {
-            let page = try await connection.locationPlaces(offset: offset, limitCount: Self.placePageSize)
+            let page = try await connection.locationPlaces(
+                placeLabel: placeLabelFilter?.rawValue, query: readPlaceQuery, offset: offset, limitCount: Self.placePageSize)
             let known = Set(places.map(\.id))
             places += page.places.filter { !known.contains($0.id) }
             nextPlaceOffset = page.nextOffset
@@ -198,6 +225,52 @@ final class LocationModel {
             problemText = error.localizedDescription
         }
     }
+
+    /// Shows only visits to places with this label, or all of them.
+    func setVisitLabelFilter(_ label: PlaceLabel?) async {
+        guard label != visitLabelFilter else { return }
+        visitLabelFilter = label
+        await reloadVisits()
+    }
+
+    /// Shows only places with this label, or all of them.
+    func setPlaceLabelFilter(_ label: PlaceLabel?) async {
+        guard label != placeLabelFilter else { return }
+        placeLabelFilter = label
+        await reloadPlaces()
+    }
+
+    /// Reads the first page of visits again, for the filter chosen.
+    private func reloadVisits() async {
+        do {
+            let page = try await connection.locationVisits(placeLabel: visitLabelFilter?.rawValue, limitCount: Self.visitPageSize)
+            visits = page.placeVisits
+            nextVisitOffset = page.nextOffset
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Reads the first page of places again, for the label and the words
+    /// typed; nothing is read when they are what the places shown were read
+    /// for.
+    func reloadPlaces() async {
+        let query = trimmedPlaceSearchText
+        do {
+            let page = try await connection.locationPlaces(
+                placeLabel: placeLabelFilter?.rawValue, query: query, limitCount: Self.placePageSize)
+            // The words changed while this was read.
+            guard query == trimmedPlaceSearchText else { return }
+            places = page.places
+            nextPlaceOffset = page.nextOffset
+            readPlaceQuery = query
+        } catch {
+            problemText = error.localizedDescription
+        }
+    }
+
+    /// Whether the words typed are not what the places shown were read for.
+    var isPlaceSearchPending: Bool { trimmedPlaceSearchText != readPlaceQuery }
 
     /// The points of one day, for drawing the path.
     func points(on day: Date) async throws -> [LocationPoint] {
@@ -219,6 +292,7 @@ final class LocationModel {
         do {
             let saved = try await connection.savePlace(change)
             replace(saved)
+            LocationRecorder.shared.placesDidChange()
             return saved
         } catch {
             problemText = error.localizedDescription
@@ -238,7 +312,7 @@ final class LocationModel {
         if let open = location?.openVisit, open.place.id == saved.id, let current = location {
             location = PersonLocation(
                 userId: current.userId, username: current.username, name: current.name, avatarUrl: current.avatarUrl,
-                avatarColorIndex: current.avatarColorIndex, locationShareLevel: current.locationShareLevel, latestPoint: current.latestPoint,
+                avatarColorIndex: current.avatarColorIndex, shareLevel: current.shareLevel, latestPoint: current.latestPoint,
                 openVisit: PlaceVisit(
                     id: open.id, place: saved, arrivedAt: open.arrivedAt, departedAt: open.departedAt, durationSeconds: open.durationSeconds,
                     latitudeDegrees: open.latitudeDegrees, longitudeDegrees: open.longitudeDegrees, accuracyMeters: open.accuracyMeters,
@@ -254,6 +328,7 @@ final class LocationModel {
             places.removeAll { $0.id == place.id }
             visits.removeAll { $0.place.id == place.id }
             if location?.openVisit?.place.id == place.id { await load() }
+            LocationRecorder.shared.placesDidChange()
             doneText = String(localized: "Forgot \(place.shownName)")
             return true
         } catch {
@@ -278,37 +353,59 @@ final class LocationModel {
         try await connection.nearbyPlaces(latitudeDegrees: latitudeDegrees, longitudeDegrees: longitudeDegrees)
     }
 
-    /// Records that the person is at a place now.
-    @discardableResult
-    func checkIn(_ target: CheckInTarget, placeName: String) async -> Bool {
+    /// Places matching words near a position, from OpenStreetMap, a page at
+    /// a time.
+    func searchPlaces(words: String, near position: (latitudeDegrees: Double, longitudeDegrees: Double), offset: Int = 0) async throws
+        -> FoundPlacePage
+    {
+        try await connection.searchPlaces(
+            query: words, latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees, offset: offset,
+            limitCount: Self.searchPageSize)
+    }
+
+    /// Records that the person is at a place now. Nil when it worked, else
+    /// the reason, for the sheet that asked to say.
+    func checkIn(_ target: CheckInTarget, placeName: String) async -> String? {
         do {
             try await connection.checkIn(target)
             doneText = String(localized: "Checked in at \(placeName)")
+            LocationRecorder.shared.placesDidChange()
             await load()
-            return true
+            return nil
         } catch {
-            problemText = error.localizedDescription
-            return false
+            return error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
         }
     }
 
-    /// Deletes everything recorded: every point, visit and place.
+    /// Erases the positions and visits of a range (with no range, all of
+    /// them), and the places that leaves with no visit that the person did
+    /// not name or label. What the phone has noticed in that range and not
+    /// yet sent goes too, and nothing is sent while the erase is on its way.
     @discardableResult
-    func eraseHistory() async -> Bool {
+    func eraseHistory(from: Date? = nil, until: Date? = nil, dayText: String? = nil) async -> Bool {
+        let recorder = LocationRecorder.shared
+        await recorder.holdReporting()
         do {
-            _ = try await connection.forgetLocationHistory()
+            _ = try await connection.eraseLocationHistory(from: from, until: until)
+        } catch {
+            recorder.releaseReporting(discardingFrom: from, until: until, isErased: false)
+            problemText = error.localizedDescription
+            return false
+        }
+        recorder.releaseReporting(discardingFrom: from, until: until, isErased: true)
+        recorder.placesDidChange()
+        if from == nil, until == nil {
             location = nil
             visits = []
             places = []
             nextVisitOffset = nil
             nextPlaceOffset = nil
-            doneText = String(localized: "Your location history is erased")
-            await load()
-            return true
-        } catch {
-            problemText = error.localizedDescription
-            return false
+            doneText = String(localized: "Your positions and visits are erased")
+        } else if let dayText {
+            doneText = String(localized: "Erased the positions and visits of \(dayText)")
         }
+        await load()
+        return true
     }
 
     // MARK: Following people
@@ -382,8 +479,9 @@ final class LocationModel {
     /// phone changes.
     private func refreshOwn() async {
         let connection = self.connection
+        let visitLabel = visitLabelFilter?.rawValue
         async let readLocation = attempt { try await connection.location() }
-        async let readVisits = attempt { try await connection.locationVisits(limitCount: LocationModel.visitPageSize) }
+        async let readVisits = attempt { try await connection.locationVisits(placeLabel: visitLabel, limitCount: LocationModel.visitPageSize) }
         let (locationResult, visitsResult) = await (readLocation, readVisits)
         if case .success(let read) = locationResult { location = read }
         if case .success(let page) = visitsResult {
@@ -491,17 +589,16 @@ final class LocationModel {
     }
 
     /// Shares the person's location with a person or a circle, at a level.
-    @discardableResult
-    func share(with target: ShareTarget, name: String, level: LocationShareLevel) async -> Bool {
+    /// Nil when it worked, else the reason, for the sheet that asked to say.
+    func share(with target: ShareTarget, name: String, level: LocationShareLevel) async -> String? {
         do {
             try await connection.shareLocation(granteeUserId: target.granteeUserId, granteeCircleId: target.granteeCircleId, level: level)
             doneText = String(localized: "Shared with \(name)")
             await reloadShares()
             finishSetupIfDone()
-            return true
+            return nil
         } catch {
-            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
-            return false
+            return error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
         }
     }
 
@@ -565,10 +662,11 @@ final class LocationModel {
         await load()
     }
 
-    /// Shares the person's location with their family circle from the setup.
-    func shareWithFamily(at level: LocationShareLevel) async {
-        guard let circle = setup.familyCircle else { return }
-        await share(with: .circle(circle.id), name: String(localized: "Everyone in \(circle.name)"), level: level)
+    /// Shares the person's location with one of their family circles from
+    /// the setup, which is on the screen itself, so a refusal is said there.
+    func shareWithFamily(_ circle: PeopleCircle, at level: LocationShareLevel) async {
+        let refusalText = await share(with: .circle(circle.id), name: String(localized: "Everyone in \(circle.name)"), level: level)
+        if let refusalText { problemText = refusalText }
     }
 }
 

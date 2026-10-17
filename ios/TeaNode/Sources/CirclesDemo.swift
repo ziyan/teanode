@@ -28,6 +28,8 @@
             "alex": DemoPerson(userId: "alex", name: "Alex", avatarColorIndex: 4, hasPicture: false),
             // A name of 60 characters, the longest a row has to hold.
             "jordan": DemoPerson(userId: "jordan", name: "Jordan Alexander Montgomery-Featherstonehaugh Wellington-Amy", avatarColorIndex: 9, hasPicture: true),
+            "casey": DemoPerson(userId: "casey", name: "Casey", avatarColorIndex: 1, hasPicture: false),
+            "morgan": DemoPerson(userId: "morgan", name: "Morgan", avatarColorIndex: 5, hasPicture: false),
         ]
 
         static func demoPerson(_ userId: String) -> DemoPerson { demoPeople[userId]! }
@@ -476,7 +478,7 @@
                         accepting: CircleInvitation(
                             id: "invitation-demo", circleId: "circle-home", circleName: "Home", circleKind: "family", invitedByName: "Sam",
                             invitedUsername: "robin", memberRole: "member", createdAt: "2026-10-15T09:00:00Z", expiresAt: "2026-10-29T09:00:00Z"),
-                        calendarId: "home")
+                        calendarId: "home", canShareLocation: true)
                     {
                         CircleCalendarOfferSheet(connection: connection, offer: offer) { _ in }
                     }

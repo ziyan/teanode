@@ -57624,22 +57624,6 @@
         }
       }
     },
-    "A visit counts as here when you are within this distance of the pin.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ピンからこの距離以内にいるとき、ここへの訪問として数えます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当您与图钉的距离在此范围内时，就算作到访此处。"
-          }
-        }
-      }
-    },
     "A visit shows up here after you spend a while somewhere.": {
       "localizations": {
         "ja": {
@@ -57828,54 +57812,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "诊所"
-          }
-        }
-      }
-    },
-    "Erase everything recorded of where you have been?": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "行った場所の記録をすべて消去しますか？"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "要清除所有关于您去过哪里的记录吗？"
-          }
-        }
-      }
-    },
-    "Erase history": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "履歴を消去"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除历史记录"
-          }
-        }
-      }
-    },
-    "Every visit, place and position is deleted from your server. This cannot be undone.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すべての訪問、場所、位置情報がサーバーから削除されます。この操作は取り消せません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每一次到访、每个地点和位置都会从您的服务器删除。此操作无法撤销。"
           }
         }
       }
@@ -58632,22 +58568,6 @@
         }
       }
     },
-    "Try again from a place with a shop, park or building on the map.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "地図上に店、公園、建物がある場所でもう一度お試しください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请在地图上有商店、公园或建筑物的地方重试。"
-          }
-        }
-      }
-    },
     "Turn on Record where I go in the settings, and your visits show up here.": {
       "localizations": {
         "ja": {
@@ -58740,38 +58660,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "等待发送"
-          }
-        }
-      }
-    },
-    "Your agent and the people you share with can no longer see what is erased.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "消去した内容は、エージェントや共有相手にも表示されなくなります。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "您的智能体和与您共享的人将无法再看到已清除的内容。"
-          }
-        }
-      }
-    },
-    "Your location history is erased": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "位置情報の履歴を消去しました"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "您的定位历史记录已清除"
           }
         }
       }
@@ -59056,38 +58944,6 @@
         }
       }
     },
-    "They see where you are now, and nothing before it.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今いる場所だけが見えます。それ以前の場所は見えません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方能看到你现在的位置,看不到更早的记录。"
-          }
-        }
-      }
-    },
-    "They see where you are now, and the places you have been and when.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今いる場所と、訪れた場所とその時刻が見えます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方能看到你现在的位置,以及去过的地方和时间。"
-          }
-        }
-      }
-    },
     "%@ · at %@ since %@": {
       "localizations": {
         "ja": {
@@ -59132,38 +58988,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · 暂无位置"
-          }
-        }
-      }
-    },
-    "Show fewer people": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "表示する人を減らす"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "收起"
-          }
-        }
-      }
-    },
-    "Show all %lld people": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 人すべてを表示"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "显示全部 %lld 人"
           }
         }
       }
@@ -59276,22 +59100,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "点按一行可更改对方能看到的范围,或停止共享。"
-          }
-        }
-      }
-    },
-    "Choose a person or a circle, and whether they see where you are now or the places you have been too.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共有する相手(人またはサークル)と、今いる場所だけか訪れた場所も見せるかを選びます。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择一个人或一个圈子,以及对方只能看到你现在的位置,还是也能看到去过的地方。"
           }
         }
       }
@@ -59456,22 +59264,6 @@
         }
       }
     },
-    "Only where I am now": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今いる場所だけ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "只共享我现在的位置"
-          }
-        }
-      }
-    },
     "Set up Location": {
       "localizations": {
         "ja": {
@@ -59596,6 +59388,614 @@
           "stringUnit": {
             "state": "translated",
             "value": "共享位置的人到达和离开某地"
+          }
+        }
+      }
+    },
+    "No visits to places with this label": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このラベルの場所への訪問はありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有该标签地点的到访记录"
+          }
+        }
+      }
+    },
+    "Choose another label, or all places, to see the rest.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのラベルか「すべての場所」を選ぶと、残りが表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择其他标签，或选择全部地点，查看其余记录。"
+          }
+        }
+      }
+    },
+    "Search your places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の場所を検索"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索您的地点"
+          }
+        }
+      }
+    },
+    "All places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべての場所"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部地点"
+          }
+        }
+      }
+    },
+    "Erase this day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日を消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除这一天"
+          }
+        }
+      }
+    },
+    "Erase %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を消去しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要清除%@的记录吗？"
+          }
+        }
+      }
+    },
+    "Erases your positions and visits of this day, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from those days stays in its memory until you remove it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この日の位置と訪問、そして訪問がなくなり、名前もラベルも付けていない場所を消去します。名前やラベルを付けた場所は残ります。エージェントがこの日々から覚えたことは、削除するまで記憶に残ります。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将清除您这一天的位置和到访记录，以及清除后没有到访记录、且您未命名或未设标签的地点。您命名过或设过标签的地点会保留。您的智能体从这些日子学到的内容会留在它的记忆中，直到您将其移除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "Shows everyone who shares where they are with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたに位置を共有しているすべての人を表示します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示所有与您共享位置的人"
+          }
+        }
+      }
+    },
+    "More places": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "さらに場所を表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多地点"
+          }
+        }
+      }
+    },
+    "Find a place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所を探す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找地点"
+          }
+        }
+      }
+    },
+    "Try again from a place with a shop, park or building on the map, or find a place by its name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図上に店、公園、建物がある場所でもう一度お試しいただくか、名前で場所を探してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在地图上有商店、公园或建筑物的地方重试，或按名称查找地点。"
+          }
+        }
+      }
+    },
+    "A visit counts as here when you are within this distance of the center of the place.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の中心からこの距離以内にいるとき、ここへの訪問として数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当您与地点中心的距离在此范围内时，就算作到访此处。"
+          }
+        }
+      }
+    },
+    "The server did not take what this phone noticed, so recording has stopped: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーがこの iPhone の記録を受け付けなかったため、記録を止めました：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器没有接收这部手机记下的内容，所以记录已停止：%@"
+          }
+        }
+      }
+    },
+    "Turn Record where I go off and on again to try once more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「行った場所を記録」をオフにしてからオンにすると、もう一度試せます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭再打开“记录我去过的地方”即可重试。"
+          }
+        }
+      }
+    },
+    "Erase positions and visits": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問を消去"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除位置和到访记录"
+          }
+        }
+      }
+    },
+    "Erase your positions and visits?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問を消去しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要清除您的位置和到访记录吗？"
+          }
+        }
+      }
+    },
+    "Erases your positions and visits, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from those days stays in its memory until you remove it. This cannot be undone.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問、そして訪問がなくなり、名前もラベルも付けていない場所を消去します。名前やラベルを付けた場所は残ります。エージェントがこの日々から覚えたことは、削除するまで記憶に残ります。この操作は取り消せません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将清除您的位置和到访记录，以及清除后没有到访记录、且您未命名或未设标签的地点。您命名过或设过标签的地点会保留。您的智能体从这些日子学到的内容会留在它的记忆中，直到您将其移除。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "The people you share with can no longer see what is erased.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消去した内容は、共有相手にも表示されなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与您共享的人将无法再看到已清除的内容。"
+          }
+        }
+      }
+    },
+    "Your positions and visits are erased": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置と訪問を消去しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您的位置和到访记录已清除"
+          }
+        }
+      }
+    },
+    "Erased the positions and visits of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の位置と訪問を消去しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除%@的位置和到访记录"
+          }
+        }
+      }
+    },
+    "Location is not available to you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報は利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您无法使用位置功能"
+          }
+        }
+      }
+    },
+    "Your account is not allowed to record or share where you go. Whoever manages your TeaNode server can allow it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアカウントには、行った場所の記録と共有が許可されていません。TeaNode サーバーの管理者が許可できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "您的账户无权记录或共享您去过的地方。管理您 TeaNode 服务器的人可以为您开启。"
+          }
+        }
+      }
+    },
+    "They see where you are now and the place you are at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今いる場所と、いる場所の名前が見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方能看到您现在的位置和您所在的地点。"
+          }
+        }
+      }
+    },
+    "They also see your visits and the places they were at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "訪問と、訪れた場所も見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方还能看到您的到访记录和到访的地点。"
+          }
+        }
+      }
+    },
+    "Choose a person or a circle, and whether they also see your visits and the places they were at.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有する相手（人またはサークル）と、訪問や訪れた場所も見せるかどうかを選びます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人或一个圈子，以及对方是否还能看到您的到访记录和到访的地点。"
+          }
+        }
+      }
+    },
+    "Only where I am now, with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@には今いる場所だけ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只与%@共享我现在的位置"
+          }
+        }
+      }
+    },
+    "Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前は OpenStreetMap から取得します：サーバーが新しい場所の位置を場所の提供元に送り、名前を調べます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称来自 OpenStreetMap：您的服务器会把每个新地点的位置发送给地点服务商，以查询它的名称。"
+          }
+        }
+      }
+    },
+    "Places and maps": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所と地図"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点和地图"
+          }
+        }
+      }
+    },
+    "Place name provider": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前の提供元"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称服务商"
+          }
+        }
+      }
+    },
+    "Nominatim (OpenStreetMap)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nominatim（OpenStreetMap）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nominatim（OpenStreetMap）"
+          }
+        }
+      }
+    },
+    "Photon (OpenStreetMap data)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photon（OpenStreetMap のデータ）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photon（OpenStreetMap 数据）"
+          }
+        }
+      }
+    },
+    "Off: name places after their city": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ：場所を市の名前で呼ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭：以所在城市命名地点"
+          }
+        }
+      }
+    },
+    "Provider address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供元のアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务商地址"
+          }
+        }
+      }
+    },
+    "An https address, or http for a server on this machine or your own network, such as one you run yourself.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https のアドレス。この機械や自分のネットワーク上のサーバー（自分で運用しているものなど）なら http でも構いません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https 地址；本机或您自己网络中的服务器（例如您自己运行的）可以用 http。"
+          }
+        }
+      }
+    },
+    "Map style address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図スタイルのアドレス"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图样式地址"
+          }
+        }
+      }
+    },
+    "The MapLibre style the dashboard draws its maps from. This server fetches the style and its tiles from this address’s host and hands them to the browser.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダッシュボードが地図を描くのに使う MapLibre スタイル。このサーバーがこのアドレスのホストからスタイルとタイルを取得し、ブラウザーに渡します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "控制台绘制地图所用的 MapLibre 样式。本服务器会从该地址的主机获取样式和图块，再交给浏览器。"
+          }
+        }
+      }
+    },
+    "Place names come from OpenStreetMap: your server sends the position of each new place to the place provider to look up its name. Switch it off and places keep the name of their city, and people can still name them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所の名前は OpenStreetMap から取得します：サーバーが新しい場所の位置を場所の提供元に送り、名前を調べます。オフにすると場所は市の名前のままになり、名前は各自で付けられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点名称来自 OpenStreetMap：您的服务器会把每个新地点的位置发送给地点服务商，以查询它的名称。关闭后，地点会沿用所在城市的名称，用户仍可自己为地点命名。"
+          }
+        }
+      }
+    },
+    "Record where you go, and share it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "行った場所を記録して共有する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记录您去过的地方并共享"
           }
         }
       }

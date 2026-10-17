@@ -7,32 +7,64 @@ import TeaNodeKit
 
 /// LocationPeopleRows is a row for each person sharing, under the map. A tap
 /// selects them (the map centers on them); a tap on the selected one goes
-/// back to the person's own location.
+/// back to the person's own location. With more people than fit under the
+/// map, one row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
-    @State private var isShowingAll = false
 
+    /// The most people given a row of their own under the map.
     private static let mostRows = 3
 
     var body: some View {
         if !model.people.isEmpty {
-            let shown = isShowingAll ? model.people : Array(model.people.prefix(Self.mostRows))
             VStack(spacing: 0) {
-                ForEach(shown) { person in
-                    LocationPersonRow(person: person, isSelected: person.userId == model.selectedUserId) {
-                        if person.userId == model.selectedUserId { model.clearSelection() } else { model.select(userId: person.userId) }
-                    }
-                }
                 if model.people.count > Self.mostRows {
-                    Button(isShowingAll ? String(localized: "Show fewer people") : String(localized: "Show all \(model.people.count) people")) {
-                        isShowingAll.toggle()
+                    NavigationLink(value: LocationRoute.people) {
+                        HStack {
+                            Label("\(model.people.count) people", systemImage: "person.2")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote)
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
-                    .frame(minHeight: 44)
-                    .font(.subheadline)
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows everyone who shares where they are with you")
+                    if let person = model.selectedPerson {
+                        LocationPersonRow(person: person, isSelected: true) { model.clearSelection() }
+                    }
+                } else {
+                    ForEach(model.people) { person in
+                        LocationPersonRow(person: person, isSelected: person.userId == model.selectedUserId) {
+                            if person.userId == model.selectedUserId { model.clearSelection() } else { model.select(userId: person.userId) }
+                        }
+                    }
                 }
             }
             .padding(.horizontal)
         }
+    }
+}
+
+/// LocationPeopleScreen is everyone sharing their location with the person,
+/// a row each; choosing one shows them on the map.
+struct LocationPeopleScreen: View {
+    let model: LocationModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List(model.people) { person in
+            LocationPersonRow(person: person, isSelected: person.userId == model.selectedUserId) {
+                model.select(userId: person.userId)
+                dismiss()
+            }
+        }
+        .navigationTitle("People")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

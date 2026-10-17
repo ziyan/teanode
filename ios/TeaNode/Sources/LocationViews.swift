@@ -6,6 +6,7 @@ import TeaNodeKit
 enum LocationRoute: Hashable {
     case day(Date)
     case place(LocationPlace)
+    case people
     case settings
 }
 
@@ -120,6 +121,7 @@ struct LocationScreen: View {
                 switch route {
                 case .day(let day): LocationDayScreen(model: model, day: day)
                 case .place(let place): LocationPlaceScreen(model: model, place: place)
+                case .people: LocationPeopleScreen(model: model)
                 case .settings: LocationSettingsView(model: model)
                 }
             }
@@ -195,8 +197,9 @@ struct LocationScreen: View {
     #if DEBUG
         /// The screens a screenshot names: `-TeaNodeScreen location-day`,
         /// `location-places`, `location-place`, `location-settings`,
-        /// `location-sharing`, `location-person`; `location-setup` is the
-        /// server having no position yet.
+        /// `location-sharing`, `location-person`, `location-people` (more
+        /// people than fit under the map), `location-checkin` (the check-in
+        /// sheet); `location-setup` is the server having no position yet.
         private func openDemoScreen() {
             guard DemoServer.isRequested, path.isEmpty else { return }
             switch DemoServer.screen {
@@ -204,6 +207,8 @@ struct LocationScreen: View {
             case "location-places": segment = .places
             case "location-sharing": segment = .sharing
             case "location-person": model.select(userId: LocationDemo.historyPersonId)
+            case "location-people": path = [.people]
+            case "location-checkin": isCheckingIn = true
             case "location-place":
                 segment = .places
                 if let place = model.places.first(where: { $0.id == LocationDemo.parkPlaceId }) { path = [.place(place)] }
@@ -248,7 +253,11 @@ struct LocationMapHeader: View {
                             AvatarView(name: person.displayName, avatarUrl: person.avatarUrl, colorIndex: person.avatarColorIndex, size: 36)
                                 .overlay(
                                     Circle().stroke(
-                                        person.userId == model.selectedUserId ? Color.accentColor : Color(.systemBackground), lineWidth: 3))
+                                        person.userId == model.selectedUserId ? Color.accentColor : Color(.systemBackground), lineWidth: 3)
+                                )
+                                // A touch target of 44 points around the picture.
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Circle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(person.displayName)
@@ -324,6 +333,11 @@ struct LocationVisitsList: View {
 
     var body: some View {
         List {
+            Section {
+                PlaceLabelFilterPicker(
+                    selection: Binding(
+                        get: { model.visitLabelFilter }, set: { label in Task { await model.setVisitLabelFilter(label) } }))
+            }
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.visits) { visit in
@@ -360,7 +374,11 @@ struct LocationVisitsList: View {
         }
         .refreshable { await model.load() }
         .overlay {
-            if model.days.isEmpty {
+            if model.days.isEmpty, model.isFilteringVisits {
+                ContentUnavailableView(
+                    "No visits to places with this label", systemImage: "mappin.and.ellipse",
+                    description: Text("Choose another label, or all places, to see the rest."))
+            } else if model.days.isEmpty {
                 ContentUnavailableView(
                     "No visits yet", systemImage: "mappin.and.ellipse",
                     description: Text(
@@ -405,6 +423,8 @@ struct LocationDayScreen: View {
     @State private var position = MapCameraPosition.automatic
     @State private var isLoading = true
     @State private var loadFailedText: String?
+    @State private var isConfirmingErase = false
+    @State private var isErasing = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -433,6 +453,20 @@ struct LocationDayScreen: View {
                         } footer: {
                             OpenStreetMapCredit()
                         }
+                        Section {
+                            Button("Erase this day", systemImage: "trash", role: .destructive) { isConfirmingErase = true }
+                                .disabled(isErasing)
+                                .frame(minHeight: 44)
+                                .confirmationDialog(
+                                    "Erase \(LocationText.dayTitle(day))?", isPresented: $isConfirmingErase, titleVisibility: .visible
+                                ) {
+                                    Button("Erase this day", role: .destructive) { Task { await erase() } }
+                                } message: {
+                                    Text(
+                                        "Erases your positions and visits of this day, and the places left with no visit that you did not name or label. Places you named or labeled stay. Anything your agent already learned from those days stays in its memory until you remove it. This cannot be undone."
+                                    )
+                                }
+                        }
                     }
                     .overlay {
                         if isLoading {
@@ -447,6 +481,13 @@ struct LocationDayScreen: View {
         .navigationTitle(LocationText.dayTitle(day))
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+    }
+
+    private func erase() async {
+        isErasing = true
+        defer { isErasing = false }
+        let window = LocationDays.window(of: day)
+        if await model.eraseHistory(from: window.from, until: window.until, dayText: LocationText.dayTitle(day)) { await load() }
     }
 
     private func load() async {
@@ -471,10 +512,15 @@ struct LocationDayScreen: View {
 // MARK: Places
 
 struct LocationPlacesList: View {
-    let model: LocationModel
+    @Bindable var model: LocationModel
 
     var body: some View {
         List {
+            Section {
+                PlaceLabelFilterPicker(
+                    selection: Binding(
+                        get: { model.placeLabelFilter }, set: { label in Task { await model.setPlaceLabelFilter(label) } }))
+            }
             Section {
                 ForEach(model.sortedPlaces) { place in
                     NavigationLink(value: LocationRoute.place(place)) {
@@ -494,13 +540,39 @@ struct LocationPlacesList: View {
             }
         }
         .refreshable { await model.load() }
+        .searchable(text: $model.placeSearchText, prompt: Text("Search your places"))
+        // Read a moment after the last key, not at every key.
+        .task(id: model.placeSearchText) {
+            guard model.isPlaceSearchPending else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await model.reloadPlaces()
+        }
         .overlay {
-            if model.places.isEmpty {
+            if model.places.isEmpty, model.isFilteringPlaces {
+                ContentUnavailableView.search
+            } else if model.places.isEmpty {
                 ContentUnavailableView(
                     "No places yet", systemImage: "mappin.slash",
                     description: Text("The places you spend time at show up here, and you can name them."))
             }
         }
+    }
+}
+
+/// PlaceLabelFilterPicker narrows a list to the places with one label, or
+/// shows them all.
+struct PlaceLabelFilterPicker: View {
+    @Binding var selection: PlaceLabel?
+
+    var body: some View {
+        Picker("Label", selection: $selection) {
+            Text("All places").tag(PlaceLabel?.none)
+            ForEach(PlaceLabel.allCases, id: \.rawValue) { label in
+                Label(label.title, systemImage: label.symbolName).tag(Optional(label))
+            }
+        }
+        .pickerStyle(.menu)
     }
 }
 

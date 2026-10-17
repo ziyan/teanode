@@ -61,7 +61,7 @@ struct LocationSharingList: View {
             Section {
                 Button("Share", systemImage: "person.badge.plus") { isSharing = true }
             } footer: {
-                Text("Choose a person or a circle, and whether they see where you are now or the places you have been too.")
+                Text("Choose a person or a circle, and whether they also see your visits and the places they were at.")
             }
             if let problem = model.sharingProblemText {
                 Section { Text(verbatim: problem).foregroundStyle(.secondary) }
@@ -84,6 +84,9 @@ struct LocationShareSheet: View {
     @State private var chosen: ShareTarget?
     @State private var level = LocationShareLevel.current
     @State private var isWorking = false
+    /// Said inside the sheet: the toast of the screen behind it is hidden.
+    @State private var problemText: String?
+    @State private var doneText: String?
 
     var body: some View {
         NavigationStack {
@@ -136,6 +139,7 @@ struct LocationShareSheet: View {
                     }
                 }
             }
+            .toast(done: $doneText, problem: $problemText)
             .task { await load() }
         }
         .presentationDetents([.medium, .large])
@@ -158,6 +162,10 @@ struct LocationShareSheet: View {
         isWorking = true
         defer { isWorking = false }
         let name = ShareTargetPicker.name(of: target, people: people, circles: circles)
-        if await model.share(with: target, name: name, level: level) { dismiss() }
+        if let refusalText = await model.share(with: target, name: name, level: level) {
+            problemText = refusalText
+        } else {
+            dismiss()
+        }
     }
 }

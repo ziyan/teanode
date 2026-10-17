@@ -104,7 +104,7 @@
                 #"{"latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"accuracyMeters":12,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(measuredAt))","locationSource":"phone"}"#
             let open = isHistory ? historyPersonVisits[0] : "null"
             return #"""
-                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"locationShareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open)}
+                {"userId":"\#(userId)","username":"\#(userId)","name":"\#(person.name)","avatarUrl":\#(person.avatarUrlJSON),"avatarColorIndex":\#(person.avatarColorIndex),"shareLevel":"\#(isHistory ? "history" : "current")","latestPoint":\#(point),"openVisit":\#(open)}
                 """#
         }
 
@@ -180,7 +180,12 @@
                 return #"{"data":{"GetLocation":\#(LocationDemo.sharedPersonJSON(userId: userId))}}"#
             }
             if query.contains("ListSharedLocations") {
-                let people = [LocationDemo.historyPersonId, LocationDemo.currentPersonId].map(LocationDemo.sharedPersonJSON)
+                // `-TeaNodeScreen location-people`: more people than fit under the map.
+                let sharingIds =
+                    screen == "location-people"
+                    ? [LocationDemo.historyPersonId, LocationDemo.currentPersonId, "jordan", "casey", "morgan"]
+                    : [LocationDemo.historyPersonId, LocationDemo.currentPersonId]
+                let people = sharingIds.map(LocationDemo.sharedPersonJSON)
                 return #"{"data":{"ListSharedLocations":[\#(people.joined(separator: ","))]}}"#
             }
             if query.contains("ListLocationShares") {
@@ -193,7 +198,7 @@
             if query.contains("UnshareLocation(") { return #"{"data":{"UnshareLocation":true}}"# }
             if query.contains("GetLocation("), isSetupScreen {
                 return
-                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"locationShareLevel":"owner","latestPoint":null,"openVisit":null}}}"#
+                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":null,"openVisit":null}}}"#
             }
             if query.contains("GetLocation(") {
                 let open = LocationDemo.visits[0]
@@ -201,7 +206,7 @@
                 let point =
                     #"{"latitudeDegrees":\#(park.latitudeDegrees),"longitudeDegrees":\#(park.longitudeDegrees),"accuracyMeters":10,"altitudeMeters":null,"speedMetersPerSecond":null,"courseDegrees":null,"measuredAt":"\#(CalendarDates.text(Date()))","locationSource":"phone"}"#
                 return
-                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"locationShareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open.json)}}}"#
+                    #"{"data":{"GetLocation":{"userId":"robin","username":"robin","name":"Robin","avatarUrl":null,"avatarColorIndex":7,"shareLevel":"owner","latestPoint":\#(point),"openVisit":\#(open.json)}}}"#
             }
             if query.contains("ListLocationVisits("), variables["userId"] as? String == LocationDemo.historyPersonId {
                 var visits = LocationDemo.historyPersonVisits
@@ -222,6 +227,7 @@
             if query.contains("ListLocationVisits(") {
                 var visits = LocationDemo.visits
                 if let placeId = variables["placeId"] as? String { visits = visits.filter { $0.placeId == placeId } }
+                if let placeLabel = variables["placeLabel"] as? String { visits = visits.filter { LocationDemo.place($0.placeId).label == placeLabel } }
                 if let text = variables["from"] as? String, let from = ServerTime.date(text) {
                     visits = visits.filter { ($0.arrivedAt ?? $0.departedAt ?? .distantPast) >= from }
                 }
@@ -231,12 +237,18 @@
                 return #"{"data":{"ListLocationVisits":{"placeVisits":[\#(visits.map(\.json).joined(separator: ","))],"nextOffset":null}}}"#
             }
             if query.contains("ListPlaces(") {
-                let places = isSetupScreen ? LocationDemo.places.filter { $0.id != LocationDemo.homePlaceId } : LocationDemo.places
+                var places = isSetupScreen ? LocationDemo.places.filter { $0.id != LocationDemo.homePlaceId } : LocationDemo.places
+                if let placeLabel = variables["placeLabel"] as? String { places = places.filter { $0.label == placeLabel } }
+                if let words = variables["query"] as? String { places = places.filter { $0.name.localizedCaseInsensitiveContains(words) } }
                 return #"{"data":{"ListPlaces":{"places":[\#(places.map(\.json).joined(separator: ","))],"nextOffset":null}}}"#
             }
             if query.contains("ListNearbyPlaces(") {
                 return
                     #"{"data":{"ListNearbyPlaces":[{"placeName":"Riverside Park","osmType":"way","osmId":1001,"osmCategory":"leisure=park","addressText":"","latitudeDegrees":10.5040,"longitudeDegrees":20.5060,"distanceMeters":35,"placeId":"place-park"},{"placeName":"Boat Hire","osmType":"node","osmId":1002,"osmCategory":"amenity=bicycle_rental","addressText":"","latitudeDegrees":10.5043,"longitudeDegrees":20.5064,"distanceMeters":70,"placeId":null},{"placeName":"Kiosk by the Bridge","osmType":"node","osmId":1003,"osmCategory":"shop=kiosk","addressText":"","latitudeDegrees":10.5038,"longitudeDegrees":20.5069,"distanceMeters":110,"placeId":null}]}}"#
+            }
+            if query.contains("SearchPlaces(") {
+                return
+                    #"{"data":{"SearchPlaces":{"foundPlaces":[{"placeName":"Riverside Park Kiosk","osmType":"node","osmId":1004,"osmCategory":"shop=kiosk","addressText":"","latitudeDegrees":10.5042,"longitudeDegrees":20.5062,"distanceMeters":55,"placeId":null},{"placeName":"Riverside Park","osmType":"way","osmId":1001,"osmCategory":"leisure=park","addressText":"","latitudeDegrees":10.5040,"longitudeDegrees":20.5060,"distanceMeters":35,"placeId":"place-park"}],"nextOffset":null}}}"#
             }
             if query.contains("ListLocationPoints(") {
                 var from = Date.distantPast
@@ -251,7 +263,7 @@
             }
             if query.contains("CheckIn(") { return #"{"data":{"CheckIn":\#(LocationDemo.visits[0].json)}}"# }
             if query.contains("ForgetPlace(") { return #"{"data":{"ForgetPlace":true}}"# }
-            if query.contains("ForgetLocationHistory(") { return #"{"data":{"ForgetLocationHistory":{"pointCount":0,"visitCount":0,"placeCount":0}}}"# }
+            if query.contains("EraseLocationHistory(") { return #"{"data":{"EraseLocationHistory":{"pointCount":0,"visitCount":0,"placeCount":0}}}"# }
             if query.contains("ReportLocation(") {
                 return #"{"data":{"ReportLocation":{"newPointCount":0,"newVisitCount":0,"updatedVisitCount":0}}}"#
             }
