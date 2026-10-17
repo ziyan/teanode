@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"net/http"
 	"strconv"
@@ -395,6 +396,10 @@ func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *mod
 		if err != nil || isReplacement {
 			return err
 		}
+		isDuplicate, err := isDuplicateOfOwnOriginal(transaction, userId, headers, sizeBytes, true)
+		if err != nil || isDuplicate {
+			return err
+		}
 		usedBytes, err := transaction.PhotoUsedBytes(userId)
 		if err != nil {
 			return err
@@ -406,10 +411,48 @@ func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *mod
 			return err
 		}
 		if usedBytes+openBytes > maximumAccountBytes-sizeBytes {
-			return &QuotaError{LimitBytes: maximumAccountBytes, IsCausedByOtherUploads: usedBytes <= maximumAccountBytes-sizeBytes}
+			if usedBytes > maximumAccountBytes-sizeBytes {
+				return &QuotaError{LimitBytes: maximumAccountBytes}
+			}
+			return self.otherUploadsError(transaction, userId, headers, maximumAccountBytes, self.now().Add(-openUploadQuotaWindow), openUploadQuotaWindow)
 		}
-		return nil
+		return self.checkUnfinishedBytes(transaction, userId, headers, maximumAccountBytes)
 	})
+}
+
+// checkUnfinishedBytes refuses an upload while the account's other unfinished
+// uploads, of any age, hold more than its limit. The check above leaves out the
+// uploads that have sat idle for a day, so that they do not hold room a file
+// being sent needs, but they are still bytes in the store until cleanup deletes
+// them a week on, and without this an account could keep several times its
+// limit in parts that each look idle. The upload's own bytes are not added: an
+// account whose idle uploads fit its limit is not turned away for a file the
+// first check lets in.
+func (self *Store) checkUnfinishedBytes(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders, maximumAccountBytes int64) error {
+	unfinishedBytes, err := transaction.PhotoOpenUploadBytes(userId, headers.ClientPhotoID, headers.PhotoFileRole, time.Unix(0, 0))
+	if err != nil {
+		return err
+	}
+	if unfinishedBytes > maximumAccountBytes {
+		return self.otherUploadsError(transaction, userId, headers, maximumAccountBytes, time.Unix(0, 0), idleUploadRetention)
+	}
+	return nil
+}
+
+// otherUploadsError is the refusal that the account's other unfinished uploads
+// cause: not the file's fault, and over when the oldest of them is gone, which
+// is when it has sat idle for retention since its last part, so that is when
+// the client is told to ask again.
+func (self *Store) otherUploadsError(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders, maximumAccountBytes int64, updatedAfter time.Time, retention time.Duration) error {
+	wait := minimumQuotaRetryAfter
+	oldestAt, hasOldest, err := transaction.PhotoOldestOpenUploadAt(userId, headers.ClientPhotoID, headers.PhotoFileRole, updatedAfter)
+	if err != nil {
+		return err
+	}
+	if hasOldest {
+		wait = oldestAt.Add(retention).Sub(self.now())
+	}
+	return &QuotaError{LimitBytes: maximumAccountBytes, IsCausedByOtherUploads: true, RetryAfter: min(max(wait, minimumQuotaRetryAfter), maximumQuotaRetryAfter)}
 }
 
 // checkRoomForPart is checkRoomFor for a part that has arrived: the bytes the
@@ -428,6 +471,10 @@ func (self *Store) checkRoomForPart(ctx context.Context, userId string, upload *
 		if err != nil || isReplacement {
 			return err
 		}
+		isDuplicate, err := isDuplicateOfOwnOriginal(transaction, userId, &upload.PhotoUploadHeaders, upload.ReceivedSizeBytes+partBytes, false)
+		if err != nil || isDuplicate {
+			return err
+		}
 		usedBytes, err := transaction.PhotoUsedBytes(userId)
 		if err != nil {
 			return err
@@ -438,10 +485,44 @@ func (self *Store) checkRoomForPart(ctx context.Context, userId string, upload *
 		}
 		ownBytes := upload.ReceivedSizeBytes + partBytes
 		if usedBytes+otherBytes+ownBytes > maximumAccountBytes {
-			return &QuotaError{LimitBytes: maximumAccountBytes, IsCausedByOtherUploads: usedBytes+ownBytes <= maximumAccountBytes}
+			if usedBytes+ownBytes > maximumAccountBytes {
+				return &QuotaError{LimitBytes: maximumAccountBytes}
+			}
+			return self.otherUploadsError(transaction, userId, &upload.PhotoUploadHeaders, maximumAccountBytes, self.now().Add(-openUploadQuotaWindow), openUploadQuotaWindow)
 		}
-		return nil
+		return self.checkUnfinishedBytes(transaction, userId, &upload.PhotoUploadHeaders, maximumAccountBytes)
 	})
+}
+
+// isDuplicateOfOwnOriginal says an upload is, as far as can be told before it
+// has all arrived, the bytes the person already has as the original of a photo,
+// which when they are complete are recorded against that photo and cost no room.
+// The request names the digest it will have (headerDeclaredSha256); that is
+// believed only as far as the bytes stored under it: the size of what is sent
+// must be the size of those bytes (exactly, when the length is declared, and not
+// over it as the parts arrive), so that a request cannot use a digest it does
+// not have the bytes of to send gigabytes past the limit. A file that is not an
+// original is a new file of its photo, and costs its size.
+func isDuplicateOfOwnOriginal(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders, sizeBytes int64, isSizeExact bool) (bool, error) {
+	if headers.DeclaredSHA256 == "" || headers.PhotoFileRole != models.PhotoFileRoleOriginal {
+		return false, nil
+	}
+	if _, err := transaction.FindPhotoByOriginalBlob(userId, headers.DeclaredSHA256); errors.Is(err, db.ErrNotFound) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	blob, err := transaction.GetPhotoBlob(headers.DeclaredSHA256)
+	if errors.Is(err, db.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if isSizeExact {
+		return sizeBytes == blob.BlobSizeBytes, nil
+	}
+	return sizeBytes <= blob.BlobSizeBytes, nil
 }
 
 // hasFileInRole says whether the uploader's photo is there already with a file
@@ -527,9 +608,9 @@ func (self *Store) writeCurrentOffsetConflict(ctx context.Context, response http
 func (self *Store) failAndWriteProblem(ctx context.Context, response http.ResponseWriter, userId string, upload *models.PhotoUpload, err error) {
 	var tooLarge *FileTooLargeError
 	var overQuota *QuotaError
-	// A refusal caused by other uploads' bytes is not this file's fault: the
-	// answer is the same, and the upload stays, for the client to resume once
-	// room is free.
+	// A refusal caused by other uploads' bytes is not this file's fault: it is
+	// answered 503 with a Retry-After, and the upload stays, for the client to
+	// resume once room is free.
 	if errors.As(err, &overQuota) && overQuota.IsCausedByOtherUploads {
 		self.writeProblem(response, err)
 		return
@@ -551,6 +632,11 @@ func (self *Store) writeProblem(response http.ResponseWriter, err error) {
 	var tooLarge *FileTooLargeError
 	var overQuota *QuotaError
 	switch {
+	case errors.As(err, &overQuota) && overQuota.IsCausedByOtherUploads:
+		// Not a refusal of this file: every client takes a 503 with a
+		// Retry-After as "try again", where a 413 is "this file is refused".
+		response.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(overQuota.RetryAfter.Seconds()))))
+		http.Error(response, err.Error(), http.StatusServiceUnavailable)
 	case errors.As(err, &tooLarge), errors.As(err, &overQuota):
 		http.Error(response, err.Error(), http.StatusRequestEntityTooLarge)
 	case errors.Is(err, ErrDigestMismatch):

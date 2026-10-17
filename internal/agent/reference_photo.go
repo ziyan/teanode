@@ -41,7 +41,13 @@ func resolvePhotoReference(tx db.Transaction, agentId, userId string, reference 
 		return nil, err
 	}
 	if !access.IsOwner && !access.IsLocationIncluded {
+		// Anything else that can name the place goes with it, as a reader's
+		// listing holds it back (apigraph): the file name, which a camera or a
+		// person may have called after the place, and the description and the
+		// words read in the picture.
 		photo.PlaceName, photo.Latitude, photo.Longitude = "", nil, nil
+		photo.OriginalFilename = ""
+		photo.PhotoDescription, photo.DescriptionVisibleText, photo.DescribedAt = "", "", nil
 	}
 	reference.PhotoTitle = photoReferenceTitle(photo)
 	reference.PhotoContext = photoContext(photo)

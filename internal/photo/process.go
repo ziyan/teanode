@@ -268,12 +268,15 @@ func (self *Store) processAndRecord(ctx context.Context, photo *models.Photo) er
 	go func() {
 		defer deferutil.Recover()
 		defer close(renewalDone)
-		self.renewClaim(renewalContext, photo.ID, claim)
+		self.renewClaim(renewalContext, photo, claim)
 	}()
 	processed := &processedPhoto{photo: photo, isVideo: photo.PhotoKind == models.PhotoKindVideo}
 	processError := self.processGuarded(ctx, processed)
 	stopRenewal()
 	<-renewalDone
+	// A renewal whose answer was lost may still have been made. The outcome is
+	// recorded against the claim the photo has, if it is this worker's.
+	self.settleClaim(photo, claim)
 	claimedAt := claim.current()
 
 	if ctx.Err() != nil {
@@ -345,9 +348,20 @@ const claimReleaseTimeout = 30 * time.Second
 // processingClaim is the claim a worker holds on a photo. A claim is known by
 // the time it was made, and each renewal makes a new time, so the claim is
 // read and written by the worker and the goroutine that renews it.
+//
+// The worker chooses the time a renewal moves the claim to, and notes it
+// before the renewal is sent. If the answer is lost (the connection dropped, or
+// the context ended, after the database committed), the photo may have the
+// new time and the worker not know it; it then reads the photo's claim and
+// takes the new time if that is what it finds. Nobody else makes a claim at a
+// time this worker chose, so finding it is knowing the claim is still ours.
 type processingClaim struct {
 	mutex     sync.Mutex
 	claimedAt time.Time
+
+	// pendingAt is the time of a renewal that was sent and not confirmed, and
+	// zero when there is none.
+	pendingAt time.Time
 }
 
 func (self *processingClaim) current() time.Time {
@@ -356,19 +370,90 @@ func (self *processingClaim) current() time.Time {
 	return self.claimedAt
 }
 
-func (self *processingClaim) renewTo(claimedAt time.Time) {
+// beginRenewal notes the time the next renewal moves the claim to, which is
+// after the claim's own.
+func (self *processingClaim) beginRenewal() time.Time {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
-	self.claimedAt = claimedAt
+	renewedAt := time.Now().UTC().Truncate(time.Microsecond)
+	if !renewedAt.After(self.claimedAt) {
+		renewedAt = self.claimedAt.Add(time.Microsecond)
+	}
+	self.pendingAt = renewedAt
+	return renewedAt
 }
 
-// discardSupersededPreviews deletes the previews a worker wrote when what it
-// worked on has been overtaken by a different file: they are of a file the
-// photo no longer has, and the work that overtook it makes the right ones. When
-// the photo's file is the one the worker read, the claim was lost to another
-// worker on the same file, whose previews are the same ones, and they stay.
+// pending is the time of a renewal not yet confirmed.
+func (self *processingClaim) pending() (time.Time, bool) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.pendingAt, !self.pendingAt.IsZero()
+}
+
+// confirmRenewal makes the pending renewal the claim.
+func (self *processingClaim) confirmRenewal() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	if !self.pendingAt.IsZero() {
+		self.claimedAt = self.pendingAt
+	}
+	self.pendingAt = time.Time{}
+}
+
+// abandonRenewal forgets the pending renewal: it was not made.
+func (self *processingClaim) abandonRenewal() {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.pendingAt = time.Time{}
+}
+
+// settleClaim finds out what became of a renewal whose answer was lost, by
+// reading the claim the photo has. The renewal was made if the photo is
+// claimed at the time it asked for; it was not if the photo is still claimed at
+// the time before, and the claim is lost if it is claimed at neither. When the
+// photo cannot be read the renewal stays pending, to be settled by the next
+// attempt.
+func (self *Store) settleClaim(photo *models.Photo, claim *processingClaim) {
+	pendingAt, hasPending := claim.pending()
+	if !hasPending {
+		return
+	}
+	// The context of the work may be over; what became of the claim is still
+	// worth knowing.
+	settleContext, cancel := context.WithTimeout(context.Background(), claimReleaseTimeout)
+	defer cancel()
+	var stored *models.Photo
+	if err := self.database.TransactionContext(settleContext, func(transaction db.Transaction) (err error) {
+		stored, err = transaction.GetPhoto(photo.UserID, photo.ID)
+		return err
+	}); err != nil {
+		log.Warningf("cannot tell whether the claim on photo %s was renewed: %s", photo.ID, err)
+		return
+	}
+	if stored.ProcessingClaimedAt != nil && stored.ProcessingClaimedAt.Equal(pendingAt) {
+		claim.confirmRenewal()
+		return
+	}
+	claim.abandonRenewal()
+}
+
+// discardSupersededPreviews takes back the previews a worker recorded when
+// what it worked on has been overtaken by a different file: they are of a file
+// the photo no longer has, and the work that overtook it makes the right ones.
+// When the photo's file is the one the worker read, the claim was lost to
+// another worker on the same file, whose previews are the same ones, and they
+// stay.
+//
+// A preview is a row and an object under a name that is the same for every
+// worker of the photo, so the worker that overtook this one may already have
+// written over both. Only the row can be told apart, by the time it was made,
+// and it is deleted only if it is still the one this worker made. The object is
+// not deleted: it may by now be the other worker's, written just before its row,
+// and a row with no object is worse than an object with no row, which nothing
+// serves, the next work of the photo writes over, and deleting the photo deletes
+// by name.
 func (self *Store) discardSupersededPreviews(ctx context.Context, processed *processedPhoto) {
-	if len(processed.writtenPreviewSizes) == 0 || processed.source == nil {
+	if len(processed.writtenPreviews) == 0 || processed.source == nil {
 		return
 	}
 	photo := processed.photo
@@ -384,13 +469,11 @@ func (self *Store) discardSupersededPreviews(ctx context.Context, processed *pro
 	if current != nil && current.BlobSHA256 == processed.source.BlobSHA256 {
 		return
 	}
-	for _, photoPreviewSize := range processed.writtenPreviewSizes {
+	for photoPreviewSize, madeAt := range processed.writtenPreviews {
 		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
-			return transaction.DeletePhotoPreview(photo.UserID, photo.ID, photoPreviewSize)
+			_, err := transaction.DeletePhotoPreviewMadeAt(photo.UserID, photo.ID, photoPreviewSize, madeAt)
+			return err
 		}); err != nil && !errors.Is(err, db.ErrNotFound) {
-			log.Warningf("cannot delete the %s preview of photo %s made from a file it no longer has: %s", photoPreviewSize, photo.ID, err)
-		}
-		if err := self.files.DeleteFileEverywhere(ctx, models.PhotoPreviewFileID(photo.ID, photoPreviewSize)); err != nil {
 			log.Warningf("cannot delete the %s preview of photo %s made from a file it no longer has: %s", photoPreviewSize, photo.ID, err)
 		}
 	}
@@ -411,30 +494,46 @@ func (self *Store) processGuarded(ctx context.Context, processed *processedPhoto
 
 // renewClaim keeps the claim on a photo alive until the context ends, and
 // until the claim is lost, when there is nothing to keep.
-func (self *Store) renewClaim(ctx context.Context, photoId string, claim *processingClaim) {
-	ticker := time.NewTicker(claimRenewalInterval)
+func (self *Store) renewClaim(ctx context.Context, photo *models.Photo, claim *processingClaim) {
+	ticker := time.NewTicker(self.claimRenewalInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			var renewedAt time.Time
+			// An earlier renewal that could not be settled is, before another is
+			// sent over it.
+			self.settleClaim(photo, claim)
+			renewedAt := claim.beginRenewal()
 			var isCurrent bool
-			if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-				renewedAt, isCurrent, err = transaction.RenewPhotoProcessingClaim(photoId, claim.current())
+			// A renewal is not cut off when the work ends: a request cancelled
+			// mid-commit can still commit on the server a moment after the
+			// worker has looked, and the worker would then record against a
+			// claim it believes is older than the photo's.
+			renewalContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), claimReleaseTimeout)
+			err := self.database.TransactionContext(renewalContext, func(transaction db.Transaction) (err error) {
+				isCurrent, err = transaction.RenewPhotoProcessingClaim(photo.ID, claim.current(), renewedAt)
 				return err
-			}); err != nil {
-				if ctx.Err() == nil {
-					log.Warningf("cannot renew the claim on photo %s being processed: %s", photoId, err)
+			})
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					// The work ended, and settles the claim.
+					return
 				}
+				log.Warningf("cannot renew the claim on photo %s being processed: %s", photo.ID, err)
+				// The renewal may have been made and its answer lost, and the
+				// next one would then ask against a time the photo no longer has.
+				self.settleClaim(photo, claim)
 				continue
 			}
 			if !isCurrent {
-				log.Warningf("the claim on photo %s being processed was lost", photoId)
+				log.Warningf("the claim on photo %s being processed was lost", photo.ID)
+				claim.abandonRenewal()
 				return
 			}
-			claim.renewTo(renewedAt)
+			claim.confirmRenewal()
 		}
 	}
 }
@@ -482,9 +581,11 @@ type processedPhoto struct {
 	// of the file was promised.
 	releaseWorkSpace func()
 
-	// writtenPreviewSizes are the previews stored for the photo by this work, so
-	// that they can be deleted if the work turns out to have been overtaken.
-	writtenPreviewSizes []models.PhotoPreviewSize
+	// writtenPreviews are the previews this work recorded for the photo, by the
+	// time their rows were made, so that they can be taken back if the work
+	// turns out to have been overtaken, and only while they are still this
+	// work's.
+	writtenPreviews map[models.PhotoPreviewSize]time.Time
 }
 
 // workDirectoryOf is the private directory a photo's temporary files go in.
@@ -803,9 +904,11 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 // decoded picture while it works. The size the file says it is, read from its
 // boxes, is bounded as a JPEG's is, and takes the same share of the pixel
 // budget as decoding that picture would, for as long as heif-dec runs: a small
-// file can claim a huge picture, and several can claim it at once.
+// file can claim a huge picture, and several can claim it at once. heif-dec
+// decodes every top-level picture of the file, not only the primary one, so the
+// budget is taken for the pixels of all of them.
 func (self *Store) decodeHeif(ctx context.Context, content []byte) ([]byte, error) {
-	widthPixels, heightPixels, err := picture.ReadHeifSize(bytes.NewReader(content), int64(len(content)))
+	_, _, totalPixels, err := picture.ReadHEIFSize(bytes.NewReader(content), int64(len(content)))
 	if err != nil {
 		if errors.Is(err, picture.ErrTooLarge) {
 			return nil, &processingFailure{
@@ -816,7 +919,7 @@ func (self *Store) decodeHeif(ctx context.Context, content []byte) ([]byte, erro
 		}
 		return nil, readFailure(err)
 	}
-	weight := min(int64(widthPixels)*int64(heightPixels), maximumPixelsInFlight)
+	weight := min(totalPixels, maximumPixelsInFlight)
 	if err := self.pixelBudget.Acquire(ctx, weight); err != nil {
 		return nil, fmt.Errorf("%w: %s", errPixelBudget, err)
 	}
@@ -916,9 +1019,9 @@ func (self *Store) keepPreview(ctx context.Context, processed *processedPhoto, p
 	if err := self.files.PutFileStream(ctx, fileId, content, sizeBytes); err != nil {
 		return err
 	}
-	processed.writtenPreviewSizes = append(processed.writtenPreviewSizes, photoPreviewSize)
-	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
-		_, err := transaction.UpsertPhotoPreview(photo.UserID, &models.PhotoPreview{
+	var recorded *models.PhotoPreview
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+		recorded, err = transaction.UpsertPhotoPreview(photo.UserID, &models.PhotoPreview{
 			PhotoID: photo.ID, PhotoPreviewSize: photoPreviewSize, ContentType: contentType,
 			PreviewSizeBytes: sizeBytes, WidthPixels: widthPixels, HeightPixels: heightPixels,
 		})
@@ -932,6 +1035,10 @@ func (self *Store) keepPreview(ctx context.Context, processed *processedPhoto, p
 		}
 		return err
 	}
+	if processed.writtenPreviews == nil {
+		processed.writtenPreviews = map[models.PhotoPreviewSize]time.Time{}
+	}
+	processed.writtenPreviews[photoPreviewSize] = recorded.CreatedAt
 	return nil
 }
 

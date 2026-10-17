@@ -138,13 +138,17 @@ func (self *Store) deletePhotoBatch(ctx context.Context, expiredBefore time.Time
 }
 
 // cleanBlobs deletes the blobs no file has named for an hour. A blob is deleted
-// in three steps. Marking it, in a transaction of its own that commits, is the
-// guard: a file arriving with the same bytes from then on sees the mark and
-// stores them again instead of trusting the object. The object is then
-// deleted, outside any transaction, because object store calls take as long as
-// the store takes and are not worth a row lock. Last the row is dropped by a
-// second transaction, which first checks again that no file names it and that
-// nobody cleared the mark.
+// in two steps. Marking it, in a transaction of its own that commits, is the
+// first: a file arriving with the same bytes from then on sees the mark and
+// stores them again instead of trusting the object. The second is one
+// transaction that takes the blob's lock (the one a file takes while it is
+// recorded), reads the blob again, and only if it is still marked and still no
+// file names it deletes the object and then drops the row. Reading again under
+// the lock is what keeps cleanup from deleting bytes a file claimed after the
+// mark: that file cleared the mark, recorded itself and checked the object was
+// there, all before the delete, and nothing else would tell cleanup. The
+// object store call is made while the lock is held, which makes a file for the
+// same bytes wait for it, and nobody else.
 //
 // A blob whose object cannot be deleted is logged and left marked, and the
 // pass goes on to the next one; the next pass tries it again.
@@ -161,13 +165,8 @@ func (self *Store) cleanBlobs(ctx context.Context, batchSize int) error {
 			}
 			return err
 		}
-		if err := self.files.DeleteFileEverywhere(ctx, models.PhotoBlobFileID(marked.BlobSHA256)); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			log.Warningf("cannot delete the bytes of blob %s yet: %s", marked.BlobSHA256, err)
-			failedBlobSha256s = append(failedBlobSha256s, marked.BlobSHA256)
-			continue
+		if self.afterBlobMarked != nil {
+			self.afterBlobMarked(marked.BlobSHA256)
 		}
 		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 			blob, err := transaction.LockPhotoBlobForDeletion(marked.BlobSHA256)
@@ -178,12 +177,15 @@ func (self *Store) cleanBlobs(ctx context.Context, batchSize int) error {
 			if err != nil {
 				return err
 			}
+			if err := self.files.DeleteFileEverywhere(ctx, models.PhotoBlobFileID(blob.BlobSHA256)); err != nil {
+				return err
+			}
 			return transaction.DeletePhotoBlob(blob.BlobSHA256)
 		}); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			log.Warningf("cannot drop the row of blob %s yet: %s", marked.BlobSHA256, err)
+			log.Warningf("cannot delete blob %s yet: %s", marked.BlobSHA256, err)
 			failedBlobSha256s = append(failedBlobSha256s, marked.BlobSHA256)
 		}
 	}

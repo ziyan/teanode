@@ -52,14 +52,14 @@ func TestTheBytesOfOpenUploadsCountTowardsTheAccountsLimit(test *testing.T) {
 	// byte is sent, and no upload is made.
 	before := fixture.count("photo_upload")
 	refused := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("second-open", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(10, 22))
-	fixture.expect(refused, http.StatusRequestEntityTooLarge)
+	fixture.expectTryAgain(refused)
 	if !strings.Contains(refused.body, "1500") || fixture.count("photo_upload") != before {
 		test.Fatalf("%s, %s uploads", refused.body, fixture.count("photo_upload"))
 	}
 
 	// One that does not say its size is judged as its parts arrive.
 	unsaid := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("unsaid-open", "Upload-Complete", "?0"), randomBytes(1000, 23))
-	fixture.expect(unsaid, http.StatusRequestEntityTooLarge)
+	fixture.expectTryAgain(unsaid)
 
 	// Sending the same file again does not count the try it ends.
 	again := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("first-open", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(600, 21))

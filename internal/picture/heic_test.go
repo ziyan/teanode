@@ -138,43 +138,81 @@ func TestDecodeHEICNamesThePackageToInstall(t *testing.T) {
 	}
 }
 
-func TestReadHeifSizeReadsThePrimaryPicturesSize(t *testing.T) {
+func TestReadHEIFSizeReadsThePrimaryPicturesSize(t *testing.T) {
 	content := buildHeif(heifOptions{locationVersion: 1, hasExif: true, infeVersion: 2}, nil)
-	widthPixels, heightPixels, err := ReadHeifSize(bytes.NewReader(content), int64(len(content)))
-	if err != nil || widthPixels != 4032 || heightPixels != 3024 {
-		t.Errorf("size = %d by %d, err = %v", widthPixels, heightPixels, err)
+	widthPixels, heightPixels, totalPixels, err := ReadHEIFSize(bytes.NewReader(content), int64(len(content)))
+	if err != nil || widthPixels != 4032 || heightPixels != 3024 || totalPixels != 4032*3024 {
+		t.Errorf("size = %d by %d, %d pixels, err = %v", widthPixels, heightPixels, totalPixels, err)
+	}
+}
+
+// heif-dec decodes every top-level picture of a file, so a file whose primary
+// picture is small can still hold a huge one beside it. Thumbnails, auxiliary
+// pictures and the tiles of a grid are not top-level and are not counted.
+func TestReadHEIFSizeBoundsEveryTopLevelPicture(t *testing.T) {
+	read := func(extras ...heifExtraImage) (int64, error) {
+		content := buildHeif(heifOptions{locationVersion: 1, infeVersion: 2, sizeWidth: 4000, sizeHeight: 3000, extraImages: extras}, nil)
+		_, _, totalPixels, err := ReadHEIFSize(bytes.NewReader(content), int64(len(content)))
+		return totalPixels, err
+	}
+	if _, err := read(heifExtraImage{itemType: "hvc1", width: 16000, height: 4001}); !errors.Is(err, ErrTooLarge) {
+		t.Errorf("a second picture over the limit: err = %v, want ErrTooLarge", err)
+	}
+	// Each is within the limit and all of them together are over twice it.
+	if _, err := read(
+		heifExtraImage{itemType: "hvc1", width: 8000, height: 8000},
+		heifExtraImage{itemType: "hvc1", width: 8000, height: 8000},
+		heifExtraImage{itemType: "hvc1", width: 8000, height: 8000},
+	); !errors.Is(err, ErrTooLarge) {
+		t.Errorf("many pictures that together are over twice the limit: err = %v, want ErrTooLarge", err)
+	}
+	if _, err := read(heifExtraImage{itemType: "hvc1", hasNoSize: true}); err == nil || errors.Is(err, ErrTooLarge) {
+		t.Errorf("a second picture that says nothing of its size: err = %v, want a refusal that is not about size", err)
+	}
+	totalPixels, err := read(heifExtraImage{itemType: "hvc1", width: 8000, height: 8000})
+	if err != nil || totalPixels != 4000*3000+8000*8000 {
+		t.Errorf("a second picture within the limit: %d pixels, err = %v", totalPixels, err)
+	}
+	// Parts of the primary picture, however large they say they are.
+	totalPixels, err = read(
+		heifExtraImage{itemType: "hvc1", width: 320, height: 240, role: "thmb"},
+		heifExtraImage{itemType: "hvc1", width: 16000, height: 16000, role: "auxl"},
+		heifExtraImage{itemType: "hvc1", width: 16000, height: 16000, role: "tile"},
+	)
+	if err != nil || totalPixels != 4000*3000 {
+		t.Errorf("parts of the primary picture: %d pixels, err = %v", totalPixels, err)
 	}
 }
 
 // heif-dec holds the whole picture, and a small file can claim a huge one.
-func TestReadHeifSizeRefusesWhatIsTooLargeToDecode(t *testing.T) {
+func TestReadHEIFSizeRefusesWhatIsTooLargeToDecode(t *testing.T) {
 	for name, size := range map[string][2]uint32{
 		"too many pixels": {16000, 4001},
 		"a very long row": {65536, 1},
 		"a billion wide":  {1_000_000_000, 2},
 	} {
 		content := buildHeif(heifOptions{locationVersion: 1, infeVersion: 2, sizeWidth: size[0], sizeHeight: size[1]}, nil)
-		if _, _, err := ReadHeifSize(bytes.NewReader(content), int64(len(content))); !errors.Is(err, ErrTooLarge) {
+		if _, _, _, err := ReadHEIFSize(bytes.NewReader(content), int64(len(content))); !errors.Is(err, ErrTooLarge) {
 			t.Errorf("%s: err = %v, want ErrTooLarge", name, err)
 		}
 	}
 	content := buildHeif(heifOptions{locationVersion: 1, infeVersion: 2, sizeWidth: 8000, sizeHeight: 8000}, nil)
-	if widthPixels, heightPixels, err := ReadHeifSize(bytes.NewReader(content), int64(len(content))); err != nil || widthPixels != 8000 || heightPixels != 8000 {
+	if widthPixels, heightPixels, _, err := ReadHEIFSize(bytes.NewReader(content), int64(len(content))); err != nil || widthPixels != 8000 || heightPixels != 8000 {
 		t.Errorf("within the limit: %d by %d, err = %v", widthPixels, heightPixels, err)
 	}
 }
 
-func TestReadHeifSizeRefusesAFileThatDoesNotSayHowLargeItIs(t *testing.T) {
+func TestReadHEIFSizeRefusesAFileThatDoesNotSayHowLargeItIs(t *testing.T) {
 	content := box("ftyp", []byte("heic"), bigEndian32(0), []byte("mif1heic"))
 	content = append(content, fullBox("meta", 0, fullBox("pitm", 0, []byte{0, 1}))...)
-	if _, _, err := ReadHeifSize(bytes.NewReader(content), int64(len(content))); err == nil || errors.Is(err, ErrTooLarge) {
+	if _, _, _, err := ReadHEIFSize(bytes.NewReader(content), int64(len(content))); err == nil || errors.Is(err, ErrTooLarge) {
 		t.Errorf("err = %v, want a refusal that is not about size", err)
 	}
-	if _, _, err := ReadHeifSize(strings.NewReader("this is not a HEIC file at all"), 30); err == nil {
+	if _, _, _, err := ReadHEIFSize(strings.NewReader("this is not a HEIC file at all"), 30); err == nil {
 		t.Error("text has a size")
 	}
 	for length := 0; length < len(content); length++ {
-		_, _, _ = ReadHeifSize(bytes.NewReader(content[:length]), int64(length))
+		_, _, _, _ = ReadHEIFSize(bytes.NewReader(content[:length]), int64(length))
 	}
 }
 

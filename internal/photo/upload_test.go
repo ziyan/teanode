@@ -334,10 +334,12 @@ func TestTheSameBytesUnderTwoNamesMakeOnePhotoAndOneBlob(test *testing.T) {
 	if other.header.Get("X-Photo-ID") == first.header.Get("X-Photo-ID") || edited.header.Get("X-Photo-ID") == first.header.Get("X-Photo-ID") || fixture.count("photo") != "3" {
 		test.Fatalf("photos %s", fixture.count("photo"))
 	}
-	// The second name's other file joins the photo too.
+	// The second name's other file is not one more file of that photo: the
+	// name was an alias only because its original matched, and the file is the
+	// start of a photo of its own (see alias_test.go).
 	video := fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": "video/quicktime", "X-Photo-Client-ID": "second-name", "X-Photo-File-Role": "liveVideo"}, randomBytes(2000, 31))
 	fixture.expect(video, http.StatusCreated)
-	if video.header.Get("X-Photo-ID") != first.header.Get("X-Photo-ID") || len(fixture.photoFiles(first.header.Get("X-Photo-ID"))) != 2 {
+	if video.header.Get("X-Photo-ID") == first.header.Get("X-Photo-ID") || len(fixture.photoFiles(first.header.Get("X-Photo-ID"))) != 1 || len(fixture.photoFiles(video.header.Get("X-Photo-ID"))) != 2 {
 		test.Fatalf("the live video made %s", video.header.Get("X-Photo-ID"))
 	}
 }

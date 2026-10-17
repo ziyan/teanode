@@ -369,6 +369,15 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 			}
 		}
 		err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			// Cleanup deletes a marked blob's object under this lock, after
+			// reading the blob again, so from here to the commit it cannot
+			// delete the bytes this file is about to name: it waits, and then
+			// finds the mark cleared and a file naming the blob. Without the
+			// lock the bytes check below could pass an hour-old object that
+			// cleanup was about to delete.
+			if err := transaction.LockPhotoBlob(blobSha256); err != nil {
+				return err
+			}
 			isInserted, err := transaction.InsertPhotoBlobIfAbsent(&models.PhotoBlob{BlobSHA256: blobSha256, BlobSizeBytes: sizeBytes})
 			if err != nil {
 				return err
@@ -380,7 +389,7 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 				return errBlobGone
 			}
 			var isRecordedAsOwn bool
-			if photo, isRecordedAsOwn, err = self.photoForFile(transaction, userId, headers, blobSha256); err != nil {
+			if photo, isRecordedAsOwn, err = self.photoForFile(transaction, userId, headers, blobSha256, maximumAccountBytes); err != nil {
 				return err
 			}
 			// A photo that already has these bytes as its original has nothing
@@ -448,13 +457,51 @@ func (self *Store) checkBlobStored(ctx context.Context, blobSha256 string) error
 // next time. Failing both a photo is made. The second value says the file is
 // still to be recorded against the photo, which it is unless the photo already
 // has exactly these bytes as its original.
-func (self *Store) photoForFile(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders, blobSha256 string) (*models.Photo, bool, error) {
+//
+// A name is an alias only because its original matched; what the uploader goes
+// on to send under it is its own. A file of any other role arriving under an
+// alias (an edit, a Live Photo's video) is not one more file of the photo the
+// alias points at, which has an edit or a video of its own: it makes a photo of
+// its own, over the same original, and the alias becomes that photo's name.
+func (self *Store) photoForFile(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders, blobSha256 string, maximumAccountBytes int64) (*models.Photo, bool, error) {
 	found, err := transaction.FindPhotosByClientIDs(userId, []string{headers.ClientPhotoID})
 	if err != nil {
 		return nil, false, err
 	}
 	if len(found) > 0 {
-		return found[0], true, nil
+		if headers.PhotoFileRole == models.PhotoFileRoleOriginal {
+			return found[0], true, nil
+		}
+		isAlias, err := transaction.ReleasePhotoClientAlias(userId, headers.ClientPhotoID)
+		if err != nil {
+			return nil, false, err
+		}
+		if !isAlias {
+			return found[0], true, nil
+		}
+		made, _, err := transaction.CreatePhoto(newPhoto(userId, headers))
+		if err != nil {
+			return nil, false, err
+		}
+		// The same original, as a file of its own: files are what the quota
+		// counts, whichever blob they name.
+		original, err := transaction.GetPhotoFile(userId, found[0].ID, models.PhotoFileRoleOriginal)
+		if errors.Is(err, db.ErrNotFound) {
+			return made, true, nil
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		if _, err := transaction.SetPhotoFile(userId, made.ID, &models.PhotoFile{
+			PhotoFileRole: models.PhotoFileRoleOriginal, BlobSHA256: original.BlobSHA256, ContentType: original.ContentType,
+			FileSizeBytes: original.FileSizeBytes, OriginalFilename: original.OriginalFilename,
+		}, maximumAccountBytes); err != nil {
+			if errors.Is(err, db.ErrTooMuchAsked) {
+				return nil, false, &QuotaError{LimitBytes: maximumAccountBytes}
+			}
+			return nil, false, err
+		}
+		return made, true, nil
 	}
 	if headers.PhotoFileRole == models.PhotoFileRoleOriginal {
 		same, err := transaction.FindPhotoByOriginalBlob(userId, blobSha256)

@@ -223,6 +223,22 @@ type heifOptions struct {
 	// sizeWidth and sizeHeight are what the size property of the primary
 	// picture says; 4032 by 3024 when both are zero.
 	sizeWidth, sizeHeight uint32
+
+	// extraImages are further pictures the file holds, items 10 and up.
+	extraImages []heifExtraImage
+}
+
+// heifExtraImage is another picture item of a test HEIC.
+type heifExtraImage struct {
+	itemType      string
+	width, height uint32
+
+	// role says how the item is referenced: "" for not at all, which makes it a
+	// top-level picture, "thmb" or "auxl" for a thumbnail or an auxiliary
+	// picture of the primary one, "tile" for a tile of the primary one, which
+	// is then a grid. hasNoSize leaves out the size property.
+	role      string
+	hasNoSize bool
 }
 
 func box(kind string, payload ...[]byte) []byte {
@@ -258,10 +274,14 @@ func buildHeif(options heifOptions, exif []byte) []byte {
 			}
 			return fullBox("infe", 2, binary.BigEndian.AppendUint16(nil, uint16(itemId)), []byte{0, 0}, []byte(kind), []byte{0})
 		}
-		itemInfo := fullBox("iinf", 0, []byte{0, 1}, infe(1, "hvc1"))
+		infes := [][]byte{infe(1, "hvc1")}
 		if options.hasExif {
-			itemInfo = fullBox("iinf", 0, []byte{0, 2}, infe(1, "hvc1"), infe(2, "Exif"))
+			infes = append(infes, infe(2, "Exif"))
 		}
+		for index, extra := range options.extraImages {
+			infes = append(infes, infe(uint32(10+index), extra.itemType))
+		}
+		itemInfo := fullBox("iinf", 0, binary.BigEndian.AppendUint16(nil, uint16(len(infes))), bytes.Join(infes, nil))
 
 		var locations []byte
 		method := uint16(0)
@@ -306,10 +326,31 @@ func buildHeif(options heifOptions, exif []byte) []byte {
 		if sizeWidth == 0 && sizeHeight == 0 {
 			sizeWidth, sizeHeight = 4032, 3024
 		}
+		sizeProperties := [][]byte{fullBox("ispe", 0, bigEndian32(sizeWidth, sizeHeight))}
+		associations := [][]byte{binary.BigEndian.AppendUint16(nil, 1), {1, 1}}
+		associationCount := uint32(1)
+		var references [][]byte
+		for index, extra := range options.extraImages {
+			itemId := uint16(10 + index)
+			if !extra.hasNoSize {
+				sizeProperties = append(sizeProperties, fullBox("ispe", 0, bigEndian32(extra.width, extra.height)))
+				associations = append(associations, binary.BigEndian.AppendUint16(nil, itemId), []byte{1, byte(len(sizeProperties))})
+				associationCount++
+			}
+			switch extra.role {
+			case "thmb", "auxl":
+				references = append(references, box(extra.role, binary.BigEndian.AppendUint16(nil, itemId), []byte{0, 1}, []byte{0, 1}))
+			case "tile":
+				references = append(references, box("dimg", []byte{0, 1}, []byte{0, 1}, binary.BigEndian.AppendUint16(nil, itemId)))
+			}
+		}
 		properties := box("iprp",
-			box("ipco", fullBox("ispe", 0, bigEndian32(sizeWidth, sizeHeight))),
-			fullBox("ipma", 0, bigEndian32(1), binary.BigEndian.AppendUint16(nil, 1), []byte{1, 1}))
+			box("ipco", sizeProperties...),
+			fullBox("ipma", 0, bigEndian32(associationCount), bytes.Join(associations, nil)))
 		parts := [][]byte{fullBox("hdlr", 0, bigEndian32(0), []byte("pict"), make([]byte, 13)), fullBox("pitm", 0, []byte{0, 1}), itemInfo, locations, properties}
+		if len(references) > 0 {
+			parts = append(parts, fullBox("iref", 0, bytes.Join(references, nil)))
+		}
 		if options.isInHeaderData {
 			parts = append(parts, box("idat", exifItem))
 		}

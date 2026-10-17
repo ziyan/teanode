@@ -56,3 +56,15 @@ func (self *Store) WorkSpacePromisedBytes() int64 {
 	defer self.workSpace.mutex.Unlock()
 	return self.workSpace.promisedBytes
 }
+
+// SetAfterBlobMarked sets what runs between cleanup marking a blob and
+// deleting it, which is where a file for the same bytes can arrive.
+func (self *Store) SetAfterBlobMarked(afterBlobMarked func(blobSha256 string)) {
+	self.afterBlobMarked = afterBlobMarked
+}
+
+// SetClaimRenewalInterval replaces how often the claim on a photo being worked
+// on is renewed.
+func (self *Store) SetClaimRenewalInterval(interval time.Duration) {
+	self.claimRenewalInterval = interval
+}

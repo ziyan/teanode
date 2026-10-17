@@ -57,10 +57,18 @@ type Store struct {
 	// before it looks again, while another worker is still busy.
 	claimPollInterval time.Duration
 
+	// claimRenewalInterval is how often the claims on photos being worked on
+	// are renewed.
+	claimRenewalInterval time.Duration
+
 	// workSpace tracks the room the copies in the work directory have been
 	// promised, and freeBytesOf says how much the file system has.
 	workSpace   workSpace
 	freeBytesOf func(directory string) (int64, bool)
+
+	// afterBlobMarked is called by cleanup between marking a blob and deleting
+	// it; a test uses it to let a file arrive at that moment. Nil otherwise.
+	afterBlobMarked func(blobSha256 string)
 
 	// videoPrograms remembers whether ffmpeg and ffprobe were found.
 	videoPrograms videoPrograms
@@ -70,7 +78,7 @@ type Store struct {
 // configuration is a function so that a limit changed in the dashboard
 // applies to the next request.
 func New(database db.Database, files storage.StreamFiles, configuration func() *config.Configuration) *Store {
-	return &Store{database: database, files: files, configuration: configuration, now: time.Now, pixelBudget: semaphore.NewWeighted(maximumPixelsInFlight), claimPollInterval: claimPollInterval, freeBytesOf: freeDiskBytes}
+	return &Store{database: database, files: files, configuration: configuration, now: time.Now, pixelBudget: semaphore.NewWeighted(maximumPixelsInFlight), claimPollInterval: claimPollInterval, claimRenewalInterval: claimRenewalInterval, freeBytesOf: freeDiskBytes}
 }
 
 // workDirectoryName is the directory inside the data directory that temporary
@@ -132,6 +140,11 @@ const (
 	// which is too long for it to hold room another file needs.
 	openUploadQuotaWindow = 24 * time.Hour
 
+	// minimumQuotaRetryAfter and maximumQuotaRetryAfter bound the wait a refusal
+	// caused by the account's other uploads tells the client to make.
+	minimumQuotaRetryAfter = time.Minute
+	maximumQuotaRetryAfter = time.Hour
+
 	// unreferencedBlobRetention is how long a blob nothing refers to is kept.
 	// A blob is stored before the row that refers to it is, and this is the
 	// time that takes to be certain it is not about to be.
@@ -157,9 +170,17 @@ type QuotaError struct {
 	// and room comes back as they finish or go idle, so an upload that is
 	// refused for it is not ended: it can be resumed.
 	IsCausedByOtherUploads bool
+
+	// RetryAfter is, for a refusal the other uploads cause, how long until the
+	// oldest of them stops holding room, bounded to a minute at least and an
+	// hour at most so that a client neither asks again at once nor not for a day.
+	RetryAfter time.Duration
 }
 
 func (self *QuotaError) Error() string {
+	if self.IsCausedByOtherUploads {
+		return fmt.Sprintf("this account's photo library is limited to %s and its other unfinished uploads hold the room this file needs; try again later", config.ByteSize(self.LimitBytes))
+	}
 	return fmt.Sprintf("this account's photo library is limited to %s and this file would go over it", config.ByteSize(self.LimitBytes))
 }
 

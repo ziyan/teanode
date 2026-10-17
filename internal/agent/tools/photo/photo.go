@@ -33,7 +33,7 @@ func init() {
 			Name: "photo", Family: tools.FamilyAccount, Risk: tools.RiskRead,
 			Permissions: []models.Permission{models.PermissionPhotosUse},
 			Description: "The person's library of photos and videos. " +
-				"`library` says how many photos there are (total_count, videos among them, of which video_count are videos), the space used and the largest file. A photo is any item in the library: a picture, a Live Photo or a video. " +
+				"`library` says how many photos there are (photo_count, all items, videos among them, as an album counts them, of which video_count are videos), the space used and the largest file. A photo is any item in the library: a picture, a Live Photo or a video. " +
 				"`list` finds photos, newest first, by date (taken_after, taken_before), place (search_text, or near_latitude, near_longitude and near_distance_kilometers), camera and file name (search_text), kind, Favorites or the Trash; it answers a row for each. Every operation that lists (`list`, `album-list`, `album-read`, `people`, `person-photos`, `album-shares`) gives a page at a time: page_size says how many, and when there is more the answer has next_offset, which you pass as offset, with the same other arguments, to read the next page. " +
 				"A search (search_text) matches the words against the place, the file name, the camera, the titles of the albums a photo is in and, for a photo that has been described, its description and the text in the picture, and lists the best matches first. A photo nobody has described is found only by the rest, so when you search for what is in a picture, narrow by date or place too and `look` at the candidates; the answer says how many photos in the range are not described yet. " +
 				"`read` gives one photo's details, its description and the text in the picture. `look` shows you up to 6 photos (photo_ids) as pictures so you can say what is in them; a video shows its first frame; each photo you look at that has no description is also queued to be described, so the next search finds it by what is in it. " +
@@ -355,7 +355,7 @@ func library(ctx context.Context, executor client.Executor) (*tools.Result, erro
 	// together, with the videos among them said beside it, the way the
 	// dashboard and the command line say it.
 	return tools.JSONResult(map[string]any{
-		"total_count": library.PhotoCount + library.VideoCount, "video_count": library.VideoCount, "photos": client.PhotoCountText(library),
+		"photo_count": library.PhotoCount + library.VideoCount, "video_count": library.VideoCount, "photos": client.PhotoCountText(library),
 		"favorite_count": library.FavoriteCount, "trashed_count": library.TrashedCount,
 		"used_bytes": library.UsedBytes, "maximum_file_bytes": library.MaximumFileBytes, "maximum_account_bytes": library.MaximumAccountBytes,
 		"trash_kept_days": library.TrashRetentionDays,

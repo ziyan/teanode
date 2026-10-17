@@ -2,14 +2,19 @@ package photo_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/photo"
 )
 
 // holdFirstFaceReading holds the first photo the store works on where it is
@@ -66,8 +71,8 @@ func waitForPass(test *testing.T, finished <-chan error) {
 // The file of a photo is replaced while the old one is being worked on. The
 // photo goes back to waiting for the new one, and the old work's outcome is not
 // recorded over it: the photo is not marked ready on the strength of previews of
-// a file it no longer has, and those previews are deleted.
-func TestWorkOnAFileThatWasReplacedDoesNotMarkThePhotoReadyAndItsPreviewsAreDeleted(test *testing.T) {
+// a file it no longer has, and the rows of those previews are taken back.
+func TestWorkOnAFileThatWasReplacedDoesNotMarkThePhotoReadyAndItsPreviewsAreTakenBack(test *testing.T) {
 	fixture := newFixture(test)
 	reader, letGo := holdFirstFaceReading(test, fixture)
 	defer letGo()
@@ -89,7 +94,7 @@ func TestWorkOnAFileThatWasReplacedDoesNotMarkThePhotoReadyAndItsPreviewsAreDele
 		test.Fatalf("the old work marked the photo %s: %+v", found.PhotoProcessingState, found)
 	}
 	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
-		if preview, _ := fixture.previewOf(photoId, photoPreviewSize); preview != nil || fixture.files.has(models.PhotoPreviewFileID(photoId, photoPreviewSize)) {
+		if preview, _ := fixture.previewOf(photoId, photoPreviewSize); preview != nil {
 			test.Fatalf("the %s preview of the old file was kept", photoPreviewSize)
 		}
 	}
@@ -129,6 +134,46 @@ func TestWorkWhoseClaimWasLostToAnotherOnTheSameFileRecordsNothingAndKeepsThePre
 	}
 	if preview, _ := fixture.previewOf(photoId, models.PhotoPreviewSmall); preview == nil {
 		test.Fatal("previews of the same file were deleted")
+	}
+}
+
+// The file of a photo is replaced, and the work on the new file finishes before
+// the work on the old one does. The old work, overtaken, takes back only what it
+// made: the previews of the new file, which have the same names, stay, rows and
+// objects both.
+func TestOvertakenWorkDoesNotTakeBackThePreviewsOfTheWorkThatOvertookIt(test *testing.T) {
+	fixture := newFixture(test)
+	reader, letGo := holdFirstFaceReading(test, fixture)
+	defer letGo()
+	fixture.uploadPicture("replaced-twice", 22)
+	finished := fixture.startProcessing(test.Context())
+	waitForReading(test, reader)
+	photoId := fixture.photoByClientId("replaced-twice").ID
+	oldPreview, _ := fixture.previewOf(photoId, models.PhotoPreviewSmall)
+	if oldPreview == nil {
+		test.Fatal("the old file's previews were not made yet")
+	}
+
+	fixture.expect(fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("replaced-twice", "X-Photo-File-Role", "edited"), smallJpeg(test, 210)), http.StatusCreated)
+	// The new file is worked on to the end while the old work waits.
+	if err := fixture.store.Process(test.Context(), 100); err != nil {
+		test.Fatal(err)
+	}
+	newPreview, _ := fixture.previewOf(photoId, models.PhotoPreviewSmall)
+	if found := fixture.photoByClientId("replaced-twice"); found.PhotoProcessingState != models.PhotoProcessingReady || newPreview == nil || !newPreview.CreatedAt.After(oldPreview.CreatedAt) {
+		test.Fatalf("the new file was not worked on: %+v %+v", found, newPreview)
+	}
+
+	letGo()
+	waitForPass(test, finished)
+	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
+		preview, _ := fixture.previewOf(photoId, photoPreviewSize)
+		if preview == nil || !fixture.files.has(models.PhotoPreviewFileID(photoId, photoPreviewSize)) {
+			test.Fatalf("the %s preview of the new file was taken back by the work that was overtaken", photoPreviewSize)
+		}
+	}
+	if found := fixture.photoByClientId("replaced-twice"); found.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("%+v", found)
 	}
 }
 
@@ -240,5 +285,89 @@ func TestAFileIsNotCopiedWithoutRoomForItAndWhatIsMadeFromIt(test *testing.T) {
 	}
 	if promised := fixture.store.WorkSpacePromisedBytes(); promised != 0 {
 		test.Fatalf("%d bytes are still promised", promised)
+	}
+}
+
+// lostAnswerDatabase commits every renewal of a processing claim and then
+// reports an error, as a connection that drops after the commit does.
+type lostAnswerDatabase struct {
+	db.Database
+	mutex     sync.Mutex
+	lostCount int
+}
+
+func (self *lostAnswerDatabase) TransactionContext(ctx context.Context, run func(db.Transaction) error) error {
+	isRenewal := false
+	err := self.Database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		return run(&renewalWatcher{Transaction: transaction, isRenewal: &isRenewal})
+	})
+	if err == nil && isRenewal {
+		self.mutex.Lock()
+		self.lostCount++
+		self.mutex.Unlock()
+		return errors.New("the connection dropped after the commit")
+	}
+	return err
+}
+
+func (self *lostAnswerDatabase) lost() int {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.lostCount
+}
+
+type renewalWatcher struct {
+	db.Transaction
+	isRenewal *bool
+}
+
+func (self *renewalWatcher) RenewPhotoProcessingClaim(photoId string, claimedAt, renewedAt time.Time) (bool, error) {
+	*self.isRenewal = true
+	return self.Transaction.RenewPhotoProcessingClaim(photoId, claimedAt, renewedAt)
+}
+
+// A renewal of the claim that the database made, and whose answer the worker
+// never got, moved the photo's claim to a time the worker does not know. The
+// worker finds the claim it has by reading it, and records what it made against
+// that, instead of throwing finished work away because it asked with the time
+// before.
+func TestWorkWhoseRenewalAnswerWasLostStillRecordsItsOutcome(test *testing.T) {
+	fixture := newFixture(test)
+	lossy := &lostAnswerDatabase{Database: fixture.database}
+	store := photo.New(lossy, fixture.files, func() *config.Configuration { return fixture.configuration })
+	store.SetWorkDirectory(fixture.workDirectory)
+	store.SetClaimPollInterval(10 * time.Millisecond)
+	store.SetClaimRenewalInterval(20 * time.Millisecond)
+	release := make(chan struct{})
+	reader := newGateFaceReader()
+	reader.hold = func(callNumber int) <-chan struct{} {
+		if callNumber == 1 {
+			return release
+		}
+		return nil
+	}
+	store.SetFaceReader(reader, nil)
+
+	fixture.uploadPicture("renewed", 23)
+	finished := make(chan error, 1)
+	go func() { finished <- store.Process(test.Context(), 1) }()
+	waitForReading(test, reader)
+	// Several renewals are made and not answered, one after the other.
+	deadline := time.Now().Add(10 * time.Second)
+	for lossy.lost() < 3 {
+		if time.Now().After(deadline) {
+			test.Fatal("the claim was not renewed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(release)
+	waitForPass(test, finished)
+
+	found := fixture.photoByClientId("renewed")
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.ProcessingClaimedAt != nil {
+		test.Fatalf("the finished work was thrown away: %+v", found)
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewSmall); preview == nil {
+		test.Fatal("the photo has no previews")
 	}
 }

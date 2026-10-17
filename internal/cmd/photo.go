@@ -50,7 +50,7 @@ func NewPhotoCommand() *cli.Command {
 					&cli.StringFlag{Name: "after", Usage: "only photos taken on or after this date (2025-07-12 or an RFC 3339 time)"},
 					&cli.StringFlag{Name: "before", Usage: "only photos taken before this date"},
 					&cli.StringFlag{Name: "kind", Usage: "only pictures, videos or Live Photos: picture, video or livePhoto"},
-					&cli.StringFlag{Name: "near", Usage: "only photos taken near a point: <latitude>,<longitude>,<kilometers>, such as 51.5,-0.12,2"},
+					&cli.StringFlag{Name: "near", Usage: "only photos taken near a point: <latitude>,<longitude>,<kilometers>, such as 10.5,20.25,2"},
 					&cli.StringFlag{Name: "album", Usage: "only the photos of this album (its id is in teanode photo album list)"},
 					&cli.StringFlag{Name: "face-group", Usage: "only the photos with a face in this group of faces (its id is in teanode photo people list)"},
 					&cli.StringFlag{Name: "contact", Usage: "only the photos with a face in a group this contact names (its id is in teanode contact list)"},
@@ -135,12 +135,12 @@ func parsePhotoNear(text string) (latitude, longitude, kilometers *float64, err 
 	for _, part := range parts {
 		number, parseErr := strconv.ParseFloat(strings.TrimSpace(part), 64)
 		if parseErr != nil || math.IsNaN(number) || math.IsInf(number, 0) {
-			return nil, nil, nil, usage(fmt.Sprintf("--near must be <latitude>,<longitude>,<kilometers>, such as 51.5,-0.12,2, not %q", text))
+			return nil, nil, nil, usage(fmt.Sprintf("--near must be <latitude>,<longitude>,<kilometers>, such as 10.5,20.25,2, not %q", text))
 		}
 		numbers = append(numbers, number)
 	}
 	if len(numbers) != 3 {
-		return nil, nil, nil, usage(fmt.Sprintf("--near must be <latitude>,<longitude>,<kilometers>, such as 51.5,-0.12,2, not %q", text))
+		return nil, nil, nil, usage(fmt.Sprintf("--near must be <latitude>,<longitude>,<kilometers>, such as 10.5,20.25,2, not %q", text))
 	}
 	if numbers[0] < -90 || numbers[0] > 90 {
 		return nil, nil, nil, usage("--near: the latitude is from -90 to 90 degrees")

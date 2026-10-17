@@ -8,8 +8,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ziyan/teanode/internal/config"
+	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/photo"
@@ -42,6 +44,17 @@ func TestAnEmptyFinalAppendCompletesAnUploadWhoseBytesAreAllThere(test *testing.
 }
 
 func itoa(number int) string { return strconv.Itoa(number) }
+
+// expectTryAgain checks an answer that is a refusal for the account's other
+// uploads: a 503 that says when to ask again, between a minute and an hour.
+func (self *fixture) expectTryAgain(got *answer) {
+	self.test.Helper()
+	self.expect(got, http.StatusServiceUnavailable)
+	seconds, err := strconv.Atoi(got.header.Get("Retry-After"))
+	if err != nil || seconds < 60 || seconds > 3600 {
+		self.test.Fatalf("Retry-After is %q", got.header.Get("Retry-After"))
+	}
+}
 
 // Bytes cleanup has just deleted are not trusted: a file that arrives with the
 // bytes of a blob whose row is there and whose object is gone stores them
@@ -144,39 +157,158 @@ func TestCleanupDeletesTheObjectOfAMarkedBlobAndPassesOverOneThatCannotBeDeleted
 	}
 }
 
-// A file arriving with the bytes of a marked blob while its object is being
-// deleted clears the mark, and the row is not dropped from under it.
+// unreferencedPicture uploads a picture and deletes its photo for good, so
+// that its blob is unreferenced and, once an hour has passed, cleanup's.
+func (self *fixture) unreferencedPicture(clientPhotoId string, shade uint8) []byte {
+	self.test.Helper()
+	picture := smallJpeg(self.test, shade)
+	first := self.send(http.MethodPost, self.collectionUrl(), jpegHeaders(clientPhotoId), picture)
+	self.expect(first, http.StatusCreated)
+	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
+		photoId := first.header.Get("X-Photo-ID")
+		if _, err := transaction.TrashPhotos(self.userId, []string{photoId}); err != nil {
+			self.test.Fatal(err)
+		}
+		if _, err := transaction.MarkPhotosForDeletion(self.userId, []string{photoId}); err != nil {
+			self.test.Fatal(err)
+		}
+		if _, err := transaction.DeleteMarkedPhotos([]string{photoId}); err != nil {
+			self.test.Fatal(err)
+		}
+	})
+	self.age("UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = now() - interval '2 hours'")
+	return picture
+}
+
+// A file for the same bytes that completes after cleanup marked the blob and
+// before it deletes the object has claimed them: it cleared the mark, recorded
+// a file, and found the object still there. Cleanup reads the blob again under
+// the blob's lock and leaves it, bytes included.
 func TestCleanupLeavesABlobWhoseMarkWasClearedByAFileArriving(test *testing.T) {
 	fixture := newFixture(test)
-	content := randomBytes(200, 70)
-	digest := digestOf(content)
-	if err := fixture.files.PutFileStream(test.Context(), models.PhotoBlobFileID(digest), readSeeker(content), int64(len(content))); err != nil {
+	picture := fixture.unreferencedPicture("gone", 72)
+	arrivals := 0
+	fixture.store.SetAfterBlobMarked(func(blobSha256 string) {
+		arrivals++
+		fixture.expect(fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("arriving"), picture), http.StatusCreated)
+	})
+	if err := fixture.store.Cleanup(test.Context(), 10); err != nil {
 		test.Fatal(err)
 	}
-	dbtest.Exec(test, fixture.database, "INSERT INTO photo_blob (blob_sha256, blob_size_bytes, created_at, unreferenced_since) VALUES ('"+digest+"', 200, now() - interval '2 hours', now() - interval '2 hours')")
-	clearing := &clearingFiles{memoryFiles: fixture.files, fixture: fixture, digest: digest}
-	store := photo.New(fixture.database, clearing, func() *config.Configuration { return fixture.configuration })
+	if arrivals != 1 {
+		test.Fatalf("the blob was marked %d times", arrivals)
+	}
+	if !fixture.files.has(models.PhotoBlobFileID(digestOf(picture))) {
+		test.Fatal("cleanup deleted the bytes of a blob a file had claimed")
+	}
+	if fixture.count("photo_blob") != "1" || fixture.count("photo_file") != "1" {
+		test.Fatalf("blobs %s, files %s", fixture.count("photo_blob"), fixture.count("photo_file"))
+	}
+	// The photo is whole: its file is there to be read.
+	arrived := fixture.photoByClientId("arriving")
+	if arrived == nil || len(fixture.photoFiles(arrived.ID)) != 1 {
+		test.Fatal("the arriving file was not recorded")
+	}
+}
+
+// A file for the same bytes that starts while cleanup is deleting them waits
+// for the blob's lock, and then stores them again: it is never recorded
+// against the object cleanup is deleting.
+func TestAFileArrivingWhileCleanupDeletesTheBytesStoresThemAgain(test *testing.T) {
+	fixture := newFixture(test)
+	picture := fixture.unreferencedPicture("gone", 73)
+	arrival := make(chan *answer, 1)
+	deleting := &arrivingFiles{memoryFiles: fixture.files, arrive: func() {
+		go func() {
+			arrival <- fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("arriving"), picture)
+		}()
+		// Long enough for the upload to get as far as it can without the lock.
+		time.Sleep(500 * time.Millisecond)
+	}}
+	store := photo.New(fixture.database, deleting, func() *config.Configuration { return fixture.configuration })
 	if err := store.Cleanup(test.Context(), 10); err != nil {
 		test.Fatal(err)
 	}
-	if fixture.count("photo_blob") != "1" {
-		test.Fatal("the row of a blob a file had claimed was dropped")
+	fixture.expect(<-arrival, http.StatusCreated)
+	if !fixture.files.has(models.PhotoBlobFileID(digestOf(picture))) {
+		test.Fatal("a file was recorded against bytes cleanup deleted")
+	}
+	if fixture.count("photo_blob") != "1" || fixture.count("photo_file") != "1" {
+		test.Fatalf("blobs %s, files %s", fixture.count("photo_blob"), fixture.count("photo_file"))
 	}
 }
 
-// clearingFiles stands for a file arriving with the same bytes at the moment
-// their object is deleted: the blob's row is written again, which clears its mark.
-type clearingFiles struct {
+// arrivingFiles stands for a file arriving at the moment a blob's object is
+// deleted: arrive runs just before the deletion.
+type arrivingFiles struct {
 	*memoryFiles
-	fixture *fixture
-	digest  string
+	arrive func()
 }
 
-func (self *clearingFiles) DeleteFileEverywhere(ctx context.Context, id string) error {
-	if id == models.PhotoBlobFileID(self.digest) {
-		dbtest.Exec(self.fixture.test, self.fixture.database, "UPDATE photo_blob SET deleting_at = NULL, created_at = now(), unreferenced_since = now() WHERE blob_sha256 = '"+self.digest+"'")
+func (self *arrivingFiles) DeleteFileEverywhere(ctx context.Context, id string) error {
+	if strings.HasPrefix(id, "photo-blob-") {
+		self.arrive()
 	}
 	return self.memoryFiles.DeleteFileEverywhere(ctx, id)
+}
+
+// An account cannot keep more than its limit in unfinished uploads, however old:
+// the quota check leaves out those idle for a day so that they do not hold room,
+// and they are still bytes in the store until cleanup deletes them a week on.
+// The upload that would take the unfinished bytes past the limit is answered
+// like a refusal for the other uploads: 503 and a Retry-After, and the wait
+// ends when the oldest of them is due to be deleted.
+func TestUnfinishedUploadsOfAnyAgeAreBoundedByTheAccountsLimit(test *testing.T) {
+	fixture := newFixture(test)
+	fixture.configuration.Photos.MaxAccountBytes = config.ByteSize(1500)
+	for index, name := range []string{"idle-one", "idle-two"} {
+		started := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders(name, "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(1000, int64(100+index)))
+		fixture.expect(started, http.StatusCreated)
+		// Each sits idle for two days, so it does not hold room for the quota
+		// check, and the next fits it; together they hold 2000 bytes of an
+		// account that may keep 1500.
+		fixture.age("UPDATE photo_upload SET updated_at = now() - interval '2 days'")
+	}
+	refused := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("one-too-many", "Upload-Complete", "?0", "Upload-Length", "100"), randomBytes(100, 102))
+	fixture.expectTryAgain(refused)
+	// The oldest is due to be deleted in five days, which is more than the hour
+	// the wait is bounded to.
+	if refused.header.Get("Retry-After") != "3600" {
+		test.Fatalf("Retry-After is %q", refused.header.Get("Retry-After"))
+	}
+	// One that arrives in parts is judged as its parts arrive.
+	unsaid := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("unsaid-too-many", "Upload-Complete", "?0"), randomBytes(100, 103))
+	fixture.expectTryAgain(unsaid)
+
+	// Once one of them is gone the rest fit the limit, and there is room.
+	dbtest.Exec(test, fixture.database, "DELETE FROM photo_upload WHERE upload_headers->>'clientPhotoId' = 'idle-two'")
+	accepted := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("room-again", "Upload-Complete", "?0", "Upload-Length", "100"), randomBytes(100, 104))
+	fixture.expect(accepted, http.StatusCreated)
+}
+
+// How long a refused client is told to wait depends on the oldest upload that
+// holds the room: when it is soon due to stop counting, the wait is as short,
+// and never under a minute.
+func TestTheWaitAfterARefusalForOtherUploadsFollowsTheOldestOne(test *testing.T) {
+	fixture := newFixture(test)
+	fixture.configuration.Photos.MaxAccountBytes = config.ByteSize(1500)
+	other := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("holder", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(1000, 105))
+	fixture.expect(other, http.StatusCreated)
+	// The holder stops counting in 20 minutes.
+	fixture.age("UPDATE photo_upload SET updated_at = now() - interval '23 hours 40 minutes'")
+	refused := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("waiting", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(10, 106))
+	fixture.expectTryAgain(refused)
+	seconds, _ := strconv.Atoi(refused.header.Get("Retry-After"))
+	if seconds < 19*60 || seconds > 20*60+5 {
+		test.Fatalf("Retry-After is %d seconds, want about 20 minutes", seconds)
+	}
+	// Due in less than a minute: a minute.
+	fixture.age("UPDATE photo_upload SET updated_at = now() - interval '23 hours 59 minutes 50 seconds'")
+	soon := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("waiting", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(10, 106))
+	fixture.expectTryAgain(soon)
+	if soon.header.Get("Retry-After") != "60" {
+		test.Fatalf("Retry-After is %q, want 60", soon.header.Get("Retry-After"))
+	}
 }
 
 // Uploads that sat idle for a day no longer hold the account's room.
@@ -186,7 +318,7 @@ func TestAnUploadIdleForADayNoLongerHoldsTheAccountsRoom(test *testing.T) {
 	idle := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("idle", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(1000, 80))
 	fixture.expect(idle, http.StatusCreated)
 	refused := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("waiting-for-room", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(10, 81))
-	fixture.expect(refused, http.StatusRequestEntityTooLarge)
+	fixture.expectTryAgain(refused)
 
 	fixture.age("UPDATE photo_upload SET updated_at = now() - interval '25 hours'")
 	accepted := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("waiting-for-room", "Upload-Complete", "?0", "Upload-Length", "1000"), randomBytes(10, 81))
@@ -194,8 +326,9 @@ func TestAnUploadIdleForADayNoLongerHoldsTheAccountsRoom(test *testing.T) {
 }
 
 // A refusal that the other uploads' bytes cause is not the upload's fault: it is
-// answered with 413 and the upload is left for the client to resume, where a
-// refusal its own bytes cause ends it.
+// answered with 503 and a Retry-After, which every client takes as "try again",
+// and the upload is left for the client to resume, where a refusal its own bytes
+// cause is a 413 and ends it.
 func TestARefusalCausedByOtherUploadsLeavesTheUploadToBeResumed(test *testing.T) {
 	fixture := newFixture(test)
 	fixture.configuration.Photos.MaxAccountBytes = config.ByteSize(1500)
@@ -206,7 +339,7 @@ func TestARefusalCausedByOtherUploadsLeavesTheUploadToBeResumed(test *testing.T)
 	// other upload that is 1600, over the limit, though it would fit alone.
 	content := randomBytes(1000, 83)
 	refused := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("resumable", "Upload-Complete", "?0"), content)
-	fixture.expect(refused, http.StatusRequestEntityTooLarge)
+	fixture.expectTryAgain(refused)
 	location := refused.interimLocation
 	if location == "" {
 		test.Fatal("the upload was not announced")

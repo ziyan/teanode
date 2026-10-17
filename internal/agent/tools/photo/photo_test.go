@@ -390,10 +390,13 @@ func TestLibraryAnswersCountsAndLimits(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{`"total_count":7`, `"video_count":2`, `"photos":"7 (2 videos)"`, `"trash_kept_days":30`, "found only by the rest", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
+	for _, want := range []string{`"photo_count":7`, `"video_count":2`, `"photos":"7 (2 videos)"`, `"trash_kept_days":30`, "found only by the rest", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
 		if !strings.Contains(result.Content, want) {
 			test.Errorf("the library answer lacks %s: %s", want, result.Content)
 		}
+	}
+	if strings.Contains(result.Content, "total_count") {
+		test.Errorf("the library answer counts photos under the name the paged lists use for other things: %s", result.Content)
 	}
 	var _ client.Executor = current.operations
 }

@@ -633,7 +633,7 @@ In `internal/picture` (reading pictures and videos; every program it runs is giv
     func EncodeJPEG(picture image.Image, quality int) ([]byte, error)
     func EncodePPM(picture image.Image) []byte                                    // what the face reader is given
     func DecodeHEIC(ctx context.Context, content io.Reader, workDirectory string) ([]byte, error)  // heif-dec
-    func ReadHeifSize(content io.ReaderAt, sizeBytes int64) (widthPixels, heightPixels int, err error)
+    func ReadHEIFSize(content io.ReaderAt, sizeBytes int64) (widthPixels, heightPixels int, totalPixels int64, err error)
     func ProbeVideo(ctx context.Context, path string) (*VideoMetadata, error)     // ffprobe
     func VideoPoster(ctx context.Context, path string) ([]byte, error)            // ffmpeg
     func VideoPreview(ctx context.Context, inputPath, outputPath string) error

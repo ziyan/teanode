@@ -77,6 +77,12 @@ type PhotoOperation interface {
 	// that is taken already is left as it is.
 	AddPhotoClientAlias(userId, photoId, clientPhotoId string) error
 
+	// ReleasePhotoClientAlias takes a name off the photo it was recorded as
+	// another name of, so that the name can be the own name of a photo made
+	// for it. The value says there was such a name: a name that is the own
+	// name of a photo, or is not an alias at all, is left as it is.
+	ReleasePhotoClientAlias(userId, clientPhotoId string) (bool, error)
+
 	// UpdatePhoto corrects a photo. A new date is stored with the offset that
 	// came with it, in the same statement, so a date never keeps the offset of
 	// the one it replaced.
@@ -126,6 +132,12 @@ type PhotoOperation interface {
 	// are given, because starting that upload again ends the ones before it.
 	PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (int64, error)
 
+	// PhotoOldestOpenUploadAt is when a part last arrived in the oldest of the
+	// uploads PhotoOpenUploadBytes counts with the same arguments, which is
+	// when its bytes stop being counted once it has sat idle for a while. The
+	// value says there is one.
+	PhotoOldestOpenUploadAt(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (time.Time, bool, error)
+
 	// SetPhotoFile records a file of a photo, replacing the one in that role.
 	// The size is checked against the account's limit, the photo is queued for
 	// processing when the file is one its previews are made from, and the
@@ -152,11 +164,18 @@ type PhotoOperation interface {
 	// and not a row whose bytes are gone.
 	MarkUnreferencedPhotoBlobDeleting(unreferencedBefore time.Time, exceptBlobSha256s []string) (*models.PhotoBlob, error)
 
-	// LockPhotoBlobForDeletion locks a marked blob and checks again that no
-	// file names it. A blob some file names after all, or whose mark a file
-	// arriving with the same bytes cleared, comes back as nil with its mark
-	// cleared; that is not an error, because an error would roll the clearing
-	// back.
+	// LockPhotoBlob takes, until the transaction ends, the lock that orders
+	// everything that decides whether a blob's bytes are wanted: a file being
+	// recorded against them, and cleanup deleting them. Whoever holds it sees
+	// the blob, its mark, its files and its object as nobody else is changing
+	// them.
+	LockPhotoBlob(blobSha256 string) error
+
+	// LockPhotoBlobForDeletion takes that lock, then locks a marked blob and
+	// checks again that no file names it. A blob some file names after all, or
+	// whose mark a file arriving with the same bytes cleared, comes back as nil
+	// with its mark cleared; that is not an error, because an error would roll
+	// the clearing back.
 	LockPhotoBlobForDeletion(blobSha256 string) (*models.PhotoBlob, error)
 	DeletePhotoBlob(blobSha256 string) error
 
@@ -164,6 +183,11 @@ type PhotoOperation interface {
 	GetPhotoPreview(userId, photoId string, photoPreviewSize models.PhotoPreviewSize) (*models.PhotoPreview, error)
 	ListPhotoPreviews(userId string, photoIds []string) ([]*models.PhotoPreview, error)
 	DeletePhotoPreview(userId, photoId string, photoPreviewSize models.PhotoPreviewSize) error
+
+	// DeletePhotoPreviewMadeAt deletes the preview's row only if it is the one
+	// made at that time, which is how a worker tells its own row from one that
+	// a later worker wrote over it. The value says a row was deleted.
+	DeletePhotoPreviewMadeAt(userId, photoId string, photoPreviewSize models.PhotoPreviewSize, madeAt time.Time) (bool, error)
 
 	// UpdatePhotoMetadata records what reading a photo's file found. What the
 	// photo already has wins over what the file says, because the uploader's
@@ -212,10 +236,10 @@ type PhotoOperation interface {
 	// RenewPhotoProcessingClaim renews the claim made at claimedAt on a photo
 	// an instance is still working on, so that a long video is not taken by
 	// another instance while it is being made. A renewed claim is known by the
-	// time it was renewed at, which is the first value; the second says the
-	// photo was still claimed at claimedAt, and is false when the claim was
-	// lost.
-	RenewPhotoProcessingClaim(photoId string, claimedAt time.Time) (time.Time, bool, error)
+	// time it was renewed at, which the caller chooses and so knows even when
+	// the answer to the renewal is lost; the value says the photo was still
+	// claimed at claimedAt, and is false when the claim was lost.
+	RenewPhotoProcessingClaim(photoId string, claimedAt, renewedAt time.Time) (bool, error)
 
 	// RequeuePhotosWithoutPreviews puts up to limit photos that are ready
 	// and have no small preview back to waiting, and says how many there
@@ -809,6 +833,15 @@ func (self *transaction) AddPhotoClientAlias(userId, photoId, clientPhotoId stri
 	}).Error
 }
 
+func (self *transaction) ReleasePhotoClientAlias(userId, clientPhotoId string) (bool, error) {
+	if userId == "" || strings.TrimSpace(clientPhotoId) == "" {
+		return false, ErrInvalidArguments
+	}
+	deleted := self.tx.Where("user_id = ? AND client_photo_id = ? AND NOT EXISTS (SELECT 1 FROM photo WHERE photo.user_id = ? AND photo.client_photo_id = ?)",
+		userId, clientPhotoId, userId, clientPhotoId).Delete(&photoClientAliasModel{})
+	return deleted.RowsAffected == 1, deleted.Error
+}
+
 func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error) {
 	if update == nil || (update.TakenAt == nil && update.TakenAtOffsetMinutes != nil) ||
 		(update.TakenAtOffsetMinutes != nil && !isPlausibleOffsetMinutes(*update.TakenAtOffsetMinutes)) {
@@ -974,18 +1007,35 @@ func (self *transaction) PhotoUsedBytes(userId string) (int64, error) {
 	return usedBytes, err
 }
 
-func (self *transaction) PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (int64, error) {
-	if userId == "" {
-		return 0, ErrNotFound
-	}
-	query := self.tx.Model(&photoUploadModel{}).Select("COALESCE(SUM(received_size_bytes), 0)").
+// openPhotoUploads are the account's uploads that are still receiving and had
+// a part arrive after the time, without the named uploader's file.
+func (self *transaction) openPhotoUploads(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) *gorm.DB {
+	query := self.tx.Model(&photoUploadModel{}).
 		Where("user_id = ? AND photo_upload_state = ? AND updated_at > ?", userId, models.PhotoUploadReceiving, updatedAfter.UTC())
 	if exceptClientPhotoId != "" {
 		query = query.Where("NOT (upload_headers->>'clientPhotoId' = ? AND upload_headers->>'photoFileRole' = ?)", exceptClientPhotoId, string(exceptPhotoFileRole))
 	}
+	return query
+}
+
+func (self *transaction) PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (int64, error) {
+	if userId == "" {
+		return 0, ErrNotFound
+	}
 	var openBytes int64
-	err := query.Scan(&openBytes).Error
+	err := self.openPhotoUploads(userId, exceptClientPhotoId, exceptPhotoFileRole, updatedAfter).Select("COALESCE(SUM(received_size_bytes), 0)").Scan(&openBytes).Error
 	return openBytes, err
+}
+
+func (self *transaction) PhotoOldestOpenUploadAt(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (time.Time, bool, error) {
+	if userId == "" {
+		return time.Time{}, false, ErrNotFound
+	}
+	var oldestAt *time.Time
+	if err := self.openPhotoUploads(userId, exceptClientPhotoId, exceptPhotoFileRole, updatedAfter).Select("MIN(updated_at)").Scan(&oldestAt).Error; err != nil || oldestAt == nil {
+		return time.Time{}, false, err
+	}
+	return oldestAt.UTC(), true, nil
 }
 
 func isPhotoFileSourceOfPreviews(photoFileRole models.PhotoFileRole) bool {
@@ -1170,7 +1220,21 @@ func (self *transaction) MarkUnreferencedPhotoBlobDeleting(unreferencedBefore ti
 	return photoBlobFromModel(&row), nil
 }
 
+func (self *transaction) LockPhotoBlob(blobSha256 string) error {
+	if !validPhotoSha256(blobSha256) {
+		return ErrInvalidArguments
+	}
+	// A lock on a key made of the digest, not on the row: the row may not be
+	// there yet when a file is recorded, and a row lock cannot also cover the
+	// object in the store, which is deleted by a call made while it is held.
+	// Two digests whose keys collide only wait for each other.
+	return self.tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "photo-blob:"+blobSha256).Error
+}
+
 func (self *transaction) LockPhotoBlobForDeletion(blobSha256 string) (*models.PhotoBlob, error) {
+	if err := self.LockPhotoBlob(blobSha256); err != nil {
+		return nil, err
+	}
 	var row photoBlobModel
 	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("blob_sha256 = ?", blobSha256), &row)
 	if err != nil {
@@ -1184,9 +1248,9 @@ func (self *transaction) LockPhotoBlobForDeletion(blobSha256 string) (*models.Ph
 	if row.DeletingAt == nil {
 		return nil, nil
 	}
-	// Counted after the lock is held and in a statement of its own: a file
-	// being recorded takes a share of this row first, so one that was not
-	// there a moment ago cannot appear while the lock is ours.
+	// Counted after the locks are held and in a statement of its own: a file
+	// is recorded under the same advisory lock, so one that was not there a
+	// moment ago cannot appear while the lock is ours.
 	var referenceCount int64
 	if err := self.tx.Model(&photoFileModel{}).Where("blob_sha256 = ?", blobSha256).Count(&referenceCount).Error; err != nil {
 		return nil, err
@@ -1272,6 +1336,14 @@ func (self *transaction) DeletePhotoPreview(userId, photoId string, photoPreview
 		return err
 	}
 	return self.tx.Where("photo_id = ? AND photo_preview_size = ?", photoId, photoPreviewSize).Delete(&photoPreviewModel{}).Error
+}
+
+func (self *transaction) DeletePhotoPreviewMadeAt(userId, photoId string, photoPreviewSize models.PhotoPreviewSize, madeAt time.Time) (bool, error) {
+	if _, err := self.GetPhoto(userId, photoId); err != nil {
+		return false, err
+	}
+	deleted := self.tx.Where("photo_id = ? AND photo_preview_size = ? AND created_at = ?", photoId, photoPreviewSize, madeAt.UTC()).Delete(&photoPreviewModel{})
+	return deleted.RowsAffected == 1, deleted.Error
 }
 
 // photoProcessingBackoffs are the waits after the first, second, third and
@@ -1552,10 +1624,12 @@ func settlePhotoTakenAt(currentTakenAt *time.Time, currentOffsetMinutes *int, me
 	return currentTakenAt, offsetOf(*currentTakenAt)
 }
 
-func (self *transaction) RenewPhotoProcessingClaim(photoId string, claimedAt time.Time) (time.Time, bool, error) {
-	renewedAt := photoNow()
-	renewed := self.tx.Model(&photoModel{}).Where(claimedPhoto, photoId, claimedAt.UTC()).Update("processing_claimed_at", renewedAt)
-	return renewedAt, renewed.RowsAffected > 0, renewed.Error
+func (self *transaction) RenewPhotoProcessingClaim(photoId string, claimedAt, renewedAt time.Time) (bool, error) {
+	if !renewedAt.After(claimedAt) {
+		return false, ErrInvalidArguments
+	}
+	renewed := self.tx.Model(&photoModel{}).Where(claimedPhoto, photoId, claimedAt.UTC()).Update("processing_claimed_at", renewedAt.UTC().Truncate(time.Microsecond))
+	return renewed.RowsAffected > 0, renewed.Error
 }
 
 func (self *transaction) RequeuePhotosWithoutPreviews(limit int) (int, error) {

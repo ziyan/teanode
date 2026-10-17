@@ -925,15 +925,15 @@ it('offers to show a restored photo in the library', async () => {
 })
 
 it('opens the library near where a photo was taken, as a filter that stays in the address and can be taken off', async () => {
-  library = library.map((photo) => ({ ...photo, placeName: 'Old Harbor', latitude: 48.8584, longitude: 2.2945 }))
+  library = library.map((photo) => ({ ...photo, placeName: 'Old Harbor', latitude: 10.5, longitude: 20.25 }))
   show('/photos/albums/album-1/photo-1')
   fireEvent.click(await screen.findByRole('button', { name: 'Photos taken near here' }))
-  await waitFor(() => expect(address()).toBe('/photos?near=48.85840%2C2.29450&nearPlace=Old+Harbor'))
+  await waitFor(() => expect(address()).toBe('/photos?near=10.50000%2C20.25000&nearPlace=Old+Harbor'))
   expect(await screen.findByText('Near Old Harbor')).toBeTruthy()
   await waitFor(() =>
     expect(
       callsTo('ListPhotos').some(
-        (variables) => variables.nearLatitude === 48.8584 && variables.nearDistanceKilometers === 1,
+        (variables) => variables.nearLatitude === 10.5 && variables.nearDistanceKilometers === 1,
       ),
     ).toBe(true),
   )

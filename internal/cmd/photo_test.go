@@ -751,15 +751,15 @@ func TestSaveKeepsAPhotoOfASharedAlbumOrAFileOfAConversation(test *testing.T) {
 
 func TestListNearAPointSendsTheThreeNumbers(test *testing.T) {
 	server := newPhotoServer(test)
-	if _, _, err := server.run(test, "list", "--near", "51.5,-0.12,2"); err != nil {
+	if _, _, err := server.run(test, "list", "--near", "10.5,20.25,2"); err != nil {
 		test.Fatal(err)
 	}
 	sent := server.variables[len(server.variables)-1]
-	if sent["nearLatitude"] != 51.5 || sent["nearLongitude"] != -0.12 || sent["nearDistanceKilometers"] != float64(2) {
+	if sent["nearLatitude"] != 10.5 || sent["nearLongitude"] != 20.25 || sent["nearDistanceKilometers"] != float64(2) {
 		test.Fatalf("sent %v", sent)
 	}
 	count := len(server.documents)
-	for _, near := range []string{"51.5,-0.12", "51.5,-0.12,2,3", "north,-0.12,2", "91,0,2", "0,181,2", "0,0,0", "0,0,-1", "nan,0,1", "0,0,inf", ","} {
+	for _, near := range []string{"10.5,20.25", "10.5,20.25,2,3", "north,20.25,2", "91,0,2", "0,181,2", "0,0,0", "0,0,-1", "nan,0,1", "0,0,inf", ","} {
 		if _, _, err := server.run(test, "list", "--near", near); err == nil {
 			test.Errorf("--near %q was accepted", near)
 		}

@@ -62,7 +62,7 @@ func TestAnOutcomeIsRecordedOnlyWhileTheClaimStands(test *testing.T) {
 		if isCurrent, err := transaction.ReleasePhotoProcessingClaim(waiting.ID, *first.ProcessingClaimedAt); err != nil || isCurrent {
 			test.Fatalf("the first claim was given back after it was lost: %v %v", isCurrent, err)
 		}
-		if _, isCurrent, err := transaction.RenewPhotoProcessingClaim(waiting.ID, *first.ProcessingClaimedAt); err != nil || isCurrent {
+		if isCurrent, err := transaction.RenewPhotoProcessingClaim(waiting.ID, *first.ProcessingClaimedAt, first.ProcessingClaimedAt.Add(time.Minute)); err != nil || isCurrent {
 			test.Fatalf("the first claim was renewed after it was lost: %v %v", isCurrent, err)
 		}
 	})
@@ -71,11 +71,9 @@ func TestAnOutcomeIsRecordedOnlyWhileTheClaimStands(test *testing.T) {
 	}
 
 	// A claim that is renewed is known by the time it was renewed at.
-	var renewedAt time.Time
+	renewedAt := second.ProcessingClaimedAt.Add(time.Minute)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		var isCurrent bool
-		var err error
-		if renewedAt, isCurrent, err = transaction.RenewPhotoProcessingClaim(waiting.ID, *second.ProcessingClaimedAt); err != nil || !isCurrent {
+		if isCurrent, err := transaction.RenewPhotoProcessingClaim(waiting.ID, *second.ProcessingClaimedAt, renewedAt); err != nil || !isCurrent {
 			test.Fatalf("%v %v", isCurrent, err)
 		}
 		if isCurrent, err := transaction.MarkPhotoReady(waiting.ID, *second.ProcessingClaimedAt); err != nil || isCurrent {

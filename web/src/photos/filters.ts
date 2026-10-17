@@ -78,7 +78,7 @@ export function isFoundByMeaningOnly(
 // How near is near: a kilometer, as a person says "around here".
 export const NEARBY_KILOMETERS = 1
 
-// A point in the address, "48.8584,2.2945", or nothing when it is not one on
+// A point in the address, "10.5,20.25", or nothing when it is not one on
 // the earth.
 export function parseNear(text: string | null): { latitude: number; longitude: number } | null {
   const match = text ? /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(text) : null

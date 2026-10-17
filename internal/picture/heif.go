@@ -140,28 +140,42 @@ func readHeifMetadata(content io.ReaderAt, sizeBytes int64) (*Metadata, error) {
 	return metadata, nil
 }
 
-// ReadHeifSize reads the size of the primary picture of a HEIC or HEIF file
-// from its boxes alone, and refuses one that has more than MaximumPixels pixels
-// or a side longer than MaximumSidePixels. It is what a caller asks before it
-// hands the file to a program that decodes it: heif-dec holds the whole
-// picture, and a small file can claim a huge one. A file that does not say how
-// large its primary picture is is an error, because nothing then bounds what
-// decoding would take.
-func ReadHeifSize(content io.ReaderAt, sizeBytes int64) (widthPixels, heightPixels int, err error) {
+// heifImageItemTypes are the item types that are pictures a decoder makes
+// pixels of. An item of one of these types that says nothing about its size
+// cannot be bounded.
+var heifImageItemTypes = map[string]bool{
+	"hvc1": true, "hev1": true, "av01": true, "avc1": true, "vvc1": true, "jpeg": true, "j2k1": true,
+	"unci": true, "grid": true, "iovl": true,
+}
+
+// ReadHEIFSize reads, from the boxes of a HEIC or HEIF file alone, the size of
+// its primary picture and the number of pixels of every top-level picture it
+// holds, and refuses a file in which any one picture has more than
+// MaximumPixels pixels or a side longer than MaximumSidePixels, or in which all
+// of them together have more than twice MaximumPixels. It is what a caller
+// asks before it hands the file to a program that decodes it: heif-dec holds
+// the whole picture, decodes every top-level picture and not only the primary,
+// and a small file can claim huge ones. The pictures that are not top-level are
+// left out: the thumbnails (thmb), auxiliary pictures such as a depth map or a
+// matte (auxl), and the tiles a grid or an overlay is made of (dimg), which
+// make up a top-level picture and are counted in its size. A file that does not
+// say how large its primary picture is, or how large another picture is, is an
+// error, because nothing then bounds what decoding would take.
+func ReadHEIFSize(content io.ReaderAt, sizeBytes int64) (widthPixels, heightPixels int, totalPixels int64, err error) {
 	metaPayload, err := findMetaBox(content, sizeBytes)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	if len(metaPayload) < 4 {
-		return 0, 0, errors.New("picture: the HEIC meta box is cut short")
+		return 0, 0, 0, errors.New("picture: the HEIC meta box is cut short")
 	}
 	children, err := parseBoxes(metaPayload[4:])
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	var primaryItemId uint64
 	var hasPrimaryItem bool
-	var propertiesBox []byte
+	var itemInfoBox, referencesBox, propertiesBox []byte
 	for _, child := range children {
 		switch child.kind {
 		case "pitm":
@@ -169,25 +183,148 @@ func ReadHeifSize(content io.ReaderAt, sizeBytes int64) (widthPixels, heightPixe
 			version := reader.unsigned(4) >> 24
 			primaryItemId = reader.unsigned(2 + 2*int(min(version, 1)))
 			if reader.err != nil {
-				return 0, 0, reader.err
+				return 0, 0, 0, reader.err
 			}
 			hasPrimaryItem = true
+		case "iinf":
+			itemInfoBox = child.payload
+		case "iref":
+			referencesBox = child.payload
 		case "iprp":
 			propertiesBox = child.payload
 		}
 	}
-	if hasPrimaryItem && propertiesBox != nil {
-		if widthPixels, heightPixels, err = findPrimarySize(propertiesBox, primaryItemId); err != nil {
-			return 0, 0, err
+	var sizes map[uint64][2]int
+	if propertiesBox != nil {
+		if sizes, err = findItemSizes(propertiesBox); err != nil {
+			return 0, 0, 0, err
 		}
 	}
-	if widthPixels <= 0 || heightPixels <= 0 {
-		return 0, 0, errors.New("picture: the HEIC does not say how large its picture is")
+	primarySize, hasPrimarySize := sizes[primaryItemId]
+	if !hasPrimaryItem || !hasPrimarySize || primarySize[0] <= 0 || primarySize[1] <= 0 {
+		return 0, 0, 0, errors.New("picture: the HEIC does not say how large its picture is")
 	}
-	if widthPixels > MaximumSidePixels || heightPixels > MaximumSidePixels || int64(widthPixels)*int64(heightPixels) > MaximumPixels {
-		return 0, 0, fmt.Errorf("%w: %d by %d pixels", ErrTooLarge, widthPixels, heightPixels)
+
+	var items []heifItem
+	if itemInfoBox != nil {
+		if items, err = readItems(itemInfoBox); err != nil {
+			return 0, 0, 0, err
+		}
 	}
-	return widthPixels, heightPixels, nil
+	var partIds map[uint64]bool
+	if referencesBox != nil {
+		if partIds, err = readPartItemIds(referencesBox); err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	// The primary picture is counted whether or not the item list names it.
+	topLevel := map[uint64]bool{primaryItemId: true}
+	for _, item := range items {
+		if partIds[item.id] && item.id != primaryItemId {
+			continue
+		}
+		if _, hasSize := sizes[item.id]; hasSize {
+			topLevel[item.id] = true
+		} else if heifImageItemTypes[item.itemType] {
+			return 0, 0, 0, errors.New("picture: the HEIC holds a picture that does not say how large it is")
+		}
+	}
+	for itemId := range topLevel {
+		size := sizes[itemId]
+		if size[0] > MaximumSidePixels || size[1] > MaximumSidePixels || int64(size[0])*int64(size[1]) > MaximumPixels {
+			return 0, 0, 0, fmt.Errorf("%w: %d by %d pixels", ErrTooLarge, size[0], size[1])
+		}
+		totalPixels += int64(size[0]) * int64(size[1])
+		if totalPixels > 2*MaximumPixels {
+			return 0, 0, 0, fmt.Errorf("%w: the pictures in the file hold more than %d pixels together", ErrTooLarge, 2*MaximumPixels)
+		}
+	}
+	return primarySize[0], primarySize[1], totalPixels, nil
+}
+
+// heifItem is one entry of the item information box.
+type heifItem struct {
+	id uint64
+	// itemType is the four letter type of an entry of version 2 or later, and
+	// empty for an older entry, which has none.
+	itemType string
+}
+
+// readItems lists the entries of the item information box.
+func readItems(payload []byte) ([]heifItem, error) {
+	reader := &memoryReader{data: payload}
+	version := reader.unsigned(4) >> 24
+	reader.unsigned(2 + 2*int(min(version, 1)))
+	if reader.err != nil {
+		return nil, reader.err
+	}
+	entries, err := parseBoxes(payload[reader.position:])
+	if err != nil {
+		return nil, err
+	}
+	var items []heifItem
+	for _, entry := range entries {
+		if entry.kind != "infe" {
+			continue
+		}
+		entryReader := &memoryReader{data: entry.payload}
+		entryVersion := entryReader.unsigned(4) >> 24
+		if entryVersion < 2 {
+			itemId := entryReader.unsigned(2)
+			if entryReader.err != nil {
+				return nil, entryReader.err
+			}
+			items = append(items, heifItem{id: itemId})
+			continue
+		}
+		itemId := entryReader.unsigned(2 + 2*int(min(entryVersion-2, 1)))
+		entryReader.unsigned(2)
+		itemType := entryReader.unsigned(4)
+		if entryReader.err != nil {
+			return nil, entryReader.err
+		}
+		items = append(items, heifItem{id: itemId, itemType: string(binary.BigEndian.AppendUint32(nil, uint32(itemType)))})
+	}
+	return items, nil
+}
+
+// readPartItemIds are the items that the item reference box says are a part of
+// another picture or a companion of one, and so not a top-level picture of
+// their own: the thumbnails and auxiliary pictures (the item the reference is
+// from) and the tiles of a derived picture (the items it is to).
+func readPartItemIds(payload []byte) (map[uint64]bool, error) {
+	reader := &memoryReader{data: payload}
+	version := reader.unsigned(4) >> 24
+	if reader.err != nil {
+		return nil, reader.err
+	}
+	idBytes := 2 + 2*int(min(version, 1))
+	references, err := parseBoxes(payload[reader.position:])
+	if err != nil {
+		return nil, err
+	}
+	partIds := map[uint64]bool{}
+	for _, reference := range references {
+		referenceReader := &memoryReader{data: reference.payload}
+		fromItemId := referenceReader.unsigned(idBytes)
+		count := referenceReader.unsigned(2)
+		if referenceReader.err != nil {
+			return nil, referenceReader.err
+		}
+		switch reference.kind {
+		case "thmb", "auxl":
+			partIds[fromItemId] = true
+		case "dimg":
+			for range count {
+				toItemId := referenceReader.unsigned(idBytes)
+				if referenceReader.err != nil {
+					return nil, referenceReader.err
+				}
+				partIds[toItemId] = true
+			}
+		}
+	}
+	return partIds, nil
 }
 
 // findMetaBox walks the top level boxes of the file, skipping the big ones by
@@ -359,9 +496,21 @@ func parseHeifExif(item []byte) (*Metadata, error) {
 // findPrimarySize reads the size property (ispe) that iprp associates with the
 // primary item.
 func findPrimarySize(propertiesBox []byte, primaryItemId uint64) (int, int, error) {
-	children, err := parseBoxes(propertiesBox)
+	sizes, err := findItemSizes(propertiesBox)
 	if err != nil {
 		return 0, 0, err
+	}
+	size := sizes[primaryItemId]
+	return size[0], size[1], nil
+}
+
+// findItemSizes reads the size property (ispe) that iprp associates with each
+// item, by item. An item with none, or one too large to be a size, is not in the
+// map. Of several that an item has, the first counts.
+func findItemSizes(propertiesBox []byte) (map[uint64][2]int, error) {
+	children, err := parseBoxes(propertiesBox)
+	if err != nil {
+		return nil, err
 	}
 	var properties []heifBox
 	var associations []byte
@@ -369,14 +518,15 @@ func findPrimarySize(propertiesBox []byte, primaryItemId uint64) (int, int, erro
 		switch child.kind {
 		case "ipco":
 			if properties, err = parseBoxes(child.payload); err != nil {
-				return 0, 0, err
+				return nil, err
 			}
 		case "ipma":
 			associations = child.payload
 		}
 	}
+	sizes := map[uint64][2]int{}
 	if associations == nil {
-		return 0, 0, nil
+		return sizes, nil
 	}
 	reader := &memoryReader{data: associations}
 	header := reader.unsigned(4)
@@ -392,7 +542,7 @@ func findPrimarySize(propertiesBox []byte, primaryItemId uint64) (int, int, erro
 			} else {
 				propertyIndex = reader.unsigned(1) & 0x7F
 			}
-			if itemId != primaryItemId || propertyIndex < 1 || propertyIndex > uint64(len(properties)) {
+			if _, isKnown := sizes[itemId]; isKnown || propertyIndex < 1 || propertyIndex > uint64(len(properties)) {
 				continue
 			}
 			property := properties[propertyIndex-1]
@@ -400,14 +550,14 @@ func findPrimarySize(propertiesBox []byte, primaryItemId uint64) (int, int, erro
 				width := uint64(binary.BigEndian.Uint32(property.payload[4:]))
 				height := uint64(binary.BigEndian.Uint32(property.payload[8:]))
 				if width > math.MaxInt32 || height > math.MaxInt32 {
-					return 0, 0, nil
+					continue
 				}
-				return int(width), int(height), nil
+				sizes[itemId] = [2]int{int(width), int(height)}
 			}
 		}
 	}
 	if reader.err != nil {
-		return 0, 0, reader.err
+		return nil, reader.err
 	}
-	return 0, 0, nil
+	return sizes, nil
 }

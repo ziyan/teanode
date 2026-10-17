@@ -91,15 +91,24 @@ declared digest, stores the file under its SHA-256 (in parts on S3 for files
 over 256 MiB), and records it; the blob's row is committed right after its
 bytes, so bytes whose recording then fails are reclaimed by cleanup. In the same
 transaction that records the file, after it, one byte of the blob is read back
-to see it is in the store: cleanup deletes a blob's object before it drops the
-row, so a file recorded against an object cleanup had just deleted would name
-nothing; the step is then done again with the bytes stored. The quota counts
+to see it is in the store; that transaction holds the blob's advisory lock
+(`LockPhotoBlob`, a Postgres lock on the digest) from before it clears the
+blob's mark until it commits, and cleanup deletes the object under the same
+lock, so cleanup cannot delete bytes a file has just claimed. If the object is
+gone the step is done again with the bytes stored. The quota counts
 what is stored and what is still arriving, where "arriving" is the uploads a
 part arrived in during the last day (`openUploadQuotaWindow`): an upload that
-sat idle for longer does not hold room for the week cleanup keeps it. A
-refusal that the account's other uploads cause, as opposed to this file's own
-size, answers 413 and leaves the upload resumable (`QuotaError.IsCausedByOtherUploads`);
-a refusal its own bytes cause ends it.
+sat idle for longer does not hold room for the week cleanup keeps it, and a
+second check bounds what those idle uploads add up to: the account's other
+unfinished uploads of any age may not hold more than its limit. A refusal that
+the account's other uploads cause, as opposed to this file's own size, answers
+503 with a `Retry-After` (seconds until the oldest of them stops counting, at
+least 60 and at most 3600) and leaves the upload resumable
+(`QuotaError.IsCausedByOtherUploads`), because every client takes that as "try
+again"; a refusal its own bytes cause answers 413 and ends it. A request that
+names the digest it will have (`X-Photo-Declared-SHA256`) of bytes the person
+already has as the original of a photo, and sends no more than their size, is
+not asked for room at all: it costs none.
 
 A client whose last part got no answer asks where the upload is (`HEAD`). When
 every byte is there and the upload is not complete, either the server is still
@@ -115,8 +124,12 @@ under a name the person has no photo for, and the person already has a photo, in
 the library or the Trash, whose `original` has the same SHA-256, the upload is
 recorded against that photo, which costs no room, and the name goes into
 `photo_client_alias` so that `FindPhotos` finds the photo by either name (with
-the name that was asked as its `clientPhotoId`). The other roles of the
-upload's name join that photo too. The photo's own name does not change.
+the name that was asked as its `clientPhotoId`). The photo's own name does not
+change. A name is an alias only because its original matched: a file of another
+role (an edit, a Live Photo's video) arriving under an alias makes a photo of its
+own for that name, over the same original blob (a `photo_file` of its own, which
+counts against the quota), and the alias row is deleted; two assets with the same
+original and different edits end as two photos.
 
 A phone signs these requests with a device password that grants photos and
 nothing else (`sync_credential.has_photos_access`), because a background
@@ -147,16 +160,26 @@ renewal moves), and what a worker records at the end, ready or failed, is
 recorded only while the photo is still claimed at that time. If the claim was
 lost, because it ran out and another instance took the photo or because the
 photo's file was replaced, nothing is recorded; when the photo's file is a
-different one from the file the worker read, the previews the worker wrote are
-deleted, since they are of a file the photo no longer has. A worker that is
+different one from the file the worker read, the preview rows the worker wrote
+are deleted, since they are of a file the photo no longer has, but only the rows
+that are still the ones it made (by the time they were made): preview objects
+are named by photo and size alone, so the work that overtook it may have written
+over them, and the objects are left to be written over or deleted with the
+photo. A renewal moves the claim to a time the worker chooses, so a renewal
+whose answer was lost is settled by reading the claim: if it is at that time, it
+was made and is still this worker's. A worker that is
 stopped (the server shuts down) gives the attempt back and clears the claim,
 in a transaction that does not end with the request, so the next run takes the
 photo at once and a restart does not cost it an attempt or ten minutes.
 
-A HEIC says how large its picture is in its boxes (`ispe` of the primary item),
-which `picture.ReadHeifSize` reads and bounds (64 megapixels, 65535 on a side)
-before `heif-dec` is run, and the pixels it will hold are taken from the same
-budget decoded JPEGs use for as long as it runs. A PNG or GIF with a side over
+A HEIC says how large its pictures are in its boxes (`ispe` of each item),
+which `picture.ReadHEIFSize` reads before `heif-dec` is run, since `heif-dec`
+decodes every top-level picture and not only the primary one: each is bounded
+(64 megapixels, 65535 on a side), all together may hold twice that, and a
+picture that does not say its size is refused. Thumbnails, auxiliary pictures
+and the tiles of a grid (`thmb`, `auxl`, `dimg`) are not top-level. The pixels
+of all of them are taken from the same budget decoded JPEGs use for as long as
+`heif-dec` runs. A PNG or GIF with a side over
 65535 pixels is refused from its header too: a strip a billion pixels wide is
 under the pixel limit and would still make the scaler allocate a row of
 gigabytes. The size a JPEG's EXIF block gives is swapped for an orientation of
@@ -319,7 +342,7 @@ Every operation of the tool that answers a list (`list`, `album-list`,
 `album-shares`) gives a page at a time: `page_size` and `offset` in, and when
 there is more `next_offset` out (with the count, `matching_photo_count` for photos,
 `total_count` for the rest), as the mail and memory tools do. `library` gives
-`total_count` for the photos, videos among them, and `video_count` for the
+`photo_count` for all items, videos among them, as albums count them, and `video_count` for the
 videos in it. `set-date` (a write) corrects the date a photo was taken, from an
 RFC 3339 time with an offset, as `teanode photo date` and the viewer's change of
 date do. Turning faces on is of the risk class granting and turning them off is
@@ -356,12 +379,14 @@ A blob is found by `photo_blob.unreferenced_since`, which a trigger on
 `photo_file` keeps (cleared when a file names the blob, set when the last
 one stops, whatever stops it: a replaced file, a deleted photo, a deleted
 account), through a partial index, so a pass does not look at every blob. It is
-deleted in three steps: marked (`deleting_at`) in a transaction that commits,
-which is what makes a file arriving with the same bytes store them again;
-the object deleted, outside any transaction; and the row dropped by a second
-transaction that checks again that no file names it and that the mark is still
-there. A blob whose object cannot be deleted is logged and passed over, and the
-ones behind it go on.
+deleted in two steps: marked (`deleting_at`) in a transaction that commits,
+which is what makes a file arriving with the same bytes store them again; and
+then one transaction that takes the blob's advisory lock (the one a file takes
+while it is recorded), reads the blob again, and only if it is still marked and
+no file names it deletes the object and then the row. A file that claimed the
+bytes after the mark has cleared it or named the blob, and is seen by that
+second read. A blob whose object cannot be deleted is logged and passed over,
+and the ones behind it go on.
 
 Deleting an account lists its objects (previews and upload parts) while its
 rows say what they are, deletes the account, and deletes the objects after the
