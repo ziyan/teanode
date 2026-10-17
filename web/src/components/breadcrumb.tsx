@@ -40,6 +40,9 @@ const TRAILS: { prefix: string; trail: Crumb[] }[] = [
   // menu of these pages; the trail only needs to carry a page's own
   // ancestors, which a knowledge page has and the others do not.
   { prefix: '/mailbox', trail: [{ label: 'nav.mailbox', to: '/mailbox' }] },
+  // Reached from the account menu, so the trail starts at the page. A circle
+  // adds its own name below.
+  { prefix: '/circles', trail: [{ label: 'circles.title', to: '/circles' }] },
   { prefix: '/manage/mail', trail: [{ label: 'nav.mail', to: '/manage/mail' }] },
   { prefix: '/manage/queue', trail: [{ label: 'nav.queue', to: '/manage/queue' }] },
   { prefix: '/manage/reports', trail: [{ label: 'nav.reports', to: '/manage/reports' }] },

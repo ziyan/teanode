@@ -138,6 +138,12 @@ const (
 	// kilobytes of base64 through a listing.
 	PathContactPhoto = Prefix + "/contacts/{contactId}/photo"
 
+	// PathAvatarUser is a person's picture, a square PNG. The address the
+	// API hands out carries ?v=<when it changed>, so a new picture is a new
+	// address and the old one can be cached for a day; ?size=64 asks for the
+	// small one a list row needs.
+	PathAvatarUser = Prefix + "/avatar/user/{userId}"
+
 	// A setup profile for an iPhone or a Mac, downloaded once. The address
 	// is the credential: Safari opens it without the person's session, and
 	// it works for five minutes.

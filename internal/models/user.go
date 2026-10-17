@@ -50,6 +50,16 @@ type User struct {
 	// rather than copying it. Optional; empty until they choose one.
 	ContactID string `json:"contactId,omitempty"`
 
+	// AvatarFileID names the stored file holding their picture, empty when
+	// they have none. It is a storage key, not an address: the picture is
+	// served at /api/v1/avatar/user/<id>, and this id is never sent to a
+	// client.
+	AvatarFileID string `json:"avatarFileId,omitempty"`
+
+	// AvatarUpdatedAt is when the picture last changed. It versions the
+	// picture's address and its ETag.
+	AvatarUpdatedAt *time.Time `json:"avatarUpdatedAt,omitempty"`
+
 	// DisabledAt, when set, means this person cannot sign in. Their mail and
 	// their memberships are kept, so enabling them again restores everything.
 	DisabledAt *time.Time `json:"disabledAt,omitempty"`

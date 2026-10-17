@@ -32,6 +32,11 @@ type AgentCollection struct {
 	// Kind is "calendar" or "addressBook".
 	Kind string `json:"kind"`
 
+	// CalendarKind is, for a calendar, what it holds: events, or reminders.
+	// The reminders list is a calendar too, so a client that means the
+	// person's diary asks for the events one. Null on an address book.
+	CalendarKind string `json:"calendarKind,omitempty" graphapi:"nullable"`
+
 	// Granted says the agent may read it.
 	Granted bool `json:"granted"`
 
@@ -73,7 +78,7 @@ func (self *graph) GrantAgentSource(ctx context.Context, arguments GrantAgentSou
 	if err != nil {
 		return nil, err
 	}
-	if found == nil {
+	if found == nil || found.IsPlaceholder() {
 		return nil, fmt.Errorf("turn the agent on before giving it anything to read")
 	}
 	id := strings.TrimSpace(arguments.ID)
@@ -140,7 +145,7 @@ func (self *graph) collectionsOf(tx db.Transaction, userId string) ([]*AgentColl
 			return nil, err
 		}
 		collections = append(collections, &AgentCollection{
-			ID: calendar.ID, Name: calendar.Name, Kind: AgentCollectionCalendar,
+			ID: calendar.ID, Name: calendar.Name, Kind: AgentCollectionCalendar, CalendarKind: string(calendar.CalendarKind),
 			Granted: calendar.AgentGranted, Items: int(events),
 		})
 	}

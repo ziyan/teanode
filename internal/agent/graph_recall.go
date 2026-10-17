@@ -115,6 +115,11 @@ func (self *AskRun) recallWords() string {
 	if self.settings.Headless {
 		return ""
 	}
+	// A turn somebody else asked for in a chat reads nothing of the owner's
+	// memory or files.
+	if self.settings.isMemberTurn() {
+		return ""
+	}
 	// What has no vector yet is not given one here. Backfilling on the
 	// interactive path put twenty embedding calls between the person
 	// pressing return and the model being asked anything, for rows the

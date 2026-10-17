@@ -60,17 +60,20 @@ public struct Glance: Codable, Hashable, Sendable {
 }
 
 extension Connection {
-    /// Reads what a widget shows: the events of the next `hours` from every
-    /// events calendar, and the unread mail in every mailbox. A part the
-    /// person cannot read is left empty rather than failing the rest.
+    /// Reads what a widget shows: the events of the next `hours` from the
+    /// person's own calendar and their circles', and the unread mail in every
+    /// mailbox. What other people shared with them stays in the Calendar: a
+    /// widget on a lock screen shows what the person is doing, not what
+    /// somebody else shared with them. A part the person cannot read is left
+    /// empty rather than failing the rest.
     public func glance(now: Date = Date(), hours: Int = 48, limit: Int = 6) async throws -> Glance {
         let services = (try? await serviceCapabilities()) ?? .unavailable
         let agentName = services.isAssistantEnabled ? (try? await agentName()) ?? "" : ""
         var events: [CalendarEvent] = []
         if services.isCalendarEnabled, let calendars = try? await calendars() {
-            for calendar in calendars where calendar.calendarKind != "reminders" {
+            for calendar in calendars where calendar.calendarKind != "reminders" && (calendar.isOwn || calendar.isCircleCalendar == true) {
                 if let read = try? await calendarEvents(calendarId: calendar.id, from: now, until: now.addingTimeInterval(Double(hours) * 3600)) {
-                    events += read
+                    events += read.filter { !$0.isBusy }
                 }
             }
         }

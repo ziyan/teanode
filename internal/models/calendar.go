@@ -11,9 +11,15 @@ import (
 //
 // An account is given one named "Calendar" the first time it looks, so that
 // nobody has to create one before they can keep an appointment.
+//
+// A circle may have one of its own, which every member reads and writes: then
+// CircleID is set and UserID is empty. Exactly one of the two is set. Whose a
+// calendar is must never be decided by comparing UserID alone; ask
+// CalendarAccess, which knows about shares and circles.
 type Calendar struct {
 	ID         string    `json:"id"`
-	UserID     string    `json:"userId"`
+	UserID     string    `json:"userId,omitempty"`
+	CircleID   string    `json:"circleId,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ModifiedAt time.Time `json:"modifiedAt"`
 

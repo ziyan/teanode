@@ -76,6 +76,7 @@ type backgroundWake struct {
 	endings      []backgroundEnding
 	works        []*models.AgentBackgroundWork
 	settlings    []*herdrSettling
+	shareCalls   []*skillShareAnswer
 	isQueued     bool
 	attemptCount int
 }
@@ -204,7 +205,7 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	wake := self.backgroundWakes[conversationId]
 	delete(self.backgroundWakes, conversationId)
 	self.backgroundMutex.Unlock()
-	if wake == nil || (len(wake.endings) == 0 && len(wake.works) == 0 && len(wake.settlings) == 0) {
+	if wake == nil || (len(wake.endings) == 0 && len(wake.works) == 0 && len(wake.settlings) == 0 && len(wake.shareCalls) == 0) {
 		return
 	}
 	err := self.tryWakeForBackground(conversationId, wake)
@@ -214,11 +215,12 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	if err != nil && wake.attemptCount+1 < backgroundWakeAttempts && self.ctx.Err() == nil {
 		log.Warningf("cannot wake conversation %q for background work or a command that ended, trying again in %s: %s", conversationId, backgroundWakeRetry, err)
 		// What ended while this one failed joins it.
-		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, works: wake.works, settlings: wake.settlings, attemptCount: wake.attemptCount + 1}
+		retry := &backgroundWake{agentId: wake.agentId, endings: wake.endings, works: wake.works, settlings: wake.settlings, shareCalls: wake.shareCalls, attemptCount: wake.attemptCount + 1}
 		if waiting := self.backgroundWakes[conversationId]; waiting != nil {
 			retry.endings = append(retry.endings, waiting.endings...)
 			retry.works = append(retry.works, waiting.works...)
 			retry.settlings = append(retry.settlings, waiting.settlings...)
+			retry.shareCalls = append(retry.shareCalls, waiting.shareCalls...)
 			retry.isQueued = waiting.isQueued
 		}
 		self.backgroundWakes[conversationId] = retry
@@ -228,6 +230,7 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	if err != nil {
 		log.Warningf("cannot wake conversation %q for background work or a command that ended; a command is said again when the computer next connects, and work is found again by the sweep: %s", conversationId, err)
 		self.releaseBackgroundWorkWakes(wake.works)
+		self.releaseSkillShareCallWakes(wake.shareCalls)
 	}
 	for _, ending := range wake.endings {
 		delete(self.backgroundInFlight, ending.status.ID)
@@ -237,6 +240,9 @@ func (self *Agent) wakeForBackground(conversationId string) {
 	}
 	for _, settling := range wake.settlings {
 		delete(self.backgroundInFlight, herdrInFlight(settling.event.HerdrEventID))
+	}
+	for _, answer := range wake.shareCalls {
+		delete(self.backgroundInFlight, skillShareCallInFlight(answer.call.ID))
 	}
 }
 
@@ -257,6 +263,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		for _, settling := range wake.settlings {
 			self.acknowledgeHerdr(self.currentComputer(wake.agentId, settling.computer), settling.event.HerdrEventID)
 		}
+		self.markSkillShareCallsWoken(wake.shareCalls)
 		if len(wake.works) == 0 {
 			return
 		}
@@ -320,7 +327,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 		if deferral != nil {
 			reason = deferral.Reason
 		}
-		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works, wake.settlings), reason)
+		note := fmt.Sprintf("%s; not woken again (%s).", backgroundEndedLine(wake.endings, wake.works, wake.settlings, wake.shareCalls), reason)
 		if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) error {
 			_, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: conversationId, Role: models.AgentMessageNote, Content: note})
 			return err
@@ -337,7 +344,7 @@ func (self *Agent) tryWakeForBackground(conversationId string, wake *backgroundW
 	}
 	turn, err := self.Ask(&AskSettings{
 		Agent: agent, Owner: owner, Operations: operations, Conversation: conversation,
-		Message: backgroundWakeMessage(wake.endings, wake.works, wake.settlings), Surface: backgroundSurface,
+		Message: wakeMessage(wake), Surface: backgroundSurface,
 		UsageKind: backgroundSurface,
 		// In a goal's conversation nobody is there to answer a card: what
 		// the person allows the agent to do alone applies instead.
@@ -512,7 +519,7 @@ func backgroundOutcome(status *computer.BackgroundStatus) string {
 
 // backgroundEndedLine is the endings and the finished work in a line,
 // for a note.
-func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgroundWork, settlings []*herdrSettling) string {
+func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgroundWork, settlings []*herdrSettling, shareCalls []*skillShareAnswer) string {
 	var said []string
 	if len(endings) > 0 {
 		described := make([]string, 0, len(endings))
@@ -530,6 +537,9 @@ func backgroundEndedLine(endings []backgroundEnding, works []*models.AgentBackgr
 	}
 	if len(settlings) > 0 {
 		said = append(said, herdrSettledLine(settlings))
+	}
+	if len(shareCalls) > 0 {
+		said = append(said, skillShareAnswersLine(shareCalls))
 	}
 	return strings.Join(said, ". ")
 }

@@ -12,6 +12,8 @@ export type User = {
   username: string
   name?: string
   email?: string
+  avatarUrl?: string | null
+  avatarColorIndex?: number
   disabledAt?: string | null
   hasPassword: boolean
   groupIds: string[]
@@ -43,7 +45,8 @@ export type PermissionDescription = {
 
 export type DomainSummary = { id: string; domain: string }
 
-export const USER_FIELDS = '{ id username name email disabledAt hasPassword groupIds createdAt }'
+export const USER_FIELDS =
+  '{ id username name email avatarUrl avatarColorIndex disabledAt hasPassword groupIds createdAt }'
 export const GROUP_FIELDS = '{ id name description idpGroup userIds roleIds domainIds }'
 export const ROLE_FIELDS = '{ id name description permissions }'
 

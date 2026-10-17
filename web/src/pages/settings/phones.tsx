@@ -72,6 +72,12 @@ export function PhonesPage() {
         return t('phones.kind.question')
       case 'answer':
         return t('phones.kind.answer')
+      case 'circle':
+        return t('phones.kind.circle')
+      case 'chat':
+        return t('phones.kind.chat')
+      case 'skill_share_call':
+        return t('phones.kind.skillShareCall')
     }
     return kind
   }
@@ -183,7 +189,7 @@ export function PhonesPage() {
               onChange={(event) => setEditing({ ...editing, phoneName: event.target.value })}
             />
           </label>
-          <fieldset className="field">
+          <fieldset className="phone-kinds">
             <legend>{t('phones.toldAbout')}</legend>
             <p className="muted field-hint">{t('phones.toldAboutHint')}</p>
             {kinds.map((kind) => (

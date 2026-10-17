@@ -23,7 +23,7 @@ func TestOnlyOneRenewalRetiresAToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}
-	token, _, _, err := authenticator.IssueAuthorizedToken(user.ID, "a program", "a-client", "/api/v1/mcp", time.Hour)
+	token, _, _, err := authenticator.IssueAuthorizedToken(user.ID, "a program", "a-client", "/api/v1/mcp", "", time.Hour)
 	if err != nil {
 		t.Fatalf("IssueAuthorizedToken: %s", err)
 	}
@@ -58,7 +58,7 @@ func TestAnExpiredTokenCanBeRenewedAndARetiredOneCannot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAuthenticator: %s", err)
 	}
-	token, _, refresh, err := authenticator.IssueAuthorizedToken(user.ID, "a program", "a-client", "/api/v1/mcp", time.Nanosecond)
+	token, _, refresh, err := authenticator.IssueAuthorizedToken(user.ID, "a program", "a-client", "/api/v1/mcp", "", time.Nanosecond)
 	if err != nil {
 		t.Fatalf("IssueAuthorizedToken: %s", err)
 	}

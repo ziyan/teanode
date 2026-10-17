@@ -5,7 +5,10 @@ import { graphql } from '../api'
 import { useSession } from '../session'
 import { useCalendarMutation } from '../hooks/useCalendarMutation'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { ChevronLeftIcon, ChevronRightIcon, PencilIcon, TrashIcon } from '../components/icons'
+import { Avatar } from '../components/avatar'
+import { FindATimeDialog } from '../components/calendarFindTime'
+import { CalendarShareDialog } from '../components/calendarShare'
+import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, LockIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
 import { TabItem, Tabs } from '../components/tabs'
 import { RemindersView } from '../components/reminders'
@@ -25,12 +28,13 @@ import { InMemory } from '../memoryLinks'
 // per time something happens, so a weekly meeting arrives once for each week
 // in view and this page never has to know what a repeat rule means.
 
-const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events calendarKind } }`
+const CALENDARS = `query { ListCalendars { id name description colour timezone weekStart events calendarKind
+  shareLevel ownerUserId ownerName ownerAvatarUrl ownerAvatarColorIndex circleId circleName isCircleCalendar colorIndex } }`
 
 const EVENTS = `
   query ($calendarId: String!, $from: String!, $until: String!) {
     ListCalendarEvents(calendarId: $calendarId, from: $from, until: $until) {
-      id calendarId uid summary location startsAt endsAt allDay recurring occurrence status
+      id calendarId uid summary location startsAt endsAt allDay recurring occurrence status isBusyOnly isPrivate
     }
   }`
 
@@ -38,11 +42,15 @@ const GET = `
   query ($calendarId: String!, $id: String!) {
     GetCalendarEvent(calendarId: $calendarId, id: $id) {
       id uid etag summary location description startsAt endsAt allDay
-      recurring recurrence status timezone organizer attendees { address name participation role }
+      recurring recurrence status timezone isPrivate organizer attendees { address name participation role }
     }
   }`
 
-type Calendar = {
+// What the caller may do with a calendar: owner for their own, then how much
+// of someone else's was shared, or edit for a circle's.
+export type ShareLevel = 'owner' | 'busy' | 'titles' | 'details' | 'edit'
+
+export type Calendar = {
   id: string
   name: string
   description?: string
@@ -51,7 +59,23 @@ type Calendar = {
   weekStart?: string
   events: number
   calendarKind: 'events' | 'reminders'
+  shareLevel?: ShareLevel
+  // Whose it is: null for a circle's calendar, which belongs to the circle.
+  ownerUserId?: string | null
+  ownerName?: string
+  ownerAvatarUrl?: string | null
+  ownerAvatarColorIndex?: number
+  circleId?: string | null
+  circleName?: string
+  isCircleCalendar?: boolean
+  // Which of eight colors it is painted in when it has none of its own.
+  colorIndex?: number
 }
+
+// The caller's own calendar, whatever an older answer left out.
+const isOwn = (calendar: Calendar) => !calendar.shareLevel || calendar.shareLevel === 'owner'
+// Whether the events in it may be changed from here.
+const canWrite = (calendar: Calendar) => isOwn(calendar) || calendar.shareLevel === 'edit'
 
 type Attendee = { address: string; name?: string; participation?: string; role?: string }
 
@@ -73,6 +97,11 @@ type CalendarEvent = {
   timezone?: string
   organizer?: string
   attendees?: Attendee[]
+  // All the caller is told of it is that the owner is busy.
+  isBusyOnly?: boolean
+  // The owner marked it private: everyone the calendar is shared with sees
+  // only that they are busy. Only the owner's own list carries it as true.
+  isPrivate?: boolean
 }
 
 type View = 'month' | 'week' | 'workweek' | 'day' | 'agenda' | 'reminders'
@@ -97,9 +126,13 @@ type Draft = {
   allDay: boolean
   recurrence: string
   status: string
+  isPrivate: boolean
   // One address a line, which is how somebody with four guests expects to
   // type them and avoids a row of controls for adding and removing lines.
   attendees: string
+  // The calendar it goes in, which is the caller's own unless they chose a
+  // circle's or one shared with them at edit.
+  calendarId: string
 }
 
 // The repeats worth offering as a list, each with a name a catalogue can
@@ -134,6 +167,8 @@ const VIEWS: View[] = ['month', 'week', 'workweek', 'day', 'agenda', 'reminders'
 // something at six is still there to scroll to, which a grid that started at
 // eight would have hidden.
 const HOUR = 48
+// How far above its line an hour's label reaches (0.55rem, and a margin).
+const HOUR_LABEL_OVERHANG = 12
 const OPENS_AT = 7
 
 // minutesInto is how far into a day a moment falls, clamped to it. An event
@@ -265,6 +300,17 @@ function noonOf(event: { startsAt: string; allDay: boolean }): Date {
   return new Date(year, month - 1, day, 12)
 }
 
+// The small lock on the person's own private events, in month, week, day and
+// agenda alike. It says in words what it is for a screen reader.
+function PrivateMark() {
+  const { t } = useTranslation()
+  return (
+    <span className="calendar-lock" role="img" aria-label={t('calendar.private')}>
+      <LockIcon size={12} />
+    </span>
+  )
+}
+
 function clockKey(at: Date): string {
   const hour = `${at.getHours()}`.padStart(2, '0')
   const minute = `${at.getMinutes()}`.padStart(2, '0')
@@ -318,6 +364,82 @@ function parseDay(value: string | null): Date {
   return startOfDay(new Date())
 }
 
+// The calendars a person hid, remembered in this browser only: whether the
+// family's calendar is in the way on this screen is not something to carry to
+// their phone. Wrapped in try, because storage is not always there.
+const HIDDEN_KEY = 'teanode.calendar.hidden'
+
+function readHidden(ownerId: string): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`${HIDDEN_KEY}.${ownerId}`) ?? '[]')
+    return Array.isArray(stored) ? stored.filter((each): each is string => typeof each === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeHidden(ownerId: string, hidden: string[]) {
+  try {
+    localStorage.setItem(`${HIDDEN_KEY}.${ownerId}`, JSON.stringify(hidden))
+  } catch {
+    // Not remembered; it still holds for as long as the page is open.
+  }
+}
+
+// The class and the style that paint something in a calendar's color. The
+// caller's own calendar keeps the accent unless it was given a color of its
+// own; every other one takes the color its identifier hashes to, so that the
+// same calendar is the same color here and in the app.
+function toneOf(calendar: Calendar | undefined): { className: string; style?: React.CSSProperties } {
+  if (!calendar) return { className: '' }
+  if (calendar.colour && /^#[0-9a-fA-F]{6}$/.test(calendar.colour)) {
+    return { className: 'calendar-toned', style: { ['--leaf' as string]: calendar.colour } }
+  }
+  if (isOwn(calendar)) return { className: '' }
+  return { className: `calendar-toned calendar-tone-${(calendar.colorIndex ?? 0) % 8}` }
+}
+
+type Translate = ReturnType<typeof useTranslation>['t']
+
+// What a calendar is called in the list: its own name for the caller's and
+// for a circle's, and whose it is for another person's, since everybody's is
+// called "Calendar".
+function calendarLabel(calendar: Calendar, t: Translate): string {
+  if (isOwn(calendar) || calendar.isCircleCalendar || !calendar.ownerName) return calendar.name
+  return t('calendar.ownersCalendar', { name: calendar.ownerName })
+}
+
+// What the toast says after an event was kept: that it was added or saved, and,
+// when it is in somebody else's calendar or a circle's, which.
+function savedWords(draft: { id?: string; summary: string }, calendar: Calendar | undefined, t: Translate): string {
+  const name = draft.summary.trim()
+  if (!calendar || isOwn(calendar)) {
+    return draft.id ? t('calendar.saidSaved', { name }) : t('calendar.saidAdded', { name })
+  }
+  const calendarName = calendarLabel(calendar, t)
+  return draft.id
+    ? t('calendar.saidSavedIn', { name, calendar: calendarName })
+    : t('calendar.saidAddedIn', { name, calendar: calendarName })
+}
+
+// Whose an event is, for a list that mixes several calendars: the person, or
+// the circle.
+function whoseCalendar(calendar: Calendar | undefined, t: Translate): string {
+  if (!calendar || isOwn(calendar)) return ''
+  if (calendar.isCircleCalendar) return calendar.circleName ?? calendar.name
+  return calendar.ownerName ?? t('calendar.busy')
+}
+
+// Whose the busy time or the shared event is, to be said beside it: the
+// person's name for a calendar they shared, and nothing for the caller's own.
+// Blocks of several people's calendars sit in one grid, and a gray "Busy"
+// would not say whose.
+function ownerOfCalendar(calendar: Calendar | undefined): string {
+  if (!calendar || isOwn(calendar)) return ''
+  if (calendar.isCircleCalendar) return calendar.circleName ?? calendar.name
+  return calendar.ownerName ?? ''
+}
+
 export function CalendarPage() {
   const session = useSession()
   return <CalendarPageForAccount key={session.userId ?? ''} ownerId={session.userId ?? ''} />
@@ -351,9 +473,31 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   }
 
   const calendars = useQuery(() => graphql<{ ListCalendars: Calendar[] }>(CALENDARS), [], { refresh: false })
-  // The events calendar; the reminders list beside it is drawn on its own.
-  const calendar = calendars.data?.ListCalendars?.find((found) => found.calendarKind !== 'reminders') ?? null
+  // Every calendar of events the person reaches: their own, their circles',
+  // and the ones shared with them. The reminders list beside them is drawn on
+  // its own.
+  const allCalendars = useMemo(
+    () => (calendars.data?.ListCalendars ?? []).filter((found) => found.calendarKind !== 'reminders'),
+    [calendars.data],
+  )
+  // The person's own, which is where a new event goes unless they say otherwise.
+  const calendar = allCalendars.find(isOwn) ?? null
   const calendarId = calendar?.id ?? ''
+  const calendarsById = useMemo(() => new Map(allCalendars.map((found) => [found.id, found])), [allCalendars])
+  // Hidden here, remembered in this browser.
+  const [hidden, setHidden] = useState<string[]>(() => readHidden(ownerId))
+  const shown = useMemo(() => allCalendars.filter((found) => !hidden.includes(found.id)), [allCalendars, hidden])
+  const shownKey = shown.map((found) => found.id).join(',')
+  const writable = allCalendars.filter(canWrite)
+  const toggleCalendar = (id: string) => {
+    const next = hidden.includes(id) ? hidden.filter((each) => each !== id) : [...hidden, id]
+    setHidden(next)
+    writeHidden(ownerId, next)
+  }
+  const [isSharing, setSharing] = useState(false)
+  const [isFindingTime, setFindingTime] = useState(false)
+  // An event in a calendar shared read only, opened to be read.
+  const [viewing, setViewing] = useState<CalendarEvent | null>(null)
   // Sunday unless this calendar says Monday. The server answers with one of
   // the two, so this only has to cope with an answer that has not arrived.
   const weekStart: WeekStart = calendar?.weekStart === 'monday' ? 'monday' : 'sunday'
@@ -372,16 +516,22 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     return [grid[0], addDays(grid[41], 1)]
   }, [view, on, weekStart])
 
+  // One question per calendar shown, answered together. A calendar shared at
+  // busy answers with gray blocks and nothing else.
   const events = useQuery(
     () =>
-      calendarId
-        ? graphql<{ ListCalendarEvents: CalendarEvent[] }>(EVENTS, {
-            calendarId,
-            from: from.toISOString(),
-            until: until.toISOString(),
-          })
+      shown.length > 0
+        ? Promise.all(
+            shown.map((each) =>
+              graphql<{ ListCalendarEvents: CalendarEvent[] }>(EVENTS, {
+                calendarId: each.id,
+                from: from.toISOString(),
+                until: until.toISOString(),
+              }),
+            ),
+          ).then((answers) => ({ ListCalendarEvents: answers.flatMap((answer) => answer.ListCalendarEvents) }))
         : Promise.resolve(null),
-    [calendarId, from.getTime(), until.getTime()],
+    [shownKey, from.getTime(), until.getTime()],
     { refresh: false },
   )
 
@@ -439,7 +589,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
       allDay: false,
       recurrence: '',
       status: '',
+      isPrivate: false,
       attendees: '',
+      calendarId,
     }
   }
 
@@ -460,6 +612,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
       })
       if (generation !== openingGeneration.current) return
       const full = answer.GetCalendarEvent
+      // A calendar shared below edit is read, not edited: the form would only
+      // be refused when it was sent.
+      const reached = calendarsById.get(event.calendarId)
+      if (reached && !canWrite(reached)) {
+        setViewing({ ...full, calendarId: event.calendarId })
+        return
+      }
       const starts = new Date(full.startsAt)
       const ends = new Date(full.endsAt)
       // A whole-day event's dates are read from its own parts, not from what
@@ -481,7 +640,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
         allDay: full.allDay,
         recurrence: full.recurrence ?? '',
         status: full.status ?? '',
+        isPrivate: full.isPrivate ?? false,
         attendees: (full.attendees ?? []).map((attendee) => attendee.address).join('\n'),
+        calendarId: event.calendarId,
       })
     } catch (failure) {
       toast.failure(failure, t('calendar.failed'))
@@ -519,6 +680,11 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
 
   const found = useMemo(() => events.data?.ListCalendarEvents ?? [], [events.data])
 
+  // Which calendar the open form writes to, and whether it is the person's
+  // own: a circle's has no owner to send invitations from.
+  const draftCalendar = draft ? (calendarsById.get(draft.calendarId) ?? calendar) : null
+  const draftIsOwn = !draftCalendar || isOwn(draftCalendar)
+
   // Grouped by the day they start on, which is how every view here reads
   // them. An event running over several days is listed on the day it begins;
   // the grid says so by drawing it to the edge.
@@ -533,11 +699,24 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     for (const list of grouped.values()) {
       list.sort((first, second) => {
         if (first.allDay !== second.allDay) return first.allDay ? -1 : 1
-        return first.startsAt.localeCompare(second.startsAt)
+        // By the moment, not the text: calendars in other zones write the
+        // same moment in other offsets.
+        return new Date(first.startsAt).getTime() - new Date(second.startsAt).getTime()
       })
     }
     return grouped
   }, [found])
+
+  // The agenda is one list in time order across every calendar shown: the
+  // answers come one calendar after another, and read like that it was three
+  // lists run together. A day's all-day events come first, as in the grids.
+  const agenda = useMemo(
+    () =>
+      [...byDay.entries()]
+        .sort(([firstDay], [secondDay]) => firstDay.localeCompare(secondDay))
+        .flatMap(([, events]) => events),
+    [byDay],
+  )
 
   const dayFormat = useMemo(
     () => new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' }),
@@ -631,26 +810,68 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // effect that only watched the view found nothing and never ran again.
   useLayoutEffect(() => {
     if (loading || !COLUMNS[view] || !grid.current) return
-    grid.current.scrollTop = OPENS_AT * HOUR
+    // A little above the line of the first hour, since its label is drawn
+    // centered on the line and the line was flush with the header: the label
+    // was half under it.
+    grid.current.scrollTop = OPENS_AT * HOUR - HOUR_LABEL_OVERHANG
     const head = grid.current.querySelector('.calendar-grid-head')
     if (head) {
       grid.current.style.setProperty('--calendar-head', `${head.getBoundingClientRect().height}px`)
     }
   }, [view, on, loading])
 
-  const entry = (event: CalendarEvent) => (
-    <Tooltip key={event.id + event.startsAt} label={event.summary || t('calendar.untitled')}>
-      <button
-        type="button"
-        className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''}`}
-        onClick={() => void edit(event)}
-        aria-disabled={!!submission.pending || submission.isWorking || busy}
-      >
-        {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
-        <span className="calendar-entry-title">{event.summary || t('calendar.untitled')}</span>
-      </button>
-    </Tooltip>
-  )
+  // "Busy · Ada" on a block of somebody else's calendar, so that several
+  // people's blocks in one grid can be told apart; a shared event with a title
+  // keeps its title and says whose it is on hover.
+  const busyLabel = (event: CalendarEvent) => {
+    const owner = ownerOfCalendar(calendarsById.get(event.calendarId))
+    return owner ? t('calendar.busyOf', { name: owner }) : t('calendar.busy')
+  }
+  const titleWithOwner = (event: CalendarEvent) => {
+    const calendar = calendarsById.get(event.calendarId)
+    const owner = ownerOfCalendar(calendar)
+    const title = event.summary || t('calendar.untitled')
+    if (!owner) return title
+    // A circle's calendar is the circle's, named as it is, and a person's is
+    // theirs.
+    return `${title} · ${calendar?.isCircleCalendar ? owner : t('calendar.ownersCalendar', { name: owner })}`
+  }
+
+  const canEditEvent = (event: CalendarEvent) => canWrite(calendarsById.get(event.calendarId) ?? ({} as Calendar))
+
+  const entry = (event: CalendarEvent) => {
+    // All the caller is told is that the owner is busy then: a gray block
+    // that says so, and cannot be opened, because there is nothing in it.
+    if (event.isBusyOnly) {
+      return (
+        <div
+          key={event.calendarId + event.id + event.startsAt}
+          className={`calendar-entry calendar-busy-block${event.allDay ? ' all-day' : ''}`}
+        >
+          {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
+          <span className="calendar-entry-title">{busyLabel(event)}</span>
+        </div>
+      )
+    }
+    const tone = toneOf(calendarsById.get(event.calendarId))
+    return (
+      <Tooltip key={event.calendarId + event.id + event.startsAt} label={titleWithOwner(event)}>
+        <button
+          type="button"
+          className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''} ${tone.className}`}
+          style={tone.style}
+          onClick={() => void edit(event)}
+          aria-disabled={!!submission.pending || submission.isWorking || busy}
+        >
+          {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
+          <span className="calendar-entry-title">
+            {event.isPrivate && <PrivateMark />}
+            {event.summary || t('calendar.untitled')}
+          </span>
+        </button>
+      </Tooltip>
+    )
+  }
 
   return (
     <div className="calendar-page" ref={page}>
@@ -723,6 +944,37 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
         />
       )}
 
+      {/* Every calendar the person reaches, each in its own color, with a
+          check to show or hide it. Only when there is more than their own to
+          choose between. */}
+      {view !== 'reminders' && allCalendars.length > 1 && (
+        <div className="calendar-list" role="group" aria-label={t('calendar.calendars')}>
+          {allCalendars.map((each) => {
+            const tone = toneOf(each)
+            return (
+              <label key={each.id} className={`calendar-chip ${tone.className}`} style={tone.style}>
+                <input type="checkbox" checked={!hidden.includes(each.id)} onChange={() => toggleCalendar(each.id)} />
+                <span className="calendar-chip-swatch" aria-hidden="true" />
+                {!isOwn(each) && !each.isCircleCalendar && (
+                  <Avatar
+                    name={each.ownerName ?? ''}
+                    avatarUrl={each.ownerAvatarUrl}
+                    colorIndex={each.ownerAvatarColorIndex}
+                    size={18}
+                  />
+                )}
+                <span className="calendar-chip-name">{calendarLabel(each, t)}</span>
+                {!isOwn(each) && (
+                  <span className="muted calendar-chip-level">
+                    {t(`calendar.level.${each.shareLevel ?? 'busy'}` as Parameters<typeof t>[0])}
+                  </span>
+                )}
+              </label>
+            )
+          })}
+        </div>
+      )}
+
       {view !== 'reminders' && (
         <div className="calendar-bar">
           <div className="calendar-move">
@@ -746,17 +998,25 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
             </Tooltip>
             <span className="calendar-heading">{heading}</span>
           </div>
-          <button
-            className="primary"
-            type="button"
-            disabled={!calendarId || !!submission.pending || submission.isWorking || busy}
-            onClick={() => {
-              setProblem(null)
-              setDraft(blank(on))
-            }}
-          >
-            {t('calendar.new')}
-          </button>
+          <div className="calendar-bar-actions">
+            <button type="button" disabled={!calendarId} onClick={() => setFindingTime(true)}>
+              {t('calendar.findTime')}
+            </button>
+            <button type="button" disabled={!calendarId} onClick={() => setSharing(true)}>
+              {t('calendar.share')}
+            </button>
+            <button
+              className="primary"
+              type="button"
+              disabled={writable.length === 0 || !!submission.pending || submission.isWorking || busy}
+              onClick={() => {
+                setProblem(null)
+                setDraft(blank(on))
+              }}
+            >
+              {t('calendar.new')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -897,35 +1157,59 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                       {Array.from({ length: 24 }, (_, hour) => (
                         <div key={hour} className="calendar-slot" style={{ height: HOUR }} />
                       ))}
-                      {placed.map(({ event, top, height, column, columns: across }) => (
-                        <Tooltip key={event.id + event.startsAt} label={event.summary || t('calendar.untitled')}>
-                          <button
-                            type="button"
-                            className={[
-                              'calendar-placed',
-                              height < 34 ? 'compact' : '',
-                              opening === event.id ? 'busy' : '',
-                              event.status === 'CANCELLED' ? 'cancelled' : '',
-                            ]
-                              .filter(Boolean)
-                              .join(' ')}
-                            style={{
-                              top,
-                              height,
-                              left: `calc(${(column / across) * 100}% + 2px)`,
-                              width: `calc(${(1 / across) * 100}% - 4px)`,
-                            }}
-                            onClick={() => void edit(event)}
-                            aria-disabled={!!submission.pending || submission.isWorking || busy}
-                          >
-                            <span className="calendar-placed-time">{timeFormat.format(new Date(event.startsAt))}</span>
-                            <span className="calendar-placed-title">{event.summary || t('calendar.untitled')}</span>
-                            {event.location && height > 56 && (
-                              <span className="calendar-placed-where">{event.location}</span>
-                            )}
-                          </button>
-                        </Tooltip>
-                      ))}
+                      {placed.map(({ event, top, height, column, columns: across }) => {
+                        const slot = {
+                          top,
+                          height,
+                          left: `calc(${(column / across) * 100}% + 2px)`,
+                          width: `calc(${(1 / across) * 100}% - 4px)`,
+                        }
+                        if (event.isBusyOnly) {
+                          return (
+                            <div
+                              key={event.calendarId + event.id + event.startsAt}
+                              className={`calendar-placed calendar-busy-block${height < 34 ? ' compact' : ''}`}
+                              style={slot}
+                            >
+                              <span className="calendar-placed-time">
+                                {timeFormat.format(new Date(event.startsAt))}
+                              </span>
+                              <span className="calendar-placed-title">{busyLabel(event)}</span>
+                            </div>
+                          )
+                        }
+                        const tone = toneOf(calendarsById.get(event.calendarId))
+                        return (
+                          <Tooltip key={event.calendarId + event.id + event.startsAt} label={titleWithOwner(event)}>
+                            <button
+                              type="button"
+                              className={[
+                                'calendar-placed',
+                                height < 34 ? 'compact' : '',
+                                opening === event.id ? 'busy' : '',
+                                event.status === 'CANCELLED' ? 'cancelled' : '',
+                                tone.className,
+                              ]
+                                .filter(Boolean)
+                                .join(' ')}
+                              style={{ ...slot, ...tone.style }}
+                              onClick={() => void edit(event)}
+                              aria-disabled={!!submission.pending || submission.isWorking || busy}
+                            >
+                              <span className="calendar-placed-time">
+                                {timeFormat.format(new Date(event.startsAt))}
+                              </span>
+                              <span className="calendar-placed-title">
+                                {event.isPrivate && <PrivateMark />}
+                                {event.summary || t('calendar.untitled')}
+                              </span>
+                              {event.location && height > 56 && (
+                                <span className="calendar-placed-where">{event.location}</span>
+                              )}
+                            </button>
+                          </Tooltip>
+                        )
+                      })}
                       {key === today && (
                         <div
                           className="calendar-now"
@@ -944,9 +1228,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
 
       {!loading && view === 'agenda' && (
         <div className="calendar-agenda">
-          {found.length === 0 && <p className="calendar-notice muted">{t('calendar.empty')}</p>}
-          {found.map((event) => (
-            <div key={event.id + event.startsAt} className="calendar-agenda-row">
+          {agenda.length === 0 && <p className="calendar-notice muted">{t('calendar.empty')}</p>}
+          {agenda.map((event) => (
+            <div key={event.calendarId + event.id + event.startsAt} className="calendar-agenda-row">
               <div className="calendar-agenda-when">
                 <span>{dayFormat.format(noonOf(event))}</span>
                 <span className="muted">
@@ -954,35 +1238,48 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                 </span>
               </div>
               <div className="calendar-agenda-what">
-                <span className="calendar-agenda-title">{event.summary || t('calendar.untitled')}</span>
+                <span className="calendar-agenda-title">
+                  {event.isPrivate && <PrivateMark />}
+                  {event.isBusyOnly ? busyLabel(event) : event.summary || t('calendar.untitled')}
+                </span>
                 {event.location && <span className="muted">{event.location}</span>}
                 {event.recurring && <span className="muted">{t('calendar.repeats')}</span>}
+                {/* A busy block already says whose it is, "Busy · name". */}
+                {!event.isBusyOnly && !isOwn(calendarsById.get(event.calendarId) ?? ({} as Calendar)) && (
+                  <span className="muted">{whoseCalendar(calendarsById.get(event.calendarId), t)}</span>
+                )}
               </div>
-              <div className="row-actions">
-                <Tooltip label={t('common.edit')}>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    disabled={opening === event.id || !!submission.pending || submission.isWorking || busy}
-                    onClick={() => void edit(event)}
-                    aria-disabled={!!submission.pending || submission.isWorking || busy}
-                    aria-label={t('common.edit')}
-                  >
-                    <PencilIcon />
-                  </button>
-                </Tooltip>
-                <Tooltip label={t('common.delete')}>
-                  <button
-                    type="button"
-                    className="icon-button danger"
-                    disabled={!!submission.pending || submission.isWorking || busy}
-                    onClick={() => setDeleting(event)}
-                    aria-label={t('common.delete')}
-                  >
-                    <TrashIcon />
-                  </button>
-                </Tooltip>
-              </div>
+              {!event.isBusyOnly && (
+                <div className="row-actions">
+                  {/* An event of a calendar shared below edit is only read, so the
+                      action says View, with an eye, rather than promising an edit. */}
+                  <Tooltip label={canEditEvent(event) ? t('common.edit') : t('common.view')}>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      disabled={opening === event.id || !!submission.pending || submission.isWorking || busy}
+                      onClick={() => void edit(event)}
+                      aria-disabled={!!submission.pending || submission.isWorking || busy}
+                      aria-label={canEditEvent(event) ? t('common.edit') : t('common.view')}
+                    >
+                      {canEditEvent(event) ? <PencilIcon /> : <EyeIcon />}
+                    </button>
+                  </Tooltip>
+                  {canEditEvent(event) && (
+                    <Tooltip label={t('common.delete')}>
+                      <button
+                        type="button"
+                        className="icon-button danger"
+                        disabled={!!submission.pending || submission.isWorking || busy}
+                        onClick={() => setDeleting(event)}
+                        aria-label={t('common.delete')}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1021,7 +1318,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                   operation: 'save',
                   summary: draft.summary.trim(),
                   variables: {
-                    calendarId,
+                    calendarId: draft.calendarId || calendarId,
                     id: draft.id || null,
                     summary: draft.summary.trim(),
                     location: draft.location.trim(),
@@ -1034,24 +1331,53 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                     // The calendar's own zone, so that a repeat keeps its
                     // hour when the clocks change. An all-day event is a
                     // date and has no zone at all.
-                    timezone: draft.allDay ? '' : calendar?.timezone || browserZone(),
+                    timezone: draft.allDay
+                      ? ''
+                      : (calendarsById.get(draft.calendarId) ?? calendar)?.timezone || browserZone(),
                     recurrence: draft.recurrence.trim(),
                     status: draft.status.trim(),
+                    // Only in the person's own calendar: in a circle's, or one
+                    // shared with them at edit, every reader is an editor and
+                    // sees the event whatever it says.
+                    isPrivate: draftIsOwn ? draft.isPrivate : null,
                     // Every line, including none: an empty box means nobody
                     // is coming, which is a different thing from the meeting
                     // being called off.
-                    attendees: draft.attendees
-                      .split('\n')
-                      .map((line) => line.trim())
-                      .filter(Boolean),
+                    // Only in the person's own calendar: the invitations go
+                    // out from, and the answers come back to, the owner, so a
+                    // circle's calendar or one shared with them has none.
+                    attendees: draftIsOwn
+                      ? draft.attendees
+                          .split('\n')
+                          .map((line) => line.trim())
+                          .filter(Boolean)
+                      : null,
                   },
                 }),
-              draft.id
-                ? t('calendar.saidSaved', { name: draft.summary.trim() })
-                : t('calendar.saidAdded', { name: draft.summary.trim() }),
+              // Which calendar it went into, when it is not the person's own:
+              // "in your calendar" was said of a circle's too.
+              savedWords(draft, calendarsById.get(draft.calendarId || calendarId), t),
             ).then((done) => done && setDraft(null))
           }
         >
+          {/* Which calendar a new event goes in, when there is a choice: the
+              person's own, a circle's, or one shared with them at edit. An
+              event already kept stays where it is. */}
+          {!draft.id && writable.length > 1 && (
+            <label>
+              {t('calendar.calendarChoice')}
+              <select
+                value={draft.calendarId}
+                onChange={(event) => setDraft({ ...draft, calendarId: event.target.value })}
+              >
+                {writable.map((each) => (
+                  <option key={each.id} value={each.id}>
+                    {calendarLabel(each, t)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             {t('calendar.summary')}
             <input value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} />
@@ -1068,6 +1394,19 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
             />
             {t('calendar.allDay')}
           </label>
+          {draftIsOwn && (
+            <>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={draft.isPrivate}
+                  onChange={(event) => setDraft({ ...draft, isPrivate: event.target.checked })}
+                />
+                {t('calendar.private')}
+              </label>
+              <p className="muted field-hint">{t('calendar.privateHint')}</p>
+            </>
+          )}
           <div className="field-row">
             <label>
               {t('calendar.starts')}
@@ -1130,15 +1469,17 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                 quietly replaced by the nearest one on the list. */}
             {!namedRepeat(draft.recurrence) && <span className="mono muted">{draft.recurrence}</span>}
           </label>
-          <label>
-            {t('calendar.guests')}
-            <textarea
-              rows={2}
-              value={draft.attendees}
-              onChange={(event) => setDraft({ ...draft, attendees: event.target.value })}
-            />
-            <span className="muted">{t('calendar.guestsHint')}</span>
-          </label>
+          {draftIsOwn && (
+            <label>
+              {t('calendar.guests')}
+              <textarea
+                rows={2}
+                value={draft.attendees}
+                onChange={(event) => setDraft({ ...draft, attendees: event.target.value })}
+              />
+              <span className="muted">{t('calendar.guestsHint')}</span>
+            </label>
+          )}
           <label>
             {t('calendar.description')}
             <textarea
@@ -1150,6 +1491,37 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           {draft.id ? <InMemory recordKind="calendar_event" recordId={draft.id} /> : null}
         </FormDialog>
       )}
+
+      {viewing && (
+        <ConfirmDialog
+          title={viewing.isBusyOnly ? t('calendar.busy') : viewing.summary || t('calendar.untitled')}
+          destructive={false}
+          wide
+          body={
+            <div className="calendar-viewed">
+              <p className="muted">
+                {t('calendar.readOnlyNote', { name: whoseCalendar(calendarsById.get(viewing.calendarId), t) })}
+              </p>
+              <p>
+                {viewing.allDay
+                  ? dayFormat.format(noonOf(viewing))
+                  : `${dayFormat.format(new Date(viewing.startsAt))} ${timeFormat.format(new Date(viewing.startsAt))} - ${timeFormat.format(new Date(viewing.endsAt))}`}
+              </p>
+              {viewing.location && <p>{viewing.location}</p>}
+              {viewing.description && <p className="calendar-viewed-notes">{viewing.description}</p>}
+              {(viewing.attendees ?? []).length > 0 && (
+                <p className="muted">
+                  {(viewing.attendees ?? []).map((guest) => guest.name || guest.address).join(', ')}
+                </p>
+              )}
+            </div>
+          }
+          onClose={() => setViewing(null)}
+        />
+      )}
+
+      {isSharing && calendar && <CalendarShareDialog calendar={calendar} onClose={() => setSharing(false)} />}
+      {isFindingTime && <FindATimeDialog ownUserId={ownerId} onClose={() => setFindingTime(false)} />}
 
       {deleting && !submission.pending && (
         <ConfirmDialog

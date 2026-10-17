@@ -67,7 +67,16 @@ function dashboardPathOf(address: string): string | null {
   // only the characters a path of the graph or an item id is made of, so
   // this changes nothing a valid link says, and it is the escaping that
   // keeps a link's text from ever being read as markup where it lands.
-  return path === null ? null : path.split('/').map(encodeURIComponent).join('/')
+  // A page another person shared carries the one query a link of ours has,
+  // ?owner=, which memoryPath has already checked; it is put back together
+  // from that one key, escaped the same way, and nothing else of it is kept.
+  if (path === null) return null
+  const [pathname, query] = path.split('?')
+  const owner = query === undefined ? null : new URLSearchParams(query).get('owner')
+  return (
+    pathname.split('/').map(encodeURIComponent).join('/') +
+    (owner === null ? '' : `?owner=${encodeURIComponent(owner)}`)
+  )
 }
 
 // PictureSource is where whoever draws this markdown has a picture fetched

@@ -19,8 +19,11 @@ import (
 // describing a version of an event that is no longer there.
 
 type calendarModel struct {
-	ID          string    `gorm:"column:id;primaryKey"`
-	UserID      string    `gorm:"column:user_id"`
+	ID string `gorm:"column:id;primaryKey"`
+	// Exactly one of UserID and CircleID is set: a calendar belongs to a
+	// person or, for a circle's own, to the circle.
+	UserID      *string   `gorm:"column:user_id"`
+	CircleID    *string   `gorm:"column:circle_id"`
 	CreatedAt   time.Time `gorm:"column:created_at"`
 	ModifiedAt  time.Time `gorm:"column:modified_at"`
 	Name        string    `gorm:"column:name"`
@@ -36,12 +39,19 @@ type calendarModel struct {
 func (calendarModel) TableName() string { return "calendar" }
 
 func (self *calendarModel) toModel() *models.Calendar {
-	return &models.Calendar{
-		ID: self.ID, UserID: self.UserID, CreatedAt: self.CreatedAt,
+	found := &models.Calendar{
+		ID: self.ID, CreatedAt: self.CreatedAt,
 		ModifiedAt: self.ModifiedAt, Name: self.Name, Description: self.Description,
 		Colour: self.Colour, Timezone: self.Timezone, WeekStart: self.WeekStart,
 		AgentGranted: self.AgentGranted, CalendarKind: models.CalendarKind(self.CalendarKind),
 	}
+	if self.UserID != nil {
+		found.UserID = *self.UserID
+	}
+	if self.CircleID != nil {
+		found.CircleID = *self.CircleID
+	}
+	return found
 }
 
 type calendarObjectModel struct {
@@ -105,8 +115,12 @@ func (self *calendarOccurrenceModel) toModel() *models.Occurrence {
 	}
 }
 
-// ListCalendars are one account's, oldest first, which is the order they were
-// made in and so the order somebody expects to see them.
+// ListCalendars are one account's own, oldest first, which is the order they
+// were made in and so the order somebody expects to see them. Not the ones
+// shared with them and not a circle's: those are ListReachableCalendars, and
+// a caller that wants "the person's calendar" for a purpose of its own (the
+// events calendar an invitation lands in, what the agent was granted) wants
+// this one.
 func (self *transaction) ListCalendars(userId string) ([]*models.Calendar, error) {
 	var found []calendarModel
 	if err := self.tx.Where("\"user_id\" = ?", userId).Order("\"created_at\" ASC").Find(&found).Error; err != nil {
@@ -143,12 +157,13 @@ func readCalendar(query *gorm.DB, calendarId string) (*models.Calendar, error) {
 // changes the shape of an account, which is what the administrative log is
 // for. What goes inside it is not audited -- see PutCalendarObject.
 func (self *transaction) CreateCalendar(calendar *models.Calendar) (*models.Calendar, error) {
-	if calendar == nil || strings.TrimSpace(calendar.UserID) == "" {
-		return nil, fmt.Errorf("db: a calendar needs an account")
+	if calendar == nil || (strings.TrimSpace(calendar.UserID) == "") == (strings.TrimSpace(calendar.CircleID) == "") {
+		return nil, fmt.Errorf("db: a calendar belongs to an account or to a circle, and to one of them")
 	}
 	now := time.Now()
 	row := &calendarModel{
-		ID: newID(), UserID: calendar.UserID, CreatedAt: now, ModifiedAt: now,
+		ID: newID(), UserID: nullableText(strings.TrimSpace(calendar.UserID)),
+		CircleID: nullableText(strings.TrimSpace(calendar.CircleID)), CreatedAt: now, ModifiedAt: now,
 		Name: truncateRunes(strings.TrimSpace(calendar.Name), 200), Description: calendar.Description,
 		Colour: truncateRunes(strings.TrimSpace(calendar.Colour), 16),
 		// Not validated against the zone database here: a name this machine
@@ -235,7 +250,8 @@ func (self *transaction) UpdateCalendar(calendar *models.Calendar) (*models.Cale
 		return nil, nil
 	}
 	row := &calendarModel{
-		ID: calendar.ID, UserID: before.UserID, CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
+		ID: calendar.ID, UserID: nullableText(before.UserID), CircleID: nullableText(before.CircleID),
+		CreatedAt: before.CreatedAt, ModifiedAt: time.Now(),
 		Name: truncateRunes(strings.TrimSpace(calendar.Name), 200), Description: calendar.Description,
 		Colour:       truncateRunes(strings.TrimSpace(calendar.Colour), 16),
 		Timezone:     truncateRunes(strings.TrimSpace(calendar.Timezone), 64),

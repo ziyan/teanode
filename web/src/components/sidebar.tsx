@@ -229,7 +229,7 @@ export function Sidebar({
   // parallel with the account settings, and left by the row at the top of
   // it. Somebody with nothing to manage never sees that mode at all.
   const inMailbox =
-    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders'].some(
+    ['/agent', '/knowledge', '/recordings', '/finance', '/calendar', '/contacts', '/reminders', '/circles'].some(
       (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
     ) ||
     location.pathname === '/mailbox' ||

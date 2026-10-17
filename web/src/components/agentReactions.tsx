@@ -11,6 +11,18 @@ export interface AgentMessageReaction {
   emoji: string
   reactorKind: 'person' | 'agent' | string
   reactedAt?: string
+  // Who, where more than one person can react: a chat. A conversation with
+  // an agent has the one person, who these leave out or name alike.
+  reactorUserId?: string | null
+  reactorName?: string | null
+}
+
+// isOwnReaction is whether a person's reaction is the signed-in person's.
+// Without their id to compare, which is where nobody else can react, every
+// person's reaction is theirs.
+function isOwnReaction(reaction: AgentMessageReaction, ownUserId?: string): boolean {
+  if (reaction.reactorKind !== 'person') return false
+  return !ownUserId || !reaction.reactorUserId || reaction.reactorUserId === ownUserId
 }
 
 // QUICK_REACTIONS are what the picker offers. The server takes any one or
@@ -25,17 +37,32 @@ export function withReaction(
   reactorKind: string,
   emoji: string,
   reactedAt?: string,
+  reactor?: { userId?: string | null; name?: string | null },
 ): AgentMessageReaction[] {
-  const others = (reactions ?? []).filter((reaction) => reaction.reactorKind !== reactorKind)
-  const next = emoji ? [...others, { emoji, reactorKind, reactedAt }] : others
+  // With a person named, only theirs is replaced: in a chat the others'
+  // stay. Without, the kind is the reactor, as it is with one person.
+  const others = (reactions ?? []).filter(
+    (reaction) =>
+      reaction.reactorKind !== reactorKind ||
+      Boolean(reactor?.userId && reaction.reactorUserId && reaction.reactorUserId !== reactor.userId),
+  )
+  const next = emoji
+    ? [
+        ...others,
+        reactor?.userId
+          ? { emoji, reactorKind, reactedAt, reactorUserId: reactor.userId, reactorName: reactor.name }
+          : { emoji, reactorKind, reactedAt },
+      ]
+    : others
   return next.sort((left, right) =>
     left.reactorKind === right.reactorKind ? 0 : left.reactorKind === 'person' ? -1 : 1,
   )
 }
 
-// personReaction is the emoji the person has on a message, or empty.
-export function personReaction(reactions: AgentMessageReaction[] | undefined): string {
-  return reactions?.find((reaction) => reaction.reactorKind === 'person')?.emoji ?? ''
+// personReaction is the emoji the person has on a message, or empty. In a
+// chat, the person is named by their id.
+export function personReaction(reactions: AgentMessageReaction[] | undefined, ownUserId?: string): string {
+  return reactions?.find((reaction) => isOwnReaction(reaction, ownUserId))?.emoji ?? ''
 }
 
 // ReactionBadges sit on the bubble's lower corner: the person's is a button
@@ -43,18 +70,28 @@ export function personReaction(reactions: AgentMessageReaction[] | undefined): s
 export function ReactionBadges({
   reactions,
   onRemove,
+  ownUserId,
 }: {
   reactions: AgentMessageReaction[] | undefined
   onRemove?: () => void
+  ownUserId?: string
 }) {
   const { t } = useTranslation()
   if (!reactions || reactions.length === 0) return null
+  // Who put an emoji there, in words: by name where the server names the
+  // person, which is what tells two people's apart in a chat.
+  const reactionWords = (reaction: AgentMessageReaction) =>
+    reaction.reactorKind === 'agent'
+      ? t('agentDrawer.reactionAgent', { emoji: reaction.emoji })
+      : reaction.reactorName
+        ? t('chat.reactionBy', { emoji: reaction.emoji, name: reaction.reactorName })
+        : t('agentDrawer.reactionPerson', { emoji: reaction.emoji })
   return (
     <span className="agent-reactions">
       {reactions.map((reaction) =>
-        reaction.reactorKind === 'person' && onRemove ? (
+        isOwnReaction(reaction, ownUserId) && onRemove ? (
           <button
-            key={reaction.reactorKind}
+            key={`${reaction.reactorKind}-${reaction.reactorUserId ?? ''}`}
             type="button"
             className="agent-reaction mine"
             title={t('agentDrawer.reactionYours', { emoji: reaction.emoji })}
@@ -65,18 +102,10 @@ export function ReactionBadges({
           </button>
         ) : (
           <span
-            key={reaction.reactorKind}
+            key={`${reaction.reactorKind}-${reaction.reactorUserId ?? ''}`}
             className="agent-reaction"
-            title={
-              reaction.reactorKind === 'agent'
-                ? t('agentDrawer.reactionAgent', { emoji: reaction.emoji })
-                : t('agentDrawer.reactionPerson', { emoji: reaction.emoji })
-            }
-            aria-label={
-              reaction.reactorKind === 'agent'
-                ? t('agentDrawer.reactionAgent', { emoji: reaction.emoji })
-                : t('agentDrawer.reactionPerson', { emoji: reaction.emoji })
-            }
+            title={reactionWords(reaction)}
+            aria-label={reactionWords(reaction)}
           >
             {reaction.emoji}
           </span>

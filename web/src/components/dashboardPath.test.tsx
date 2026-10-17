@@ -2,7 +2,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { memoryPath, shownPath, useShowPage } from './dashboardPath'
+import { SHARED_CITATION, memoryPath, shownPath, useShowPage } from './dashboardPath'
 
 afterEach(cleanup)
 
@@ -13,6 +13,39 @@ it('reads a memory link as a page the graph could hold and nothing else', () => 
   for (const target of ['', '../x', 'a//b', 'A/b', 'a b', 'a?b', 'a/b#c', 'a#1#2', 'a--b', '-a']) {
     expect(memoryPath(target), target).toBeNull()
   }
+})
+
+it('reads a page another person shared as theirs, by the username that ends the link', () => {
+  expect(memoryPath('people/a-grandparent#3@ada')).toBe('/knowledge/people/a-grandparent?owner=ada')
+  expect(memoryPath('people/a-grandparent@ada.example')).toBe('/knowledge/people/a-grandparent?owner=ada.example')
+  for (const target of [
+    'people/a@',
+    'people/a@a b',
+    'people/a@ada@ben',
+    'people/a@ada/../x',
+    'people/a@ada?x=1',
+    '@ada',
+  ]) {
+    expect(memoryPath(target), target).toBeNull()
+  }
+  expect(shownPath('/knowledge/people/a-grandparent?owner=ada')).toBe('/knowledge/people/a-grandparent?owner=ada')
+  for (const path of [
+    '/knowledge/people/a?owner=',
+    '/knowledge/people/a?owner=ada&x=1',
+    '/mailbox?owner=ada',
+    '/knowledge?owner=ada',
+    '/knowledge/people/a?owner=a b',
+  ]) {
+    expect(shownPath(path), path).toBeNull()
+  }
+})
+
+it('finds a fact cited from another person’s shared page in an answer', () => {
+  const found = [...'It is on people/a-grandparent#3 (shared by Ada Example), at three.'.matchAll(SHARED_CITATION)]
+  expect(found.map((match) => [match[1], match[2], match[3]])).toEqual([['people/a-grandparent', '3', 'Ada Example']])
+  expect([...'people/a#3 and people/b#4 (shared by Ada)'.matchAll(SHARED_CITATION)].map((match) => match[1])).toEqual([
+    'people/b',
+  ])
 })
 
 it('shows only the parts of the dashboard the agent may take the person to', () => {

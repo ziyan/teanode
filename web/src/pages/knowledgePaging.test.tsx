@@ -183,7 +183,8 @@ const searchReads = () =>
 // other words start again at the first page, asked for once.
 it('pages the search box with its page in the address', async () => {
   renderAt('/knowledge')
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'harbor' } })
+  // The page waits to hear that the person's agent is on before it asks for pages.
+  fireEvent.change(await screen.findByRole('searchbox'), { target: { value: 'harbor' } })
   expect(await screen.findByText('Invented harbor-0')).toBeTruthy()
 
   fireEvent.click(screen.getByRole('button', { name: 'table.next' }))

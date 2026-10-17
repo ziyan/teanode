@@ -137,7 +137,7 @@ func phoneView(phone *models.AgentPhone) *AgentPhoneView {
 }
 
 func (self *graph) ListAgentPhones(ctx context.Context) (*AgentPhoneList, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	_, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (self *graph) ListAgentPhones(ctx context.Context) (*AgentPhoneList, error)
 }
 
 func (self *graph) RegisterAgentPhone(ctx context.Context, arguments RegisterAgentPhoneArguments) (*AgentPhoneView, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	_, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -178,11 +178,9 @@ func (self *graph) RegisterAgentPhone(ctx context.Context, arguments RegisterAge
 		if err != nil || len(raw) != push.PhoneKeyBytes {
 			return nil, fmt.Errorf("%w: the payload key is %d random bytes, base64", api.ErrInvalidArguments, push.PhoneKeyBytes)
 		}
-		worker := self.agentWorker()
-		if worker == nil {
-			return nil, agent.ErrUnavailable
-		}
-		if sealedKey, err = worker.SealSecret(key); err != nil {
+		// Sealed with the server secret, which a server with no agent has as
+		// well: a phone is told of a chat whatever the agent configuration.
+		if sealedKey, err = agent.SealConnectionSecret(self.config.Current(), key); err != nil {
 			return nil, err
 		}
 	}
@@ -221,8 +219,12 @@ func (self *graph) callingAppClient(ctx context.Context) (string, error) {
 	return token.ClientID, nil
 }
 
+// requirePhone is one of the caller's phones. The caller is a person who may
+// use the agent, or one who may chat, whose agent may be switched off or not
+// exist yet: a phone hangs from the person's agent row and is told of what
+// happens in their chats as well as of what their agent says.
 func (self *graph) requirePhone(ctx context.Context, phoneId string) (*models.Agent, *models.AgentPhone, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	_, found, err := self.requireConversationPerson(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -290,15 +292,15 @@ func (self *graph) TestAgentPhone(ctx context.Context, arguments AgentPhoneArgum
 	if err != nil {
 		return nil, err
 	}
-	worker := self.agentWorker()
-	if worker == nil {
+	notifier := self.phoneNotifier()
+	if notifier == nil {
 		return nil, agent.ErrUnavailable
 	}
 	name := found.Name
 	if strings.TrimSpace(name) == "" {
 		name = "TeaNode"
 	}
-	if err := worker.NotifyPhone(ctx, phone, &push.Content{
+	if err := notifier.NotifyPhone(ctx, phone, &push.Content{
 		NotificationKind: "test", Title: name, Body: "This phone can be reached. Notifications from " + name + " will arrive here.",
 	}); err != nil {
 		return nil, fmt.Errorf("%w: %w", api.ErrInvalidArguments, err)

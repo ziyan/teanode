@@ -87,8 +87,26 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"ReadAgentConversation":           client.DocumentReadAgentConversation,
 		// The agent's own documents, which the command line sends for the
 		// same things the drawer and the dashboard do.
-		"ListAgentConversations":  client.DocumentListAgentConversations,
-		"ListReminders":           client.DocumentListReminders,
+		"ListAgentConversations": client.DocumentListAgentConversations,
+		"ListReminders":          client.DocumentListReminders,
+		// A calendar shared at a level, a circle's own, and when several
+		// people are free together.
+		"ListCalendars":        client.DocumentListCalendars,
+		"ListCalendarEvents":   client.DocumentListCalendarEvents,
+		"ListCalendarShares":   client.DocumentListCalendarShares,
+		"ShareCalendar":        client.DocumentShareCalendar,
+		"UnshareCalendar":      client.DocumentUnshareCalendar,
+		"CreateCircleCalendar": client.DocumentCreateCircleCalendar,
+		"ListCalendarFreeBusy": client.DocumentListCalendarFreeBusy,
+		// Pages of the agent's memory shared with other people, and what
+		// they shared.
+		"ListAgentPageShares":     client.DocumentListAgentPageShares,
+		"ShareAgentPage":          client.DocumentShareAgentPage,
+		"UnshareAgentPage":        client.DocumentUnshareAgentPage,
+		"PreviewAgentPageShare":   client.DocumentPreviewAgentPageShare,
+		"ListSharedAgentPages":    client.DocumentListSharedAgentPages,
+		"SearchSharedAgentPages":  client.DocumentSearchSharedAgentPages,
+		"ReadSharedAgentPage":     client.DocumentReadSharedAgentPage,
 		"SaveReminder":            client.DocumentSaveReminder,
 		"SetReminderDone":         client.DocumentSetReminderDone,
 		"DeleteReminder":          client.DocumentDeleteReminder,

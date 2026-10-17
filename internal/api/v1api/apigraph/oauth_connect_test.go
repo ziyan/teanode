@@ -117,10 +117,17 @@ func (self *signInWorld) register(t *testing.T, redirects ...string) string {
 // error messages.
 func (self *signInWorld) ask(t *testing.T, query string) (map[string]any, []string) {
 	t.Helper()
+	return self.askWith(t, models.CredentialSession, query)
+}
+
+// askWith is ask with the credential the request signed in with.
+func (self *signInWorld) askWith(t *testing.T, credentialKind models.CredentialKind, query string) (map[string]any, []string) {
+	t.Helper()
 	body, _ := json.Marshal(graphRequest{Query: query})
 	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, strings.NewReader(string(body)))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(api.AuthenticatedUsernameHeader, self.person.Username)
+	request.Header.Set(api.CredentialKindHeader, string(credentialKind))
 	request.Host = self.host
 	response := httptest.NewRecorder()
 	self.graph.graphView(response, request)
@@ -146,11 +153,25 @@ func (self *signInWorld) worksOnTheAPI(token string) bool {
 	return ok && username == self.person.Username
 }
 
+// credentialOf is what a request carrying the token signs in with.
+func (self *signInWorld) credentialOf(token string) models.CredentialKind {
+	request := httptest.NewRequest(http.MethodPost, api.PathGraphQL, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	identity, _ := self.authenticator.AuthenticateIdentity(request)
+	return identity.CredentialKind
+}
+
 // connectCode makes a connect code as the person and returns the secret the
 // link carries.
 func (self *signInWorld) connectCode(t *testing.T) string {
 	t.Helper()
-	data, errors := self.ask(t, `mutation { CreateOAuthConnectCode { connectLink qrCodeSvg expiresAt } }`)
+	return self.connectCodeWith(t, models.CredentialSession)
+}
+
+// connectCodeWith is connectCode made with another credential.
+func (self *signInWorld) connectCodeWith(t *testing.T, credentialKind models.CredentialKind) string {
+	t.Helper()
+	data, errors := self.askWith(t, credentialKind, `mutation { CreateOAuthConnectCode { connectLink qrCodeSvg expiresAt } }`)
 	if len(errors) > 0 {
 		t.Fatalf("CreateOAuthConnectCode: %v", errors)
 	}
@@ -305,5 +326,67 @@ func TestAnImpersonatorCannotSignAnAppIn(test *testing.T) {
 	world.graph.graphView(response, request)
 	if !strings.Contains(response.Body.String(), "signed in by the person themselves") {
 		test.Fatalf("an impersonator signed an app in: %s", response.Body.String())
+	}
+}
+
+// The phone app's token is marked as the app's only when its sign-in was made
+// where a person was tapping. A connect code or a consent that a command line
+// token made could have been made, and used, by a program on the person's
+// computer, which would then hold what is taken for a tap: it still gets a
+// token that works, but not one that approves a call or lends money. A renewal
+// is the same sign-in, so it keeps the kind.
+func TestOnlyASignInMadeAtATapGivesTheAppItsMark(test *testing.T) {
+	world := newSignInWorld(test)
+	appClient := world.register(test, "com.example.app:/oauth")
+	const challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	resource := "https://" + world.host + api.Prefix
+
+	connect := func(credentialKind models.CredentialKind) map[string]any {
+		_, answer := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"urn:teanode:params:oauth:grant-type:connect-code"}, "client_id": {appClient},
+			"connect_code": {world.connectCodeWith(test, credentialKind)}, "device_name": {"a test phone"},
+		})
+		return answer
+	}
+	consent := func(credentialKind models.CredentialKind) map[string]any {
+		data, failures := world.askWith(test, credentialKind, `mutation { ApproveOAuthAuthorization(clientId: "`+appClient+`", redirectUri: "com.example.app:/oauth", codeChallenge: "`+challenge+`", resource: "`+resource+`") { redirectUrl } }`)
+		if len(failures) > 0 {
+			test.Fatalf("ApproveOAuthAuthorization: %v", failures)
+		}
+		redirect, _ := url.Parse(data["ApproveOAuthAuthorization"].(map[string]any)["redirectUrl"].(string))
+		_, answer := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"authorization_code"}, "client_id": {appClient}, "redirect_uri": {"com.example.app:/oauth"},
+			"code": {redirect.Query().Get("code")}, "code_verifier": {"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"},
+		})
+		return answer
+	}
+	for name, test2 := range map[string]struct {
+		signIn   func(models.CredentialKind) map[string]any
+		made     models.CredentialKind
+		expected models.CredentialKind
+	}{
+		"a code made on the dashboard":       {connect, models.CredentialSession, models.CredentialApp},
+		"a code made in the app":             {connect, models.CredentialApp, models.CredentialApp},
+		"a code made with a command line":    {connect, models.CredentialToken, models.CredentialToken},
+		"a code made with no credential":     {connect, "", models.CredentialToken},
+		"a consent given on the dashboard":   {consent, models.CredentialSession, models.CredentialApp},
+		"a consent made with a command line": {consent, models.CredentialToken, models.CredentialToken},
+	} {
+		answer := test2.signIn(test2.made)
+		token, _ := answer["access_token"].(string)
+		if token == "" || !world.worksOnTheAPI(token) {
+			test.Errorf("%s: the sign-in was answered %v", name, answer)
+			continue
+		}
+		if got := world.credentialOf(token); got != test2.expected {
+			test.Errorf("%s: the token signs in as %q, expected %q", name, got, test2.expected)
+		}
+		_, renewed := world.post(test, api.PathOAuthToken, url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {appClient}, "refresh_token": {answer["refresh_token"].(string)},
+		})
+		renewedToken, _ := renewed["access_token"].(string)
+		if got := world.credentialOf(renewedToken); renewedToken == "" || got != test2.expected {
+			test.Errorf("%s: the renewal signs in as %q, expected %q (%v)", name, got, test2.expected, renewed)
+		}
 	}
 }

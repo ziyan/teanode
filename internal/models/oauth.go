@@ -66,6 +66,11 @@ type OAuthAuthorization struct {
 	// Resource is what the token will be good for.
 	Resource string `json:"resource,omitempty"`
 
+	// ClientKind is the kind the token will have (ClientKindApp or empty):
+	// the app's, when the approval was made on the dashboard or in the app
+	// and the program is an app that asked for the API itself.
+	ClientKind TokenClientKind `json:"clientKind,omitempty"`
+
 	ExpiresAt time.Time `json:"expiresAt,omitempty"`
 }
 
@@ -76,5 +81,10 @@ type OAuthConnectCode struct {
 	ID        string    `json:"id,omitempty"`
 	CreatedAt time.Time `json:"createdAt,omitempty"`
 	UserID    string    `json:"userId,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt,omitempty"`
+
+	// ClientKind is the kind the token will have: ClientKindApp when the
+	// code was made on the dashboard or in the app, empty when a command line
+	// token made it.
+	ClientKind TokenClientKind `json:"clientKind,omitempty"`
+	ExpiresAt  time.Time       `json:"expiresAt,omitempty"`
 }

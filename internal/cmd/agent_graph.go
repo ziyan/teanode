@@ -46,12 +46,13 @@ func newAgentGraphCommands() []*cli.Command {
 				JSONFlag(),
 				&cli.IntFlag{Name: "link-limit", Usage: "how many of the page's links to show; every one when left out"},
 				&cli.IntFlag{Name: "link-offset", Usage: "how many of the page's links to skip, for the next part of them"},
+				&cli.StringFlag{Name: "owner", Usage: "read a page another person shared with you instead of one of your own: their username, from 'teanode agent memory shared'"},
 			},
 			Action: runAgentGraphGet,
 		},
 		{
 			Name:      "overview",
-			Usage:     "how the thing a page is about works, as the night last wrote it from the page and the pages under and beside it",
+			Usage:     "how the thing a page is about works, as the last dream wrote it from the page and the pages under and beside it",
 			ArgsUsage: "<path>",
 			Flags: []cli.Flag{
 				JSONFlag(),
@@ -692,6 +693,9 @@ func runAgentGraphGet(ctx context.Context, command *cli.Command) error {
 	connection, err := openClient(command)
 	if err != nil {
 		return err
+	}
+	if owner := strings.TrimSpace(command.String("owner")); owner != "" {
+		return runAgentMemoryGetShared(ctx, command, connection, owner, command.Args().First())
 	}
 	linkOffset, linkLimit := int(command.Int("link-offset")), int(command.Int("link-limit"))
 	page, err := client.AgentGraphPageWithLinks(ctx, connection, command.Args().First(), linkOffset, linkLimit)

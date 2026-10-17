@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
+import { ChatAvatars, UnreadCount, chatTitleOf } from '../components/agentChat'
 import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
@@ -13,6 +14,11 @@ import { SettingsEmpty } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
 import { useTranslation } from '../i18n/i18n'
+import { useOptionalSession } from '../session'
+
+// Which of the conversations the page lists: all of them, the ones with the
+// person's agent, or the chats with other people.
+type KindFilter = 'all' | 'agent' | 'chats'
 
 // The person's conversations with their agent, as tiles: the list the
 // drawer's picker holds, on a page wide enough to read what each was about.
@@ -24,6 +30,8 @@ export function AgentConversationsPage() {
   const toast = useToast()
   const navigate = useNavigate()
   const agent = useAgentIdentity()
+  const ownUserId = useOptionalSession()?.userId ?? ''
+  const deletedNote = t('chat.deletedAccount')
   const agentLabel = agent.name || t('nav.agent')
   useBreadcrumbDetail(agentLabel)
 
@@ -41,15 +49,22 @@ export function AgentConversationsPage() {
   // Typed words narrow the tiles at once, by what each conversation is
   // called and by the summary the agent wrote of it.
   const [filter, setFilter] = useState('')
+  const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  // What a conversation is called here: a chat by the people in it.
+  const titleOf = (conversation: Conversation) =>
+    conversation.kind === 'main'
+      ? t('agentDrawer.main')
+      : conversation.chat
+        ? chatTitleOf(conversation.chat, ownUserId, deletedNote, conversation.title || t('agentDrawer.untitled'))
+        : conversation.title
   const conversations = useMemo(() => {
-    const listed = data?.ListAgentConversations ?? []
+    const listed = (data?.ListAgentConversations ?? []).filter(
+      (conversation) => kindFilter === 'all' || (kindFilter === 'chats') === (conversation.kind === 'chat'),
+    )
     const words = filter.trim().toLowerCase()
     const matching = words
       ? listed.filter((conversation) =>
-          [conversation.kind === 'main' ? t('agentDrawer.main') : conversation.title, conversation.summary ?? '']
-            .join(' ')
-            .toLowerCase()
-            .includes(words),
+          [titleOf(conversation), conversation.summary ?? ''].join(' ').toLowerCase().includes(words),
         )
       : listed
     // The main chat first, as the picker has it, then by when each was last
@@ -58,7 +73,8 @@ export function AgentConversationsPage() {
       if (first.kind === 'main' || second.kind === 'main') return first.kind === 'main' ? -1 : 1
       return (second.lastAt ?? '').localeCompare(first.lastAt ?? '')
     })
-  }, [data, filter, t])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, filter, kindFilter, ownUserId, t])
 
   // Turning it on is on the agent's own settings page, where each person
   // does it for themselves.
@@ -98,6 +114,7 @@ export function AgentConversationsPage() {
   }
 
   const hasConversations = (data?.ListAgentConversations.length ?? 0) > 0
+  const hasChats = (data?.ListAgentConversations ?? []).some((conversation) => conversation.kind === 'chat')
 
   return (
     <>
@@ -109,6 +126,17 @@ export function AgentConversationsPage() {
           <PlusIcon size={16} />
           {t('agentConversations.new')}
         </button>
+        {hasChats && (
+          <select
+            value={kindFilter}
+            aria-label={t('agentConversations.kindLabel')}
+            onChange={(event) => setKindFilter(event.target.value as KindFilter)}
+          >
+            <option value="all">{t('agentConversations.kindAll')}</option>
+            <option value="agent">{t('agentConversations.kindAgent')}</option>
+            <option value="chats">{t('agentConversations.kindChats')}</option>
+          </select>
+        )}
         {hasConversations && (
           <input
             type="search"
@@ -145,24 +173,41 @@ export function AgentConversationsPage() {
                     <>
                       <StarIcon size={14} /> <HighlightText text={t('agentDrawer.main')} search={filter} />
                     </>
+                  ) : conversation.chat ? (
+                    <>
+                      <ChatAvatars chat={conversation.chat} ownUserId={ownUserId} deleted={deletedNote} size={20} />
+                      <HighlightText text={titleOf(conversation) || t('agentDrawer.untitled')} search={filter} />
+                    </>
                   ) : (
                     <HighlightText text={conversation.title || t('agentDrawer.untitled')} search={filter} />
                   )}
                 </span>
                 {/* What it is about: the agent's summary, else what it is
                     working toward, so no tile is a bare title. */}
+                {/* A direct chat is titled by the person it is with, so a
+                    line saying it is a chat with them repeats the title. */}
+                {conversation.chat?.chatKind === 'direct' && !conversation.summary ? null : (
                 <span
                   className={conversation.summary ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
                   id={`conversation-${conversation.id}-summary`}
                 >
                   {conversation.summary ? (
                     <HighlightText text={conversation.summary} search={filter} />
+                  ) : conversation.chat ? (
+                    t('chat.withPeople', {
+                      names: conversation.chat.members
+                        .filter((member) => member.userId !== ownUserId && !member.isRemoved)
+                        .map((member) => member.name?.trim() || member.username)
+                        .join(', '),
+                    })
                   ) : (
                     t('agentConversations.noSummary')
                   )}
                 </span>
+                )}
                 <span className="tile-detail">
                   <RelativeTime value={conversation.lastAt} />
+                  {conversation.chat ? <UnreadCount count={conversation.chat.unreadCount} /> : null}
                 </span>
               </button>
             </li>

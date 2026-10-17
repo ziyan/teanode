@@ -56,6 +56,16 @@ export function PencilIcon(props: IconProps) {
   )
 }
 
+// A closed padlock: something only its owner may read.
+export function LockIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </Icon>
+  )
+}
+
 // Drafts are what is still being written: the pencil.
 export function DraftsIcon(props: IconProps) {
   return <PencilIcon {...props} />
@@ -930,6 +940,16 @@ export function MinusIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M5 12h14" />
+    </Icon>
+  )
+}
+
+// EyeIcon is an eye: to look at something without changing it.
+export function EyeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
+      <circle cx="12" cy="12" r="3" />
     </Icon>
   )
 }

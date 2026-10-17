@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@"
+          }
+        }
+      }
+    },
     "%@ (bill: %@)": {
       "localizations": {
         "ja": {
@@ -13,6 +29,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@（账单：%2$@）"
+          }
+        }
+      }
+    },
+    "%@ has an account and is in the circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のアカウントを作成し、サークルに追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已有账号，并已加入圈子"
           }
         }
       }
@@ -369,6 +401,22 @@
         }
       }
     },
+    "%@ is now in %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@を%2$@に追加しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 已加入 %2$@。"
+          }
+        }
+      }
+    },
     "%@ is off": {
       "localizations": {
         "ja": {
@@ -413,6 +461,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 将退出 TeaNode，不再收到任何通知。要再次使用，请重新连接。"
+          }
+        }
+      }
+    },
+    "%@ is switched off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ はオフになっています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已关闭。"
           }
         }
       }
@@ -849,6 +913,22 @@
         }
       }
     },
+    "%@ stopped sharing a calendar with you, so when everyone is free cannot be said.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@がカレンダーの共有をやめたため、全員が空いている時間はわかりません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@已不再向你共享日历,所以无法判断大家何时有空。"
+          }
+        }
+      }
+    },
     "%@ stops being able to sign in. Your password still works, so this does not lock you out.": {
       "localizations": {
         "ja": {
@@ -961,6 +1041,38 @@
         }
       }
     },
+    "%@ will no longer read this page.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@は、このページを読めなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将不再能读取这个页面。"
+          }
+        }
+      }
+    },
+    "%@ will no longer see your calendar.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@には、あなたのカレンダーが表示されなくなります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@将不再能看到你的日历。"
+          }
+        }
+      }
+    },
     "%@ without the questions filed afterwards (%lld)": {
       "localizations": {
         "ja": {
@@ -1005,6 +1117,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$@ · %2$@ · %3$@"
+          }
+        }
+      }
+    },
+    "%@'s owner is not in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の持ち主は、このチャットにいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的主人不在此聊天中。"
+          }
+        }
+      }
+    },
+    "%@, all day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@、終日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@，全天"
           }
         }
       }
@@ -1117,6 +1261,502 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@：已不存在"
+          }
+        }
+      }
+    },
+    "%@’s agent asked to run %@ with your %@ skill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@さんのエージェントが、あなたのスキル「%3$@」で%2$@を実行しようとしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@的助手想通过你的技能“%3$@”运行%2$@"
+          }
+        }
+      }
+    },
+    "%@’s calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のカレンダー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的日历"
+          }
+        }
+      }
+    },
+    "A calendar of the circle’s own, which everyone in it reads and writes. Events in it cannot have guests.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークル専用のカレンダーです。メンバー全員が見て、書き込めます。予定に参加者を入れることはできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圈子自己的日历，圈子里的每个人都可以查看和编辑。其中的日程不能有参与者。"
+          }
+        }
+      }
+    },
+    "Also show the words each fact was read in": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各事実の出典となった文面も表示する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同时显示每条事实出处的原文"
+          }
+        }
+      }
+    },
+    "Busy": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定あり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忙碌"
+          }
+        }
+      }
+    },
+    "Busy times only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定の有無のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示忙闲"
+          }
+        }
+      }
+    },
+    "Calendar made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを作成しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历已创建"
+          }
+        }
+      }
+    },
+    "Calendars": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日历"
+          }
+        }
+      }
+    },
+    "Calendars you hide here stay hidden on this phone only.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで非表示にしたカレンダーは、このiPhoneでのみ非表示になります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此隐藏的日历只会在这部手机上隐藏。"
+          }
+        }
+      }
+    },
+    "Choose a person, or a whole circle.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人、またはサークル全体を選択します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人，或整个圈子。"
+          }
+        }
+      }
+    },
+    "Choose a person, or a whole circle. They read this page and everything under it as it is now, and cannot change it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人またはサークル全体を選びます。相手はこのページとその下のすべてを現在の内容のまま読めますが、変更はできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人，或整个圈子。对方可以读到这个页面和它下面的所有内容（当前的样子），但不能修改。"
+          }
+        }
+      }
+    },
+    "Choose who can see your calendar, and how much. An event you mark private is only ever shown to others as busy.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを誰に、どこまで見せるかを選びます。非公開にした予定は、ほかの人には「予定あり」としてしか表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择谁可以查看你的日历，以及可以看到多少。标记为私密的日程，别人只会看到“忙碌”。"
+          }
+        }
+      }
+    },
+    "Details, and can edit": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細と編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详情并可编辑"
+          }
+        }
+      }
+    },
+    "Earliest hour": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一番早い時刻"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最早几点"
+          }
+        }
+      }
+    },
+    "Event": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日程"
+          }
+        }
+      }
+    },
+    "Everyone in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の全員"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的所有人"
+          }
+        }
+      }
+    },
+    "Everyone in %@ (%@)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の全員（%@）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的所有人（%@）"
+          }
+        }
+      }
+    },
+    "Everyone in %@ could see your calendar, as much as you choose. An event you mark private is only ever shown as busy.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の全員が、あなたが選んだ範囲であなたのカレンダーを見られるようになります。非公開にした予定は、常に「予定あり」としてだけ表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@里的所有人可以在你选择的范围内看到你的日历。你标为私密的日程只会显示为“忙碌”。"
+          }
+        }
+      }
+    },
+    "Everything waits for your approval, whatever it costs.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金額にかかわらず、すべて承認を待ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无论金额多少，一切都等待你的确认。"
+          }
+        }
+      }
+    },
+    "Find a time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空いている時間を探す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找个时间"
+          }
+        }
+      }
+    },
+    "Find times": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找"
+          }
+        }
+      }
+    },
+    "First day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初の日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第一天"
+          }
+        }
+      }
+    },
+    "How much": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "見せる範囲"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享范围"
+          }
+        }
+      }
+    },
+    "Last day": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最後の日"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最后一天"
+          }
+        }
+      }
+    },
+    "Latest hour": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一番遅い時刻"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最晚几点"
+          }
+        }
+      }
+    },
+    "Let someone in a circle you share run a skill of yours. It runs on your own computer, as you. Anything above the limits you set, or that cannot be priced, waits for your word.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じサークルの人に、あなたのスキルを実行させることができます。実行はあなたのコンピューターで、あなたとして行われます。設定した上限を超えるものや、金額が読み取れないものは、あなたの承認を待ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让同一圈子里的人运行你的技能。它在你自己的电脑上、以你的身份运行。超过你设定的上限，或无法确定金额的操作，会等待你的确认。"
+          }
+        }
+      }
+    },
+    "Links to other shared pages": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有されている他のページへのリンク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "指向其他共享页面的链接"
+          }
+        }
+      }
+    },
+    "Make a circle and add the people who use this server, with or without accounts yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを作成して、このサーバーを使う人を、アカウントの有無にかかわらず追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建一个圈子，然后添加使用这台服务器的人，无论他们是否已有账号。"
+          }
+        }
+      }
+    },
+    "Make a family calendar for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の家族カレンダーを作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为%@创建家庭日历"
+          }
+        }
+      }
+    },
+    "Make a shared calendar for %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の共有カレンダーを作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为%@创建共享日历"
+          }
+        }
+      }
+    },
+    "Make an account for someone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誰かのためにアカウントを作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为某人创建账号"
           }
         }
       }
@@ -2368,7 +3008,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 位联系人"
+            "value": "%lld 人"
           }
         }
       }
@@ -3013,6 +3653,854 @@
         }
       }
     },
+    "1 person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1人"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 人"
+          }
+        }
+      }
+    },
+    "100.00": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100.00"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100.00"
+          }
+        }
+      }
+    },
+    "400.00": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "400.00"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "400.00"
+          }
+        }
+      }
+    },
+    "Above these limits, or when the amount cannot be read, the call waits for you. The limits are in the currency you give. A call that fails still counts toward the month, in case the money moved.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限を超える場合や金額が読み取れない場合、呼び出しはあなたの承認を待ちます。上限は入力した通貨で数えます。失敗した呼び出しも、お金が動いた可能性があるため、その月の合計に数えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超过上限，或无法读出金额时，这次调用会等待你的确认。上限以你填写的币种计算。失败的调用也计入当月，因为钱可能已经付出。"
+          }
+        }
+      }
+    },
+    "Add to a circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルに追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到圈子"
+          }
+        }
+      }
+    },
+    "No amount is stated. Only you can say whether it is fine.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金額が書かれていません。問題ないかはあなたにしか判断できません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有写明金额，是否可以只有你能判断。"
+          }
+        }
+      }
+    },
+    "Nobody has shared their calendar with you yet. Ask the people you share a circle with to share theirs, at busy times or more.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰もカレンダーをあなたに共有していません。サークルの仲間に、予定の有無だけでも共有してもらってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有人把日历共享给你。请圈子里的人至少共享忙闲时间。"
+          }
+        }
+      }
+    },
+    "Not now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今はしない"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂不"
+          }
+        }
+      }
+    },
+    "Only %@ can ask %@'s agent in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットで%2$@のエージェントに頼めるのは%1$@だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这个聊天里，只有 %1$@ 可以呼叫 %2$@ 的助手。"
+          }
+        }
+      }
+    },
+    "Only %@ can ask %@, %@'s agent, in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットで%3$@のエージェントの%2$@に頼めるのは%1$@だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这个聊天里，只有 %1$@ 可以呼叫 %3$@ 的助手 %2$@。"
+          }
+        }
+      }
+    },
+    "Only %@'s owner can ask it in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ をこのチャットで呼び出せるのは、持ち主だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有 %@ 的主人才能在此聊天中向它提问。"
+          }
+        }
+      }
+    },
+    "Only its owner can ask that agent in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントをこのチャットで呼び出せるのは、持ち主だけです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有该助手的主人才能在此聊天中向它提问。"
+          }
+        }
+      }
+    },
+    "Open one to see what was asked through it. What waits for you is first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開くと、その共有で求められたことを確認できます。承認待ちが先頭です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开后可以查看通过它发起的内容，等待你确认的排在最前。"
+          }
+        }
+      }
+    },
+    "Open the menu to read and write to the people you share a circle with.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューを開くと、サークルを共有している人とやり取りできます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开菜单，即可与和你同在一个圈子的人聊天。"
+          }
+        }
+      }
+    },
+    "Share your calendar with %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを%@と共有しますか?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要把你的日历共享给%@吗?"
+          }
+        }
+      }
+    },
+    "Skills other people lend your agent. Each tool runs on their computer and is limited to the limits they set.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他の人があなたのエージェントに貸しているスキルです。実行は相手のコンピューターで、相手が決めた上限が適用されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "别人借给你的助手使用的技能。每个工具都在对方的电脑上运行，并受对方设定的上限约束。"
+          }
+        }
+      }
+    },
+    "Some people in your circles have not shared their calendar with you, so they are not listed.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルの中に、カレンダーを共有していない人がいるため、一覧に出ていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圈子里有些人没有把日历共享给你,所以没有列出。"
+          }
+        }
+      }
+    },
+    "That agent is switched off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントはオフになっています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该助手已关闭。"
+          }
+        }
+      }
+    },
+    "That agent's owner is not in this chat.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのエージェントの持ち主は、このチャットにいません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该助手的主人不在此聊天中。"
+          }
+        }
+      }
+    },
+    "That did not reach the chat: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットに届きませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没能送到聊天：%@"
+          }
+        }
+      }
+    },
+    "The account is made; adding it to the circle again": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントは作成済みです。サークルへの追加をもう一度行います"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号已创建；正在再次将其加入圈子"
+          }
+        }
+      }
+    },
+    "The calendar “%@” could not be read: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダー「%@」を読み込めませんでした：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取日历“%@”：%@"
+          }
+        }
+      }
+    },
+    "The day must end after it begins.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終わりの時刻は始まりより後にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束时间必须晚于开始时间。"
+          }
+        }
+      }
+    },
+    "The last day comes before the first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最後の日が最初の日より前になっています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最后一天早于第一天。"
+          }
+        }
+      }
+    },
+    "The owner's longer overview of this page is not shared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "持ち主によるこのページの長い概要は共有されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主人对这个页面写的较长概述不会共享。"
+          }
+        }
+      }
+    },
+    "No facts on this page are shared.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページで共有されている事実はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个页面没有共享任何事实。"
+          }
+        }
+      }
+    },
+    "Not shared with anybody yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰とも共有していません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有共享给任何人。"
+          }
+        }
+      }
+    },
+    "Others you share your calendar with see only that you are busy.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーを共有している相手には、予定ありとだけ表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享日历的人只会看到你正忙。"
+          }
+        }
+      }
+    },
+    "Owner": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オーナー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有者"
+          }
+        }
+      }
+    },
+    "Pages under it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページの下にあるページ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它下面的页面"
+          }
+        }
+      }
+    },
+    "Private": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非公開"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私密"
+          }
+        }
+      }
+    },
+    "Quotes shown": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "引用あり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含引文"
+          }
+        }
+      }
+    },
+    "Read only": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り専用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只读"
+          }
+        }
+      }
+    },
+    "Share my calendar": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のカレンダーを共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享我的日历"
+          }
+        }
+      }
+    },
+    "Share this page": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページを共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享这个页面"
+          }
+        }
+      }
+    },
+    "Share with": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有する相手"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享给"
+          }
+        }
+      }
+    },
+    "Shared as part of %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@の一部として共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作为%@的一部分共享"
+          }
+        }
+      }
+    },
+    "Shared by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんが共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由%@共享"
+          }
+        }
+      }
+    },
+    "Shared with": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有先"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已共享给"
+          }
+        }
+      }
+    },
+    "Shared with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたと共有されているページ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共享的页面"
+          }
+        }
+      }
+    },
+    "Shared with you in %@. You can read it but not change it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@で共有されています。閲覧のみで、変更はできません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已在%@中共享给你。你可以查看，但不能修改。"
+          }
+        }
+      }
+    },
+    "Share…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享…"
+          }
+        }
+      }
+    },
+    "Stop sharing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有をやめる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止共享"
+          }
+        }
+      }
+    },
+    "The account %@ was made, but it could not be put in the circle (%@). Try again to add it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウント%1$@は作成しましたが、サークルに追加できませんでした（%2$@）。もう一度追加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账号 %1$@ 已创建，但无法加入圈子（%2$@）。请重试添加。"
+          }
+        }
+      }
+    },
+    "The agent’s guess": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの推測"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能体的猜测"
+          }
+        }
+      }
+    },
+    "Their agent is offered the tools you choose. Your computer must be connected for a tool to run, and you can stop sharing at any time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選んだツールが相手のエージェントに提供されます。ツールの実行にはあなたのコンピューターが接続されている必要があり、共有はいつでもやめられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方的助手会获得你选择的工具。工具运行时你的电脑必须在线，你也可以随时停止共享。"
+          }
+        }
+      }
+    },
+    "There is no time in those days and hours when everyone is free.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その日にちと時間帯に、全員が空いている時間はありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在这些日期和时段里,没有大家都有空的时间。"
+          }
+        }
+      }
+    },
+    "There may be more; use more words": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他にもある可能性があります。言葉を増やして絞り込んでください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可能还有更多；请多加几个词来缩小范围"
+          }
+        }
+      }
+    },
+    "They see everything in each event, including its notes and guests.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メモや参加者を含め、予定の内容がすべて見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可以看到日程的全部内容，包括备注和参与者。"
+          }
+        }
+      }
+    },
+    "They see everything, and can add, change and remove events that have no guests.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて見え、参加者のいない予定を追加、変更、削除できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可以看到全部内容，并且可以添加、修改和删除没有参与者的日程。"
+          }
+        }
+      }
+    },
+    "They see the time, title and place of each event.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各予定の時間、タイトル、場所が見えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可以看到每个日程的时间、标题和地点。"
+          }
+        }
+      }
+    },
+    "They see when you are busy, and nothing else.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定があるかどうかだけが見え、内容は見えません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方只能看到你什么时候忙，看不到其他内容。"
+          }
+        }
+      }
+    },
+    "They sign in with that username and password, and can change the password themselves in their settings.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その人はこのユーザー名とパスワードでサインインし、パスワードは自分の設定で変更できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方用这个用户名和密码登录，并可以在自己的设置中修改密码。"
+          }
+        }
+      }
+    },
     "(untitled layout)": {
       "localizations": {
         "ja": {
@@ -3297,6 +4785,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "从现在起 90 天"
+          }
+        }
+      }
+    },
+    "%@ was removed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を外しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移出 %@"
+          }
+        }
+      }
+    },
+    "%@ will no longer be in %@. They can be invited again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@は%2$@から外れます。あとでもう一度招待できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 将不再属于 %2$@，之后仍可再次邀请。"
+          }
+        }
+      }
+    },
+    "%@ is now an admin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を管理者にしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 现在是管理员"
+          }
+        }
+      }
+    },
+    "%@ is now a member": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@をメンバーにしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 现在是普通成员"
           }
         }
       }
@@ -4005,6 +5557,22 @@
         }
       }
     },
+    "Admin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理者"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理员"
+          }
+        }
+      }
+    },
     "all follow-ups": {
       "localizations": {
         "ja": {
@@ -4017,6 +5585,118 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有跟进"
+          }
+        }
+      }
+    },
+    "Choose a picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择头像"
+          }
+        }
+      }
+    },
+    "Circle deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已删除圈子"
+          }
+        }
+      }
+    },
+    "Circle made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを作成しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已创建圈子"
+          }
+        }
+      }
+    },
+    "Circle renamed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークル名を変更しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重命名圈子"
+          }
+        }
+      }
+    },
+    "Circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圈子"
+          }
+        }
+      }
+    },
+    "Colleagues": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同僚"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同事"
+          }
+        }
+      }
+    },
+    "Delete circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除圈子"
           }
         }
       }
@@ -4037,6 +5717,182 @@
         }
       }
     },
+    "Enter the username of an account on this server.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーにあるアカウントのユーザー名を入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入这台服务器上某个账号的用户名。"
+          }
+        }
+      }
+    },
+    "Friends": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "友人"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "朋友"
+          }
+        }
+      }
+    },
+    "Invitation declined": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待を辞退しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拒绝邀请"
+          }
+        }
+      }
+    },
+    "Invitation sent if that account exists": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのアカウントがあれば、招待を送りました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "如果该账号存在，邀请已发出"
+          }
+        }
+      }
+    },
+    "Invitation withdrawn": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待を取り消しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已撤回邀请"
+          }
+        }
+      }
+    },
+    "Invitations": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请"
+          }
+        }
+      }
+    },
+    "Invite someone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请成员"
+          }
+        }
+      }
+    },
+    "Invited by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待した人: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请人：%@"
+          }
+        }
+      }
+    },
+    "Invited by %@. Expires %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待した人: %1$@。期限: %2$@。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "邀请人：%1$@。到期日：%2$@。"
+          }
+        }
+      }
+    },
+    "Leave circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルから退出"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出圈子"
+          }
+        }
+      }
+    },
+    "Leave the circle %@?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークル「%@」から退出しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出圈子“%@”？"
+          }
+        }
+      }
+    },
     "Look around town on": {
       "localizations": {
         "ja": {
@@ -4049,6 +5905,358 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看附近活动的日子"
+          }
+        }
+      }
+    },
+    "Make admin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理者にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为管理员"
+          }
+        }
+      }
+    },
+    "Make member": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバーにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为普通成员"
+          }
+        }
+      }
+    },
+    "Make them an admin": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理者にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为管理员"
+          }
+        }
+      }
+    },
+    "Members": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "成员"
+          }
+        }
+      }
+    },
+    "New circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを作成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建圈子"
+          }
+        }
+      }
+    },
+    "No circles yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルはまだありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有圈子"
+          }
+        }
+      }
+    },
+    "Picture": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "头像"
+          }
+        }
+      }
+    },
+    "Picture removed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を削除しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "头像已移除"
+          }
+        }
+      }
+    },
+    "Picture saved": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "头像已保存"
+          }
+        }
+      }
+    },
+    "Remove from the circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルから外す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移出圈子"
+          }
+        }
+      }
+    },
+    "Remove from the circle?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルから外しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要移出圈子吗？"
+          }
+        }
+      }
+    },
+    "Rename circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークル名を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名圈子"
+          }
+        }
+      }
+    },
+    "Send invitation": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "招待を送る"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送邀请"
+          }
+        }
+      }
+    },
+    "Shown beside your name to the people you share a circle with. Without one, your initial is shown.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを共有する人に、名前の横に表示されます。未設定の場合はイニシャルが表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会显示在你名字旁边，让与你同在一个圈子的人看到。未设置时显示你的首字母。"
+          }
+        }
+      }
+    },
+    "The circle is removed for everyone in it. No account is deleted.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルは全員から削除されます。アカウントは削除されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圈子会对其中所有人删除，不会删除任何账号。"
+          }
+        }
+      }
+    },
+    "The people you share this server with, grouped as family, friends or colleagues.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーを共有する人たちを、家族、友人、同僚に分けて表示します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你共用这台服务器的人，按家人、朋友或同事分组。"
+          }
+        }
+      }
+    },
+    "This circle is no longer here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサークルはもうありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个圈子已不存在"
+          }
+        }
+      }
+    },
+    "This page is no longer shared with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページは、もうあなたと共有されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此页面已不再与你共享"
+          }
+        }
+      }
+    },
+    "This page is not available": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページは利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个页面不可用"
+          }
+        }
+      }
+    },
+    "Those words are quoted from your mail and documents. Off, they see what a fact says and what kind of thing it was read in, not the words. Words from a chat are never shown, since they are other people's too.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この文面はあなたのメールと文書からの引用です。オフのままだと、事実の内容と、何から読み取ったかだけが見え、文面は見えません。チャットの文面は、他の人の言葉でもあるため、常に表示されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些原文引自你的邮件和文档。不开启时，对方只能看到事实本身和它出自哪一类内容，看不到原文。聊天里的原文永远不会显示，因为那也是别人的话。"
+          }
+        }
+      }
+    },
+    "Titles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タイトル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标题"
+          }
+        }
+      }
+    },
+    "Waiting for an answer": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待回复"
           }
         }
       }
@@ -7685,6 +9893,22 @@
         }
       }
     },
+    "Before it is shared, you see exactly what they will be shown.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有する前に、相手に表示される内容をそのまま確認できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享之前，你会先看到对方将看到的完全相同的内容。"
+          }
+        }
+      }
+    },
     "Behind": {
       "localizations": {
         "ja": {
@@ -8129,6 +10353,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "商业服务"
+          }
+        }
+      }
+    },
+    "Busy · %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予定あり · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "忙碌 · %@"
           }
         }
       }
@@ -9173,6 +11413,22 @@
         }
       }
     },
+    "Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请检查网络连接后再试一次。"
+          }
+        }
+      }
+    },
     "Look around town": {
       "localizations": {
         "ja": {
@@ -9473,6 +11729,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择页面"
+          }
+        }
+      }
+    },
+    "Choose a person or a circle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人またはサークルを選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人或圈子"
           }
         }
       }
@@ -12933,6 +15205,22 @@
         }
       }
     },
+    "Each person turns on their own agent, under Settings, Your agent. Once it is on, it can answer questions, sort your mail and act for you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントのオンは各自で、設定の「エージェント」から行います。オンにすると、質問への回答、メールの整理、代わりの作業ができます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个人各自开启自己的助手，在设置的“你的助手”里。开启后，它可以回答问题、整理邮件、替你办事。"
+          }
+        }
+      }
+    },
     "Each person's own": {
       "localizations": {
         "ja": {
@@ -12986,13 +15274,13 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "前へ"
+            "value": "以前"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "往前"
+            "value": "更早"
           }
         }
       }
@@ -13509,6 +15797,22 @@
         }
       }
     },
+    "Enter the username of an account on this server. If nobody is listed, ask whoever runs this server to make their account.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーにあるアカウントのユーザー名を入力してください。誰も表示されない場合は、このサーバーを運用している人にアカウントの作成を頼んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入这台服务器上某个账号的用户名。如果没有列出任何人，请让运营这台服务器的人为他们创建账号。"
+          }
+        }
+      }
+    },
     "Entertainment": {
       "localizations": {
         "ja": {
@@ -13729,6 +16033,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "所有说话人都已命名。"
+          }
+        }
+      }
+    },
+    "Everyone you share a circle with is already in this group.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを共有している人は、すでにこのグループにいます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与你在同一个圈子里的人都已经在这个群聊里了。"
           }
         }
       }
@@ -20693,6 +23013,22 @@
         }
       }
     },
+    "Make a circle, then invite the people who should be in it. If nobody is listed, ask whoever runs this server to make their account.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを作成して、入れたい人を招待してください。誰も表示されない場合は、このサーバーを運用している人にアカウントの作成を頼んでください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建一个圈子，然后邀请该加入的人。如果没有列出任何人，请让运营这台服务器的人为他们创建账号。"
+          }
+        }
+      }
+    },
     "Make a new address": {
       "localizations": {
         "ja": {
@@ -23477,6 +25813,22 @@
         }
       }
     },
+    "No longer shared with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@との共有をやめました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已不再与%@共享"
+          }
+        }
+      }
+    },
     "No machine sends through this domain yet.": {
       "localizations": {
         "ja": {
@@ -24065,6 +26417,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "此组还没有成员。"
+          }
+        }
+      }
+    },
+    "Nobody left to add": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加できる人がいません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可添加的人"
           }
         }
       }
@@ -25269,6 +27637,22 @@
         }
       }
     },
+    "Nothing was approved. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何も承認されませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有批准任何内容。请检查网络连接后再试一次。"
+          }
+        }
+      }
+    },
     "Nothing was checked. Outgoing mail is not authenticated against itself.": {
       "localizations": {
         "ja": {
@@ -25281,6 +27665,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有进行检查。发出的邮件不会对自身做认证。"
+          }
+        }
+      }
+    },
+    "Nothing was declined. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "何も断っていません。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有拒绝任何内容。请检查网络连接后再试一次。"
           }
         }
       }
@@ -26177,6 +28577,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开"
+          }
+        }
+      }
+    },
+    "Open Circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルを開く"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开圈子"
           }
         }
       }
@@ -33877,6 +36293,54 @@
         }
       }
     },
+    "Shared with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@と共有しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已共享给%@"
+          }
+        }
+      }
+    },
+    "Sharing was not changed. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を変更できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有更改共享。请检查网络连接后再试一次。"
+          }
+        }
+      }
+    },
+    "Sharing was not stopped. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有を停止できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有停止共享。请检查网络连接后再试一次。"
+          }
+        }
+      }
+    },
     "Shopping": {
       "localizations": {
         "ja": {
@@ -36149,6 +38613,22 @@
         }
       }
     },
+    "Stopped sharing with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@との共有をやめました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止与%@共享"
+          }
+        }
+      }
+    },
     "Stopped with a problem": {
       "localizations": {
         "ja": {
@@ -36517,6 +38997,22 @@
         }
       }
     },
+    "Swipe left, or touch and hold, to stop sharing.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有をやめるには、左にスワイプするか長押ししてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向左滑动或长按可停止共享。"
+          }
+        }
+      }
+    },
     "Switch off": {
       "localizations": {
         "ja": {
@@ -36805,6 +39301,38 @@
         }
       }
     },
+    "That did not work. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "うまくいきませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "操作没有成功。请检查网络连接后再试一次。"
+          }
+        }
+      }
+    },
+    "That picture could not be read. Use a JPEG or PNG.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その写真を読み込めませんでした。JPEG か PNG を使ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取该图片。请使用 JPEG 或 PNG。"
+          }
+        }
+      }
+    },
     "The answer from the transcription service was lost, so this recording was not transcribed. Transcribing it again is a new paid request.": {
       "localizations": {
         "ja": {
@@ -36817,6 +39345,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "转写服务的响应丢失了，因此这段录音没有转写。重新转写会是一次新的付费请求。"
+          }
+        }
+      }
+    },
+    "the currency below": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下の通貨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下面的币种"
           }
         }
       }
@@ -36869,6 +39413,22 @@
         }
       }
     },
+    "The skill was not shared. Check your connection and try again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキルを共有できませんでした。接続を確認して、もう一度お試しください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有共享这个技能。请检查网络连接后再试一次。"
+          }
+        }
+      }
+    },
     "The TeaNode app on your phones, and what each is told about.": {
       "localizations": {
         "ja": {
@@ -36897,6 +39457,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "完整消息"
+          }
+        }
+      }
+    },
+    "This call could not be loaded. It will keep trying.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この呼び出しを読み込めませんでした。読み込みを続けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载这次调用，会继续尝试。"
+          }
+        }
+      }
+    },
+    "This call is gone. The share was taken back, or you no longer share a circle.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この呼び出しはもうありません。共有が取り消されたか、サークルを共有しなくなりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这次调用已经不存在了。共享已被收回，或者你们不再同在一个圈子。"
+          }
+        }
+      }
+    },
+    "This could not be loaded": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み込めませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法加载"
           }
         }
       }
@@ -39704,6 +42312,22 @@
         }
       }
     },
+    "This page is not shared with you, or the person stopped sharing it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページはあなたに共有されていないか、相手が共有をやめました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个页面没有共享给你，或者对方已停止共享。"
+          }
+        }
+      }
+    },
     "This person is no longer here": {
       "localizations": {
         "ja": {
@@ -39960,6 +42584,70 @@
         }
       }
     },
+    "This shares %lld pages: this one and everything under it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページとその下のすべて、%lldページを共有します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将共享 %lld 个页面：这个页面以及它下面的所有页面。"
+          }
+        }
+      }
+    },
+    "This shares 1 page: this one and everything under it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページとその下のすべて、1ページを共有します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将共享 1 个页面：这个页面以及它下面的所有页面。"
+          }
+        }
+      }
+    },
+    "This shares at least %lld pages: this one and everything under it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページとその下のすべて、%lldページ以上を共有します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将共享至少 %lld 个页面：这个页面以及它下面的所有页面。"
+          }
+        }
+      }
+    },
+    "This shares at least 1 page: this one and everything under it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページとその下のすべて、1ページ以上を共有します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将共享至少 1 个页面：这个页面以及它下面的所有页面。"
+          }
+        }
+      }
+    },
     "This skill is no longer installed": {
       "localizations": {
         "ja": {
@@ -39988,6 +42676,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这个话题：%@"
+          }
+        }
+      }
+    },
+    "This tool does not say what it costs, so you are asked every time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このツールは費用を示さないため、毎回確認します"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个工具没有说明费用，所以每次都会问你"
           }
         }
       }
@@ -40968,6 +43672,22 @@
         }
       }
     },
+    "Type the amount in %@, such as %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "金額は%1$@で入力してください。例: %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请用%1$@输入金额，例如 %2$@"
+          }
+        }
+      }
+    },
     "Type this into the machine now. It is shown this once and cannot be shown again.": {
       "localizations": {
         "ja": {
@@ -41764,6 +44484,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "今日用量"
+          }
+        }
+      }
+    },
+    "usd": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "usd"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "usd"
           }
         }
       }
@@ -42936,6 +45672,22 @@
         }
       }
     },
+    "What they will see": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手に見える内容"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方将会看到"
+          }
+        }
+      }
+    },
     "What this server accepts from whoever connects to it. Every one of these is read for each message or each connection, so a change applies to the next one.": {
       "localizations": {
         "ja": {
@@ -43380,6 +46132,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "何时以及如何回复"
+          }
+        }
+      }
+    },
+    "When everyone is free": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員が空いている時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大家都有空的时间"
           }
         }
       }
@@ -44056,6 +46824,22 @@
         }
       }
     },
+    "With": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一緒に"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和谁"
+          }
+        }
+      }
+    },
     "With a unit, as in the file: 50MB, 25MiB, 10485760. A message over this is refused while it is still arriving, so the sender is told rather than left to wonder.": {
       "localizations": {
         "ja": {
@@ -44084,6 +46868,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "有附件"
+          }
+        }
+      }
+    },
+    "Withdraw": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り消す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回"
           }
         }
       }
@@ -44440,6 +47240,38 @@
         }
       }
     },
+    "You do not share a circle with anybody yet. Make or join a circle to share a page.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。サークルを作成するか参加すると、ページを共有できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人在同一个圈子里。创建或加入一个圈子后，就可以共享页面了。"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anybody yet. Make or join a circle to share your calendar.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。サークルを作成するか参加すると、カレンダーを共有できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人在同一个圈子里。创建或加入一个圈子后，就可以共享日历了。"
+          }
+        }
+      }
+    },
     "You get a new import address, and mail to the old one is refused from now on. What was already imported stays.": {
       "localizations": {
         "ja": {
@@ -44520,6 +47352,38 @@
         }
       }
     },
+    "You joined %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@に参加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已加入 %@"
+          }
+        }
+      }
+    },
+    "You left %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@から退出しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已退出 %@"
+          }
+        }
+      }
+    },
     "You may see the groups on this server but not the accounts in them.": {
       "localizations": {
         "ja": {
@@ -44548,6 +47412,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你回应了 %@"
+          }
+        }
+      }
+    },
+    "You will no longer be in %@, and what it shares with you stops reaching you. An admin can invite you again. The circle is deleted when its last member leaves. If you are its only admin, make somebody else an admin first.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@から外れ、共有されていたものは届かなくなります。管理者がもう一度招待できます。最後のメンバーが抜けるとサークルは削除されます。唯一の管理者の場合は、先に別の人を管理者にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你将不再属于 %@，它与你共享的内容也不会再到达你。管理员可以再次邀请你。圈子在最后一位成员离开时被删除。如果你是唯一的管理员，请先让别人成为管理员。"
           }
         }
       }
@@ -44584,6 +47464,22 @@
         }
       }
     },
+    "Your agent asked to run %@ with %@’s %@ skill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントが、%2$@さんのスキル「%3$@」で%1$@を実行しようとしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手想通过%2$@的技能“%3$@”运行%1$@"
+          }
+        }
+      }
+    },
     "Your agent is not following anything right now.": {
       "localizations": {
         "ja": {
@@ -44596,6 +47492,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "代理现在没有在跟进任何事。"
+          }
+        }
+      }
+    },
+    "Your calendar is not shared with anybody yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カレンダーはまだ誰とも共有されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的日历还没有共享给任何人。"
+          }
+        }
+      }
+    },
+    "Your chats are in the menu": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットはメニューにあります"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的聊天在菜单里"
           }
         }
       }
@@ -44723,7 +47651,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "你的助手未开启"
+            "value": "你的助手已关闭"
           }
         }
       }
@@ -47076,6 +50004,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "原为：%@"
+          }
+        }
+      }
+    },
+    "No limits: every call waits for approval, except one that only works on something an earlier call through this share made": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限なし：この共有の以前の呼び出しが作ったものにだけ使える呼び出しを除き、すべての呼び出しは承認を待ちます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有上限：除了只作用于此共享中先前调用所产生内容的调用，每次调用都要等待批准"
           }
         }
       }
@@ -53076,6 +56020,1590 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Invitations to circles": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サークルへの招待"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圈子邀请"
+          }
+        }
+      }
+    },
+    "Make circles of people on this server, and join them": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバー上の人たちとサークルを作り、参加する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与此服务器上的人组成圈子，并加入圈子"
+          }
+        }
+      }
+    },
+    "%@ invited you to %@. Answer it under Circles in Settings.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ さんから「%2$@」に招待されました。設定のサークルから返事をしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 邀请你加入「%2$@」。请在设置的圈子中回复。"
+          }
+        }
+      }
+    },
+    "(deleted account)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（削除されたアカウント）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（账号已删除）"
+          }
+        }
+      }
+    },
+    "%@ is typing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@が入力中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 正在输入"
+          }
+        }
+      }
+    },
+    "%@ and %@ are typing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@と%2$@が入力中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 和 %2$@ 正在输入"
+          }
+        }
+      }
+    },
+    "Several people are typing": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複数の人が入力中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好几个人正在输入"
+          }
+        }
+      }
+    },
+    "Read by %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@が既読"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 已读"
+          }
+        }
+      }
+    },
+    "Agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手"
+          }
+        }
+      }
+    },
+    "Rename group": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ名を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名群聊"
+          }
+        }
+      }
+    },
+    "Mute for 8 hours": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "8時間ミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音 8 小时"
+          }
+        }
+      }
+    },
+    "Mute until I unmute": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除するまでミュート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静音直到我取消"
+          }
+        }
+      }
+    },
+    "Leave group": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループから退出"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出群聊"
+          }
+        }
+      }
+    },
+    "Chat options": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットのオプション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天选项"
+          }
+        }
+      }
+    },
+    "Leave this group?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このグループから退出しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出这个群聊？"
+          }
+        }
+      }
+    },
+    "You will stop getting its messages. Someone in the group can add you again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このグループのメッセージが届かなくなります。グループの誰かがもう一度追加できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你将不再收到它的消息，群里的人可以再次添加你。"
+          }
+        }
+      }
+    },
+    "Group name": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "グループ名"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "群名称"
+          }
+        }
+      }
+    },
+    "Add people": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メンバーを追加"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加成员"
+          }
+        }
+      }
+    },
+    "%@ will not see new messages in this group. What was said stays.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はこのグループの新しいメッセージを見られなくなります。これまでの内容は残ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 将看不到这个群聊里的新消息，已发的消息会保留。"
+          }
+        }
+      }
+    },
+    "No one to message yet": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを送れる相手がまだいません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有可以发消息的人"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anyone yet. Invite people to a circle, then message them from here.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。サークルに招待してから、ここでメッセージを送ってください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人在同一个圈子里。先邀请他们加入圈子，再从这里发消息。"
+          }
+        }
+      }
+    },
+    "Message someone": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "誰かにメッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给某人发消息"
+          }
+        }
+      }
+    },
+    "Edit message": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを編集"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑消息"
+          }
+        }
+      }
+    },
+    "Message deleted": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージは削除されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息已删除"
+          }
+        }
+      }
+    },
+    "A file that was removed with the account": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アカウントとともに削除されたファイル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随账号一起删除的文件"
+          }
+        }
+      }
+    },
+    "Edited": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已编辑"
+          }
+        }
+      }
+    },
+    "Nothing has been said here yet. Say hello.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ何も書かれていません。声をかけてみましょう。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里还没有消息，打个招呼吧。"
+          }
+        }
+      }
+    },
+    "You are not in this chat any more. You can read it, but not write to it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットのメンバーではなくなりました。読むことはできますが、書き込めません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你已不在这个聊天里，可以阅读，但不能再发消息。"
+          }
+        }
+      }
+    },
+    "You no longer share a circle with this person, so you cannot write to them.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人とはもうサークルを共有していないため、メッセージを送れません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你和对方已不在同一个圈子里，因此不能再给对方发消息。"
+          }
+        }
+      }
+    },
+    "Delete this message?": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このメッセージを削除しますか？"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除这条消息？"
+          }
+        }
+      }
+    },
+    "Everybody in the chat will see “Message deleted” in its place.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットの全員に「メッセージは削除されました」と表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天里的所有人都会看到“消息已删除”。"
+          }
+        }
+      }
+    },
+    "Message %@…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にメッセージ…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发消息给 %@…"
+          }
+        }
+      }
+    },
+    "%@ reacted %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@が%2$@でリアクション"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 回应了 %2$@"
+          }
+        }
+      }
+    },
+    "Chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャット"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天"
+          }
+        }
+      }
+    },
+    "Messages from people in your chats": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットの相手からのメッセージ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天里其他人发来的消息"
+          }
+        }
+      }
+    },
+    "Message…": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发消息…"
+          }
+        }
+      }
+    },
+    "%@ is thinking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@が考え中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 正在思考"
+          }
+        }
+      }
+    },
+    "%@ and %@ are thinking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@と%2$@が考え中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 和 %2$@ 正在思考"
+          }
+        }
+      }
+    },
+    "Several agents are thinking": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複数のエージェントが考え中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "多个助手正在思考"
+          }
+        }
+      }
+    },
+    "%@'s agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんのエージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的助手"
+          }
+        }
+      }
+    },
+    "Agents you can ask here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで頼めるエージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以在这里呼叫的助手"
+          }
+        }
+      }
+    },
+    "My agent remembers this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "私のエージェントにこのチャットを記憶させる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让我的助手记住这个聊天"
+          }
+        }
+      }
+    },
+    "Others may ask my agent here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで他の人が私のエージェントに頼めるようにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许其他人在这里呼叫我的助手"
+          }
+        }
+      }
+    },
+    "Your agent in this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このチャットでのあなたのエージェント"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你在这个聊天里的助手"
+          }
+        }
+      }
+    },
+    "Their agent remembers this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この人のエージェントがこのチャットを記憶中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其助手记住了这个聊天"
+          }
+        }
+      }
+    },
+    "Others may ask their agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他の人もこの人のエージェントに頼めます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他人可以呼叫其助手"
+          }
+        }
+      }
+    },
+    "Remembering: from now on your agent reads what is said here with the rest of what it knows. What it learned stays if you turn this off, and it reads nothing said while this is off.\n\nAsking: anyone in this chat can address your agent with @, and it answers them in front of everybody. It can read this chat and look things up on the web, and nothing of yours: no mail, notes, files or calendar. Its work is counted as yours.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "記憶: これ以降、エージェントはここでの発言を、他に知っていることと一緒に読みます。オフにしても、すでに覚えたことは残ります。オフの間の発言は読みません。\n\n頼めるようにする: このチャットの誰でも @ であなたのエージェントを呼び出せ、みんなの前で答えます。エージェントが読めるのはこのチャットとウェブだけで、メール、ノート、ファイル、カレンダーなどあなたのものは読めません。作業はあなたの利用分として数えられます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "记住：从现在起，你的助手会把这里的发言和它已知的其他内容一起阅读。关闭后它已学到的内容会保留，关闭期间的发言它不会读。\n\n允许呼叫：这个聊天里的任何人都可以用 @ 呼叫你的助手，它会当着大家的面回答。它只能阅读这个聊天并上网查资料，读不到你的任何内容：邮件、笔记、文件和日历都不行。它的用量算在你名下。"
+          }
+        }
+      }
+    },
+    "asks you every time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎回確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次都问你"
+          }
+        }
+      }
+    },
+    "up to %@ a payment": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1回あたり%@まで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单笔最多 %@"
+          }
+        }
+      }
+    },
+    "up to %@ a month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月%@まで"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月最多 %@"
+          }
+        }
+      }
+    },
+    "%@ so far this month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今月ここまで%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本月已用 %@"
+          }
+        }
+      }
+    },
+    "Ran": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已运行"
+          }
+        }
+      }
+    },
+    "Did not complete": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了せず"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未完成"
+          }
+        }
+      }
+    },
+    "Waiting": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認待ち"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待确认"
+          }
+        }
+      }
+    },
+    "Waiting.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認待ちです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待中。"
+          }
+        }
+      }
+    },
+    "Approved. It ran on the owner’s computer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認され、持ち主のコンピューターで実行されました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已批准，并在对方的电脑上运行。"
+          }
+        }
+      }
+    },
+    "It was tried and did not complete.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行を試みましたが、完了しませんでした。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已尝试，但未完成。"
+          }
+        }
+      }
+    },
+    "Declined.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "却下されました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拒绝。"
+          }
+        }
+      }
+    },
+    "Nobody answered in time, so it expired.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間内に返事がなく、期限切れになりました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有人及时回复，已过期。"
+          }
+        }
+      }
+    },
+    "Their note: %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のひとこと: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方留言：%@"
+          }
+        }
+      }
+    },
+    "Shared skills": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有しているスキル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享的技能"
+          }
+        }
+      }
+    },
+    "No skill is installed to share.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有できるスキルがインストールされていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可共享的已安装技能。"
+          }
+        }
+      }
+    },
+    "Share a skill": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スキルを共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享技能"
+          }
+        }
+      }
+    },
+    "You do not share a circle with anybody yet. Start or join one under Circles to share a skill.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ誰ともサークルを共有していません。スキルを共有するには、サークルを作るか参加してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有和任何人共享圈子。要共享技能，请先在“圈子”中创建或加入一个圈子。"
+          }
+        }
+      }
+    },
+    "%@ loses %@ at once, and the record of what was asked through it goes with it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@さんは%2$@をすぐに使えなくなり、これまでの依頼の記録も削除されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@会立刻失去%2$@，通过它发起过的请求记录也会一并删除。"
+          }
+        }
+      }
+    },
+    "Shared by you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたが共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你共享的"
+          }
+        }
+      }
+    },
+    "Stopped sharing %@ with %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@の%2$@さんとの共有をやめました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止把%1$@共享给%2$@。"
+          }
+        }
+      }
+    },
+    "%@ with %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@（%2$@さんへ）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@，共享给%2$@"
+          }
+        }
+      }
+    },
+    "Choose a person": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手を選ぶ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个人"
+          }
+        }
+      }
+    },
+    "Tools to share": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共有するツール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要共享的工具"
+          }
+        }
+      }
+    },
+    "Ask me every time": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎回確認する"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次都问我"
+          }
+        }
+      }
+    },
+    "A tool that pays is shared with a limit, or with Ask me every time.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支払うツールは、上限を付けるか「毎回確認する」にして共有します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会付款的工具需要设置上限，或选择“每次都问我”才能共享。"
+          }
+        }
+      }
+    },
+    "Share %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を共有"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享%@"
+          }
+        }
+      }
+    },
+    "Shared %@ with %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@を%2$@さんと共有しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已把%1$@共享给%2$@。"
+          }
+        }
+      }
+    },
+    "Nothing has been asked through this yet.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この共有ではまだ何も依頼されていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有人通过这次共享发起过请求。"
+          }
+        }
+      }
+    },
+    "Tool": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ツール"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具"
+          }
+        }
+      }
+    },
+    "%@’s agent wrote": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんのエージェントの説明"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@的助手写道"
+          }
+        }
+      }
+    },
+    "A word for %@ (optional)": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんへのひとこと（任意）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给%@留一句话（可选）"
+          }
+        }
+      }
+    },
+    "Approve and run it": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認して実行"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准并运行"
+          }
+        }
+      }
+    },
+    "Waits until %@, then expires.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@まで待ち、その後は期限切れになります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待到 %@，之后过期。"
+          }
+        }
+      }
+    },
+    "Waiting for %@ to answer.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@さんの返事を待っています。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待%@回复。"
+          }
+        }
+      }
+    },
+    "Lend a skill to someone in a circle you share, and answer what they ask. Each use runs on your computer, as you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同じサークルの人にスキルを使わせ、その依頼に答えます。使うたびに、あなたのコンピューターであなたとして実行されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把技能借给同一圈子里的人，并回复他们的请求。每次使用都在你的电脑上、以你的身份运行。"
+          }
+        }
+      }
+    },
+    "Skills shared with you": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたと共有されているスキル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享给你的技能"
+          }
+        }
+      }
+    },
+    "You are not in a circle yet. Make one under Circles.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだどのサークルにも入っていません。「サークル」で作成してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你还没有加入任何圈子。请在“圈子”里创建一个。"
+          }
+        }
+      }
+    },
+    "Skill calls waiting for your approval": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたの承認待ちのスキル呼び出し"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待你批准的技能调用"
+          }
+        }
+      }
+    },
+    "Refused": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被拦截"
+          }
+        }
+      }
+    },
+    "It was refused before it ran.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実行前に拒否されました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行前就被拦截。"
+          }
+        }
+      }
+    },
+    "Per payment": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1回あたり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每笔"
+          }
+        }
+      }
+    },
+    "Per month": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1か月あたり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月"
+          }
+        }
+      }
+    },
+    "Spends money. Calls within your limits go ahead; bigger ones wait for you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お金を使います。上限内の呼び出しはそのまま実行され、それを超えるものは承認を待ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会花钱。在上限内的调用直接执行，超过的会等你确认。"
+          }
+        }
+      }
+    },
+    "Costs nothing itself. It only works on something an earlier call through this share made, such as checking or cancelling it.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "それ自体に費用はかかりません。この共有の以前の呼び出しが作ったものにだけ使えます（確認や取り消しなど）。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本身不花钱。只能用于此共享中先前调用所产生的内容，例如查询或取消它。"
+          }
+        }
+      }
+    },
+    "The limit for one payment cannot be above the monthly limit.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1回の支払いの上限は、1か月の上限を超えられません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "单笔付款的上限不能高于每月上限。"
+          }
+        }
+      }
+    },
+    "Use the three-letter code, such as usd.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "usd のように3文字のコードで入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用三个字母的代码，例如 usd。"
+          }
+        }
+      }
+    },
+    "Your agent is off.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントはオフです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手未开启。"
+          }
+        }
+      }
+    },
+    "Your agent remembers this chat": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのエージェントがこのチャットを記憶中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手记住了这个聊天"
+          }
+        }
+      }
+    },
+    "Others may ask your agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他の人もあなたのエージェントに頼めます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他人可以呼叫你的助手"
+          }
+        }
+      }
+    },
+    "Message, or @ to ask an agent": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ、または @ でエージェントに頼む"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发消息，或输入 @ 呼叫助手"
+          }
+        }
+      }
+    },
+    "%@ is in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ を%2$@に追加しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 已加入%2$@"
+          }
+        }
+      }
+    },
+    "%@ saved in %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ を%2$@に保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 已保存到%2$@"
           }
         }
       }
