@@ -153,6 +153,7 @@ func TestListAnswersCompactRowsInThePersonsZoneAndSaysHowToPage(test *testing.T)
 			PreviewState    string `json:"preview_state"`
 		} `json:"photos"`
 		MatchingPhotoCount int    `json:"matching_photo_count"`
+		NextOffset         int    `json:"next_offset"`
 		More               string `json:"more"`
 	}
 	if err := json.Unmarshal([]byte(result.Content), &answer); err != nil {
@@ -164,11 +165,11 @@ func TestListAnswersCompactRowsInThePersonsZoneAndSaysHowToPage(test *testing.T)
 	if answer.Photos[1].DurationSeconds != 12 || answer.Photos[1].PhotoKind != "video" || answer.Photos[2].PreviewState != "not made yet" {
 		test.Fatalf("%+v", answer.Photos)
 	}
-	if answer.MatchingPhotoCount != 40 || !strings.Contains(answer.More, "before_photo_id photo-three") {
+	if answer.MatchingPhotoCount != 40 || answer.NextOffset != 3 || !strings.Contains(answer.More, "offset 3") {
 		test.Fatalf("paging: %+v", answer)
 	}
 	asked := current.operations.asked("ListPhotos")
-	if len(asked) != 1 || asked[0]["searchText"] != "Example" || asked[0]["pageSize"] != 3 || asked[0]["isFavorite"] != false || asked[0]["takenAfter"] != "2025-01-01T00:00:00Z" {
+	if len(asked) != 1 || asked[0]["searchText"] != "Example" || asked[0]["pageSize"] != 3 || asked[0]["offset"] != nil || asked[0]["isFavorite"] != false || asked[0]["takenAfter"] != "2025-01-01T00:00:00Z" {
 		test.Fatalf("the listing asked %v", asked)
 	}
 	for _, arguments := range []map[string]any{{"operation": "list", "page_size": 101}, {"operation": "list", "photo_kind": "gif"}, {"operation": "list", "taken_before": "last blue moon"}} {
@@ -300,7 +301,7 @@ func TestFavoriteTrashRestoreAndSaveUseTheSharedOperations(test *testing.T) {
 	if result, err := current.call(map[string]any{"operation": "trash", "photo_ids": []string{"a", "b"}}); err != nil || !strings.Contains(result.Content, "2 of 2 photos moved to the Trash") {
 		test.Fatalf("%v %v", result, err)
 	}
-	if result, err := current.call(map[string]any{"operation": "restore", "photo_ids": []string{"a"}}); err != nil || !strings.Contains(result.Content, "1 of 1 photos taken out of the Trash") {
+	if result, err := current.call(map[string]any{"operation": "restore", "photo_ids": []string{"a"}}); err != nil || !strings.Contains(result.Content, "1 of 1 photos restored from the Trash") {
 		test.Fatalf("%v %v", result, err)
 	}
 	if _, err := current.call(map[string]any{"operation": "trash"}); err == nil {
@@ -355,7 +356,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	for operation, want := range map[string]tools.Risk{
 		"library": tools.RiskRead, "list": tools.RiskRead, "read": tools.RiskRead, "look": tools.RiskRead, "show": tools.RiskRead,
-		"favorite": tools.RiskWrite, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive,
+		"favorite": tools.RiskWrite, "set-date": tools.RiskWrite, "restore": tools.RiskWrite, "retry": tools.RiskWrite, "save": tools.RiskWrite, "trash": tools.RiskDestructive,
 		"album-cover": tools.RiskWrite, "save-shared": tools.RiskWrite, "album-share": tools.RiskGranting, "album-unshare": tools.RiskGranting, "album-shares": tools.RiskRead, "person-unname": tools.RiskWrite, "person-hide": tools.RiskWrite, "person-remove-face": tools.RiskWrite,
 	} {
 		arguments, _ := json.Marshal(map[string]any{"operation": operation})
@@ -377,7 +378,7 @@ func TestEachOperationHasItsRisk(test *testing.T) {
 	}
 	properties, _ := photoTool.Parameters["properties"].(map[string]any)
 	operation, _ := properties["operation"].(map[string]any)
-	if enum, _ := operation["enum"].([]string); len(enum) != 32 {
+	if enum, _ := operation["enum"].([]string); len(enum) != 33 {
 		test.Errorf("operations %v", enum)
 	}
 }
@@ -389,7 +390,7 @@ func TestLibraryAnswersCountsAndLimits(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{`"photo_count":5`, `"video_count":2`, `"trash_kept_days":30`, "found only by the rest", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
+	for _, want := range []string{`"total_count":7`, `"video_count":2`, `"photos":"7 (2 videos)"`, `"trash_kept_days":30`, "found only by the rest", `"space_used":"1000 B · No limit"`, `"largest_file":"2 KB"`} {
 		if !strings.Contains(result.Content, want) {
 			test.Errorf("the library answer lacks %s: %s", want, result.Content)
 		}
@@ -550,7 +551,7 @@ func TestReadGivesTheDescriptionAndTheWordsReadInThePicture(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{`"has_description":true`, `"description":"A red lighthouse on a rocky point. Waves break at its base."`, `"words_read_in_it":"HARBOR ENTRANCE"`} {
+	for _, want := range []string{`"has_description":true`, `"description":"A red lighthouse on a rocky point. Waves break at its base."`, `"text_in_the_picture":"HARBOR ENTRANCE"`} {
 		if !strings.Contains(result.Content, want) {
 			test.Errorf("read lacks %s: %s", want, result.Content)
 		}

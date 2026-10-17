@@ -44,7 +44,7 @@ func TestAlbumListAndReadGiveTitlesCountsAndDaysInThePersonsZone(test *testing.T
 	}
 
 	result, err = current.call(map[string]any{"operation": "album-read", "album_id": "album-one"})
-	if err != nil || !result.Untrusted || !strings.Contains(result.Content, `"album_title":"Picnic"`) || !strings.Contains(result.Content, `"created_at":"2025-07-15 08:30"`) || !strings.Contains(result.Content, "list with album_id") {
+	if err != nil || !result.Untrusted || !strings.Contains(result.Content, `"album_title":"Picnic"`) || !strings.Contains(result.Content, `"created_at":"2025-07-15 08:30"`) || !strings.Contains(result.Content, `"photos":[]`) {
 		test.Fatalf("%v %v", result, err)
 	}
 	if asked := current.operations.asked("ReadPhotoAlbum"); len(asked) != 1 || asked[0]["photoAlbumId"] != "album-one" {

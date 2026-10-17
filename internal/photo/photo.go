@@ -56,13 +56,21 @@ type Store struct {
 	// claimPollInterval is how long a worker with nothing to claim waits
 	// before it looks again, while another worker is still busy.
 	claimPollInterval time.Duration
+
+	// workSpace tracks the room the copies in the work directory have been
+	// promised, and freeBytesOf says how much the file system has.
+	workSpace   workSpace
+	freeBytesOf func(directory string) (int64, bool)
+
+	// videoPrograms remembers whether ffmpeg and ffprobe were found.
+	videoPrograms videoPrograms
 }
 
 // New requires range-capable storage, because files are large. The
 // configuration is a function so that a limit changed in the dashboard
 // applies to the next request.
 func New(database db.Database, files storage.StreamFiles, configuration func() *config.Configuration) *Store {
-	return &Store{database: database, files: files, configuration: configuration, now: time.Now, pixelBudget: semaphore.NewWeighted(maximumPixelsInFlight), claimPollInterval: claimPollInterval}
+	return &Store{database: database, files: files, configuration: configuration, now: time.Now, pixelBudget: semaphore.NewWeighted(maximumPixelsInFlight), claimPollInterval: claimPollInterval, freeBytesOf: freeDiskBytes}
 }
 
 // workDirectoryName is the directory inside the data directory that temporary
@@ -117,6 +125,13 @@ const (
 	// in a drawer starts that file again.
 	idleUploadRetention = 7 * 24 * time.Hour
 
+	// openUploadQuotaWindow is how recently a part must have arrived in an
+	// unfinished upload for its bytes to count against the account's room. An
+	// upload that has sat idle for longer than this is not about to be
+	// finished, and cleanup does not delete it for a week (idleUploadRetention),
+	// which is too long for it to hold room another file needs.
+	openUploadQuotaWindow = 24 * time.Hour
+
 	// unreferencedBlobRetention is how long a blob nothing refers to is kept.
 	// A blob is stored before the row that refers to it is, and this is the
 	// time that takes to be certain it is not about to be.
@@ -136,6 +151,12 @@ const (
 // limit.
 type QuotaError struct {
 	LimitBytes int64
+
+	// IsCausedByOtherUploads says the file would fit if the account's other
+	// unfinished uploads were not holding room. That is not the file's fault,
+	// and room comes back as they finish or go idle, so an upload that is
+	// refused for it is not ended: it can be resumed.
+	IsCausedByOtherUploads bool
 }
 
 func (self *QuotaError) Error() string {

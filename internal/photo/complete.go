@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"unicode"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -21,6 +22,11 @@ import (
 // by the time the file naming it was recorded: cleanup got to it. The whole
 // step is done again, this time storing the bytes.
 var errBlobGone = errors.New("photo: the blob was deleted while the file was being recorded")
+
+// errBlobBytesGone is a blob whose row is there and whose bytes are not: cleanup
+// deleted the bytes and has not yet dropped the row. The step is done again with
+// the bytes stored, whatever the row says.
+var errBlobBytesGone = fmt.Errorf("%w: its bytes are not in the store", errBlobGone)
 
 // ErrNotAPhoto is a file that is not a picture or a video that phones and
 // cameras write.
@@ -323,6 +329,9 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 	maximumAccountBytes := int64(configuration.Photos.MaxAccountBytes)
 	defer func() { _ = source.Close() }()
 	var photo *models.Photo
+	// isStoredAgain says the bytes were found missing from a blob whose row is
+	// there, so that the next attempt stores them whatever the row says.
+	isStoredAgain := false
 	for attempt := 0; attempt < 3; attempt++ {
 		// Whether the blob is already stored decides whether it is stored
 		// again. A blob marked for deletion has bytes that may be half gone,
@@ -339,7 +348,7 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 			return nil, err
 		}
 		hasStoredBytes := false
-		if existing == nil || existing.DeletingAt != nil {
+		if existing == nil || existing.DeletingAt != nil || isStoredAgain {
 			if err := self.files.PutFileStream(ctx, models.PhotoBlobFileID(blobSha256), source, sizeBytes); err != nil {
 				return nil, err
 			}
@@ -370,18 +379,30 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 			if isInserted && (existing != nil || hasStoredBytes) {
 				return errBlobGone
 			}
-			photo, _, err = transaction.CreatePhoto(newPhoto(userId, headers))
-			if err != nil {
+			var isRecordedAsOwn bool
+			if photo, isRecordedAsOwn, err = self.photoForFile(transaction, userId, headers, blobSha256); err != nil {
 				return err
 			}
-			_, err = transaction.SetPhotoFile(userId, photo.ID, &models.PhotoFile{
-				PhotoFileRole: headers.PhotoFileRole, BlobSHA256: blobSha256, ContentType: headers.ContentType,
-				FileSizeBytes: sizeBytes, OriginalFilename: headers.OriginalFilename,
-			}, maximumAccountBytes)
-			if errors.Is(err, db.ErrTooMuchAsked) {
-				return &QuotaError{LimitBytes: maximumAccountBytes}
+			// A photo that already has these bytes as its original has nothing
+			// new to record: the same picture under another name is that
+			// photo, and costs no room.
+			if isRecordedAsOwn {
+				_, err = transaction.SetPhotoFile(userId, photo.ID, &models.PhotoFile{
+					PhotoFileRole: headers.PhotoFileRole, BlobSHA256: blobSha256, ContentType: headers.ContentType,
+					FileSizeBytes: sizeBytes, OriginalFilename: headers.OriginalFilename,
+				}, maximumAccountBytes)
+				if errors.Is(err, db.ErrTooMuchAsked) {
+					return &QuotaError{LimitBytes: maximumAccountBytes}
+				}
+				if err != nil {
+					return err
+				}
 			}
-			if err != nil {
+			// The bytes are checked to be in the store once the file naming them
+			// is recorded: cleanup deletes the bytes of a marked blob before it
+			// drops the row, so a file recorded against bytes it had just
+			// deleted would name nothing. Missing bytes are stored again.
+			if err := self.checkBlobStored(ctx, blobSha256); err != nil {
 				return err
 			}
 			if photoUploadId != "" {
@@ -393,7 +414,7 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 			return err
 		})
 		if errors.Is(err, errBlobGone) || errors.Is(err, db.ErrPhotoBlobGone) {
-			existing = nil
+			isStoredAgain = isStoredAgain || errors.Is(err, errBlobBytesGone)
 			continue
 		}
 		if err != nil {
@@ -402,6 +423,53 @@ func (self *Store) keepFile(ctx context.Context, userId string, headers *models.
 		return photo, nil
 	}
 	return nil, errBlobGone
+}
+
+// checkBlobStored says the blob's bytes are in the store, by reading one byte
+// of them. A blob that is not is errBlobGone, and the whole step is done again
+// with the bytes stored.
+func (self *Store) checkBlobStored(ctx context.Context, blobSha256 string) error {
+	stream, err := self.files.OpenFileRange(ctx, models.PhotoBlobFileID(blobSha256), 0, 1)
+	if errors.Is(err, storage.ErrNotFound) {
+		return errBlobBytesGone
+	}
+	if err != nil {
+		return err
+	}
+	return stream.Close()
+}
+
+// photoForFile is the photo a file belongs to. It is the photo the uploader's
+// name for it already finds (under the name it was made with or another it was
+// recorded under), else, for an original, the photo of the person's that already
+// has these bytes as its original: a picture kept from a conversation and then
+// backed up by a phone is one photo, whatever the two called it. The name is
+// recorded as one the photo has, so that the uploader finds the photo by it
+// next time. Failing both a photo is made. The second value says the file is
+// still to be recorded against the photo, which it is unless the photo already
+// has exactly these bytes as its original.
+func (self *Store) photoForFile(transaction db.Transaction, userId string, headers *models.PhotoUploadHeaders, blobSha256 string) (*models.Photo, bool, error) {
+	found, err := transaction.FindPhotosByClientIDs(userId, []string{headers.ClientPhotoID})
+	if err != nil {
+		return nil, false, err
+	}
+	if len(found) > 0 {
+		return found[0], true, nil
+	}
+	if headers.PhotoFileRole == models.PhotoFileRoleOriginal {
+		same, err := transaction.FindPhotoByOriginalBlob(userId, blobSha256)
+		switch {
+		case err == nil:
+			if err := transaction.AddPhotoClientAlias(userId, same.ID, headers.ClientPhotoID); err != nil {
+				return nil, false, err
+			}
+			return same, false, nil
+		case !errors.Is(err, db.ErrNotFound):
+			return nil, false, err
+		}
+	}
+	made, _, err := transaction.CreatePhoto(newPhoto(userId, headers))
+	return made, true, err
 }
 
 // newPhoto is the photo an uploader's first file makes, from what the
@@ -459,6 +527,20 @@ func (self *Store) SaveAttachment(ctx context.Context, userId string, attachment
 	if len(headers.OriginalFilename) > maximumFilenameLength || strings.ContainsAny(headers.OriginalFilename, `/\`) {
 		headers.OriginalFilename = path.Base(strings.ReplaceAll(headers.OriginalFilename, `\`, "/"))
 		headers.OriginalFilename = strings.ToValidUTF8(headers.OriginalFilename[:min(len(headers.OriginalFilename), maximumFilenameLength)], "")
+	}
+	// The name is stored and shown, so it must pass what an uploader's name
+	// passes. A file the person has is not refused for a name an attachment
+	// came with; what the name may not hold is taken out of it.
+	if checkText(headerFilename, headers.OriginalFilename, maximumFilenameLength) != nil {
+		headers.OriginalFilename = strings.Map(func(character rune) rune {
+			if unicode.IsControl(character) {
+				return -1
+			}
+			return character
+		}, strings.ToValidUTF8(headers.OriginalFilename, ""))
+		if checkText(headerFilename, headers.OriginalFilename, maximumFilenameLength) != nil {
+			headers.OriginalFilename = ""
+		}
 	}
 	return self.keepFile(ctx, userId, headers, newSegmentReader(ctx, self.files, segments), blobSha256, attachment.Size, "")
 }

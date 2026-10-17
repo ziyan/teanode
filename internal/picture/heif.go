@@ -3,6 +3,7 @@ package picture
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 )
@@ -137,6 +138,56 @@ func readHeifMetadata(content io.ReaderAt, sizeBytes int64) (*Metadata, error) {
 		metadata.WidthPixels, metadata.HeightPixels = width, height
 	}
 	return metadata, nil
+}
+
+// ReadHeifSize reads the size of the primary picture of a HEIC or HEIF file
+// from its boxes alone, and refuses one that has more than MaximumPixels pixels
+// or a side longer than MaximumSidePixels. It is what a caller asks before it
+// hands the file to a program that decodes it: heif-dec holds the whole
+// picture, and a small file can claim a huge one. A file that does not say how
+// large its primary picture is is an error, because nothing then bounds what
+// decoding would take.
+func ReadHeifSize(content io.ReaderAt, sizeBytes int64) (widthPixels, heightPixels int, err error) {
+	metaPayload, err := findMetaBox(content, sizeBytes)
+	if err != nil {
+		return 0, 0, err
+	}
+	if len(metaPayload) < 4 {
+		return 0, 0, errors.New("picture: the HEIC meta box is cut short")
+	}
+	children, err := parseBoxes(metaPayload[4:])
+	if err != nil {
+		return 0, 0, err
+	}
+	var primaryItemId uint64
+	var hasPrimaryItem bool
+	var propertiesBox []byte
+	for _, child := range children {
+		switch child.kind {
+		case "pitm":
+			reader := &memoryReader{data: child.payload}
+			version := reader.unsigned(4) >> 24
+			primaryItemId = reader.unsigned(2 + 2*int(min(version, 1)))
+			if reader.err != nil {
+				return 0, 0, reader.err
+			}
+			hasPrimaryItem = true
+		case "iprp":
+			propertiesBox = child.payload
+		}
+	}
+	if hasPrimaryItem && propertiesBox != nil {
+		if widthPixels, heightPixels, err = findPrimarySize(propertiesBox, primaryItemId); err != nil {
+			return 0, 0, err
+		}
+	}
+	if widthPixels <= 0 || heightPixels <= 0 {
+		return 0, 0, errors.New("picture: the HEIC does not say how large its picture is")
+	}
+	if widthPixels > MaximumSidePixels || heightPixels > MaximumSidePixels || int64(widthPixels)*int64(heightPixels) > MaximumPixels {
+		return 0, 0, fmt.Errorf("%w: %d by %d pixels", ErrTooLarge, widthPixels, heightPixels)
+	}
+	return widthPixels, heightPixels, nil
 }
 
 // findMetaBox walks the top level boxes of the file, skipping the big ones by

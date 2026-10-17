@@ -2,15 +2,18 @@ package cmd
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"mime"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -42,11 +45,12 @@ func NewPhotoCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.BoolFlag{Name: "favorites", Usage: "only the favorites"},
-					&cli.BoolFlag{Name: "trash", Usage: "list the trash instead of the library"},
-					&cli.StringFlag{Name: "search", Usage: "photos matching these words, best match first: the place, file name, camera, album titles, and the description and words read in a photo that has been described (a photo nobody described is found by the rest)"},
+					&cli.BoolFlag{Name: "trash", Usage: "list the Trash instead of the library"},
+					&cli.StringFlag{Name: "search", Usage: "photos matching these words, best match first: the place, file name, camera, album titles, and the description and the text in the picture of a photo that has been described (a photo nobody described is found by the rest)"},
 					&cli.StringFlag{Name: "after", Usage: "only photos taken on or after this date (2025-07-12 or an RFC 3339 time)"},
 					&cli.StringFlag{Name: "before", Usage: "only photos taken before this date"},
 					&cli.StringFlag{Name: "kind", Usage: "only pictures, videos or Live Photos: picture, video or livePhoto"},
+					&cli.StringFlag{Name: "near", Usage: "only photos taken near a point: <latitude>,<longitude>,<kilometers>, such as 51.5,-0.12,2"},
 					&cli.StringFlag{Name: "album", Usage: "only the photos of this album (its id is in teanode photo album list)"},
 					&cli.StringFlag{Name: "face-group", Usage: "only the photos with a face in this group of faces (its id is in teanode photo people list)"},
 					&cli.StringFlag{Name: "contact", Usage: "only the photos with a face in a group this contact names (its id is in teanode contact list)"},
@@ -74,17 +78,29 @@ func NewPhotoCommand() *cli.Command {
 				},
 				Action: runPhotoDownload,
 			},
-			{Name: "save", Usage: "keep a photo from a shared album, or a circle's, in your own library", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoSave},
+			{
+				Name: "save", Usage: "keep a photo in your own library: a photo from a shared album or a circle's (save <photo id>), or a file from a conversation with your assistant (save --attachment <attachment id>)",
+				ArgsUsage: "<photo id>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "attachment", Usage: "keep this file of a conversation as a photo, instead of a photo of a shared album (give no photo id with it)"},
+				},
+				Action: runPhotoSave,
+			},
+			{
+				Name: "date", Usage: "correct the date a photo was taken: an RFC 3339 time whose offset is the place's, such as 2025-07-12T14:30:00+09:00", ArgsUsage: "<id> <time>",
+				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoDate,
+			},
 			{Name: "favorite", Usage: "make a photo a favorite", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "off", Usage: "take it out of the favorites"}}, Action: runPhotoFavorite},
-			{Name: "trash", Usage: "move photos to the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
-			{Name: "restore", Usage: "take photos out of the trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
+			{Name: "trash", Usage: "move photos to the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
+			{Name: "restore", Usage: "restore photos from the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRestore},
 			{
 				Name: "retry", Usage: "make the previews of photos again: the ones that failed, and ones that are ready but look wrong", ArgsUsage: "<id>...",
 				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRetry,
 			},
-			{Name: "delete", Usage: "delete photos in the trash forever", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoDelete},
-			{Name: "empty-trash", Usage: "delete everything in the trash forever", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoEmptyTrash},
-			{Name: "library", Usage: "how many photos and videos there are, the space used and the largest file", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
+			{Name: "delete", Usage: "delete photos in the Trash forever", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoDelete},
+			{Name: "empty-trash", Usage: "delete everything in the Trash forever", Flags: []cli.Flag{JSONFlag(), ForceFlag()}, Action: runPhotoEmptyTrash},
+			{Name: "library", Usage: "how many photos there are and how many of them are videos, the space used and the largest file", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoLibrary},
 			newPhotoAlbumCommand(),
 			newPhotoPeopleCommand(),
 			newPhotoFacesCommand(),
@@ -107,6 +123,37 @@ func parsePhotoDate(flag, text string) (*time.Time, error) {
 	return nil, usage(fmt.Sprintf("--%s must be a date such as 2025-07-12 or an RFC 3339 time, not %q", flag, text))
 }
 
+// parsePhotoNear reads "<latitude>,<longitude>,<kilometers>", the point and
+// how near to it a photo was taken.
+func parsePhotoNear(text string) (latitude, longitude, kilometers *float64, err error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, nil, nil, nil
+	}
+	parts := strings.Split(text, ",")
+	numbers := make([]float64, 0, 3)
+	for _, part := range parts {
+		number, parseErr := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if parseErr != nil || math.IsNaN(number) || math.IsInf(number, 0) {
+			return nil, nil, nil, usage(fmt.Sprintf("--near must be <latitude>,<longitude>,<kilometers>, such as 51.5,-0.12,2, not %q", text))
+		}
+		numbers = append(numbers, number)
+	}
+	if len(numbers) != 3 {
+		return nil, nil, nil, usage(fmt.Sprintf("--near must be <latitude>,<longitude>,<kilometers>, such as 51.5,-0.12,2, not %q", text))
+	}
+	if numbers[0] < -90 || numbers[0] > 90 {
+		return nil, nil, nil, usage("--near: the latitude is from -90 to 90 degrees")
+	}
+	if numbers[1] < -180 || numbers[1] > 180 {
+		return nil, nil, nil, usage("--near: the longitude is from -180 to 180 degrees")
+	}
+	if numbers[2] <= 0 {
+		return nil, nil, nil, usage("--near: the distance is more than 0 kilometers")
+	}
+	return &numbers[0], &numbers[1], &numbers[2], nil
+}
+
 func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
 	filter := &client.PhotoFilter{
 		PageSize: int(command.Int("limit")), BeforePhotoID: command.String("continue-after"),
@@ -123,6 +170,9 @@ func photoFilterOf(command *cli.Command) (*client.PhotoFilter, error) {
 		filter.IsFavorite = &isFavorite
 	}
 	var err error
+	if filter.NearLatitude, filter.NearLongitude, filter.NearDistanceKilometers, err = parsePhotoNear(command.String("near")); err != nil {
+		return nil, err
+	}
 	if filter.TakenAfter, err = parsePhotoDate("after", command.String("after")); err != nil {
 		return nil, err
 	}
@@ -172,7 +222,7 @@ func photoStateText(photo *models.Photo) string {
 	case photo.PhotoProcessingState == models.PhotoProcessingWaiting:
 		return "processing"
 	case photo.TrashedAt != nil:
-		return "trash"
+		return "Trash"
 	case photo.IsFavorite:
 		return "favorite"
 	}
@@ -287,7 +337,7 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 			for index, line := range strings.Split(photo.DescriptionVisibleText, "\n") {
 				name := ""
 				if index == 0 {
-					name = "words read in it"
+					name = "text in the picture"
 				}
 				fields = append(fields, [2]string{name, line})
 			}
@@ -298,7 +348,7 @@ func runPhotoShow(ctx context.Context, command *cli.Command) error {
 		fields = append(fields, [2]string{"description", "none yet (teanode photo describe " + photo.ID + ")"})
 	}
 	if photo.TrashedAt != nil {
-		fields = append(fields, [2]string{"in the trash since", photo.TrashedAt.Local().Format("2006-01-02 15:04")})
+		fields = append(fields, [2]string{"in the Trash since", photo.TrashedAt.Local().Format("2006-01-02 15:04")})
 	}
 	for _, file := range view.PhotoFiles {
 		fields = append(fields, [2]string{"file " + string(file.PhotoFileRole), fmt.Sprintf("%s, %s", client.PhotoByteSizeText(file.FileSizeBytes), file.ContentType)})
@@ -700,7 +750,7 @@ func runPhotoDownload(ctx context.Context, command *cli.Command) error {
 // do not both win.
 func savePhotoFile(ctx context.Context, connection *client.Client, file *models.PhotoFile, path string, isForced bool) error {
 	if !isForced {
-		placeholder, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		placeholder, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 		if err != nil {
 			if errors.Is(err, fs.ErrExist) {
 				return fmt.Errorf("%s is already there; --force replaces it", path)
@@ -709,7 +759,7 @@ func savePhotoFile(ctx context.Context, connection *client.Client, file *models.
 		}
 		_ = placeholder.Close()
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".photo-download-*")
+	temporary, err := createDownloadTemporary(filepath.Dir(path))
 	if err != nil {
 		if !isForced {
 			_ = os.Remove(path)
@@ -732,9 +782,6 @@ func savePhotoFile(ctx context.Context, connection *client.Client, file *models.
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(temporary.Name(), 0o644); err != nil {
-		return err
-	}
 	if err := os.Rename(temporary.Name(), path); err != nil {
 		return err
 	}
@@ -742,24 +789,89 @@ func savePhotoFile(ctx context.Context, connection *client.Client, file *models.
 	return nil
 }
 
+// createDownloadTemporary makes the file a download is written to. It is made
+// with the mode 0666 and left for the umask to narrow, as any program's new file
+// is: a person who keeps a umask of 077 gets a file only they can read, and not
+// the world-readable one that forcing 0644 would give them. (os.CreateTemp
+// makes a file only its owner can read, which is the other way to be wrong:
+// the photo would be unreadable to the group a shared directory is for.)
+func createDownloadTemporary(directory string) (*os.File, error) {
+	for range 10 {
+		random := make([]byte, 8)
+		if _, err := rand.Read(random); err != nil {
+			return nil, err
+		}
+		file, err := os.OpenFile(filepath.Join(directory, ".photo-download-"+hex.EncodeToString(random)), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+		if !errors.Is(err, fs.ErrExist) {
+			return file, err
+		}
+	}
+	return nil, fmt.Errorf("a file to download to could not be made in %s", directory)
+}
+
 func runPhotoSave(ctx context.Context, command *cli.Command) error {
+	attachmentId := strings.TrimSpace(command.String("attachment"))
 	photoId := command.Args().First()
-	if photoId == "" || command.Args().Len() != 1 {
-		return usage("usage: teanode photo save <id>")
+	if (attachmentId == "") == (photoId == "") || command.Args().Len() > 1 {
+		return usage("usage: teanode photo save <photo id> (a photo of a shared album or a circle's), or teanode photo save --attachment <attachment id> (a file of a conversation)")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
 	}
-	saved, err := client.SavePhotoToLibrary(ctx, connection, photoId)
-	if err != nil {
-		return describeNotFound(command, err, "photo "+photoId)
+	var saved *models.Photo
+	if attachmentId != "" {
+		saved, err = client.SavePhotoFromAttachment(ctx, connection, attachmentId)
+		if err != nil {
+			return describeNotFound(command, err, "attachment "+attachmentId)
+		}
+	} else {
+		saved, err = client.SavePhotoToLibrary(ctx, connection, photoId)
+		if err != nil {
+			return describeNotFound(command, err, "photo "+photoId)
+		}
 	}
 	if command.Bool("json") {
 		return PrintJSON(saved)
 	}
 	_, _ = fmt.Fprintf(command.Writer, "saved to your library as %s\n", saved.ID)
 	return nil
+}
+
+// runPhotoDate corrects the date a photo was taken. The offset of the time is
+// the offset the photo is shown at, so it is required: a time with no offset
+// would be read on the server's clock, which is not where the photo was taken.
+func runPhotoDate(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() != 2 {
+		return usage("usage: teanode photo date <id> <time>, such as 2025-07-12T14:30:00+09:00 (the offset is the place's)")
+	}
+	photoId := command.Args().First()
+	takenAt, err := parsePhotoTakenAt(command.Args().Get(1))
+	if err != nil {
+		return err
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	photo, err := client.SetPhotoTakenAt(ctx, connection, photoId, takenAt)
+	if err != nil {
+		return describeNotFound(command, err, "photo "+photoId)
+	}
+	if command.Bool("json") {
+		return PrintJSON(photo)
+	}
+	_, _ = fmt.Fprintf(command.Writer, "%s was taken %s\n", photo.ID, photoDateText(photo))
+	return nil
+}
+
+// parsePhotoTakenAt reads an RFC 3339 time that has an offset.
+func parsePhotoTakenAt(text string) (time.Time, error) {
+	takenAt, err := client.ParsePhotoTakenAt(text)
+	if err != nil {
+		return time.Time{}, usage(err.Error())
+	}
+	return takenAt, nil
 }
 
 func runPhotoFavorite(ctx context.Context, command *cli.Command) error {
@@ -812,7 +924,7 @@ func runPhotoMove(ctx context.Context, command *cli.Command, move func(context.C
 }
 
 func runPhotoTrash(ctx context.Context, command *cli.Command) error {
-	return runPhotoMove(ctx, command, client.TrashPhotos, "trashedCount", "moved to the trash")
+	return runPhotoMove(ctx, command, client.TrashPhotos, "trashedCount", "moved to the Trash")
 }
 
 func runPhotoRestore(ctx context.Context, command *cli.Command) error {
@@ -827,14 +939,14 @@ func runPhotoDelete(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() == 0 {
 		return usage("usage: teanode photo delete <id>...")
 	}
-	if err := confirm(command, "This deletes the photos forever; only photos already in the trash are deleted."); err != nil {
+	if err := confirm(command, "This deletes the photos forever; only photos already in the Trash are deleted."); err != nil {
 		return err
 	}
 	return runPhotoMove(ctx, command, client.DeletePhotos, "deletedCount", "deleted forever")
 }
 
 func runPhotoEmptyTrash(ctx context.Context, command *cli.Command) error {
-	if err := confirm(command, "This deletes everything in the trash forever."); err != nil {
+	if err := confirm(command, "This deletes everything in the Trash forever."); err != nil {
 		return err
 	}
 	connection, err := openClient(command)
@@ -865,11 +977,11 @@ func runPhotoLibrary(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(library)
 	}
 	return printFields([][2]string{
-		{"photos", fmt.Sprint(library.PhotoCount)}, {"videos", fmt.Sprint(library.VideoCount)},
-		{"favorites", fmt.Sprint(library.FavoriteCount)}, {"in the trash", fmt.Sprint(library.TrashedCount)},
+		{"photos", client.PhotoCountText(library)},
+		{"favorites", fmt.Sprint(library.FavoriteCount)}, {"in the Trash", fmt.Sprint(library.TrashedCount)},
 		{"space used", library.SpaceUsedText()},
 		{"largest file", client.PhotoByteSizeText(library.MaximumFileBytes)},
-		{"trash kept for", fmt.Sprintf("%d days", library.TrashRetentionDays)},
+		{"Trash kept for", fmt.Sprintf("%d days", library.TrashRetentionDays)},
 		{"finding faces", photoFaceRecognitionText(library)},
 	})
 }

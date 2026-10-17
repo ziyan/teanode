@@ -171,6 +171,9 @@ func TestParseVideoDate(t *testing.T) {
 	if moment, _ := parseVideoDate("", "1904-01-01T00:00:00Z"); moment != nil {
 		t.Errorf("epoch date = %v, want none", moment)
 	}
+	if moment, _ := parseVideoDate("", time.Now().AddDate(1, 0, 0).UTC().Format(time.RFC3339)); moment != nil {
+		t.Errorf("a date a year ahead = %v, want none", moment)
+	}
 	if moment, _ := parseVideoDate("garbage", "garbage"); moment != nil {
 		t.Errorf("garbage = %v, want none", moment)
 	}
@@ -340,5 +343,34 @@ func TestVideoToolsStopWhenAskedTo(t *testing.T) {
 	cancel()
 	if _, err := ProbeVideo(ctx, path); err == nil {
 		t.Error("want an error from a canceled context")
+	}
+}
+
+// fakeVideoProgram puts a script with the name of a program first on the path.
+func fakeVideoProgram(t *testing.T, name, body string) {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestVideoProgramsRunWithAMinimalEnvironment(t *testing.T) {
+	t.Setenv("TEANODE_DATABASE_PASSWORD", "a-secret-nobody-else-should-see")
+	work := t.TempDir()
+	path := filepath.Join(work, "source")
+	if err := os.WriteFile(path, []byte("not really a video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// What the program prints is taken as the picture it made.
+	fakeVideoProgram(t, "ffmpeg", `env`)
+	poster, err := VideoPoster(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkMinimalEnvironment(t, poster)
+	if home := environmentNames(t, poster)["HOME"]; home != work {
+		t.Errorf("HOME = %q, want the private directory %q", home, work)
 	}
 }

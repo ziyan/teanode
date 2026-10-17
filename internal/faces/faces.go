@@ -111,8 +111,17 @@ func (self *programReader) ReadFaces(ctx context.Context, source image.Image) ([
 	if bounds.Dx() < 1 || bounds.Dy() < 1 {
 		return nil, errors.New("faces: an empty picture has no faces")
 	}
+	// The program reads its picture from standard input and needs no files of
+	// its own, so its home is an empty directory that only it can enter.
+	homeDirectory, err := os.MkdirTemp("", "teanode-faces-")
+	if err != nil {
+		return nil, fmt.Errorf("faces: a private directory for %s could not be made: %w", programName, err)
+	}
+	defer func() { _ = os.RemoveAll(homeDirectory) }()
 	output := &boundedBuffer{maximumBytes: maximumOutput}
 	command := exec.CommandContext(ctx, self.programPath, "--detector", self.detectorPath, "--recognizer", self.recognizerPath)
+	command.Dir = homeDirectory
+	command.Env = picture.ProgramEnvironment(homeDirectory)
 	command.Stdin = bytes.NewReader(picture.EncodePPM(source))
 	command.Stdout = output
 	messages := &lastWords{maximumBytes: 4 << 10}

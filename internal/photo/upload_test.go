@@ -296,21 +296,71 @@ func TestADeclaredDigestThatDoesNotMatchIsRefused(test *testing.T) {
 	fixture.expect(status, http.StatusNotFound)
 }
 
-func TestTheSameBytesUnderTwoNamesMakeTwoPhotosAndOneBlob(test *testing.T) {
+// A picture kept from a conversation and then backed up by a phone under its
+// own name is one photo: the second upload is recorded against the photo that
+// has those bytes, costs no room, and the name it came with finds the photo.
+func TestTheSameBytesUnderTwoNamesMakeOnePhotoAndOneBlob(test *testing.T) {
 	fixture := newFixture(test)
 	picture := smallJpeg(test, 120)
 	first := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("first-name"), picture)
 	second := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("second-name"), picture)
 	fixture.expect(first, http.StatusCreated)
 	fixture.expect(second, http.StatusCreated)
-	if first.header.Get("X-Photo-ID") == second.header.Get("X-Photo-ID") || fixture.count("photo") != "2" || fixture.count("photo_blob") != "1" || fixture.count("photo_file") != "2" {
-		test.Fatalf("photos %s blobs %s files %s", fixture.count("photo"), fixture.count("photo_blob"), fixture.count("photo_file"))
+	if first.header.Get("X-Photo-ID") != second.header.Get("X-Photo-ID") || fixture.count("photo") != "1" || fixture.count("photo_blob") != "1" || fixture.count("photo_file") != "1" {
+		test.Fatalf("photos %s blobs %s files %s, answered %s and %s", fixture.count("photo"), fixture.count("photo_blob"), fixture.count("photo_file"),
+			first.header.Get("X-Photo-ID"), second.header.Get("X-Photo-ID"))
 	}
-	// The same name again is the same photo.
-	again := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("first-name"), picture)
-	fixture.expect(again, http.StatusCreated)
-	if again.header.Get("X-Photo-ID") != first.header.Get("X-Photo-ID") || fixture.count("photo") != "2" {
-		test.Fatal("the same name made another photo")
+	// Either name finds the photo, and FindPhotos says which name it found it by.
+	for _, name := range []string{"first-name", "second-name"} {
+		found := fixture.photoByClientId(name)
+		if found == nil || found.ID != first.header.Get("X-Photo-ID") || found.ClientPhotoID != name {
+			test.Fatalf("%s found %+v", name, found)
+		}
+	}
+	// The same name again is the same photo, whichever name it is.
+	for _, name := range []string{"first-name", "second-name"} {
+		again := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders(name), picture)
+		fixture.expect(again, http.StatusCreated)
+		if again.header.Get("X-Photo-ID") != first.header.Get("X-Photo-ID") || fixture.count("photo") != "1" {
+			test.Fatalf("%s made another photo", name)
+		}
+	}
+	// Other bytes under a new name are another photo, and a file of the other
+	// roles is not matched by its bytes.
+	other := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("third-name"), smallJpeg(test, 121))
+	fixture.expect(other, http.StatusCreated)
+	edited := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("edited-name", "X-Photo-File-Role", "edited"), picture)
+	fixture.expect(edited, http.StatusCreated)
+	if other.header.Get("X-Photo-ID") == first.header.Get("X-Photo-ID") || edited.header.Get("X-Photo-ID") == first.header.Get("X-Photo-ID") || fixture.count("photo") != "3" {
+		test.Fatalf("photos %s", fixture.count("photo"))
+	}
+	// The second name's other file joins the photo too.
+	video := fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": "video/quicktime", "X-Photo-Client-ID": "second-name", "X-Photo-File-Role": "liveVideo"}, randomBytes(2000, 31))
+	fixture.expect(video, http.StatusCreated)
+	if video.header.Get("X-Photo-ID") != first.header.Get("X-Photo-ID") || len(fixture.photoFiles(first.header.Get("X-Photo-ID"))) != 2 {
+		test.Fatalf("the live video made %s", video.header.Get("X-Photo-ID"))
+	}
+}
+
+// The same picture found in the trash is recorded against that photo, and the
+// photo stays where the person put it.
+func TestTheSameBytesUnderANewNameFindTheTrashedPhoto(test *testing.T) {
+	fixture := newFixture(test)
+	picture := smallJpeg(test, 122)
+	first := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("kept-name"), picture)
+	fixture.expect(first, http.StatusCreated)
+	dbtest.RunTransactionOn(test, fixture.database, func(transaction db.Transaction) {
+		if _, err := transaction.TrashPhotos(fixture.userId, []string{first.header.Get("X-Photo-ID")}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	second := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("phone-name"), picture)
+	fixture.expect(second, http.StatusCreated)
+	if second.header.Get("X-Photo-ID") != first.header.Get("X-Photo-ID") || fixture.count("photo") != "1" {
+		test.Fatalf("photos %s", fixture.count("photo"))
+	}
+	if found := fixture.photoByClientId("phone-name"); found == nil || found.TrashedAt == nil {
+		test.Fatalf("%+v", found)
 	}
 }
 

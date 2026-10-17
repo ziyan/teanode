@@ -15,10 +15,6 @@ import (
 // named by a contact from the person's address book. The operations call the
 // ones the dashboard's People page and teanode photo people call.
 
-// maximumPeopleRowCount bounds the rows people answers with; a library of
-// ordinary people has far fewer named ones.
-const maximumPeopleRowCount = 200
-
 // maximumMergedGroupCount is how many groups person-merge puts into one.
 const maximumMergedGroupCount = client.MaximumMergedPhotoFaceGroups
 
@@ -47,18 +43,22 @@ func facePreviewOf(asked arguments) (string, bool) {
 		case asked.IsEnabled == nil:
 			return "Read whether faces are found in the photos", true
 		case *asked.IsEnabled:
-			return "Find faces in the photos", true
+			return "Start finding faces in every photo, and keep what identifies each face", true
 		}
 		return "Stop finding faces in the photos and delete every face and group found so far", true
 	}
 	return "", false
 }
 
-// faceRiskOf is how risky a people operation is. Switching faces off deletes
-// what was found, and the only way back is reading every photo again, so it is
-// destructive and asks the person; naming, merging, taking a name off, hiding and taking a face out of its
-// group only change who the groups are called and which are listed, and the
-// person can change them back.
+// faceRiskOf is how risky a people operation is. Finding faces is a privacy
+// choice either way, so both ways of changing it ask the person. Switching
+// faces on finds and keeps a face vector for every face in every photo,
+// the faces of other people among them, which is not something to start because
+// a message said to: it is granting, the class that asks unless the person has
+// allowed it. Switching faces off deletes what was found, and the only way back
+// is reading every photo again, so it is destructive. Naming, merging, taking
+// a name off, hiding and taking a face out of its group only change who the
+// groups are called and which are listed, and the person can change them back.
 func faceRiskOf(asked arguments) (tools.Risk, bool) {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
 	case "people", "person-photos":
@@ -70,7 +70,7 @@ func faceRiskOf(asked arguments) (tools.Risk, bool) {
 		case asked.IsEnabled == nil:
 			return tools.RiskRead, true
 		case *asked.IsEnabled:
-			return tools.RiskWrite, true
+			return tools.RiskGranting, true
 		}
 		return tools.RiskDestructive, true
 	}
@@ -98,20 +98,18 @@ func people(ctx context.Context, current tools.Run, asked *arguments) (*tools.Re
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]map[string]any, 0, min(len(groups), maximumPeopleRowCount))
+	rows := make([]map[string]any, 0, len(groups))
 	for _, group := range groups {
-		if len(rows) == maximumPeopleRowCount {
-			break
-		}
 		rows = append(rows, groupRow(group))
 	}
 	answer := map[string]any{
-		"people": rows,
-		"note":   "a group nobody has named is listed once it has three faces; a face group is named by a contact; list with face_group_id or contact_id gives a person's photos. A group with contact_name null is nobody yet: ask the person who it is, and name it only with a contact they choose",
+		"note": "a group nobody has named is listed once it has three faces; a face group is named by a contact; list with face_group_id or contact_id gives a person's photos. A group with contact_name null is nobody yet: ask the person who it is, and name it only with a contact they choose",
 	}
-	if len(groups) > len(rows) {
-		answer["more"] = fmt.Sprintf("%d groups are not listed", len(groups)-len(rows))
+	page, err := pageOfRows(rows, asked, answer)
+	if err != nil {
+		return nil, err
 	}
+	answer["people"] = page
 	result, err := tools.JSONResult(answer)
 	if err != nil {
 		return nil, err

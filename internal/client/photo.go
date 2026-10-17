@@ -354,6 +354,45 @@ func SetPhotoFavorite(ctx context.Context, executor Executor, photoId string, is
 	return result.UpdatePhoto, nil
 }
 
+// ParsePhotoTakenAt reads the date a person gives for when a photo was taken: an
+// RFC 3339 time with an offset (+09:00, or Z for a place on UTC). The offset is
+// kept as the offset the photo is shown at, so a time without one is refused
+// rather than read on a clock that is not where the photo was taken.
+func ParsePhotoTakenAt(text string) (time.Time, error) {
+	text = strings.TrimSpace(text)
+	takenAt, err := time.Parse(time.RFC3339, text)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("the date must be an RFC 3339 time with the offset of the place the photo was taken, such as 2025-07-12T14:30:00+09:00, not %q", text)
+	}
+	return takenAt, nil
+}
+
+// SetPhotoTakenAt corrects the date a photo was taken. The offset of takenAt is
+// the offset the photo is shown at from then on.
+func SetPhotoTakenAt(ctx context.Context, executor Executor, photoId string, takenAt time.Time) (*models.Photo, error) {
+	var result struct {
+		UpdatePhoto *models.Photo `json:"UpdatePhoto"`
+	}
+	if err := executor.Execute(ctx, DocumentUpdatePhoto, map[string]any{"photoId": photoId, "takenAt": takenAt.Format(time.RFC3339)}, &result); err != nil {
+		return nil, err
+	}
+	return result.UpdatePhoto, nil
+}
+
+// PhotoCountText is how many photos a library holds as the dashboard says it: a
+// photo is any item, so the count is of pictures, Live Photos and videos
+// together, and the videos among them are said beside it: "120 (4 videos)".
+func PhotoCountText(library *PhotoLibrary) string {
+	total := library.PhotoCount + library.VideoCount
+	switch library.VideoCount {
+	case 0:
+		return fmt.Sprint(total)
+	case 1:
+		return fmt.Sprintf("%d (1 video)", total)
+	}
+	return fmt.Sprintf("%d (%d videos)", total, library.VideoCount)
+}
+
 // TrashPhotos moves photos to the trash and says how many it moved.
 func TrashPhotos(ctx context.Context, executor Executor, photoIds []string) (int, error) {
 	var result struct {
@@ -866,6 +905,28 @@ func (self *photoUploader) awaitCompletion(ctx context.Context) (string, *photoR
 			if recovery.offsetBytes < self.upload.SizeBytes {
 				return "", recovery, nil
 			}
+			// Every byte is there and the upload is not complete: either the
+			// server is still storing the file, or its attempt to complete it
+			// failed and nothing is going to try again. The end is sent again
+			// to find out which. A server that is busy with it says so (409)
+			// and the wait goes on; one that is not completes it now, and
+			// does not leave the client waiting out the longest it could have
+			// taken.
+			outcome, err := self.requestCompletion(ctx)
+			switch {
+			case err != nil && (errors.Is(err, errPhotoUploadLost) || errors.Is(err, ErrUnauthorized) || ctx.Err() != nil):
+				return "", nil, err
+			case err != nil:
+				lastError = err
+			case outcome.statusCode == http.StatusCreated && outcome.header.Get("Upload-Complete") == "?1":
+				if photoId := outcome.header.Get("X-Photo-ID"); photoId != "" {
+					return photoId, nil, nil
+				}
+			case outcome.statusCode == http.StatusConflict || isRetryablePhotoStatus(outcome.statusCode):
+				lastError = fmt.Errorf("the server answered HTTP %d: %s", outcome.statusCode, outcome.message)
+			default:
+				return "", nil, fmt.Errorf("client: %s was refused (HTTP %d): %s", self.describe(), outcome.statusCode, outcome.message)
+			}
 		case errors.Is(err, errPhotoUploadLost), errors.Is(err, ErrUnauthorized), ctx.Err() != nil:
 			return "", nil, err
 		default:
@@ -886,6 +947,37 @@ func (self *photoUploader) awaitCompletion(ctx context.Context) (string, *photoR
 		}
 		delay = min(delay*3/2, photoCompletionLastDelay)
 	}
+}
+
+// requestCompletion sends the end of an upload whose bytes have all arrived: an
+// append with no bytes at the offset the upload is at, marked as the last. The
+// server completes the upload if nothing is, and tells a client that something
+// is (HTTP 409) to wait. A 404 is an upload the server no longer has, and a 401
+// a client that may no longer upload.
+func (self *photoUploader) requestCompletion(ctx context.Context) (*photoOutcome, error) {
+	requestContext, cancel := context.WithTimeout(ctx, photoCompletionWait)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestContext, http.MethodPatch, self.client.url+self.location, nil)
+	if err != nil {
+		return nil, err
+	}
+	if self.client.token != "" {
+		request.Header.Set("Authorization", "Bearer "+self.client.token)
+	}
+	request.Header.Set("Content-Type", "application/partial-upload")
+	request.Header.Set("Upload-Offset", strconv.FormatInt(self.upload.SizeBytes, 10))
+	request.Header.Set("Upload-Complete", "?1")
+	outcome, err := self.do(request)
+	if err != nil {
+		return nil, err
+	}
+	switch outcome.statusCode {
+	case http.StatusNotFound:
+		return nil, errPhotoUploadLost
+	case http.StatusUnauthorized:
+		return nil, fmt.Errorf("%w: %s refused the end of the upload", ErrUnauthorized, self.client.url)
+	}
+	return outcome, nil
 }
 
 // DownloadPhotoFile streams one of a photo's files to destination and checks

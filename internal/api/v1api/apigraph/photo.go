@@ -247,7 +247,8 @@ func (self *graph) requirePhotosPerson(ctx context.Context) (*api.Principal, err
 // caller may read. Whatever is not the caller's own is shown as the caller may
 // have it: no favorite mark, no uploader's name for it, and, unless the share
 // that lets the caller in includes where photos were taken
-// (isPlaceShownOfOthers), no place, and the original files stand for by the
+// (isPlaceShownOfOthers), no place, no file name, no description and none of
+// the words read in the picture, and the original files stand for by the
 // preview that carries none.
 func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string, photos []*models.Photo, isPlaceShownOfOthers bool) error {
 	photoIdsOfOwner := map[string][]string{}
@@ -294,6 +295,14 @@ func (self *graph) withFilesAndPreviews(ctx context.Context, callerUserId string
 			found.OwnerName, found.IsFavorite, found.ClientPhotoID = ownerNames[found.UserID], false, ""
 			if !isPlaceShownOfOthers {
 				found.Latitude, found.Longitude, found.PlaceName = nil, nil, ""
+				// Anything else that can name the place goes with it: the file
+				// name, which a camera or a person may have called after it,
+				// and the description and the words read in the picture, which
+				// say what is there ("the lighthouse at ...", a sign, a
+				// street). The reader's own assistant reads these too, so they
+				// are held back from it as well.
+				found.OriginalFilename = ""
+				found.PhotoDescription, found.DescriptionVisibleText, found.DescribedAt, found.IsDescriptionRequested = "", "", nil, false
 				found.PhotoFileRoles = nil
 				hasPreview := func(photoPreviewSize models.PhotoPreviewSize) bool { return madeSizes[found.ID][photoPreviewSize] }
 				if _, isAvailable := photo.SharedCopyPreviewSize(found.PhotoKind, hasPreview); isAvailable {
@@ -337,24 +346,35 @@ func photoFilter(arguments ListPhotosArguments) *db.PhotoFilter {
 	return filter
 }
 
+// ListPhotos is a page of the library. It is one of isModelBackedQuery: a
+// search reads the meaning of its words from an embedding model, which takes as
+// long as the model takes, so the words are read in a short transaction of
+// their own that ends before the model is asked, and the listing is read in
+// another after it.
 func (self *graph) ListPhotos(ctx context.Context, arguments ListPhotosArguments) ([]*models.Photo, error) {
-	principal, err := self.requirePhotosPerson(ctx)
+	filter := photoFilter(arguments)
+	searchMeaning, err := self.readPhotoSearchMeaning(ctx, filter.SearchText)
 	if err != nil {
 		return nil, err
 	}
-	filter := photoFilter(arguments)
-	filter.SearchMeaning = self.photoSearchMeaning(ctx, principal.User.ID, filter.SearchText)
-	transaction := self.transaction(ctx)
-	photos, err := transaction.ListPhotos(principal.User.ID, filter)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	isPlaceShown, err := self.isPlaceShownInAlbum(ctx, principal.User.ID, arguments.AlbumID)
-	if err != nil {
-		return nil, translateError(err)
-	}
-	if err := self.withFilesAndPreviews(ctx, principal.User.ID, photos, isPlaceShown); err != nil {
-		return nil, translateError(err)
+	filter.SearchMeaning = searchMeaning
+	var photos []*models.Photo
+	if err := self.inShortTransaction(ctx, func(ctx context.Context) error {
+		principal, err := self.requirePhotosPerson(ctx)
+		if err != nil {
+			return err
+		}
+		photos, err = self.transaction(ctx).ListPhotos(principal.User.ID, filter)
+		if err != nil {
+			return translateError(err)
+		}
+		isPlaceShown, err := self.isPlaceShownInAlbum(ctx, principal.User.ID, arguments.AlbumID)
+		if err != nil {
+			return translateError(err)
+		}
+		return translateError(self.withFilesAndPreviews(ctx, principal.User.ID, photos, isPlaceShown))
+	}); err != nil {
+		return nil, err
 	}
 	return photos, nil
 }
@@ -373,25 +393,45 @@ func (self *graph) isPlaceShownInAlbum(ctx context.Context, userId, photoAlbumId
 	return access.IsLocationIncluded, nil
 }
 
-// photoSearchMeaning is the words of a search as a vector, for finding
-// described photos by what they mean. Nil, and the search by words alone,
-// when the person has no assistant on or the server no embedding model.
+// readPhotoSearchMeaning is the words of a search as a vector, for finding
+// described photos by what they mean. Nil, and the search by words alone, when
+// the person has no assistant on or the server no embedding model.
+//
+// Who is asking and their assistant are read in a short transaction, which is
+// over before the model is called: the model is not asked with a database
+// connection held. A caller that is not allowed a photo library is refused here
+// as it is by the listing.
 //
 // A page of a search asks for the listing and the count together, with the
 // same words, so what the model answered is kept for a few seconds and the
 // second does not call it again.
-func (self *graph) photoSearchMeaning(ctx context.Context, userId, searchText string) *db.PhotoSearchMeaning {
-	worker := self.agentWorker()
-	if worker == nil || strings.TrimSpace(searchText) == "" {
-		return nil
-	}
-	return self.photoSearchMeanings.read(userId, strings.TrimSpace(searchText), func() *db.PhotoSearchMeaning {
-		found, err := self.transaction(ctx).GetAgentByUser(userId)
-		if err != nil || !found.Active() {
+func (self *graph) readPhotoSearchMeaning(ctx context.Context, searchText string) (*db.PhotoSearchMeaning, error) {
+	var userId string
+	var assistant *models.Agent
+	searchText = strings.TrimSpace(searchText)
+	if err := self.inShortTransaction(ctx, func(ctx context.Context) error {
+		principal, err := self.requirePhotosPerson(ctx)
+		if err != nil {
+			return err
+		}
+		userId = principal.User.ID
+		if self.agentWorker() == nil || searchText == "" {
 			return nil
 		}
-		return worker.EmbedPhotoSearch(ctx, found, searchText)
-	})
+		if found, err := self.transaction(ctx).GetAgentByUser(userId); err == nil && found.Active() {
+			assistant = found
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if assistant == nil {
+		return nil, nil
+	}
+	worker := self.agentWorker()
+	return self.photoSearchMeanings.read(userId, searchText, func() *db.PhotoSearchMeaning {
+		return worker.EmbedPhotoSearch(ctx, assistant, searchText)
+	}), nil
 }
 
 // photoSearchMeaningLifetime is how long the reading of a search's words is
@@ -450,17 +490,28 @@ func (self *photoSearchMeaningCache) read(userId, searchText string, embed func(
 }
 
 // CountPhotos is how many photos the filters of a listing keep. The paging
-// arguments are ignored: it is the size of the whole listing.
+// arguments are ignored: it is the size of the whole listing. It reads in
+// phases like ListPhotos.
 func (self *graph) CountPhotos(ctx context.Context, arguments ListPhotosArguments) (int, error) {
-	principal, err := self.requirePhotosPerson(ctx)
+	filter := photoFilter(arguments)
+	filter.BeforePhotoID, filter.Offset = "", 0
+	searchMeaning, err := self.readPhotoSearchMeaning(ctx, filter.SearchText)
 	if err != nil {
 		return 0, err
 	}
-	filter := photoFilter(arguments)
-	filter.BeforePhotoID, filter.Offset = "", 0
-	filter.SearchMeaning = self.photoSearchMeaning(ctx, principal.User.ID, filter.SearchText)
-	count, err := self.transaction(ctx).CountPhotos(principal.User.ID, filter)
-	return count, translateError(err)
+	filter.SearchMeaning = searchMeaning
+	var count int
+	if err := self.inShortTransaction(ctx, func(ctx context.Context) error {
+		principal, err := self.requirePhotosPerson(ctx)
+		if err != nil {
+			return err
+		}
+		count, err = self.transaction(ctx).CountPhotos(principal.User.ID, filter)
+		return translateError(err)
+	}); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // CountUndescribedPhotos is how many photos the filters keep that no model
@@ -509,7 +560,7 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 			file.FileURL = api.PhotoFilePath(file.PhotoID, string(file.PhotoFileRole))
 		}
 	} else {
-		files = sharedCopyFiles(found, files, previews)
+		files = sharedCopyFiles(found, previews)
 	}
 	if err := self.withFilesAndPreviews(ctx, principal.User.ID, []*models.Photo{found}, access.IsLocationIncluded); err != nil {
 		return nil, translateError(err)
@@ -529,7 +580,7 @@ func (self *graph) ReadPhoto(ctx context.Context, arguments PhotoArguments) (*Ph
 // sharedCopyFiles is the one file a reader who may not have the originals is
 // offered: the preview that stands for the original, under the name of a
 // picture or a video, with none of the original's bytes or digest.
-func sharedCopyFiles(found *models.Photo, files []*models.PhotoFile, previews []*models.PhotoPreview) []*models.PhotoFile {
+func sharedCopyFiles(found *models.Photo, previews []*models.PhotoPreview) []*models.PhotoFile {
 	photoPreviewSize, isAvailable := photo.SharedCopyPreviewSize(found.PhotoKind, photo.HasPreviewIn(previews))
 	if !isAvailable {
 		return []*models.PhotoFile{}
@@ -538,7 +589,7 @@ func sharedCopyFiles(found *models.Photo, files []*models.PhotoFile, previews []
 		if preview.PhotoPreviewSize == photoPreviewSize {
 			return []*models.PhotoFile{{
 				PhotoID: found.ID, PhotoFileRole: models.PhotoFileRoleOriginal, ContentType: preview.ContentType,
-				FileSizeBytes: preview.PreviewSizeBytes, OriginalFilename: photo.SharedCopyFilename(found, files, photoPreviewSize),
+				FileSizeBytes: preview.PreviewSizeBytes, OriginalFilename: photo.SharedCopyFilename(found.ID, photoPreviewSize),
 				CreatedAt: preview.CreatedAt, FileURL: api.PhotoFilePath(found.ID, string(models.PhotoFileRoleOriginal)),
 			}}
 		}
@@ -864,7 +915,10 @@ func (self *graph) SavePhotoFromAttachment(ctx context.Context, arguments SavePh
 		if errors.As(err, &tooLarge) || errors.As(err, &overQuota) || errors.Is(err, photo.ErrNotAPhoto) || errors.Is(err, photo.ErrEmptyFile) {
 			return nil, fmt.Errorf("%w: %s", api.ErrInvalidArguments, err)
 		}
-		return nil, translateError(err)
+		// What went wrong inside (the store, the database, a path) is the
+		// server's to log, not the caller's to read.
+		log.Errorf("cannot keep attachment %s as a photo: %s", arguments.AgentAttachmentID, err)
+		return nil, errors.New("the file could not be saved as a photo; try again in a moment")
 	}
 	return saved, nil
 }

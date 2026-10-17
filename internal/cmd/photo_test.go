@@ -54,9 +54,10 @@ func TestPhotoParity(test *testing.T) {
 		// For a player that cannot send the person's sign-in; neither the
 		// command line nor the agent plays anything.
 		"PhotoPlaybackAddress": {client.DocumentPhotoPlaybackAddress, nil, nil},
-		"UpdatePhoto":          {client.DocumentUpdatePhoto, []string{"favorite"}, []string{"favorite"}},
-		"TrashPhotos":          {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
-		"RestorePhotos":        {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
+		// Marking a favorite and correcting a date are both an update of the photo.
+		"UpdatePhoto":   {client.DocumentUpdatePhoto, []string{"favorite", "date"}, []string{"favorite", "set-date"}},
+		"TrashPhotos":   {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
+		"RestorePhotos": {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
 		// Making the previews of photos again: a person whose photo failed, or
 		// looks wrong, and the agent they ask to do it.
 		"RetryPhotoProcessing": {client.DocumentRetryPhotoProcessing, []string{"retry"}, []string{"retry"}},
@@ -70,9 +71,10 @@ func TestPhotoParity(test *testing.T) {
 		// Asking for a description is a person looking at one photo, or the
 		// agent looking at some.
 		"DescribePhoto": {client.DocumentDescribePhoto, []string{"describe"}, []string{"describe", "look"}},
-		// The command line sends a file itself, with upload; the agent saves
-		// a file of a conversation, a message or the computer.
-		"SavePhotoFromAttachment": {client.DocumentSavePhotoFromAttachment, nil, []string{"save"}},
+		// The command line sends a file itself, with upload, and keeps a file of
+		// a conversation with save --attachment; the agent saves a file of a
+		// conversation, a message or the computer.
+		"SavePhotoFromAttachment": {client.DocumentSavePhotoFromAttachment, []string{"save"}, []string{"save"}},
 
 		// Albums. The command line's are subcommands of album.
 		"ListPhotoAlbums":       {client.DocumentListPhotoAlbums, []string{"album list"}, []string{"album-list"}},
@@ -328,6 +330,10 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbumShares":[{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"view","isLocationIncluded":false},{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true}]}}`))
 			case strings.Contains(asked.Query, "RemovePhotoAlbumShare("):
 				_, _ = response.Write([]byte(`{"data":{"RemovePhotoAlbumShare":true}}`))
+			case strings.Contains(asked.Query, "UpdatePhoto("):
+				_, _ = response.Write([]byte(`{"data":{"UpdatePhoto":{"id":"` + asked.Variables["photoId"].(string) + `","photoKind":"picture","takenAt":"2025-07-12T05:30:00Z","takenAtOffsetMinutes":540}}}`))
+			case strings.Contains(asked.Query, "SavePhotoFromAttachment("):
+				_, _ = response.Write([]byte(`{"data":{"SavePhotoFromAttachment":{"id":"photo-kept","photoKind":"picture","isOwnedByCaller":true}}}`))
 			case strings.Contains(asked.Query, "SavePhotoToLibrary("):
 				_, _ = response.Write([]byte(`{"data":{"SavePhotoToLibrary":{"id":"photo-mine","photoKind":"picture","isOwnedByCaller":true}}}`))
 			case strings.Contains(asked.Query, "ListPhotoAlbums") && self.albumsWithOthers:
@@ -585,7 +591,7 @@ func TestListSendsItsFiltersAndPrintsJSONOrATable(test *testing.T) {
 func TestTrashNamesThePhotosAndDeleteAsksFirst(test *testing.T) {
 	server := newPhotoServer(test)
 	output, _, err := server.run(test, "trash", "photo-1", "photo-2")
-	if err != nil || !strings.Contains(output, "moved to the trash 2 of 2 photos") {
+	if err != nil || !strings.Contains(output, "moved to the Trash 2 of 2 photos") {
 		test.Fatalf("%v: %s", err, output)
 	}
 	if got := server.variables[len(server.variables)-1]["photoIds"]; !reflect.DeepEqual(got, []any{"photo-1", "photo-2"}) {
@@ -658,12 +664,17 @@ func TestTheLibraryCommandUsesTheDashboardsWords(test *testing.T) {
 	if err != nil {
 		test.Fatal(err)
 	}
-	for _, want := range []string{"space used", "1.5 MB · No limit", "largest file", "8 GB", "in the trash"} {
+	for _, want := range []string{"space used", "1.5 MB · No limit", "largest file", "8 GB", "in the Trash", "Trash kept for", "7 (2 videos)"} {
 		if !strings.Contains(output, want) {
 			test.Errorf("the library output lacks %q:\n%s", want, output)
 		}
 	}
-	for _, unwanted := range []string{"room", "MiB", "GiB"} {
+	// A photo is any item, so the videos are among the photos and are said beside
+	// them, not as a second count to add up.
+	if strings.Contains(output, "videos  ") || strings.Contains(output, "\nvideos") {
+		test.Errorf("the videos are listed apart from the photos:\n%s", output)
+	}
+	for _, unwanted := range []string{"room", "MiB", "GiB", "in the trash"} {
 		if strings.Contains(output, unwanted) {
 			test.Errorf("the library output says %q, which the dashboard does not:\n%s", unwanted, output)
 		}
@@ -672,5 +683,88 @@ func TestTheLibraryCommandUsesTheDashboardsWords(test *testing.T) {
 	_, list, err := server.run(test, "list")
 	if err != nil || !strings.Contains(list, "2025-03-04 11:30") || !strings.Contains(list, "date") {
 		test.Fatalf("%v\n%s", err, list)
+	}
+}
+
+// A date is corrected with an RFC 3339 time whose offset is the place's, which is
+// sent as it was given: the offset is the one the photo is shown at.
+func TestDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *testing.T) {
+	server := newPhotoServer(test)
+	output, _, err := server.run(test, "date", "photo-1", "2025-07-12T14:30:00+09:00")
+	if err != nil || !strings.Contains(output, "photo-1 was taken 2025-07-12 14:30 (UTC+09:00)") {
+		test.Fatalf("%v %q", err, output)
+	}
+	sent := server.variables[len(server.variables)-1]
+	if sent["photoId"] != "photo-1" || sent["takenAt"] != "2025-07-12T14:30:00+09:00" || sent["isFavorite"] != nil {
+		test.Fatalf("sent %v", sent)
+	}
+	count := len(server.documents)
+	for _, arguments := range [][]string{
+		{"date", "photo-1", "2025-07-12T14:30:00"}, {"date", "photo-1", "2025-07-12"}, {"date", "photo-1", "yesterday"}, {"date", "photo-1"}, {"date", "photo-1", "2025-07-12T14:30:00Z", "extra"},
+	} {
+		if _, _, err := server.run(test, arguments...); err == nil {
+			test.Errorf("%v was accepted", arguments)
+		}
+	}
+	if len(server.documents) != count {
+		test.Fatal("a date that was refused reached the server")
+	}
+	if _, _, err := server.run(test, "date", "photo-1", "2025-07-12T05:30:00Z"); err != nil {
+		test.Fatalf("a time on UTC: %v", err)
+	}
+}
+
+// save keeps a photo of a shared album by its id, or a file of a conversation by
+// its attachment, and says which it needs when it is given neither or both.
+func TestSaveKeepsAPhotoOfASharedAlbumOrAFileOfAConversation(test *testing.T) {
+	server := newPhotoServer(test)
+	output, _, err := server.run(test, "save", "photo-shared")
+	if err != nil || !strings.Contains(output, "saved to your library as photo-mine") {
+		test.Fatalf("%v %q", err, output)
+	}
+	if sent := server.variables[len(server.variables)-1]; sent["photoId"] != "photo-shared" || !strings.Contains(server.documents[len(server.documents)-1], "SavePhotoToLibrary(") {
+		test.Fatalf("sent %v", sent)
+	}
+	output, _, err = server.run(test, "save", "--attachment", "attachment-one")
+	if err != nil || !strings.Contains(output, "saved to your library as photo-kept") {
+		test.Fatalf("%v %q", err, output)
+	}
+	if sent := server.variables[len(server.variables)-1]; sent["agentAttachmentId"] != "attachment-one" || !strings.Contains(server.documents[len(server.documents)-1], "SavePhotoFromAttachment(") {
+		test.Fatalf("sent %v", sent)
+	}
+	count := len(server.documents)
+	for _, arguments := range [][]string{{"save"}, {"save", "photo-shared", "--attachment", "attachment-one"}, {"save", "one", "two"}} {
+		if _, _, err := server.run(test, arguments...); err == nil || !strings.Contains(err.Error(), "--attachment") {
+			test.Errorf("%v: %v", arguments, err)
+		}
+	}
+	if len(server.documents) != count {
+		test.Fatal("a call that was refused reached the server")
+	}
+	// The help says which is which.
+	for _, subcommand := range NewPhotoCommand().Commands {
+		if subcommand.Name == "save" && (!strings.Contains(subcommand.Usage, "shared album") || !strings.Contains(subcommand.Usage, "--attachment")) {
+			test.Errorf("the help of save: %q", subcommand.Usage)
+		}
+	}
+}
+
+func TestListNearAPointSendsTheThreeNumbers(test *testing.T) {
+	server := newPhotoServer(test)
+	if _, _, err := server.run(test, "list", "--near", "51.5,-0.12,2"); err != nil {
+		test.Fatal(err)
+	}
+	sent := server.variables[len(server.variables)-1]
+	if sent["nearLatitude"] != 51.5 || sent["nearLongitude"] != -0.12 || sent["nearDistanceKilometers"] != float64(2) {
+		test.Fatalf("sent %v", sent)
+	}
+	count := len(server.documents)
+	for _, near := range []string{"51.5,-0.12", "51.5,-0.12,2,3", "north,-0.12,2", "91,0,2", "0,181,2", "0,0,0", "0,0,-1", "nan,0,1", "0,0,inf", ","} {
+		if _, _, err := server.run(test, "list", "--near", near); err == nil {
+			test.Errorf("--near %q was accepted", near)
+		}
+	}
+	if len(server.documents) != count {
+		test.Fatal("a point that was refused reached the server")
 	}
 }

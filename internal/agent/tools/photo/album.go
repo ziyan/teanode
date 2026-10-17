@@ -56,7 +56,7 @@ func albumIdOf(asked *arguments, operation string) (string, error) {
 	return albumId, nil
 }
 
-func albumList(ctx context.Context, current tools.Run) (*tools.Result, error) {
+func albumList(ctx context.Context, current tools.Run, asked *arguments) (*tools.Result, error) {
 	albums, err := client.ListPhotoAlbums(ctx, current.Operations())
 	if err != nil {
 		return nil, err
@@ -66,7 +66,13 @@ func albumList(ctx context.Context, current tools.Run) (*tools.Result, error) {
 	for _, album := range albums {
 		rows = append(rows, albumRow(album, location))
 	}
-	result, err := tools.JSONResult(map[string]any{"albums": rows, "note": "list with album_id gives an album's photos, in an album shared with the person too; an album with an owner_name or circle_name is not the person's own"})
+	answer := map[string]any{"note": "album-read with album_id (or list with album_id) gives an album's photos, in an album shared with the person too; an album with an owner_name or circle_name is not the person's own"}
+	page, err := pageOfRows(rows, asked, answer)
+	if err != nil {
+		return nil, err
+	}
+	answer["albums"] = page
+	result, err := tools.JSONResult(answer)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +91,21 @@ func albumRead(ctx context.Context, current tools.Run, asked *arguments) (*tools
 	}
 	details := albumRow(album, tools.Location(current.Owner()))
 	details["created_at"] = album.CreatedAt.In(tools.Location(current.Owner())).Format("2006-01-02 15:04")
-	details["note"] = "list with album_id gives the album's photos; photos in the Trash are not counted until they are restored"
+	details["note"] = "the album's photos follow, a page at a time; photos in the Trash are not counted until they are restored"
+	// The album's photos are the list the answer pages: the rows list gives for
+	// album_id, from offset, and next_offset when there are more.
+	listed := *asked
+	listed.AlbumID = albumId
+	filter, err := filterOf(&listed, tools.Location(current.Owner()))
+	if err != nil {
+		return nil, err
+	}
+	photos, err := client.ListPhotos(ctx, current.Operations(), filter)
+	if err != nil {
+		return nil, err
+	}
+	details["photos"] = listedRows(photos)
+	pagePhotos(ctx, current.Operations(), filter, len(photos), details)
 	result, err := tools.JSONResult(details)
 	if err != nil {
 		return nil, err
@@ -363,7 +383,13 @@ func albumShares(ctx context.Context, executor client.Executor, asked *arguments
 		rows = append(rows, row)
 	}
 	// Names are what other people called themselves.
-	result, err := tools.JSONResult(map[string]any{"shares": rows})
+	answer := map[string]any{}
+	page, err := pageOfRows(rows, asked, answer)
+	if err != nil {
+		return nil, err
+	}
+	answer["shares"] = page
+	result, err := tools.JSONResult(answer)
 	if err != nil {
 		return nil, err
 	}

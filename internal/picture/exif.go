@@ -483,9 +483,23 @@ func (self *tiffBlock) signedDegrees(entry tiffEntry, reference, positive, negat
 	return degrees, true
 }
 
+// earliestPlausibleYear is the first year a date a file states for itself is
+// believed. Cameras whose clock was never set write the year their clock
+// starts at (1970, 1980, 2000 and the like), and a date from before there were
+// digital cameras is a clock that was never set.
+const earliestPlausibleYear = 1990
+
+// isPlausibleDate says whether a date a file states for itself can be believed:
+// it is not from before earliestPlausibleYear, and not more than a day ahead of
+// now, which is as far as a time zone and a camera a little fast can put it.
+func isPlausibleDate(moment time.Time) bool {
+	return moment.Year() >= earliestPlausibleYear && !moment.After(time.Now().Add(24*time.Hour))
+}
+
 // parseExifDate reads "2006:01:02 15:04:05" and an optional "+02:00". With an
 // offset the moment is exact. Without one all there is is a wall clock
-// reading, returned as if it were UTC, with no offset.
+// reading, returned as if it were UTC, with no offset. A date that
+// isPlausibleDate refuses is no date.
 func parseExifDate(dateText, offsetText string) (*time.Time, *int) {
 	if dateText == "" {
 		return nil, nil
@@ -499,9 +513,15 @@ func parseExifDate(dateText, offsetText string) (*time.Time, *int) {
 	}
 	offsetMinutes, hasOffset := parseExifOffset(offsetText)
 	if !hasOffset {
+		if !isPlausibleDate(wallClock) {
+			return nil, nil
+		}
 		return &wallClock, nil
 	}
 	moment := time.Date(wallClock.Year(), wallClock.Month(), wallClock.Day(), wallClock.Hour(), wallClock.Minute(), wallClock.Second(), 0, time.FixedZone("", offsetMinutes*60))
+	if !isPlausibleDate(moment) {
+		return nil, nil
+	}
 	return &moment, &offsetMinutes
 }
 

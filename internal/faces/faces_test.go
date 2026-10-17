@@ -122,6 +122,38 @@ func TestReadFacesParsesWhatTheProgramPrints(t *testing.T) {
 	}
 }
 
+// The program opens a picture nobody has checked, so it does not get the
+// server's secrets with it.
+func TestReadFacesRunsTheProgramWithAMinimalEnvironment(t *testing.T) {
+	program := installFakeProgram(t, `env > "$(dirname "$0")/environment"; pwd > "$(dirname "$0")/working"; cat "$(dirname "$0")/output.json"`)
+	program.printing(t, `{"widthPixels":8,"heightPixels":8,"faces":[]}`)
+	t.Setenv("TEANODE_DATABASE_PASSWORD", "a-secret-nobody-else-should-see")
+	reader, err := NewReader()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.ReadFaces(context.Background(), image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(program.file(t, "environment"))), "\n") {
+		name, value, _ := strings.Cut(line, "=")
+		names[name] = value
+	}
+	for name := range names {
+		if name != "PATH" && name != "LANG" && name != "HOME" && name != "PWD" && name != "SHLVL" && name != "_" {
+			t.Errorf("the program was given %s", name)
+		}
+	}
+	if names["PATH"] == "" || names["HOME"] == "" || strings.Contains(string(program.file(t, "environment")), "a-secret") {
+		t.Errorf("environment = %v", names)
+	}
+	// The home is a directory of ours that is gone once the run is.
+	if _, err := os.Stat(names["HOME"]); err == nil {
+		t.Errorf("%s was left behind", names["HOME"])
+	}
+}
+
 func TestReadFacesWithNoFacesFindsNone(t *testing.T) {
 	program := installFakeProgram(t, `cat "$(dirname "$0")/output.json"`)
 	program.printing(t, `{"widthPixels":8,"heightPixels":8,"faces":[]}`)

@@ -19,7 +19,11 @@ the blob store and nothing about HTTP routes or GraphQL.
 scaling, EXIF from JPEG and HEIC, HEIC through libheif's `heif-dec`, and video
 through `ffprobe` and `ffmpeg`. `internal/place` names the city a photo was
 taken in from a table bundled with the server. `internal/faces` runs
-`teanode-faces`, the C++ face reader in `tools/faces/`.
+`teanode-faces`, the C++ face reader in `tools/faces/`. Every program they run
+(`ffmpeg`, `ffprobe`, `heif-dec`, `teanode-faces`) is given a minimal
+environment, `PATH`, `LANG` and a `HOME` that is a private directory of ours
+(`picture.ProgramEnvironment`), and not the server's: it holds the server's
+secret and database address, and the programs open files nobody has checked.
 
 `internal/db/database_photo*.go` keeps the rows, migrations 0220 to 0224 make
 them, and `internal/api/v1api/apigraph/photo*.go` is what every client talks
@@ -52,6 +56,8 @@ Everything known about a photo is a row; the bytes are blobs in the store
 - `photo_preview` is a smaller copy made for showing: `small` (400 pixels on
   the long side), `large` (2048) and, for a video, `video` (H.264, 1280).
   Previews can always be made again; nothing depends on them being kept.
+- `photo_client_alias` is another name an uploader has for a photo that is
+  there already (see Uploads).
 - `photo_upload` and `photo_upload_part` are a file on its way in.
 - `photo_album` and `photo_album_item`; `photo_album_share` (who an album is
   shared with); `photo_vector` (a description's embedding); `photo_face` and
@@ -77,8 +83,34 @@ that are durable and a dropped connection costs at most the part in flight.
 Completing reads the parts back, checks them against their receipts and the
 declared digest, stores the file under its SHA-256 (in parts on S3 for files
 over 256 MiB), and records it; the blob's row is committed right after its
-bytes, so bytes whose recording then fails are reclaimed by cleanup. The
-quota counts what is stored and what is still arriving.
+bytes, so bytes whose recording then fails are reclaimed by cleanup. In the same
+transaction that records the file, after it, one byte of the blob is read back
+to see it is in the store: cleanup deletes a blob's object before it drops the
+row, so a file recorded against an object cleanup had just deleted would name
+nothing; the step is then done again with the bytes stored. The quota counts
+what is stored and what is still arriving, where "arriving" is the uploads a
+part arrived in during the last day (`openUploadQuotaWindow`): an upload that
+sat idle for longer does not hold room for the week cleanup keeps it. A
+refusal that the account's other uploads cause, as opposed to this file's own
+size, answers 413 and leaves the upload resumable (`QuotaError.IsCausedByOtherUploads`);
+a refusal its own bytes cause ends it.
+
+A client whose last part got no answer asks where the upload is (`HEAD`). When
+every byte is there and the upload is not complete, either the server is still
+completing it or its attempt failed and nothing will try again, and an append
+with no bytes, `Upload-Offset` at the file's end and `Upload-Complete: ?1`,
+completes it (the client sends it on every poll); a server that is busy with
+the upload answers 409 and the client waits.
+
+The same picture can reach the library under two names: kept from a
+conversation, which names it by its digest, and then backed up by a phone
+under its own. When the first file of an upload (role `original`) completes
+under a name the person has no photo for, and the person already has a photo, in
+the library or the Trash, whose `original` has the same SHA-256, the upload is
+recorded against that photo, which costs no room, and the name goes into
+`photo_client_alias` so that `FindPhotos` finds the photo by either name (with
+the name that was asked as its `clientPhotoId`). The other roles of the
+upload's name join that photo too. The photo's own name does not change.
 
 A phone signs these requests with a device password that grants photos and
 nothing else (`sync_credential.has_photos_access`), because a background
@@ -99,15 +131,54 @@ through `heif-dec`, because ffmpeg 7.1 decodes only one tile of an iPhone
 photo. Decoded pixels in flight are bounded, a panic is a failure of that
 photo rather than of the server, and a failure waits longer each time (1, 5,
 15, 60 minutes) up to five attempts; a store or database failure does not
-count against the photo. `RetryPhotoProcessing` starts a failed photo again.
+count against the photo, and waits 1, 5, 15 and then 60 minutes by how many
+such failures there were in a row (`processing_outage_count`), so a missing
+program or a full disk is not retried every minute.
+`RetryPhotoProcessing` starts a failed photo again.
+
+A claim is known by the time it was made (`processing_claimed_at`, which each
+renewal moves), and what a worker records at the end, ready or failed, is
+recorded only while the photo is still claimed at that time. If the claim was
+lost, because it ran out and another instance took the photo or because the
+photo's file was replaced, nothing is recorded; when the photo's file is a
+different one from the file the worker read, the previews the worker wrote are
+deleted, since they are of a file the photo no longer has. A worker that is
+stopped (the server shuts down) gives the attempt back and clears the claim,
+in a transaction that does not end with the request, so the next run takes the
+photo at once and a restart does not cost it an attempt or ten minutes.
+
+A HEIC says how large its picture is in its boxes (`ispe` of the primary item),
+which `picture.ReadHeifSize` reads and bounds (64 megapixels, 65535 on a side)
+before `heif-dec` is run, and the pixels it will hold are taken from the same
+budget decoded JPEGs use for as long as it runs. A PNG or GIF with a side over
+65535 pixels is refused from its header too: a strip a billion pixels wide is
+under the pixel limit and would still make the scaler allocate a row of
+gigabytes. The size a JPEG's EXIF block gives is swapped for an orientation of
+5 to 8; a HEIC's is not, since `heif-dec` applies its own rotation.
+
+A file is copied to the work directory (a video, or a picture too large to
+decode whose date is read) only if the disk has room for twice its size and a
+reserve of 1 GiB after the room promised to the copies already being worked on
+(`workSpace`). A video is not claimed at all while `ffmpeg` or `ffprobe` is
+missing (the claim excludes videos, and the programs are looked for again every
+five minutes), and the programs are looked for before the file is copied, so a
+server without them does not copy every video once a minute.
+
+A date a file states for itself is believed only if it is from 1990 on and not
+more than a day ahead of now (`picture.isPlausibleDate`), for EXIF and for a
+video's tags alike: a camera whose clock was never set writes the year it
+starts at.
 
 ## Finding photos
 
 `ListPhotos` filters by date, kind, favorites, the trash, an album, a person
 or a contact, and a point and a distance, and searches: full-text over the
 place, file name, camera, album titles, the names of the people in it, the
-description and the words read in the picture, and, when an embedding model
-is configured, by meaning over the descriptions.
+description and the text in the picture, and, when an embedding model
+is configured, by meaning over the descriptions. A search with words embeds
+them first, in a transaction of its own that is over before the model is asked
+(`ListPhotos` and `CountPhotos` are in `isModelBackedQuery`, and read in phases
+as recall does), so a slow model does not hold a database connection.
 
 A photo is described only when somebody works with it: the agent looks at it,
 or a person asks in the viewer. The agent's `describe_photo` job asks the
@@ -190,8 +261,19 @@ What a reader who is not the photo's owner is given:
 - the same listing, search and count as the owner, but a listing of an album
   gives a place away by no other means either: the distance filter and the
   words of a place find only the reader's own photos in it;
-- the faces as the owner's, with the names the owner gave them;
-- the description, which is words about the picture.
+- the faces as the owner's, with the names the owner gave them; a share dialog
+  says so, since the names are the owner's words and are given with the photo
+  whether or not places are;
+- no description and no text in the picture, no file name (the photo's own, and
+  its files': a file is named `photo-` and the photo's id, and so is the copy the
+  reader keeps), and no `describedAt`, so the reader's own assistant, which reads
+  through the same operations, is told none either. These are held back as the
+  place is, because a description says what is there ("the lighthouse at ...") and a
+  file is often named for where it was taken. The search document a reader
+  searches is only the camera, the names of the people and the title of the
+  album being listed: not the place, the description, the file name or the titles
+  of the other albums the photo is in, which include the owner's own that are
+  not shared.
 
 `SavePhotoToLibrary` makes a reader a photo of their own. Where the share
 includes places it is made over the same blob (the owner's `photo_file` rows
@@ -224,6 +306,16 @@ The agent's tool shows the albums that are not the person's with their owner
 and level (`album-list`), and reads them where they are: `list` and `look`
 with the album's `album_id`, each photo marked with its owner. It copies
 nothing into the person's library unless they ask (`save-shared`).
+Every operation of the tool that answers a list (`list`, `album-list`,
+`album-read`, which gives the album's photos, `people`, `person-photos` and
+`album-shares`) gives a page at a time: `page_size` and `offset` in, and when
+there is more `next_offset` out (with the count, `matching_photo_count` for photos,
+`total_count` for the rest), as the mail and memory tools do. `library` gives
+`total_count` for the photos, videos among them, and `video_count` for the
+videos in it. `set-date` (a write) corrects the date a photo was taken, from an
+RFC 3339 time with an offset, as `teanode photo date` and the viewer's change of
+date do. Turning faces on is of the risk class granting and turning them off is
+destructive: finding faces is a privacy choice either way, so both ask.
 `album-share` and `album-unshare` are of the risk class granting, as the
 calendar's share is, so they ask the person unless they allowed it, and the
 card names the album and the people. `look` does not queue a description of
@@ -251,3 +343,18 @@ in the trash past `photos.trashRetention` (and those deleted forever, which
 are only marked in the request and deleted here in batches), blobs no file
 refers to an hour after they became unreferenced, and face groups left
 empty.
+
+A blob is found by `photo_blob.unreferenced_since`, which a trigger on
+`photo_file` keeps (cleared when a file names the blob, set when the last
+one stops, whatever stops it: a replaced file, a deleted photo, a deleted
+account), through a partial index, so a pass does not look at every blob. It is
+deleted in three steps: marked (`deleting_at`) in a transaction that commits,
+which is what makes a file arriving with the same bytes store them again;
+the object deleted, outside any transaction; and the row dropped by a second
+transaction that checks again that no file names it and that the mark is still
+there. A blob whose object cannot be deleted is logged and passed over, and the
+ones behind it go on.
+
+Deleting an account lists its objects (previews and upload parts) while its
+rows say what they are, deletes the account, and deletes the objects after the
+transaction commits, so an account whose deletion fails keeps its previews.

@@ -126,9 +126,10 @@ func TestASharedAlbumIsReadWithoutPlacesUntilTheShareIncludesThem(test *testing.
 			test.Fatalf("%+v %v", view, err)
 		}
 		// What the reader may download is one file, the large preview, named
-		// as a picture and with none of the original's digest.
+		// as a picture and not as the owner named it, and with none of the
+		// original's digest.
 		if len(view.PhotoFiles) != 1 || view.PhotoFiles[0].ContentType != "image/jpeg" || view.PhotoFiles[0].FileSizeBytes != int64(len(large)) ||
-			view.PhotoFiles[0].OriginalFilename != "IMG_0001.jpg" || view.PhotoFiles[0].BlobSHA256 != "" || view.PhotoFiles[0].FileURL != api.PhotoFilePath(photo.ID, "original") {
+			view.PhotoFiles[0].OriginalFilename != "photo-"+photo.ID+".jpg" || view.PhotoFiles[0].BlobSHA256 != "" || view.PhotoFiles[0].FileURL != api.PhotoFilePath(photo.ID, "original") {
 			test.Fatalf("%+v", view.PhotoFiles)
 		}
 		if len(view.Albums) != 1 || view.Albums[0].ID != albumId || view.Faces == nil {
@@ -156,7 +157,7 @@ func TestASharedAlbumIsReadWithoutPlacesUntilTheShareIncludesThem(test *testing.
 	}
 	response = world.do(http.MethodGet, api.PhotoFilePath(photo.ID, "original"), asSession("share-ben"), nil)
 	body := readBody(test, response)
-	if response.StatusCode != http.StatusOK || body != string(large) || !strings.Contains(response.Header.Get("Content-Disposition"), "IMG_0001.jpg") || response.Header.Get("Content-Type") != "image/jpeg" {
+	if response.StatusCode != http.StatusOK || body != string(large) || !strings.Contains(response.Header.Get("Content-Disposition"), "photo-"+photo.ID+".jpg") || strings.Contains(response.Header.Get("Content-Disposition"), "IMG_0001") || response.Header.Get("Content-Type") != "image/jpeg" {
 		test.Fatalf("the original for a reader who may not have it: %d %q %v", response.StatusCode, body, response.Header)
 	}
 	if status := world.status(http.MethodGet, api.PhotoFilePath(photo.ID, "liveVideo"), asSession("share-ben"), nil); status != http.StatusNotFound {
@@ -529,7 +530,7 @@ func TestSavingASharedPhotoToTheLibrary(test *testing.T) {
 			test.Fatal(err)
 		}
 		if savedWithout.UserID != benId || savedWithout.PhotoSource != models.PhotoSourceShared || savedWithout.ClientPhotoID != "shared:"+originalDigest ||
-			savedWithout.Latitude != nil || savedWithout.PlaceName != "" || savedWithout.OriginalFilename != "IMG_0002.jpg" || !savedWithout.IsOwnedByCaller ||
+			savedWithout.Latitude != nil || savedWithout.PlaceName != "" || savedWithout.OriginalFilename != "photo-"+photo.ID+".jpg" || !savedWithout.IsOwnedByCaller ||
 			savedWithout.PhotoProcessingState != models.PhotoProcessingWaiting {
 			test.Fatalf("%+v", savedWithout)
 		}
@@ -740,4 +741,109 @@ func TestPhotosAddedToASharedAlbumAreAnnouncedOncePerTenMinutes(test *testing.T)
 func (self *photoWorld) circleIdOf(name string) string {
 	self.test.Helper()
 	return dbtest.QueryString(self.test, self.database, `SELECT id FROM circle WHERE name = '`+name+`'`)
+}
+
+// Where a photo was taken can be given away by more than its place: the name
+// of its file, what a model wrote it shows, the words read in it, and the title
+// of an album of the owner's it is also in. A reader whose share leaves places
+// out gets none of those, in what they read, in what they search, and in the
+// name of the file they download; the share that includes places gets all of it.
+func TestAReaderWithoutPlacesGetsNoTextThatCouldNameThePlace(test *testing.T) {
+	world := newPhotoWorld(test)
+	adaId := world.person("text-ada", models.PermissionPhotosUse)
+	benId := world.person("text-ben", models.PermissionPhotosUse)
+	world.circleOf("Home", adaId, benId)
+	photo := world.storePhoto(adaId, "lighthouse", "Quayside_Lighthouse.HEIC", []byte("the original"), map[models.PhotoPreviewSize][]byte{models.PhotoPreviewLarge: []byte("large"), models.PhotoPreviewSmall: []byte("small")})
+	dbtest.Exec(test, world.database, "UPDATE photo SET original_filename = 'Quayside_Lighthouse.HEIC' WHERE id = '"+photo.ID+"'")
+	dbtest.RunTransactionOn(test, world.database, func(transaction db.Transaction) {
+		if err := transaction.UpdatePhotoMetadata(photo.ID, &db.PhotoMetadata{CameraMake: "Example Camera Co", CameraModel: "Model 7"}); err != nil {
+			test.Fatal(err)
+		}
+		if err := transaction.SetPhotoDescription(adaId, photo.ID, &db.PhotoDescription{PhotoDescription: "A red lighthouse on the Quayside.", VisibleText: "WELCOME TO QUAYSIDE", ModelName: "p:thinker"}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	var albumId, shareId string
+	world.ask(adaId, photosAllowed, func(ctx context.Context) {
+		// An album of the owner's own, never shared, with a title that says where.
+		if _, err := world.graph.CreatePhotoAlbum(ctx, CreatePhotoAlbumArguments{AlbumTitle: "Honeymoon Zanzibar", PhotoIDs: []string{photo.ID}}); err != nil {
+			test.Fatal(err)
+		}
+		album, err := world.graph.CreatePhotoAlbum(ctx, CreatePhotoAlbumArguments{AlbumTitle: "Weekend", PhotoIDs: []string{photo.ID}})
+		if err != nil {
+			test.Fatal(err)
+		}
+		albumId = album.ID
+		share, err := world.graph.SharePhotoAlbum(ctx, SharePhotoAlbumArguments{PhotoAlbumID: albumId, GranteeUserID: benId, ShareLevel: "view"})
+		if err != nil {
+			test.Fatal(err)
+		}
+		shareId = share.ID
+	})
+
+	world.ask(benId, photosAllowed, func(ctx context.Context) {
+		listed, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId})
+		if err != nil || len(listed) != 1 {
+			test.Fatalf("%v %v", listed, err)
+		}
+		shown := listed[0]
+		if shown.OriginalFilename != "" || shown.PhotoDescription != "" || shown.DescriptionVisibleText != "" || shown.DescribedAt != nil || shown.IsDescriptionRequested {
+			test.Fatalf("a listing gave text away: %+v", shown)
+		}
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photo.ID})
+		if err != nil || view.Photo.OriginalFilename != "" || view.Photo.PhotoDescription != "" || view.Photo.DescriptionVisibleText != "" || view.Photo.DescribedAt != nil {
+			test.Fatalf("a read gave text away: %+v %v", view, err)
+		}
+		for _, file := range view.PhotoFiles {
+			if strings.Contains(file.OriginalFilename, "Quayside") {
+				test.Fatalf("the file is named %q", file.OriginalFilename)
+			}
+		}
+		// Nothing that names the place finds the photo: not its description, the
+		// words read in it, its file name or the title of the owner's album.
+		for _, words := range []string{"lighthouse", "quayside", "welcome", "Quayside_Lighthouse", "Quay", "Zanzibar", "honeymoon"} {
+			if found, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId, SearchText: words}); err != nil || len(found) != 0 {
+				test.Fatalf("searching for %q found %v %v", words, found, err)
+			}
+			if count, err := world.graph.CountPhotos(ctx, ListPhotosArguments{AlbumID: albumId, SearchText: words}); err != nil || count != 0 {
+				test.Fatalf("counting %q found %d %v", words, count, err)
+			}
+		}
+		// What cannot name a place still finds it: the camera, and the title of
+		// the album the reader reached the photo by.
+		for _, words := range []string{"Example Camera", "Weekend"} {
+			if found, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId, SearchText: words}); err != nil || len(found) != 1 {
+				test.Fatalf("%q: %v %v", words, found, err)
+			}
+		}
+	})
+	response := world.do(http.MethodGet, api.PhotoFilePath(photo.ID, "original"), asSession("text-ben"), nil)
+	_ = readBody(test, response)
+	if disposition := response.Header.Get("Content-Disposition"); response.StatusCode != http.StatusOK || strings.Contains(disposition, "Quayside") {
+		test.Fatalf("the download is named %q (%d)", disposition, response.StatusCode)
+	}
+
+	// A copy the reader keeps does not carry the owner's name for it.
+	world.ask(benId, photosAllowed, func(ctx context.Context) {
+		saved, err := world.graph.SavePhotoToLibrary(ctx, PhotoArguments{PhotoID: photo.ID})
+		if err != nil || strings.Contains(saved.OriginalFilename, "Quayside") || saved.PhotoDescription != "" {
+			test.Fatalf("%+v %v", saved, err)
+		}
+	})
+
+	// With places included the reader has all of it.
+	world.ask(adaId, photosAllowed, func(ctx context.Context) {
+		if _, err := world.graph.UpdatePhotoAlbumShare(ctx, UpdatePhotoAlbumShareArguments{PhotoAlbumShareID: shareId, ShareLevel: "view", IsLocationIncluded: true}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	world.ask(benId, photosAllowed, func(ctx context.Context) {
+		view, err := world.graph.ReadPhoto(ctx, PhotoArguments{PhotoID: photo.ID})
+		if err != nil || view.Photo.OriginalFilename != "Quayside_Lighthouse.HEIC" || view.Photo.PhotoDescription != "A red lighthouse on the Quayside." || view.Photo.DescriptionVisibleText != "WELCOME TO QUAYSIDE" {
+			test.Fatalf("%+v %v", view, err)
+		}
+		if found, err := world.graph.ListPhotos(ctx, ListPhotosArguments{AlbumID: albumId, SearchText: "quayside"}); err != nil || len(found) != 1 {
+			test.Fatalf("%v %v", found, err)
+		}
+	})
 }

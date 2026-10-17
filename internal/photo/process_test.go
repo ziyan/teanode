@@ -583,18 +583,52 @@ func TestAPhotoWhoseEditedFileArrivesIsShownFromTheEditedFile(test *testing.T) {
 	}
 }
 
-func TestAHeicIsDecodedByHeifDecAndItsPreviewsComeFromThatPicture(test *testing.T) {
-	// heif-dec is a program the image carries and a developer machine may
-	// not, so a stand-in writes the picture it is given as the decoded one.
-	// What is checked is that processing asks for it and uses what it wrote.
+// heifBox is a box of an ISO base media file: its size, its type, its bytes.
+func heifBox(kind string, payload ...[]byte) []byte {
+	joined := bytes.Join(payload, nil)
+	box := binary.BigEndian.AppendUint32(nil, uint32(8+len(joined)))
+	box = append(box, kind...)
+	return append(box, joined...)
+}
+
+// heicOfSize is the boxes of a HEIC that say how large its picture is and hold
+// no picture: all processing reads of it before a program decodes it.
+func heicOfSize(widthPixels, heightPixels uint32) []byte {
+	versioned := func(kind string, payload ...[]byte) []byte {
+		return heifBox(kind, append([][]byte{{0, 0, 0, 0}}, payload...)...)
+	}
+	size := binary.BigEndian.AppendUint32(binary.BigEndian.AppendUint32(nil, widthPixels), heightPixels)
+	properties := heifBox("iprp",
+		heifBox("ipco", versioned("ispe", size)),
+		versioned("ipma", binary.BigEndian.AppendUint32(nil, 1), []byte{0, 1, 1, 1}))
+	meta := versioned("meta", versioned("pitm", []byte{0, 1}), properties)
+	return append(heifBox("ftyp", []byte("heic"), []byte{0, 0, 0, 0}, []byte("mif1heic")), meta...)
+}
+
+// installFakeHeifDec puts a stand-in for heif-dec first on the path. heif-dec
+// is a program the image carries and a developer machine may not. It notes that
+// it ran, and writes the picture in decoded.jpg as the decoded one.
+func installFakeHeifDec(test *testing.T, decoded []byte) (ranMarker string) {
+	test.Helper()
 	directory := test.TempDir()
-	script := "#!/bin/sh\ncp \"$2\" \"$3\"\n"
+	ranMarker = filepath.Join(directory, "ran")
+	if err := os.WriteFile(filepath.Join(directory, "decoded.jpg"), decoded, 0o600); err != nil {
+		test.Fatal(err)
+	}
+	script := "#!/bin/sh\ntouch " + ranMarker + "\ncp " + filepath.Join(directory, "decoded.jpg") + " \"$3\"\n"
 	if err := os.WriteFile(filepath.Join(directory, "heif-dec"), []byte(script), 0o755); err != nil {
 		test.Fatal(err)
 	}
 	test.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return ranMarker
+}
+
+func TestAHeicIsDecodedByHeifDecAndItsPreviewsComeFromThatPicture(test *testing.T) {
+	// What is checked is that processing asks for the program and uses what it
+	// wrote.
+	installFakeHeifDec(test, exifJpeg(test, 64, 32, 1))
 	fixture := newFixture(test)
-	found := fixture.uploadAndProcess("heic", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic"}, exifJpeg(test, 64, 32, 1))
+	found := fixture.uploadAndProcess("heic", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic"}, heicOfSize(64, 32))
 	if found.PhotoProcessingState != models.PhotoProcessingReady || found.WidthPixels != 64 || found.HeightPixels != 32 {
 		test.Fatalf("%+v", found)
 	}
@@ -607,11 +641,42 @@ func TestAHeicIsDecodedByHeifDecAndItsPreviewsComeFromThatPicture(test *testing.
 	// file, so the attempt is not counted, and the reason is a plain sentence
 	// that does not name the program.
 	test.Setenv("PATH", test.TempDir())
-	missing := fixture.uploadAndProcess("heic-missing", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic-missing"}, exifJpeg(test, 48, 24, 1))
+	missing := fixture.uploadAndProcess("heic-missing", map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": "heic-missing"}, heicOfSize(48, 24))
 	if missing.PhotoProcessingState != models.PhotoProcessingWaiting || missing.ProcessingAttemptCount != 0 || missing.WidthPixels != 48 || missing.ProcessingNotBefore == nil {
 		test.Fatalf("%+v", missing)
 	}
 	if strings.Contains(missing.ProcessingErrorMessage, "heif-dec") || missing.ProcessingErrorMessage != "The previews could not be made yet; they will be tried again." {
 		test.Fatalf("the reason is %q", missing.ProcessingErrorMessage)
+	}
+}
+
+// heif-dec holds the whole picture it decodes, and a small file can claim a
+// huge one: the size the boxes give is bounded before the program is run, as a
+// JPEG's is before it is decoded, and the photo is failed at once.
+func TestAHeicClaimingAHugePictureIsFailedAtOnceAndHeifDecIsNeverRun(test *testing.T) {
+	ranMarker := installFakeHeifDec(test, smallJpeg(test, 10))
+	fixture := newFixture(test)
+	for name, size := range map[string][2]uint32{"many-pixels": {16000, 4001}, "a-long-row": {70000, 10}} {
+		found := fixture.uploadAndProcess(name, map[string]string{"Content-Type": "image/heic", "X-Photo-Client-ID": name}, heicOfSize(size[0], size[1]))
+		if found.PhotoProcessingState != models.PhotoProcessingFailed || found.ProcessingAttemptCount != 1 || found.ProcessingErrorMessage != "This picture is too large to make previews of." {
+			test.Fatalf("%s: %+v", name, found)
+		}
+	}
+	if _, err := os.Stat(ranMarker); err == nil {
+		test.Fatal("heif-dec was run on a picture that claims to be too large")
+	}
+}
+
+// A HEIC is turned by its own boxes, which heif-dec applies, and not by the
+// orientation of its EXIF block, which describes the pixels the camera stored:
+// the size read before decoding is swapped for a JPEG on its side and for no
+// other kind of file.
+func TestOnlyAJpegsSizeIsSwappedByItsExifOrientation(test *testing.T) {
+	fixture := newFixture(test)
+	content := exifJpeg(test, 64, 32, 6)
+	for contentType, want := range map[string][2]int{"image/jpeg": {32, 64}, "image/heic": {64, 32}, "image/heif": {64, 32}} {
+		if widthPixels, heightPixels := fixture.store.ReadPictureMetadataSize(content, contentType); widthPixels != want[0] || heightPixels != want[1] {
+			test.Errorf("%s: %dx%d, want %dx%d", contentType, widthPixels, heightPixels, want[0], want[1])
+		}
 	}
 }

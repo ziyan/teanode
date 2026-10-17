@@ -144,6 +144,9 @@ type Photo struct {
 	// plain reason for the last failure, with no path or tool output in it.
 	ProcessingAttemptCount int    `json:"processingAttemptCount"`
 	ProcessingErrorMessage string `json:"processingErrorMessage"`
+	// ProcessingOutageCount is how many failures in a row were not the file's
+	// fault; each makes the photo wait longer than the one before.
+	ProcessingOutageCount int `json:"-"`
 	// ProcessingClaimedAt is when an instance took the photo to process it.
 	ProcessingClaimedAt *time.Time `json:"-"`
 	// ProcessingNotBefore is the earliest time a waiting photo is claimed

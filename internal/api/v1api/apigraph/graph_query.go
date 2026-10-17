@@ -26,8 +26,9 @@ type queryExecution struct {
 // isModelBackedQuery is the queries that ask a model, or wait on runs
 // that do, and so read in phases of their own rather than inside one
 // transaction held open while the model answers: recall for a question
-// embeds it, and a survey is minutes of runs.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true}
+// embeds it, and a survey is minutes of runs. A photo search embeds its words,
+// and the listing and the count both do, so both are here.
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true}
 
 // isTransactionFreeMutation is the mutations that do slow work, such as reading
 // and storing a file as large as a video, and so are not run inside the
@@ -51,7 +52,25 @@ func (self *graph) wrapQueryTransactions() {
 		}
 		field.Resolve = func(parameters graphql.ResolveParams) (interface{}, error) {
 			execution, isQuery := parameters.Context.Value(queryExecutionKey{}).(*queryExecution)
-			if !isQuery || isModelBackedQuery[fieldName] {
+			if isQuery && isModelBackedQuery[fieldName] {
+				if _, isServiceOperation := serviceOperations()[fieldName]; isServiceOperation {
+					// The check that the service is on, wrapped around this
+					// resolver, needs to know who is asking. It is worked out
+					// in a short transaction that ends before the resolver
+					// runs; the resolver works it out again for itself, in
+					// the phases it reads in.
+					var principal *api.Principal
+					if err := self.database.TransactionContext(parameters.Context, func(transaction db.Transaction) (err error) {
+						principal, err = self.queryPrincipal(transaction, execution)
+						return err
+					}); err != nil {
+						return nil, err
+					}
+					parameters.Context = api.ContextWithPrincipal(parameters.Context, principal)
+				}
+				return resolve(parameters)
+			}
+			if !isQuery {
 				return resolve(parameters)
 			}
 			var resolved interface{}

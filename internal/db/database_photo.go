@@ -3,6 +3,7 @@ package db
 import (
 	"errors"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,7 +60,22 @@ type PhotoOperation interface {
 	// PutPhotoVector keeps the meaning of the photo's description as one
 	// model read it, replacing the vectors of other models.
 	PutPhotoVector(userId, photoId, model string, vector []float32) error
+
+	// FindPhotosByClientIDs is the photos the person has under those names: the
+	// name a photo was made with, and the other names it was later recorded
+	// under (see AddPhotoClientAlias). A photo found by another name comes with
+	// that name as its ClientPhotoID, so that an uploader matching what it gets
+	// to the names it asked for finds it.
 	FindPhotosByClientIDs(userId string, clientPhotoIds []string) ([]*models.Photo, error)
+
+	// FindPhotoByOriginalBlob is the person's oldest photo, in the library or
+	// the Trash, whose original file is the blob. ErrNotFound when there is none.
+	FindPhotoByOriginalBlob(userId, blobSha256 string) (*models.Photo, error)
+
+	// AddPhotoClientAlias records another name an uploader has for the photo, so
+	// that an upload of the same picture under that name is the photo. A name
+	// that is taken already is left as it is.
+	AddPhotoClientAlias(userId, photoId, clientPhotoId string) error
 
 	// UpdatePhoto corrects a photo. A new date is stored with the offset that
 	// came with it, in the same statement, so a date never keeps the offset of
@@ -103,10 +119,12 @@ type PhotoOperation interface {
 
 	// PhotoOpenUploadBytes is how many bytes the account's uploads that are
 	// still receiving hold, which count towards the account's limit before
-	// they are photos. The uploads of the named uploader photo and file role
-	// are left out when both are given, because starting that upload again
-	// ends the ones before it.
-	PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole) (int64, error)
+	// they are photos. Only uploads a part arrived in after the time count: an
+	// upload that has sat idle is not going to be finished soon, and cleanup
+	// deletes it a week on, so it must not hold the room for a week. The
+	// uploads of the named uploader photo and file role are left out when both
+	// are given, because starting that upload again ends the ones before it.
+	PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (int64, error)
 
 	// SetPhotoFile records a file of a photo, replacing the one in that role.
 	// The size is checked against the account's limit, the photo is queued for
@@ -124,16 +142,21 @@ type PhotoOperation interface {
 	// made, as opposed to found.
 	InsertPhotoBlobIfAbsent(blob *models.PhotoBlob) (bool, error)
 
-	// MarkUnreferencedPhotoBlobDeleting finds a blob created before the time
-	// that no file names, and marks it. The bytes are deleted by a second
-	// transaction, so that a crash between leaves a mark and not a row whose
-	// bytes are gone.
-	MarkUnreferencedPhotoBlobDeleting(createdBefore time.Time) (*models.PhotoBlob, error)
+	// MarkUnreferencedPhotoBlobDeleting finds the blob that no file has named
+	// since before the time, oldest first, and marks it. Blobs in
+	// exceptBlobSha256s are passed over: they are the ones a caller failed to
+	// delete this time, so that one that cannot be deleted does not hold up the
+	// rest. The mark is what a file arriving with the same bytes sees, and
+	// stores them again for; the bytes are deleted after the mark is committed,
+	// and the row by a second transaction, so that a crash between leaves a mark
+	// and not a row whose bytes are gone.
+	MarkUnreferencedPhotoBlobDeleting(unreferencedBefore time.Time, exceptBlobSha256s []string) (*models.PhotoBlob, error)
 
 	// LockPhotoBlobForDeletion locks a marked blob and checks again that no
-	// file names it. A blob some file names after all comes back as nil with
-	// its mark cleared; that is not an error, because an error would roll the
-	// clearing back.
+	// file names it. A blob some file names after all, or whose mark a file
+	// arriving with the same bytes cleared, comes back as nil with its mark
+	// cleared; that is not an error, because an error would roll the clearing
+	// back.
 	LockPhotoBlobForDeletion(blobSha256 string) (*models.PhotoBlob, error)
 	DeletePhotoBlob(blobSha256 string) error
 
@@ -158,12 +181,27 @@ type PhotoOperation interface {
 	// except those that wait out a backoff. Claiming counts an attempt, so a
 	// file that kills the process each time it is read runs out of attempts. A
 	// photo that has used all of them and is claimed again (its last claim ran
-	// out) is failed instead of returned.
-	ClaimPhotosForProcessing(limit int, staleBefore time.Time, maximumAttemptCount int) ([]*models.Photo, error)
+	// out) is failed instead of returned. Each photo comes back with the time of
+	// its claim in ProcessingClaimedAt, which is what the claim is known by: the
+	// functions below that take it act only while the photo is still claimed at
+	// that time, so work that was overtaken (the claim ran out and another
+	// instance took the photo, or the photo's file was replaced) cannot record
+	// its outcome over the newer work's.
+	// A caller that cannot make videos at the moment (the program that does is
+	// not installed) says so with isVideoSkipped, and is given no video.
+	ClaimPhotosForProcessing(limit int, staleBefore time.Time, maximumAttemptCount int, isVideoSkipped bool) ([]*models.Photo, error)
 
 	// MarkPhotoReady records that previews are made, and clears the attempts
-	// and the failure.
-	MarkPhotoReady(photoId string) error
+	// and the failure. The value says the photo was still claimed at claimedAt;
+	// when it is false nothing was recorded, and the photo is somebody else's
+	// to finish. That is not an error.
+	MarkPhotoReady(photoId string, claimedAt time.Time) (bool, error)
+
+	// ReleasePhotoProcessingClaim gives up a claim without an outcome, as a
+	// worker does that was stopped: the attempt claiming counted is given back
+	// and the photo is claimable at once. The value says the photo was still
+	// claimed at claimedAt.
+	ReleasePhotoProcessingClaim(photoId string, claimedAt time.Time) (bool, error)
 
 	// RetryPhotoProcessing puts the named photos that are failed, or ready (to
 	// make their previews again), back to waiting with a fresh count of
@@ -171,10 +209,13 @@ type PhotoOperation interface {
 	// waiting already, in the trash or somebody else's are left alone.
 	RetryPhotoProcessing(userId string, photoIds []string) (int, error)
 
-	// TouchPhotoProcessingClaims renews the claims on photos an instance is
-	// still working on, so that a long video is not taken by another
-	// instance while it is being made.
-	TouchPhotoProcessingClaims(photoIds []string) error
+	// RenewPhotoProcessingClaim renews the claim made at claimedAt on a photo
+	// an instance is still working on, so that a long video is not taken by
+	// another instance while it is being made. A renewed claim is known by the
+	// time it was renewed at, which is the first value; the second says the
+	// photo was still claimed at claimedAt, and is false when the claim was
+	// lost.
+	RenewPhotoProcessingClaim(photoId string, claimedAt time.Time) (time.Time, bool, error)
 
 	// RequeuePhotosWithoutPreviews puts up to limit photos that are ready
 	// and have no small preview back to waiting, and says how many there
@@ -186,11 +227,13 @@ type PhotoOperation interface {
 	// has counted. A failure that is the file's fault keeps the count: after
 	// the maximum the photo is failed and stays so, and before it the photo
 	// waits for a backoff of 1, 5, 15 and then 60 minutes. A failure that is
-	// not the file's (the store or the database) gives the attempt back, so
-	// that an outage does not use up a photo's attempts; the photo waits a
-	// minute. The message is kept as given and must be plain: no path and no
-	// output of a tool.
-	MarkPhotoProcessingFailed(photoId, errorMessage string, isFileAtFault bool, maximumAttemptCount int) error
+	// not the file's (the store, the database or a program the server lacks)
+	// gives the attempt back, so that an outage does not use up a photo's
+	// attempts; the photo waits 1, 5, 15 and then 60 minutes, by how many such
+	// failures there have been in a row. The message is kept as given and must
+	// be plain: no path and no output of a tool. As with MarkPhotoReady, the value says the photo was
+	// still claimed at claimedAt; when it is false nothing was recorded.
+	MarkPhotoProcessingFailed(photoId string, claimedAt time.Time, errorMessage string, isFileAtFault bool, maximumAttemptCount int) (bool, error)
 }
 
 // PhotoFilter narrows a page of the library.
@@ -341,6 +384,17 @@ type photoBlobModel models.PhotoBlob
 func (photoBlobModel) TableName() string { return "photo_blob" }
 
 type photoFileModel models.PhotoFile
+
+// photoClientAliasModel is a name an uploader has for a photo besides the one
+// the photo was made with.
+type photoClientAliasModel struct {
+	UserID        string    `gorm:"column:user_id;primaryKey"`
+	ClientPhotoID string    `gorm:"column:client_photo_id;primaryKey"`
+	PhotoID       string    `gorm:"column:photo_id"`
+	CreatedAt     time.Time `gorm:"column:created_at"`
+}
+
+func (photoClientAliasModel) TableName() string { return "photo_client_alias" }
 
 func (photoFileModel) TableName() string { return "photo_file" }
 
@@ -500,8 +554,9 @@ const maximumPhotoOffset = 100000
 type photoScope struct {
 	readerUserId string
 
-	// isInAlbum says the listing is of one album.
-	isInAlbum bool
+	// isInAlbum says the listing is of one album, photoAlbumId.
+	isInAlbum    bool
+	photoAlbumId string
 
 	// isPlaceHeldBack says the place of the photos that are not the reader's
 	// own is not the reader's to learn.
@@ -524,7 +579,7 @@ func (self *transaction) scopeOfPhotoListing(userId string, filter *PhotoFilter)
 	if err != nil {
 		return scope, err
 	}
-	scope.isInAlbum, scope.isPlaceHeldBack = true, !access.IsLocationIncluded
+	scope.isInAlbum, scope.photoAlbumId, scope.isPlaceHeldBack = true, filter.AlbumID, !access.IsLocationIncluded
 	return scope, nil
 }
 
@@ -681,12 +736,77 @@ func (self *transaction) FindPhotosByClientIDs(userId string, clientPhotoIds []s
 		return nil, ErrInvalidArguments
 	}
 	var rows []photoModel
-	if len(clientPhotoIds) > 0 {
-		if err := self.tx.Where("user_id = ? AND client_photo_id IN ?", userId, clientPhotoIds).Order("id").Find(&rows).Error; err != nil {
-			return nil, err
+	if len(clientPhotoIds) == 0 {
+		return photosFromModels(rows), nil
+	}
+	if err := self.tx.Where("user_id = ? AND client_photo_id IN ?", userId, clientPhotoIds).Order("id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	photos := photosFromModels(rows)
+	var aliases []photoClientAliasModel
+	if err := self.tx.Where("user_id = ? AND client_photo_id IN ?", userId, clientPhotoIds).Find(&aliases).Error; err != nil {
+		return nil, err
+	}
+	if len(aliases) == 0 {
+		return photos, nil
+	}
+	aliasedPhotoIds := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		aliasedPhotoIds = append(aliasedPhotoIds, alias.PhotoID)
+	}
+	var aliasedRows []photoModel
+	if err := self.tx.Where("user_id = ? AND id IN ? AND "+photoIsReadable, userId, aliasedPhotoIds, photoMarkedForDeletion).Find(&aliasedRows).Error; err != nil {
+		return nil, err
+	}
+	aliasedPhotos := photosFromModels(aliasedRows)
+	named := map[string]bool{}
+	for _, found := range photos {
+		named[found.ClientPhotoID] = true
+	}
+	for _, alias := range aliases {
+		if named[alias.ClientPhotoID] {
+			continue
+		}
+		for _, found := range aliasedPhotos {
+			if found.ID == alias.PhotoID {
+				renamed := *found
+				renamed.ClientPhotoID = alias.ClientPhotoID
+				photos = append(photos, &renamed)
+			}
 		}
 	}
-	return photosFromModels(rows), nil
+	sort.SliceStable(photos, func(left, right int) bool { return photos[left].ID < photos[right].ID })
+	return photos, nil
+}
+
+func (self *transaction) FindPhotoByOriginalBlob(userId, blobSha256 string) (*models.Photo, error) {
+	if userId == "" || !validPhotoSha256(blobSha256) {
+		return nil, ErrNotFound
+	}
+	var row photoModel
+	isFound, err := findOneRow(self.tx.
+		Joins("JOIN photo_file ON photo_file.photo_id = photo.id AND photo_file.photo_file_role = ?", models.PhotoFileRoleOriginal).
+		Where("photo.user_id = ? AND photo_file.blob_sha256 = ? AND "+photoIsReadable, userId, blobSha256, photoMarkedForDeletion).
+		Order("photo.created_at, photo.id"), &row)
+	if err != nil {
+		return nil, err
+	}
+	if !isFound {
+		return nil, ErrNotFound
+	}
+	return photoFromModel(&row), nil
+}
+
+func (self *transaction) AddPhotoClientAlias(userId, photoId, clientPhotoId string) error {
+	if userId == "" || photoId == "" || strings.TrimSpace(clientPhotoId) == "" || len(clientPhotoId) > 255 {
+		return ErrInvalidArguments
+	}
+	if _, err := self.GetPhoto(userId, photoId); err != nil {
+		return err
+	}
+	return self.tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&photoClientAliasModel{
+		UserID: userId, ClientPhotoID: clientPhotoId, PhotoID: photoId, CreatedAt: photoNow(),
+	}).Error
 }
 
 func (self *transaction) UpdatePhoto(userId, photoId string, update *PhotoUpdate) (*models.Photo, error) {
@@ -854,12 +974,12 @@ func (self *transaction) PhotoUsedBytes(userId string) (int64, error) {
 	return usedBytes, err
 }
 
-func (self *transaction) PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole) (int64, error) {
+func (self *transaction) PhotoOpenUploadBytes(userId, exceptClientPhotoId string, exceptPhotoFileRole models.PhotoFileRole, updatedAfter time.Time) (int64, error) {
 	if userId == "" {
 		return 0, ErrNotFound
 	}
 	query := self.tx.Model(&photoUploadModel{}).Select("COALESCE(SUM(received_size_bytes), 0)").
-		Where("user_id = ? AND photo_upload_state = ?", userId, models.PhotoUploadReceiving)
+		Where("user_id = ? AND photo_upload_state = ? AND updated_at > ?", userId, models.PhotoUploadReceiving, updatedAfter.UTC())
 	if exceptClientPhotoId != "" {
 		query = query.Where("NOT (upload_headers->>'clientPhotoId' = ? AND upload_headers->>'photoFileRole' = ?)", exceptClientPhotoId, string(exceptPhotoFileRole))
 	}
@@ -928,6 +1048,7 @@ func (self *transaction) SetPhotoFile(userId, photoId string, file *models.Photo
 		// place, so the photo goes back to waiting, whatever it was.
 		changes["photo_processing_state"] = models.PhotoProcessingWaiting
 		changes["processing_attempt_count"] = 0
+		changes["processing_outage_count"] = 0
 		changes["processing_error_message"] = ""
 		changes["processing_claimed_at"] = nil
 		changes["processing_not_before"] = nil
@@ -1000,9 +1121,15 @@ func (self *transaction) InsertPhotoBlobIfAbsent(blob *models.PhotoBlob) (bool, 
 	// xmax is zero on a row this statement inserted and not on one it
 	// updated, which is how a caller learns that the blob it believed
 	// was there had gone.
-	rows, err := self.tx.Raw(`INSERT INTO photo_blob (blob_sha256, blob_size_bytes, created_at, deleting_at) VALUES (?, ?, ?, NULL)
-		ON CONFLICT (blob_sha256) DO UPDATE SET deleting_at = NULL, created_at = EXCLUDED.created_at WHERE photo_blob.deleting_at IS NOT NULL
-		RETURNING (xmax = 0)`, blob.BlobSHA256, blob.BlobSizeBytes, photoNow()).Rows()
+	// A new blob is unreferenced from the moment it is made. One that was
+	// marked and is unmarked gets a new age, so that it keeps for the hour a
+	// file needs to name it, unless a file names it already.
+	createdAt := photoNow()
+	rows, err := self.tx.Raw(`INSERT INTO photo_blob (blob_sha256, blob_size_bytes, created_at, deleting_at, unreferenced_since) VALUES (?, ?, ?, NULL, ?)
+		ON CONFLICT (blob_sha256) DO UPDATE SET deleting_at = NULL, created_at = EXCLUDED.created_at,
+			unreferenced_since = CASE WHEN EXISTS (SELECT 1 FROM photo_file WHERE photo_file.blob_sha256 = photo_blob.blob_sha256) THEN NULL ELSE EXCLUDED.created_at END
+			WHERE photo_blob.deleting_at IS NOT NULL
+		RETURNING (xmax = 0)`, blob.BlobSHA256, blob.BlobSizeBytes, createdAt, createdAt).Rows()
 	if err != nil {
 		return false, err
 	}
@@ -1016,11 +1143,17 @@ func (self *transaction) InsertPhotoBlobIfAbsent(blob *models.PhotoBlob) (bool, 
 	return isInserted, rows.Err()
 }
 
-func (self *transaction) MarkUnreferencedPhotoBlobDeleting(createdBefore time.Time) (*models.PhotoBlob, error) {
+func (self *transaction) MarkUnreferencedPhotoBlobDeleting(unreferencedBefore time.Time, exceptBlobSha256s []string) (*models.PhotoBlob, error) {
+	// The column is kept by a trigger on photo_file and read through an index,
+	// so this does not look at the blobs that files name; the check that no file
+	// does is a second look at the one blob found.
+	query := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		Where("unreferenced_since < ? AND NOT EXISTS (SELECT 1 FROM photo_file WHERE photo_file.blob_sha256 = photo_blob.blob_sha256)", unreferencedBefore.UTC())
+	if len(exceptBlobSha256s) > 0 {
+		query = query.Where("blob_sha256 NOT IN ?", exceptBlobSha256s)
+	}
 	var row photoBlobModel
-	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
-		Where("created_at < ? AND NOT EXISTS (SELECT 1 FROM photo_file WHERE photo_file.blob_sha256 = photo_blob.blob_sha256)", createdBefore).
-		Order("created_at"), &row)
+	isFound, err := findOneRow(query.Order("unreferenced_since"), &row)
 	if err != nil {
 		return nil, err
 	}
@@ -1045,6 +1178,11 @@ func (self *transaction) LockPhotoBlobForDeletion(blobSha256 string) (*models.Ph
 	}
 	if !isFound {
 		return nil, ErrNotFound
+	}
+	// A file arriving with the same bytes while the bytes were being deleted
+	// cleared the mark and stored them again; they are its to keep.
+	if row.DeletingAt == nil {
+		return nil, nil
 	}
 	// Counted after the lock is held and in a statement of its own: a file
 	// being recorded takes a share of this row first, so one that was not
@@ -1155,7 +1293,7 @@ func photoProcessingBackoff(attemptCount int) time.Duration {
 // stops the process.
 const photoProcessingInterruptedMessage = "The file could not be processed."
 
-func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Time, maximumAttemptCount int) ([]*models.Photo, error) {
+func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Time, maximumAttemptCount int, isVideoSkipped bool) ([]*models.Photo, error) {
 	if limit < 1 || limit > 100 || maximumAttemptCount < 1 {
 		return nil, ErrInvalidArguments
 	}
@@ -1169,13 +1307,16 @@ func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Ti
 	// Each round changes every photo it looks at, so it ends.
 	for len(claimed) < limit {
 		var rows []photoModel
-		if err := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+		query := self.tx.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 			Where(`photo_processing_state = ? AND (processing_claimed_at IS NULL OR processing_claimed_at < ?)
 				AND (processing_not_before IS NULL OR processing_not_before <= ?)
 				AND `+photoIsReadable+`
 				AND EXISTS (SELECT 1 FROM photo_file WHERE photo_file.photo_id = photo.id AND photo_file.photo_file_role IN ?)`,
-				models.PhotoProcessingWaiting, staleBefore, claimedAt, photoMarkedForDeletion, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited}).
-			Order("created_at, id").Limit(limit - len(claimed)).Find(&rows).Error; err != nil {
+				models.PhotoProcessingWaiting, staleBefore, claimedAt, photoMarkedForDeletion, []models.PhotoFileRole{models.PhotoFileRoleOriginal, models.PhotoFileRoleEdited})
+		if isVideoSkipped {
+			query = query.Where("photo_kind <> ?", models.PhotoKindVideo)
+		}
+		if err := query.Order("created_at, id").Limit(limit - len(claimed)).Find(&rows).Error; err != nil {
 			return nil, err
 		}
 		if len(rows) == 0 {
@@ -1210,15 +1351,30 @@ func (self *transaction) ClaimPhotosForProcessing(limit int, staleBefore time.Ti
 	return photosFromModels(claimed), nil
 }
 
-func (self *transaction) MarkPhotoReady(photoId string) error {
-	return self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(map[string]any{
+// claimedPhoto is the photo whose claim is the one at claimedAt, which is the
+// condition every function that records the end of the work on a claim holds
+// to.
+const claimedPhoto = "id = ? AND photo_processing_state = 'waiting' AND processing_claimed_at = ?"
+
+func (self *transaction) MarkPhotoReady(photoId string, claimedAt time.Time) (bool, error) {
+	marked := self.tx.Model(&photoModel{}).Where(claimedPhoto, photoId, claimedAt.UTC()).Updates(map[string]any{
 		"photo_processing_state":   models.PhotoProcessingReady,
 		"processing_attempt_count": 0,
+		"processing_outage_count":  0,
 		"processing_error_message": "",
 		"processing_claimed_at":    nil,
 		"processing_not_before":    nil,
 		"updated_at":               photoNow(),
-	}).Error
+	})
+	return marked.RowsAffected > 0, marked.Error
+}
+
+func (self *transaction) ReleasePhotoProcessingClaim(photoId string, claimedAt time.Time) (bool, error) {
+	released := self.tx.Model(&photoModel{}).Where(claimedPhoto, photoId, claimedAt.UTC()).Updates(map[string]any{
+		"processing_attempt_count": gorm.Expr("GREATEST(processing_attempt_count - 1, 0)"),
+		"processing_claimed_at":    nil,
+	})
+	return released.RowsAffected > 0, released.Error
 }
 
 func (self *transaction) RetryPhotoProcessing(userId string, photoIds []string) (int, error) {
@@ -1234,6 +1390,7 @@ func (self *transaction) RetryPhotoProcessing(userId string, photoIds []string) 
 		Updates(map[string]any{
 			"photo_processing_state":   models.PhotoProcessingWaiting,
 			"processing_attempt_count": 0,
+			"processing_outage_count":  0,
 			"processing_error_message": "",
 			"processing_claimed_at":    nil,
 			"processing_not_before":    nil,
@@ -1242,23 +1399,28 @@ func (self *transaction) RetryPhotoProcessing(userId string, photoIds []string) 
 	return int(retried.RowsAffected), retried.Error
 }
 
-func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string, isFileAtFault bool, maximumAttemptCount int) error {
+func (self *transaction) MarkPhotoProcessingFailed(photoId string, claimedAt time.Time, errorMessage string, isFileAtFault bool, maximumAttemptCount int) (bool, error) {
 	if maximumAttemptCount < 1 {
-		return ErrInvalidArguments
+		return false, ErrInvalidArguments
 	}
 	var row photoModel
 	isFound, err := findOneRow(self.tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", photoId), &row)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !isFound {
-		return ErrNotFound
+		return false, ErrNotFound
+	}
+	if row.ProcessingClaimedAt == nil || !row.ProcessingClaimedAt.Equal(claimedAt) || row.PhotoProcessingState != models.PhotoProcessingWaiting {
+		return false, nil
 	}
 	// Claiming counted this attempt. A failure that is not the file's gives it
-	// back and waits the shortest time.
+	// back, and waits the longer the more of them there have been in a row,
+	// since a store or a program that is down does not come back in a minute.
 	attemptCount := row.ProcessingAttemptCount
+	outageCount := 0
 	photoProcessingState := models.PhotoProcessingWaiting
-	backoff := photoProcessingBackoff(1)
+	var backoff time.Duration
 	if isFileAtFault {
 		attemptCount = max(attemptCount, 1)
 		if attemptCount >= maximumAttemptCount {
@@ -1267,6 +1429,8 @@ func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string,
 		backoff = photoProcessingBackoff(attemptCount)
 	} else {
 		attemptCount = max(attemptCount-1, 0)
+		outageCount = row.ProcessingOutageCount + 1
+		backoff = photoProcessingBackoff(outageCount)
 	}
 	if len(errorMessage) > photoErrorMessageBytes {
 		errorMessage = strings.ToValidUTF8(errorMessage[:photoErrorMessageBytes], "")
@@ -1274,6 +1438,7 @@ func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string,
 	changes := map[string]any{
 		"photo_processing_state":   photoProcessingState,
 		"processing_attempt_count": attemptCount,
+		"processing_outage_count":  outageCount,
 		"processing_error_message": errorMessage,
 		"processing_claimed_at":    nil,
 		"updated_at":               photoNow(),
@@ -1283,7 +1448,7 @@ func (self *transaction) MarkPhotoProcessingFailed(photoId, errorMessage string,
 	} else {
 		changes["processing_not_before"] = nil
 	}
-	return self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(changes).Error
+	return true, self.tx.Model(&photoModel{}).Where("id = ?", photoId).Updates(changes).Error
 }
 
 func (self *transaction) UpdatePhotoMetadata(photoId string, metadata *PhotoMetadata) error {
@@ -1387,21 +1552,17 @@ func settlePhotoTakenAt(currentTakenAt *time.Time, currentOffsetMinutes *int, me
 	return currentTakenAt, offsetOf(*currentTakenAt)
 }
 
-func (self *transaction) TouchPhotoProcessingClaims(photoIds []string) error {
-	if len(photoIds) == 0 {
-		return nil
-	}
-	if len(photoIds) > 100 {
-		return ErrInvalidArguments
-	}
-	return self.tx.Model(&photoModel{}).Where("id IN ? AND photo_processing_state = ? AND processing_claimed_at IS NOT NULL", photoIds, models.PhotoProcessingWaiting).Update("processing_claimed_at", photoNow()).Error
+func (self *transaction) RenewPhotoProcessingClaim(photoId string, claimedAt time.Time) (time.Time, bool, error) {
+	renewedAt := photoNow()
+	renewed := self.tx.Model(&photoModel{}).Where(claimedPhoto, photoId, claimedAt.UTC()).Update("processing_claimed_at", renewedAt)
+	return renewedAt, renewed.RowsAffected > 0, renewed.Error
 }
 
 func (self *transaction) RequeuePhotosWithoutPreviews(limit int) (int, error) {
 	if limit < 1 || limit > 100 {
 		return 0, ErrInvalidArguments
 	}
-	requeued := self.tx.Exec(`UPDATE photo SET photo_processing_state = ?, processing_attempt_count = 0, processing_error_message = '', processing_claimed_at = NULL, processing_not_before = NULL, updated_at = ?
+	requeued := self.tx.Exec(`UPDATE photo SET photo_processing_state = ?, processing_attempt_count = 0, processing_outage_count = 0, processing_error_message = '', processing_claimed_at = NULL, processing_not_before = NULL, updated_at = ?
 		WHERE id IN (
 			SELECT id FROM photo
 			WHERE photo_processing_state = ? AND (trashed_at IS NULL OR trashed_at > ?)

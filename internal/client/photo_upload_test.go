@@ -30,6 +30,20 @@ type uploadServer struct {
 	foundPhotoID string
 	headCount    int
 	graphqlCount int
+
+	// completesOnPatch makes the server finish the upload when it is asked to
+	// by an append, as one does whose first attempt to complete it failed;
+	// otherwise it answers that it is busy with it (HTTP 409). patches are the
+	// appends received.
+	completesOnPatch bool
+	patches          []receivedPatch
+}
+
+// receivedPatch is an append as the server saw it.
+type receivedPatch struct {
+	contentLength int64
+	uploadOffset  string
+	isComplete    string
 }
 
 func (self *uploadServer) count(method string) int {
@@ -60,6 +74,16 @@ func newUploadServer(test *testing.T, sizeBytes int) *uploadServer {
 			response.WriteHeader(104)
 			response.Header().Set("Upload-Offset", strconv.Itoa(sizeBytes))
 			response.Header().Set("Upload-Complete", "?0")
+			response.WriteHeader(http.StatusCreated)
+		case request.Method == http.MethodPatch && request.URL.Path == "/api/v1/photos/uploads/upload-1":
+			self.patches = append(self.patches, receivedPatch{contentLength: request.ContentLength, uploadOffset: request.Header.Get("Upload-Offset"), isComplete: request.Header.Get("Upload-Complete")})
+			response.Header().Set("Upload-Offset", strconv.Itoa(sizeBytes))
+			if !self.completesOnPatch {
+				http.Error(response, "the upload is at "+strconv.Itoa(sizeBytes)+" bytes; continue from there", http.StatusConflict)
+				return
+			}
+			response.Header().Set("Upload-Complete", "?1")
+			response.Header().Set("X-Photo-ID", "photo-made-by-patch")
 			response.WriteHeader(http.StatusCreated)
 		case request.Method == http.MethodHead:
 			self.headCount++
@@ -133,8 +157,14 @@ func TestTheClientWaitsForTheServerToFinishALargeUploadInsteadOfSendingItAgain(t
 	if err != nil || photoId != "photo-made" {
 		test.Fatalf("%q %v", photoId, err)
 	}
-	if server.count(http.MethodPost) != 1 || server.count(http.MethodPatch) != 0 {
+	if server.count(http.MethodPost) != 1 {
 		test.Fatalf("the file was sent again: %v", server.requests)
+	}
+	// What was sent besides is only the end, with no bytes in it.
+	for _, patch := range server.patches {
+		if patch.contentLength != 0 || patch.uploadOffset != strconv.Itoa(len(content)) || patch.isComplete != "?1" {
+			test.Fatalf("a part was sent again: %+v", patch)
+		}
 	}
 	if server.count(http.MethodHead) < 5 {
 		test.Fatalf("the server was asked %d times", server.count(http.MethodHead))
@@ -194,5 +224,57 @@ func TestTheClientStartsOverWhenTheUploadIsLostAndGivesUpWhenTheServerNeverFinis
 	}
 	if never.count(http.MethodPost) != 1 {
 		test.Fatalf("the file was sent %d times while the client waited", never.count(http.MethodPost))
+	}
+}
+
+// The server took every byte and its attempt to complete the upload failed, and
+// nothing is going to try again. The client does not wait out the longest the
+// server could have taken: it sends the end of the upload, which the server
+// completes.
+func TestTheClientCompletesAnUploadWhoseCompletionFailed(test *testing.T) {
+	shortPollDelays(test)
+	// Waiting would take more than the whole test is given.
+	photoCompletionWait = 30 * time.Second
+	content := strings.Repeat("c", 100)
+	server := newUploadServer(test, len(content))
+	server.headsUntilDone = 1 << 30
+	server.completesOnPatch = true
+	connection, err := New(Options{URL: server.URL, Token: "t", HTTPClient: &http.Client{Transport: &cutTheAnswer{base: http.DefaultTransport}}})
+	if err != nil {
+		test.Fatal(err)
+	}
+	started := time.Now()
+	photoId, err := connection.UploadPhoto(test.Context(), uploadOf(content))
+	if err != nil || photoId != "photo-made-by-patch" {
+		test.Fatalf("%q %v", photoId, err)
+	}
+	if time.Since(started) > 5*time.Second {
+		test.Fatalf("it waited %v", time.Since(started))
+	}
+	if server.count(http.MethodPost) != 1 || len(server.patches) != 1 {
+		test.Fatalf("requests %v", server.requests)
+	}
+	if patch := server.patches[0]; patch.contentLength != 0 || patch.uploadOffset != "100" || patch.isComplete != "?1" {
+		test.Fatalf("the end was sent as %+v", patch)
+	}
+}
+
+// A server that is busy completing the upload says so, and the client waits for
+// it and asks again, to the end of what the server could take.
+func TestTheClientWaitsWhenTheServerIsStillCompletingTheUpload(test *testing.T) {
+	shortPollDelays(test)
+	content := strings.Repeat("w", 100)
+	server := newUploadServer(test, len(content))
+	server.headsUntilDone = 3
+	connection, err := New(Options{URL: server.URL, Token: "t", HTTPClient: &http.Client{Transport: &cutTheAnswer{base: http.DefaultTransport}}})
+	if err != nil {
+		test.Fatal(err)
+	}
+	photoId, err := connection.UploadPhoto(test.Context(), uploadOf(content))
+	if err != nil || photoId != "photo-made" {
+		test.Fatalf("%q %v", photoId, err)
+	}
+	if len(server.patches) == 0 {
+		test.Fatal("the end of the upload was never sent")
 	}
 }

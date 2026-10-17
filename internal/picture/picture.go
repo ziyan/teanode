@@ -29,18 +29,27 @@ import (
 // costs nothing.
 const MaximumPixels = 64_000_000
 
-// ErrTooLarge is a picture with more than MaximumPixels pixels.
+// MaximumSidePixels is the longest side Decode will decode. A JPEG cannot be
+// longer than this, and a PNG or a GIF can claim billions of pixels along one
+// side: a strip one pixel high and a billion wide is under MaximumPixels, and
+// scaling it would still allocate a row of gigabytes.
+const MaximumSidePixels = 65535
+
+// ErrTooLarge is a picture with more than MaximumPixels pixels, or with a side
+// longer than MaximumSidePixels.
 var ErrTooLarge = errors.New("picture: the picture is too large")
 
 // ReadSize reads the size of a JPEG, PNG or GIF from its header, and refuses
-// one that is empty or has more than MaximumPixels pixels. It is what a caller
-// asks before it decodes, to learn what the decoded picture will take.
+// one that is empty, has more than MaximumPixels pixels or has a side longer
+// than MaximumSidePixels. It is what a caller asks before it decodes, to learn
+// what the decoded picture will take.
 func ReadSize(content []byte) (widthPixels, heightPixels int, err error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
 		return 0, 0, fmt.Errorf("picture: not a JPEG, PNG or GIF: %w", err)
 	}
-	if config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > MaximumPixels {
+	if config.Width <= 0 || config.Height <= 0 || config.Width > MaximumSidePixels || config.Height > MaximumSidePixels ||
+		int64(config.Width)*int64(config.Height) > MaximumPixels {
 		return 0, 0, fmt.Errorf("%w: %d by %d pixels", ErrTooLarge, config.Width, config.Height)
 	}
 	return config.Width, config.Height, nil

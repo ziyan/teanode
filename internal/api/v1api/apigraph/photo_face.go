@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/db"
@@ -239,6 +240,16 @@ func (self *graph) SetPhotoFaceRecognition(ctx context.Context, arguments SetPho
 // maximumFacePreviewBytes bounds the large preview read to cut a face from.
 const maximumFacePreviewBytes = 64 << 20
 
+// facePictureConcurrency is how many face pictures are cut at once. Each cut
+// decodes a preview of 2048 pixels on its long side, some 16 MB of pixels, and
+// a page of faces asks for dozens at the same moment; the rest wait their turn,
+// or are given up on when the browser goes away.
+const facePictureConcurrency = 4
+
+// facePictureSlots is the turns for cutting a face picture, shared by every
+// request of the process.
+var facePictureSlots = semaphore.NewWeighted(facePictureConcurrency)
+
 // photoFacePictureView serves the picture of one face to whoever may read its
 // photo: a square cut from the photo's large preview. It is cut when asked
 // for, and cached by the browser; the ETag changes when the preview is made
@@ -296,6 +307,13 @@ func (self *graph) photoFacePictureView(response http.ResponseWriter, request *h
 		response.WriteHeader(http.StatusOK)
 		return
 	}
+	if err := facePictureSlots.Acquire(ctx, 1); err != nil {
+		header.Del("ETag")
+		header.Del("Content-Type")
+		http.Error(response, "the request was given up on", http.StatusServiceUnavailable)
+		return
+	}
+	defer facePictureSlots.Release(1)
 	stream, err := files.OpenFileRange(ctx, models.PhotoPreviewFileID(face.PhotoID, models.PhotoPreviewLarge), 0, preview.PreviewSizeBytes)
 	if err != nil {
 		header.Del("ETag")

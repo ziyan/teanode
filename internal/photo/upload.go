@@ -401,21 +401,23 @@ func (self *Store) checkRoomFor(ctx context.Context, userId string, headers *mod
 		}
 		// Starting this upload ends an unfinished one of the same file, so
 		// that one is not counted.
-		openBytes, err := transaction.PhotoOpenUploadBytes(userId, headers.ClientPhotoID, headers.PhotoFileRole)
+		openBytes, err := transaction.PhotoOpenUploadBytes(userId, headers.ClientPhotoID, headers.PhotoFileRole, self.now().Add(-openUploadQuotaWindow))
 		if err != nil {
 			return err
 		}
 		if usedBytes+openBytes > maximumAccountBytes-sizeBytes {
-			return &QuotaError{LimitBytes: maximumAccountBytes}
+			return &QuotaError{LimitBytes: maximumAccountBytes, IsCausedByOtherUploads: usedBytes <= maximumAccountBytes-sizeBytes}
 		}
 		return nil
 	})
 }
 
 // checkRoomForPart is checkRoomFor for a part that has arrived: the bytes the
-// upload already holds are among the account's open ones, so the part is added
-// to them. It is asked of every part, because a file whose size was not
-// declared, or was declared falsely, is only known as it comes.
+// upload already holds, and the part, are added to the library and to the
+// bytes of the account's other unfinished uploads. It is asked of every part,
+// because a file whose size was not declared, or was declared falsely, is only
+// known as it comes. A refusal that the upload's own bytes do not account for
+// (it would fit alone) is the other uploads', and is marked so.
 func (self *Store) checkRoomForPart(ctx context.Context, userId string, upload *models.PhotoUpload, partBytes int64) error {
 	maximumAccountBytes := int64(self.configuration().Photos.MaxAccountBytes)
 	if maximumAccountBytes <= 0 {
@@ -430,12 +432,13 @@ func (self *Store) checkRoomForPart(ctx context.Context, userId string, upload *
 		if err != nil {
 			return err
 		}
-		openBytes, err := transaction.PhotoOpenUploadBytes(userId, "", "")
+		otherBytes, err := transaction.PhotoOpenUploadBytes(userId, upload.PhotoUploadHeaders.ClientPhotoID, upload.PhotoUploadHeaders.PhotoFileRole, self.now().Add(-openUploadQuotaWindow))
 		if err != nil {
 			return err
 		}
-		if usedBytes+openBytes > maximumAccountBytes-partBytes {
-			return &QuotaError{LimitBytes: maximumAccountBytes}
+		ownBytes := upload.ReceivedSizeBytes + partBytes
+		if usedBytes+otherBytes+ownBytes > maximumAccountBytes {
+			return &QuotaError{LimitBytes: maximumAccountBytes, IsCausedByOtherUploads: usedBytes+ownBytes <= maximumAccountBytes}
 		}
 		return nil
 	})
@@ -524,6 +527,13 @@ func (self *Store) writeCurrentOffsetConflict(ctx context.Context, response http
 func (self *Store) failAndWriteProblem(ctx context.Context, response http.ResponseWriter, userId string, upload *models.PhotoUpload, err error) {
 	var tooLarge *FileTooLargeError
 	var overQuota *QuotaError
+	// A refusal caused by other uploads' bytes is not this file's fault: the
+	// answer is the same, and the upload stays, for the client to resume once
+	// room is free.
+	if errors.As(err, &overQuota) && overQuota.IsCausedByOtherUploads {
+		self.writeProblem(response, err)
+		return
+	}
 	if errors.As(err, &tooLarge) || errors.As(err, &overQuota) || errors.Is(err, ErrDigestMismatch) || errors.Is(err, ErrWrongSize) || errors.Is(err, ErrEmptyFile) || errors.Is(err, ErrNotAPhoto) || errors.Is(err, ErrPartDamaged) || errors.Is(err, ErrTooManyParts) {
 		failContext := context.WithoutCancel(ctx)
 		if failError := self.database.TransactionContext(failContext, func(transaction db.Transaction) error {

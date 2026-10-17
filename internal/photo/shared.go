@@ -5,9 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"path"
 	"slices"
-	"strings"
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/models"
@@ -39,27 +37,16 @@ func HasPreviewIn(previews []*models.PhotoPreview) func(models.PhotoPreviewSize)
 	}
 }
 
-// SharedCopyFilename is the name the preview is saved under: the photo's own
-// name, else the name of its file, with the extension of what the preview is.
-func SharedCopyFilename(found *models.Photo, files []*models.PhotoFile, photoPreviewSize models.PhotoPreviewSize) string {
+// SharedCopyFilename is the name the preview is saved under: "photo-" and the
+// photo's identifier, with the extension of what the preview is. It is never
+// the photo's own name or its file's: those are the owner's, and are given to a
+// reader only with the place, because a name is often the place's.
+func SharedCopyFilename(photoId string, photoPreviewSize models.PhotoPreviewSize) string {
 	extension := ".jpg"
 	if photoPreviewSize == models.PhotoPreviewVideo {
 		extension = ".mp4"
 	}
-	name := strings.TrimSpace(found.OriginalFilename)
-	if name == "" {
-		if source := sourceFileOf(files); source != nil {
-			name = strings.TrimSpace(source.OriginalFilename)
-		}
-	}
-	if at := strings.LastIndexAny(name, `/\`); at >= 0 {
-		name = name[at+1:]
-	}
-	name = strings.TrimSuffix(name, path.Ext(name))
-	if name == "" || name == "." || name == ".." {
-		name = "photo-" + found.ID
-	}
-	return name + extension
+	return "photo-" + photoId + extension
 }
 
 // SharedClientPhotoID is the name a saved copy has for its owner's uploads: the
@@ -200,7 +187,7 @@ func (self *Store) saveSharedPreview(ctx context.Context, readerUserId, clientPh
 	}
 	headers := &models.PhotoUploadHeaders{
 		ClientPhotoID: clientPhotoId, PhotoFileRole: models.PhotoFileRoleOriginal, PhotoKind: photoKind, PhotoSource: models.PhotoSourceShared,
-		OriginalFilename: SharedCopyFilename(shared.Photo, shared.Files, photoPreviewSize),
+		OriginalFilename: SharedCopyFilename(shared.Photo.ID, photoPreviewSize),
 		ContentType:      preview.ContentType,
 		TakenAt:          shared.Photo.TakenAt, TakenAtOffsetMinutes: shared.Photo.TakenAtOffsetMinutes,
 		IsScreenshot: shared.Photo.IsScreenshot,

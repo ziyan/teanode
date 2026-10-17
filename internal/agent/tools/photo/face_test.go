@@ -197,7 +197,7 @@ func TestFacesReadsWhetherTheyAreFoundAndSwitchesThemOnlyWhenToldTo(test *testin
 	}
 }
 
-func TestSwitchingFacesOffAsksFirstAndTheRestOfThePeopleOperationsDoNot(test *testing.T) {
+func TestSwitchingFacesOnOrOffAsksFirstAndTheRestOfThePeopleOperationsDoNot(test *testing.T) {
 	for _, scenario := range []struct {
 		arguments map[string]any
 		risk      tools.Risk
@@ -213,7 +213,7 @@ func TestSwitchingFacesOffAsksFirstAndTheRestOfThePeopleOperationsDoNot(test *te
 		{map[string]any{"operation": "person-remove-face"}, tools.RiskWrite, "Say a face is not the person its group is"},
 		{map[string]any{"operation": "album-cover"}, tools.RiskWrite, "Choose the photo an album shows as its cover"},
 		{map[string]any{"operation": "faces"}, tools.RiskRead, "Read whether faces are found in the photos"},
-		{map[string]any{"operation": "faces", "is_enabled": true}, tools.RiskWrite, "Find faces in the photos"},
+		{map[string]any{"operation": "faces", "is_enabled": true}, tools.RiskGranting, "Start finding faces in every photo, and keep what identifies each face"},
 		{map[string]any{"operation": "faces", "is_enabled": false}, tools.RiskDestructive, "Stop finding faces in the photos and delete every face and group found so far"},
 	} {
 		encoded, _ := json.Marshal(scenario.arguments)

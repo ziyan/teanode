@@ -107,6 +107,36 @@ func TestReadMetadataLeavesOutValuesItCannotUse(t *testing.T) {
 	}
 }
 
+// A camera whose clock was never set writes the year its clock starts at, and
+// a date far ahead is a clock set wrong; neither is when the photo was taken.
+func TestParseExifDateRefusesDatesNobodyTookAPhotoOn(t *testing.T) {
+	now := time.Now().UTC()
+	for name, text := range map[string]string{
+		"the epoch":         "1970:01:01 00:00:00",
+		"before cameras":    "1989:12:31 23:59:59",
+		"a year ahead":      now.AddDate(1, 0, 0).Format("2006:01:02 15:04:05"),
+		"two days ahead":    now.AddDate(0, 0, 2).Format("2006:01:02 15:04:05"),
+		"a far future year": "2099:01:01 00:00:00",
+		"with dashes":       "1980-01-01 00:00:00",
+	} {
+		if moment, offset := parseExifDate(text, ""); moment != nil || offset != nil {
+			t.Errorf("%s: %q gave %v %v, want no date", name, text, moment, offset)
+		}
+		if moment, offset := parseExifDate(text, "+02:00"); moment != nil || offset != nil {
+			t.Errorf("%s with an offset: %q gave %v %v, want no date", name, text, moment, offset)
+		}
+	}
+	// The earliest year, and a time a few hours ahead (a camera a little fast,
+	// or a zone east of the server), are believed.
+	if moment, _ := parseExifDate("1990:01:01 00:00:00", ""); moment == nil {
+		t.Error("1990 is believed")
+	}
+	soon := now.Add(3 * time.Hour).Format("2006:01:02 15:04:05")
+	if moment, _ := parseExifDate(soon, ""); moment == nil {
+		t.Errorf("%s is believed", soon)
+	}
+}
+
 func TestReadMetadataOffsets(t *testing.T) {
 	for text, want := range map[string]int{"+00:00": 0, "-05:30": -330, "+14:00": 840, "-12:00": -720} {
 		got, isValid := parseExifOffset(text)

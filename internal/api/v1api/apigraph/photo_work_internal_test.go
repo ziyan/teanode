@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -57,9 +58,13 @@ func (self *watchedFiles) PutFileStream(ctx context.Context, id string, content 
 }
 
 func (self *watchedFiles) OpenFileRange(ctx context.Context, id string, offsetBytes, sizeBytes int64) (*storage.FileStream, error) {
-	self.mutex.Lock()
-	self.openDuringReads = append(self.openDuringReads, self.database.activeCount.Load())
-	self.mutex.Unlock()
+	// Reading one byte of a blob to see that it is stored is done inside the
+	// transaction that records the file, on purpose: it is not reading the file.
+	if sizeBytes != 1 {
+		self.mutex.Lock()
+		self.openDuringReads = append(self.openDuringReads, self.database.activeCount.Load())
+		self.mutex.Unlock()
+	}
 	return self.files.OpenFileRange(ctx, id, offsetBytes, sizeBytes)
 }
 
@@ -307,9 +312,40 @@ func TestDeletingAnAccountDeletesItsPreviewsAndUploadParts(test *testing.T) {
 		}
 	}
 
+	// The objects are deleted after the account is, and not before: an account
+	// whose deletion fails or is rolled back keeps its previews.
+	rolledBack := errors.New("the deletion was rolled back")
+	if err := world.database.TransactionContext(test.Context(), func(transaction db.Transaction) error {
+		admin, err := transaction.GetUser(adminId)
+		if err != nil {
+			return err
+		}
+		grants := []models.Grant{{Permission: models.PermissionUserManage}}
+		ctx := api.ContextWithTransaction(api.ContextWithPrincipal(test.Context(), &api.Principal{User: admin, Permissions: models.NewEffectivePermissions(grants)}), transaction)
+		if err := world.graph.DeleteUser(ctx, DeleteUserArguments{UserID: ownerId}); err != nil {
+			return err
+		}
+		return rolledBack
+	}); !errors.Is(err, rolledBack) {
+		test.Fatal(err)
+	}
+	for _, name := range []string{mineSmall, mineVideo, partName} {
+		if !exists(name) {
+			test.Fatalf("%s was deleted with an account that was not", name)
+		}
+	}
+	if rows := dbtest.QueryString(test, world.database, "SELECT count(*) FROM photo WHERE user_id = '"+ownerId+"'"); rows != "1" {
+		test.Fatalf("the rolled back deletion left %s photos", rows)
+	}
+
 	world.ask(adminId, []models.Permission{models.PermissionUserManage}, func(ctx context.Context) {
 		if err := world.graph.DeleteUser(ctx, DeleteUserArguments{UserID: ownerId}); err != nil {
 			test.Fatal(err)
+		}
+		for _, name := range []string{mineSmall, mineVideo, partName} {
+			if !exists(name) {
+				test.Errorf("%s was deleted before the account was", name)
+			}
 		}
 	})
 	for _, name := range []string{mineSmall, mineVideo, partName} {

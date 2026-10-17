@@ -219,6 +219,10 @@ type heifOptions struct {
 	isLargeMdat     bool // mdat's size is in the 64 bit field
 	hasExif         bool
 	infeVersion     int // 2 or 3
+
+	// sizeWidth and sizeHeight are what the size property of the primary
+	// picture says; 4032 by 3024 when both are zero.
+	sizeWidth, sizeHeight uint32
 }
 
 func box(kind string, payload ...[]byte) []byte {
@@ -298,8 +302,12 @@ func buildHeif(options heifOptions, exif []byte) []byte {
 		}
 		locations = fullBox("iloc", byte(options.locationVersion), sizes, count(itemTotal), items)
 
+		sizeWidth, sizeHeight := options.sizeWidth, options.sizeHeight
+		if sizeWidth == 0 && sizeHeight == 0 {
+			sizeWidth, sizeHeight = 4032, 3024
+		}
 		properties := box("iprp",
-			box("ipco", fullBox("ispe", 0, bigEndian32(4032, 3024))),
+			box("ipco", fullBox("ispe", 0, bigEndian32(sizeWidth, sizeHeight))),
 			fullBox("ipma", 0, bigEndian32(1), binary.BigEndian.AppendUint16(nil, 1), []byte{1, 1}))
 		parts := [][]byte{fullBox("hdlr", 0, bigEndian32(0), []byte("pict"), make([]byte, 13)), fullBox("pitm", 0, []byte{0, 1}), itemInfo, locations, properties}
 		if options.isInHeaderData {

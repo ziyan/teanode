@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/graphql-go/graphql"
 	gqlparser "github.com/graphql-go/graphql/language/parser"
@@ -459,5 +460,59 @@ func TestPhotoFaceClientDocumentsMatchTheBuiltSchema(test *testing.T) {
 		if validated := graphql.ValidateDocument(&schema, document, nil); !validated.IsValid {
 			test.Errorf("%s does not match the built schema: %v", name, validated.Errors)
 		}
+	}
+}
+
+// Cutting a face picture decodes a whole preview, so only a few are cut at
+// once: while the turns are taken a request waits, and one whose browser goes
+// away is given up on without decoding anything.
+func TestFacePicturesAreCutAFewAtATime(test *testing.T) {
+	world := newPhotoWorld(test)
+	ownerId := world.person("face-slots-owner", models.PermissionPhotosUse)
+	stored := world.storePhoto(ownerId, "face slots", "face.jpg", []byte("original"), map[models.PhotoPreviewSize][]byte{models.PhotoPreviewLarge: facePictureJpeg(test)})
+	face, _ := world.storeFaceOf(ownerId, stored.ID, "", 0)
+	path := api.PhotoFacePicturePath(face.ID)
+
+	if err := facePictureSlots.Acquire(test.Context(), facePictureConcurrency); err != nil {
+		test.Fatal(err)
+	}
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			facePictureSlots.Release(facePictureConcurrency)
+		}
+	}
+	defer release()
+
+	// A browser that gives up while the turns are taken is told so.
+	ctx, cancel := context.WithTimeout(test.Context(), 300*time.Millisecond)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, world.server.URL+path, nil)
+	if err != nil {
+		test.Fatal(err)
+	}
+	asSession("face-slots-owner")(request)
+	if response, err := http.DefaultClient.Do(request); err == nil {
+		_ = response.Body.Close()
+		test.Fatalf("a face was cut with every turn taken: %d", response.StatusCode)
+	}
+
+	// A request that waits is served once a turn is free.
+	answered := make(chan int, 1)
+	go func() { answered <- world.status(http.MethodGet, path, asSession("face-slots-owner"), nil) }()
+	select {
+	case status := <-answered:
+		test.Fatalf("a face was cut with every turn taken: %d", status)
+	case <-time.After(300 * time.Millisecond):
+	}
+	release()
+	select {
+	case status := <-answered:
+		if status != http.StatusOK {
+			test.Fatalf("the waiting request got %d", status)
+		}
+	case <-time.After(10 * time.Second):
+		test.Fatal("the waiting request was never served")
 	}
 }

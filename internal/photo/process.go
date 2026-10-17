@@ -205,8 +205,12 @@ func (self *Store) processWaitingPhotos(ctx context.Context, pass *processingPas
 			return
 		}
 		var photos []*models.Photo
+		// Videos are left where they are while the programs they are read with
+		// are missing: claiming one would copy its whole file to the work
+		// directory only to find that out.
+		isVideoSkipped := self.videoProgramsMissing() != nil
 		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-			photos, err = transaction.ClaimPhotosForProcessing(1, self.now().Add(-processingClaimRetention), maximumProcessingAttemptCount)
+			photos, err = transaction.ClaimPhotosForProcessing(1, self.now().Add(-processingClaimRetention), maximumProcessingAttemptCount, isVideoSkipped)
 			return err
 		}); err != nil {
 			pass.release()
@@ -247,7 +251,16 @@ func (self *Store) processClaimed(ctx context.Context, pass *processingPass, pho
 // for good after the attempts, or at once for a kind of file that cannot be
 // read. A panic is a failure of the file too: the photo is recorded as failed
 // and the process goes on.
+//
+// The outcome is recorded against the claim the work was done under. If the
+// claim was lost in the meantime (it ran out and another instance took the
+// photo, or the photo's file was replaced) the outcome is not the photo's, and
+// is not recorded.
 func (self *Store) processAndRecord(ctx context.Context, photo *models.Photo) error {
+	if photo.ProcessingClaimedAt == nil {
+		return fmt.Errorf("photo %s was claimed and has no claim time", photo.ID)
+	}
+	claim := &processingClaim{claimedAt: *photo.ProcessingClaimedAt}
 	// The claim runs out in minutes and a long video takes longer, so it is
 	// renewed until the work ends.
 	renewalContext, stopRenewal := context.WithCancel(ctx)
@@ -255,16 +268,28 @@ func (self *Store) processAndRecord(ctx context.Context, photo *models.Photo) er
 	go func() {
 		defer deferutil.Recover()
 		defer close(renewalDone)
-		self.renewClaim(renewalContext, photo.ID)
+		self.renewClaim(renewalContext, photo.ID, claim)
 	}()
 	processed := &processedPhoto{photo: photo, isVideo: photo.PhotoKind == models.PhotoKindVideo}
 	processError := self.processGuarded(ctx, processed)
 	stopRenewal()
 	<-renewalDone
+	claimedAt := claim.current()
 
 	if ctx.Err() != nil {
-		// Stopping is not the photo's fault. Its claim runs out and it is
-		// taken again.
+		// Stopping is not the photo's fault. The attempt it cost is given back
+		// and the claim cleared, so that the photo is taken again at once and
+		// not after the claim has run out, which a restart would otherwise wait
+		// ten minutes for. The request is over, so this is done in a context of
+		// its own.
+		releaseContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), claimReleaseTimeout)
+		defer cancel()
+		if err := self.database.TransactionContext(releaseContext, func(transaction db.Transaction) error {
+			_, err := transaction.ReleasePhotoProcessingClaim(photo.ID, claimedAt)
+			return err
+		}); err != nil && !errors.Is(err, db.ErrNotFound) {
+			log.Warningf("cannot give back the claim on photo %s: %s", photo.ID, err)
+		}
 		return nil
 	}
 	if errors.Is(processError, errPhotoGone) {
@@ -289,21 +314,86 @@ func (self *Store) processAndRecord(ctx context.Context, photo *models.Photo) er
 			maximumAttemptCount = 1
 		}
 	}
-	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+	var isCurrent bool
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
 		if processError == nil {
-			return transaction.MarkPhotoReady(photo.ID)
+			isCurrent, err = transaction.MarkPhotoReady(photo.ID, claimedAt)
+			return err
 		}
-		return transaction.MarkPhotoProcessingFailed(photo.ID, message, isFileAtFault, maximumAttemptCount)
+		isCurrent, err = transaction.MarkPhotoProcessingFailed(photo.ID, claimedAt, message, isFileAtFault, maximumAttemptCount)
+		return err
 	}); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return nil
 		}
 		return err
 	}
+	if !isCurrent {
+		log.Infof("the claim on photo %s was lost while it was being processed; what was found is not recorded", photo.ID)
+		self.discardSupersededPreviews(ctx, processed)
+		return nil
+	}
 	if processError != nil {
 		log.Warningf("cannot process photo %s: %s", photo.ID, processError)
 	}
 	return nil
+}
+
+// claimReleaseTimeout bounds giving back the claim of a worker that was stopped.
+const claimReleaseTimeout = 30 * time.Second
+
+// processingClaim is the claim a worker holds on a photo. A claim is known by
+// the time it was made, and each renewal makes a new time, so the claim is
+// read and written by the worker and the goroutine that renews it.
+type processingClaim struct {
+	mutex     sync.Mutex
+	claimedAt time.Time
+}
+
+func (self *processingClaim) current() time.Time {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return self.claimedAt
+}
+
+func (self *processingClaim) renewTo(claimedAt time.Time) {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	self.claimedAt = claimedAt
+}
+
+// discardSupersededPreviews deletes the previews a worker wrote when what it
+// worked on has been overtaken by a different file: they are of a file the
+// photo no longer has, and the work that overtook it makes the right ones. When
+// the photo's file is the one the worker read, the claim was lost to another
+// worker on the same file, whose previews are the same ones, and they stay.
+func (self *Store) discardSupersededPreviews(ctx context.Context, processed *processedPhoto) {
+	if len(processed.writtenPreviewSizes) == 0 || processed.source == nil {
+		return
+	}
+	photo := processed.photo
+	var current *models.PhotoFile
+	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+		files, err := transaction.ListPhotoFiles(photo.UserID, []string{photo.ID})
+		current = previewSourceOf(files)
+		return err
+	}); err != nil {
+		log.Warningf("cannot tell whether the previews of photo %s are of the file it has: %s", photo.ID, err)
+		return
+	}
+	if current != nil && current.BlobSHA256 == processed.source.BlobSHA256 {
+		return
+	}
+	for _, photoPreviewSize := range processed.writtenPreviewSizes {
+		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
+			return transaction.DeletePhotoPreview(photo.UserID, photo.ID, photoPreviewSize)
+		}); err != nil && !errors.Is(err, db.ErrNotFound) {
+			log.Warningf("cannot delete the %s preview of photo %s made from a file it no longer has: %s", photoPreviewSize, photo.ID, err)
+		}
+		if err := self.files.DeleteFileEverywhere(ctx, models.PhotoPreviewFileID(photo.ID, photoPreviewSize)); err != nil {
+			log.Warningf("cannot delete the %s preview of photo %s made from a file it no longer has: %s", photoPreviewSize, photo.ID, err)
+		}
+	}
 }
 
 // processGuarded is processPhoto with a panic turned into a failure of the
@@ -319,8 +409,9 @@ func (self *Store) processGuarded(ctx context.Context, processed *processedPhoto
 	return self.processPhoto(ctx, processed)
 }
 
-// renewClaim keeps the claim on a photo alive until the context ends.
-func (self *Store) renewClaim(ctx context.Context, photoId string) {
+// renewClaim keeps the claim on a photo alive until the context ends, and
+// until the claim is lost, when there is nothing to keep.
+func (self *Store) renewClaim(ctx context.Context, photoId string, claim *processingClaim) {
 	ticker := time.NewTicker(claimRenewalInterval)
 	defer ticker.Stop()
 	for {
@@ -328,11 +419,22 @@ func (self *Store) renewClaim(ctx context.Context, photoId string) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
-				return transaction.TouchPhotoProcessingClaims([]string{photoId})
-			}); err != nil && ctx.Err() == nil {
-				log.Warningf("cannot renew the claim on photo %s being processed: %s", photoId, err)
+			var renewedAt time.Time
+			var isCurrent bool
+			if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
+				renewedAt, isCurrent, err = transaction.RenewPhotoProcessingClaim(photoId, claim.current())
+				return err
+			}); err != nil {
+				if ctx.Err() == nil {
+					log.Warningf("cannot renew the claim on photo %s being processed: %s", photoId, err)
+				}
+				continue
 			}
+			if !isCurrent {
+				log.Warningf("the claim on photo %s being processed was lost", photoId)
+				return
+			}
+			claim.renewTo(renewedAt)
 		}
 	}
 }
@@ -375,6 +477,14 @@ type processedPhoto struct {
 	// directory is a private directory inside the work directory, made when a
 	// tool needs a path to read, and removed when processing ends.
 	directory string
+
+	// releaseWorkSpace gives back the room in the work directory that the copy
+	// of the file was promised.
+	releaseWorkSpace func()
+
+	// writtenPreviewSizes are the previews stored for the photo by this work, so
+	// that they can be deleted if the work turns out to have been overtaken.
+	writtenPreviewSizes []models.PhotoPreviewSize
 }
 
 // workDirectoryOf is the private directory a photo's temporary files go in.
@@ -419,21 +529,17 @@ func (self *Store) processPhoto(ctx context.Context, processed *processedPhoto) 
 		if processed.directory != "" {
 			_ = os.RemoveAll(processed.directory)
 		}
+		if processed.releaseWorkSpace != nil {
+			processed.releaseWorkSpace()
+		}
 	}()
 	hasLiveVideo := false
 	for _, file := range files {
-		switch file.PhotoFileRole {
-		case models.PhotoFileRoleEdited:
-			processed.source = file
-		case models.PhotoFileRoleOriginal:
-			// The edited version, when there is one, is what is shown.
-			if processed.source == nil {
-				processed.source = file
-			}
-		case models.PhotoFileRoleLiveVideo:
+		if file.PhotoFileRole == models.PhotoFileRoleLiveVideo {
 			hasLiveVideo = true
 		}
 	}
+	processed.source = previewSourceOf(files)
 	if processed.source == nil {
 		return &processingFailure{Cause: errors.New("the photo has no picture or video to read"), IsFileAtFault: true}
 	}
@@ -445,6 +551,21 @@ func (self *Store) processPhoto(ctx context.Context, processed *processedPhoto) 
 		return self.processVideo(ctx, processed)
 	}
 	return self.processPicture(ctx, processed)
+}
+
+// previewSourceOf is the file a photo's previews are made from: the edited
+// version when there is one, else the original. Nil when there is neither.
+func previewSourceOf(files []*models.PhotoFile) *models.PhotoFile {
+	var original *models.PhotoFile
+	for _, file := range files {
+		switch file.PhotoFileRole {
+		case models.PhotoFileRoleEdited:
+			return file
+		case models.PhotoFileRoleOriginal:
+			original = file
+		}
+	}
+	return original
 }
 
 // ownerLocation is the time zone the owner is in, where a date the file wrote
@@ -539,11 +660,15 @@ func (self *Store) copyFileToDirectory(ctx context.Context, processed *processed
 	if err != nil {
 		return "", err
 	}
-	// A file larger than the room left is not started: it would fill the disk
-	// the server's other files are on.
-	if freeBytes, isKnown := freeDiskBytes(directory); isKnown && processed.source.FileSizeBytes > freeBytes {
-		return "", fmt.Errorf("the file is %d bytes and the work directory has %d bytes free", processed.source.FileSizeBytes, freeBytes)
+	// A file is not started unless the disk has room for it and for what is
+	// made from it, twice its size, with a reserve left over, after the room
+	// promised to the files being worked on already: it would fill the disk the
+	// server's other files are on.
+	release, err := self.workSpace.promise(self.freeBytesOf, directory, processed.source.FileSizeBytes)
+	if err != nil {
+		return "", err
 	}
+	processed.releaseWorkSpace = release
 	stream, err := self.openFile(ctx, processed.source)
 	if err != nil {
 		return "", err
@@ -599,7 +724,7 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 			if err != nil {
 				return err
 			}
-			self.readPictureMetadata(processed, file, source.FileSizeBytes)
+			self.readPictureMetadata(processed, file, source.FileSizeBytes, source.ContentType)
 			_ = file.Close()
 		}
 		processed.namePlace()
@@ -617,7 +742,7 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 		return err
 	}
 	if hasReadableMetadata {
-		self.readPictureMetadata(processed, bytes.NewReader(content), source.FileSizeBytes)
+		self.readPictureMetadata(processed, bytes.NewReader(content), source.FileSizeBytes, source.ContentType)
 	}
 	processed.namePlace()
 	if err := self.saveMetadata(ctx, processed); err != nil {
@@ -626,13 +751,8 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 
 	var decodable []byte
 	if isHeif {
-		var err error
-		workDirectory, err := self.prepareWorkDirectory()
-		if err != nil {
+		if decodable, err = self.decodeHeif(ctx, content); err != nil {
 			return err
-		}
-		if decodable, err = picture.DecodeHEIC(ctx, bytes.NewReader(content), workDirectory); err != nil {
-			return readFailure(err)
 		}
 	} else {
 		decodable = content
@@ -666,17 +786,50 @@ func (self *Store) processPicture(ctx context.Context, processed *processedPhoto
 	if err := self.saveMetadata(ctx, processed); err != nil {
 		return err
 	}
-	large, err := self.keepPicturePreviews(ctx, processed.photo, decoded)
+	large, err := self.keepPicturePreviews(ctx, processed, decoded)
 	// The full-size pixels are not needed again, and what faces are read from
 	// is the large preview.
 	releasePixels()
 	if err != nil {
 		return err
 	}
-	// Step 4: the faces. A failure here is logged and leaves the faces to be
+	// The faces. A failure here is logged and leaves the faces to be
 	// found later; the photo is ready either way.
 	self.findFaces(ctx, processed.photo, large)
 	return nil
+}
+
+// decodeHeif turns a HEIC into a JPEG with heif-dec, which holds the whole
+// decoded picture while it works. The size the file says it is, read from its
+// boxes, is bounded as a JPEG's is, and takes the same share of the pixel
+// budget as decoding that picture would, for as long as heif-dec runs: a small
+// file can claim a huge picture, and several can claim it at once.
+func (self *Store) decodeHeif(ctx context.Context, content []byte) ([]byte, error) {
+	widthPixels, heightPixels, err := picture.ReadHeifSize(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		if errors.Is(err, picture.ErrTooLarge) {
+			return nil, &processingFailure{
+				Cause:         fmt.Errorf("%w: %s", errPictureTooLarge, err),
+				Message:       tooLargeFailureMessage,
+				IsFileAtFault: true,
+			}
+		}
+		return nil, readFailure(err)
+	}
+	weight := min(int64(widthPixels)*int64(heightPixels), maximumPixelsInFlight)
+	if err := self.pixelBudget.Acquire(ctx, weight); err != nil {
+		return nil, fmt.Errorf("%w: %s", errPixelBudget, err)
+	}
+	defer self.pixelBudget.Release(weight)
+	workDirectory, err := self.prepareWorkDirectory()
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := picture.DecodeHEIC(ctx, bytes.NewReader(content), workDirectory)
+	if err != nil {
+		return nil, readFailure(err)
+	}
+	return decoded, nil
 }
 
 // errPixelBudget is a wait for room in the pixel budget that ended with the
@@ -709,7 +862,7 @@ func (self *Store) decodeWithinBudget(ctx context.Context, content []byte) (imag
 // readPictureMetadata sets what a picture's EXIF block says. A picture whose
 // block cannot be read is not a failed photo: its pixels may be fine, and the
 // date and place it would have had are the only loss.
-func (self *Store) readPictureMetadata(processed *processedPhoto, content io.ReaderAt, sizeBytes int64) {
+func (self *Store) readPictureMetadata(processed *processedPhoto, content io.ReaderAt, sizeBytes int64, contentType string) {
 	metadata, err := picture.ReadMetadata(content, sizeBytes)
 	if err != nil {
 		log.Infof("cannot read the metadata of photo %s: %s", processed.photo.ID, err)
@@ -721,10 +874,12 @@ func (self *Store) readPictureMetadata(processed *processedPhoto, content io.Rea
 	processed.metadata.Latitude, processed.metadata.Longitude = metadata.Latitude, metadata.Longitude
 	processed.metadata.CameraMake, processed.metadata.CameraModel = metadata.CameraMake, metadata.CameraModel
 	processed.metadata.WidthPixels, processed.metadata.HeightPixels = metadata.WidthPixels, metadata.HeightPixels
-	// The size is the stored one; a picture turned on its side is shown the
+	// The size is the stored one; a JPEG turned on its side is shown the
 	// other way round. A HEIC is turned by its own boxes, which the decoder
-	// applies, and its real size is set when it is decoded.
-	if metadata.Orientation >= 5 && metadata.Orientation <= 8 {
+	// applies, and not by the orientation of its EXIF block, which describes
+	// the pixels the camera stored and not the picture heif-dec makes; its
+	// real size is set when it is decoded.
+	if contentType == "image/jpeg" && metadata.Orientation >= 5 && metadata.Orientation <= 8 {
 		processed.metadata.WidthPixels, processed.metadata.HeightPixels = metadata.HeightPixels, metadata.WidthPixels
 	}
 }
@@ -732,7 +887,7 @@ func (self *Store) readPictureMetadata(processed *processedPhoto, content io.Rea
 // keepPicturePreviews makes and stores the small and large previews of an
 // upright picture, and returns the large one, which is what faces are read
 // from.
-func (self *Store) keepPicturePreviews(ctx context.Context, photo *models.Photo, upright image.Image) (image.Image, error) {
+func (self *Store) keepPicturePreviews(ctx context.Context, processed *processedPhoto, upright image.Image) (image.Image, error) {
 	large := picture.Scale(upright, largePreviewLongSidePixels)
 	// The small one is made from the large one: it is much less to read, and
 	// the difference cannot be seen at 400 pixels.
@@ -746,7 +901,7 @@ func (self *Store) keepPicturePreviews(ctx context.Context, photo *models.Photo,
 			return nil, readFailure(err)
 		}
 		bounds := preview.scaled.Bounds()
-		if err := self.keepPreview(ctx, photo, preview.photoPreviewSize, "image/jpeg", bytes.NewReader(encoded), int64(len(encoded)), bounds.Dx(), bounds.Dy()); err != nil {
+		if err := self.keepPreview(ctx, processed, preview.photoPreviewSize, "image/jpeg", bytes.NewReader(encoded), int64(len(encoded)), bounds.Dx(), bounds.Dy()); err != nil {
 			return nil, err
 		}
 	}
@@ -755,11 +910,13 @@ func (self *Store) keepPicturePreviews(ctx context.Context, photo *models.Photo,
 
 // keepPreview stores a preview's bytes and then records it, in that order, so
 // that no row names bytes that are not there.
-func (self *Store) keepPreview(ctx context.Context, photo *models.Photo, photoPreviewSize models.PhotoPreviewSize, contentType string, content io.ReadSeeker, sizeBytes int64, widthPixels, heightPixels int) error {
+func (self *Store) keepPreview(ctx context.Context, processed *processedPhoto, photoPreviewSize models.PhotoPreviewSize, contentType string, content io.ReadSeeker, sizeBytes int64, widthPixels, heightPixels int) error {
+	photo := processed.photo
 	fileId := models.PhotoPreviewFileID(photo.ID, photoPreviewSize)
 	if err := self.files.PutFileStream(ctx, fileId, content, sizeBytes); err != nil {
 		return err
 	}
+	processed.writtenPreviewSizes = append(processed.writtenPreviewSizes, photoPreviewSize)
 	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		_, err := transaction.UpsertPhotoPreview(photo.UserID, &models.PhotoPreview{
 			PhotoID: photo.ID, PhotoPreviewSize: photoPreviewSize, ContentType: contentType,
@@ -779,6 +936,12 @@ func (self *Store) keepPreview(ctx context.Context, photo *models.Photo, photoPr
 }
 
 func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) error {
+	// The programs are looked for before the file is copied: without them
+	// every video would be copied to the work directory, whole, only to be
+	// found unreadable, again at every try.
+	if err := self.videoProgramsMissing(); err != nil {
+		return err
+	}
 	// A video is never read into memory: ffmpeg reads the file from disk.
 	path, err := self.copyFileToDirectory(ctx, processed)
 	if err != nil {
@@ -812,7 +975,7 @@ func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) 
 		return readFailure(err)
 	}
 	defer releasePixels()
-	large, err := self.keepPicturePreviews(ctx, processed.photo, decoded)
+	large, err := self.keepPicturePreviews(ctx, processed, decoded)
 	releasePixels()
 	if err != nil {
 		return err
@@ -837,7 +1000,7 @@ func (self *Store) processVideo(ctx context.Context, processed *processedPhoto) 
 		return err
 	}
 	widthPixels, heightPixels := fitLongSide(probed.WidthPixels, probed.HeightPixels, picture.VideoPreviewLongSidePixels)
-	return self.keepPreview(ctx, processed.photo, models.PhotoPreviewVideo, "video/mp4", previewFile, info.Size(), widthPixels, heightPixels)
+	return self.keepPreview(ctx, processed, models.PhotoPreviewVideo, "video/mp4", previewFile, info.Size(), widthPixels, heightPixels)
 }
 
 // fitLongSide is the size a picture of the given size has once its longest

@@ -3,6 +3,7 @@ package photo_test
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -153,7 +154,20 @@ func TestDeletingAnAccountsObjectsLeavesOthersAndBlobs(test *testing.T) {
 		objectNames = append(objectNames, name)
 	}
 
-	fixture.store.DeleteAccountObjects(test.Context(), fixture.userId)
+	// Listing deletes nothing: the account's deletion may yet fail.
+	listed, err := fixture.store.AccountObjects(test.Context(), fixture.userId)
+	if err != nil {
+		test.Fatal(err)
+	}
+	for _, name := range objectNames {
+		if fixture.files.has(name) != true || !slices.Contains(listed, name) {
+			test.Errorf("%s is deleted or not listed after listing", name)
+		}
+	}
+	if slices.Contains(listed, otherPreview) {
+		test.Error("another person's preview was listed")
+	}
+	fixture.store.DeleteObjects(test.Context(), listed)
 
 	for _, name := range objectNames {
 		if fixture.files.has(name) {

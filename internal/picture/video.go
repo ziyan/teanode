@@ -164,19 +164,20 @@ func parseDurationMS(seconds string) int64 {
 
 // parseVideoDate prefers the QuickTime creation date, which has an offset,
 // and falls back to the container's creation time. A container with no date
-// at all often says the start of the QuickTime epoch, 1904, which is nothing.
+// at all often says the start of the QuickTime epoch, 1904, which is nothing;
+// a date that isPlausibleDate refuses, as that one and one far ahead, is none.
 func parseVideoDate(quickTimeDate, containerDate string) (*time.Time, *int) {
-	if moment, err := time.Parse("2006-01-02T15:04:05-0700", quickTimeDate); err == nil && moment.Year() >= 1990 {
+	if moment, err := time.Parse("2006-01-02T15:04:05-0700", quickTimeDate); err == nil && isPlausibleDate(moment) {
 		_, offsetSeconds := moment.Zone()
 		offsetMinutes := offsetSeconds / 60
 		return &moment, &offsetMinutes
 	}
-	if moment, err := time.Parse("2006-01-02T15:04:05-07:00", quickTimeDate); err == nil && moment.Year() >= 1990 {
+	if moment, err := time.Parse("2006-01-02T15:04:05-07:00", quickTimeDate); err == nil && isPlausibleDate(moment) {
 		_, offsetSeconds := moment.Zone()
 		offsetMinutes := offsetSeconds / 60
 		return &moment, &offsetMinutes
 	}
-	if moment, err := time.Parse(time.RFC3339Nano, containerDate); err == nil && moment.Year() >= 1990 {
+	if moment, err := time.Parse(time.RFC3339Nano, containerDate); err == nil && isPlausibleDate(moment) {
 		moment = moment.UTC()
 		return &moment, nil
 	}
@@ -319,6 +320,18 @@ func VideoPreview(ctx context.Context, inputPath, outputPath string) error {
 	return nil
 }
 
+// CheckVideoPrograms says whether ffmpeg and ffprobe, which videos are read
+// with, are installed, so that a caller can ask before it copies a large file
+// to hand to them. The error is ErrProgramMissing.
+func CheckVideoPrograms() error {
+	for _, name := range []string{"ffprobe", "ffmpeg"} {
+		if _, err := findVideoProgram(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func findVideoProgram(name string) (string, error) {
 	program, err := exec.LookPath(name)
 	if err != nil {
@@ -352,6 +365,9 @@ func videoInputArguments() []string {
 func runVideoProgram(ctx context.Context, program string, arguments []string, input *os.File, output io.Writer) error {
 	stderr := &tailWriter{maximumBytes: 4 << 10}
 	command := exec.CommandContext(ctx, program, arguments...)
+	// The file is in a private directory of the caller's, which is the home
+	// the program is given.
+	command.Env = ProgramEnvironment(filepath.Dir(input.Name()))
 	command.ExtraFiles = []*os.File{input}
 	command.Stdout = output
 	command.Stderr = stderr

@@ -3,6 +3,7 @@ package picture
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"hash/crc32"
 	"image"
 	"image/color"
@@ -96,6 +97,23 @@ func TestDecodeRefusesTooManyPixelsBeforeDecoding(t *testing.T) {
 	}
 	if _, _, err := ReadSize([]byte("plain text")); err == nil {
 		t.Error("text has a size")
+	}
+}
+
+// A strip is under the pixel limit and would still make Scale allocate a row
+// of gigabytes, so a side has a limit of its own.
+func TestReadSizeRefusesAVeryLongSide(t *testing.T) {
+	for _, claim := range [][2]uint32{{65536, 1}, {1, 65536}, {1_000_000_000, 1}} {
+		if _, _, err := ReadSize(pngClaiming(claim[0], claim[1])); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("%d by %d: err = %v, want ErrTooLarge", claim[0], claim[1], err)
+		}
+		if _, err := Decode(pngClaiming(claim[0], claim[1])); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("Decode %d by %d: err = %v, want ErrTooLarge", claim[0], claim[1], err)
+		}
+	}
+	widthPixels, heightPixels, err := ReadSize(pngClaiming(65535, 1))
+	if err != nil || widthPixels != 65535 || heightPixels != 1 {
+		t.Errorf("the longest allowed side: %d by %d, err = %v", widthPixels, heightPixels, err)
 	}
 }
 

@@ -46,7 +46,7 @@ func TestCleanupDeletesAnUnreferencedBlobAndKeepsAReferencedOne(test *testing.T)
 		test.Fatal("a blob younger than an hour was deleted")
 	}
 
-	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours'")
+	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END")
 	if err := fixture.store.Cleanup(test.Context(), 10); err != nil {
 		test.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestCleanupDeletesAMarkedBlobsBytesAgainWhenAFileArrivesBeforeItsRowIsGone(
 			test.Fatal(err)
 		}
 	})
-	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours', deleting_at = now()")
+	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END, deleting_at = now()")
 	_ = fixture.files.DeleteFileEverywhere(test.Context(), models.PhotoBlobFileID(digestOf(picture)))
 
 	second := fixture.send(http.MethodPost, fixture.collectionUrl(), jpegHeaders("second"), picture)
@@ -129,7 +129,7 @@ func TestCleanupDeletesPhotosPastTheTrashAndTheirPreviews(test *testing.T) {
 	if !fixture.files.has(models.PhotoBlobFileID(digestOf(smallJpeg(test, 50)))) {
 		test.Fatal("the file of a deleted photo was deleted before the blobs' hour")
 	}
-	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours'")
+	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END")
 	if err := fixture.store.Cleanup(test.Context(), 10); err != nil {
 		test.Fatal(err)
 	}

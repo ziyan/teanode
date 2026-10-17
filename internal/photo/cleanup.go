@@ -3,6 +3,7 @@ package photo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ziyan/teanode/internal/db"
@@ -12,9 +13,10 @@ import (
 // Cleanup deletes what the library no longer needs, at most batchSize of
 // each kind in a pass: the parts of uploads that failed or went idle, photos
 // that were deleted forever or have been in the trash longer than the
-// operator allows (in batches of deletionBatchSize), and blobs no file refers
-// to, and groups of faces that no face is in. Each batch is its own transaction, so that a restart in the middle finds
-// the rest where it was left. One kind failing does not hold up the others.
+// operator allows (in batches of deletionBatchSize), blobs no file refers to,
+// and groups of faces that no face is in. Each batch is its own transaction,
+// so that a restart in the middle finds the rest where it was left. One kind
+// failing does not hold up the others.
 func (self *Store) Cleanup(ctx context.Context, batchSize int) error {
 	if batchSize < 1 || batchSize > 500 {
 		return db.ErrInvalidArguments
@@ -134,21 +136,38 @@ func (self *Store) deletePhotoBatch(ctx context.Context, expiredBefore time.Time
 	}
 	return len(photos), nil
 }
+
+// cleanBlobs deletes the blobs no file has named for an hour. A blob is deleted
+// in three steps. Marking it, in a transaction of its own that commits, is the
+// guard: a file arriving with the same bytes from then on sees the mark and
+// stores them again instead of trusting the object. The object is then
+// deleted, outside any transaction, because object store calls take as long as
+// the store takes and are not worth a row lock. Last the row is dropped by a
+// second transaction, which first checks again that no file names it and that
+// nobody cleared the mark.
+//
+// A blob whose object cannot be deleted is logged and left marked, and the
+// pass goes on to the next one; the next pass tries it again.
 func (self *Store) cleanBlobs(ctx context.Context, batchSize int) error {
+	var failedBlobSha256s []string
 	for range batchSize {
-		// Marked in a transaction of its own, so that the mark is kept
-		// whatever happens to the deletion that follows: a file arriving
-		// with the same bytes in between sees it, and stores them again
-		// instead of trusting bytes that may be gone.
 		var marked *models.PhotoBlob
 		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) (err error) {
-			marked, err = transaction.MarkUnreferencedPhotoBlobDeleting(self.now().Add(-unreferencedBlobRetention))
+			marked, err = transaction.MarkUnreferencedPhotoBlobDeleting(self.now().Add(-unreferencedBlobRetention), failedBlobSha256s)
 			return err
 		}); err != nil {
 			if errors.Is(err, db.ErrNotFound) {
 				return nil
 			}
 			return err
+		}
+		if err := self.files.DeleteFileEverywhere(ctx, models.PhotoBlobFileID(marked.BlobSHA256)); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			log.Warningf("cannot delete the bytes of blob %s yet: %s", marked.BlobSHA256, err)
+			failedBlobSha256s = append(failedBlobSha256s, marked.BlobSHA256)
+			continue
 		}
 		if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 			blob, err := transaction.LockPhotoBlobForDeletion(marked.BlobSHA256)
@@ -159,12 +178,13 @@ func (self *Store) cleanBlobs(ctx context.Context, batchSize int) error {
 			if err != nil {
 				return err
 			}
-			if err := self.files.DeleteFileEverywhere(ctx, models.PhotoBlobFileID(blob.BlobSHA256)); err != nil {
-				return err
-			}
 			return transaction.DeletePhotoBlob(blob.BlobSHA256)
 		}); err != nil {
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			log.Warningf("cannot drop the row of blob %s yet: %s", marked.BlobSHA256, err)
+			failedBlobSha256s = append(failedBlobSha256s, marked.BlobSHA256)
 		}
 	}
 	return nil
@@ -174,16 +194,17 @@ func (self *Store) cleanBlobs(ctx context.Context, batchSize int) error {
 // at once when its objects are deleted.
 const accountObjectPageSize = 500
 
-// DeleteAccountObjects deletes the objects in the store that the account's
-// previews and the parts of its uploads are, for the caller to run before the
-// account's rows go with it: afterwards nothing names them. Each preview is
-// deleted by every name it can have, as the cleanup of a photo does, and each
-// upload by the names of its parts and the one after. It is best effort: a
-// failure is logged and the rest goes on, because the account is being
-// deleted whatever happens here. The blobs of the photos' files are not
-// touched; they are unreferenced once the rows are gone, and the cleanup of
-// blobs deletes them.
-func (self *Store) DeleteAccountObjects(ctx context.Context, userId string) {
+// AccountObjects lists the objects in the store that the account's previews and
+// the parts of its uploads are, for the caller to delete (DeleteObjects) once
+// the account's rows are gone, when nothing names them: they are listed first,
+// while the rows say what they are, and deleted after the account is, so that
+// an account whose deletion fails keeps its previews. Each preview is listed by
+// every name it can have, as the cleanup of a photo deletes it, and each upload
+// by the names of its parts and the one after. The blobs of the photos' files
+// are not listed; they are unreferenced once the rows are gone, and the cleanup
+// of blobs deletes them.
+func (self *Store) AccountObjects(ctx context.Context, userId string) ([]string, error) {
+	var fileIds []string
 	afterPhotoId := ""
 	for {
 		var photoIds []string
@@ -191,14 +212,11 @@ func (self *Store) DeleteAccountObjects(ctx context.Context, userId string) {
 			photoIds, err = transaction.ListPhotoIDsOfAccount(userId, afterPhotoId, accountObjectPageSize)
 			return err
 		}); err != nil {
-			log.Warningf("cannot list the photos of account %s to delete their previews: %s", userId, err)
-			break
+			return nil, fmt.Errorf("cannot list the photos of account %s: %w", userId, err)
 		}
 		for _, photoId := range photoIds {
 			for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge, models.PhotoPreviewVideo} {
-				if err := self.files.DeleteFileEverywhere(ctx, models.PhotoPreviewFileID(photoId, photoPreviewSize)); err != nil {
-					log.Warningf("cannot delete the %s preview of photo %s of a deleted account: %s", photoPreviewSize, photoId, err)
-				}
+				fileIds = append(fileIds, models.PhotoPreviewFileID(photoId, photoPreviewSize))
 			}
 		}
 		if len(photoIds) < accountObjectPageSize {
@@ -224,19 +242,27 @@ func (self *Store) DeleteAccountObjects(ctx context.Context, userId string) {
 			}
 			return nil
 		}); err != nil {
-			log.Warningf("cannot list the uploads of account %s to delete their parts: %s", userId, err)
-			return
+			return nil, fmt.Errorf("cannot list the uploads of account %s: %w", userId, err)
 		}
 		for _, upload := range uploads {
 			for partIndex := 0; partIndex <= partCounts[upload.ID]; partIndex++ {
-				if err := self.files.DeleteFileEverywhere(ctx, models.PhotoUploadPartFileID(upload.ID, partIndex)); err != nil {
-					log.Warningf("cannot delete part %d of upload %s of a deleted account: %s", partIndex, upload.ID, err)
-				}
+				fileIds = append(fileIds, models.PhotoUploadPartFileID(upload.ID, partIndex))
 			}
 		}
 		if len(uploads) < accountObjectPageSize {
-			return
+			return fileIds, nil
 		}
 		afterUploadId = uploads[len(uploads)-1].ID
+	}
+}
+
+// DeleteObjects deletes objects from the store, best effort: a failure is
+// logged and the rest goes on, because what they belonged to is gone whatever
+// happens here.
+func (self *Store) DeleteObjects(ctx context.Context, fileIds []string) {
+	for _, fileId := range fileIds {
+		if err := self.files.DeleteFileEverywhere(ctx, fileId); err != nil {
+			log.Warningf("cannot delete %s of a deleted account: %s", fileId, err)
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,47 @@ func TestDecodeHEICReturnsWhatHeifDecWrites(t *testing.T) {
 	checkClean()
 }
 
+// environmentNames is the names of the variables in the output of env, which
+// a fake program wrote in place of a picture.
+func environmentNames(t *testing.T, output []byte) map[string]string {
+	t.Helper()
+	names := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		name, value, _ := strings.Cut(line, "=")
+		names[name] = value
+	}
+	return names
+}
+
+// checkMinimalEnvironment fails for any variable a program should not have
+// been given, and for the server's secret.
+func checkMinimalEnvironment(t *testing.T, output []byte) {
+	t.Helper()
+	for name, value := range environmentNames(t, output) {
+		switch name {
+		case "PATH", "LANG", "HOME", "PWD", "SHLVL", "_", "OLDPWD":
+		default:
+			t.Errorf("the program was given %s", name)
+		}
+		if strings.Contains(value, "a-secret-nobody-else-should-see") {
+			t.Errorf("%s holds the server's secret", name)
+		}
+	}
+	if environmentNames(t, output)["HOME"] == "" || environmentNames(t, output)["PATH"] == "" {
+		t.Errorf("environment = %q", output)
+	}
+}
+
+func TestDecodeHEICRunsHeifDecWithAMinimalEnvironment(t *testing.T) {
+	t.Setenv("TEANODE_DATABASE_PASSWORD", "a-secret-nobody-else-should-see")
+	fakeHeifDec(t, `env > "$output"`)
+	decoded, err := DecodeHEIC(context.Background(), strings.NewReader("x"), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkMinimalEnvironment(t, decoded)
+}
+
 func TestDecodeHEICTakesTheFirstOfSeveralPictures(t *testing.T) {
 	fakeHeifDec(t, `printf second > "${base}-2.jpg"; printf tenth > "${base}-10.jpg"; printf first > "${base}-1.jpg"`)
 	decoded, err := DecodeHEIC(context.Background(), strings.NewReader("x"), "")
@@ -93,6 +135,46 @@ func TestDecodeHEICNamesThePackageToInstall(t *testing.T) {
 	_, err := DecodeHEIC(context.Background(), strings.NewReader("x"), "")
 	if err == nil || !strings.Contains(err.Error(), "libheif-examples") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestReadHeifSizeReadsThePrimaryPicturesSize(t *testing.T) {
+	content := buildHeif(heifOptions{locationVersion: 1, hasExif: true, infeVersion: 2}, nil)
+	widthPixels, heightPixels, err := ReadHeifSize(bytes.NewReader(content), int64(len(content)))
+	if err != nil || widthPixels != 4032 || heightPixels != 3024 {
+		t.Errorf("size = %d by %d, err = %v", widthPixels, heightPixels, err)
+	}
+}
+
+// heif-dec holds the whole picture, and a small file can claim a huge one.
+func TestReadHeifSizeRefusesWhatIsTooLargeToDecode(t *testing.T) {
+	for name, size := range map[string][2]uint32{
+		"too many pixels": {16000, 4001},
+		"a very long row": {65536, 1},
+		"a billion wide":  {1_000_000_000, 2},
+	} {
+		content := buildHeif(heifOptions{locationVersion: 1, infeVersion: 2, sizeWidth: size[0], sizeHeight: size[1]}, nil)
+		if _, _, err := ReadHeifSize(bytes.NewReader(content), int64(len(content))); !errors.Is(err, ErrTooLarge) {
+			t.Errorf("%s: err = %v, want ErrTooLarge", name, err)
+		}
+	}
+	content := buildHeif(heifOptions{locationVersion: 1, infeVersion: 2, sizeWidth: 8000, sizeHeight: 8000}, nil)
+	if widthPixels, heightPixels, err := ReadHeifSize(bytes.NewReader(content), int64(len(content))); err != nil || widthPixels != 8000 || heightPixels != 8000 {
+		t.Errorf("within the limit: %d by %d, err = %v", widthPixels, heightPixels, err)
+	}
+}
+
+func TestReadHeifSizeRefusesAFileThatDoesNotSayHowLargeItIs(t *testing.T) {
+	content := box("ftyp", []byte("heic"), bigEndian32(0), []byte("mif1heic"))
+	content = append(content, fullBox("meta", 0, fullBox("pitm", 0, []byte{0, 1}))...)
+	if _, _, err := ReadHeifSize(bytes.NewReader(content), int64(len(content))); err == nil || errors.Is(err, ErrTooLarge) {
+		t.Errorf("err = %v, want a refusal that is not about size", err)
+	}
+	if _, _, err := ReadHeifSize(strings.NewReader("this is not a HEIC file at all"), 30); err == nil {
+		t.Error("text has a size")
+	}
+	for length := 0; length < len(content); length++ {
+		_, _, _ = ReadHeifSize(bytes.NewReader(content[:length]), int64(length))
 	}
 }
 

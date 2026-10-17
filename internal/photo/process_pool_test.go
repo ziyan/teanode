@@ -339,7 +339,7 @@ func (self *fixture) claimOne() *models.Photo {
 	var claimed []*models.Photo
 	dbtest.RunTransactionOn(self.test, self.database, func(transaction db.Transaction) {
 		var err error
-		if claimed, err = transaction.ClaimPhotosForProcessing(1, time.Now().Add(-10*time.Minute), 5); err != nil {
+		if claimed, err = transaction.ClaimPhotosForProcessing(1, time.Now().Add(-10*time.Minute), 5, false); err != nil {
 			self.test.Fatal(err)
 		}
 	})

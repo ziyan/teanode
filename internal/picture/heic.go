@@ -37,9 +37,9 @@ var ErrProgramMissing = errors.New("picture: a program needed to read the file i
 // temporary directory, made inside workDirectory (the system's temporary
 // directory when that is empty), that is removed afterwards.
 func DecodeHEIC(ctx context.Context, content io.Reader, workDirectory string) ([]byte, error) {
-	program, err := exec.LookPath("heif-dec")
+	program, err := findHeifProgram()
 	if err != nil {
-		return nil, fmt.Errorf("%w: HEIC pictures cannot be read because heif-dec was not found; install libheif-examples", ErrProgramMissing)
+		return nil, err
 	}
 	directory, err := os.MkdirTemp(workDirectory, "teanode-heic-")
 	if err != nil {
@@ -60,6 +60,7 @@ func DecodeHEIC(ctx context.Context, content io.Reader, workDirectory string) ([
 	// primary one, which it lists first.
 	command := exec.CommandContext(ctx, program, "--quiet", inputPath, filepath.Join(directory, "output.jpg"))
 	command.Dir = directory
+	command.Env = ProgramEnvironment(directory)
 	command.Stdout = io.Discard
 	command.Stderr = stderr
 	command.WaitDelay = waitDelay
@@ -82,6 +83,14 @@ func DecodeHEIC(ctx context.Context, content io.Reader, workDirectory string) ([
 		return nil, errors.New("picture: the decoded HEIC is too large")
 	}
 	return os.ReadFile(outputPath)
+}
+
+func findHeifProgram() (string, error) {
+	program, err := exec.LookPath("heif-dec")
+	if err != nil {
+		return "", fmt.Errorf("%w: HEIC pictures cannot be read because heif-dec was not found; install libheif-examples", ErrProgramMissing)
+	}
+	return program, nil
 }
 
 // chooseHeicOutput returns the file heif-dec wrote, or the first of several.

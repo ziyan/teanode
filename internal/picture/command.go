@@ -3,6 +3,7 @@ package picture
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"time"
 )
@@ -11,6 +12,15 @@ import (
 // it was told to stop, so a stuck program cannot hold the caller past its
 // context.
 const waitDelay = 5 * time.Second
+
+// ProgramEnvironment is the whole environment a program that reads a file is
+// run with: the path to find what it runs, a language, and a home that is a
+// private directory of ours. Run without one, a child gets the server's, which
+// holds its secret, its database address and every token the operator set, for
+// a program that opens files nobody has checked.
+func ProgramEnvironment(homeDirectory string) []string {
+	return []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "HOME=" + homeDirectory}
+}
 
 // errOutputTooLarge is what a bounded writer answers once the child has said
 // more than it may. The write fails, the child gets a broken pipe and stops.

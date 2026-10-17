@@ -21,10 +21,26 @@ import (
 // photoSearchPlaceTerm is the part of a search document that is the place.
 const photoSearchPlaceTerm = `setweight(to_tsvector('simple', photo.place_name), 'A') ||`
 
-// photoSearchDocumentWithoutPlaceExpression is the search document as a
-// reader sees it who may not know where a photo was taken: a search for the
-// words of a place must not find a photo whose place is held back.
-var photoSearchDocumentWithoutPlaceExpression = strings.Replace(photoSearchDocumentExpression, photoSearchPlaceTerm, "", 1)
+// photoSearchHeldBackDocumentExpression is the search document as a reader
+// sees it who may not know where a photo was taken: only what cannot name a
+// place. The place is out, and so is everything else that can say it: the
+// description and the words read in the picture, which describe what is
+// there, the file name, which a camera or a person may have called after the
+// place, and the titles of the albums the photo is in, which include the
+// owner's own and not only the one shared. What stays is the camera, the names
+// of the people in the photo (the owner gave those names to the reader with the
+// photo), and the title of the one album the reader is listing, which they
+// reached by it. Its one argument is that album's identifier. A search must not
+// find a photo by a word that would give its place away, any more than a
+// listing may show it.
+const photoSearchHeldBackDocumentExpression = `
+	setweight(to_tsvector('simple', COALESCE((
+		SELECT string_agg(photo_album.album_title, ' ')
+		FROM photo_album_item JOIN photo_album ON photo_album.id = photo_album_item.photo_album_id
+		WHERE photo_album_item.photo_id = photo.id AND photo_album.id = ?), '')), 'A') ||
+	setweight(to_tsvector('simple', photo.camera_make || ' ' || photo.camera_model), 'C') ||` + photoFaceNamesSearchExpression + `
+
+`
 
 // photoSearchDocumentExpression is the search document of the photo the
 // statement it is put in is about. The place and the albums' titles weigh
@@ -75,7 +91,8 @@ func photoSearchWords(searchText string) ([]string, error) {
 }
 
 // photoSearchPartCondition keeps the photos where every word is part of the
-// place, the file name or the camera: a document matches whole words only, and
+// place, the file name or the camera (the place and the file name of a photo
+// that is not the reader's only where places are not held back): a document matches whole words only, and
 // "harb" or "IMG_12" are still ways to look for a place or a file. It reads
 // every photo the filters keep, so it is asked only when the document search
 // leaves room.
@@ -84,12 +101,12 @@ func photoSearchPartCondition(words []string, scope photoScope) (string, []any) 
 	parts := make([]string, 0, len(words))
 	for _, word := range words {
 		pattern := "%" + escapeLike(word) + "%"
-		placeCondition := "photo.place_name ILIKE ?"
+		placeAndNameCondition := "photo.place_name ILIKE ? OR photo.original_filename ILIKE ?"
 		if scope.isPlaceHeldBack {
-			placeCondition = "(photo.user_id = ? AND photo.place_name ILIKE ?)"
+			placeAndNameCondition = "(photo.user_id = ? AND (photo.place_name ILIKE ? OR photo.original_filename ILIKE ?))"
 			arguments = append(arguments, scope.readerUserId)
 		}
-		parts = append(parts, "("+placeCondition+" OR photo.original_filename ILIKE ? OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)")
+		parts = append(parts, "("+placeAndNameCondition+" OR photo.camera_make ILIKE ? OR photo.camera_model ILIKE ?)")
 		arguments = append(arguments, pattern, pattern, pattern, pattern)
 	}
 	return "(" + strings.Join(parts, " AND ") + ")", arguments
@@ -102,7 +119,7 @@ func (self photoScope) searchDocument() (string, []any) {
 	if !self.isPlaceHeldBack {
 		return "photo.search_document", nil
 	}
-	return "(CASE WHEN photo.user_id = ? THEN photo.search_document ELSE (" + photoSearchDocumentWithoutPlaceExpression + ") END)", []any{self.readerUserId}
+	return "(CASE WHEN photo.user_id = ? THEN photo.search_document ELSE (" + photoSearchHeldBackDocumentExpression + ") END)", []any{self.readerUserId, self.photoAlbumId}
 }
 
 // rankPhotos is the identifiers of the photos a search finds, best first, at

@@ -42,6 +42,10 @@ CREATE TABLE "photo" (
     "photo_processing_state" varchar(32) NOT NULL,
     "processing_attempt_count" integer NOT NULL DEFAULT 0,
     "processing_error_message" text NOT NULL DEFAULT '',
+    -- How many failures in a row were not the file's (the store, the disk or a
+    -- program the server lacks), which give the attempt back and so are not
+    -- in "processing_attempt_count". It makes each wait longer than the last.
+    "processing_outage_count" integer NOT NULL DEFAULT 0,
     "processing_claimed_at" timestamptz,
     -- A failed attempt waits before the next: "processing_not_before" is the
     -- earliest time a waiting photo is claimed again, null for no wait.
@@ -54,6 +58,21 @@ CREATE INDEX "photo_user_timeline" ON "photo" ("user_id", (COALESCE("taken_at", 
 CREATE INDEX "photo_user_trashed" ON "photo" ("user_id", "trashed_at") WHERE "trashed_at" IS NOT NULL;
 CREATE INDEX "photo_processing_waiting" ON "photo" ("photo_processing_state", "created_at") WHERE "photo_processing_state" = 'waiting';
 
+-- Another name an uploader has for a photo that is here already. The same
+-- picture can reach the library under two names: kept from a conversation
+-- or a shared album (named by the digest of its bytes), and then backed up by
+-- a phone under its own. The second upload is recorded against the photo
+-- that has those bytes, and its name goes here so that the uploader finds the
+-- photo by it, as it does by the name in "photo"."client_photo_id".
+CREATE TABLE "photo_client_alias" (
+    "user_id" varchar(32) NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+    "client_photo_id" varchar(255) NOT NULL,
+    "photo_id" varchar(32) NOT NULL REFERENCES "photo"("id") ON DELETE CASCADE,
+    "created_at" timestamptz NOT NULL,
+    PRIMARY KEY ("user_id", "client_photo_id")
+);
+CREATE INDEX "photo_client_alias_photo" ON "photo_client_alias" ("photo_id");
+
 -- The bytes of a file, named by their SHA-256, so the same picture saved
 -- twice, or by two people, is stored once. The row exists only after the
 -- bytes are in the store.
@@ -61,12 +80,21 @@ CREATE INDEX "photo_processing_waiting" ON "photo" ("photo_processing_state", "c
 -- "deleting_at" is set before cleanup deletes the bytes. A file arriving
 -- with the same digest in that window sees it and stores the bytes again
 -- instead of trusting a row whose bytes may be half gone.
+--
+-- "unreferenced_since" is when no file named the blob any more (when the blob
+-- was made, if none has yet), and null while a file does. It is what cleanup
+-- reads to find blobs to delete, through the index below, so that finding them
+-- is not a look at every blob there is. A trigger on "photo_file" keeps it, so
+-- that a file going for any reason, such as its photo or its account being
+-- deleted, is counted.
 CREATE TABLE "photo_blob" (
     "blob_sha256" varchar(64) PRIMARY KEY,
     "blob_size_bytes" bigint NOT NULL CHECK ("blob_size_bytes" >= 0),
     "created_at" timestamptz NOT NULL,
-    "deleting_at" timestamptz
+    "deleting_at" timestamptz,
+    "unreferenced_since" timestamptz
 );
+CREATE INDEX "photo_blob_unreferenced" ON "photo_blob" ("unreferenced_since") WHERE "unreferenced_since" IS NOT NULL;
 
 -- One file of a photo, by role. Sending a role again replaces the file, which
 -- is how an edit made on the phone later reaches the server; the blob it
@@ -82,6 +110,30 @@ CREATE TABLE "photo_file" (
     PRIMARY KEY ("photo_id", "photo_file_role")
 );
 CREATE INDEX "photo_file_blob" ON "photo_file" ("blob_sha256");
+
+-- Keeps "photo_blob"."unreferenced_since": cleared when a file names the blob,
+-- set when the last file that did stops.
+CREATE FUNCTION "photo_file_track_blob_references"() RETURNS trigger AS $$
+BEGIN
+    IF TG_OP IN ('INSERT', 'UPDATE') THEN
+        UPDATE "photo_blob" SET "unreferenced_since" = NULL
+        WHERE "blob_sha256" = NEW."blob_sha256" AND "unreferenced_since" IS NOT NULL;
+    END IF;
+    IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND OLD."blob_sha256" <> NEW."blob_sha256") THEN
+        -- Two transactions taking away the last two files of one blob would
+        -- each still see the other's file and neither would mark it. The lock
+        -- makes the second wait for the first, and its next statement sees
+        -- the first one's file gone.
+        PERFORM 1 FROM "photo_blob" WHERE "blob_sha256" = OLD."blob_sha256" FOR UPDATE;
+        UPDATE "photo_blob" SET "unreferenced_since" = now()
+        WHERE "blob_sha256" = OLD."blob_sha256" AND "unreferenced_since" IS NULL
+            AND NOT EXISTS (SELECT 1 FROM "photo_file" WHERE "blob_sha256" = OLD."blob_sha256");
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+CREATE TRIGGER "photo_file_blob_references" AFTER INSERT OR UPDATE OR DELETE ON "photo_file"
+    FOR EACH ROW EXECUTE FUNCTION "photo_file_track_blob_references"();
 
 -- A file on its way in, over the resumable upload protocol. Its parts are
 -- stored one by one as they arrive, each with a receipt row below, so a

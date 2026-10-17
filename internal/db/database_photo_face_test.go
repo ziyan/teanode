@@ -38,11 +38,9 @@ func foundFaceAt(angleDegrees, boxLeftFraction float64) *models.PhotoFace {
 func readyPhotoWithPreview(test *testing.T, database db.Database, userId, clientPhotoId string) *models.Photo {
 	test.Helper()
 	found := newTestPhoto(test, database, userId, clientPhotoId, nil)
+	dbtest.MarkPhotoReady(test, database, found.ID)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		if _, err := transaction.UpsertPhotoPreview(userId, &models.PhotoPreview{PhotoID: found.ID, PhotoPreviewSize: models.PhotoPreviewLarge, ContentType: "image/jpeg", PreviewSizeBytes: 10}); err != nil {
-			test.Fatal(err)
-		}
-		if err := transaction.MarkPhotoReady(found.ID); err != nil {
 			test.Fatal(err)
 		}
 	})
@@ -698,10 +696,8 @@ func TestPhotosWaitForFacesOnlyWhenReadyWithALargePreview(test *testing.T) {
 	newTestPhoto(test, database, ownerId, "not processed", nil)
 	noPreview := newTestPhoto(test, database, ownerId, "no preview", nil)
 	trashed := readyPhotoWithPreview(test, database, ownerId, "trashed")
+	dbtest.MarkPhotoReady(test, database, noPreview.ID)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		if err := transaction.MarkPhotoReady(noPreview.ID); err != nil {
-			test.Fatal(err)
-		}
 		if _, err := transaction.TrashPhotos(ownerId, []string{trashed.ID}); err != nil {
 			test.Fatal(err)
 		}

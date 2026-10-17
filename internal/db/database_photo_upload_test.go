@@ -196,14 +196,14 @@ func TestOpenUploadsCountTowardsWhatAnAccountHolds(test *testing.T) {
 		if _, err := transaction.FailPhotoUpload(ownerId, ended.ID); err != nil {
 			test.Fatal(err)
 		}
-		if openBytes, err := transaction.PhotoOpenUploadBytes(ownerId, "", ""); err != nil || openBytes != 150 {
+		if openBytes, err := transaction.PhotoOpenUploadBytes(ownerId, "", "", time.Now().Add(-24*time.Hour)); err != nil || openBytes != 150 {
 			test.Fatalf("open bytes %d: %v", openBytes, err)
 		}
 		// The file about to be started again is not counted.
-		if openBytes, err := transaction.PhotoOpenUploadBytes(ownerId, "first", models.PhotoFileRoleOriginal); err != nil || openBytes != 50 {
+		if openBytes, err := transaction.PhotoOpenUploadBytes(ownerId, "first", models.PhotoFileRoleOriginal, time.Now().Add(-24*time.Hour)); err != nil || openBytes != 50 {
 			test.Fatalf("open bytes without the first: %d %v", openBytes, err)
 		}
-		if openBytes, err := transaction.PhotoOpenUploadBytes(ownerId, "first", models.PhotoFileRoleEdited); err != nil || openBytes != 150 {
+		if openBytes, err := transaction.PhotoOpenUploadBytes(ownerId, "first", models.PhotoFileRoleEdited, time.Now().Add(-24*time.Hour)); err != nil || openBytes != 150 {
 			test.Fatalf("open bytes of another role: %d %v", openBytes, err)
 		}
 	})

@@ -94,16 +94,12 @@ func (self *graph) photoFileBytesFor(ctx context.Context, access *models.PhotoAc
 	}
 	var photoPreviewSize models.PhotoPreviewSize
 	var found *models.Photo
-	var files []*models.PhotoFile
 	if err := self.database.TransactionContext(ctx, func(transaction db.Transaction) error {
 		if photoFileRole == models.PhotoFileRoleLiveVideo {
 			return db.ErrNotFound
 		}
 		var err error
 		if found, err = transaction.GetPhoto(access.OwnerUserID, access.PhotoID); err != nil {
-			return err
-		}
-		if files, err = transaction.ListPhotoFiles(access.OwnerUserID, []string{access.PhotoID}); err != nil {
 			return err
 		}
 		previews, err := transaction.ListPhotoPreviews(access.OwnerUserID, []string{access.PhotoID})
@@ -122,7 +118,7 @@ func (self *graph) photoFileBytesFor(ctx context.Context, access *models.PhotoAc
 	if err != nil {
 		return nil, err
 	}
-	content.disposition = mime.FormatMediaType(disposition, map[string]string{"filename": photo.SharedCopyFilename(found, files, photoPreviewSize)})
+	content.disposition = mime.FormatMediaType(disposition, map[string]string{"filename": photo.SharedCopyFilename(found.ID, photoPreviewSize)})
 	content.cacheControl, content.isRangeServed = "private, no-cache", true
 	return content, nil
 }

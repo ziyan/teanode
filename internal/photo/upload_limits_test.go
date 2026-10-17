@@ -228,7 +228,7 @@ func TestBytesStoredForAFileThatCouldNotBeRecordedAreFoundAndDeletedByCleanup(te
 	if !fixture.files.has(blobName) {
 		test.Fatal("a blob only just stored was deleted")
 	}
-	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours' WHERE blob_sha256 = '" + digestOf(content) + "'")
+	fixture.age("UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END WHERE blob_sha256 = '" + digestOf(content) + "'")
 	if err := fixture.store.Cleanup(test.Context(), 100); err != nil {
 		test.Fatal(err)
 	}

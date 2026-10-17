@@ -75,7 +75,7 @@ func suggestAlbum(run []*models.Photo) *models.PhotoAlbumSuggestion {
 		PlaceNames:     placeNames,
 		AlbumTitle:     proposedAlbumTitle(placeNames, first, last),
 		PhotoCount:     len(run),
-		SamplePhotoIDs: samplePhotoIDs(run),
+		SamplePhotoIDs: samplePhotoIds(run),
 	}
 }
 
@@ -101,10 +101,10 @@ func placeNamesByCount(run []*models.Photo) []string {
 	return names
 }
 
-// samplePhotoIDs picks photos spread over the run, the first and the last
+// samplePhotoIds picks photos spread over the run, the first and the last
 // among them, so that a trip is shown by its start and its end and not by
 // its busiest hour.
-func samplePhotoIDs(run []*models.Photo) []string {
+func samplePhotoIds(run []*models.Photo) []string {
 	sampleCount := min(albumSuggestionSampleCount, len(run))
 	sampleIds := make([]string, 0, sampleCount)
 	for index := 0; index < sampleCount; index++ {

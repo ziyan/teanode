@@ -348,12 +348,10 @@ func TestPhotoFileQuotaReplacementAndProcessing(test *testing.T) {
 	photo := newTestPhoto(test, database, ownerId, "photo", nil)
 	secondDigest := photoDigest("second file")
 	liveDigest := photoDigest("live video")
+	dbtest.MarkPhotoReady(test, database, photo.ID)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		// The photo is ready, and a trashed photo that gets a new file stays
 		// in the trash.
-		if err := transaction.MarkPhotoReady(photo.ID); err != nil {
-			test.Fatal(err)
-		}
 		if _, err := transaction.TrashPhotos(ownerId, []string{photo.ID}); err != nil {
 			test.Fatal(err)
 		}
@@ -389,10 +387,8 @@ func TestPhotoFileQuotaReplacementAndProcessing(test *testing.T) {
 	})
 	// A refused file leaves nothing behind, and one that fits makes the photo
 	// a Live Photo without queuing it again.
+	dbtest.MarkPhotoReady(test, database, photo.ID)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		if err := transaction.MarkPhotoReady(photo.ID); err != nil {
-			test.Fatal(err)
-		}
 		if _, err := transaction.SetPhotoFile(ownerId, photo.ID, &models.PhotoFile{PhotoFileRole: models.PhotoFileRoleLiveVideo, BlobSHA256: liveDigest, FileSizeBytes: 150}, 0); err != nil {
 			test.Fatal(err)
 		}
@@ -439,20 +435,20 @@ func TestPhotoProcessingClaims(test *testing.T) {
 	})
 	staleBefore := func() time.Time { return time.Now().Add(-10 * time.Minute) }
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5)
+		claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5, false)
 		if err != nil || len(claimed) != 1 || claimed[0].ID != waiting.ID {
 			test.Fatalf("claimed %v %v", claimed, err)
 		}
 	})
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5)
+		claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5, false)
 		if err != nil || len(claimed) != 0 {
 			test.Fatalf("a claimed photo was claimed again: %v %v", claimed, err)
 		}
 	})
 	dbtest.Exec(test, database, "UPDATE photo SET processing_claimed_at = now() - interval '11 minutes' WHERE id = '"+waiting.ID+"'")
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5)
+		claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5, false)
 		if err != nil || len(claimed) != 1 {
 			test.Fatalf("a claim that old was not taken again: %v %v", claimed, err)
 		}
@@ -476,7 +472,7 @@ func TestAFailedPhotoWaitsOutABackoffAndRunsOutOfAttempts(test *testing.T) {
 		var claimed []*models.Photo
 		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 			var err error
-			if claimed, err = transaction.ClaimPhotosForProcessing(10, staleBefore(), 5); err != nil {
+			if claimed, err = transaction.ClaimPhotosForProcessing(10, staleBefore(), 5, false); err != nil {
 				test.Fatal(err)
 			}
 		})
@@ -493,11 +489,7 @@ func TestAFailedPhotoWaitsOutABackoffAndRunsOutOfAttempts(test *testing.T) {
 		return found
 	}
 	fail := func(isFileAtFault bool) {
-		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-			if err := transaction.MarkPhotoProcessingFailed(waiting.ID, "The picture could not be read.", isFileAtFault, 5); err != nil {
-				test.Fatal(err)
-			}
-		})
+		dbtest.MarkPhotoProcessingFailed(test, database, waiting.ID, "The picture could not be read.", isFileAtFault, 5)
 	}
 	// Waits are one, five, fifteen and then sixty minutes.
 	for attempt, wantWait := range []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 0} {
@@ -544,11 +536,7 @@ func TestAFailedPhotoWaitsOutABackoffAndRunsOutOfAttempts(test *testing.T) {
 		test.Fatalf("after a failure that is not the file's: %+v", found)
 	}
 	// Ready clears the count and the wait.
-	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		if err := transaction.MarkPhotoReady(waiting.ID); err != nil {
-			test.Fatal(err)
-		}
-	})
+	dbtest.MarkPhotoReady(test, database, waiting.ID)
 	if found := read(); found.PhotoProcessingState != models.PhotoProcessingReady || found.ProcessingAttemptCount != 0 || found.ProcessingNotBefore != nil || found.ProcessingErrorMessage != "" {
 		test.Fatalf("after ready: %+v", found)
 	}
@@ -564,7 +552,7 @@ func TestAPhotoThatKeepsKillingTheProcessRunsOutOfAttempts(test *testing.T) {
 	staleBefore := func() time.Time { return time.Now().Add(-10 * time.Minute) }
 	for attempt := 1; attempt <= 5; attempt++ {
 		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-			claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5)
+			claimed, err := transaction.ClaimPhotosForProcessing(10, staleBefore(), 5, false)
 			if err != nil || len(claimed) != 1 || claimed[0].ProcessingAttemptCount != attempt {
 				test.Fatalf("attempt %d: claimed %+v %v", attempt, claimed, err)
 			}
@@ -576,7 +564,7 @@ func TestAPhotoThatKeepsKillingTheProcessRunsOutOfAttempts(test *testing.T) {
 	// failed not counting towards the limit.
 	bystander := newTestPhoto(test, database, ownerId, "bystander", nil)
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		claimed, err := transaction.ClaimPhotosForProcessing(1, staleBefore(), 5)
+		claimed, err := transaction.ClaimPhotosForProcessing(1, staleBefore(), 5, false)
 		if err != nil || len(claimed) != 1 || claimed[0].ID != bystander.ID {
 			test.Fatalf("a photo with no attempts left was claimed, or the one behind it was missed: %+v %v", claimed, err)
 		}
@@ -651,15 +639,15 @@ func TestPhotoBlobLifecycle(test *testing.T) {
 		}
 	})
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		if _, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour)); !errors.Is(err, db.ErrNotFound) {
+		if _, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour), nil); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a blob younger than the cutoff was picked: %v", err)
 		}
 	})
-	dbtest.Exec(test, database, "UPDATE photo_blob SET created_at = now() - interval '2 hours'")
+	dbtest.Exec(test, database, "UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END")
 	var marked *models.PhotoBlob
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		var err error
-		marked, err = transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour))
+		marked, err = transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour), nil)
 		if err != nil {
 			test.Fatal(err)
 		}
@@ -683,15 +671,15 @@ func TestPhotoBlobLifecycle(test *testing.T) {
 		if time.Since(blob.CreatedAt) > time.Minute {
 			test.Fatalf("an unmarked blob kept its age: %v", blob.CreatedAt)
 		}
-		if _, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour)); !errors.Is(err, db.ErrNotFound) {
+		if _, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour), nil); !errors.Is(err, db.ErrNotFound) {
 			test.Fatalf("a blob just stored was picked again: %v", err)
 		}
 	})
-	dbtest.Exec(test, database, "UPDATE photo_blob SET created_at = now() - interval '2 hours'")
+	dbtest.Exec(test, database, "UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END")
 	// A blob marked, then referenced before the second transaction locks it,
 	// is spared, and unmarked.
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		if _, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour)); err != nil {
+		if _, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour), nil); err != nil {
 			test.Fatal(err)
 		}
 	})
@@ -732,9 +720,9 @@ func TestPhotoBlobDeletionAfterTheLastFileGoes(test *testing.T) {
 			test.Fatalf("%d %v", deleted, err)
 		}
 	})
-	dbtest.Exec(test, database, "UPDATE photo_blob SET created_at = now() - interval '2 hours'")
+	dbtest.Exec(test, database, "UPDATE photo_blob SET created_at = now() - interval '2 hours', unreferenced_since = CASE WHEN unreferenced_since IS NULL THEN NULL ELSE now() - interval '2 hours' END")
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		marked, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour))
+		marked, err := transaction.MarkUnreferencedPhotoBlobDeleting(time.Now().Add(-time.Hour), nil)
 		if err != nil || marked.BlobSHA256 != digest {
 			test.Fatalf("%+v %v", marked, err)
 		}
@@ -852,7 +840,7 @@ func TestPhotoMigrationReverses(test *testing.T) {
 		test.Fatal("the photos:use grants survive the reverse")
 	}
 	dbtest.Exec(test, database, migration.SQL)
-	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo%'"); tables != "6" {
+	if tables := dbtest.QueryString(test, database, "SELECT count(*) FROM information_schema.tables WHERE table_name LIKE 'photo%'"); tables != "7" {
 		test.Fatalf("%s photo tables after running it again", tables)
 	}
 	dbtest.Exec(test, database, albumMigration.SQL)
@@ -949,12 +937,10 @@ func TestReadyPhotosWithoutASmallPreviewAreQueuedAgain(test *testing.T) {
 	without := newTestPhoto(test, database, ownerId, "without", nil)
 	with := newTestPhoto(test, database, ownerId, "with", nil)
 	waiting := newTestPhoto(test, database, ownerId, "waiting", nil)
+	for _, photoId := range []string{without.ID, with.ID} {
+		dbtest.MarkPhotoReady(test, database, photoId)
+	}
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
-		for _, photoId := range []string{without.ID, with.ID} {
-			if err := transaction.MarkPhotoReady(photoId); err != nil {
-				test.Fatal(err)
-			}
-		}
 		if _, err := transaction.UpsertPhotoPreview(ownerId, &models.PhotoPreview{PhotoID: with.ID, PhotoPreviewSize: models.PhotoPreviewSmall, ContentType: "image/jpeg", PreviewSizeBytes: 3}); err != nil {
 			test.Fatal(err)
 		}

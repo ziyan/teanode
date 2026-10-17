@@ -413,11 +413,7 @@ func TestThePhotoJobWaitsForPreviewsAndLetsGoOfWhatIsGone(test *testing.T) {
 	if fixture.provider.chatCount() != 0 {
 		test.Fatal("a model was called without a picture")
 	}
-	dbtest.RunTransactionOn(test, fixture.database, func(tx db.Transaction) {
-		if err := tx.MarkPhotoProcessingFailed(waiting.ID, "The picture could not be read.", true, 1); err != nil {
-			test.Fatal(err)
-		}
-	})
+	dbtest.MarkPhotoProcessingFailed(test, fixture.database, waiting.ID, "The picture could not be read.", true, 1)
 	if err := fixture.worker.runDescribePhoto(test.Context(), fixture.run(waiting)); err != nil {
 		test.Fatalf("a photo with no previews for good is refused, not retried: %s", err)
 	}
