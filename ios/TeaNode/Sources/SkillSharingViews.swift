@@ -632,7 +632,7 @@ struct SkillShareCallCard: View {
     }
 
     private func fact(_ name: String, _ value: String, isProminent: Bool = false) -> some View {
-        factLayout(spacing: 8) {
+        (factLayout(spacing: 8)) {
             Text(verbatim: name).font(.footnote).foregroundStyle(.secondary)
                 .frame(minWidth: dynamicTypeSize.isAccessibilitySize ? nil : 70, alignment: .leading)
             // Whole, and wrapped: the owner approves exactly this call.
