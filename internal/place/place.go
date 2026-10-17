@@ -29,13 +29,20 @@ var embeddedPlaces []byte
 // be named after it; farther out it is nowhere in particular.
 const MaximumDistanceKilometers = 25
 
+// LargestCityKilometers is how near the largest city has to be to win over a
+// nearer, smaller place. The table lists the wards and suburbs of a large city
+// as places of their own, and a photo taken in one of them is a photo of that
+// city to the person who took it.
+const LargestCityKilometers = 10
+
 const earthRadiusKilometers = 6371.0
 
 // city is one row of the table.
 type city struct {
-	label     string // "Name, Country"
-	latitude  float64
-	longitude float64
+	label           string // "Name, Country"
+	latitude        float64
+	longitude       float64
+	populationCount int64
 }
 
 // finder holds the cities sorted by latitude, so that a lookup reads only the
@@ -61,8 +68,9 @@ var embeddedFinder = sync.OnceValue(func() *finder {
 	return newFinder(cities)
 })
 
-// Nearest returns "City, Country" for the nearest city within
-// MaximumDistanceKilometers of the point, or false when there is none.
+// Nearest returns "City, Country" for the city a photo taken at the point
+// belongs to: the largest within LargestCityKilometers, otherwise the nearest
+// within MaximumDistanceKilometers, or false when there is none.
 func Nearest(latitude, longitude float64) (string, bool) {
 	return embeddedFinder().nearest(latitude, longitude)
 }
@@ -77,17 +85,27 @@ func (self *finder) nearest(latitude, longitude float64) (string, bool) {
 	// the way the globe does.
 	bandDegrees := MaximumDistanceKilometers / earthRadiusKilometers * 180 / math.Pi
 	first := sort.Search(len(self.cities), func(index int) bool { return self.cities[index].latitude >= latitude-bandDegrees })
-	best, bestDistance := "", math.MaxFloat64
+	nearest, nearestDistance := "", math.MaxFloat64
+	largest, largestPopulationCount, largestDistance := "", int64(-1), math.MaxFloat64
 	for index := first; index < len(self.cities) && self.cities[index].latitude <= latitude+bandDegrees; index++ {
 		candidate := self.cities[index]
-		if distance := distanceKilometers(latitude, longitude, candidate.latitude, candidate.longitude); distance < bestDistance {
-			best, bestDistance = candidate.label, distance
+		distance := distanceKilometers(latitude, longitude, candidate.latitude, candidate.longitude)
+		if distance < nearestDistance {
+			nearest, nearestDistance = candidate.label, distance
+		}
+		// Of places as large as each other, the nearer one.
+		if distance <= LargestCityKilometers && (candidate.populationCount > largestPopulationCount ||
+			(candidate.populationCount == largestPopulationCount && distance < largestDistance)) {
+			largest, largestPopulationCount, largestDistance = candidate.label, candidate.populationCount, distance
 		}
 	}
-	if bestDistance > MaximumDistanceKilometers {
+	if largest != "" {
+		return largest, true
+	}
+	if nearestDistance > MaximumDistanceKilometers {
 		return "", false
 	}
-	return best, true
+	return nearest, true
 }
 
 // distanceKilometers is the great circle distance by the haversine formula,
@@ -102,8 +120,8 @@ func distanceKilometers(firstLatitude, firstLongitude, secondLatitude, secondLon
 }
 
 // readTable reads the table as scripts/make-places.sh writes it: gzipped,
-// one city per line, four tab separated columns: name, country name,
-// latitude, longitude.
+// one city per line, five tab separated columns: name, country name,
+// latitude, longitude, population.
 func readTable(compressed io.Reader) ([]city, error) {
 	reader, err := gzip.NewReader(compressed)
 	if err != nil {
@@ -114,19 +132,20 @@ func readTable(compressed io.Reader) ([]city, error) {
 	scanner := bufio.NewScanner(reader)
 	for lineNumber := 1; scanner.Scan(); lineNumber++ {
 		columns := strings.Split(scanner.Text(), "\t")
-		if len(columns) != 4 {
-			return nil, fmt.Errorf("place: line %d of the table has %d columns, want 4", lineNumber, len(columns))
+		if len(columns) != 5 {
+			return nil, fmt.Errorf("place: line %d of the table has %d columns, want 5", lineNumber, len(columns))
 		}
 		latitude, latitudeErr := strconv.ParseFloat(columns[2], 64)
 		longitude, longitudeErr := strconv.ParseFloat(columns[3], 64)
-		if latitudeErr != nil || longitudeErr != nil {
-			return nil, fmt.Errorf("place: line %d of the table has a coordinate that is not a number", lineNumber)
+		populationCount, populationErr := strconv.ParseInt(columns[4], 10, 64)
+		if latitudeErr != nil || longitudeErr != nil || populationErr != nil {
+			return nil, fmt.Errorf("place: line %d of the table has a coordinate or population that is not a number", lineNumber)
 		}
 		label := columns[0]
 		if columns[1] != "" {
 			label += ", " + columns[1]
 		}
-		cities = append(cities, city{label: label, latitude: latitude, longitude: longitude})
+		cities = append(cities, city{label: label, latitude: latitude, longitude: longitude, populationCount: populationCount})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("place: the table could not be read: %w", err)

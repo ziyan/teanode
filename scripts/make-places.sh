@@ -6,8 +6,8 @@
 # GeoNames data is licensed CC BY 4.0 (https://www.geonames.org); the credit
 # is in the documentation of package place.
 #
-# Each line of the table is: name, country name, latitude, longitude, with
-# the coordinates rounded to 4 decimals (about 10 meters).
+# Each line of the table is: name, country name, latitude, longitude,
+# population, with the coordinates rounded to 4 decimals (about 10 meters).
 set -euo pipefail
 
 base_url="https://download.geonames.org/export/dump"
@@ -20,14 +20,17 @@ curl --fail --silent --show-error --location --output "${work}/countryInfo.txt" 
 unzip -q -o "${work}/cities15000.zip" cities15000.txt -d "${work}"
 
 # cities15000.txt: tab separated; column 2 is the name, 5 and 6 the latitude
-# and longitude, 9 the ISO country code. countryInfo.txt: comment lines start
-# with #; column 1 is the ISO code and column 5 the country name.
+# and longitude, 8 the feature code, 9 the ISO country code, 15 the population. countryInfo.txt:
+# comment lines start with #; column 1 is the ISO code and column 5 the
+# country name. A section of a city (PPLX, such as a ward), and a place that
+# is historical, abandoned or destroyed, is left out: a photo taken in a city
+# is named after the city, not after a district of it or a place that was.
 awk -F'\t' -v OFS='\t' '
 	FILENAME ~ /countryInfo/ { if ($0 !~ /^#/ && NF >= 5) country[$1] = $5; next }
 	{
 		name = $2; code = $9
-		if (name == "" || !(code in country)) next
-		printf "%s\t%s\t%.4f\t%.4f\n", name, country[code], $5, $6
+		if (name == "" || !(code in country) || $8 ~ /^PPL[XHQW]$/) next
+		printf "%s\t%s\t%.4f\t%.4f\t%d\n", name, country[code], $5, $6, $15
 	}
 ' "${work}/countryInfo.txt" "${work}/cities15000.txt" | LC_ALL=C sort -u | gzip -9 -n > "${output}"
 

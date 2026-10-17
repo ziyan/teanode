@@ -39,6 +39,30 @@ func TestNearestPicksTheClosestCityInReach(t *testing.T) {
 	}
 }
 
+// A large city's wards and suburbs are places of their own in the table, and a
+// photo taken in one belongs to the city.
+func TestTheLargestCityNearbyWinsOverANearerSmallerPlace(t *testing.T) {
+	finder := newFinder([]city{
+		{label: "Metropolis, Testland", latitude: 10.0, longitude: 20.0, populationCount: 2000000},
+		{label: "Ward, Testland", latitude: 10.05, longitude: 20.0, populationCount: 80000},
+		{label: "Village, Testland", latitude: 10.2, longitude: 20.0, populationCount: 20000},
+	})
+	for name, test := range map[string]struct {
+		latitude, longitude float64
+		want                string
+	}{
+		// About 5.5 km from the city and 0 from the ward.
+		"in the ward, near the city": {10.05, 20.0, "Metropolis, Testland"},
+		// About 16.7 km from the city, 11 from the ward, 5.5 from the village.
+		"beyond the city's reach": {10.15, 20.0, "Village, Testland"},
+	} {
+		got, isFound := finder.nearest(test.latitude, test.longitude)
+		if !isFound || got != test.want {
+			t.Errorf("%s: nearest(%v, %v) = %q, %v; want %q", name, test.latitude, test.longitude, got, isFound, test.want)
+		}
+	}
+}
+
 func TestNearestGivesUpBeyondTheReach(t *testing.T) {
 	finder := testCities()
 	// 0.4 degrees of longitude at latitude 10 is about 44 km from the nearer city.
@@ -74,20 +98,21 @@ func TestNearestOfNoCitiesIsNothing(t *testing.T) {
 func TestReadTable(t *testing.T) {
 	var compressed bytes.Buffer
 	writer := gzip.NewWriter(&compressed)
-	_, _ = writer.Write([]byte("Alpha\tTestland\t10.0000\t20.0000\nBeta\t\t-1.5000\t2.2500\n"))
+	_, _ = writer.Write([]byte("Alpha\tTestland\t10.0000\t20.0000\t250000\nBeta\t\t-1.5000\t2.2500\t0\n"))
 	_ = writer.Close()
 	cities, err := readTable(bytes.NewReader(compressed.Bytes()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cities) != 2 || cities[0].label != "Alpha, Testland" || cities[1].label != "Beta" || cities[1].latitude != -1.5 {
+	if len(cities) != 2 || cities[0].label != "Alpha, Testland" || cities[1].label != "Beta" || cities[1].latitude != -1.5 || cities[0].populationCount != 250000 {
 		t.Errorf("cities = %+v", cities)
 	}
 
 	for name, text := range map[string]string{
-		"too few columns":  "Alpha\tTestland\t10.0000\n",
-		"a bad coordinate": "Alpha\tTestland\tnorth\t20.0000\n",
-		"too many columns": "Alpha\tTestland\t10\t20\textra\n",
+		"too few columns":  "Alpha\tTestland\t10.0000\t20.0000\n",
+		"a bad coordinate": "Alpha\tTestland\tnorth\t20.0000\t1\n",
+		"a bad population": "Alpha\tTestland\t10\t20\tmany\n",
+		"too many columns": "Alpha\tTestland\t10\t20\t1\textra\n",
 	} {
 		var broken bytes.Buffer
 		writer := gzip.NewWriter(&broken)
