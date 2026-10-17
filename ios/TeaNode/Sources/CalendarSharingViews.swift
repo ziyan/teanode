@@ -323,8 +323,6 @@ struct CalendarShareScreen: View {
             } else if isLoaded {
                 Section {
                     ShareTargetPicker(people: people, circles: circles, chosen: $chosen)
-                } header: {
-                    Text("Share with")
                 } footer: {
                     Text("Choose a person, or a whole circle.")
                 }
