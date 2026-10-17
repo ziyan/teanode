@@ -70,7 +70,7 @@ final class AccessManagementTests: XCTestCase {
         XCTAssertTrue(users[0].matches("ROBIN@example"))
         XCTAssertTrue(users[0].matches("  "))
         XCTAssertFalse(users[1].matches("robin"))
-        XCTAssertTrue(try sentDocument(fake.sent[0]).contains("ListUsers { id username name email disabledAt hasPassword groupIds createdAt }"))
+        XCTAssertTrue(try sentDocument(fake.sent[0]).contains("ListUsers { id username name email avatarUrl avatarColorIndex disabledAt hasPassword groupIds createdAt }"))
     }
 
     func testCreatesAPersonWithOrWithoutAPassword() async throws {
