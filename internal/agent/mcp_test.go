@@ -220,6 +220,11 @@ func TestResearchWritesNotesOnTheInsight(t *testing.T) {
 			continue
 		}
 		said, _ := messages[1].(map[string]any)["content"].(string)
+		// The look back over past mail reads the same message for
+		// follow-ups, with a prompt of its own; that is not this turn.
+		if strings.HasPrefix(said, "Read one message of") {
+			continue
+		}
 		if strings.Contains(said, "Parcel 42 has shipped") {
 			researched, prompt = request, said
 			break
