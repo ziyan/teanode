@@ -136,13 +136,21 @@ final class PhotoClientTests: XCTestCase {
     // MARK: Typed errors
 
     func testAFileTheServerDoesNotServeIsATypedErrorWithNoStatusCode() async throws {
-        let (connection, _) = try connection { _ in (404, "gone") }
+        let (gone, _) = try connection { _ in (404, "gone") }
         do {
-            _ = try await connection.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, fileName: "a.jpg")
+            _ = try await gone.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, fileName: "a.jpg")
             XCTFail("a refused file was returned")
         } catch {
-            XCTAssertEqual(error as? PhotoError, .fileCouldNotBeRead)
+            XCTAssertEqual(error as? PhotoError, .fileNotAvailable)
             XCTAssertFalse(String(describing: error).contains("404"))
+        }
+        // A server that failed is not "no such file": nothing stands in for it.
+        let (failing, _) = try connection { _ in (500, "oops") }
+        do {
+            _ = try await failing.downloadFile(from: URL(string: "https://assistant.example.com/api/v1/photos/playback/p1/files/original")!, fileName: "a.jpg")
+            XCTFail("a failed read was returned")
+        } catch {
+            XCTAssertEqual(error as? PhotoError, .fileCouldNotBeRead)
         }
     }
 

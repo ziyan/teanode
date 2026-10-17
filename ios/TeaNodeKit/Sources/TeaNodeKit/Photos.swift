@@ -10,6 +10,9 @@ import Foundation
 public enum PhotoError: Error, Equatable, Sendable {
     /// The server did not serve the file. The status code is not shown.
     case fileCouldNotBeRead
+    /// The server says there is no such file for this person: it is gone, or
+    /// they may not have it. Another copy of the photo may stand in for it.
+    case fileNotAvailable
     /// The photo has no file and no preview yet.
     case nothingToSaveYet
     /// The person has no address book to put a new contact in.
@@ -53,6 +56,13 @@ public struct Photo: Codable, Identifiable, Hashable, Sendable {
     /// The server's plain reason the last try at making previews failed;
     /// empty unless it did.
     public let processingErrorMessage: String
+    /// Whether the photo is in the person's own library. A photo read through
+    /// an album shared with them is not: it has no favorite mark or place of
+    /// theirs, and cannot be trashed by them. A server that does not say
+    /// shares nothing, so the photo is the person's.
+    public let isOwnedByCaller: Bool
+    /// Whose the photo is when it is not the person's; empty otherwise.
+    public let ownerName: String
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -79,6 +89,8 @@ public struct Photo: Codable, Identifiable, Hashable, Sendable {
         videoPreviewUrl = try container.decode(String.self, forKey: .videoPreviewUrl)
         photoFileRoles = try container.decodeIfPresent([String].self, forKey: .photoFileRoles) ?? []
         processingErrorMessage = try container.decodeIfPresent(String.self, forKey: .processingErrorMessage) ?? ""
+        isOwnedByCaller = try container.decodeIfPresent(Bool.self, forKey: .isOwnedByCaller) ?? true
+        ownerName = try container.decodeIfPresent(String.self, forKey: .ownerName) ?? ""
     }
 
     /// Whether the photo has an edited version beside its original.
@@ -398,8 +410,9 @@ public struct PhotoLibrary: Codable, Hashable, Sendable {
     }
 }
 
-/// PhotoAlbum is a named set of the person's photos. It holds references: a
-/// photo can be in several albums, and deleting the album leaves the photos.
+/// PhotoAlbum is a named set of photos. It holds references: a photo can be in
+/// several albums, and deleting the album leaves the photos. An album belongs
+/// to a person or to a circle; the photos in it belong to whoever added them.
 public struct PhotoAlbum: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let albumTitle: String
@@ -415,10 +428,34 @@ public struct PhotoAlbum: Codable, Identifiable, Hashable, Sendable {
     /// Where the cover picture is read from; empty until a photo of the album
     /// has a small preview.
     public let coverPreviewUrl: String
+    /// The person the album belongs to; nil for a circle's album.
+    public let ownerUserId: String?
+    /// The circle the album belongs to; nil for a person's.
+    public let circleId: String?
+    public let ownerUsername: String
+    public let ownerName: String
+    public let ownerAvatarUrl: String?
+    public let ownerAvatarColorIndex: Int
+    public let circleName: String
+    /// Whether the album is the person's own. A server that does not share
+    /// albums says nothing, and every album is then the person's.
+    public let isOwnedByCaller: Bool
+    /// "view" or "contribute" for an album shared with the person; empty for
+    /// their own.
+    public let shareLevel: String
+    /// Whether the person may add photos of their own to the album.
+    public let canCallerContribute: Bool
+    /// Whether the person may rename, delete and share the album.
+    public let canCallerManage: Bool
+    /// Whether the share that reaches the person lets them see where the
+    /// photos were taken.
+    public let isLocationIncluded: Bool
 
     public init(
         id: String, albumTitle: String, createdAt: String = "", updatedAt: String = "", coverPhotoId: String? = nil, photoCount: Int = 0,
-        firstTakenAt: String? = nil, lastTakenAt: String? = nil, coverPreviewUrl: String = ""
+        firstTakenAt: String? = nil, lastTakenAt: String? = nil, coverPreviewUrl: String = "", ownerUserId: String? = nil, circleId: String? = nil,
+        ownerUsername: String = "", ownerName: String = "", ownerAvatarUrl: String? = nil, ownerAvatarColorIndex: Int = 0, circleName: String = "",
+        isOwnedByCaller: Bool = true, shareLevel: String = "", canCallerContribute: Bool = true, canCallerManage: Bool = true, isLocationIncluded: Bool = true
     ) {
         self.id = id
         self.albumTitle = albumTitle
@@ -429,6 +466,45 @@ public struct PhotoAlbum: Codable, Identifiable, Hashable, Sendable {
         self.firstTakenAt = firstTakenAt
         self.lastTakenAt = lastTakenAt
         self.coverPreviewUrl = coverPreviewUrl
+        self.ownerUserId = ownerUserId
+        self.circleId = circleId
+        self.ownerUsername = ownerUsername
+        self.ownerName = ownerName
+        self.ownerAvatarUrl = ownerAvatarUrl
+        self.ownerAvatarColorIndex = ownerAvatarColorIndex
+        self.circleName = circleName
+        self.isOwnedByCaller = isOwnedByCaller
+        self.shareLevel = shareLevel
+        self.canCallerContribute = canCallerContribute
+        self.canCallerManage = canCallerManage
+        self.isLocationIncluded = isLocationIncluded
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        albumTitle = try container.decode(String.self, forKey: .albumTitle)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        coverPhotoId = try container.decodeIfPresent(String.self, forKey: .coverPhotoId)
+        photoCount = try container.decode(Int.self, forKey: .photoCount)
+        firstTakenAt = try container.decodeIfPresent(String.self, forKey: .firstTakenAt)
+        lastTakenAt = try container.decodeIfPresent(String.self, forKey: .lastTakenAt)
+        coverPreviewUrl = try container.decode(String.self, forKey: .coverPreviewUrl)
+        // A server older than shared albums says nothing of them, which reads
+        // as an album that is the person's own.
+        ownerUserId = try container.decodeIfPresent(String.self, forKey: .ownerUserId)
+        circleId = try container.decodeIfPresent(String.self, forKey: .circleId)
+        ownerUsername = try container.decodeIfPresent(String.self, forKey: .ownerUsername) ?? ""
+        ownerName = try container.decodeIfPresent(String.self, forKey: .ownerName) ?? ""
+        ownerAvatarUrl = try container.decodeIfPresent(String.self, forKey: .ownerAvatarUrl)
+        ownerAvatarColorIndex = try container.decodeIfPresent(Int.self, forKey: .ownerAvatarColorIndex) ?? 0
+        circleName = try container.decodeIfPresent(String.self, forKey: .circleName) ?? ""
+        isOwnedByCaller = try container.decodeIfPresent(Bool.self, forKey: .isOwnedByCaller) ?? true
+        shareLevel = try container.decodeIfPresent(String.self, forKey: .shareLevel) ?? ""
+        canCallerContribute = try container.decodeIfPresent(Bool.self, forKey: .canCallerContribute) ?? true
+        canCallerManage = try container.decodeIfPresent(Bool.self, forKey: .canCallerManage) ?? true
+        isLocationIncluded = try container.decodeIfPresent(Bool.self, forKey: .isLocationIncluded) ?? true
     }
 
     /// The dates the album's photos span, as one date or a range, in the
@@ -436,6 +512,59 @@ public struct PhotoAlbum: Codable, Identifiable, Hashable, Sendable {
     public func dateRangeText(timeZone: TimeZone = .current, locale: Locale = .autoupdatingCurrent) -> String? {
         PhotoAlbumText.dateRange(from: firstTakenAt, to: lastTakenAt, timeZone: timeZone, locale: locale)
     }
+
+    /// Whether the album belongs to a circle, which every member of it adds to.
+    public var isCircleAlbum: Bool { circleId != nil }
+
+    /// Whether another person shared the album with this person, as itself and
+    /// not as a circle's.
+    public var isSharedWithCaller: Bool { !isOwnedByCaller && circleId == nil }
+
+    /// Whether the person may share the album: only a person's own album is
+    /// shared, since every member of a circle has a circle's already.
+    public var canCallerShare: Bool { canCallerManage && circleId == nil }
+
+    /// What to call whose the album is: the owner's name, or their username
+    /// when they have no name.
+    public var ownerDisplayName: String { ownerName.isEmpty ? ownerUsername : ownerName }
+}
+
+/// PhotoCircleAlbums is the albums one circle keeps.
+public struct PhotoCircleAlbums: Identifiable, Hashable, Sendable {
+    public let circleId: String
+    public let circleName: String
+    public let albums: [PhotoAlbum]
+
+    public var id: String { circleId }
+}
+
+/// PhotoAlbumSections is the albums as the Albums section lays them out: the
+/// person's own, then those shared with them, then one list for each circle,
+/// by the circle's name. Each keeps the order the server gave.
+public struct PhotoAlbumSections: Hashable, Sendable {
+    public let own: [PhotoAlbum]
+    public let sharedWithYou: [PhotoAlbum]
+    public let circles: [PhotoCircleAlbums]
+
+    public init(_ albums: [PhotoAlbum]) {
+        own = albums.filter { $0.isOwnedByCaller && $0.circleId == nil }
+        sharedWithYou = albums.filter(\.isSharedWithCaller)
+        var order: [String] = []
+        var members: [String: [PhotoAlbum]] = [:]
+        for album in albums {
+            guard let circleId = album.circleId else { continue }
+            if members[circleId] == nil { order.append(circleId) }
+            members[circleId, default: []].append(album)
+        }
+        circles = order.compactMap { circleId -> PhotoCircleAlbums? in
+            guard let albums = members[circleId], let first = albums.first else { return nil }
+            return PhotoCircleAlbums(circleId: circleId, circleName: first.circleName, albums: albums)
+        }.sorted { $0.circleName.localizedCaseInsensitiveCompare($1.circleName) == .orderedAscending }
+    }
+
+    /// Whether any album is not the person's own, which is what makes the
+    /// sections worth titling.
+    public var hasOthers: Bool { !sharedWithYou.isEmpty || !circles.isEmpty }
 }
 
 /// PhotoAlbumSuggestion is a run of photos that are in no album and belong
@@ -537,11 +666,11 @@ extension Documents {
     static let photoFields = """
         id createdAt photoKind takenAt takenAtOffsetMinutes widthPixels heightPixels durationMS latitude longitude placeName cameraMake cameraModel
         originalFilename isFavorite isScreenshot photoProcessingState trashedAt smallPreviewUrl largePreviewUrl videoPreviewUrl
-        photoFileRoles processingErrorMessage
+        photoFileRoles processingErrorMessage isOwnedByCaller ownerName
         """
     public static let listPhotos = """
-        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String) {
-          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText) { \(photoFields) }
+        query ($beforePhotoId: String, $pageSize: Int, $isFavorite: Boolean, $isTrashed: Boolean, $albumId: String, $faceGroupId: String, $photoKind: String, $takenAfter: DateTime, $takenBefore: DateTime, $searchText: String) {
+          ListPhotos(beforePhotoId: $beforePhotoId, pageSize: $pageSize, isFavorite: $isFavorite, isTrashed: $isTrashed, albumId: $albumId, faceGroupId: $faceGroupId, photoKind: $photoKind, takenAfter: $takenAfter, takenBefore: $takenBefore, searchText: $searchText) { \(photoFields) }
         }
         """
     static let photoDescriptionFields = """
@@ -581,7 +710,9 @@ extension Documents {
         }
         """
     public static let updatePhoto = """
-        mutation ($photoId: String!, $isFavorite: Boolean) { UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite) { \(photoFields) } }
+        mutation ($photoId: String!, $isFavorite: Boolean, $takenAt: DateTime) {
+          UpdatePhoto(photoId: $photoId, isFavorite: $isFavorite, takenAt: $takenAt) { \(photoFields) }
+        }
         """
     public static let trashPhotos = """
         mutation ($photoIds: [String!]!) { TrashPhotos(photoIds: $photoIds) }
@@ -600,6 +731,8 @@ extension Documents {
         """
     static let photoAlbumFields = """
         id albumTitle createdAt updatedAt coverPhotoId photoCount firstTakenAt lastTakenAt coverPreviewUrl
+        ownerUserId circleId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex circleName
+        isOwnedByCaller shareLevel canCallerContribute canCallerManage isLocationIncluded
         """
     public static let listPhotoAlbums = """
         query { ListPhotoAlbums { \(photoAlbumFields) } }
@@ -608,7 +741,9 @@ extension Documents {
         query { SuggestPhotoAlbums { takenAfter takenBefore placeNames albumTitle photoCount samplePhotoIds } }
         """
     public static let createPhotoAlbum = """
-        mutation ($albumTitle: String!, $photoIds: [String!]) { CreatePhotoAlbum(albumTitle: $albumTitle, photoIds: $photoIds) { \(photoAlbumFields) } }
+        mutation ($albumTitle: String!, $photoIds: [String!], $circleId: String) {
+          CreatePhotoAlbum(albumTitle: $albumTitle, photoIds: $photoIds, circleId: $circleId) { \(photoAlbumFields) }
+        }
         """
     public static let renamePhotoAlbum = """
         mutation ($photoAlbumId: String!, $albumTitle: String!) { RenamePhotoAlbum(photoAlbumId: $photoAlbumId, albumTitle: $albumTitle) { \(photoAlbumFields) } }
@@ -660,12 +795,15 @@ extension Documents {
 extension Connection {
     /// One page of a list of photos, newest first. A page after the first
     /// starts after the last photo of the one before.
-    public func photos(in collection: PhotoCollection, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
+    public func photos(
+        in collection: PhotoCollection, filter: PhotoFilter = PhotoFilter(), beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize
+    ) async throws -> [Photo] {
         struct Answer: Decodable, Sendable { let ListPhotos: [Photo] }
         var variables: [String: JSONValue] = ["pageSize": .number(Double(pageSize))]
         if let beforePhotoId, !beforePhotoId.isEmpty { variables["beforePhotoId"] = .string(beforePhotoId) }
         if let isFavorite = collection.isFavoriteFilter { variables["isFavorite"] = .bool(isFavorite) }
         if let isTrashed = collection.isTrashedFilter { variables["isTrashed"] = .bool(isTrashed) }
+        for (name, value) in filter.variables() { variables[name] = value }
         return try await execute(Documents.listPhotos, variables: variables, as: Answer.self).ListPhotos
     }
 
@@ -725,25 +863,45 @@ extension Connection {
         return try await execute(Documents.updatePhoto, variables: ["photoId": .string(photoId), "isFavorite": .bool(isFavorite)], as: Answer.self).UpdatePhoto
     }
 
+    /// Corrects the date a photo is placed at. The text is an RFC 3339 time
+    /// whose offset is the one the photo is shown at (see
+    /// `PhotoDateChange.takenAtText`). Returns the photo as it now is.
+    public func changePhotoDate(_ photoId: String, takenAtText: String) async throws -> Photo {
+        struct Answer: Decodable, Sendable { let UpdatePhoto: Photo }
+        return try await execute(Documents.updatePhoto, variables: ["photoId": .string(photoId), "takenAt": .string(takenAtText)], as: Answer.self).UpdatePhoto
+    }
+
     /// Moves photos to the trash; says how many moved.
     @discardableResult
     public func trashPhotos(_ photoIds: [String]) async throws -> Int {
         struct Answer: Decodable, Sendable { let TrashPhotos: Int }
-        return try await execute(Documents.trashPhotos, variables: ["photoIds": .array(photoIds.map { .string($0) })], as: Answer.self).TrashPhotos
+        var changedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            changedCount += try await execute(Documents.trashPhotos, variables: ["photoIds": .array(batch.map { .string($0) })], as: Answer.self).TrashPhotos
+        }
+        return changedCount
     }
 
     /// Takes photos out of the trash; says how many came back.
     @discardableResult
     public func restorePhotos(_ photoIds: [String]) async throws -> Int {
         struct Answer: Decodable, Sendable { let RestorePhotos: Int }
-        return try await execute(Documents.restorePhotos, variables: ["photoIds": .array(photoIds.map { .string($0) })], as: Answer.self).RestorePhotos
+        var changedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            changedCount += try await execute(Documents.restorePhotos, variables: ["photoIds": .array(batch.map { .string($0) })], as: Answer.self).RestorePhotos
+        }
+        return changedCount
     }
 
     /// Deletes photos that are in the trash for good; says how many went.
     @discardableResult
     public func deletePhotos(_ photoIds: [String]) async throws -> Int {
         struct Answer: Decodable, Sendable { let DeletePhotos: Int }
-        return try await execute(Documents.deletePhotos, variables: ["photoIds": .array(photoIds.map { .string($0) })], as: Answer.self).DeletePhotos
+        var changedCount = 0
+        for batch in PhotoBatches.batches(of: photoIds) {
+            changedCount += try await execute(Documents.deletePhotos, variables: ["photoIds": .array(batch.map { .string($0) })], as: Answer.self).DeletePhotos
+        }
+        return changedCount
     }
 
     /// Puts photos whose previews failed back in the queue to be made again;
@@ -990,19 +1148,26 @@ extension Connection {
         return try absoluteAddress(of: path)
     }
 
-    /// The original file of a photo, or, when that cannot be read, the large
-    /// preview (the video preview, for a video) in its place. The bytes go
-    /// straight to a file with a download task and are never held in memory,
-    /// since an original can be hundreds of megabytes.
+    /// The original file of a photo, or, when the server says it has none for
+    /// this person, the large preview (the video preview, for a video) in its
+    /// place. The bytes go straight to a file with a download task and are
+    /// never held in memory, since an original can be hundreds of megabytes.
+    ///
+    /// Only "there is no such file" falls back to a preview: a network error
+    /// or a server that failed is thrown, so that a smaller copy is never
+    /// saved because of a bad connection. `isOriginal` says which came.
     public func downloadPhotoFile(_ photo: Photo) async throws -> PhotoDownload {
-        let detail = try? await photoDetail(photo.id)
-        if let file = detail?.originalFile,
-            let fileURL = try? await downloadSigned(photo.id, source: .file(file.photoFileRole), fileName: file.originalFilename.isEmpty ? photo.fileName : file.originalFilename)
-        {
-            return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: true)
+        let detail = try await photoDetail(photo.id)
+        if let file = detail.originalFile {
+            do {
+                let fileURL = try await downloadSigned(photo.id, source: .file(file.photoFileRole), fileName: file.originalFilename.isEmpty ? photo.fileName : file.originalFilename)
+                return PhotoDownload(fileURL: fileURL, fileName: fileURL.lastPathComponent, isOriginal: true)
+            } catch PhotoError.fileNotAvailable {
+                // The one case a preview stands in.
+            }
         }
         let previewSize = photo.isVideo ? "video" : "large"
-        let preview = detail?.photoPreviews.first { $0.photoPreviewSize == previewSize }
+        let preview = detail.photoPreviews.first { $0.photoPreviewSize == previewSize }
         guard preview != nil || (photo.isVideo ? photo.videoPath : photo.viewerPreviewPath) != nil else {
             throw PhotoError.nothingToSaveYet
         }
@@ -1045,17 +1210,18 @@ extension Connection {
         return try await execute(Documents.suggestPhotoAlbums, as: Answer.self).SuggestPhotoAlbums
     }
 
-    /// Makes an album holding the photos, which may be none. The photos go in
+    /// Makes an album holding the photos, which may be none, for the person or,
+    /// with a circle's id, for the circle. The photos go in
     /// batches the server accepts: the first batch makes the album and the
     /// rest are added to it.
-    public func createPhotoAlbum(title: String, photoIds: [String] = []) async throws -> PhotoAlbum {
+    public func createPhotoAlbum(title: String, photoIds: [String] = [], circleId: String? = nil) async throws -> PhotoAlbum {
         struct Answer: Decodable, Sendable { let CreatePhotoAlbum: PhotoAlbum }
         let batches = PhotoBatches.batches(of: photoIds)
         let first = batches.first ?? []
-        let created = try await execute(
-            Documents.createPhotoAlbum, variables: ["albumTitle": .string(PhotoAlbumText.trimmedTitle(title)), "photoIds": .array(first.map { .string($0) })],
-            as: Answer.self
-        ).CreatePhotoAlbum
+        var variables: [String: JSONValue] = ["albumTitle": .string(PhotoAlbumText.trimmedTitle(title)), "photoIds": .array(first.map { .string($0) })]
+        // An album for a circle belongs to the circle: every member adds to it.
+        if let circleId, !circleId.isEmpty { variables["circleId"] = .string(circleId) }
+        let created = try await execute(Documents.createPhotoAlbum, variables: variables, as: Answer.self).CreatePhotoAlbum
         for batch in batches.dropFirst() { try await addPhotos(batch, toAlbum: created.id) }
         return created
     }

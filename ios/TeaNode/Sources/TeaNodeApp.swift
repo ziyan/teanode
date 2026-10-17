@@ -15,6 +15,9 @@ struct TeaNodeApp: App {
 
     init() {
         DisplayLanguage.chosen.apply()
+        // Files that photo downloads left in the temporary folder before the
+        // app was last closed.
+        Task.detached(priority: .utility) { PhotoTemporaryFiles.sweep() }
     }
 
     var body: some Scene {
@@ -730,15 +733,24 @@ struct SettingsForm: View {
 /// screen, saying whether backup is on.
 struct PhotoBackupSettingsRow: View {
     private let engine = PhotoBackupEngine.shared
+    @Environment(AppModel.self) private var app
 
     var body: some View {
         HStack {
             Label("Photo backup", systemImage: "icloud.and.arrow.up")
             Spacer()
-            (engine.isEnabled ? Text("On") : Text("Off"))
+            statusText
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// On only for the account backup is on for; for another account it says
+    /// which one, since this account's backup is off.
+    private var statusText: Text {
+        guard let enabledAccountKey = engine.enabledAccountKey else { return Text("Off") }
+        if enabledAccountKey == app.connection?.accountKey { return Text("On") }
+        return Text("On for \(PhotoBackupEngine.name(ofAccountKey: enabledAccountKey))")
     }
 }
 
@@ -798,6 +810,7 @@ struct NotificationKindToggle: View {
         case "circle": String(localized: "Invitations to circles")
         case "chat": String(localized: "Messages from people in your chats")
         case "payment": String(localized: "Requests to use a skill you shared, and how yours came out")
+        case "photo": String(localized: "Photos added to albums shared with you")
         default: notificationKind
         }
     }

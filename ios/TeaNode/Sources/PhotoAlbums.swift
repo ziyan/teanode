@@ -10,6 +10,8 @@ import UIKit
 struct AlbumTitleRequest: Identifiable {
     enum Purpose {
         case new
+        /// An empty album that belongs to a circle: every member adds to it.
+        case newForCircle(PeopleCircle)
         case newWith([Photo])
         case suggestion(PhotoAlbumSuggestion)
         case rename(PhotoAlbum)
@@ -28,6 +30,7 @@ struct AlbumTitleRequest: Identifiable {
     var alertTitle: String {
         switch purpose {
         case .new, .newWith: String(localized: "New album")
+        case .newForCircle(let circle): String(localized: "New album for \(circle.name)")
         case .suggestion: String(localized: "Create album")
         case .rename: String(localized: "Rename album")
         }
@@ -35,7 +38,7 @@ struct AlbumTitleRequest: Identifiable {
 
     var buttonTitle: String {
         switch purpose {
-        case .new, .newWith, .suggestion: String(localized: "Create")
+        case .new, .newForCircle, .newWith, .suggestion: String(localized: "Create")
         case .rename: String(localized: "Rename")
         }
     }
@@ -44,7 +47,7 @@ struct AlbumTitleRequest: Identifiable {
     /// album's own.
     var initialTitle: String {
         switch purpose {
-        case .new, .newWith: ""
+        case .new, .newForCircle, .newWith: ""
         case .suggestion(let suggestion): suggestion.albumTitle
         case .rename(let album): album.albumTitle
         }
@@ -112,11 +115,12 @@ struct AddToAlbumMenu: View {
                 model.requestAlbumTitle(.newWith(photos), scope: scope)
                 onAdded()
             }
-            let choices = (model.albums ?? []).filter { $0.id != hiddenAlbumId }
+            let choices = (model.albums ?? []).filter { $0.id != hiddenAlbumId && $0.canCallerContribute }
             if !choices.isEmpty {
                 Divider()
                 ForEach(choices) { album in
-                    Button(album.albumTitle) {
+                    // Two albums of the same name are told apart by whose they are.
+                    Button(album.isCircleAlbum ? "\(album.albumTitle) (\(album.circleName))" : album.albumTitle) {
                         let chosen = photos
                         Task { await model.add(chosen, to: album) }
                         onAdded()
@@ -142,8 +146,37 @@ struct PhotoSelectionToolbar: ToolbarContent {
 
     private var isEmpty: Bool { selectedPhotos.isEmpty }
     private var areAllFavorites: Bool { !selectedPhotos.isEmpty && selectedPhotos.allSatisfy(\.isFavorite) }
+    /// Whether the photos chosen are all the person's own. Somebody else's
+    /// photo, seen through a shared album, can be kept or shared, not changed.
+    private var areAllOwn: Bool { selectedPhotos.allSatisfy(\.isOwnedByCaller) }
 
     var body: some ToolbarContent {
+        if areAllOwn {
+            ownBar
+        } else {
+            othersBar
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var othersBar: some ToolbarContent {
+        ToolbarItem(placement: .bottomBar) {
+            Button("Save to my library", systemImage: "photo.badge.plus") {
+                let chosen = selectedPhotos
+                Task {
+                    await model.saveToLibrary(chosen)
+                    onEnd()
+                }
+            }
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            PhotosShareLink(photos: selectedPhotos, connection: model.connection)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var ownBar: some ToolbarContent {
         ToolbarItem(placement: .bottomBar) {
             AddToAlbumMenu(model: model, photos: selectedPhotos, scope: scope, hiddenAlbumId: listKey.albumId, onAdded: onEnd)
                 .disabled(isEmpty)
@@ -164,7 +197,7 @@ struct PhotoSelectionToolbar: ToolbarContent {
         }
         ToolbarItem(placement: .bottomBar) {
             Button(
-                areAllFavorites ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Favorite"),
+                areAllFavorites ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"),
                 systemImage: areAllFavorites ? "heart.slash" : "heart"
             ) {
                 let chosen = selectedPhotos
@@ -200,7 +233,8 @@ struct PhotoSelectionToolbar: ToolbarContent {
 // MARK: The albums
 
 /// PhotoAlbumsView is the Albums section: the suggestions across the top, then
-/// the albums as covers with their titles.
+/// the person's albums as covers with their titles, then the albums shared
+/// with them and the albums of each circle they are in, each under a heading.
 struct PhotoAlbumsView: View {
     let model: PhotosModel
 
@@ -220,24 +254,19 @@ struct PhotoAlbumsView: View {
                         .containerRelativeFrame(.vertical)
                     }
                 } else {
+                    let sections = PhotoAlbumSections(albums)
                     ScrollView {
                         if !model.suggestions.isEmpty {
                             PhotoSuggestionsSection(model: model)
                         }
-                        if !albums.isEmpty {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 20) {
-                                ForEach(albums) { album in
-                                    NavigationLink {
-                                        PhotoAlbumScreen(model: model, albumId: album.id)
-                                    } label: {
-                                        PhotoAlbumCell(album: album, connection: model.connection)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, model.suggestions.isEmpty ? 8 : 20)
-                            .padding(.bottom)
+                        if !sections.own.isEmpty {
+                            albumGrid(sections.own, title: sections.hasOthers ? String(localized: "Your albums") : nil)
+                        }
+                        if !sections.sharedWithYou.isEmpty {
+                            albumGrid(sections.sharedWithYou, title: String(localized: "Albums shared with you"))
+                        }
+                        ForEach(sections.circles) { circleAlbums in
+                            albumGrid(circleAlbums.albums, title: circleAlbums.circleName)
                         }
                     }
                 }
@@ -253,6 +282,29 @@ struct PhotoAlbumsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+
+    private func albumGrid(_ albums: [PhotoAlbum], title: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let title {
+                Text(title)
+                    .font(.headline)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 20) {
+                ForEach(albums) { album in
+                    NavigationLink {
+                        PhotoAlbumScreen(model: model, albumId: album.id)
+                    } label: {
+                        PhotoAlbumCell(album: album, connection: model.connection)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 }
 
@@ -295,6 +347,7 @@ struct PhotoAlbumCell: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            PhotoAlbumOwnerLine(album: album)
         }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
@@ -435,6 +488,8 @@ struct PhotoAlbumScreen: View {
     @State private var selectedPhotoIds: Set<String> = []
     @State private var isConfirmingTrashOfSelection = false
     @State private var isConfirmingDelete = false
+    @State private var isSharing = false
+    @State private var isAddingPhotos = false
     @Environment(\.dismiss) private var dismiss
 
     private var key: PhotoListKey { .album(albumId) }
@@ -459,12 +514,30 @@ struct PhotoAlbumScreen: View {
             .fullScreenCover(item: $opened) { opened in
                 PhotoViewer(model: model, listKey: key, openedPhotoId: opened.id)
             }
+            .sheet(isPresented: $isSharing) {
+                if let album { PhotoAlbumShareSheet(model: model, album: album) }
+            }
+            .sheet(isPresented: $isAddingPhotos) {
+                if let album { PhotoPickerSheet(model: model, album: album) }
+            }
             .albumTitleAlert(model: model, scope: .album, isActive: opened == nil)
             .onDisappear { model.dropPhotosNoLongerFavorite() }
+            #if DEBUG
+                // `-TeaNodeScreen photos-share` opens the share sheet over the first album, and
+                // `photos-shared-viewer` the viewer over the first photo of a shared one.
+                .task(id: album?.id) {
+                    if DemoServer.isRequested, DemoServer.screen == "photos-share", album?.canCallerShare == true { isSharing = true }
+                }
+                .task(id: photos.first?.id) {
+                    if DemoServer.isRequested, DemoServer.screen == "photos-shared-viewer", let first = photos.first, opened == nil {
+                        opened = OpenedPhoto(id: first.id)
+                    }
+                }
+            #endif
     }
 
     private var selectionTitle: String {
-        selectedPhotoIds.isEmpty ? String(localized: "Select items") : String(localized: "\(selectedPhotoIds.count) Selected")
+        selectedPhotoIds.isEmpty ? String(localized: "Select photos") : String(localized: "\(selectedPhotoIds.count) Selected")
     }
 
     private func endSelection() {
@@ -486,13 +559,21 @@ struct PhotoAlbumScreen: View {
                     Button("Select") { isSelecting = true }
                 }
             }
-            if let album {
+            if let album, album.canCallerContribute || album.canCallerManage {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button("Rename album", systemImage: "pencil") {
-                            model.requestAlbumTitle(.rename(album), scope: .album)
+                        if album.canCallerContribute {
+                            Button("Add photos", systemImage: "photo.badge.plus") { isAddingPhotos = true }
                         }
-                        Button("Delete album", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                        if album.canCallerShare {
+                            Button("Share", systemImage: "person.badge.plus") { isSharing = true }
+                        }
+                        if album.canCallerManage {
+                            Button("Rename album", systemImage: "pencil") {
+                                model.requestAlbumTitle(.rename(album), scope: .album)
+                            }
+                            Button("Delete album", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                        }
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
@@ -518,7 +599,16 @@ struct PhotoAlbumScreen: View {
                     ContentUnavailableView {
                         Label("No photos in this album", systemImage: "rectangle.stack")
                     } description: {
-                        Text("Choose photos in your library and add them here.")
+                        if album?.canCallerContribute == true {
+                            Text("Choose photos in your library and add them here.")
+                        } else {
+                            Text("Nothing has been added to this album yet.")
+                        }
+                    } actions: {
+                        if album?.canCallerContribute == true {
+                            Button("Add photos") { isAddingPhotos = true }
+                                .buttonStyle(.borderedProminent)
+                        }
                     }
                     .containerRelativeFrame(.vertical)
                 }

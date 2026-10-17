@@ -342,6 +342,24 @@ jobs:
           shoot photos-person-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-person
           shoot photos-faces-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-faces
           shoot photos-faces-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-faces
+          # Shared albums: Albums with the person's own, those shared with them and a circle's; the share
+          # sheet over an album; an album another person shared, and the viewer over its first photo (no
+          # favorite or Trash, Save to my library instead).
+          shoot photos-shared-albums-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-shared-albums
+          shoot photos-shared-albums-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-shared-albums
+          shoot photos-shared-albums-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-shared-albums
+          shoot photos-share-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-share
+          shoot photos-share-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-share
+          shoot photos-share-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-share
+          shoot photos-shared-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-shared-album
+          shoot photos-shared-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-shared-viewer
+          shoot photos-shared-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-shared-viewer
+          # The library narrowed to videos, with the days to choose over it, and the date of a photo being changed.
+          shoot photos-filter-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-filter
+          shoot photos-filter-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-filter
+          shoot photos-filter-dates-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-filter-dates
+          shoot photos-change-date-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-change-date
+          shoot photos-change-date-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-change-date
           # Photo backup, off and part way through a library, with invented counts (opened from Settings).
           shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
           shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off

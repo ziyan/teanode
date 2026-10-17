@@ -6,7 +6,9 @@
     /// What the demo server answers for Photos, for `-TeaNodeTab photos` with
     /// `-TeaNodeScreen photos-library`, `photos-viewer`, `photos-viewer-described`, `photos-trash`,
     /// `photos-empty`, `photos-select`, `photos-trash-select`, `photos-search`, `photos-viewer-failed`,
-    /// `photos-albums`, `photos-album`, `photos-people` or `photos-person`
+    /// `photos-albums`, `photos-album`, `photos-people`, `photos-person`,
+    /// `photos-shared-albums`, `photos-share`, `photos-shared-album`, `photos-shared-viewer`,
+    /// `photos-filter`, `photos-filter-dates` or `photos-change-date`
     /// (and `photos-faces`, in Settings). The photos are invented, and their pictures are drawn
     /// here: a gradient and a few shapes in a color taken from the photo's id.
     extension DemoServer {
@@ -24,6 +26,10 @@
             /// The files the server holds for the photo, such as "edited".
             var fileRoles = ["original"]
             var failureMessage = ""
+            /// Whose the photo is when it is another person's, seen through a shared album.
+            var ownerName = ""
+
+            var isForeign: Bool { !ownerName.isEmpty }
         }
 
         private static let demoPhotos: [DemoPhoto] = [
@@ -49,6 +55,12 @@
             DemoPhoto(id: "demo-18", kind: "picture", takenAt: "2026-10-01T08:00:00Z", offsetMinutes: -240),
             DemoPhoto(id: "demo-19", kind: "picture", takenAt: "2026-09-30T19:00:00Z", offsetMinutes: -240),
             DemoPhoto(id: "demo-20", kind: "picture", takenAt: "2026-09-30T18:00:00Z", offsetMinutes: -240),
+            DemoPhoto(id: "demo-s1", kind: "picture", takenAt: "2026-09-20T10:00:00Z", offsetMinutes: -240, isPortrait: true, ownerName: "Sam Placeholder"),
+            DemoPhoto(id: "demo-s2", kind: "picture", takenAt: "2026-09-20T09:00:00Z", offsetMinutes: -240, ownerName: "Sam Placeholder"),
+            DemoPhoto(id: "demo-s3", kind: "video", takenAt: "2026-09-19T16:00:00Z", offsetMinutes: -240, durationMS: 41_000, ownerName: "Sam Placeholder"),
+            DemoPhoto(id: "demo-s4", kind: "picture", takenAt: "2026-09-19T12:00:00Z", offsetMinutes: -240, ownerName: "Sam Placeholder"),
+            DemoPhoto(id: "demo-s5", kind: "picture", takenAt: "2026-09-27T17:00:00Z", offsetMinutes: -240, ownerName: "Casey Example"),
+            DemoPhoto(id: "demo-s6", kind: "picture", takenAt: "2026-09-27T16:00:00Z", offsetMinutes: -240, isPortrait: true, ownerName: "Casey Example"),
             DemoPhoto(id: "demo-t1", kind: "picture", takenAt: "2026-10-09T10:00:00Z", offsetMinutes: -240, isTrashed: true),
             DemoPhoto(id: "demo-t2", kind: "picture", takenAt: "2026-10-09T09:00:00Z", offsetMinutes: -240, isTrashed: true, isPortrait: true),
             DemoPhoto(id: "demo-t3", kind: "video", takenAt: "2026-10-08T17:00:00Z", offsetMinutes: -240, durationMS: 9_000, isTrashed: true),
@@ -59,13 +71,35 @@
             let title: String
             let photoIds: [String]
             let coverPhotoId: String
+            /// Whose the album is when it is another person's, and the circle it belongs to.
+            var ownerName = ""
+            var circleName = ""
+            var shareLevel = ""
+            var canManage = true
+            var canContribute = true
+
+            var isOwned: Bool { ownerName.isEmpty && circleName.isEmpty }
         }
 
         private static let demoAlbums: [DemoAlbum] = [
             DemoAlbum(id: "demo-album-1", title: "Riverside weekend", photoIds: ["demo-01", "demo-02", "demo-03", "demo-04"], coverPhotoId: "demo-01"),
             DemoAlbum(id: "demo-album-2", title: "Harbor Market", photoIds: ["demo-09", "demo-10", "demo-11"], coverPhotoId: "demo-10"),
             DemoAlbum(id: "demo-album-3", title: "Autumn", photoIds: ["demo-05", "demo-06"], coverPhotoId: "demo-06"),
+            DemoAlbum(
+                id: "demo-album-4", title: "Lake weekend", photoIds: ["demo-s1", "demo-s2", "demo-s3", "demo-s4"], coverPhotoId: "demo-s1", ownerName: "Sam Placeholder",
+                shareLevel: "view", canManage: false, canContribute: false),
+            DemoAlbum(
+                id: "demo-album-5", title: "Block party", photoIds: ["demo-s5", "demo-14", "demo-s6"], coverPhotoId: "demo-s5", circleName: "Neighbors", shareLevel: "contribute",
+                canManage: false),
         ]
+
+        /// The people and circles the demo account shares with.
+        private static let demoPeopleJSON =
+            #"[{"userId":"user-sam","username":"sam","name":"Sam Placeholder","avatarUrl":null,"avatarColorIndex":4},{"userId":"user-casey","username":"casey","name":"Casey Example","avatarUrl":null,"avatarColorIndex":7}]"#
+        private static let demoCirclesJSON =
+            #"[{"id":"circle-family","name":"Family","circleKind":"family","createdAt":"2026-01-01T00:00:00Z","memberRole":"admin","members":[],"pendingInvitations":[]},{"id":"circle-neighbors","name":"Neighbors","circleKind":"friends","createdAt":"2026-01-01T00:00:00Z","memberRole":"member","members":[],"pendingInvitations":[]}]"#
+        private static let demoSharesJSON =
+            #"[{"id":"share-1","photoAlbumId":"demo-album-1","granteeUserId":"user-sam","granteeUsername":"sam","granteeName":"Sam Placeholder","granteeAvatarUrl":null,"granteeAvatarColorIndex":4,"granteeCircleId":null,"granteeCircleName":"","shareLevel":"contribute","isLocationIncluded":true,"createdAt":"2026-10-12T10:00:00Z"},{"id":"share-2","photoAlbumId":"demo-album-1","granteeUserId":null,"granteeUsername":"","granteeName":"","granteeAvatarUrl":null,"granteeAvatarColorIndex":0,"granteeCircleId":"circle-family","granteeCircleName":"Family","shareLevel":"view","isLocationIncluded":false,"createdAt":"2026-10-12T10:05:00Z"}]"#
 
         /// A person the demo server has found in the photos, with the photos they
         /// are in. Invented, like everything here; an empty name is a person
@@ -116,7 +150,11 @@
             let last = dates.last.map { #""\#($0)""# } ?? "null"
             let cover = members.first { $0.id == album.coverPhotoId } ?? members.first
             let coverPreviewUrl = cover.map { "/api/v1/photos/\($0.id)/previews/small?v=1" } ?? ""
-            return #"{"id":"\#(album.id)","albumTitle":"\#(album.title)","createdAt":"2026-10-10T10:00:00Z","updatedAt":"2026-10-14T10:00:00Z","coverPhotoId":null,"photoCount":\#(members.count),"firstTakenAt":\#(first),"lastTakenAt":\#(last),"coverPreviewUrl":"\#(coverPreviewUrl)"}"#
+            let circleId = album.circleName.isEmpty ? "null" : #""circle-neighbors""#
+            let ownerUserId = album.ownerName.isEmpty ? "null" : #""user-sam""#
+            let sharingFields =
+                #","ownerUserId":\#(ownerUserId),"circleId":\#(circleId),"ownerUsername":"\#(album.ownerName.isEmpty ? "" : "sam")","ownerName":"\#(album.ownerName)","ownerAvatarUrl":null,"ownerAvatarColorIndex":4,"circleName":"\#(album.circleName)","isOwnedByCaller":\#(album.isOwned),"shareLevel":"\#(album.shareLevel)","canCallerContribute":\#(album.canContribute),"canCallerManage":\#(album.canManage),"isLocationIncluded":true"#
+            return #"{"id":"\#(album.id)","albumTitle":"\#(album.title)","createdAt":"2026-10-10T10:00:00Z","updatedAt":"2026-10-14T10:00:00Z","coverPhotoId":null,"photoCount":\#(members.count),"firstTakenAt":\#(first),"lastTakenAt":\#(last),"coverPreviewUrl":"\#(coverPreviewUrl)"\#(sharingFields)}"#
         }
 
         /// The trips and events the demo server offers as albums.
@@ -132,7 +170,7 @@
             let videoPreviewUrl = isReady && isVideo ? previewPath + "video?v=1" : ""
             let trashedAt = photo.isTrashed ? #""2026-10-12T10:00:00Z""# : "null"
             let fileRoles = photo.fileRoles.map { "\"" + $0 + "\"" }.joined(separator: ",")
-            return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":null,"longitude":null,"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)","photoFileRoles":[\#(fileRoles)],"processingErrorMessage":"\#(photo.failureMessage)"\#(extraFields)}"#
+            return #"{"id":"\#(photo.id)","createdAt":"\#(photo.takenAt)","photoKind":"\#(photo.kind)","takenAt":"\#(photo.takenAt)","takenAtOffsetMinutes":\#(photo.offsetMinutes),"widthPixels":\#(photo.isPortrait ? 3024 : 4032),"heightPixels":\#(photo.isPortrait ? 4032 : 3024),"durationMS":\#(photo.durationMS),"latitude":null,"longitude":null,"placeName":"\#(photo.placeName)","cameraMake":"Example","cameraModel":"Phone 1","originalFilename":"IMG_\#(photo.id.suffix(2)).\#(isVideo ? "MOV" : "HEIC")","isFavorite":\#(photo.isFavorite),"isScreenshot":false,"photoProcessingState":"\#(photo.processingState)","trashedAt":\#(trashedAt),"smallPreviewUrl":"\#(smallPreviewUrl)","largePreviewUrl":"\#(largePreviewUrl)","videoPreviewUrl":"\#(videoPreviewUrl)","photoFileRoles":[\#(fileRoles)],"processingErrorMessage":"\#(photo.failureMessage)","isOwnedByCaller":\#(!photo.isForeign),"ownerName":"\#(photo.ownerName)"\#(extraFields)}"#
         }
 
         /// The answer to a request about photos: a GraphQL document, or a
@@ -145,8 +183,23 @@
             let variables = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any])?["variables"] as? [String: Any] ?? [:]
             let isEmpty = screen == "photos-empty"
             let json: String
-            if body.contains("ReadPhotoLibrary") {
-                let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed }.count
+            let isPhotosScreen = screen?.hasPrefix("photos-") == true
+            if body.contains("ListCirclePeople"), isPhotosScreen {
+                json = #"{"data":{"ListCirclePeople":\#(demoPeopleJSON)}}"#
+            } else if body.contains("ListCircles"), isPhotosScreen {
+                json = #"{"data":{"ListCircles":\#(demoCirclesJSON)}}"#
+            } else if body.contains("ListPhotoAlbumShares") {
+                json = #"{"data":{"ListPhotoAlbumShares":\#(demoSharesJSON)}}"#
+            } else if body.contains("SharePhotoAlbum") {
+                json = #"{"data":{"SharePhotoAlbum":{"id":"share-3","photoAlbumId":"demo-album-1","granteeUserId":"user-casey","granteeUsername":"casey","granteeName":"Casey Example","granteeAvatarUrl":null,"granteeAvatarColorIndex":7,"granteeCircleId":null,"granteeCircleName":"","shareLevel":"\#(variables["shareLevel"] as? String ?? "view")","isLocationIncluded":\#(variables["isLocationIncluded"] as? Bool ?? false),"createdAt":"2026-10-17T10:00:00Z"}}}"#
+            } else if body.contains("UpdatePhotoAlbumShare") {
+                json = #"{"data":{"UpdatePhotoAlbumShare":{"id":"share-1","photoAlbumId":"demo-album-1","granteeUserId":"user-sam","granteeUsername":"sam","granteeName":"Sam Placeholder","granteeAvatarUrl":null,"granteeAvatarColorIndex":4,"granteeCircleId":null,"granteeCircleName":"","shareLevel":"\#(variables["shareLevel"] as? String ?? "view")","isLocationIncluded":\#(variables["isLocationIncluded"] as? Bool ?? false),"createdAt":"2026-10-12T10:00:00Z"}}}"#
+            } else if body.contains("RemovePhotoAlbumShare") {
+                json = #"{"data":{"RemovePhotoAlbumShare":true}}"#
+            } else if body.contains("SavePhotoToLibrary") || body.contains("SavePhotoFromAttachment") {
+                json = #"{"data":{"\#(body.contains("SavePhotoToLibrary") ? "SavePhotoToLibrary" : "SavePhotoFromAttachment")":\#(photoJSON(demoPhotos[0]))}}"#
+            } else if body.contains("ReadPhotoLibrary") {
+                let inLibrary = isEmpty ? 0 : demoPhotos.filter { !$0.isTrashed && !$0.isForeign }.count
                 let trashed = isEmpty ? 0 : demoPhotos.filter(\.isTrashed).count
                 json = #"{"data":{"ReadPhotoLibrary":{"photoCount":\#(inLibrary),"videoCount":3,"favoriteCount":3,"trashedCount":\#(trashed),"usedBytes":412000000,"maximumFileBytes":2000000000,"maximumAccountBytes":50000000000,"trashRetentionDays":30,"isDescriptionAvailable":true,"descriptionUnavailableMessage":"","isFaceRecognitionAvailable":true,"faceRecognitionUnavailableMessage":"","isPhotoFaceRecognitionEnabled":true}}}"#
             } else if body.contains("ListPhotoAlbums") {
@@ -196,8 +249,11 @@
             } else if body.contains("ListPhotos") {
                 let isTrashed = variables["isTrashed"] as? Bool == true
                 let isFavorite = variables["isFavorite"] as? Bool == true
-                var chosen = demoPhotos.filter { $0.isTrashed == isTrashed }
+                // Photos of other people are seen only through the album that shares them.
+                let isAlbumAsked = variables["albumId"] is String
+                var chosen = demoPhotos.filter { $0.isTrashed == isTrashed && (isAlbumAsked || !$0.isForeign) }
                 if isFavorite { chosen = chosen.filter(\.isFavorite) }
+                if let photoKind = variables["photoKind"] as? String { chosen = chosen.filter { $0.kind == photoKind } }
                 if let albumId = variables["albumId"] as? String {
                     let members = demoAlbums.first { $0.id == albumId }?.photoIds ?? []
                     chosen = chosen.filter { members.contains($0.id) }
@@ -206,12 +262,11 @@
                     let members = demoPeople.first { $0.id == faceGroupId }?.photoIds ?? []
                     chosen = chosen.filter { members.contains($0.id) }
                 }
-                if let after = variables["takenAfter"] as? String, let before = variables["takenBefore"] as? String {
-                    chosen = chosen.filter { $0.takenAt >= after && $0.takenAt < before }
-                }
+                if let after = variables["takenAfter"] as? String { chosen = chosen.filter { $0.takenAt >= after } }
+                if let before = variables["takenBefore"] as? String { chosen = chosen.filter { $0.takenAt < before } }
                 // A search keeps the photos whose place or file name has the words.
                 if let words = variables["searchText"] as? String, !words.isEmpty {
-                    chosen = demoPhotos.filter { !$0.isTrashed && ($0.placeName.localizedCaseInsensitiveContains(words) || $0.id.localizedCaseInsensitiveContains(words)) }
+                    chosen = demoPhotos.filter { !$0.isTrashed && !$0.isForeign && ($0.placeName.localizedCaseInsensitiveContains(words) || $0.id.localizedCaseInsensitiveContains(words)) }
                 }
                 // Everything fits in one page, so a page after it is empty.
                 if isEmpty || variables["beforePhotoId"] is String { chosen = [] }

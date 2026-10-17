@@ -282,6 +282,17 @@ struct FileCard: View {
     @Environment(AppModel.self) private var app
     @State private var shareAddress: URL?
     @State private var openedPhotoId: OpenedPhoto?
+    /// The photo made of this file once the person kept it in their library.
+    @State private var savedPhotoId: String?
+    @State private var isSavingToLibrary = false
+    @State private var savingProblemText: String?
+
+    /// The photo this file is: the one the photo tool showed, or the copy the
+    /// person just kept.
+    private var photoId: String? { file.photoId ?? savedPhotoId }
+
+    /// Whether the file is a picture or video that can be kept as a photo.
+    private var canBeKept: Bool { photoId == nil && (file.isImage || file.isVideo) && !file.isArtifact && app.isPhotosOffered }
 
     var body: some View {
         AgentBubble {
@@ -295,7 +306,7 @@ struct FileCard: View {
                     .font(.subheadline)
                     .lineLimit(1)
                     Spacer(minLength: 8)
-                    if let photoId = file.photoId {
+                    if let photoId {
                         // A photo the agent showed opens in the app's photo
                         // viewer, where it can be favorited, saved or shared.
                         Button("Open in Photos") { openedPhotoId = OpenedPhoto(id: photoId) }
@@ -320,12 +331,33 @@ struct FileCard: View {
                         ProgressView()
                     }
                 }
+                if canBeKept {
+                    // Keeps the picture or video as a photo in TeaNode's library.
+                    Button {
+                        Task { await keepInLibrary() }
+                    } label: {
+                        if isSavingToLibrary {
+                            ProgressView()
+                        } else {
+                            Label("Save to Photos", systemImage: "photo.badge.plus")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
+                    .disabled(isSavingToLibrary)
+                }
                 if !file.caption.isEmpty {
                     Text(file.caption)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
+        }
+        .sensoryFeedback(.success, trigger: savedPhotoId)
+        .alert("Cannot save to Photos", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { text in
+            Text(text)
         }
         .fullScreenCover(item: $openedPhotoId) { opened in
             if let connection = app.connection {
@@ -338,6 +370,20 @@ struct FileCard: View {
             if file.isVideo || file.isAudio, let connection = app.connection {
                 shareAddress = try? await connection.shareAddress(attachmentId: file.attachmentId)
             }
+        }
+    }
+}
+
+extension FileCard {
+    /// Keeps the file as a photo of the person's own library.
+    fileprivate func keepInLibrary() async {
+        guard let connection = app.connection else { return }
+        isSavingToLibrary = true
+        defer { isSavingToLibrary = false }
+        do {
+            savedPhotoId = try await connection.savePhotoFromAttachment(file.attachmentId).id
+        } catch {
+            savingProblemText = app.describe(error)
         }
     }
 }

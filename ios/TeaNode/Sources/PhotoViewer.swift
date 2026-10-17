@@ -26,7 +26,7 @@ struct PhotoViewer: View {
         _currentPhotoId = State(initialValue: openedPhotoId)
         #if DEBUG
             // `-TeaNodeScreen photos-viewer-described` and `photos-viewer-failed` open Info over the viewer.
-            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-failed" {
+            if DemoServer.isRequested, DemoServer.screen == "photos-viewer-described" || DemoServer.screen == "photos-viewer-failed" || DemoServer.screen == "photos-change-date" {
                 _isShowingInfo = State(initialValue: true)
             }
         #endif
@@ -44,7 +44,7 @@ struct PhotoViewer: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .sheet(isPresented: $isShowingInfo) {
-                    if let current { PhotoInfoView(photo: current, model: model, onAskAgent: askAgent) }
+                    if let current { PhotoInfoView(photo: current, model: model, listKey: listKey, onAskAgent: askAgent) }
                 }
                 .albumTitleAlert(model: model, scope: .viewer)
         }
@@ -91,18 +91,24 @@ struct PhotoViewer: View {
         ToolbarItem(placement: .cancellationAction) {
             Button("Close", systemImage: "xmark") { dismiss() }
         }
-        if let current, !current.isTrashed {
+        if let current, !current.isTrashed, moreMenuHasItems(for: current) {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
+                    if current.isOwnedByCaller {
+                        AddToAlbumMenu(model: model, photos: [current], scope: .viewer, hiddenAlbumId: listKey.albumId)
+                    }
                     if let albumId = listKey.albumId, let album = model.albums?.first(where: { $0.id == albumId }) {
-                        Button("Use as album cover", systemImage: "rectangle.stack.badge.person.crop") {
-                            Task { await model.setCover(of: album, to: current) }
+                        if album.canCallerManage {
+                            Button("Use as album cover", systemImage: "rectangle.stack.badge.person.crop") {
+                                Task { await model.setCover(of: album, to: current) }
+                            }
                         }
-                        Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
-                            let next = neighbor(of: current)
-                            Task {
-                                if await model.remove([current], fromAlbum: albumId) { leave(movingTo: next) }
+                        if current.isOwnedByCaller || album.canCallerManage {
+                            Button("Remove from album", systemImage: "rectangle.stack.badge.minus") {
+                                let next = neighbor(of: current)
+                                Task {
+                                    if await model.remove([current], fromAlbum: albumId) { leave(movingTo: next) }
+                                }
                             }
                         }
                     }
@@ -139,10 +145,37 @@ struct PhotoViewer: View {
                             Text("This cannot be undone.")
                         }
                 }
+            } else if !current.isOwnedByCaller {
+                // Somebody else's photo, seen through a shared album: keep it,
+                // save it to the phone, share it. Favorites and the Trash are
+                // its owner's.
+                ToolbarItem(placement: .bottomBar) {
+                    if model.savingPhotoIds.contains(current.id) {
+                        ProgressView()
+                            .accessibilityLabel("Saving to my library")
+                    } else {
+                        Button("Save to my library", systemImage: "photo.badge.plus") {
+                            Task { await model.saveToLibrary([current]) }
+                        }
+                    }
+                }
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    PhotoShareLink(photo: current, connection: model.connection)
+                        .labelStyle(.iconOnly)
+                }
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    saveToPhoneControl(for: current)
+                }
+                ToolbarSpacer(.flexible, placement: .bottomBar)
+                ToolbarItem(placement: .bottomBar) {
+                    Button("Info", systemImage: "info.circle") { isShowingInfo = true }
+                }
             } else {
                 ToolbarItem(placement: .bottomBar) {
                     Button(
-                        current.isFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Favorite"),
+                        current.isFavorite ? LocalizedStringKey("Remove from Favorites") : LocalizedStringKey("Add to Favorites"),
                         systemImage: current.isFavorite ? "heart.fill" : "heart"
                     ) {
                         Task { await model.toggleFavorite(current, in: listKey) }
@@ -156,14 +189,7 @@ struct PhotoViewer: View {
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
-                    if model.savingPhotoIds.contains(current.id) {
-                        ProgressView()
-                            .accessibilityLabel("Saving to Photos")
-                    } else {
-                        Button("Save to Photos", systemImage: "square.and.arrow.down") {
-                            Task { await model.saveToPhotos(current) }
-                        }
-                    }
+                    saveToPhoneControl(for: current)
                 }
                 ToolbarSpacer(.flexible, placement: .bottomBar)
                 ToolbarItem(placement: .bottomBar) {
@@ -181,6 +207,40 @@ struct PhotoViewer: View {
                             }
                         }
                 }
+            }
+        }
+    }
+
+    /// Whether the viewer's More menu has anything for the photo: albums to
+    /// add it to, or the album it is shown in to take it out of.
+    private func moreMenuHasItems(for photo: Photo) -> Bool {
+        if photo.isOwnedByCaller { return true }
+        guard let albumId = listKey.albumId, let album = model.albums?.first(where: { $0.id == albumId }) else { return false }
+        return album.canCallerManage
+    }
+
+    /// Adds the photo to the phone's own Photos app: one button, or a menu when
+    /// the photo has an edited version or a Live Photo's video to choose from.
+    @ViewBuilder
+    private func saveToPhoneControl(for photo: Photo) -> some View {
+        if model.savingPhotoIds.contains(photo.id) {
+            ProgressView()
+                .accessibilityLabel("Saving to the Photos app")
+        } else if photo.hasEditedFile || photo.hasLiveVideoFile {
+            Menu {
+                Button("Save original", systemImage: "photo") { Task { await model.saveToPhotos(photo) } }
+                if photo.hasEditedFile {
+                    Button("Save edited version", systemImage: "slider.horizontal.3") { Task { await model.saveToPhotos(photo, saving: .edited) } }
+                }
+                if photo.hasLiveVideoFile {
+                    Button("Save as Live Photo", systemImage: "livephoto") { Task { await model.saveToPhotos(photo, saving: .livePhoto) } }
+                }
+            } label: {
+                Label("Save to the Photos app", systemImage: "square.and.arrow.down")
+            }
+        } else {
+            Button("Save to the Photos app", systemImage: "square.and.arrow.down") {
+                Task { await model.saveToPhotos(photo) }
             }
         }
     }
@@ -233,7 +293,8 @@ struct PhotoPage: View {
             } else if let picture {
                 // A new picture, the large one in place of the small, is a new
                 // zooming view: the old one keeps showing what it was made with.
-                ZoomablePicture(picture: picture, isZoomed: isCurrent ? $isZoomed : .constant(false))
+                // A page that is not the one on screen goes back to its whole size.
+                ZoomablePicture(picture: picture, isZoomed: $isZoomed, isCurrent: isCurrent)
                     .id(ObjectIdentifier(picture))
                     .accessibilityLabel(accessibilityText)
                     .accessibilityAddTraits(.isImage)
@@ -241,12 +302,23 @@ struct PhotoPage: View {
                 ContentUnavailableView {
                     Label("Cannot show this photo", systemImage: "exclamationmark.circle")
                 } description: {
-                    Text(photo.processingErrorMessage.isEmpty ? String(localized: "No picture could be made of it.") : photo.processingErrorMessage)
+                    Text(PhotoWords.failure(of: photo))
                 } actions: {
-                    Button("Try again") { Task { await model.retryProcessing([photo]) } }
+                    if photo.isOwnedByCaller {
+                        Button("Try again") { Task { await model.retryProcessing([photo]) } }
+                    }
                 }
             } else {
-                ProgressView()
+                // A photo still being made ready says so, rather than spinning unexplained.
+                VStack(spacing: 12) {
+                    ProgressView()
+                    if photo.isWaiting {
+                        Text("Getting this photo ready")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
             }
         }
         .task(id: photo.viewerPreviewPath) {
@@ -255,6 +327,7 @@ struct PhotoPage: View {
         .task(id: isCurrent) {
             await loadVideo()
         }
+
         .overlay(alignment: .topLeading) {
             if photo.isLivePhoto, isCurrent, !isZoomed {
                 liveButton
@@ -267,7 +340,7 @@ struct PhotoPage: View {
     }
 
     private var accessibilityText: String {
-        let kind = photo.isLivePhoto ? String(localized: "Live Photo") : String(localized: "Photo")
+        let kind = PhotoWords.kind(of: photo)
         guard let taken = PhotoTimeline.takenText(of: photo) else { return kind }
         return "\(kind), \(taken)"
     }
@@ -292,13 +365,13 @@ struct PhotoPage: View {
                 } else if photo.isFailed {
                     VStack(spacing: 12) {
                         Label("Cannot play this video", systemImage: "exclamationmark.circle")
-                        if !photo.processingErrorMessage.isEmpty {
-                            Text(photo.processingErrorMessage)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                        Text(PhotoWords.failure(of: photo))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        if photo.isOwnedByCaller {
+                            Button("Try again") { Task { await model.retryProcessing([photo]) } }
+                                .buttonStyle(.bordered)
                         }
-                        Button("Try again") { Task { await model.retryProcessing([photo]) } }
-                            .buttonStyle(.bordered)
                     }
                     .padding()
                     .background(.regularMaterial, in: .rect(cornerRadius: 12))
@@ -389,7 +462,10 @@ struct PhotoPage: View {
 struct PhotoInfoView: View {
     let photo: Photo
     let model: PhotosModel
+    /// The list the viewer pages through, which a changed date reads again.
+    let listKey: PhotoListKey
     let onAskAgent: (Photo) -> Void
+    @State private var isChangingDate = false
     @State private var detail: PhotoDetail?
     /// Why the photo's details could not be read; nil when they could, or have
     /// not been asked for yet.
@@ -416,8 +492,18 @@ struct PhotoInfoView: View {
                 if let detailFailureText {
                     detailFailureSection(detailFailureText)
                 }
+                if shownPhoto.isWaiting {
+                    Label("Getting this photo ready", systemImage: "hourglass")
+                        .foregroundStyle(.secondary)
+                }
+                if !shownPhoto.isOwnedByCaller, !shownPhoto.ownerName.isEmpty {
+                    LabeledContent("Shared by") { Text(shownPhoto.ownerName) }
+                }
                 LabeledContent("Date") {
                     Text(PhotoTimeline.takenText(of: shownPhoto) ?? String(localized: "Unknown"))
+                }
+                if shownPhoto.isOwnedByCaller, !shownPhoto.isTrashed {
+                    Button("Change date", systemImage: "calendar") { isChangingDate = true }
                 }
                 if !shownPhoto.placeName.isEmpty {
                     LabeledContent("Place") { Text(shownPhoto.placeName) }
@@ -445,6 +531,9 @@ struct PhotoInfoView: View {
                 if !people.isEmpty {
                     peopleSection
                 }
+                if shownPhoto.isOwnedByCaller, !shownPhoto.isFailed, !shownPhoto.isWaiting, !shownPhoto.isTrashed {
+                    makePreviewsSection
+                }
                 if detail != nil {
                     descriptionSection
                 }
@@ -456,6 +545,20 @@ struct PhotoInfoView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .sheet(isPresented: $isChangingDate) {
+                PhotoDateChangeSheet(model: model, photo: shownPhoto, listKey: listKey)
+            }
+            .onChange(of: isChangingDate) { _, isStillChanging in
+                if !isStillChanging { Task { await loadDetail() } }
+            }
+            #if DEBUG
+                // `-TeaNodeScreen photos-change-date` opens the date over Info.
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "photos-change-date" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isChangingDate = true
+                }
+            #endif
             // The viewer's toasts are behind this sheet, so it shows its own.
             .toast(done: Bindable(model).doneText, problem: Bindable(model).problemText)
         }
@@ -493,13 +596,22 @@ struct PhotoInfoView: View {
     /// way to ask for it to be made again.
     private var failureSection: some View {
         Section {
-            Label("This photo could not be made ready.", systemImage: "exclamationmark.circle")
-            if !shownPhoto.processingErrorMessage.isEmpty {
-                Text(shownPhoto.processingErrorMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            Label(PhotoWords.failure(of: shownPhoto), systemImage: "exclamationmark.circle")
+            if shownPhoto.isOwnedByCaller {
+                Button("Try again", systemImage: "arrow.clockwise") {
+                    Task {
+                        if await model.retryProcessing([shownPhoto]) { await loadDetail() }
+                    }
+                }
             }
-            Button("Try again", systemImage: "arrow.clockwise") {
+        }
+    }
+
+    /// For a photo that is ready: have its previews made again, as the
+    /// dashboard offers, for a picture that came out wrong.
+    private var makePreviewsSection: some View {
+        Section {
+            Button("Make previews again", systemImage: "arrow.clockwise") {
                 Task {
                     if await model.retryProcessing([shownPhoto]) { await loadDetail() }
                 }
@@ -588,7 +700,7 @@ struct PhotoInfoView: View {
                     Button("Describe again", systemImage: "arrow.clockwise") { Task { await describe(isRedescribed: true) } }
                 }
             } else if isDescriptionAvailable {
-                Button("Describe", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
+                Button("Describe this photo", systemImage: "text.viewfinder") { Task { await describe(isRedescribed: false) } }
             } else if let library = model.library {
                 Text(library.descriptionUnavailableMessage.isEmpty ? String(localized: "Describing photos is not available.") : library.descriptionUnavailableMessage)
                     .foregroundStyle(.secondary)
@@ -762,8 +874,15 @@ struct PhotoShareFile: Transferable, Sendable {
             } else {
                 download = try await item.connection.downloadPhotoFile(item.photo)
             }
-            return SentTransferredFile(download.fileURL)
+            return PhotoShareFile.hand(over: download)
         }
+    }
+
+    /// The file for the share sheet, which copies it. The folder it is in is
+    /// removed after a while, once the sheet has had its time.
+    static func hand(over download: PhotoDownload) -> SentTransferredFile {
+        PhotoTemporaryFiles.removeLater(download)
+        return SentTransferredFile(download.fileURL, allowAccessingOriginalFile: false)
     }
 }
 
@@ -775,7 +894,7 @@ struct PhotoShareImage: Transferable, Sendable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .image) { item in
             let download = try await item.connection.downloadPhotoFile(item.photo)
-            return SentTransferredFile(download.fileURL)
+            return PhotoShareFile.hand(over: download)
         }
     }
 }
@@ -788,7 +907,7 @@ struct PhotoShareMovie: Transferable, Sendable {
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(exportedContentType: .movie) { item in
             let download = try await item.connection.downloadPhotoFile(item.photo)
-            return SentTransferredFile(download.fileURL)
+            return PhotoShareFile.hand(over: download)
         }
     }
 }
@@ -804,6 +923,19 @@ enum PhotoLibrarySaver {
         try await PHPhotoLibrary.shared().performChanges {
             let request = PHAssetCreationRequest.forAsset()
             request.addResource(with: isVideo ? .video : .photo, fileURL: fileURL, options: nil)
+        }
+    }
+
+    /// Adds a picture with its video as one Live Photo.
+    static func saveLivePhoto(pictureURL: URL, videoURL: URL) async throws {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else {
+            throw TeaNodeError.refused(String(localized: "TeaNode is not allowed to add to your Photos. Allow it in Settings, under Photos."))
+        }
+        try await PHPhotoLibrary.shared().performChanges {
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .photo, fileURL: pictureURL, options: nil)
+            request.addResource(with: .pairedVideo, fileURL: videoURL, options: nil)
         }
     }
 }

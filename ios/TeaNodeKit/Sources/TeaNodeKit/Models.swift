@@ -365,7 +365,7 @@ public struct AgentPhone: Codable, Hashable, Sendable {
     public let canBeNotified: Bool
 
     /// Every kind, in the order a person chooses among them.
-    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "payment"]
+    public static let allNotificationKinds = ["message", "approval", "question", "answer", "circle", "chat", "payment", "photo"]
 }
 
 /// ServerTime reads the server's times.

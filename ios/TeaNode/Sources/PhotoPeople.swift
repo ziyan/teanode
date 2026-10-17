@@ -288,6 +288,14 @@ struct PhotoPersonCell: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            // A hidden person is dimmed, and says so in words too: dimming alone
+            // is not seen by everybody.
+            if group.isHidden {
+                Label("Hidden", systemImage: "eye.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .opacity(group.isHidden ? 0.5 : 1)
         .contentShape(.rect)
@@ -358,7 +366,7 @@ struct PhotoPersonScreen: View {
     }
 
     private var selectionTitle: String {
-        selectedPhotoIds.isEmpty ? String(localized: "Select items") : String(localized: "\(selectedPhotoIds.count) Selected")
+        selectedPhotoIds.isEmpty ? String(localized: "Select photos") : String(localized: "\(selectedPhotoIds.count) Selected")
     }
 
     private func endSelection() {
