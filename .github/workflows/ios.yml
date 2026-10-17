@@ -268,6 +268,23 @@ jobs:
           shoot calendar-chinese-light light large -TeaNodeDemo -TeaNodeTab calendar -AppleLanguages "(zh-Hans)" -AppleLocale zh_CN
           shoot calendar-day-light light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
           shoot calendar-day-dark dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen calendar-day
+          shoot location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot location-dark dark large -TeaNodeDemo -TeaNodeTab location
+          shoot location-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location
+          shoot location-day-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
+          shoot location-day-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-day
+          shoot location-places-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-places-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-places
+          shoot location-place-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-place-dark dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-place-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-place
+          shoot location-settings-light light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen location-settings
+          # Sharing, a person chosen on the map, many people sharing, the check-in sheet, and setting Location up.
+          for location_screen in location-sharing location-person location-people location-checkin location-setup; do
+            shoot "$location_screen-light" light large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-dark" dark large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+            shoot "$location_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab location -TeaNodeScreen "$location_screen"
+          done
           shoot recordings-light light large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-dark dark large -TeaNodeDemo -TeaNodeTab recordings
           shoot recordings-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings
@@ -453,7 +470,7 @@ jobs:
           # each screen in light, dark and the largest text. Circles, a
           # circle's page as its admin, the picture on the profile, and the
           # sheet and the card of a shared skill: Settings pushes them.
-          for circles_screen in circles circle-detail settings-picture skill-share-sheet skill-share-call; do
+          for circles_screen in circles circle-detail circle-join-offer settings-picture skill-share-sheet skill-share-call; do
             shoot "$circles_screen-light" light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-dark" dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"

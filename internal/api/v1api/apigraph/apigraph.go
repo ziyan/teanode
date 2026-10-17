@@ -30,6 +30,7 @@ import (
 	"github.com/ziyan/teanode/internal/util/ceremony"
 	"github.com/ziyan/teanode/internal/util/geoip"
 	"github.com/ziyan/teanode/internal/util/graphapi"
+	"github.com/ziyan/teanode/internal/util/ratelimit"
 	"github.com/ziyan/teanode/internal/web"
 )
 
@@ -92,6 +93,18 @@ type graph struct {
 	// instance; made the first time they are wanted (chat.go).
 	chatLimitsOnce  sync.Once
 	chatLimitsValue *chatRateLimits
+
+	// locationEvents is the one listener for location events, fanned out to
+	// the maps open on this instance (location_events.go); mapLimits is what
+	// one account may fetch of the map a minute (location_map.go).
+	locationEvents locationEventHub
+	mapLimitsOnce  sync.Once
+	mapLimitsValue *ratelimit.Registry
+
+	// locationLimits are what one account may ask of the place provider and
+	// how fast it may make places (location_limits.go).
+	locationLimitsOnce  sync.Once
+	locationLimitsValue *locationRateLimits
 }
 
 // New builds the GraphQL component, generating the schema by reflection over
@@ -175,6 +188,9 @@ func (self *graph) AddRoutes(router *mux.Router) error {
 	// A person's picture, which is a file in storage and far too large to
 	// carry through a listing.
 	router.Path(api.PathAvatarUser).Methods(http.MethodGet, http.MethodHead).HandlerFunc(self.avatarView)
+	// The map style host's files, fetched here for the signed-in browser
+	// (location_map.go).
+	router.PathPrefix(api.PathMap + "/").Methods(http.MethodGet).HandlerFunc(self.mapView)
 	// A setup profile, downloaded once by the device that installs it.
 	router.Path(api.PathMailboxSetupProfile).Methods(http.MethodGet).HandlerFunc(self.setupProfileView)
 	return nil

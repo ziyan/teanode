@@ -1144,7 +1144,7 @@ func (self *graph) commandAgentRun(ctx context.Context, found *models.Agent, wor
 }
 
 func (self *graph) AnswerAgentLocation(ctx context.Context, arguments AnswerAgentLocationArguments) (bool, error) {
-	_, found, err := self.requireAgentPerson(ctx)
+	principal, found, err := self.requireAgentPerson(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -1173,7 +1173,46 @@ func (self *graph) AnswerAgentLocation(ctx context.Context, arguments AnswerAgen
 	if err != nil {
 		return false, err
 	}
-	return self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandLocate, CallID: arguments.CallID, Answer: string(said)})
+	isAnswered, err := self.commandAgentRun(ctx, found, worker, agent.RunCommand{RunID: arguments.RunID, Action: agent.CommandLocate, CallID: arguments.CallID, Answer: string(said)})
+	if err == nil && isAnswered && answer.ErrorMessage == "" {
+		self.keepBrowserLocation(ctx, principal, &answer)
+	}
+	return isAnswered, err
+}
+
+// keepBrowserLocation stores where the browser said it was as a position of
+// the person's, so that the Location page and the agent's history count it
+// too, when they may record where they go. Best effort: the person asked
+// where they are and has been answered, so a failure here is logged and goes
+// no further. It is its own transaction for the same reason, since a failed
+// statement would spoil the one the answer is in.
+func (self *graph) keepBrowserLocation(ctx context.Context, principal *api.Principal, answer *agent.LocationAnswer) {
+	if !principal.Permissions.Has(models.PermissionLocationUse) {
+		return
+	}
+	measuredAt := answer.MeasuredAt
+	if now := time.Now(); measuredAt.IsZero() || measuredAt.After(now) {
+		// A browser's clock a little ahead of this one's is the same moment.
+		measuredAt = now
+	}
+	newPointCount := 0
+	if err := self.database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
+		newPointCount, err = tx.InsertLocationPoints(principal.User.ID, []*models.LocationPoint{{
+			LatitudeDegrees: answer.LatitudeDegrees, LongitudeDegrees: answer.LongitudeDegrees, AccuracyMeters: answer.AccuracyMeters,
+			MeasuredAt: measuredAt, LocationSource: models.LocationSourceBrowser,
+		}})
+		return err
+	}); err != nil {
+		log.Warningf("cannot keep the location the browser gave: %s", err)
+		return
+	}
+	// Told once the position is stored, as a phone's report is, so that the
+	// maps of the people it is shared with move now and not at their next read.
+	if newPointCount > 0 {
+		if err := self.database.NotifyLocationEvent(principal.User.ID); err != nil {
+			log.Warningf("cannot tell the listeners that a location changed: %s", err)
+		}
+	}
 }
 
 func (self *graph) StopAgentRun(ctx context.Context, arguments StopAgentRunArguments) (bool, error) {

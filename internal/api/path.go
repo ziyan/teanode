@@ -164,6 +164,16 @@ const (
 	// kilobytes of base64 through a listing.
 	PathContactPhoto = Prefix + "/contacts/{contactId}/photo"
 
+	// PathMap is the map style host's files (the style, its vector tiles,
+	// fonts and icons), fetched by this server for the signed-in browser,
+	// so that the dashboard's content security policy keeps allowing nothing
+	// but this server and a viewer's browser never talks to a third party.
+	// Only the host of the configured map style is ever fetched from,
+	// whatever the address says. PathMapStyle is the style itself, wherever
+	// on that host the configured style is.
+	PathMap      = Prefix + "/map"
+	PathMapStyle = PathMap + "/style"
+
 	// PathAvatarUser is a person's picture, a square PNG. The address the
 	// API hands out carries ?v=<when it changed>, so a new picture is a new
 	// address and the old one can be cached for a day; ?size=64 asks for the

@@ -956,6 +956,42 @@ that published rule data when you enable it and load it.
 
 **`databaseFile`** — DatabaseFile is a MaxMind .mmdb file.
 
+### `places`
+
+Where the names of the places a person goes to come from, and the map they are
+drawn on. **Place names come from OpenStreetMap: your server sends the position
+of each new place to the place provider to look up its name.** A place is named
+once, right after the report that made it is stored, and the name is kept, so a
+server with a handful of people asks very little of the provider. The position
+sent is the place's own, to six decimals, which for a person's home is their
+home. Nothing else about the person goes with it: the request carries only the
+server's User-Agent, which names this server.
+
+**`providerKind`**: `nominatim` (the default) or `photon`. Empty turns the
+provider off: a place is then named after its city from a table built into the
+server, nothing is sent anywhere, and a person can still name it themselves.
+The same provider answers the check-in list and the agent's place search. It is
+on by default because the names are what make a list of visits readable; an
+operator who does not want positions to leave the server sets it empty.
+
+**`providerUrl`**: The provider's address, without a trailing path. The
+default is the OpenStreetMap Foundation's public Nominatim server, whose usage
+policy allows light use from an application that identifies itself and asks for
+each place once. This server sends at most one request a second whichever
+provider is set, and the limit is for each instance: two instances sharing one
+database send up to two a second, so give a server with several instances a
+provider of your own. A caller that would wait more than a few seconds is told
+the provider is busy instead. Photon is for a server you run yourself. The
+address must be https; plain http is accepted only for localhost and private
+addresses.
+
+**`mapStyleUrl`**: The address of the map style the dashboard draws its maps
+from, fetched through the server so that a viewer's browser talks to nothing
+else; the map host sees this server's address and the tiles it asks for, never
+a person. The default is OpenFreeMap's `liberty` style. The same address rules
+apply. Only accounts that may use Location are served, up to 600 files a minute
+each.
+
 ### `storage`
 
 **`mode`**: `local` requires a directory and treats S3 as a best-effort mirror.
