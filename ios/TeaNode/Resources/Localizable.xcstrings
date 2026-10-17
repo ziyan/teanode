@@ -61349,6 +61349,22 @@
           }
         }
       }
+    },
+    "This file is not available. It may have been deleted, or it is no longer shared with you.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このファイルは利用できません。削除されたか、共有が解除された可能性があります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此文件不可用。它可能已被删除，或已不再与你共享。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

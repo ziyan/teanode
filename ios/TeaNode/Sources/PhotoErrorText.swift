@@ -11,6 +11,8 @@ extension PhotoError {
         switch self {
         case .fileCouldNotBeRead:
             String(localized: "The file could not be read. Try again in a moment.")
+        case .fileNotAvailable:
+            String(localized: "This file is not available. It may have been deleted, or it is no longer shared with you.")
         case .nothingToSaveYet:
             String(localized: "This photo has nothing to save yet. Try again in a moment.")
         case .noAddressBook:
