@@ -4,7 +4,7 @@ import TeaNodeKit
 // Chats in the conversation screens. A chat is one more conversation: it is
 // listed with the others, opens in ConversationView and is written to with
 // the same composer. These are the parts only a chat needs: its people's
-// faces, who has read what, who is typing, and the sheets for starting one
+// pictures, who has read what, who is typing, and the sheets for starting one
 // and changing who is in it.
 
 /// ChatWords are the words a chat is described in.
@@ -41,9 +41,9 @@ enum ChatWords {
     }
 }
 
-/// ChatFacesView is a chat's people: the other person's face for a direct
+/// ChatAvatarsView is a chat's people: the other person's picture for a direct
 /// chat, two overlapped for a group.
-struct ChatFacesView: View {
+struct ChatAvatarsView: View {
     let chat: ChatSummary
     let ownUserId: String?
     var size: CGFloat = 30
@@ -72,7 +72,9 @@ struct UnreadBadge: View {
         Text(verbatim: unreadCount > 99 ? "99+" : "\(unreadCount)")
             .font(.caption.weight(.semibold))
             .monospacedDigit()
-            .foregroundStyle(.white)
+            // The window's own color on the tint, light in dark mode and dark in
+            // light mode, so that it holds against the tint in both.
+            .foregroundStyle(.background)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(.tint, in: .capsule)
@@ -80,21 +82,21 @@ struct UnreadBadge: View {
     }
 }
 
-/// ReadMarks are the small faces under a message of the people who have
+/// ReadMarks are the small pictures under a message of the people who have
 /// read as far as it.
 struct ReadMarks: View {
     let readers: [ChatMember]
-    private static let mostFaces = 4
+    private static let mostAvatars = 4
 
     var body: some View {
         if !readers.isEmpty {
             HStack(spacing: -3) {
-                ForEach(readers.prefix(Self.mostFaces)) { member in
+                ForEach(readers.prefix(Self.mostAvatars)) { member in
                     AvatarView(name: member.displayName, avatarUrl: member.avatarUrl, colorIndex: member.avatarColorIndex, size: 14)
                         .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 1))
                 }
-                if readers.count > Self.mostFaces {
-                    Text(verbatim: "+\(readers.count - Self.mostFaces)")
+                if readers.count > Self.mostAvatars {
+                    Text(verbatim: "+\(readers.count - Self.mostAvatars)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.leading, 6)
@@ -174,16 +176,16 @@ struct MentionRow: View {
 }
 
 /// ChatLineFrame puts a message of a chat where it belongs: the person's
-/// own on the right, and everybody else's on the left with their face and,
+/// own on the right, and everybody else's on the left with their picture and,
 /// above the first message of a run, their name. The bubble is the content.
 struct ChatLineFrame<Content: View>: View {
     let line: TranscriptLine
     let author: ChatAuthor
-    let startsRun: Bool
+    let isRunStart: Bool
     let readers: [ChatMember]
     @ViewBuilder let content: Content
 
-    private static var faceSize: CGFloat { 30 }
+    private static var avatarSide: CGFloat { 30 }
 
     var body: some View {
         if author.isOwnWords {
@@ -194,13 +196,13 @@ struct ChatLineFrame<Content: View>: View {
             }
         } else {
             HStack(alignment: .top, spacing: 8) {
-                if startsRun {
-                    AvatarView(name: name, avatarUrl: author.authorAvatarUrl, colorIndex: author.authorAvatarColorIndex, size: Self.faceSize)
+                if isRunStart {
+                    AvatarView(name: name, avatarUrl: author.authorAvatarUrl, colorIndex: author.authorAvatarColorIndex, size: Self.avatarSide)
                 } else {
-                    Color.clear.frame(width: Self.faceSize, height: 1)
+                    Color.clear.frame(width: Self.avatarSide, height: 1)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    if startsRun {
+                    if isRunStart {
                         HStack(spacing: 4) {
                             Text(name)
                             if author.isAgent {
@@ -216,7 +218,7 @@ struct ChatLineFrame<Content: View>: View {
                         // A continuation shows no name, so VoiceOver is told
                         // whose it is, as it is for the first of a run.
                         .overlay(alignment: .topLeading) {
-                            if !startsRun {
+                            if !isRunStart {
                                 Color.clear.frame(width: 1, height: 1).allowsHitTesting(false).accessibilityElement().accessibilityLabel(name)
                             }
                         }
@@ -316,6 +318,14 @@ struct ChatMenu: View {
             .sheet(isPresented: $isShowingMembers) {
                 ChatMembersSheet(model: model)
             }
+            #if DEBUG
+                // `-TeaNodeScreen chat-members`: the members sheet open over the chat.
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "chat-members" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isShowingMembers = true
+                }
+            #endif
         }
     }
 }
@@ -372,7 +382,17 @@ struct ChatMembersSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(detents)
+    }
+
+    /// The sheet opens half way and can be pulled up. A screenshot of it
+    /// (`-TeaNodeScreen chat-members`) opens it whole, to show the switches
+    /// under the members.
+    private var detents: Set<PresentationDetent> {
+        #if DEBUG
+            if DemoServer.isRequested, DemoServer.screen == "chat-members" { return [.large] }
+        #endif
+        return [.medium, .large]
     }
 
     /// What the person's agent does in this chat, as two switches that are the
@@ -471,6 +491,9 @@ struct ChatPeopleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppModel.self) private var app
     @State private var people: [ChatPerson]?
+    /// Why the people could not be read, to be said with a way to try again: an
+    /// empty list would say the person shares a circle with nobody.
+    @State private var loadProblemText: String?
     @State private var chosen: Set<String> = []
     @State private var groupName = ""
     @State private var isBusy = false
@@ -520,12 +543,27 @@ struct ChatPeopleSheet: View {
                 }
             }
             .overlay {
-                if people == nil {
+                if let loadProblemText, people == nil {
+                    LoadFailedView(problemText: loadProblemText) { await load() }
+                } else if people == nil {
                     ProgressView()
                 } else if choices.isEmpty {
-                    ContentUnavailableView(
-                        "No one to message yet", systemImage: "person.2",
-                        description: Text("You do not share a circle with anyone yet. Invite people to a circle, then message them from here."))
+                    if purpose == .add, !(people ?? []).isEmpty {
+                        // Adding to a group the person's circles are all in
+                        // already is not the same as sharing a circle with nobody.
+                        ContentUnavailableView(
+                            "Nobody left to add", systemImage: "person.2",
+                            description: Text("Everyone you share a circle with is already in this group."))
+                    } else {
+                        ContentUnavailableView {
+                            Label("No one to message yet", systemImage: "person.2")
+                        } description: {
+                            Text("You do not share a circle with anyone yet. Invite people to a circle, then message them from here.")
+                        } actions: {
+                            OpenCirclesLink(connection: connection)
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
                 }
             }
             .navigationTitle(navigationTitle)
@@ -551,14 +589,16 @@ struct ChatPeopleSheet: View {
             } message: { text in
                 Text(text)
             }
-            .task {
-                do {
-                    people = try await connection.chatPeople()
-                } catch {
-                    people = []
-                    problemText = app.describe(error)
-                }
-            }
+            .task { await load() }
+        }
+    }
+
+    private func load() async {
+        do {
+            people = try await connection.chatPeople()
+            loadProblemText = nil
+        } catch {
+            loadProblemText = error.loadProblemText
         }
     }
 

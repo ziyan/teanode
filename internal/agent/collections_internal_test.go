@@ -44,7 +44,7 @@ func TestTheSharedCalendarsLineIsOnlyWithTheGrantOfTheOwnCalendar(t *testing.T) 
 	}
 
 	granted, withheld := collectionsOf(true)
-	if !strings.Contains(strings.Join(granted, "\n"), "1 calendars other people or their circles share with them; read with calendar agenda and whose") {
+	if !strings.Contains(strings.Join(granted, "\n"), "1 calendars other people or their circles share with them; read with calendar agenda and its owner argument") {
 		t.Errorf("with the own calendar granted the shared ones are readable: %v", granted)
 	}
 	if strings.Contains(strings.Join(withheld, "\n"), "share with them") {

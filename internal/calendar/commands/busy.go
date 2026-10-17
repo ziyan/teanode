@@ -35,7 +35,7 @@ func OwnerAddresses(transaction db.Transaction, ownerUserId string) (map[string]
 
 // BusyOccurrences are the times in a window that make the owner of an events
 // calendar busy: the occurrences of the events that do, by the four
-// judgements of calendar.MakesBusy. They are not merged; calendar.FreeBusy
+// judgments of calendar.MakesBusy. They are not merged; calendar.FreeBusy
 // does that.
 //
 // The one place that decides it, for the owner's own free-busy over CalDAV, for

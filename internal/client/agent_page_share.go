@@ -42,6 +42,20 @@ type SharedAgentPageRoot struct {
 	IsQuoteShared bool   `json:"isQuoteShared"`
 }
 
+// SharedAgentPageHit is a page or a fact of a shared page that a search
+// found, with whose it is. FactNumber is zero for a page.
+type SharedAgentPageHit struct {
+	OwnerUserID   string `json:"ownerUserId"`
+	OwnerUsername string `json:"ownerUsername"`
+	OwnerName     string `json:"ownerName"`
+
+	Path       string `json:"path"`
+	Name       string `json:"name"`
+	Opening    string `json:"opening"`
+	FactNumber int    `json:"factNumber"`
+	Text       string `json:"text"`
+}
+
 // SharedAgentFact is one fact of a shared page.
 type SharedAgentFact struct {
 	Number            int        `json:"number"`
@@ -137,6 +151,12 @@ const (
   ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex path name nodeKind opening isQuoteShared
 } }`
 
+	// DocumentSearchSharedAgentPages finds, by words, pages and facts in what
+	// other people shared with the caller.
+	DocumentSearchSharedAgentPages = `query ($query: String!, $first: Int) {
+  SearchSharedAgentPages(query: $query, first: $first) { ownerUserId ownerUsername ownerName path name opening factNumber text }
+}`
+
 	// DocumentReadSharedAgentPage reads one page another person shared.
 	DocumentReadSharedAgentPage = `query ($ownerUserId: String!, $path: String!) {
   ReadSharedAgentPage(ownerUserId: $ownerUserId, path: $path) { ` + sharedAgentPageFields + ` }
@@ -210,6 +230,23 @@ func ListSharedAgentPages(ctx context.Context, connection *Client) ([]*SharedAge
 		return nil, err
 	}
 	return result.ListSharedAgentPages, nil
+}
+
+// SearchSharedAgentPages finds, by words, pages and facts in the pages other
+// people shared with the signed-in account; first bounds the hits, 20 when it
+// is zero.
+func SearchSharedAgentPages(ctx context.Context, connection *Client, query string, first int) ([]*SharedAgentPageHit, error) {
+	variables := map[string]any{"query": query, "first": nil}
+	if first > 0 {
+		variables["first"] = first
+	}
+	var result struct {
+		SearchSharedAgentPages []*SharedAgentPageHit `json:"SearchSharedAgentPages"`
+	}
+	if err := connection.Execute(ctx, DocumentSearchSharedAgentPages, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchSharedAgentPages, nil
 }
 
 // ReadSharedAgentPage is one page another person shared, or a page under one.

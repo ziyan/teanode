@@ -16,7 +16,7 @@ per-run sequence and a time.
 | Kind | When |
 | --- | --- |
 | `asked` | first, before anything else: what was said, and the surface it came from |
-| `text` | a piece of the answer, as it streams. In a chat the pieces of an agent's answer are of no run's feed: they go to every member's conversation through the chat hub, with `runId`, `authorAgentId` and `name`, at most four times a second, and a client draws them as a provisional message that the stored `said` (its `message.agentRunId` is the run) replaces; if the turn is stopped or fails, or what it said comes to nothing, an `unsaid` named `streaming-<runId>` takes the provisional line off every screen |
+| `text` | a piece of the answer, as it streams. In a chat the pieces of an agent's answer are of no run's feed: they go to every member's conversation through the chat hub, with `runId`, `authorAgentId` and `name`, at most four times a second, and a client draws them as a provisional message that the stored `said` (its `message.agentRunId` is the run) replaces; if the turn is stopped or fails, or what it said comes to nothing, a `deleted` event named `streaming-<runId>` takes the provisional line off every screen |
 | `message` | the whole answer of a round, once it is stored |
 | `tool_call` | the model asked for a tool |
 | `tool_result` | the tool answered: the bounded, wrapped content, plus a line for the drawer |
@@ -28,7 +28,7 @@ per-run sequence and a time.
 | `reacted` | a reaction on a message changed: `messageId`, `emoji` (empty when it was taken away) and `reactorKind`, `person` or `agent`; in a chat also `reactorUserId` and `reactorName`. Of no run, like a new title: no `runId`, never replayed |
 | `said` | a chat conversation only: a new message by a person or an agent, whole in `message` (an `AgentMessage` as this member reads it, so `isMine` is theirs); `isMessageCut` says it was too long to travel to the other instances, cut or left out, and the client reads the conversation again |
 | `edited` | a chat conversation only: a message was changed; `message` is the new one |
-| `unsaid` | a chat conversation only: a message was taken back; `messageId` |
+| `deleted` | a chat conversation only: a message was deleted; `messageId` |
 | `read` | a chat conversation only: a member's read mark moved to `messageId`; `userId` is whose |
 | `typing` | a chat conversation only: `userId` and `name` of the member who is writing, or, while an agent's turn in the chat runs, `authorAgentId`, `name` and `authorOwnerName` of the agent that is thinking (the `text` events of its answer carry the same), sent when the turn starts and every four seconds to every member but the agent's owner; nothing is stored |
 | `members` | a chat conversation only: somebody was added, taken out or left, or a member changed what their agent does in the chat (remembers it, may be asked by the others); read the chat's members again |
@@ -58,7 +58,7 @@ on its own.
 
 **A chat.** A chat conversation's feed carries the events of the chat, which
 belong to no run and are never replayed (the table above has them: `said`,
-`edited`, `unsaid`, `read`, `typing`, and `reacted` with the reactor's name).
+`edited`, `deleted`, `read`, `typing`, and `reacted` with the reactor's name).
 They do not travel through the agent. A server with no language model builds no
 agent, and two people in a circle can still write to each other there, so the
 feed of a chat is the chat hub's (`internal/chat`, `Hub`), made at start

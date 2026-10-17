@@ -507,8 +507,13 @@ func TestConversationListsReadsAndSendsInAChat(t *testing.T) {
 		t.Fatalf("the chat reads %v", messages)
 	}
 	first, second := messages[0].(map[string]any), messages[1].(map[string]any)
-	if first["from"] != "Example Friend" || first["from_the_person"] != false || second["from_the_person"] != true || second["from"] != "Example Owner" {
+	if first["from"] != "Example Friend" || first["is_from_the_person"] != false || second["is_from_the_person"] != true || second["from"] != "Example Owner" {
 		t.Errorf("who said what: %v", messages)
+	}
+	// Somebody else's words in a chat have an author and no role, which
+	// would say "user" for every other person.
+	if first["role"] != nil || second["role"] != nil {
+		t.Errorf("a message of a chat carries no role: %v", messages)
 	}
 
 	sending := json.RawMessage(`{"action":"send","conversation_id":"` + chatConversation.ID + `","text":"I will be late."}`)
@@ -647,5 +652,92 @@ func TestAHeldRunReadsOnlyTheChatItIsIn(t *testing.T) {
 		if strings.Contains(fmt.Sprint(read), "private mail") {
 			t.Errorf("the owner's agent's own rows were read: %v", read)
 		}
+	}
+}
+
+// A chat is found by its title or by the name of somebody in it, as the
+// dashboard's search finds it, and not by what was said in it. A reaction to a
+// message of a chat goes through the API as the person, with the message the
+// chat gave; in a chat there is no latest message of the person's to default to.
+func TestConversationSearchesChatsAndReactsInThem(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	operations := &sayingOperations{}
+	run := &chattingRun{fakeRun: &fakeRun{database: database}, operations: operations}
+	var chatConversation *models.AgentConversation
+	var friendsMessage *models.ChatMessage
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "chat-owner", Name: "Example Owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		friend, err := tx.CreateUser(&models.User{Username: "chat-friend", Name: "Example Friend"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatal(err)
+		}
+		chat, err := tx.CreateGroupChat(owner.ID, "Weekend plans", []string{friend.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chatConversation, err = tx.EnsureChatConversation(run.agent.ID, chat.ID); err != nil {
+			t.Fatal(err)
+		}
+		run.conversation = chatConversation
+		if friendsMessage, err = tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: "Example Friend", Body: "the moorings are booked"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+	search := func(words string) []any {
+		t.Helper()
+		result, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(`{"action":"search","query":"` + words + `"}`)})
+		if err != nil {
+			t.Fatalf("search %s: %s", words, err)
+		}
+		var answer map[string]any
+		_ = json.Unmarshal([]byte(result.Content), &answer)
+		return answer["conversations"].([]any)
+	}
+	for _, words := range []string{"weekend", "EXAMPLE FRIEND", "chat-friend"} {
+		found := search(words)
+		if len(found) != 1 || found[0].(map[string]any)["conversation_id"] != chatConversation.ID || found[0].(map[string]any)["kind"] != "chat" {
+			t.Errorf("searching %q found %v; want the chat", words, found)
+		}
+	}
+	if found := search("moorings"); len(found) != 0 {
+		t.Errorf("what was said in a chat is not searched: %v", found)
+	}
+
+	reacting := json.RawMessage(`{"action":"react","emoji":"❤️","message_id":"` + friendsMessage.ID + `"}`)
+	result, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: reacting})
+	if err != nil {
+		t.Fatalf("react: %s", err)
+	}
+	if !strings.Contains(result.Content, friendsMessage.ID) || !strings.Contains(result.Note, "in the chat") {
+		t.Errorf("react answered %q, %q", result.Content, result.Note)
+	}
+	if len(operations.documents) != 1 || !strings.Contains(operations.documents[0], "ReactInChatAsAgent") ||
+		operations.variables[0]["messageId"] != friendsMessage.ID || operations.variables[0]["emoji"] != "❤️" {
+		t.Errorf("the API was asked %v with %v", operations.documents, operations.variables)
+	}
+	// Taking it back is the same operation with no emoji.
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c3", Arguments: json.RawMessage(`{"action":"react","emoji":"","message_id":"` + friendsMessage.ID + `"}`)}); err != nil {
+		t.Fatalf("taking a reaction back: %s", err)
+	}
+	if len(operations.variables) != 2 || operations.variables[1]["emoji"] != "" {
+		t.Errorf("taking it back asked %v", operations.variables)
+	}
+	// With no message named, a chat has no latest message of the person's.
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c4", Arguments: json.RawMessage(`{"action":"react","emoji":"👍"}`)}); err == nil ||
+		!strings.Contains(err.Error(), "message_id") {
+		t.Errorf("react in a chat without a message: %v", err)
+	}
+	if len(operations.documents) != 2 {
+		t.Errorf("the refused react reached the API: %v", operations.documents)
 	}
 }

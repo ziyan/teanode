@@ -350,11 +350,12 @@ func TestTheIndexOfSharedPagesSaysHowManyMore(t *testing.T) {
 func TestSharingIsAGrantingCall(t *testing.T) {
 	tool := find(t, "memory")
 	for arguments, want := range map[string]tools.Risk{
-		`{"action":"share","path":"people/a","with":"ben"}`: tools.RiskGranting,
-		`{"action":"unshare","share_id":"x"}`:               tools.RiskWrite,
-		`{"action":"shares"}`:                               tools.RiskRead,
-		`{"action":"shared"}`:                               tools.RiskRead,
-		`{"action":"get","path":"people/a","owner":"ada"}`:  tools.RiskRead,
+		`{"action":"share","path":"people/a","with":"ben"}`:                                         tools.RiskGranting,
+		`{"action":"unshare","share_id":"x"}`:                                                       tools.RiskWrite,
+		`{"action":"shares"}`:                                                                       tools.RiskRead,
+		`{"action":"shared"}`:                                                                       tools.RiskRead,
+		`{"action":"preview","path":"people/a","with":"ben"}`:                                       tools.RiskRead,
+		`{"action":"get","path":"people/a","owner":"ada"}`:                                          tools.RiskRead,
 		`{"action":"batch","items":[{"action":"get","path":"a"},{"action":"share","path":"a"}]}`:    tools.RiskGranting,
 		`{"action":"batch","items":[{"action":"share","path":"a"},{"action":"note","text":"x"}]}`:   tools.RiskGranting,
 		`{"action":"batch","items":[{"action":"share","path":"a"},{"action":"forget","path":"x"}]}`: tools.RiskDestructive,
@@ -367,7 +368,7 @@ func TestSharingIsAGrantingCall(t *testing.T) {
 }
 
 // Sharing goes through the same operations the dashboard and the command line
-// use, resolving a username or a circle's name.
+// use, resolving a username or a circle's id.
 func TestSharingGoesThroughTheAPI(t *testing.T) {
 	run, closeDatabase := aSharingRun(t, "sharing-api")
 	defer closeDatabase()
@@ -386,17 +387,23 @@ func TestSharingGoesThroughTheAPI(t *testing.T) {
 	if sent := run.operations.sent["ShareAgentPage"]; sent["granteeUserId"] != "ben-id" || sent["granteeCircleId"] != nil || sent["path"] != "people/a" || sent["isQuoteShared"] != false {
 		t.Errorf("what was sent: %v", sent)
 	}
-	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"home","is_quote_shared":true}`); err != nil {
+	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"home-id","is_quote_shared":true}`); err != nil {
 		t.Fatalf("share with a circle: %s", err)
 	}
 	if sent := run.operations.sent["ShareAgentPage"]; sent["granteeCircleId"] != "home-id" || sent["granteeUserId"] != nil || sent["isQuoteShared"] != true {
 		t.Errorf("what was sent for a circle: %v", sent)
 	}
-	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"stranger"}`); err == nil || !strings.Contains(err.Error(), "neither somebody the person shares a circle with nor a circle") {
+	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"stranger"}`); err == nil || !strings.Contains(err.Error(), "neither the username of somebody the person shares a circle with nor the name or id of a circle") {
 		t.Errorf("somebody in no circle: %v", err)
 	}
 	if _, err := callMemory(t, run, `{"action":"share","path":"people/a"}`); err == nil {
 		t.Error("with whom")
+	}
+	if _, err := callMemory(t, run, `{"action":"share","path":"people/a","with":"Home"}`); err != nil {
+		t.Errorf("a circle is shared with by its name: %s", err)
+	}
+	if sent := run.operations.sent["ShareAgentPage"]; sent["granteeCircleId"] != "home-id" {
+		t.Errorf("a circle by name: %v", sent)
 	}
 	result, err = callMemory(t, run, `{"action":"shares"}`)
 	if err != nil || !strings.Contains(result.Content, `"with":"everyone in Home"`) || !strings.Contains(result.Content, `"with":"ben"`) {
@@ -410,5 +417,55 @@ func TestSharingGoesThroughTheAPI(t *testing.T) {
 	}
 	if _, err := callMemory(t, run, `{"action":"unshare"}`); err == nil {
 		t.Error("which share")
+	}
+}
+
+// The card for sharing a page says the page goes with everything under it,
+// who it is for and how many people a circle is, and whether the quotes go.
+func TestTheCardForSharingAPageSaysWhatIsGranted(t *testing.T) {
+	run, closeDatabase := aSharingRun(t, "sharing-card")
+	defer closeDatabase()
+	run.operations.answers = map[string]string{
+		"ListCirclePeople": `[{"userId":"ben-id","username":"ben"}]`,
+		"ListCircles":      `[{"id":"home-id","name":"Home","members":[{"userId":"a"},{"userId":"b"},{"userId":"c"}]}]`,
+	}
+	ctx := tools.WithRun(context.Background(), run)
+	memory := find(t, "memory")
+	for arguments, want := range map[string]string{
+		`{"action":"share","path":"people/a","with":"ben"}`:                         `Share "people/a" and everything under it with ben, read only, without the quotes each fact was read from`,
+		`{"action":"share","path":"people/a","with":"home","is_quote_shared":true}`: `Share "people/a" and everything under it with everyone in Home (3 people), read only, with the quotes each fact was read from`,
+	} {
+		if got := memory.PreviewLine(ctx, []byte(arguments)); got != want {
+			t.Errorf("%s\n got %q\nwant %q", arguments, got, want)
+		}
+	}
+}
+
+// Previewing a share shows what it would show and how far it reaches, through
+// the operation the dashboard and the command line use, and shares nothing.
+func TestPreviewingAShareSharesNothing(t *testing.T) {
+	run, closeDatabase := aSharingRun(t, "sharing-preview")
+	defer closeDatabase()
+	run.operations.answers = map[string]string{
+		"ListCirclePeople": `[{"userId":"ben-id","username":"ben"}]`,
+		"ListCircles":      `[]`,
+		"PreviewAgentPageShare": `{"page":{"path":"people/a","name":"A","nodeKind":"person","opening":"Lives by the sea.",
+			"facts":[{"number":1,"text":"Likes tea","evidenceQuote":"I like tea"}],"edges":[{"relation":"knows"}],"children":[{"path":"people/a/b"}]},
+			"reachedPageCount":4,"isReachedPageCountCut":false}`,
+	}
+	result, err := callMemory(t, run, `{"action":"preview","path":"/People/A/","with":"ben","is_quote_shared":true}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, wanted := range []string{`"reached_page_count":4`, `"Likes tea"`, `"quote":"I like tea"`, `"with":"ben"`} {
+		if !strings.Contains(result.Content, wanted) {
+			t.Errorf("the preview lacks %s:\n%s", wanted, result.Content)
+		}
+	}
+	if sent := run.operations.sent["PreviewAgentPageShare"]; sent["granteeUserId"] != "ben-id" || sent["path"] != "people/a" || sent["isQuoteShared"] != true {
+		t.Errorf("what was sent: %v", sent)
+	}
+	if run.operations.sent["ShareAgentPage"] != nil {
+		t.Error("a preview shared the page")
 	}
 }

@@ -79,6 +79,7 @@ struct KnowledgeFolder: View {
     @State private var foundNodes: [KnowledgeNode] = []
     @State private var foundFacts: [KnowledgeSearch.FoundFact] = []
     @State private var sharedGroups: [SharedKnowledgeOwnerGroup] = []
+    @State private var sharedHits: [SharedKnowledgeHit] = []
 
     var body: some View {
         List {
@@ -113,6 +114,7 @@ struct KnowledgeFolder: View {
         .task(id: searchText) {
             guard !searchText.trimmingCharacters(in: .whitespaces).isEmpty else {
                 found = nil
+                sharedHits = []
                 return
             }
             try? await Task.sleep(for: .milliseconds(250))
@@ -172,10 +174,31 @@ struct KnowledgeFolder: View {
             }
             .listSectionSeparator(.hidden)
         }
+        // What other people shared, found by the same words: pages and facts,
+        // each saying whose it is.
+        if !sharedHits.isEmpty {
+            Section {
+                ForEach(sharedHits) { hit in
+                    NavigationLink(value: KnowledgePlace.sharedPage(ownerUserId: hit.ownerUserId, path: hit.path)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(hit.isFact ? "\(hit.shownName) #\(hit.factNumber)" : hit.shownName).font(.headline).lineLimit(1)
+                            Text("Shared by \(hit.shownOwner)").font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                            if !hit.shownText.isEmpty {
+                                Text(hit.shownText).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                            }
+                        }
+                    }
+                    .knowledgeListRow()
+                }
+            } header: {
+                ListPeriodHeader(title: String(localized: "Shared with you"))
+            }
+            .listSectionSeparator(.hidden)
+        }
         if let found {
             if found.nextOffset > 0 {
                 Button("Show more") { Task { await search(isMore: true) } }
-            } else if foundNodes.isEmpty, foundFacts.isEmpty {
+            } else if foundNodes.isEmpty, foundFacts.isEmpty, sharedHits.isEmpty {
                 Text("Nothing matches").foregroundStyle(.secondary)
             }
         }
@@ -223,6 +246,12 @@ struct KnowledgeFolder: View {
             foundNodes = (isMore ? foundNodes : []) + read.nodes.compactMap { $0 }
             foundFacts = (isMore ? foundFacts : []) + read.facts.compactMap { $0 }
             found = read
+            // What is shared is searched with the first page of the person's
+            // own, at the top level where it is listed; not being able to
+            // search it leaves the person's own results as they are.
+            if !isMore, folderPath.isEmpty {
+                sharedHits = (try? await connection.searchSharedKnowledge(words)) ?? []
+            }
             problemText = nil
         } catch {
             report(error)

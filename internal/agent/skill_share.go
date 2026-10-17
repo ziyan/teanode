@@ -28,7 +28,7 @@ import (
 // so the owner's secrets, reach, computer and the skill's own rules apply
 // exactly as for the owner. What the server adds is in front of that: whether
 // the two still share a circle, what the call pays against the share's limits,
-// the judgement of what a command would do, and the owner's approval when any
+// the judgment of what a command would do, and the owner's approval when any
 // of them says to wait.
 // docs/decisions/20261016-a-payment-skill-is-shared-call-by-call.md says why,
 // and docs/subsystems/skills.md ("Sharing a skill") how it fits together.
@@ -51,7 +51,7 @@ const (
 	// sharedOutputBytes is the most of a call's answer that is kept whole.
 	sharedOutputBytes = 128 << 10
 
-	// The sweep for calls that waited out their day, and for calls decided
+	// The sweep for calls that waited out their day, and for calls answered
 	// whose conversation was not told.
 	skillShareSweepEvery      = time.Minute
 	skillShareWakeAfter       = 30 * time.Second
@@ -479,7 +479,7 @@ func (self *Agent) judgeSharedCall(ctx context.Context, shared *sharedSkill, arg
 	if !sharedCommandNeedsJudging(shared) {
 		return callRiskRead, true
 	}
-	// No model to judge with: the call waits for the owner, as a judgement
+	// No model to judge with: the call waits for the owner, as a judgment
 	// that fails does.
 	if self.settings.Registry == nil {
 		return "", false
@@ -555,7 +555,7 @@ func (self *Agent) noteWaitingCall(tx db.Transaction, shared *sharedSkill, call 
 		SkillShareID: shared.share.ID, CallID: call.ID,
 		GranteeName: shared.share.GranteeName, GranteeUserID: shared.share.GranteeUserID,
 	})
-	if _, err := tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NotePaymentWaiting, detail)); err != nil {
+	if _, err := tx.AppendAgentMessage(models.NewAgentNote(main.ID, models.NoteSkillShareCallWaiting, detail)); err != nil {
 		return "", err
 	}
 	return main.ID, nil
@@ -574,12 +574,12 @@ func (self *Agent) tellOwnerOfWaitingCall(mainConversationId string, shared *sha
 	if mainConversationId != "" {
 		self.publish(Event{
 			Kind: EventNote, ConversationID: mainConversationId, At: time.Now(),
-			Note:     models.NoteText(models.NotePaymentWaiting, detail),
-			NoteKind: string(models.NotePaymentWaiting), NoteDetail: detail,
+			Note:     models.NoteText(models.NoteSkillShareCallWaiting, detail),
+			NoteKind: string(models.NoteSkillShareCallWaiting), NoteDetail: detail,
 		}, true)
 	}
-	self.notifyPhones(shared.ownerAgent.ID, models.NotificationPayment, &push.Content{
-		NotificationKind: models.NotificationPayment,
+	self.notifyPhones(shared.ownerAgent.ID, models.NotificationSkillShareCall, &push.Content{
+		NotificationKind: models.NotificationSkillShareCall,
 		ConversationID:   mainConversationId,
 		CallID:           call.ID,
 		Title:            "Approval needed",
@@ -603,7 +603,7 @@ func (self *Agent) tellOwnerOfWaitingCall(mainConversationId string, shared *sha
 // were shown, through the owner's own runner; the limits are skipped, since
 // the approval is the owner's word on this call. Answering twice, from the
 // phone and the drawer at once, changes the row once and runs the call once.
-func (self *Agent) AnswerSharedCall(ctx context.Context, ownerUserId, callId string, isApproved bool, decisionNote string) (*models.SkillShareCall, error) {
+func (self *Agent) AnswerSharedCall(ctx context.Context, ownerUserId, callId string, isApproved bool, answerNote string) (*models.SkillShareCall, error) {
 	var call *models.SkillShareCall
 	var share *models.SkillShare
 	var isAvailable bool
@@ -627,13 +627,13 @@ func (self *Agent) AnswerSharedCall(ctx context.Context, ownerUserId, callId str
 	if !isAvailable {
 		return nil, ErrSharedUnavailable
 	}
-	decisionNote = cutRunes(strings.TrimSpace(decisionNote), sharedReasonCharacters)
+	answerNote = cutRunes(strings.TrimSpace(answerNote), sharedReasonCharacters)
 	if call.CallState != models.SkillShareCallWaitingForApproval {
 		return call, ErrCallNotWaiting
 	}
 
 	if !isApproved {
-		answered, isChanged, err := self.answerWaitingCall(ctx, callId, models.SkillShareCallDeclined, decisionNote)
+		answered, isChanged, err := self.answerWaitingCall(ctx, callId, models.SkillShareCallDeclined, answerNote)
 		if err != nil {
 			return nil, err
 		}
@@ -653,7 +653,7 @@ func (self *Agent) AnswerSharedCall(ctx context.Context, ownerUserId, callId str
 	if err := self.ownerComputerReady(ctx, shared); err != nil {
 		return nil, err
 	}
-	answered, isChanged, err := self.answerWaitingCall(ctx, callId, models.SkillShareCallRan, decisionNote)
+	answered, isChanged, err := self.answerWaitingCall(ctx, callId, models.SkillShareCallRan, answerNote)
 	if err != nil {
 		return nil, err
 	}
@@ -671,12 +671,12 @@ func (self *Agent) AnswerSharedCall(ctx context.Context, ownerUserId, callId str
 	return outcome.Call, nil
 }
 
-// answerWaitingCall is the conditional update that decides who answered.
-func (self *Agent) answerWaitingCall(ctx context.Context, callId string, callState models.SkillShareCallState, decisionNote string) (*models.SkillShareCall, bool, error) {
+// answerWaitingCall is the conditional update that settles who answered.
+func (self *Agent) answerWaitingCall(ctx context.Context, callId string, callState models.SkillShareCallState, answerNote string) (*models.SkillShareCall, bool, error) {
 	var answered *models.SkillShareCall
 	isChanged := false
 	if err := self.settings.Database.TransactionContext(ctx, func(tx db.Transaction) (err error) {
-		answered, isChanged, err = tx.AnswerSkillShareCall(callId, callState, decisionNote, time.Now())
+		answered, isChanged, err = tx.AnswerSkillShareCall(callId, callState, answerNote, time.Now())
 		return err
 	}); err != nil {
 		return nil, false, err
@@ -699,11 +699,11 @@ func (self *Agent) tellGranteeOfAnswer(call *models.SkillShareCall, share *model
 		log.Warningf("cannot find the agent to tell how a shared call came out: %s", err)
 	}
 	if granteeAgent != nil && !self.isWatching(share.GranteeUserID, time.Time{}, time.Now()) {
-		self.notifyPhones(granteeAgent.ID, models.NotificationPayment, &push.Content{
-			NotificationKind: models.NotificationPayment,
+		self.notifyPhones(granteeAgent.ID, models.NotificationSkillShareCall, &push.Content{
+			NotificationKind: models.NotificationSkillShareCall,
 			ConversationID:   call.GranteeConversationID,
 			CallID:           call.ID,
-			Title:            "Request answered",
+			Title:            "Answered",
 			Body:             PhoneBody(sharedAnswerSentence(call, share.OwnerName)),
 			ThreadID:         "skill-share-" + share.ID,
 			Buttons:          []push.Button{{Label: "Open", ButtonAction: "open"}},
@@ -716,19 +716,19 @@ func (self *Agent) tellGranteeOfAnswer(call *models.SkillShareCall, share *model
 func sharedAnswerSentence(call *models.SkillShareCall, ownerName string) string {
 	switch call.CallState {
 	case models.SkillShareCallRan:
-		return ownerName + " approved your request and it ran."
+		return ownerName + " approved what your agent asked for, and it ran."
 	case models.SkillShareCallFailed:
-		return ownerName + " approved your request, but it did not complete."
+		return ownerName + " approved what your agent asked for, but it did not complete."
 	case models.SkillShareCallDeclined:
-		return ownerName + " declined your request."
+		return ownerName + " declined what your agent asked for."
 	case models.SkillShareCallExpired:
-		return "Your request to " + ownerName + " expired without an answer."
+		return "What your agent asked of " + ownerName + " expired without an answer."
 	}
-	return ownerName + " answered your request."
+	return ownerName + " answered what your agent asked for."
 }
 
 // sweepSkillShareCalls expires the calls that waited out their day, and tells
-// the conversations of decided calls whose telling was lost to a restart. Once
+// the conversations of answered calls whose telling was lost to a restart. Once
 // a minute, on whichever instance gets there first: the update that expires a
 // call changes it once.
 func (self *Agent) sweepSkillShareCalls(ctx context.Context, now time.Time) {
@@ -765,9 +765,9 @@ func (self *Agent) tellGranteeOfSweptCall(ctx context.Context, call *models.Skil
 	}); err != nil || share == nil {
 		return
 	}
-	// A call decided by a person was told by the instance that decided it, a
+	// A call answered by a person was told by the instance that answered it, a
 	// moment ago; the claim in the wake makes sure of it. A phone is told only
-	// of what the clock decided.
+	// of a call the clock expired.
 	if call.CallState == models.SkillShareCallExpired {
 		self.tellGranteeOfAnswer(call, share)
 		return

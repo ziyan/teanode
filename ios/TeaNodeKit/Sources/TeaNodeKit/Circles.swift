@@ -90,6 +90,40 @@ public struct CircleInvitation: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// CircleCalendarOffer is the question asked once, as a person joins a family or
+/// a group of colleagues: share their calendar with everyone in it, at a level
+/// they choose, or not now. It is asked only as the invitation is accepted and
+/// never again, as the dashboard's Circles page does; the calendar screen has
+/// the same choice whenever they want it. Friends are not asked, since a
+/// calendar is not what friends are assumed to share.
+public struct CircleCalendarOffer: Hashable, Sendable, Identifiable {
+    public let circleId: String
+    public let circleName: String
+    /// The person's own calendar of events, which is what would be shared.
+    public let calendarId: String
+
+    public var id: String { circleId }
+
+    /// The levels offered: edit is a choice made on the calendar screen, not
+    /// in passing.
+    public static let levels: [CalendarShareLevel] = [.busy, .titles, .details]
+
+    /// The offer for an invitation just accepted, or nil for a circle of
+    /// friends.
+    public init?(accepting invitation: CircleInvitation, calendarId: String) {
+        guard invitation.circleKind != CircleKind.friends.rawValue else { return nil }
+        circleId = invitation.circleId
+        circleName = invitation.circleName
+        self.calendarId = calendarId
+    }
+
+    /// The calendar a share would be of: the person's own calendar of events,
+    /// not their reminders or one shared with them.
+    public static func ownCalendar(among calendars: [AgentCalendar]) -> AgentCalendar? {
+        calendars.first { $0.isOwn && $0.calendarKind == "events" }
+    }
+}
+
 /// PeopleCircle is a circle: a set of people on one server who know each
 /// other, named and described by its kind. Not called Circle because SwiftUI
 /// already has a shape of that name.

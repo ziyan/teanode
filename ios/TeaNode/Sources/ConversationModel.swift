@@ -230,6 +230,12 @@ final class ConversationModel {
         }
         isLoaded = true
         loadProblemText = nil
+        #if DEBUG
+            // `-TeaNodeScreen chat-direct`: Sam is typing, for an hour, since no feed says so or says it stopped.
+            if DemoServer.isRequested, DemoServer.screen == "chat-direct" {
+                typing.note(userId: "sam", name: "Sam", at: Date().addingTimeInterval(60 * 60))
+            }
+        #endif
         loadSharedOwnersIfCited()
         // A chat is people: no ideas to start it with, and no call to the
         // agent.

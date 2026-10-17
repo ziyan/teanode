@@ -187,7 +187,7 @@ on the person's chats, and the offer to turn the agent on takes the main
 conversation's place. There is no page of chats and no row for them in the
 rail; the number on the drawer's button is the unread messages in the chats
 that are not muted, asked again every 15 seconds and at once when the window
-regains focus. A small face under a message is a member who has read through
+regains focus. A small picture under a message is a member who has read through
 it: the newest message by somebody else that they have read, never one of their
 own, so in a direct chat it is under the signed-in person's own newest message
 the other has read. The usage ring in the head is the agent's budget, so it is

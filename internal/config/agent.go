@@ -668,7 +668,7 @@ type AgentLimits struct {
 
 	// MaxChatAttachmentAccountBytes bounds the files one person has sent in
 	// chats and that are still kept, which is every file of a message nobody
-	// has taken back. A message with files stays until somebody deletes it,
+	// has deleted. A message with files stays until somebody deletes it,
 	// and every member of the chat reads them, so unlike a file handed to the
 	// agent they are not swept. Zero resolves to 1GB. Apart from
 	// MaxAttachmentBytes, which bounds one upload.

@@ -62,8 +62,8 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
     /// ran, failed, refused, waiting_for_approval, declined or expired.
     public let callState: String
     public let toolOutput: String
-    public let decidedAt: String?
-    public let decisionNote: String
+    public let answeredAt: String?
+    public let answerNote: String
     public let expiresAt: String?
     public let createdAt: String
 
@@ -78,8 +78,9 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// The arguments one to a line, less the amount, the currency and the
-    /// reason, which are shown apart. A long value is cut: a card is read at a
-    /// glance.
+    /// reason, which are shown apart. A value is kept whole: the owner approves
+    /// exactly this call, and a cut value could hide the part that matters.
+    /// The card wraps it.
     public var argumentLines: [(name: String, value: String)] {
         guard let data = toolArguments.data(using: .utf8),
             case .object(let object)? = try? JSONDecoder().decode(JSONValue.self, from: data)
@@ -99,13 +100,13 @@ public struct SkillShareCall: Codable, Hashable, Sendable, Identifiable {
                 text = String(decoding: encoded, as: UTF8.self)
             }
             if text.isEmpty { continue }
-            lines.append((name: name.replacingOccurrences(of: "_", with: " "), value: text.count > 200 ? String(text.prefix(200)) + "…" : text))
+            lines.append((name: name.replacingOccurrences(of: "_", with: " "), value: text))
         }
         return lines
     }
 }
 
-/// SkillShareNote is the detail of a payment_waiting note of the main
+/// SkillShareNote is the detail of a skill_share_call_waiting note of the main
 /// conversation: which call waits, in which share. The card reads the call
 /// itself, so that it shows how it stands now.
 public struct SkillShareNote: Decodable, Hashable, Sendable {
@@ -120,6 +121,27 @@ public struct SkillShareNote: Decodable, Hashable, Sendable {
             !note.callId.isEmpty, !note.skillShareId.isEmpty
         else { return nil }
         return note
+    }
+}
+
+/// SkillShareCallReading is what reading one call of a share came to. Only the
+/// server answering that it is not there says the call is gone (the share was
+/// taken back, or the two no longer share a circle); a read that did not get
+/// through says nothing about the call, and is tried again.
+public enum SkillShareCallReading: Equatable, Sendable {
+    case found(SkillShareCall)
+    case gone
+    case failed
+
+    /// What a read of the share's calls came to for the one call.
+    public static func reading(callId: String, of result: Result<[SkillShareCall], Error>) -> SkillShareCallReading {
+        switch result {
+        case .success(let calls):
+            if let call = calls.first(where: { $0.id == callId }) { return .found(call) }
+            return .gone
+        case .failure(let error):
+            return error.isNotFoundRefusal ? .gone : .failed
+        }
     }
 }
 
@@ -178,6 +200,14 @@ public enum SkillShareMoney {
         return sign + number + (currencyCode.isEmpty ? "" : " " + currencyCode.uppercased())
     }
 
+    /// An amount as it is typed in the currency's own digits, for saying what to
+    /// type when one could not be read: 1000.00, or 1000 where there is no minor
+    /// unit.
+    public static func typedExample(currencyCode: String) -> String {
+        let digits = exponent(of: currencyCode)
+        return digits == 0 ? "1000" : "1000." + String(repeating: "0", count: digits)
+    }
+
     /// An amount somebody typed in the currency's own units, in minor units,
     /// or nil when it is not an amount above zero in that currency: no sign, no
     /// thousands separator, no more digits after the point than the currency
@@ -204,7 +234,7 @@ extension Documents {
         """
     static let skillShareCallFields = """
         id skillShareId skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex ownerName
-        toolName toolArguments requestReason amountMinor currencyCode callState toolOutput decidedAt decisionNote expiresAt createdAt
+        toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt
         """
     public static let skillShares = """
         query { ListSkillShares { \(skillShareFields) } }
@@ -226,8 +256,8 @@ extension Documents {
         }
         """
     public static let answerSkillShareCall = """
-        mutation ($callId: String!, $isApproved: Boolean!, $decisionNote: String) {
-          AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, decisionNote: $decisionNote) { \(skillShareCallFields) }
+        mutation ($callId: String!, $isApproved: Boolean!, $answerNote: String) {
+          AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, answerNote: $answerNote) { \(skillShareCallFields) }
         }
         """
 }
@@ -305,15 +335,26 @@ extension Connection {
         ).ListSkillShareCalls
     }
 
+    /// One call of a share, for a card that is drawn from how the call stands now.
+    public func readSkillShareCall(shareId: String, callId: String) async -> SkillShareCallReading {
+        let result: Result<[SkillShareCall], Error>
+        do {
+            result = .success(try await skillShareCalls(shareId: shareId))
+        } catch {
+            result = .failure(error)
+        }
+        return SkillShareCallReading.reading(callId: callId, of: result)
+    }
+
     /// Approves or declines a call that waits, as the share's owner. Approving
     /// runs exactly that call once on the owner's computer. The agent never
     /// answers one: the server refuses it.
-    public func answerSkillShareCall(callId: String, isApproved: Bool, decisionNote: String?) async throws -> SkillShareCall {
+    public func answerSkillShareCall(callId: String, isApproved: Bool, answerNote: String?) async throws -> SkillShareCall {
         struct Answer: Decodable, Sendable { let AnswerSkillShareCall: SkillShareCall }
-        let note = decisionNote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let note = answerNote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return try await execute(
             Documents.answerSkillShareCall,
-            variables: ["callId": .string(callId), "isApproved": .bool(isApproved), "decisionNote": note.isEmpty ? .null : .string(note)],
+            variables: ["callId": .string(callId), "isApproved": .bool(isApproved), "answerNote": note.isEmpty ? .null : .string(note)],
             as: Answer.self
         ).AnswerSkillShareCall
     }

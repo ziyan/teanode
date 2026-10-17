@@ -98,7 +98,7 @@ type SuggestPhotoAlbumsArguments struct {
 func withCoverAddresses(albums ...*models.PhotoAlbum) {
 	for _, album := range albums {
 		if album.OwnerUserID != nil {
-			album.OwnerAvatarURL, album.OwnerAvatarColorIndex = avatarURL(album.OwnerUser), avatar.InitialColorIndex(*album.OwnerUserID)
+			album.OwnerAvatarURL, album.OwnerAvatarColorIndex = avatarUrl(album.OwnerUser), avatar.InitialColorIndex(*album.OwnerUserID)
 		}
 		if album.CoverPreviewPhotoID == "" || album.CoverPreviewPhotoUpdatedAt == nil {
 			continue

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -38,6 +39,7 @@ func newAgentAskCommand() *cli.Command {
 			&cli.StringSliceFlag{Name: "recording", Usage: "the id of a recording to ask about, as recording list shows them; repeat it for more than one"},
 			&cli.StringSliceFlag{Name: "photo", Usage: "the id of a photo to ask about, as photo list shows them; repeat it for more than one"},
 			&cli.StringFlag{Name: "reply-to", Usage: "the id of a message in the conversation this answers, as conversation show --json lists them"},
+			&cli.StringSliceFlag{Name: "address", Usage: "in a chat (--conversation), ask this agent with the message: an agent id, or the username of the person it belongs to, from 'chat members'; repeat it for more than one. Another person's agent answers only if its owner let the chat ask it. Replying to an agent's message (--reply-to) asks that agent as well"},
 			&cli.BoolFlag{Name: "ask-agent", Usage: "in a chat (--conversation), ask your own agent with it: the message goes to the people there and your agent answers them, for everybody to read; its work stays yours. Without it a message in a chat starts no agent"},
 		},
 		Action: runAgentAsk,
@@ -260,10 +262,57 @@ func runAgentAsk(ctx context.Context, command *cli.Command) error {
 	if command.Bool("ask-agent") && conversationId == "" {
 		return fmt.Errorf("--ask-agent asks your agent in a chat: name it with --conversation")
 	}
+	addressedAgentIds, err := addressedAgentsNamed(ctx, command, connection, conversationId)
+	if err != nil {
+		return err
+	}
 	return askOnce(ctx, command, connection, &client.AskAgentRequest{
 		ConversationID: conversationId, Message: message, Surface: "cli", AttachmentIDs: attachmentIds, References: references, Effort: command.String("effort"),
-		ShouldAddressOwnAgent: command.Bool("ask-agent"),
+		AddressedAgentIDs: addressedAgentIds, ShouldAddressOwnAgent: command.Bool("ask-agent"),
 	}, command.Bool("json"), command.Bool("quiet"))
+}
+
+// addressedAgentsNamed are the agents --address names, as ids: each is the id
+// of an agent in the chat, or the username of its owner. The chat says which
+// agents there are for the caller to ask, so a name that matches none is
+// refused here in words instead of being sent as an id nobody has.
+func addressedAgentsNamed(ctx context.Context, command *cli.Command, connection *client.Client, conversationId string) ([]string, error) {
+	named := command.StringSlice("address")
+	if len(named) == 0 {
+		return nil, nil
+	}
+	if conversationId == "" || command.Bool("new") {
+		return nil, fmt.Errorf("--address asks an agent in a chat: name the chat with --conversation")
+	}
+	view, err := chatOf(ctx, command, connection, conversationId, 1)
+	if err != nil {
+		return nil, err
+	}
+	agentIds := []string{}
+	for _, each := range named {
+		each = strings.TrimSpace(each)
+		if each == "" {
+			continue
+		}
+		found := ""
+		for _, member := range view.Conversation.Chat.Members {
+			if member.IsRemoved || member.AgentID == "" {
+				continue
+			}
+			if member.AgentID == each || strings.EqualFold(member.Username, each) {
+				found = member.AgentID
+				break
+			}
+		}
+		if found == "" {
+			return nil, fmt.Errorf("%q is neither the id of an agent in this chat nor the username of somebody whose agent you can ask here; "+
+				"'teanode agent chat members' says whose agents there are, and an agent is listed there only if its owner let the chat ask it", each)
+		}
+		if !slices.Contains(agentIds, found) {
+			agentIds = append(agentIds, found)
+		}
+	}
+	return agentIds, nil
 }
 
 // askOnce says one thing and follows the run to its end, answering

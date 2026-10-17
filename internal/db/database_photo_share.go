@@ -458,7 +458,7 @@ func (self *transaction) ListPhotoAlbumShares(userId, photoAlbumId string) ([]*m
 			circleIds = append(circleIds, *row.GranteeCircleID)
 		}
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}

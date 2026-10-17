@@ -285,7 +285,7 @@ struct ConversationsSheet: View {
             ?? AgentConversation(id: conversationId, kind: "chat", title: nil, summary: nil, lastAt: nil))
     }
 
-    /// A chat in the list: its people's faces, its name, bold with a count
+    /// A chat in the list: its people's pictures, its name, bold with a count
     /// while messages wait in it, and a mark when it is muted.
     private func chatRow(_ conversation: AgentConversation) -> some View {
         let chat = conversation.chat
@@ -296,7 +296,7 @@ struct ConversationsSheet: View {
         } label: {
             HStack(spacing: 12) {
                 if let chat {
-                    ChatFacesView(chat: chat, ownUserId: app.ownUserId, size: 32)
+                    ChatAvatarsView(chat: chat, ownUserId: app.ownUserId, size: 32)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name)
@@ -498,6 +498,8 @@ struct SettingsForm: View {
     /// one are waiting for an answer, as the badge on its row.
     @State private var canUseCircles = false
     @State private var openCircleInvitationCount = 0
+    /// Whether Circles is pushed because a notification of an invitation was pressed.
+    @State private var isShowingCircles = false
     #if DEBUG
         /// Whether the screen a screenshot names (`-TeaNodeScreen`) is
         /// pushed, and whether it has been once, so coming back stays here.
@@ -672,6 +674,14 @@ struct SettingsForm: View {
             .onAppear {
                 Task { await refreshCircles() }
             }
+            .navigationDestination(isPresented: $isShowingCircles) {
+                if let connection = app.connection { CirclesView(connection: connection) }
+            }
+            .onChange(of: app.isCirclesOpened, initial: true) { _, isOpened in
+                guard isOpened else { return }
+                app.isCirclesOpened = false
+                isShowingCircles = true
+            }
             #if DEBUG
                 .navigationDestination(isPresented: $isShowingDemoScreen) { demoScreen }
                 .onAppear {
@@ -742,6 +752,11 @@ struct SettingsForm: View {
                 case "schedules": SchedulesView(connection: connection)
                 case "agent-usage": AgentUsageView(connection: connection)
                 case "agent-usage-cost": AgentUsageView(connection: connection, isTableAtCost: true)
+                case "circles": CirclesView(connection: connection)
+                case "circle-detail": CircleDetailDemoScreen(connection: connection)
+                case "skill-share-sheet": SkillSharingView(connection: connection)
+                case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
+                case "settings-picture": PreferencesView(connection: connection)
                 default: EmptyView()
                 }
             }
@@ -836,7 +851,7 @@ struct NotificationKindToggle: View {
         case "answer": String(localized: "Answers that come after you have left")
         case "circle": String(localized: "Invitations to circles")
         case "chat": String(localized: "Messages from people in your chats")
-        case "payment": String(localized: "Requests to use a skill you shared, and how yours came out")
+        case "skill_share_call": String(localized: "Skills you share, when a call waits for you")
         case "photo": String(localized: "Photos added to albums shared with you")
         default: notificationKind
         }

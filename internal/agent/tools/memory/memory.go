@@ -105,8 +105,8 @@ func init() {
 				Name: "memory", Family: tools.FamilyGeneral, Core: true, Risk: tools.RiskWrite,
 				Description: "What you know about the person, kept between conversations as pages with facts on them. Every page has a path: people/alice-chen, projects/portal, self, time/2026/09. A fact on a page is cited as people/alice-chen#3. Your prompt carries the top of the graph and whatever this turn's words touched; `get` a path before telling them you do not know something about them, and `search` when you cannot guess the path. A partial answer ends with how many more there are and the call that reads them: `get` with `from` for facts and `link_offset` for links, `index` and `search` with `offset`. You need not file what you learn -- a run after this conversation does that -- but `note` anything they ask you to remember, and correct a page that is wrong: `note` with the fact's number rewrites that one sentence where it stands. `history` says what has happened to a page and who did it, which is how a line nobody recognizes is accounted for. `look` shows you the picture a fact was read out of, when the answer is in the screenshot rather than in the sentence about it. `checkout` shows what a Claude Code or Codex session in a directory is shown of this memory by the hooks the person installed. Other people can share pages with the person, read only and read where they live: `get`, `index` and `search` take `owner`, the username of whoever shared, and a `search` without it covers what is shared too. `share` gives somebody a page of the person's own, `shares` lists those shares and `unshare` takes one back.",
 				Parameters: tools.Object(map[string]any{
-					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page; share gives another person read-only sight of a page and everything under it, and shared lists what others shared with the person; shares lists the person's own shares with their ids, unshare takes one back by share_id",
-						"index", "get", "search", "look", "checkout", "note", "page", "history", "link", "unlink", "links", "backlinks", "move", "merge", "forget", "share", "unshare", "shares", "shared", "batch"),
+					"action": tools.EnumProperty("what to do; move files a page under another, or with number moves one fact onto another page; share gives another person read-only sight of a page and everything under it, preview shows what a share would show them and how many pages it reaches before the person decides, and shared lists what others shared with the person; shares lists the person's own shares with their ids, unshare takes one back by share_id",
+						"index", "get", "search", "look", "checkout", "note", "page", "history", "link", "unlink", "links", "backlinks", "move", "merge", "forget", "share", "preview", "unshare", "shares", "shared", "batch"),
 					"directory":       tools.StringProperty("for checkout: a directory on one of the person's computers; shows what a Claude Code or Codex session there is shown of memory by the hooks they install, and with query, what that prompt would recall"),
 					"computer":        tools.StringProperty("for checkout: the computer the directory is on, where several have it"),
 					"path":            tools.StringProperty("the page: a path like people/alice-chen. For note, the page the fact goes on; it is made if it is missing"),
@@ -134,7 +134,7 @@ func init() {
 					"offset":          tools.IntegerProperty("for index: how many lines to skip, and for search: how many pages and facts of the ranking to pass over; to read on from where a listing stopped"),
 					"link_offset":     tools.IntegerProperty("for get: how many of the page's links to pass over; a get with it answers with the next 40 links alone, to read on from where a get stopped listing them"),
 					"owner":           tools.StringProperty("for get, index and search: the username of someone who shared pages with the person, to read what they shared, read only; search without it also searches what is shared. Every write refuses an owner other than the person"),
-					"with":            tools.StringProperty("for share: who to share the page with, a username of somebody the person shares a circle with or the name of a circle they are in"),
+					"with":            tools.StringProperty("for share: who to share the page with, the username of somebody the person shares a circle with, or a circle they are in by its name or id (a name that more than one circle has is refused with their ids)"),
 					"is_quote_shared": tools.BooleanProperty("for share: show the words each fact was read in as well; only when the person said to, since they are quoted from their mail, chat and documents"),
 					"share_id":        tools.StringProperty("for unshare: the share to take back, from shares"),
 					"items":           tools.ArrayProperty("for batch: up to 25 of the above, each with its own action", map[string]any{"type": "object"}),
@@ -148,6 +148,8 @@ func init() {
 					Number int    `json:"number"`
 					Record string `json:"record"`
 					With   string `json:"with"`
+
+					IsQuoteShared bool `json:"is_quote_shared"`
 				}) string {
 					page := tools.Named(call.Path, "the graph")
 					switch call.Action {
@@ -200,7 +202,9 @@ func init() {
 						}
 						return "Forget " + page
 					case "share":
-						return "Share " + page + " with " + tools.Named(call.With, "someone")
+						return shareCard(page, tools.Named(call.With, "someone"), call.IsQuoteShared)
+					case "preview":
+						return "Look at what sharing " + page + " would show"
 					case "unshare":
 						return "Take back a share of one of their pages"
 					case "shares":
@@ -212,6 +216,19 @@ func init() {
 					}
 					return "Change what it knows"
 				}),
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						Action string `json:"action"`
+						Path   string `json:"path"`
+						With   string `json:"with"`
+
+						IsQuoteShared bool `json:"is_quote_shared"`
+					}
+					if err := json.Unmarshal(arguments, &call); err != nil || call.Action != "share" {
+						return ""
+					}
+					return shareCard(tools.Named(call.Path, "the graph"), tools.GranteeWords(ctx, call.With), call.IsQuoteShared)
+				},
 				Run:     runMemory,
 				RiskOf:  riskOfMemory,
 				Overlay: recalledOverlay,
@@ -230,7 +247,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		return tools.RiskWrite
 	}
 	switch call.Action {
-	case "index", "get", "search", "look", "checkout", "history", "links", "backlinks", "shares", "shared":
+	case "index", "get", "search", "look", "checkout", "history", "links", "backlinks", "preview", "shares", "shared":
 		return tools.RiskRead
 	case "share":
 		// Showing the person's memory to somebody else.
@@ -248,7 +265,7 @@ func riskOfMemory(arguments json.RawMessage) tools.Risk {
 		risk := tools.RiskRead
 		for _, item := range call.Items {
 			switch item.Action {
-			case "index", "get", "search", "look", "checkout", "history", "links", "backlinks", "shares", "shared":
+			case "index", "get", "search", "look", "checkout", "history", "links", "backlinks", "preview", "shares", "shared":
 			case "forget":
 				if item.Number <= 0 {
 					return tools.RiskDestructive
@@ -371,6 +388,8 @@ func runMemoryItem(ctx context.Context, run tools.Run, call *tools.Call, argumen
 		return withSharedSearch(ctx, run, &arguments.memoryItem, own), nil
 	case "share":
 		return shareAction(ctx, run, &arguments.memoryItem)
+	case "preview":
+		return previewShareAction(ctx, run, &arguments.memoryItem)
 	case "unshare":
 		return unshareAction(ctx, run, &arguments.memoryItem)
 	case "shares":

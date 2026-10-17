@@ -58,6 +58,15 @@ public struct AgentCalendar: Codable, Identifiable, Hashable, Sendable {
     /// called "Calendar". The possessive is the screen's to write.
     public var isNamedForOwner: Bool { !isOwn && isCircleCalendar != true && !(ownerName ?? "").isEmpty }
 
+    /// Whose it is, to be said beside an event of it when several calendars
+    /// are on one screen: the owner's name for one shared with the person, the
+    /// circle's name for a circle's, and nil for their own.
+    public var whoseName: String? {
+        if isOwn { return nil }
+        let name = isCircleCalendar == true ? (circleName ?? self.name) : (ownerName ?? "")
+        return name.isEmpty ? nil : name
+    }
+
     public init(
         id: String, name: String, colour: String? = nil, timezone: String? = nil, weekStart: String? = nil, calendarKind: String? = nil,
         shareLevel: String? = nil, ownerUserId: String? = nil, ownerName: String? = nil, ownerAvatarUrl: String? = nil,
@@ -147,6 +156,37 @@ public struct CalendarSharePerson: Codable, Identifiable, Hashable, Sendable {
     public var displayName: String {
         guard let name, !name.isEmpty else { return username }
         return name
+    }
+
+    /// How a picker names them: the name and, in brackets, the username, so two
+    /// people with one name can be told apart.
+    public var pickerLabel: String { PersonWords.pickerLabel(name: name, username: username) }
+}
+
+/// PersonWords are the words for a person that more than one screen shares.
+public enum PersonWords {
+    /// "Ada Example (ada)": the name and the username; the username alone for a
+    /// person with no name, or whose name is their username.
+    public static func pickerLabel(name: String?, username: String) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty || trimmed == username ? username : "\(trimmed) (\(username))"
+    }
+}
+
+/// ShareTarget is who a calendar or a page is shared with, as one choice: a
+/// person, or a whole circle. The server takes one of the two.
+public enum ShareTarget: Hashable, Sendable {
+    case person(String)
+    case circle(String)
+
+    public var granteeUserId: String? {
+        if case .person(let userId) = self { return userId }
+        return nil
+    }
+
+    public var granteeCircleId: String? {
+        if case .circle(let circleId) = self { return circleId }
+        return nil
     }
 }
 

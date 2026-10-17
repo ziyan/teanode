@@ -11,18 +11,26 @@ import (
 // it is on, which is where they would look for what happened while they were
 // away, and as a notification on their phones.
 //
+// The phones hang from the person's agent row whether or not the agent is on,
+// and the notification goes through the phone notifier chats use, which needs
+// no worker, so an invitation reaches a person whose agent is off or whose
+// server has no model just the same. Only the note needs the agent on.
+//
 // The note is written in the transaction that stores the invitation, so there
 // is never one without the other. The notification is sent after it commits.
 
 // NoteCircleInvitation writes the note into the invited person's main
-// conversation and says whose agent it was written for, or "" when they have
-// none that is on. The note is not a turn: nothing is asked of the model, and
-// the phone is told by NotifyCircleInvitation instead of by the loop that
-// sends what the agent says on its own.
+// conversation when their agent is on, and says whose agent row holds their
+// phones, or "" when they have none. The note is not a turn: nothing is asked
+// of the model, and the phone is told by NotifyCircleInvitation instead of by
+// the loop that sends what the agent says on its own.
 func NoteCircleInvitation(tx db.Transaction, invitedUserId, invitedByName, circleName string) (string, error) {
 	person, err := tx.GetAgentByUser(invitedUserId)
-	if err != nil || !person.Active() {
+	if err != nil || person == nil {
 		return "", err
+	}
+	if !person.Active() {
+		return person.ID, nil
 	}
 	main, err := tx.MainAgentConversation(person.ID, "drawer")
 	if err != nil {
@@ -38,8 +46,8 @@ func NoteCircleInvitation(tx db.Transaction, invitedUserId, invitedByName, circl
 // invitation, in the background. The title and body are the same in every
 // language: the notification is plain text sent to a phone that decrypts it,
 // and the phone has no catalog to word it from.
-func (self *Agent) NotifyCircleInvitation(agentId, invitedByName, circleName string) {
-	self.notifyPhones(agentId, models.NotificationCircle, &push.Content{
+func (self *PhoneNotifier) NotifyCircleInvitation(agentId, invitedByName, circleName string) {
+	self.NotifyPhones(agentId, models.NotificationCircle, &push.Content{
 		NotificationKind: models.NotificationCircle,
 		Title:            "Invitation",
 		Body:             PhoneBody(invitedByName + " invited you to " + circleName),

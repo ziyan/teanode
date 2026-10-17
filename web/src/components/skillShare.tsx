@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { graphql } from '../api'
+import { failureText, graphql, isNotFound } from '../api'
 import { Avatar } from './avatar'
 import { Tag, formatTime } from './common'
 import { useToast } from './toast'
@@ -55,8 +55,8 @@ export type SkillShareCall = {
   currencyCode: string
   callState: string
   toolOutput: string
-  decidedAt: string | null
-  decisionNote: string
+  answeredAt: string | null
+  answerNote: string
   expiresAt: string | null
   createdAt: string
 }
@@ -66,7 +66,7 @@ export const SKILL_SHARE_FIELDS = `id skillName toolNames ownerUserId ownerUsern
   paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor`
 
 export const SKILL_SHARE_CALL_FIELDS = `id skillShareId isShareEnded skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex
-  ownerName toolName toolArguments requestReason amountMinor currencyCode callState toolOutput decidedAt decisionNote expiresAt createdAt`
+  ownerName toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt`
 
 export const LIST_SKILL_SHARE_CALLS = `query ($shareId: String!, $callState: String) {
   ListSkillShareCalls(shareId: $shareId, callState: $callState) { ${SKILL_SHARE_CALL_FIELDS} }
@@ -78,8 +78,8 @@ export const LIST_ENDED_SKILL_SHARE_CALLS = `query {
   ListSkillShareCalls(isShareEnded: true) { ${SKILL_SHARE_CALL_FIELDS} }
 }`
 
-const ANSWER_SKILL_SHARE_CALL = `mutation ($callId: String!, $isApproved: Boolean!, $decisionNote: String) {
-  AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, decisionNote: $decisionNote) { ${SKILL_SHARE_CALL_FIELDS} }
+const ANSWER_SKILL_SHARE_CALL = `mutation ($callId: String!, $isApproved: Boolean!, $answerNote: String) {
+  AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, answerNote: $answerNote) { ${SKILL_SHARE_CALL_FIELDS} }
 }`
 
 // currencyExponent is how many digits follow the point in a currency's own
@@ -133,8 +133,9 @@ export function limitsLine(share: SkillShare, t: (key: Key, values?: Values) => 
 }
 
 // argumentLines are the arguments a call was made with, one line each, less
-// the amount and currency, which the card shows apart. A value is cut: a long
-// one is somebody's text, and a card is read at a glance.
+// the amount and currency, which the card shows apart. A value is kept whole:
+// the owner is approving exactly this call, and a cut value could hide the part
+// that matters. The card wraps it.
 export function argumentLines(toolArguments: string, hide: string[]): [string, string][] {
   let parsed: unknown
   try {
@@ -147,17 +148,17 @@ export function argumentLines(toolArguments: string, hide: string[]): [string, s
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (hide.includes(key) || value === null || value === undefined || value === '') continue
     const text = typeof value === 'string' ? value : JSON.stringify(value)
-    lines.push([key.replace(/_/g, ' '), text.length > 200 ? text.slice(0, 200) + '…' : text])
+    lines.push([key.replace(/_/g, ' '), text])
   }
   return lines
 }
 
-// PaymentCard is one call of a shared skill, with who asked, what, and for how
+// SkillShareCallCard is one call of a shared skill, with who asked, what, and for how
 // much; and, while it waits, the two buttons that answer it. Approving runs
 // exactly this call on the owner's computer. What the other person's agent
 // wrote as its reason is drawn as their words, quoted, and never as part of
 // the page.
-export function PaymentCard({
+export function SkillShareCallCard({
   call,
   isOwner = true,
   onAnswered,
@@ -182,103 +183,103 @@ export function PaymentCard({
       const done = await graphql<{ AnswerSkillShareCall: SkillShareCall }>(ANSWER_SKILL_SHARE_CALL, {
         callId: call.id,
         isApproved,
-        decisionNote: note.trim() || null,
+        answerNote: note.trim() || null,
       })
       onAnswered?.(done.AnswerSkillShareCall)
-      toast.done(isApproved ? t('payment.toastApproved', { name }) : t('payment.toastDeclined', { name }))
+      toast.done(isApproved ? t('skillShare.callToastApproved', { name }) : t('skillShare.callToastDeclined', { name }))
     } catch (caught) {
-      toast.failure(caught, t('payment.answerFailed'))
+      toast.failed(failureText(caught, t(isApproved ? 'skillShare.callApproveFailed' : 'skillShare.callDeclineFailed')))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="payment-card" role="group" aria-label={t('payment.asks', { name, skill: call.skillName })}>
-      <div className="payment-card-head">
+    <div
+      className="skill-share-call-card"
+      role="group"
+      aria-label={t('skillShare.callAsks', { name, tool: call.toolName, skill: call.skillName })}
+    >
+      <div className="skill-share-call-card-head">
         <Avatar name={name} avatarUrl={call.granteeAvatarUrl} colorIndex={call.granteeAvatarColorIndex} size={28} />
-        <strong className="payment-card-title">
+        <strong className="skill-share-call-card-title">
           {isOwner
-            ? t('payment.asks', { name, skill: call.skillName })
-            : t('payment.youAsked', { name: call.ownerName, skill: call.skillName })}
+            ? t('skillShare.callAsks', { name, tool: call.toolName, skill: call.skillName })
+            : t('skillShare.callYouAsked', { name: call.ownerName, tool: call.toolName, skill: call.skillName })}
         </strong>
         <Tag
           value={t(`skillShare.callState.${call.callState}` as Parameters<typeof t>[0])}
           tone={isWaiting ? 'warn' : call.callState === 'ran' ? 'good' : 'bad'}
         />
       </div>
-      <dl className="payment-card-facts">
-        <dt>{t('payment.tool')}</dt>
+      <dl className="skill-share-call-card-facts">
+        <dt>{t('skillShare.callTool')}</dt>
         <dd>{call.toolName}</dd>
-        <dt>{t('payment.amount')}</dt>
-        <dd className={amount ? 'payment-card-amount' : 'muted'}>{amount || t('payment.amountUnknown')}</dd>
+        <dt>{t('skillShare.callAmount')}</dt>
+        <dd className={amount ? 'skill-share-call-card-amount' : 'muted'}>
+          {amount || t('skillShare.callAmountUnknown')}
+        </dd>
         {lines.map(([key, value]) => (
-          <div className="payment-card-line" key={key}>
+          <div className="skill-share-call-card-line" key={key}>
             <dt>{key}</dt>
             <dd>{value}</dd>
           </div>
         ))}
       </dl>
       {call.requestReason ? (
-        <figure className="payment-card-reason">
-          <figcaption className="muted">{t('payment.reasonFrom', { name })}</figcaption>
+        <figure className="skill-share-call-card-reason">
+          <figcaption className="muted">{t('skillShare.callReasonFrom', { name })}</figcaption>
           <blockquote>{call.requestReason}</blockquote>
         </figure>
       ) : null}
       {isWaiting && isOwner ? (
         <>
           <input
-            className="payment-card-note"
+            className="skill-share-call-card-note"
             type="text"
             value={note}
             maxLength={400}
-            placeholder={t('payment.notePlaceholder', { name })}
-            aria-label={t('payment.notePlaceholder', { name })}
+            placeholder={t('skillShare.callNotePlaceholder', { name })}
+            aria-label={t('skillShare.callNotePlaceholder', { name })}
             disabled={busy}
             onChange={(event) => setNote(event.target.value)}
           />
-          <div className="payment-card-actions">
+          <div className="skill-share-call-card-actions">
             <button type="button" className="primary" disabled={busy} onClick={() => void answer(true)}>
-              {t('payment.approve')}
+              {t('skillShare.callApprove')}
             </button>
             <button type="button" disabled={busy} onClick={() => void answer(false)}>
-              {t('payment.decline')}
+              {t('skillShare.callDecline')}
             </button>
           </div>
           {call.expiresAt ? (
-            <p className="muted">{t('payment.expires', { time: formatTime(call.expiresAt) })}</p>
+            <p className="muted">{t('skillShare.callExpires', { time: formatTime(call.expiresAt) })}</p>
           ) : null}
         </>
       ) : isWaiting ? (
-        <p className="muted">{t('payment.waitingForOwner', { name: call.ownerName })}</p>
+        <p className="muted">{t('skillShare.callWaitingForOwner', { name: call.ownerName })}</p>
       ) : (
         <p className="muted">
-          {t(`payment.outcome.${call.callState}` as Parameters<typeof t>[0])}
-          {call.decisionNote ? ` ${t('payment.theirNote', { note: call.decisionNote })}` : ''}
+          {t(`skillShare.callOutcome.${call.callState}` as Parameters<typeof t>[0])}
+          {call.answerNote ? ` ${t('skillShare.callTheirNote', { note: call.answerNote })}` : ''}
         </p>
       )}
     </div>
   )
 }
 
-// PaymentWaitingNote is the card for a payment_waiting note of the main
+// SkillShareCallWaitingNote is the card for a skill_share_call_waiting note of the main
 // conversation: the note names the call, the call is read for how it stands now
 // (it may have been answered on the phone since), and the card is drawn from
 // that. A call that is gone, because the share was taken back or the two no
 // longer share a circle, says so.
-export function PaymentWaitingNote({ detail }: { detail: string }) {
+export function SkillShareCallWaitingNote({ detail }: { detail: string }) {
   const { t } = useTranslation()
-  let note: { skillShareId?: string; callId?: string } | null = null
-  try {
-    note = JSON.parse(detail) as { skillShareId?: string; callId?: string }
-  } catch {
-    note = null
-  }
-  const shareId = note?.skillShareId ?? ''
-  const callId = note?.callId ?? ''
+  const { skillShareId: shareId, callId } = waitingNoteOf(detail)
   // Read again every few seconds while the call waits, so that an answer given
   // on the phone shows here; once it is settled, or gone, it is read no more,
-  // since a transcript can hold many of these notes.
+  // since a transcript can hold many of these notes. A read that failed is not
+  // an answer: it keeps being tried, and can be tried now.
   const [isSettled, setIsSettled] = useState(false)
   const calls = useQuery(
     async () => {
@@ -289,25 +290,47 @@ export function PaymentWaitingNote({ detail }: { detail: string }) {
           callState: null,
         })
         return answer.ListSkillShareCalls.find((each) => each.id === callId) ?? null
-      } catch {
-        return null
+      } catch (caught) {
+        // Only an answer of not found says the share is gone. Anything else
+        // is a read that did not get through.
+        if (isNotFound(caught)) return null
+        throw caught
       }
     },
     [shareId, callId],
     { refresh: !isSettled },
   )
   useEffect(() => {
-    if (!calls.loading && (calls.data === null || calls.data.callState !== 'waiting_for_approval')) setIsSettled(true)
-  }, [calls.loading, calls.data])
+    if (calls.loading || calls.error) return
+    if (calls.data === null || calls.data.callState !== 'waiting_for_approval') setIsSettled(true)
+  }, [calls.loading, calls.error, calls.data])
   const [answered, setAnswered] = useState<SkillShareCall | null>(null)
   const call = answered ?? calls.data
   return (
-    <div className="agent-line payment-card-line-wrap">
+    <div className="agent-line skill-share-call-card-wrap">
       {call ? (
-        <PaymentCard call={call} onAnswered={setAnswered} />
+        <SkillShareCallCard call={call} onAnswered={setAnswered} />
+      ) : calls.error ? (
+        <p className="muted">
+          {t('skillShare.callLoadFailed')}{' '}
+          <button type="button" onClick={() => void calls.reload()}>
+            {t('common.tryAgain')}
+          </button>
+        </p>
       ) : (
-        <p className="muted">{calls.loading ? t('payment.loading') : t('payment.gone')}</p>
+        <p className="muted">{calls.loading ? t('skillShare.callLoading') : t('skillShare.callGone')}</p>
       )}
     </div>
   )
+}
+
+// waitingNoteOf reads the share and the call a skill_share_call_waiting note
+// names, from its detail. A detail that is not that names nothing.
+function waitingNoteOf(detail: string): { skillShareId: string; callId: string } {
+  try {
+    const note = JSON.parse(detail) as { skillShareId?: string; callId?: string } | null
+    return { skillShareId: note?.skillShareId ?? '', callId: note?.callId ?? '' }
+  } catch {
+    return { skillShareId: '', callId: '' }
+  }
 }

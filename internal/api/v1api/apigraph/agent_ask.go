@@ -122,7 +122,7 @@ type AgentSubscription interface {
 	// instance: the turns in flight are replayed, then it is live until
 	// the subscription ends. A turn begins with an "asked" event carrying
 	// what was said. A chat's feed carries what the people do in it: said,
-	// edited, unsaid, reacted, read and typing. Needs agent:use, or
+	// edited, deleted, reacted, read and typing. Needs agent:use, or
 	// circle:use for a chat.
 	AgentConversationEvents(ctx context.Context, arguments ReadAgentConversationEventsArguments) (<-chan *agent.Event, error)
 }
@@ -634,7 +634,7 @@ func (self *graph) ListAgentConversations(ctx context.Context, arguments ListAge
 			}
 		}
 		for _, chat := range chats {
-			if chatMatches(chat, query) {
+			if chat.HasChatWords(query) {
 				matched = append(matched, chat)
 			}
 		}
@@ -671,24 +671,6 @@ func sortByLastMessage(conversations []*models.AgentConversation) {
 	sort.SliceStable(conversations, func(left, right int) bool {
 		return conversations[left].LastAt.After(conversations[right].LastAt)
 	})
-}
-
-// chatMatches says whether a chat's title or one of its members' names holds
-// the words.
-func chatMatches(conversation *models.AgentConversation, query string) bool {
-	if conversation.Chat == nil {
-		return false
-	}
-	query = strings.ToLower(query)
-	if strings.Contains(strings.ToLower(conversation.Chat.Title), query) {
-		return true
-	}
-	for _, member := range conversation.Chat.Members {
-		if strings.Contains(strings.ToLower(member.Name), query) || strings.Contains(strings.ToLower(member.Username), query) {
-			return true
-		}
-	}
-	return false
 }
 
 func (self *graph) ReadAgentConversation(ctx context.Context, arguments ReadAgentConversationArguments) (*AgentConversationView, error) {
@@ -769,7 +751,7 @@ func describeOwnMessages(messages []*models.AgentMessage, owner *models.User, sp
 			message.AuthorKind = models.ChatAuthorPerson
 			message.AuthorUserID = owner.ID
 			message.AuthorName = owner.DisplayName()
-			message.AuthorAvatarURL = avatarURL(owner)
+			message.AuthorAvatarURL = avatarUrl(owner)
 		} else {
 			message.AuthorKind = models.ChatAuthorAgent
 			message.AuthorAgentID = speakingAgent.ID

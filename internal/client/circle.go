@@ -164,9 +164,9 @@ func WithdrawCircleInvitation(ctx context.Context, connection *Client, invitatio
 	return connection.Execute(ctx, query, map[string]any{"invitationId": invitationId}, nil)
 }
 
-// circleMemberID turns the username the command line speaks in into the
+// circleMemberId turns the username the command line speaks in into the
 // identifier the schema takes, from the circle's own members.
-func circleMemberID(ctx context.Context, connection *Client, circleId, username string) (string, error) {
+func circleMemberId(ctx context.Context, connection *Client, circleId, username string) (string, error) {
 	circle, err := ReadCircle(ctx, connection, circleId)
 	if err != nil {
 		return "", err
@@ -184,7 +184,7 @@ func SetCircleMemberRole(ctx context.Context, connection *Client, circleId, user
 	var result struct {
 		SetCircleMemberRole *Circle `json:"SetCircleMemberRole"`
 	}
-	userId, err := circleMemberID(ctx, connection, circleId, username)
+	userId, err := circleMemberId(ctx, connection, circleId, username)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func RemoveCircleMember(ctx context.Context, connection *Client, circleId, usern
 	var result struct {
 		RemoveCircleMember *Circle `json:"RemoveCircleMember"`
 	}
-	userId, err := circleMemberID(ctx, connection, circleId, username)
+	userId, err := circleMemberId(ctx, connection, circleId, username)
 	if err != nil {
 		return nil, err
 	}

@@ -21,7 +21,7 @@ func room() []AgentSeat {
 }
 
 func TestDecideAgentTurns(t *testing.T) {
-	person := func(userID string) AgentMessageAuthor { return AgentMessageAuthor{UserID: userID, CanUseAgents: true} }
+	person := func(userId string) AgentMessageAuthor { return AgentMessageAuthor{UserID: userId, CanUseAgents: true} }
 	cases := []struct {
 		name      string
 		author    AgentMessageAuthor

@@ -46,7 +46,7 @@ func otherOwner(run tools.Run, item *memoryItem) (string, bool) {
 // read of shared pages when it names an owner who is not the person.
 func refuseWritingToAnotherOwner(run tools.Run, item *memoryItem) error {
 	switch item.Action {
-	case "share", "unshare", "shares", "shared":
+	case "share", "preview", "unshare", "shares", "shared":
 		// These are about the person's own shares and what is shared with
 		// them, and have no use for an owner.
 		return nil
@@ -90,16 +90,16 @@ func sharedRootsOf(ctx context.Context, shared tools.SharedMemory, owner string)
 	return kept, nil
 }
 
-// sharedResult is a result carrying the shared marker and the words of
+// sharedPageResult is a result carrying the shared marker and the words of
 // another person's memory, which is data and never instructions.
-func sharedResult(text string) *tools.Result {
+func sharedPageResult(text string) *tools.Result {
 	result := tools.TextResult("%s\n%s", tools.SharedPageMarker, text)
 	result.Untrusted = true
 	return result
 }
 
 // sharedRootLine is one root as a listing shows it.
-func sharedRootLine(root *models.SharedRoot, withOwner bool) string {
+func sharedRootLine(root *models.SharedRoot, isWithOwner bool) string {
 	line := root.Path
 	if name := strings.TrimSpace(root.Name); name != "" && !strings.EqualFold(name, models.LastSegment(root.Path)) {
 		line += " - " + name
@@ -107,7 +107,7 @@ func sharedRootLine(root *models.SharedRoot, withOwner bool) string {
 	if root.Opening != "" {
 		line += ": " + root.Opening
 	}
-	if withOwner {
+	if isWithOwner {
 		line += " (shared by " + root.OwnerName + ", owner:" + root.OwnerUsername + ")"
 	}
 	return line
@@ -149,7 +149,7 @@ func sharedListing(ctx context.Context, run tools.Run, item *memoryItem, owner s
 		}
 		lines = append(lines, fmt.Sprintf("\n… %d more; %s", len(roots)-next, call))
 	}
-	return sharedResult(strings.Join(lines, "\n")), nil
+	return sharedPageResult(strings.Join(lines, "\n")), nil
 }
 
 // sharedIndexAction is the pages one person shared with the person: their
@@ -185,7 +185,7 @@ func sharedIndexAction(ctx context.Context, run tools.Run, item *memoryItem, own
 		}
 		lines = append(lines, line)
 	}
-	return sharedResult(strings.Join(lines, "\n")), nil
+	return sharedPageResult(strings.Join(lines, "\n")), nil
 }
 
 func sharedPageLine(page *models.SharedPage) string {
@@ -232,9 +232,9 @@ func sharedGetAction(ctx context.Context, run tools.Run, item *memoryItem, owner
 		return nil, fmt.Errorf("%s shared no page at %s with the person. What they shared: %s", owner, path, strings.Join(names, ", "))
 	}
 	if item.LinkOffset > 0 {
-		return sharedResult(sharedHeading(page) + renderSharedLinks(page, item.LinkOffset)), nil
+		return sharedPageResult(sharedHeading(page) + renderSharedLinks(page, item.LinkOffset)), nil
 	}
-	return sharedResult(renderSharedPage(page, item.From)), nil
+	return sharedPageResult(renderSharedPage(page, item.From)), nil
 }
 
 func sharedHeading(page *models.SharedPage) string {
@@ -429,7 +429,7 @@ func searchSharedAction(ctx context.Context, run tools.Run, item *memoryItem, ow
 	if text == "" {
 		return tools.TextResult("nothing about that among what %s shared", owner), nil
 	}
-	return sharedResult(text), nil
+	return sharedPageResult(text), nil
 }
 
 // withSharedSearch adds, after the person's own results, what a search finds
@@ -477,44 +477,15 @@ func shareAction(ctx context.Context, run tools.Run, item *memoryItem) (*tools.R
 	if path == "" {
 		return nil, fmt.Errorf("which page? give a path, like people/alice-chen")
 	}
-	with := strings.TrimSpace(item.With)
-	if with == "" {
-		return nil, fmt.Errorf("with whom? give 'with': the username of somebody the person shares a circle with, or a circle of theirs")
-	}
-	variables := map[string]any{"path": path, "isQuoteShared": item.IsQuoteShared, "granteeUserId": nil, "granteeCircleId": nil}
-	said := ""
-	var people struct {
-		ListCirclePeople []struct {
-			UserID   string `json:"userId"`
-			Username string `json:"username"`
-		} `json:"ListCirclePeople"`
-	}
-	if err := run.Operations().Execute(ctx, `query { ListCirclePeople { userId username } }`, nil, &people); err != nil {
+	grantee, err := tools.ResolveGrantee(ctx, run.Operations(), item.With)
+	if err != nil {
 		return nil, err
 	}
-	for _, person := range people.ListCirclePeople {
-		if strings.EqualFold(person.Username, with) {
-			variables["granteeUserId"], said = person.UserID, person.Username
-		}
-	}
-	if said == "" {
-		var circles struct {
-			ListCircles []struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"ListCircles"`
-		}
-		if err := run.Operations().Execute(ctx, `query { ListCircles { id name } }`, nil, &circles); err != nil {
-			return nil, err
-		}
-		for _, circle := range circles.ListCircles {
-			if circle.ID == with || strings.EqualFold(circle.Name, with) {
-				variables["granteeCircleId"], said = circle.ID, "everyone in "+circle.Name
-			}
-		}
-	}
-	if said == "" {
-		return nil, fmt.Errorf("%q is neither somebody the person shares a circle with nor a circle they are in", with)
+	variables := map[string]any{"path": path, "isQuoteShared": item.IsQuoteShared, "granteeUserId": nil, "granteeCircleId": nil}
+	if grantee.UserID != "" {
+		variables["granteeUserId"] = grantee.UserID
+	} else {
+		variables["granteeCircleId"] = grantee.CircleID
 	}
 	var result struct {
 		ShareAgentPage struct {
@@ -529,13 +500,101 @@ func shareAction(ctx context.Context, run tools.Run, item *memoryItem) (*tools.R
 		return nil, err
 	}
 	answer, err := tools.JSONResult(map[string]any{
-		"shared": path, "with": said, "quotes_shared": result.ShareAgentPage.IsQuoteShared, "share": result.ShareAgentPage.ID,
+		"path": path, "with": grantee.Description, "is_quote_shared": result.ShareAgentPage.IsQuoteShared, "share_id": result.ShareAgentPage.ID,
 	})
 	if err != nil {
 		return nil, err
 	}
-	answer.Note = "shared " + path + " with " + said
+	answer.Note = "shared " + path + " with " + grantee.Description
 	return answer, nil
+}
+
+// shareCard is the card the person answers before a page is shared. It says
+// the page goes with everything under it, and whether the words each fact was
+// read in go too, since those are quoted from their mail, chat and documents.
+func shareCard(page, with string, isQuoteShared bool) string {
+	quotes := "without the quotes each fact was read from"
+	if isQuoteShared {
+		quotes = "with the quotes each fact was read from"
+	}
+	return "Share " + page + " and everything under it with " + with + ", read only, " + quotes
+}
+
+// previewFactsShown is the most facts a preview lists.
+const previewFactsShown = 20
+
+// previewShareAction shows the person what sharing a page would show, through
+// the operation the dashboard and the command line use for it, so that the
+// person decides knowing how far the share reaches. Nothing is shared.
+func previewShareAction(ctx context.Context, run tools.Run, item *memoryItem) (*tools.Result, error) {
+	path := models.NormalizePath(item.Path)
+	if path == "" {
+		return nil, fmt.Errorf("which page? give a path, like people/alice-chen")
+	}
+	grantee, err := tools.ResolveGrantee(ctx, run.Operations(), item.With)
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{"path": path, "isQuoteShared": item.IsQuoteShared, "granteeUserId": nil, "granteeCircleId": nil}
+	if grantee.UserID != "" {
+		variables["granteeUserId"] = grantee.UserID
+	} else {
+		variables["granteeCircleId"] = grantee.CircleID
+	}
+	var result struct {
+		PreviewAgentPageShare struct {
+			Page struct {
+				Path     string `json:"path"`
+				Name     string `json:"name"`
+				Opening  string `json:"opening"`
+				NodeKind string `json:"nodeKind"`
+				Facts    []struct {
+					Number        int    `json:"number"`
+					Text          string `json:"text"`
+					EvidenceQuote string `json:"evidenceQuote"`
+				} `json:"facts"`
+				Edges    []struct{} `json:"edges"`
+				Children []struct {
+					Path string `json:"path"`
+				} `json:"children"`
+			} `json:"page"`
+			ReachedPageCount      int  `json:"reachedPageCount"`
+			IsReachedPageCountCut bool `json:"isReachedPageCountCut"`
+		} `json:"PreviewAgentPageShare"`
+	}
+	if err := run.Operations().Execute(ctx,
+		`query ($path: String!, $granteeUserId: String, $granteeCircleId: String, $isQuoteShared: Boolean) {
+		   PreviewAgentPageShare(path: $path, granteeUserId: $granteeUserId, granteeCircleId: $granteeCircleId, isQuoteShared: $isQuoteShared) {
+		     page { path name nodeKind opening facts { number text evidenceQuote } edges { relation } children { path } }
+		     reachedPageCount isReachedPageCountCut
+		   }
+		 }`, variables, &result); err != nil {
+		return nil, err
+	}
+	preview := result.PreviewAgentPageShare
+	facts := make([]map[string]any, 0, previewFactsShown)
+	for _, fact := range preview.Page.Facts {
+		if len(facts) == previewFactsShown {
+			break
+		}
+		row := map[string]any{"number": fact.Number, "text": fact.Text}
+		if fact.EvidenceQuote != "" {
+			row["quote"] = fact.EvidenceQuote
+		}
+		facts = append(facts, row)
+	}
+	answer := map[string]any{
+		"path": path, "with": grantee.ApprovalDescription, "is_quote_shared": item.IsQuoteShared,
+		"reached_page_count": preview.ReachedPageCount, "is_reached_page_count_cut": preview.IsReachedPageCountCut,
+		"page": map[string]any{
+			"name": preview.Page.Name, "opening": preview.Page.Opening, "fact_count": len(preview.Page.Facts), "facts": facts,
+			"link_count": len(preview.Page.Edges), "pages_directly_under_it": len(preview.Page.Children),
+		},
+	}
+	if len(preview.Page.Facts) > previewFactsShown {
+		answer["more_facts"] = fmt.Sprintf("%d more facts on the page are shown too", len(preview.Page.Facts)-previewFactsShown)
+	}
+	return tools.JSONResult(answer)
 }
 
 // sharesAction lists the shares the person made, each with who it is for.
@@ -559,7 +618,7 @@ func sharesAction(ctx context.Context, run tools.Run) (*tools.Result, error) {
 		if share.GranteeCircleName != "" {
 			with = "everyone in " + share.GranteeCircleName
 		}
-		rows = append(rows, map[string]any{"share": share.ID, "path": share.Path, "page": share.PageName, "with": with, "quotes_shared": share.IsQuoteShared})
+		rows = append(rows, map[string]any{"share_id": share.ID, "path": share.Path, "page": share.PageName, "with": with, "is_quote_shared": share.IsQuoteShared})
 	}
 	return tools.JSONResult(map[string]any{"shares": rows})
 }

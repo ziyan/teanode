@@ -9,9 +9,9 @@ afterEach(cleanup)
 describe('Avatar', () => {
   it('shows the first letter on the color the server chose when there is no picture', () => {
     const { container } = render(<Avatar name="alex" colorIndex={7} />)
-    const face = container.querySelector('.avatar') as HTMLElement
-    expect(face.textContent).toBe('A')
-    expect(face.classList.contains('avatar-color-7')).toBe(true)
+    const avatar = container.querySelector('.avatar') as HTMLElement
+    expect(avatar.textContent).toBe('A')
+    expect(avatar.classList.contains('avatar-color-7')).toBe(true)
     expect(container.querySelector('img')).toBeNull()
   })
 

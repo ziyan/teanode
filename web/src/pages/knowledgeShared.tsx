@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { graphql, isNotFound } from '../api'
+import { failureText, graphql, isNotFound } from '../api'
 import { Avatar } from '../components/avatar'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { FormDialog } from '../components/dialog'
 import { ChevronLeftIcon, CloseIcon } from '../components/icons'
 import { Markdown } from '../components/markdown'
+import { personLabel, personName } from '../components/personLabel'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../components/settingsList'
 import { useToast } from '../components/toast'
 import { Tooltip } from '../components/tooltip'
+import { useDebounced } from '../components/preview'
 import { useQuery } from '../components/useQuery'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { useTranslation } from '../i18n/i18n'
@@ -34,6 +36,20 @@ export type SharedRoot = {
   nodeKind: string
   opening: string
   isQuoteShared: boolean
+}
+
+// A page, or a fact of a page, that a search of what is shared found. A page
+// has factNumber zero and an opening; a fact has its number as the owner
+// numbers them and what it says.
+export type SharedHit = {
+  ownerUserId: string
+  ownerUsername: string
+  ownerName: string
+  path: string
+  name: string
+  opening: string
+  factNumber: number
+  text: string
 }
 
 export type SharedFact = {
@@ -84,6 +100,10 @@ const LIST_SHARED = `query { ListSharedAgentPages {
   ownerUserId ownerUsername ownerName ownerAvatarUrl ownerAvatarColorIndex path name nodeKind opening isQuoteShared
 } }`
 
+const SEARCH_SHARED = `query ($query: String!, $first: Int) {
+  SearchSharedAgentPages(query: $query, first: $first) { ownerUserId ownerUsername ownerName path name opening factNumber text }
+}`
+
 const READ_SHARED = `query ($ownerUserId: String!, $path: String!) {
   ReadSharedAgentPage(ownerUserId: $ownerUserId, path: $path) { ${PAGE_FIELDS} }
 }`
@@ -113,10 +133,6 @@ const PREVIEW = `query ($path: String!, $granteeUserId: String, $granteeCircleId
 // same path.
 export function sharedAddress(path: string, ownerUsername: string): string {
   return `/knowledge/${path.split('/').map(encodeURIComponent).join('/')}?owner=${encodeURIComponent(ownerUsername)}`
-}
-
-function messageOf(caught: unknown): string {
-  return caught instanceof Error ? caught.message : String(caught)
 }
 
 function cut(text: string, length: number): string {
@@ -169,39 +185,85 @@ export function SharedWithYou({
 }) {
   const { t } = useTranslation()
   const shared = useQuery(() => graphql<{ ListSharedAgentPages: SharedRoot[] }>(LIST_SHARED), [], { refresh: false })
+  const [typed, setTyped] = useState('')
+  const words = useDebounced(typed.trim(), 250)
+  const found = useQuery(
+    () =>
+      words ? graphql<{ SearchSharedAgentPages: SharedHit[] }>(SEARCH_SHARED, { query: words }) : Promise.resolve(null),
+    [words],
+    { refresh: false },
+  )
   const groups = groupByOwner(shared.data?.ListSharedAgentPages ?? [])
   if (groups.length === 0) return null
+  const hits = found.data?.SearchSharedAgentPages ?? []
   return (
     <section className="knowledge-shared" aria-label={t('knowledge.shared.title')}>
       <div className="knowledge-list-heading">{t('knowledge.shared.title')}</div>
-      {groups.map((group) => (
-        <div key={group.ownerUserId} className="knowledge-shared-owner">
-          <div className="knowledge-shared-person">
-            <Avatar
-              name={group.ownerName || group.ownerUsername}
-              avatarUrl={group.ownerAvatarUrl}
-              colorIndex={group.ownerAvatarColorIndex}
-              size={20}
-            />
-            <span>{group.ownerName || group.ownerUsername}</span>
-          </div>
-          {group.roots.map((root) => {
-            const isSelected = selectedOwner === root.ownerUsername && selectedPath === root.path
-            return (
-              <Link
-                key={root.path}
-                to={sharedAddress(root.path, root.ownerUsername)}
-                className={isSelected ? 'knowledge-row selected' : 'knowledge-row'}
-              >
-                <span className="knowledge-row-text">
-                  <span className="knowledge-row-name">{root.name || root.path}</span>
-                  <span className="knowledge-row-hint">{root.opening ? cut(root.opening, 90) : root.path}</span>
+      <div className="list-toolbar">
+        <input
+          type="search"
+          value={typed}
+          placeholder={t('knowledge.shared.find')}
+          aria-label={t('knowledge.shared.find')}
+          onChange={(event) => setTyped(event.target.value)}
+        />
+      </div>
+      {words ? (
+        found.error ? (
+          <ErrorMessage error={found.error} />
+        ) : found.loading ? null : hits.length === 0 ? (
+          <SettingsEmpty>{t('knowledge.shared.findNone')}</SettingsEmpty>
+        ) : (
+          hits.map((hit) => (
+            <Link
+              key={`${hit.ownerUserId}/${hit.path}/${hit.factNumber}`}
+              to={sharedAddress(hit.path, hit.ownerUsername)}
+              className="knowledge-row"
+            >
+              <span className="knowledge-row-text">
+                <span className="knowledge-row-name">
+                  {hit.factNumber > 0 ? `${hit.name || hit.path} #${hit.factNumber}` : hit.name || hit.path}
                 </span>
-              </Link>
-            )
-          })}
-        </div>
-      ))}
+                <span className="knowledge-row-hint">
+                  {t('knowledge.shared.by', { name: hit.ownerName || hit.ownerUsername })}
+                  {': '}
+                  {cut(hit.factNumber > 0 ? hit.text : hit.opening || hit.path, 90)}
+                </span>
+              </span>
+            </Link>
+          ))
+        )
+      ) : null}
+      {words
+        ? null
+        : groups.map((group) => (
+            <div key={group.ownerUserId} className="knowledge-shared-owner">
+              <div className="knowledge-shared-person">
+                <Avatar
+                  name={group.ownerName || group.ownerUsername}
+                  avatarUrl={group.ownerAvatarUrl}
+                  colorIndex={group.ownerAvatarColorIndex}
+                  size={20}
+                />
+                <span>{group.ownerName || group.ownerUsername}</span>
+              </div>
+              {group.roots.map((root) => {
+                const isSelected = selectedOwner === root.ownerUsername && selectedPath === root.path
+                return (
+                  <Link
+                    key={root.path}
+                    to={sharedAddress(root.path, root.ownerUsername)}
+                    className={isSelected ? 'knowledge-row selected' : 'knowledge-row'}
+                  >
+                    <span className="knowledge-row-text">
+                      <span className="knowledge-row-name">{root.name || root.path}</span>
+                      <span className="knowledge-row-hint">{root.opening ? cut(root.opening, 90) : root.path}</span>
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
     </section>
   )
 }
@@ -542,10 +604,13 @@ export function SharePageDialog({
   const grantee = id
     ? { granteeUserId: kind === 'user' ? id : null, granteeCircleId: kind === 'circle' ? id : null }
     : null
+  const chosenPerson = people.find((each) => each.userId === id)
   const chosenName =
     kind === 'circle'
       ? everyoneIn(circles.find((each) => each.id === id)?.name ?? '')
-      : ((people.find((each) => each.userId === id)?.name || people.find((each) => each.userId === id)?.username) ?? '')
+      : chosenPerson
+        ? personName(chosenPerson)
+        : ''
 
   // What they would see, asked again when the choice or the quotes change.
   const preview = useQuery(
@@ -566,8 +631,8 @@ export function SharePageDialog({
       onChanged()
       onClose()
     } catch (caught) {
-      setProblem(messageOf(caught))
-      toast.failure(caught, t('knowledge.share.failed'))
+      // The dialog is open, so the failure is said in it, once.
+      setProblem(failureText(caught, t('knowledge.share.failed')))
     } finally {
       setBusy(false)
     }
@@ -586,7 +651,14 @@ export function SharePageDialog({
     >
       <p className="muted">{t('knowledge.share.intro')}</p>
       {choices.data && people.length === 0 && circles.length === 0 ? (
-        <p className="muted">{t('knowledge.share.noPeople')}</p>
+        <>
+          <p className="muted">{t('knowledge.share.noPeople')}</p>
+          <p>
+            <Link to="/circles" onClick={onClose}>
+              {t('circles.open')}
+            </Link>
+          </p>
+        </>
       ) : (
         <>
           <label>
@@ -597,7 +669,7 @@ export function SharePageDialog({
                 <optgroup label={t('knowledge.share.people')}>
                   {people.map((person) => (
                     <option key={person.userId} value={`user:${person.userId}`}>
-                      {person.name || person.username}
+                      {personLabel(person)}
                     </option>
                   ))}
                 </optgroup>

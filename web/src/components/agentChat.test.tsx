@@ -13,7 +13,7 @@ import {
   isStreamingKey,
   mentionAt,
   readersByMessage,
-  startsRun,
+  beginsRun,
   streamingKeyOf,
   withMention,
   type ChatLine,
@@ -223,16 +223,16 @@ it('starts a new run after a date divider even for the same person, and not with
   const lateEvening = new Date(2030, 0, 2, 23, 59)
   const justAfterMidnight = new Date(2030, 0, 3, 0, 1)
   const before = at('01', 'person-b', lateEvening)
-  expect(startsRun(at('02', 'person-b', justAfterMidnight), before)).toBe(true)
+  expect(beginsRun(at('02', 'person-b', justAfterMidnight), before)).toBe(true)
 
   // The same two minutes in the middle of a day stay one run.
   const noon = new Date(2030, 0, 2, 12, 0)
   const soonAfter = new Date(2030, 0, 2, 12, 2)
-  expect(startsRun(at('04', 'person-b', soonAfter), at('03', 'person-b', noon))).toBe(false)
+  expect(beginsRun(at('04', 'person-b', soonAfter), at('03', 'person-b', noon))).toBe(false)
 
   // A different author starts one either way, and the first line of all does.
-  expect(startsRun(at('05', 'person-c', soonAfter), at('03', 'person-b', noon))).toBe(true)
-  expect(startsRun(at('06', 'person-b', noon), undefined)).toBe(true)
+  expect(beginsRun(at('05', 'person-c', soonAfter), at('03', 'person-b', noon))).toBe(true)
+  expect(beginsRun(at('06', 'person-b', noon), undefined)).toBe(true)
 })
 
 // The words of the dashboard's catalog, for a test that has no provider.

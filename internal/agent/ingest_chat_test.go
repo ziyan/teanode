@@ -93,12 +93,12 @@ func withOwnerName(row *models.AgentMessage, ownerName string) *models.AgentMess
 
 // chatRows builds the rows of a chat conversation as the database lists them.
 func chatRows() []*models.AgentMessage {
-	chatRow := func(id, body string, authorKind models.ChatAuthorKind, userID, agentID, name string) *models.AgentMessage {
+	chatRow := func(id, body string, authorKind models.ChatAuthorKind, userId, agentId, name string) *models.AgentMessage {
 		role := "user"
 		if authorKind == models.ChatAuthorAgent {
 			role = "assistant"
 		}
-		return &models.AgentMessage{ID: id, Role: role, Content: body, AuthorKind: authorKind, AuthorUserID: userID, AuthorAgentID: agentID, AuthorName: name}
+		return &models.AgentMessage{ID: id, Role: role, Content: body, AuthorKind: authorKind, AuthorUserID: userId, AuthorAgentID: agentId, AuthorName: name}
 	}
 	return []*models.AgentMessage{
 		chatRow("01", "Hello all.", models.ChatAuthorPerson, "user-ben", "", "Ben"),

@@ -406,6 +406,11 @@ public struct Transcript: Sendable {
 
     static func cardId(runId: String, callId: String) -> String { "\(runId)-\(callId)-card" }
 
+    /// The id of the card for a call of a shared skill that waits, built from
+    /// the call so that each call has one card however the note reached the
+    /// transcript.
+    static func skillShareCallWaitingId(callId: String) -> String { "skill-share-call-waiting-\(callId)" }
+
     /// A tool line's id, the same whether it was read back or arrived live,
     /// so a turn replayed after the feed reconnects does not draw it twice.
     static func toolId(callId: String) -> String { "tool-\(callId)" }
@@ -517,7 +522,7 @@ public struct Transcript: Sendable {
     /// the stored message replaces one after another.
     static func streamingId(runId: String) -> String { "\(streamingPrefix)\(runId)" }
 
-    /// What every streaming line's id begins with, and so what an unsaid event
+    /// What every streaming line's id begins with, and so what a deleted event
     /// that names one begins with.
     static let streamingPrefix = "streaming-"
 
@@ -545,11 +550,11 @@ public struct Transcript: Sendable {
         lines[index].editedAt = message.editedAt
     }
 
-    /// A message of a chat that was taken back: a mark that it was, not a gap.
+    /// A message of a chat that was deleted: a mark that it was, not a gap.
     /// The line an agent's words were drawn as while they came is taken off
     /// instead, when the turn was stopped or failed: no message was stored for
     /// it, so there is nothing to mark.
-    public mutating func apply(unsaid messageId: String) {
+    public mutating func apply(deleted messageId: String) {
         if messageId.hasPrefix(Self.streamingPrefix) {
             lines.removeAll { $0.id == messageId && $0.isStreaming }
             return
@@ -603,8 +608,8 @@ public struct Transcript: Sendable {
         case "edited":
             if let message = event.message { apply(edited: message) }
             return
-        case "unsaid":
-            if let messageId = event.messageId { apply(unsaid: messageId) }
+        case "deleted":
+            if let messageId = event.messageId { apply(deleted: messageId) }
             return
         case "asked":
             // In a chat what was said is a message of the chat, drawn from its
@@ -728,7 +733,14 @@ public struct Transcript: Sendable {
                 // its card folds with what it was answered with.
                 answerCodingQuestion(note: event.noteDetail ?? "")
             default:
-                let id = "\(event.runId)-note-\(event.sequence)"
+                // A call that waits is keyed by the call it names, as the
+                // dashboard keys it: the notes of two calls can arrive with
+                // the same run and sequence, and the second card is not the
+                // first one again.
+                var id = "\(event.runId)-note-\(event.sequence)"
+                if noteKind == "skill_share_call_waiting", let note = SkillShareNote.parsing(event.noteDetail ?? "") {
+                    id = Self.skillShareCallWaitingId(callId: note.callId)
+                }
                 guard !lines.contains(where: { $0.id == id }) else { return }
                 let line = TranscriptLine(id: id, kind: .note, text: event.noteDetail ?? event.note ?? "", detail: noteKind, runId: event.runId, at: event.at)
                 if noteKind == "compacted", let index = lines.firstIndex(where: { $0.id == "\(event.runId)-compacting" }) {

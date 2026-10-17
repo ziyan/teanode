@@ -13,6 +13,11 @@ struct CalendarListSheet: View {
     @State private var problemText: String?
     @State private var doneText: String?
     @State private var isWorking = false
+    #if DEBUG
+        /// Whether the share screen is pushed for a screenshot.
+        @State private var isShowingDemoShare = false
+        @State private var isShowingDemoFindTime = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -36,6 +41,13 @@ struct CalendarListSheet: View {
                             CalendarShareScreen(model: model, calendar: own)
                         } label: {
                             Label("Share my calendar", systemImage: "person.2")
+                        }
+                        if let ownUserId = own.ownerUserId {
+                            NavigationLink {
+                                FindATimeScreen(connection: model.connection, ownUserId: ownUserId)
+                            } label: {
+                                Label("Find a time", systemImage: "calendar.badge.clock")
+                            }
                         }
                     } footer: {
                         Text("Choose who can see your calendar, and how much. An event you mark private is only ever shown to others as busy.")
@@ -68,6 +80,26 @@ struct CalendarListSheet: View {
                 }
             }
             .task { await findCirclesWithoutCalendar() }
+            #if DEBUG
+                // `-TeaNodeScreen calendar-share-sheet`: Share my calendar, open in the sheet.
+                .navigationDestination(isPresented: $isShowingDemoShare) {
+                    if let own = model.calendar { CalendarShareScreen(model: model, calendar: own) }
+                }
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "calendar-share-sheet" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isShowingDemoShare = true
+                }
+                // `-TeaNodeScreen calendar-find-time`: Find a time, open with its answer.
+                .navigationDestination(isPresented: $isShowingDemoFindTime) {
+                    if let ownUserId = model.calendar?.ownerUserId { FindATimeScreen(connection: model.connection, ownUserId: ownUserId) }
+                }
+                .task {
+                    guard DemoServer.isRequested, DemoServer.screen == "calendar-find-time" else { return }
+                    try? await Task.sleep(for: .seconds(1))
+                    isShowingDemoFindTime = true
+                }
+            #endif
             .toast(done: $doneText, problem: $problemText)
         }
     }
@@ -88,14 +120,14 @@ struct CalendarListSheet: View {
                 await model.reloadCalendars()
                 await findCirclesWithoutCalendar()
             } catch {
-                problemText = error.localizedDescription
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
             }
             isWorking = false
         }
     }
 }
 
-/// CalendarListRow is one calendar in the list: its color, the owner's face
+/// CalendarListRow is one calendar in the list: its color, the owner's picture
 /// when it is another person's, its name and how much of it the person may
 /// use.
 struct CalendarListRow: View {
@@ -125,14 +157,8 @@ struct CalendarListRow: View {
 
     /// What the person may do with it, for a calendar that is not their own.
     private var levelNote: String? {
-        if calendar.isOwn { return nil }
-        switch calendar.level {
-        case .busy: return String(localized: "Busy times only")
-        case .titles: return String(localized: "Titles")
-        case .details: return String(localized: "Details")
-        case .edit: return String(localized: "Can edit")
-        case .owner: return nil
-        }
+        // The same names the pickers use for the levels.
+        calendar.isOwn ? nil : calendar.level.title
     }
 }
 
@@ -145,6 +171,22 @@ extension CalendarModel {
             return String(localized: "\(owner)’s calendar")
         }
         return calendar.name
+    }
+}
+
+extension CalendarModel {
+    /// Whose the calendar an event is in is, to be said beside it: the owner's
+    /// name for a calendar shared with the person, the circle's for a circle's,
+    /// and nothing for their own.
+    func ownerName(of event: CalendarEvent) -> String? {
+        calendar(withId: event.calendarId)?.whoseName
+    }
+
+    /// An event's title as a list shows it. Time somebody else is busy says
+    /// whose it is, so that several people's gray blocks can be told apart.
+    func shownTitle(of event: CalendarEvent) -> String {
+        if event.isBusy, let owner = ownerName(of: event) { return String(localized: "Busy · \(owner)") }
+        return event.shownTitle
     }
 }
 
@@ -172,6 +214,48 @@ extension CalendarShareLevel {
     }
 }
 
+/// ShareTargetPicker is the one picker for who a calendar or a page is shared
+/// with: the people in one section and the circles in another, so that a person
+/// and a circle are never both chosen.
+struct ShareTargetPicker: View {
+    let people: [CalendarSharePerson]
+    let circles: [CalendarShareCircle]
+    @Binding var chosen: ShareTarget?
+
+    var body: some View {
+        Picker("Share with", selection: $chosen) {
+            Text("Choose a person or a circle").tag(ShareTarget?.none)
+            if !people.isEmpty {
+                Section("People") {
+                    ForEach(people) { person in
+                        Text(verbatim: person.pickerLabel).tag(Optional(ShareTarget.person(person.userId)))
+                    }
+                }
+            }
+            if !circles.isEmpty {
+                Section("Circles") {
+                    ForEach(circles) { circle in
+                        Text("Everyone in \(circle.name)").tag(Optional(ShareTarget.circle(circle.id)))
+                    }
+                }
+            }
+        }
+    }
+
+    /// What the choice is called in a sentence, such as "Shared with Ben".
+    static func name(of target: ShareTarget?, people: [CalendarSharePerson], circles: [CalendarShareCircle]) -> String {
+        switch target {
+        case .person(let userId)?:
+            return people.first(where: { $0.userId == userId })?.displayName ?? ""
+        case .circle(let circleId)?:
+            let circleName = circles.first(where: { $0.id == circleId })?.name ?? ""
+            return String(localized: "Everyone in \(circleName)")
+        case nil:
+            return ""
+        }
+    }
+}
+
 /// CalendarShareScreen is who the person's calendar is shared with, at what
 /// level, with a way to stop, and a form to share it with someone else: one
 /// person in a circle they share, or a whole circle.
@@ -182,9 +266,10 @@ struct CalendarShareScreen: View {
     @State private var people: [CalendarSharePerson] = []
     @State private var circles: [CalendarShareCircle] = []
     @State private var isLoaded = false
-    @State private var chosenPersonId: String?
-    @State private var chosenCircleId: String?
+    @State private var loadProblemText: String?
+    @State private var chosen: ShareTarget?
     @State private var level: CalendarShareLevel = .titles
+    @State private var stopping: CalendarShare?
     @State private var isWorking = false
     @State private var problemText: String?
     @State private var doneText: String?
@@ -206,38 +291,37 @@ struct CalendarShareScreen: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    .confirmationDialog(
+                        "Stop sharing", isPresented: Binding(get: { stopping?.id == share.id }, set: { if !$0 { stopping = nil } }),
+                        titleVisibility: .visible, presenting: stopping
+                    ) { share in
+                        Button("Stop sharing", role: .destructive) { stop(share) }
+                    } message: { share in
+                        Text("\(Self.name(of: share)) will no longer see your calendar.")
+                    }
+                    .swipeActions {
+                        Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
+                    }
                     .contextMenu {
-                        Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) {
-                            stop(share)
-                        }
+                        Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
                     }
                 }
             } header: {
                 Text("Shared with")
             } footer: {
                 if !shares.isEmpty {
-                    Text("Touch and hold to stop sharing.")
+                    Text("Swipe left, or touch and hold, to stop sharing.")
                 }
             }
             if isLoaded && people.isEmpty && circles.isEmpty {
                 Section {
                     Text("You do not share a circle with anybody yet. Make or join a circle to share your calendar.")
                         .foregroundStyle(.secondary)
+                    OpenCirclesLink(connection: model.connection)
                 }
             } else if isLoaded {
                 Section {
-                    Picker("Person", selection: $chosenPersonId) {
-                        Text("None").tag(String?.none)
-                        ForEach(people) { person in
-                            Text(person.displayName).tag(Optional(person.userId))
-                        }
-                    }
-                    Picker("Circle", selection: $chosenCircleId) {
-                        Text("None").tag(String?.none)
-                        ForEach(circles) { circle in
-                            Text(circle.name).tag(Optional(circle.id))
-                        }
-                    }
+                    ShareTargetPicker(people: people, circles: circles, chosen: $chosen)
                 } header: {
                     Text("Share with")
                 } footer: {
@@ -258,24 +342,26 @@ struct CalendarShareScreen: View {
                 }
                 Section {
                     Button("Share") { share() }
-                        .disabled(isWorking || (chosenPersonId == nil && chosenCircleId == nil))
+                        .disabled(isWorking || chosen == nil)
                 }
             }
         }
         .navigationTitle("Share my calendar")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
-            if !isLoaded { ProgressView() }
+            if let loadProblemText, !isLoaded {
+                LoadFailedView(problemText: loadProblemText) { await load() }
+            } else if !isLoaded {
+                ProgressView()
+            }
         }
-        // A person and a circle are not both chosen: the last choice wins.
-        .onChange(of: chosenPersonId) { _, person in
-            if person != nil { chosenCircleId = nil }
-        }
-        .onChange(of: chosenCircleId) { _, circle in
-            if circle != nil { chosenPersonId = nil }
-        }
+        .refreshable { await load() }
         .task { await load() }
         .toast(done: $doneText, problem: $problemText)
+    }
+
+    private static func name(of share: CalendarShare) -> String {
+        share.isWithCircle ? String(localized: "Everyone in \(share.granteeDisplayName)") : share.granteeDisplayName
     }
 
     private func load() async {
@@ -285,38 +371,43 @@ struct CalendarShareScreen: View {
             async let readCircles = model.connection.calendarShareCircles()
             (shares, people, circles) = try await (readShares, readPeople, readCircles)
             isLoaded = true
+            loadProblemText = nil
         } catch {
-            problemText = error.localizedDescription
+            // With the screen already drawn a failed refresh leaves it be and
+            // says so.
+            if isLoaded { problemText = error.loadProblemText } else { loadProblemText = error.loadProblemText }
         }
     }
 
     private func share() {
+        guard let target = chosen else { return }
+        let name = ShareTargetPicker.name(of: target, people: people, circles: circles)
         isWorking = true
         Task {
             do {
                 try await model.connection.shareCalendar(
-                    calendarId: calendar.id, granteeUserId: chosenPersonId, granteeCircleId: chosenCircleId, level: level)
-                doneText = String(localized: "Shared")
-                chosenPersonId = nil
-                chosenCircleId = nil
+                    calendarId: calendar.id, granteeUserId: target.granteeUserId, granteeCircleId: target.granteeCircleId, level: level)
+                doneText = String(localized: "Shared with \(name)")
+                chosen = nil
                 level = .titles
                 shares = try await model.connection.calendarShares(calendarId: calendar.id)
             } catch {
-                problemText = error.localizedDescription
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
             }
             isWorking = false
         }
     }
 
     private func stop(_ share: CalendarShare) {
+        let name = Self.name(of: share)
         isWorking = true
         Task {
             do {
                 try await model.connection.unshareCalendar(shareId: share.id)
-                doneText = String(localized: "No longer shared")
+                doneText = String(localized: "No longer shared with \(name)")
                 shares = try await model.connection.calendarShares(calendarId: calendar.id)
             } catch {
-                problemText = error.localizedDescription
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
             }
             isWorking = false
         }
@@ -383,5 +474,75 @@ struct EventReader: View {
         guard let start = ServerTime.date(eventDetail.startsAt) else { return "" }
         let end = ServerTime.date(eventDetail.endsAt) ?? start
         return "\(start.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())) \((start..<max(start, end)).formatted(date: .omitted, time: .shortened))"
+    }
+}
+
+/// CircleCalendarOfferSheet is the question asked once, as a person joins a
+/// family or a group of colleagues: share their calendar with everyone in it,
+/// at a level they choose, or not now. The dashboard asks the same on its
+/// Circles page, and the Share my calendar screen has the choice whenever they
+/// want it.
+struct CircleCalendarOfferSheet: View {
+    let connection: Connection
+    let offer: CircleCalendarOffer
+    /// Said on the screen behind the sheet once the calendar is shared.
+    let onShared: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var level: CalendarShareLevel = .busy
+    @State private var isWorking = false
+    @State private var problemText: String?
+    @State private var doneText: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Everyone in \(offer.circleName) could see your calendar, as much as you choose. An event you mark private is only ever shown as busy.")
+                }
+                Section {
+                    Picker("How much", selection: $level) {
+                        ForEach(CircleCalendarOffer.levels, id: \.self) { each in
+                            Text(each.title).tag(each)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("How much")
+                } footer: {
+                    Text(level.explanation)
+                }
+            }
+            .navigationTitle("Share your calendar with \(offer.circleName)?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Not now") { dismiss() }
+                        .disabled(isWorking)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isWorking {
+                        ProgressView()
+                    } else {
+                        Button("Share") { Task { await share() } }
+                    }
+                }
+            }
+            .toast(done: $doneText, problem: $problemText)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func share() async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await connection.shareCalendar(calendarId: offer.calendarId, granteeUserId: nil, granteeCircleId: offer.circleId, level: level)
+            let name = String(localized: "Everyone in \(offer.circleName)")
+            onShared(String(localized: "Shared with \(name)"))
+            dismiss()
+        } catch {
+            problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+        }
     }
 }

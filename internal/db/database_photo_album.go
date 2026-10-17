@@ -187,7 +187,7 @@ func (self *transaction) listReachablePhotoAlbums(userId, photoAlbumId string) (
 			circleIds = append(circleIds, *rows[index].CircleID)
 		}
 	}
-	owners, err := loadUsersByID(self.tx, ownerIds)
+	owners, err := loadUsersById(self.tx, ownerIds)
 	if err != nil {
 		return nil, err
 	}

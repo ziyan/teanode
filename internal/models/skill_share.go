@@ -195,10 +195,10 @@ type SkillShareCall struct {
 	// ToolOutput is what the call answered, or why it did not complete.
 	ToolOutput map[string]any `json:"toolOutput,omitempty"`
 
-	DecidedAt    *time.Time `json:"decidedAt,omitempty"`
-	DecisionNote string     `json:"decisionNote,omitempty"`
-	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
-	WokenAt      *time.Time `json:"wokenAt,omitempty"`
+	AnsweredAt *time.Time `json:"answeredAt,omitempty"`
+	AnswerNote string     `json:"answerNote,omitempty"`
+	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
+	WokenAt    *time.Time `json:"wokenAt,omitempty"`
 
 	// The people, read along with the calls of shares that ended, which have
 	// no share to name them. Empty on any other call.
@@ -224,7 +224,7 @@ func (self *SkillShareCall) ToolArgumentsJSON() []byte {
 	return encoded
 }
 
-// SkillShareCallNote is the detail of a payment_waiting note: which call
+// SkillShareCallNote is the detail of a skill_share_call_waiting note: which call
 // waits, in which share, and who asked, so that the card in the drawer and the
 // app reads the rest of it from the call itself and shows its present state.
 type SkillShareCallNote struct {
@@ -234,7 +234,7 @@ type SkillShareCallNote struct {
 	GranteeUserID string `json:"granteeUserId"`
 }
 
-// SkillShareCallDetail is the detail of a payment_waiting note.
+// SkillShareCallDetail is the detail of a skill_share_call_waiting note.
 func SkillShareCallDetail(note SkillShareCallNote) string {
 	encoded, err := json.Marshal(note)
 	if err != nil {
@@ -243,7 +243,7 @@ func SkillShareCallDetail(note SkillShareCallNote) string {
 	return string(encoded)
 }
 
-// ParseSkillShareCallNote reads the detail of a payment_waiting note, or
+// ParseSkillShareCallNote reads the detail of a skill_share_call_waiting note, or
 // returns nil when it is not one.
 func ParseSkillShareCallNote(detail string) *SkillShareCallNote {
 	var note SkillShareCallNote

@@ -121,7 +121,7 @@ func (self *transaction) describePageShares(rows []agentPageShareModel) ([]*mode
 			userIds = append(userIds, owner.UserID)
 		}
 	}
-	users, err := loadUsersByID(self.tx, userIds)
+	users, err := loadUsersById(self.tx, userIds)
 	if err != nil {
 		return nil, err
 	}

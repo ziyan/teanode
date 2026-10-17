@@ -108,25 +108,25 @@ const MostAgentsAddressed = 4
 //     starts and the author is told only its owner can ask it; if they have
 //     and it is switched off, nothing starts and the author is told so;
 //     otherwise a member turn.
-func DecideAgentTurns(author AgentMessageAuthor, addressedAgentIDs []string, seats []AgentSeat) AgentDecision {
+func DecideAgentTurns(author AgentMessageAuthor, addressedAgentIds []string, seats []AgentSeat) AgentDecision {
 	decision := AgentDecision{Turns: []AgentTurn{}, Notes: []AgentNote{}}
 	if author.IsAgent || author.UserID == "" || !isInRoom(author.UserID, seats) {
 		return decision
 	}
 	seen := []string{}
-	for _, agentID := range addressedAgentIDs {
-		agentID = strings.TrimSpace(agentID)
-		if agentID == "" || slices.Contains(seen, agentID) {
+	for _, agentId := range addressedAgentIds {
+		agentId = strings.TrimSpace(agentId)
+		if agentId == "" || slices.Contains(seen, agentId) {
 			continue
 		}
 		if len(seen) == MostAgentsAddressed {
 			break
 		}
-		seen = append(seen, agentID)
-		seat := seatOf(agentID, seats)
+		seen = append(seen, agentId)
+		seat := seatOf(agentId, seats)
 		switch {
 		case seat == nil || seat.IsRemoved:
-			decision.Notes = append(decision.Notes, AgentNote{AgentID: agentID, NoteKind: models.NoteChatAgentAbsent})
+			decision.Notes = append(decision.Notes, AgentNote{AgentID: agentId, NoteKind: models.NoteChatAgentAbsent})
 		case seat.OwnerUserID == author.UserID && !seat.IsAgentActive:
 			decision.Notes = append(decision.Notes, noteFor(seat, models.NoteChatAgentOff))
 		case seat.OwnerUserID == author.UserID:
@@ -142,18 +142,18 @@ func DecideAgentTurns(author AgentMessageAuthor, addressedAgentIDs []string, sea
 	return decision
 }
 
-func isInRoom(userID string, seats []AgentSeat) bool {
+func isInRoom(userId string, seats []AgentSeat) bool {
 	for _, seat := range seats {
-		if seat.OwnerUserID == userID && !seat.IsRemoved {
+		if seat.OwnerUserID == userId && !seat.IsRemoved {
 			return true
 		}
 	}
 	return false
 }
 
-func seatOf(agentID string, seats []AgentSeat) *AgentSeat {
+func seatOf(agentId string, seats []AgentSeat) *AgentSeat {
 	for index := range seats {
-		if seats[index].AgentID == agentID {
+		if seats[index].AgentID == agentId {
 			return &seats[index]
 		}
 	}

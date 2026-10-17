@@ -46,9 +46,9 @@ CREATE TABLE "chat_member" (
     "read_through_message_id"    character varying(32),
     "muted_until"                timestamp with time zone,
 
-    -- Whether the member's agent remembers this chat, and whether the other
-    -- members may ask it. Written by a later milestone; here so that one
-    -- needs no second migration of this table.
+    -- Whether the member's agent remembers this chat (reads it as a source of
+    -- what it knows), and whether the other members may ask that agent in the
+    -- chat. Both are the member's own to switch, and both start off.
     "is_agent_reading"           boolean NOT NULL DEFAULT false,
     "is_agent_askable_by_others" boolean NOT NULL DEFAULT false,
     UNIQUE ("chat_id", "user_id")

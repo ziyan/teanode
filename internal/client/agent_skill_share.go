@@ -59,12 +59,12 @@ type SkillShareCall struct {
 	AmountMinor  *int64 `json:"amountMinor"`
 	CurrencyCode string `json:"currencyCode"`
 
-	CallState    string     `json:"callState"`
-	ToolOutput   string     `json:"toolOutput"`
-	DecidedAt    *time.Time `json:"decidedAt"`
-	DecisionNote string     `json:"decisionNote"`
-	ExpiresAt    *time.Time `json:"expiresAt"`
-	CreatedAt    time.Time  `json:"createdAt"`
+	CallState  string     `json:"callState"`
+	ToolOutput string     `json:"toolOutput"`
+	AnsweredAt *time.Time `json:"answeredAt"`
+	AnswerNote string     `json:"answerNote"`
+	ExpiresAt  *time.Time `json:"expiresAt"`
+	CreatedAt  time.Time  `json:"createdAt"`
 
 	// ApproveAddress is where a call that waits is approved, filled in by the
 	// command line from the server it talked to; the server does not send it.
@@ -77,7 +77,7 @@ const (
     paymentLimitMinor monthlyLimitMinor currencyCode isApprovalRequired isOwnedByCaller waitingCallCount monthTotalMinor createdAt`
 
 	skillShareCallFields = `id skillShareId isShareEnded skillName granteeUserId granteeUsername granteeName granteeAvatarUrl granteeAvatarColorIndex ownerName
-    toolName toolArguments requestReason amountMinor currencyCode callState toolOutput decidedAt decisionNote expiresAt createdAt`
+    toolName toolArguments requestReason amountMinor currencyCode callState toolOutput answeredAt answerNote expiresAt createdAt`
 
 	// DocumentListSkillShares lists the shares the caller made and was given.
 	DocumentListSkillShares = `query { ListSkillShares { ` + skillShareFields + ` } }`
@@ -103,8 +103,8 @@ const (
 }`
 
 	// DocumentAnswerSkillShareCall approves or declines a call that waits.
-	DocumentAnswerSkillShareCall = `mutation ($callId: String!, $isApproved: Boolean!, $decisionNote: String) {
-  AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, decisionNote: $decisionNote) { ` + skillShareCallFields + ` }
+	DocumentAnswerSkillShareCall = `mutation ($callId: String!, $isApproved: Boolean!, $answerNote: String) {
+  AnswerSkillShareCall(callId: $callId, isApproved: $isApproved, answerNote: $answerNote) { ` + skillShareCallFields + ` }
 }`
 )
 
@@ -200,10 +200,10 @@ func ListEndedSkillShareCalls(ctx context.Context, connection *Client, callState
 
 // AnswerSkillShareCall approves or declines a call that waits for the
 // signed-in account, which owns the share. Approving runs it.
-func AnswerSkillShareCall(ctx context.Context, connection *Client, callId string, isApproved bool, decisionNote string) (*SkillShareCall, error) {
-	variables := map[string]any{"callId": callId, "isApproved": isApproved, "decisionNote": nil}
-	if decisionNote != "" {
-		variables["decisionNote"] = decisionNote
+func AnswerSkillShareCall(ctx context.Context, connection *Client, callId string, isApproved bool, answerNote string) (*SkillShareCall, error) {
+	variables := map[string]any{"callId": callId, "isApproved": isApproved, "answerNote": nil}
+	if answerNote != "" {
+		variables["answerNote"] = answerNote
 	}
 	var answer struct {
 		AnswerSkillShareCall *SkillShareCall `json:"AnswerSkillShareCall"`

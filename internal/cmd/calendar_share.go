@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -52,29 +53,36 @@ func ownCalendarNamed(ctx context.Context, command *cli.Command, connection *cli
 // shareTarget is who a share is for, resolved from what was typed: the
 // username of somebody who shares a circle with the caller, or a circle by
 // identifier or name. The same answer for an account that does not exist and
-// one that shares no circle, since the server answers that way too.
+// one that shares no circle, since the server answers that way too. A circle
+// name more than one circle has, or that is also a username, is refused with
+// the ids and sizes to choose from, in the words the agent's tools use.
 func shareTarget(ctx context.Context, connection *client.Client, typed string) (granteeUserId, granteeCircleId, described string, err error) {
 	typed = strings.TrimSpace(typed)
 	people, err := client.ListCirclePeople(ctx, connection)
 	if err != nil {
 		return "", "", "", err
 	}
-	for _, person := range people {
-		if strings.EqualFold(person.Username, typed) {
-			return person.UserID, "", person.Username, nil
-		}
-	}
 	circles, err := client.ListCircles(ctx, connection)
 	if err != nil {
 		return "", "", "", err
 	}
-	for _, circle := range circles {
-		if circle.ID == typed || strings.EqualFold(circle.Name, typed) {
-			return "", circle.ID, "everyone in " + circle.Name, nil
-		}
+	shareablePeople := make([]models.ShareablePerson, 0, len(people))
+	for _, person := range people {
+		shareablePeople = append(shareablePeople, models.ShareablePerson{UserID: person.UserID, Username: person.Username})
 	}
-	return "", "", "", fmt.Errorf("%q is neither somebody you share a circle with nor a circle you are in; "+
-		"'teanode circle people' and 'teanode circle list' say who and which", typed)
+	shareableCircles := make([]models.ShareableCircle, 0, len(circles))
+	for _, circle := range circles {
+		shareableCircles = append(shareableCircles, models.ShareableCircle{ID: circle.ID, Name: circle.Name, MemberCount: len(circle.Members)})
+	}
+	target, err := models.ResolveShareTarget(typed, shareablePeople, shareableCircles)
+	if errors.Is(err, models.ErrNoShareTarget) {
+		return "", "", "", fmt.Errorf("%q is neither somebody you share a circle with nor a circle you are in; "+
+			"'teanode circle people' and 'teanode circle list' say who and which", typed)
+	}
+	if err != nil {
+		return "", "", "", err
+	}
+	return target.UserID, target.CircleID, target.Description, nil
 }
 
 func runCalendarShare(ctx context.Context, command *cli.Command) error {
@@ -175,7 +183,7 @@ func runCalendarCircle(ctx context.Context, command *cli.Command) error {
 
 // sharedEntry is one entry of what other people shared, with whose it is.
 type sharedEntry struct {
-	Whose      string `json:"whose"`
+	Owner      string `json:"owner"`
 	ShareLevel string `json:"shareLevel"`
 	CalendarID string `json:"calendarId"`
 	*client.CalendarEvent
@@ -206,15 +214,15 @@ func runCalendarSharedList(ctx context.Context, command *cli.Command, connection
 	if err != nil {
 		return describeError(command, err)
 	}
-	whose := strings.TrimSpace(command.String("whose"))
-	isEveryone := strings.EqualFold(whose, "everyone")
+	owner := strings.TrimSpace(command.String("owner"))
+	isEveryone := strings.EqualFold(owner, "everyone")
 	var entries []*sharedEntry
 	chosen := 0
 	for _, found := range calendars {
 		if found.IsOwn() || found.CalendarKind == string(models.CalendarReminders) {
 			continue
 		}
-		if !isEveryone && (found.IsCircleCalendar || !strings.EqualFold(found.OwnerUsername, whose)) {
+		if !isEveryone && (found.IsCircleCalendar || !strings.EqualFold(found.OwnerUsername, owner)) {
 			continue
 		}
 		chosen++
@@ -224,11 +232,11 @@ func runCalendarSharedList(ctx context.Context, command *cli.Command, connection
 			return describeError(command, err)
 		}
 		for _, event := range events {
-			entries = append(entries, &sharedEntry{Whose: whoseCalendar(found), ShareLevel: found.ShareLevel, CalendarID: found.ID, CalendarEvent: event})
+			entries = append(entries, &sharedEntry{Owner: whoseCalendar(found), ShareLevel: found.ShareLevel, CalendarID: found.ID, CalendarEvent: event})
 		}
 	}
 	if chosen == 0 && !isEveryone {
-		return fmt.Errorf("%s has not shared a calendar with you", whose)
+		return fmt.Errorf("%s has not shared a calendar with you", owner)
 	}
 	sort.SliceStable(entries, func(first, second int) bool { return entries[first].StartsAt < entries[second].StartsAt })
 	if command.Bool("json") {
@@ -258,9 +266,9 @@ func runCalendarSharedList(ctx context.Context, command *cli.Command, connection
 		if entry.IsBusyOnly {
 			what = "busy"
 		}
-		rows = append(rows, []string{when, ends, what, entry.Whose, entry.Location, entry.ShareLevel})
+		rows = append(rows, []string{when, ends, what, entry.Owner, entry.Location, entry.ShareLevel})
 	}
-	return printTable([]string{"starts", "ends", "what", "whose", "where", "shared at"}, rows)
+	return printTable([]string{"starts", "ends", "what", "owner", "where", "shared at"}, rows)
 }
 
 // runCalendarFreeTogether is when the caller and the people named are all

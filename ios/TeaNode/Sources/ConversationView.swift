@@ -69,7 +69,7 @@ struct ConversationView: View {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 8) {
                         if let chat = model.chat {
-                            ChatFacesView(chat: chat, ownUserId: model.ownUserId, size: 22)
+                            ChatAvatarsView(chat: chat, ownUserId: model.ownUserId, size: 22)
                         }
                         Text(model.title)
                             .font(.headline)
@@ -647,7 +647,7 @@ struct ConversationItemView: View {
             case .person:
                 if let author = line.author {
                     ChatLineFrame(
-                        line: line, author: author, startsRun: line.beginsRun(after: previous?.line),
+                        line: line, author: author, isRunStart: line.beginsRun(after: previous?.line),
                         readers: line.messageId.flatMap { readers[$0] } ?? []
                     ) {
                         PersonBubble(line: line) { model.readingText = line.text }
@@ -666,7 +666,7 @@ struct ConversationItemView: View {
                 // the people in it.
                 if let author = line.author {
                     ChatLineFrame(
-                        line: line, author: author, startsRun: line.beginsRun(after: previous?.line),
+                        line: line, author: author, isRunStart: line.beginsRun(after: previous?.line),
                         readers: line.messageId.flatMap { readers[$0] } ?? []
                     ) {
                         if line.isDeleted {
@@ -706,10 +706,10 @@ struct ConversationItemView: View {
             case .checkIn:
                 CheckInLine(line: line)
             case .note:
-                if line.detail == "payment_waiting" {
+                if line.detail == "skill_share_call_waiting" {
                     // A call of a skill the person shared that waits for
                     // their word: the card reads the call for how it stands.
-                    PaymentWaitingCard(connection: model.connection, noteDetail: line.text)
+                    SkillShareCallWaitingCard(connection: model.connection, noteDetail: line.text)
                 } else {
                     NoteLine(line: line)
                 }
@@ -1167,7 +1167,7 @@ struct PersonBubble: View {
         line.text.count > Self.shownCharacterCount || line.text.split(separator: "\n", omittingEmptySubsequences: false).count > Self.shownLineCount
     }
 
-    /// Another person's words in a chat: on the left, in the grey the agent's
+    /// Another person's words in a chat: on the left, in the gray the agent's
     /// are in, since the accent is the person's own.
     private var isOthers: Bool {
         guard let author = line.author else { return false }
@@ -1224,7 +1224,7 @@ struct PersonBubble: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 // The person's side in the accent's tint, the agent's in
-                // grey, so whose each bubble is shows at a glance.
+                // gray, so whose each bubble is shows at a glance.
                 .background(
                     isOthers ? AnyShapeStyle(Color(.secondarySystemBackground)) : AnyShapeStyle(Color.accentColor.opacity(0.2)),
                     in: .rect(cornerRadius: 20, style: .continuous)

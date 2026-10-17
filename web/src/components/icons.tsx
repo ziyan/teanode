@@ -944,6 +944,16 @@ export function MinusIcon(props: IconProps) {
   )
 }
 
+// EyeIcon is an eye: to look at something without changing it.
+export function EyeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  )
+}
+
 // InfoIcon is a letter i in a circle: how a number is worked out.
 export function InfoIcon(props: IconProps) {
   return (
@@ -1077,16 +1087,6 @@ export function AlbumCoverIcon(props: IconProps) {
       <rect x="3" y="7" width="14" height="14" rx="2" />
       <path d="M7 3h12a2 2 0 0 1 2 2v12" />
       <path d="m10 11 1.1 2.2 2.4.35-1.75 1.7.42 2.4L10 16.5l-2.17 1.15.42-2.4-1.75-1.7 2.4-.35L10 11Z" />
-    </Icon>
-  )
-}
-
-// An eye: shown, or show again.
-export function EyeIcon(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
-      <circle cx="12" cy="12" r="3" />
     </Icon>
   )
 }
