@@ -12,6 +12,9 @@ import TeaNodeKit
 /// position) the screen says where to get one instead.
 struct LocationAddressScreen: View {
     let model: LocationModel
+    /// The place whose address is being changed, so the matches come nearest
+    /// first to it. Nil in the setup, which has no place yet.
+    var placeId: String?
     /// What keeping the typed words as the address does. Nil when it worked,
     /// else the reason. Nil itself when keeping is not offered. Declared
     /// before `choose` so a call can give it and still end in the closure
@@ -123,7 +126,7 @@ struct LocationAddressScreen: View {
         isSearching = true
         defer { isSearching = false }
         do {
-            let found = try await model.searchAddresses(words: words)
+            let found = try await model.searchAddresses(words: words, placeId: placeId)
             // Other words were typed while this was read.
             guard words == trimmedSearchText else { return }
             matches = found

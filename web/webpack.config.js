@@ -56,11 +56,6 @@ module.exports = {
   module: {
     rules: [
       { test: /\.tsx?$/, use: 'ts-loader', exclude: /node_modules/ },
-      // MapLibre's build for pages that allow no blob: workers is a UMD file
-      // inside a package marked as a module, which webpack would read as a
-      // module and so skip the UMD wrapper's export branch. Read as it is
-      // written.
-      { test: /maplibre-gl-csp\.js$/, type: 'javascript/auto' },
       { test: /\.css$/, use: [MiniCssExtractPlugin.loader, 'css-loader'] },
       { test: /\.(png|svg|ico)$/, type: 'asset/resource' },
     ],
@@ -142,8 +137,11 @@ module.exports = {
         // audio thread; the content policy takes it only from the server.
         { from: 'src/voice/voiceCaptureWorklet.js', to: 'assets/voice-capture-worklet.js' },
         // The map's worker, a file of the server's own because the content
-        // policy refuses the blob: address the usual build makes it from.
-        { from: 'node_modules/maplibre-gl/dist/maplibre-gl-csp-worker.js', to: 'assets/maplibre-gl-csp-worker.js' },
+        // policy refuses the blob: address the map otherwise makes it from. It
+        // is a module that imports the code it shares with the page from the
+        // file beside it, by that file's name.
+        { from: 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs', to: 'assets/maplibre-gl-worker.mjs' },
+        { from: 'node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs', to: 'assets/maplibre-gl-shared.mjs' },
       ],
     }),
   ],

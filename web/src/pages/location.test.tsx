@@ -685,6 +685,7 @@ it('turns Check in here off when the browser is sure only to 1500 m, and checks 
   const chooser = await screen.findByRole('alertdialog')
   fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '12 Elm' } })
   fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
+  expect(calls('SearchAddresses')[0][1]).toEqual({ query: '12 Elm', placeId: undefined })
   fireEvent.click(await within(chooser).findByRole('button', { name: /12 Elm Street, Exampleton/ }))
   await waitFor(() => expect(calls('CheckIn(')).toHaveLength(1))
   expect(calls('CheckIn(')[0][1]).toMatchObject({
@@ -844,7 +845,7 @@ it('shows the address of a place and moves the place to a typed address', async 
   const chooser = await screen.findByRole('alertdialog')
   fireEvent.change(within(chooser).getByLabelText('Type an address'), { target: { value: '12 Elm' } })
   fireEvent.click(within(chooser).getByRole('button', { name: 'Search' }))
-  expect(calls('SearchAddresses')[0][1]).toEqual({ query: '12 Elm' })
+  expect(calls('SearchAddresses')[0][1]).toEqual({ query: '12 Elm', placeId: 'place-one' })
   fireEvent.click(await within(chooser).findByRole('button', { name: /12 Elm Street, Exampleton/ }))
 
   await waitFor(() => expect(calls('SavePlace')).toHaveLength(1))

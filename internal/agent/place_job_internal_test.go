@@ -35,7 +35,7 @@ func (self *fakeProvider) Name(_ context.Context, latitudeDegrees, longitudeDegr
 	return nil, fmt.Errorf("%w: dial tcp 10.0.0.5:2322 for lat=%v", place.ErrProviderUnreachable, latitudeDegrees)
 }
 
-func (self *fakeProvider) Addresses(context.Context, string, int) ([]*place.Found, error) {
+func (self *fakeProvider) Addresses(context.Context, string, *place.Position, int) ([]*place.Found, error) {
 	return nil, nil
 }
 

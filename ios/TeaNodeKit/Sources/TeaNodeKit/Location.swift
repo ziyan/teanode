@@ -520,8 +520,8 @@ extension Documents {
         }
         """
     public static let searchAddresses = """
-        query ($query: String!, $limitCount: Int) {
-          SearchAddresses(query: $query, limitCount: $limitCount) { \(foundPlaceFields) }
+        query ($query: String!, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeId: String, $limitCount: Int) {
+          SearchAddresses(query: $query, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeId: $placeId, limitCount: $limitCount) { \(foundPlaceFields) }
         }
         """
     public static let locationPoints = """
@@ -658,12 +658,18 @@ extension Connection {
         return try await execute(Documents.searchPlaces, variables: variables, as: Answer.self).SearchPlaces
     }
 
-    /// Addresses matching words, best first, from the place provider and
-    /// anywhere in the world, not near a position. `distanceMeters` is from
-    /// the person's latest position when the server has one, else 0.
-    public func searchAddresses(query: String, limitCount: Int? = nil) async throws -> [FoundPlace] {
+    /// Addresses matching words, from the place provider and anywhere in the
+    /// world, nearest first to the given position, else to the place, else
+    /// to the person's latest position. `distanceMeters` is from that
+    /// center; with no center at all it is 0 and the best match is first.
+    public func searchAddresses(
+        query: String, latitudeDegrees: Double? = nil, longitudeDegrees: Double? = nil, placeId: String? = nil, limitCount: Int? = nil
+    ) async throws -> [FoundPlace] {
         struct Answer: Decodable, Sendable { let SearchAddresses: [FoundPlace] }
         var variables: [String: JSONValue] = ["query": .string(query)]
+        if let latitudeDegrees { variables["latitudeDegrees"] = .number(latitudeDegrees) }
+        if let longitudeDegrees { variables["longitudeDegrees"] = .number(longitudeDegrees) }
+        if let placeId { variables["placeId"] = .string(placeId) }
         if let limitCount { variables["limitCount"] = .number(Double(limitCount)) }
         return try await execute(Documents.searchAddresses, variables: variables, as: Answer.self).SearchAddresses
     }

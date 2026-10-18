@@ -488,6 +488,21 @@ func TestFindAddressGivesWhatSavePlaceTakes(t *testing.T) {
 	if _, _, err := act(t, runOf(operations), "find_address", `{}`, false); err == nil {
 		t.Error("an address search needs words")
 	}
+	if _, _, err := act(t, runOf(operations), "find_address", `{"query":"rue example","place_id":" p1 "}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["SearchAddresses"]; sent["placeId"] != "p1" || sent["latitudeDegrees"] != nil {
+		t.Errorf("the place the matches are nearest to: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "find_address", `{"query":"rue example","latitude_degrees":40.1,"longitude_degrees":-75.2}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["SearchAddresses"]; sent["placeId"] != nil || sent["latitudeDegrees"] != 40.1 || sent["longitudeDegrees"] != -75.2 {
+		t.Errorf("the point the matches are nearest to: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "find_address", `{"query":"rue example","latitude_degrees":40.1}`, false); err == nil {
+		t.Error("half a position is refused")
+	}
 
 	saved, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","place_label":"home","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":" 6 Rue Example, Exampleton, Testland "}`, false)
 	if err != nil {

@@ -23,7 +23,7 @@ func (self *scriptedProvider) Name(context.Context, float64, float64) (*Found, e
 	return self.found, self.err
 }
 
-func (self *scriptedProvider) Addresses(context.Context, string, int) ([]*Found, error) {
+func (self *scriptedProvider) Addresses(context.Context, string, *Position, int) ([]*Found, error) {
 	return nil, nil
 }
 

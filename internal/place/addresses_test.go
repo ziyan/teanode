@@ -24,7 +24,7 @@ func TestNominatimAddressesSearchesAnywhereAndNamesMatchesByTheirAddress(t *test
 	defer server.Close()
 	provider := &nominatimProvider{requester: newTestRequester(server)}
 
-	found, err := provider.Addresses(context.Background(), " 6 rue example ", 8)
+	found, err := provider.Addresses(context.Background(), " 6 rue example ", nil, 8)
 	if err != nil || len(found) != 3 {
 		t.Fatalf("Addresses: %v, %v", found, err)
 	}
@@ -42,7 +42,7 @@ func TestNominatimAddressesSearchesAnywhereAndNamesMatchesByTheirAddress(t *test
 		t.Errorf("the park came back as %+v", found[2])
 	}
 
-	if none, err := provider.Addresses(context.Background(), "   ", 8); none != nil || err != nil || len(asked) != 1 {
+	if none, err := provider.Addresses(context.Background(), "   ", nil, 8); none != nil || err != nil || len(asked) != 1 {
 		t.Errorf("empty words asked the provider: %v, %v, %v", none, err, asked)
 	}
 }
@@ -61,7 +61,7 @@ func TestPhotonAddressesSearchesAnywhereWithoutAPointToLeanToward(t *testing.T) 
 	defer server.Close()
 	provider := &photonProvider{requester: newTestRequester(server)}
 
-	found, err := provider.Addresses(context.Background(), "6 rue example", 5)
+	found, err := provider.Addresses(context.Background(), "6 rue example", nil, 5)
 	if err != nil || len(found) != 2 {
 		t.Fatalf("Addresses: %v, %v", found, err)
 	}
@@ -74,5 +74,99 @@ func TestPhotonAddressesSearchesAnywhereWithoutAPointToLeanToward(t *testing.T) 
 	}
 	if found[1].PlaceName != "Example Park" || found[1].AddressText != "Example Park, Exampleton, Testland" {
 		t.Errorf("the park came back as %+v", found[1])
+	}
+}
+
+func TestNominatimAddressesNearAPositionPreferABoxAroundItAndComeNearestFirst(t *testing.T) {
+	t.Parallel()
+
+	var asked []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		asked = append(asked, request.URL.RequestURI())
+		// The best match by the words is the farthest: another town's street.
+		say(writer, `[
+			{"osm_type":"node","osm_id":31,"lat":"12.000000","lon":"22.000000","category":"place","type":"house","name":"","display_name":"6, Rue Example, Sampleford, Testland","address":{"house_number":"6","road":"Rue Example","city":"Sampleford","country":"Testland"}},
+			{"osm_type":"node","osm_id":32,"lat":"11.001000","lon":"21.000000","category":"place","type":"house","name":"","display_name":"6, Rue Example, Exampleton, Testland","address":{"house_number":"6","road":"Rue Example","city":"Exampleton","country":"Testland"}},
+			{"osm_type":"node","osm_id":33,"lat":"11.100000","lon":"21.000000","category":"place","type":"house","name":"","display_name":"6, Rue Example, Mockton, Testland","address":{"house_number":"6","road":"Rue Example","city":"Mockton","country":"Testland"}}
+		]`)
+	}))
+	defer server.Close()
+	provider := &nominatimProvider{requester: newTestRequester(server)}
+
+	found, err := provider.Addresses(context.Background(), "6 rue example", &Position{LatitudeDegrees: 11, LongitudeDegrees: 21}, 2)
+	if err != nil || len(found) != 2 {
+		t.Fatalf("Addresses: %v, %v", found, err)
+	}
+	if len(asked) != 1 || !strings.Contains(asked[0], "viewbox=") || !strings.Contains(asked[0], "bounded=0") || !strings.Contains(asked[0], "limit=6") {
+		t.Errorf("the request is %v", asked)
+	}
+	// The nearest first, and the provider's best match, in another town,
+	// kept as the last row in place of the next nearest.
+	if found[0].OSMID != 32 || found[1].OSMID != 31 {
+		t.Errorf("the matches are not nearest first with the best match kept: %+v, %+v", found[0], found[1])
+	}
+	if found[0].DistanceMeters < 100 || found[0].DistanceMeters > 120 || found[1].DistanceMeters < found[0].DistanceMeters {
+		t.Errorf("the distances are from the position: %v, %v", found[0].DistanceMeters, found[1].DistanceMeters)
+	}
+}
+
+func TestPhotonAddressesNearAPositionLeanTowardItAndComeNearestFirst(t *testing.T) {
+	t.Parallel()
+
+	var asked []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		asked = append(asked, request.URL.RequestURI())
+		say(writer, `{"features":[
+			{"geometry":{"coordinates":[22.0,12.0]},"properties":{"osm_type":"N","osm_id":41,"osm_key":"place","osm_value":"house","housenumber":"6","street":"Rue Example","city":"Sampleford","country":"Testland"}},
+			{"geometry":{"coordinates":[21.0,11.001]},"properties":{"osm_type":"N","osm_id":42,"osm_key":"place","osm_value":"house","housenumber":"6","street":"Rue Example","city":"Exampleton","country":"Testland"}}
+		]}`)
+	}))
+	defer server.Close()
+	provider := &photonProvider{requester: newTestRequester(server)}
+
+	found, err := provider.Addresses(context.Background(), "6 rue example", &Position{LatitudeDegrees: 11, LongitudeDegrees: 21}, 5)
+	if err != nil || len(found) != 2 {
+		t.Fatalf("Addresses: %v, %v", found, err)
+	}
+	if len(asked) != 1 || !strings.Contains(asked[0], "lat=11.000000") || !strings.Contains(asked[0], "lon=21.000000") {
+		t.Errorf("the request is %v", asked)
+	}
+	if found[0].OSMID != 42 || found[0].DistanceMeters > 120 || found[1].OSMID != 41 {
+		t.Errorf("the matches are not nearest first: %+v, %+v", found[0], found[1])
+	}
+}
+
+func TestAddressesNearestFirstKeepTheBestMatchWhenNearerOnesFillTheList(t *testing.T) {
+	t.Parallel()
+
+	near := &Position{LatitudeDegrees: 11, LongitudeDegrees: 21}
+	// The provider's best match is in another town; three weaker ones are
+	// nearer than it.
+	found := []*Found{
+		{OSMID: 1, LatitudeDegrees: 12, LongitudeDegrees: 22},
+		{OSMID: 2, LatitudeDegrees: 11.003, LongitudeDegrees: 21},
+		{OSMID: 3, LatitudeDegrees: 11.001, LongitudeDegrees: 21},
+		{OSMID: 4, LatitudeDegrees: 11.002, LongitudeDegrees: 21},
+	}
+	kept := addressesNearestFirst(found, near, 3)
+	if len(kept) != 3 || kept[0].OSMID != 3 || kept[1].OSMID != 4 || kept[2].OSMID != 1 {
+		t.Errorf("kept %d: %+v, %+v, %+v", len(kept), kept[0], kept[1], kept[2])
+	}
+
+	// When it is among the nearest already, the list is simply nearest first.
+	found = []*Found{
+		{OSMID: 1, LatitudeDegrees: 11.002, LongitudeDegrees: 21},
+		{OSMID: 2, LatitudeDegrees: 11.001, LongitudeDegrees: 21},
+		{OSMID: 3, LatitudeDegrees: 12, LongitudeDegrees: 22},
+	}
+	kept = addressesNearestFirst(found, near, 2)
+	if len(kept) != 2 || kept[0].OSMID != 2 || kept[1].OSMID != 1 {
+		t.Errorf("kept %+v", kept)
+	}
+
+	// With no position the provider's order stands.
+	found = []*Found{{OSMID: 1, LatitudeDegrees: 12, LongitudeDegrees: 22}, {OSMID: 2, LatitudeDegrees: 11, LongitudeDegrees: 21}}
+	if kept = addressesNearestFirst(found, nil, 1); len(kept) != 1 || kept[0].OSMID != 1 || kept[0].DistanceMeters != 0 {
+		t.Errorf("kept %+v", kept)
 	}
 }

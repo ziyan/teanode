@@ -366,7 +366,12 @@ export function TransactionRowsDialog({ onImported, onClose }: { onImported: () 
               })}
             </p>
           ) : null}
-          {shownPreview.verificationSummary ? <p className="muted">{shownPreview.verificationSummary}</p> : null}
+          {/* The server's summary is a phrase in lower case, as the command line prints it after a colon. */}
+          {shownPreview.verificationSummary ? (
+            <p className="muted">
+              {shownPreview.verificationSummary.charAt(0).toUpperCase() + shownPreview.verificationSummary.slice(1)}
+            </p>
+          ) : null}
           {newRowCount > 0 ? (
             <PreviewRows
               rows={shownPreview.newTransactionRows}

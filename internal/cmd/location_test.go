@@ -117,6 +117,7 @@ func TestLocationParity(test *testing.T) {
 		"SearchPlaces.query.command":       "the words are the arguments of the subcommand",
 		"SearchAddresses.query.command":    "the words are the arguments of the subcommand",
 		"SearchPlaces.placeId.command":     "the flag is --near-place, since --place would read as a filter",
+		"SearchAddresses.placeId.command":  "the flag is --near-place, as it is for search",
 		"ListLocationPoints.from.command":  "a day is given with --day",
 		"ListLocationPoints.until.command": "a day is given with --day",
 	}
@@ -459,6 +460,34 @@ func TestLocationAddressesListsMatches(test *testing.T) {
 	}
 }
 
+// addresses centers on a place or a position, never both and never half a
+// position, and sends only what was given.
+func TestLocationAddressesCentersOnAPlaceOrAPoint(test *testing.T) {
+	server, called := locationServer(test)
+	if _, err := runLocationCommand(test, server, "addresses", "rue", "example", "--near-place", "p1"); err != nil {
+		test.Fatal(err)
+	}
+	variables := called("SearchAddresses")
+	if variables["placeId"] != "p1" || variables["latitudeDegrees"] != nil || variables["longitudeDegrees"] != nil {
+		test.Errorf("the place was sent: %v", variables)
+	}
+	if _, err := runLocationCommand(test, server, "addresses", "rue", "example", "--latitude", "40.1", "--longitude", "-75.2"); err != nil {
+		test.Fatal(err)
+	}
+	variables = called("SearchAddresses")
+	if variables["placeId"] != nil || variables["latitudeDegrees"] != 40.1 || variables["longitudeDegrees"] != -75.2 {
+		test.Errorf("the point was sent: %v", variables)
+	}
+	for _, arguments := range [][]string{
+		{"addresses", "rue", "--latitude", "40.1"},
+		{"addresses", "rue", "--near-place", "p1", "--latitude", "40.1", "--longitude", "-75.2"},
+	} {
+		if _, err := runLocationCommand(test, server, arguments...); err == nil {
+			test.Errorf("%v should have been refused", arguments)
+		}
+	}
+}
+
 // save --address takes the first match, moves the place there with its
 // address, and lists the others so that the first being wrong can be undone.
 func TestLocationSaveAddressTakesTheFirstMatch(test *testing.T) {
@@ -474,6 +503,9 @@ func TestLocationSaveAddressTakesTheFirstMatch(test *testing.T) {
 	}
 	if !strings.Contains(output, "address: ") || !strings.Contains(output, "8 Rue Example, Exampleton, Testland") || !strings.Contains(output, "--address-text") {
 		test.Errorf("the address chosen and the other matches: %q", output)
+	}
+	if lookup := called("SearchAddresses"); lookup["placeId"] != "p1" || lookup["latitudeDegrees"] != nil {
+		test.Errorf("the lookup centered on the place being saved: %v", lookup)
 	}
 
 	// The exact form sends what it was given and looks nothing up.

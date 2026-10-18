@@ -301,6 +301,8 @@ jobs:
           shoot coding-session-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot coding-session-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot coding-session-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-hooks-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-hooks
+          shoot coding-hooks-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-hooks
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
@@ -335,6 +337,9 @@ jobs:
           shoot finance-trades-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-trades
           shoot finance-import-preview-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-preview
           shoot finance-import-preview-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-preview
+          shoot finance-receipt-entry-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-receipt-entry
+          shoot finance-paystub-entry-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-paystub-entry
+          shoot finance-tax-form-entry-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-tax-form-entry
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
