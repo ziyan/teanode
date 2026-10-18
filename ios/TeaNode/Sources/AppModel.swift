@@ -669,7 +669,7 @@ final class AppModel {
     }
 
     func noteNotificationFailure(_ error: Error) {
-        notificationProblemText = error.localizedDescription
+        notificationProblemText = error.localizedDescription.asReasonSentence
     }
 
     /// Whether this phone is told about a kind of notification.
@@ -851,7 +851,7 @@ final class AppModel {
         // The Kit names what went wrong with a photo; the words are the app's.
         if let error = error as? PhotoError { return error.localizedText }
         if let error = error as? LocalizedError, let description = error.errorDescription {
-            return description
+            return description.asReasonSentence
         }
         // A request called off is not the server failing: it is said as
         // iOS says it, which the toasts know to leave out.
@@ -861,7 +861,7 @@ final class AppModel {
         if (error as? URLError) != nil {
             return String(localized: "The server could not be reached. Check the connection and try again.")
         }
-        return error.localizedDescription
+        return error.localizedDescription.asReasonSentence
     }
 }
 

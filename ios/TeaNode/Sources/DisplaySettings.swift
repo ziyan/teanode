@@ -27,15 +27,32 @@ enum Appearance: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Sets every window of the app, so sheets and alerts follow too: a
-    /// preferredColorScheme of nil leaves an open sheet in the last choice
-    /// rather than returning it to the system's.
+    /// The scheme SwiftUI is told to draw in; nil follows the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    /// Sets every window of the app and every sheet open in it. The app's
+    /// root is also given `colorScheme` as its preferredColorScheme, for the
+    /// pictures the app switcher keeps, which the windows' style appeared not
+    /// to reach; but a preferredColorScheme of nil leaves an open sheet in the
+    /// last choice rather than returning it to the system's, so the sheets
+    /// are set here as well.
     @MainActor
     func apply() {
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows {
                 window.overrideUserInterfaceStyle = interfaceStyle
+                var presented = window.rootViewController?.presentedViewController
+                while let controller = presented {
+                    controller.overrideUserInterfaceStyle = interfaceStyle
+                    presented = controller.presentedViewController
+                }
             }
         }
     }

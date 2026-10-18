@@ -750,7 +750,7 @@ struct CalendarSearch: View {
             }
             .overlay {
                 if let problemText {
-                    ContentUnavailableView("Events could not be read", systemImage: "calendar.badge.exclamationmark", description: Text(problemText))
+                    ContentUnavailableView("Events could not be read", systemImage: "calendar.badge.exclamationmark", description: Text(problemText.asReasonSentence))
                 } else if events == nil {
                     ProgressView()
                 } else if words.isEmpty {
@@ -996,6 +996,9 @@ struct EventRow: View {
             Spacer(minLength: 0)
         }
         .contentShape(.rect)
+        // Only the rows of other people's events have a symbol (the owner's
+        // name): the line under every row starts at the row's edge.
+        .fullWidthRowSeparator()
     }
 }
 
@@ -1214,7 +1217,7 @@ struct EventOpener: View {
             } else if let reading {
                 EventReader(model: model, calendar: model.calendar(withId: event.calendarId), eventDetail: reading)
             } else if let problemText {
-                ContentUnavailableView("That event could not be read", systemImage: "calendar.badge.exclamationmark", description: Text(problemText))
+                ContentUnavailableView("That event could not be read", systemImage: "calendar.badge.exclamationmark", description: Text(problemText.asReasonSentence))
             } else {
                 ProgressView()
             }

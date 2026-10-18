@@ -737,20 +737,38 @@ a.tile:hover strong {
 }
 
 /* --- the agent's conversations, a tile each ------------------------------ */
-/* The box that narrows the tiles, on a line of its own above them, as wide
-   as a field is allowed to be rather than as wide as the page. */
+/* One row above the tiles: which kind, the search box taking the rest of
+   it, and starting a new conversation at its end. */
 .conversation-toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
 
+/* As tall as the box beside it, as the mailbox's list toolbar does. */
+.conversation-toolbar .segmented {
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
+.conversation-toolbar .segmented button {
+  height: 100%;
+}
+
 .conversation-toolbar input[type='search'] {
-  flex: 1 1 220px;
+  flex: 1 1 0;
   min-width: 0;
   max-width: 420px;
+  /* The size of the search box on every other page's list. */
+  padding-block: 5px;
+  font-size: var(--text-label);
+}
+
+/* At the row's end even when there is no search box to push it there. */
+.conversation-toolbar .conversation-new {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 /* auto-fill rather than the band's auto-fit: one conversation is one tile's
@@ -1230,6 +1248,17 @@ button.conversation-tile:focus-visible {
   white-space: nowrap;
 }
 
+/* Tighter rows with a pointer: the mailbox's rail is two dozen rows and the
+   last three, Recordings, Coding and Finance, were below the fold of a
+   900px window behind a thin scrollbar. The drawer on a phone keeps its
+   full-height rows for a thumb. */
+@media (min-width: 901px) {
+  .sidebar nav a {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
 .sidebar nav a:hover {
   background: var(--sidebar-hover);
   color: var(--text);
@@ -1277,7 +1306,19 @@ button.conversation-tile:focus-visible {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  /* The scrollbar's room is kept whether or not the page needs one. A page
+     long enough to scroll was ten pixels narrower than a short one, so
+     switching between two tabs moved everything on them sideways. */
+  scrollbar-gutter: stable;
   padding: var(--space-6) max(32px, (100% - 1400px) / 2);
+}
+
+/* The mail and knowledge pages never scroll the content (their frames hold the
+   scrolling), so a strip kept for a scrollbar that is never drawn is only an
+   empty band at the window's edge on a classic scrollbar. */
+.content:has(> .mailbox-frame),
+.content:has(> .knowledge-frame) {
+  scrollbar-gutter: auto;
 }
 
 h2 {
@@ -2025,6 +2066,9 @@ label span {
 .error {
   color: var(--bad);
 }
+.success {
+  color: var(--good);
+}
 /* Monospace, and allowed to break inside a word — but only when the word
    cannot fit on a line of its own. That is the difference between
    overflow-wrap:anywhere and word-break:break-all, and it matters here: a
@@ -2366,17 +2410,34 @@ label span {
 }
 
 /* A row with more tabs past an edge fades out at that edge, so a row cut
-   between two tabs still says it goes on. */
+   between two tabs still says it goes on.
+
+   The fade covers the labels only. The strip's last three pixels (the rule
+   under the row and the active tab's underline) are a second mask layer
+   that is always opaque, so the underline of the tab you are on stays a
+   line instead of dissolving into a smudge at the edge. */
+.tabs.tabs-more-after,
+.tabs.tabs-more-before {
+  mask-image: var(--tabs-fade), linear-gradient(#000, #000);
+  mask-size:
+    100% 100%,
+    100% 3px;
+  mask-position:
+    0 0,
+    0 100%;
+  mask-repeat: no-repeat;
+}
+
 .tabs.tabs-more-after {
-  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+  --tabs-fade: linear-gradient(to right, #000 calc(100% - 56px), transparent);
 }
 
 .tabs.tabs-more-before {
-  mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+  --tabs-fade: linear-gradient(to left, #000 calc(100% - 56px), transparent);
 }
 
 .tabs.tabs-more-before.tabs-more-after {
-  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+  --tabs-fade: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
 }
 
 /* A tab keeps its width in a row that scrolls; the default would squeeze them
@@ -3416,7 +3477,7 @@ body,
      head-icons (a page's rename and delete): each is a square, two or three
      fit beside a title. A row of words keeps the rule above, since beside
      the title it would squeeze it. */
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3424,23 +3485,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) h3 {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child > p {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > :is(button, .head-icons, .menu-button) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons, .menu-button):last-child) > :is(button, .head-icons, .menu-button) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -3460,21 +3521,23 @@ body,
     flex-wrap: wrap;
   }
 
-  /* A row whose only action is one icon keeps it beside the title: on a line
-     of its own it sat alone under an empty band, the row twice its height.
-     The icon may be inside a tooltip's anchor; :has() cannot be nested in
-     :has(), so the anchor is matched by its position, not by what it holds. */
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child, > .settings-row-actions > .tooltip-anchor:only-child > .icon-action:only-child) {
+  /* A row whose actions are icons, up to three of them, keeps them beside
+     the title (SettingsRow adds has-icon-actions): on a line of their own
+     they sat alone under an empty band, the row twice its height, and with the name and the badge above them they
+     read as belonging to nothing. Four or more (the people page) do not fit
+     beside a name, and a word button does not either, so those still drop. */
+  .settings-row.has-icon-actions {
     flex-wrap: nowrap;
     align-items: flex-start;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child, > .settings-row-actions > .tooltip-anchor:only-child > .icon-action:only-child) > .settings-row-body {
+  .settings-row.has-icon-actions > .settings-row-body {
     min-width: 0;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child, > .settings-row-actions > .tooltip-anchor:only-child > .icon-action:only-child) > .settings-row-actions {
+  .settings-row.has-icon-actions > .settings-row-actions {
     width: auto;
+    flex-wrap: nowrap;
   }
 
   /* A row about a person keeps the person's picture beside their name: with
@@ -4081,6 +4144,12 @@ a.button.primary:hover {
    to say. */
 .mailbox-pane .richtext-editor {
   min-height: 120px;
+}
+
+/* A draft opened from the thread is a message that was already written, so its
+   editor starts taller than an empty reply's. */
+.mailbox-pane .mailbox-thread-compose.is-draft .richtext-editor {
+  min-height: 200px;
 }
 
 /* A signature is three lines and a link, not a message. */
@@ -4913,6 +4982,10 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 .mailbox-actions input[type='checkbox'] {
   margin: 0;
 }
+/* Nothing to act on in an empty list: no band above "Nothing here". */
+.mailbox-actions[hidden] {
+  display: none;
+}
 .mailbox-actions button,
 .mailbox-actions select {
   font-size: 12px;
@@ -5129,10 +5202,19 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   border-radius: var(--radius-2);
   background: var(--surface);
   color: var(--text);
+  /* The text size of a field (an input takes the page's 15px, and 16px on a
+     phone below), set here rather than inherited from the parent, so a
+     dropdown reads the same wherever it sits. */
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
   text-align: left;
   cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .select {
+    font-size: 16px;
+  }
 }
 
 /* A select holding a number needs the width of a number. The 160px above is
@@ -5146,8 +5228,16 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   width: 4.75rem;
 }
 
-.select:hover {
-  border-color: var(--muted);
+.select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.select:focus-visible {
+  /* The same darker border an input takes, and the ring a button that is not
+     a text field needs, so a keyboard can see where it is. */
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+  border-color: var(--text);
 }
 
 /* In a form, the width of an input; the list under it is the same. */
@@ -5215,6 +5305,13 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 }
 
 .select-value {
+  /* Not the small gray of a field's caption: inside a label the caption rule
+     (label span) reached the value of a dropdown too, so a dropdown showed
+     13px gray text, pushed up by the caption's bottom margin, beside the
+     input boxes' own text. */
+  color: inherit;
+  font-size: inherit;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8329,28 +8426,19 @@ button.agent-reaction:focus-visible {
 /* What the agent worked out, in the width of a word: the category, whether
    an answer is waited for, and a mark when it said the message matters
    today. Quiet, because every row may carry one. */
-/* Whole chips or none: what does not fit wraps onto a second line that
-   the box is too short to show, so a narrow row ends in a chip and not in
-   half a word. */
+/* At most a mark and one chip, kept whole and pushed to the end of the line,
+   so the chips of every row stand in one column and it is the sender's name
+   that gives way, with an ellipsis, when the row is narrow. */
 .mailbox-row-insight {
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
-  align-content: flex-start;
-  row-gap: 18px;
-  max-height: 18px;
   min-width: 0;
-  overflow: hidden;
-  /* And when even the first chip is too wide for what is left, it fades
-     out at the edge rather than stopping at a cut letter. */
-  mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+  max-width: 55%;
 }
 
-/* The chips give way before the name does: a row that reads "M…" beside
-   three chips says less than one that reads "Maria" beside one. The name
-   keeps a few characters whatever else is in the line. */
 .mailbox-row-from > .mailbox-row-insight {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .mailbox-row-who {
   min-width: 8ch;
@@ -8713,6 +8801,28 @@ p.notice.domain-logo-note {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* A contact's name, and on a phone its address under it, where the Email
+   column no longer fits beside it. */
+.contact-name {
+  display: flex;
+  flex-direction: column;
+}
+/* A postal address is the longest thing in the row and the least often
+   there: it may shrink below the usual floor of a truncated column, so the
+   row's actions stay on the screen. */
+td.truncate:has(.contact-postal) {
+  min-width: 8rem;
+}
+.contact-email-line {
+  display: none;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .contact-email-line {
+    display: block;
+  }
 }
 
 /* A mailing list in the list of them, laid out the way a conversation is: the
@@ -10770,14 +10880,58 @@ button.with-icon {
    a list is not a month -- and scrolls sideways instead, wide enough that a
    day is still a day. The day view and the agenda are the ones worth reaching
    for on a phone, and neither needs sideways room. */
-@media (max-width: 640px) {
+@media (max-width: 600px) {
+  /* Seven columns of a phone's width cannot hold a chip with a time and a
+     title, so an event is a dot in its calendar's color here and the day,
+     which a press on it opens, writes them out. */
   .calendar-month {
-    display: grid;
-    min-width: 40rem;
+    grid-template-rows: auto repeat(6, minmax(4.5rem, 1fr));
   }
 
-  .calendar-month-scroll {
-    overflow-x: auto;
+  .calendar-month .calendar-day {
+    min-height: 4.5rem;
+    padding: 0.15rem;
+    align-items: center;
+  }
+
+  .calendar-month .calendar-day-entries {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: flex-start;
+    gap: 3px;
+    /* Two rows of dots at most: the day has the rest. */
+    max-height: 22px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .calendar-month .calendar-entry {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--leaf);
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .calendar-month .calendar-entry.calendar-busy-block {
+    background: var(--muted);
+    opacity: 0.5;
+  }
+
+  .calendar-month .calendar-entry > * {
+    display: none;
+  }
+
+  .calendar-month .calendar-weekday {
+    padding: 0.4rem 0;
+    letter-spacing: 0;
   }
 
   .calendar-grid-scroll {
@@ -12064,6 +12218,10 @@ main.content:has(> .knowledge-frame) {
   display: flex;
   flex-direction: column;
   max-height: min(55vh, 22rem);
+  /* In a window too short for the list at that height the list is what gives
+     way, down to a few rows, and the rows are what scroll. */
+  min-height: 7rem;
+  flex: 0 1 auto;
   overflow-y: auto;
   margin-top: var(--space-2);
   border: 1px solid var(--border);
@@ -12081,6 +12239,9 @@ main.content:has(> .knowledge-frame) {
    text, a line between. */
 .contact-picker-row {
   display: flex;
+  /* Rows keep the height their words need; a list that is taller than its box
+     scrolls, it does not squeeze the rows into each other. */
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--space-3);
   margin: 0;
@@ -12116,6 +12277,31 @@ label.checkbox.is-plain input {
   flex: 0 0 auto;
   min-height: 0;
   margin: 0;
+}
+
+/* The dialog that holds the list is never taller than the window: the list
+   shrinks first, and what is still too tall scrolls inside the dialog with
+   Cancel and Save kept in view. */
+.dialog:has(.contact-picker) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--space-4) * 2);
+  overflow-y: auto;
+}
+
+.dialog:has(.contact-picker) > * {
+  flex: 0 0 auto;
+}
+
+.dialog:has(.contact-picker) > .contact-picker {
+  flex: 0 1 auto;
+}
+
+/* The line under the list is under it. A hint under a field pulls itself up
+   to sit close to the field; under a box that scrolls it pulled up into the
+   last row. */
+.contact-picker + .field-hint {
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 .contact-picker-text {
@@ -12592,7 +12778,7 @@ label.checkbox.is-plain input {
 .graph-explore-zoom {
   position: absolute;
   right: var(--space-3);
-  bottom: var(--space-3);
+  top: var(--space-3);
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -12603,6 +12789,12 @@ label.checkbox.is-plain input {
    segmented pair brings its own outline; an icon button is given one. */
 .graph-explore-zoom .segmented {
   background: var(--surface);
+  height: 36px;
+}
+
+.graph-explore-zoom .segmented button {
+  height: 100%;
+  padding: 0 12px;
 }
 
 .graph-explore-zoom .icon-button {
@@ -12611,6 +12803,28 @@ label.checkbox.is-plain input {
   font: inherit;
   font-size: 17px;
   line-height: 1;
+  /* The same height as the Fit and Fullscreen pair beside them. */
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+/* The agent's button floats over the bottom right of every page and covered
+   Fit and Fullscreen there, on a phone as on a desktop; the top right of the
+   drawing is free, so the controls stay there at every width.
+
+   At 760px and below every button is at least 40px tall, which made the 36px
+   icon buttons taller than wide. The whole group takes that height, and the
+   icon buttons the same width, so they stay square. */
+@media (max-width: 760px) {
+  .graph-explore-zoom .segmented {
+    height: 40px;
+  }
+
+  .graph-explore-zoom .icon-button {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 .graph-explore-legend {
@@ -12630,9 +12844,9 @@ label.checkbox.is-plain input {
 .graph-explore-swatch {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: var(--muted);
-  font-size: var(--text-label);
+  font-size: 13px;
 }
 
 .graph-explore-swatch i {
@@ -12653,7 +12867,7 @@ label.checkbox.is-plain input {
 
 .graph-explore-hint {
   flex-basis: 100%;
-  font-size: var(--text-label);
+  font-size: 13px;
 }
 
 .graph-explore-nothing {
@@ -15716,6 +15930,22 @@ button.herdr-question-head {
 .recording-title-link {
   font-weight: 600;
 }
+.recording-meta-line {
+  display: none;
+}
+@media (max-width: 760px) {
+  .recording-title-link {
+    display: block;
+  }
+  .recording-meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px var(--space-3);
+    margin-top: 2px;
+    font-size: 12px;
+  }
+}
 .recording-conversation {
   display: flex;
   flex-direction: column;
@@ -17338,9 +17568,18 @@ body.has-recording-bar .content {
   border-top: 1px solid var(--border);
 }
 
+/* The legend floats so it sits under the line rather than on it, where a
+   fieldset's border would otherwise run into its words. */
 .chat-agent-switches legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-3);
   padding: 0;
   font-weight: 600;
+}
+
+.chat-agent-switches legend + * {
+  clear: both;
 }
 
 .chat-agent-switches label.checkbox {
@@ -17350,7 +17589,7 @@ body.has-recording-bar .content {
 }
 
 .chat-agent-switches legend + label.checkbox {
-  margin-top: var(--space-2);
+  margin-top: 0;
 }
 
 /* Each sentence sits under its own switch and a gap away from the next. */
@@ -17461,11 +17700,28 @@ body.has-recording-bar .content {
   gap: var(--space-2);
 }
 
-.chat-member-name {
+.chat-member-text {
+  display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
   min-width: 0;
+}
+
+/* A tag longer than the row (some languages say a lot) wraps inside it
+   rather than running over the button beside it. */
+.chat-member-text .tag {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.chat-member-name {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* On the page of conversations a chat's tile leads with its pictures. */

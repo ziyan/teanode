@@ -6,6 +6,60 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.172.4] - 2026-10-18
+
+### Changed
+
+- Conversations page: the kind filter is a segmented control beside the search box, with New conversation at the end of the row. (#543)
+
+## [0.172.3] - 2026-10-18
+
+### Fixed
+
+- On the iPhone, the lines between rows in a list are one length, error messages from the server read as sentences, and warnings show orange or red instead of green. (#559)
+
+## [0.172.2] - 2026-10-18
+
+### Fixed
+
+- iPhone app: the app switcher shows the app in the appearance chosen in Settings, not partly in the system's. (#549)
+
+## [0.172.1] - 2026-10-18
+
+### Fixed
+
+- Chat members panel: your own row shows your name, tags wrap instead of running off, and the heading no longer overlaps its line. (#542)
+
+## [0.172.0] - 2026-10-18
+
+### Added
+
+- The command line reads, files, flags and sends your own mail (`teanode mailbox message`), and answers calendar invitations that arrived by mail (`teanode mailbox invitation`); the assistant can read and, with your confirmation, answer such invitations. (#558)
+
+### Fixed
+
+- The dashboard's calendar, drafts, mail list, contacts, recordings, knowledge graph and conversations pages fit a phone and line up on a desktop. (#561)
+
+## [0.171.6] - 2026-10-18
+
+### Fixed
+
+- The dashboard's settings and operator pages line up on a phone, show badges only when something needs attention, and no longer shift width between tabs. (#562)
+
+## [0.171.5] - 2026-10-18
+
+### Fixed
+
+- In the dialog that names a person in Photos, the note under the contact list no longer overlaps the list. (#553)
+
+## [0.171.4] - 2026-10-18
+
+### Fixed
+
+- Photo uploads sent together from one phone no longer fail now and then with "the upload could not be stored". (#544)
+- In the dashboard's photo viewer, the pencil beside the date opens the date dialog on the first click. (#544)
+- Asking the agent for a person's photos no longer fails with "invalid arguments", and its photo listings no longer leave out favorites, videos or Live Photos it was not asked to. (#552)
+
 ## [0.171.3] - 2026-10-18
 
 ### Changed

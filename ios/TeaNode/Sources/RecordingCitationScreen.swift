@@ -21,7 +21,7 @@ struct RecordingCitationScreen: View {
                         .secondary)
                 }
             } else if let problemText {
-                ContentUnavailableView("Cannot open recording", systemImage: "exclamationmark.triangle", description: Text(problemText))
+                ContentUnavailableView("Cannot open recording", systemImage: "exclamationmark.triangle", description: Text(problemText.asReasonSentence))
             } else {
                 ProgressView()
             }

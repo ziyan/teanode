@@ -39,39 +39,55 @@ export function ChangePassword({ username }: { username: string }) {
   return (
     <form className="card" onSubmit={submit}>
       <h3>{t('password.title')}</h3>
-      <p className="muted">{t('password.signedInAs', { username })}</p>
+      {/* Whose password this is: an operator signed in as somebody else
+          changes that person's, and this is the one place that says so. */}
+      <p className="muted field-standalone">{t('password.signedInAs', { username })}</p>
 
-      <label>
-        <span>{t('password.current')}</span>
+      <div className="form-narrow">
+        {/* Not shown, but in the form, so that a password manager ties the
+            new password to the account rather than to whatever it guesses. */}
         <input
-          type="password"
-          value={current}
-          onChange={(event) => setCurrent(event.target.value)}
-          autoComplete="current-password"
+          className="visually-hidden"
+          type="text"
+          name="username"
+          value={username}
+          autoComplete="username"
+          readOnly
+          tabIndex={-1}
+          aria-hidden="true"
         />
-      </label>
-      <label>
-        <span>{t('password.new')}</span>
-        <input
-          type="password"
-          value={replacement}
-          onChange={(event) => setReplacement(event.target.value)}
-          autoComplete="new-password"
-        />
-      </label>
-      <label>
-        <span>{t('password.newAgain')}</span>
-        <input
-          type="password"
-          value={confirmation}
-          onChange={(event) => setConfirmation(event.target.value)}
-          autoComplete="new-password"
-        />
-        {mismatch && <span className="error">{t('common.passwordsDoNotMatch')}</span>}
-      </label>
+        <label>
+          <span>{t('password.current')}</span>
+          <input
+            type="password"
+            value={current}
+            onChange={(event) => setCurrent(event.target.value)}
+            autoComplete="current-password"
+          />
+        </label>
+        <label>
+          <span>{t('password.new')}</span>
+          <input
+            type="password"
+            value={replacement}
+            onChange={(event) => setReplacement(event.target.value)}
+            autoComplete="new-password"
+          />
+        </label>
+        <label>
+          <span>{t('password.newAgain')}</span>
+          <input
+            type="password"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            autoComplete="new-password"
+          />
+          {mismatch && <span className="error">{t('common.passwordsDoNotMatch')}</span>}
+        </label>
 
-      <ErrorMessage error={error} />
-      {done && <p style={{ color: 'var(--good)' }}>{t('password.changed')}</p>}
+        <ErrorMessage error={error} />
+        {done && <p className="success">{t('password.changed')}</p>}
+      </div>
 
       <button className="primary" type="submit" disabled={busy || !ready}>
         {busy ? t('password.changing') : t('password.change')}

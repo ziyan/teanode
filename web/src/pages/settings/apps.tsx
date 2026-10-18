@@ -76,11 +76,7 @@ export function AppsPage() {
           <SettingsRow
             key={app.clientId}
             title={app.name || app.registeredName || t('apps.unnamed')}
-            badge={
-              app.renewableUntil ? (
-                <Tag value={t('apps.renewsUntil', { time: formatTime(app.renewableUntil) })} />
-              ) : undefined
-            }
+            badge={appBadge(app, t)}
             subtitle={
               <>
                 {app.registeredName && app.registeredName !== app.name && (
@@ -98,6 +94,7 @@ export function AppsPage() {
                   ) : (
                     t('apps.notUsedYet')
                   )}
+                  {app.renewableUntil ? ` · ${t('apps.renewsUntil', { time: formatTime(app.renewableUntil) })}` : ''}
                   {app.tokenCount > 1 ? ` · ${t('apps.authorizedTimes', { count: app.tokenCount })}` : ''}
                 </div>
               </>
@@ -176,4 +173,26 @@ export function AppsPage() {
       )}
     </>
   )
+}
+
+type Translate = ReturnType<typeof useTranslation>['t']
+
+// How close to the end of its renewal an app has to be for the row to say so.
+const RENEWAL_WARNING_MS = 7 * 24 * 60 * 60 * 1000
+
+// A badge only when the renewal is about to run out or has: every app renews
+// by itself, so the same date on every row is not worth a badge, and it is in
+// the row's details for whoever wants it.
+function appBadge(app: App, t: Translate): React.ReactNode {
+  if (!app.renewableUntil) {
+    return undefined
+  }
+  const remaining = new Date(app.renewableUntil).getTime() - Date.now()
+  if (remaining < 0) {
+    return <Tag value={t('common.expired')} tone="bad" />
+  }
+  if (remaining < RENEWAL_WARNING_MS) {
+    return <Tag value={t('apps.renewsUntil', { time: formatTime(app.renewableUntil) })} tone="warn" />
+  }
+  return undefined
 }

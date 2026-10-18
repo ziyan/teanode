@@ -188,7 +188,6 @@ function GeneralTab({ view }: { view: MailboxView }) {
         }}
       >
         <h3>{t('mailboxSettings.tabGeneral')}</h3>
-        <p className="muted">{t('mailboxSettings.generalHint')}</p>
         {/* The fields are capped, not the card: a narrow card beside a wide
             one reads as two different pages. */}
         <div className="form-narrow">

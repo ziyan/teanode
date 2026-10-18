@@ -286,7 +286,7 @@ struct ContactImportView: View {
             }
         case .failed(let problemText):
             ContentUnavailableView(
-                "Your contacts could not be read", systemImage: "person.crop.circle.badge.exclamationmark", description: Text(problemText))
+                "Your contacts could not be read", systemImage: "person.crop.circle.badge.exclamationmark", description: Text(problemText.asReasonSentence))
         case .ready:
             if model.phoneContacts.isEmpty {
                 ContentUnavailableView("No contacts on this iPhone", systemImage: "person.crop.circle")

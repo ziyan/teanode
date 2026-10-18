@@ -335,7 +335,7 @@ final class ConversationModel {
         case "done", "error":
             runningRunIds.removeAll { $0 == event.runId }
             if event.kind == "error", let text = event.error, !text.isEmpty {
-                sendProblemText = text
+                sendProblemText = text.asReasonSentence
             }
             // The stored turn replaces the one drawn as it arrived: its
             // usage, its ids for replying, a coding session's question card.

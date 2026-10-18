@@ -93,6 +93,12 @@ type Tool struct {
 	// at all: any one of them. Empty means anybody signed in.
 	Permissions []models.Permission
 
+	// ActionRequires names, for an action of the tool, permissions the
+	// person must all hold on top of Permissions, which admit the tool by
+	// any one. An action they lack is left out of what the person is
+	// offered, so the model is not given a verb that always fails.
+	ActionRequires map[string][]models.Permission
+
 	// Services lists hosted dependencies independent of permissions.
 	Services []models.Service
 
@@ -323,12 +329,61 @@ func (self *Catalog) Offered(permissions *models.EffectivePermissions, policy *c
 		if !AllowedByPermissions(tool, permissions) {
 			continue
 		}
+		tool = tool.WithHeldActions(permissions)
 		if policy != nil && Listed(policy.Disabled, tool) {
 			continue
 		}
 		offered = append(offered, tool)
 	}
 	return offered
+}
+
+// HoldsAll says whether the person holds every one of the permissions.
+func HoldsAll(permissions *models.EffectivePermissions, required []models.Permission) bool {
+	for _, permission := range required {
+		if permissions == nil || !permissions.Has(permission) {
+			return false
+		}
+	}
+	return true
+}
+
+// WithHeldActions is the tool as one person is offered it: the actions that
+// ask for more than they hold (ActionRequires) are taken out of the "action"
+// choices. It is the tool itself when nothing is taken out.
+func (self *Tool) WithHeldActions(permissions *models.EffectivePermissions) *Tool {
+	if len(self.ActionRequires) == 0 {
+		return self
+	}
+	var kept []string
+	isChanged := false
+	for _, verb := range ActionsOf(self) {
+		if required, isRestricted := self.ActionRequires[verb]; isRestricted && !HoldsAll(permissions, required) {
+			isChanged = true
+			continue
+		}
+		kept = append(kept, verb)
+	}
+	if !isChanged {
+		return self
+	}
+	given, isObject := self.Parameters["properties"].(map[string]any)
+	if !isObject {
+		return self
+	}
+	properties := map[string]any{}
+	for name, property := range given {
+		properties[name] = property
+	}
+	properties["action"] = EnumProperty("what to do", kept...)
+	parameters := map[string]any{}
+	for key, value := range self.Parameters {
+		parameters[key] = value
+	}
+	parameters["properties"] = properties
+	narrowed := *self
+	narrowed.Parameters = parameters
+	return &narrowed
 }
 
 // AllowedByPermissions says whether the person holds one of the

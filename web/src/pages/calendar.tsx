@@ -444,6 +444,24 @@ export function CalendarPage() {
   const session = useSession()
   return <CalendarPageForAccount key={session.userId ?? ''} ownerId={session.userId ?? ''} />
 }
+// The width at which the month's seven columns no longer hold a day's events:
+// the same breakpoint the stylesheet turns them into dots at.
+const PHONE_QUERY = '(max-width: 600px)'
+
+function useIsPhone(): boolean {
+  // matchMedia is not there under every test environment, and a missing one
+  // is a wide screen.
+  const [isPhone, setPhone] = useState(() => window.matchMedia?.(PHONE_QUERY).matches ?? false)
+  useEffect(() => {
+    if (!window.matchMedia) return
+    const query = window.matchMedia(PHONE_QUERY)
+    const listen = () => setPhone(query.matches)
+    query.addEventListener('change', listen)
+    return () => query.removeEventListener('change', listen)
+  }, [])
+  return isPhone
+}
+
 function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   const submission = useCalendarMutation(ownerId)
   const { t } = useTranslation()
@@ -456,7 +474,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // The reminders address is the reminders list, which a link from the agent's
   // memory ("/reminders?reminder=...") relies on.
   const isRemindersAddress = useLocation().pathname.startsWith('/reminders')
-  const requestedView = (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : 'month')
+  const isPhone = useIsPhone()
+  // A phone opens on the agenda, a list that needs no sideways room; the
+  // month is a tab away and keeps working there, with dots for the events.
+  // This follows the window (a rotation changes it) until the person picks a
+  // view, which puts it in the address.
+  const requestedView =
+    (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : isPhone ? 'agenda' : 'month')
   const view =
     serviceCapabilities?.isCalendarEnabled === false
       ? 'reminders'
@@ -861,6 +885,12 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
           className={`calendar-entry${event.allDay ? ' all-day' : ''}${opening === event.id ? ' busy' : ''} ${tone.className}`}
           style={tone.style}
           onClick={() => void edit(event)}
+          // The month draws an event as a dot on a phone, with no text, so
+          // the name is given here; elsewhere the chip's own words, with its
+          // time, are its name. On a phone the day opens the list, so the
+          // dot is left out of the tab order.
+          aria-label={isPhone && view === 'month' ? titleWithOwner(event) : undefined}
+          tabIndex={isPhone && view === 'month' ? -1 : undefined}
           aria-disabled={!!submission.pending || submission.isWorking || busy}
         >
           {!event.allDay && <span className="calendar-entry-time">{timeFormat.format(new Date(event.startsAt))}</span>}
@@ -1058,16 +1088,29 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                       a button inside a button is not a thing, and the empty
                       part of a day is the natural place to press to put
                       something in it. */}
-                  <Tooltip label={t('calendar.newOn', { day: dayFormat.format(day) })}>
+                  {/* On a phone the events are dots, so a press on the day opens
+                      the day, where they are written out. */}
+                  <Tooltip
+                    label={
+                      isPhone
+                        ? t('calendar.openDay', { day: dayFormat.format(day) })
+                        : t('calendar.newOn', { day: dayFormat.format(day) })
+                    }
+                  >
                     <button
                       type="button"
                       className="calendar-day-add"
-                      disabled={!!submission.pending || submission.isWorking || busy}
+                      disabled={!isPhone && (!!submission.pending || submission.isWorking || busy)}
                       onClick={() => {
+                        if (isPhone) return move({ view: 'day', on: day })
                         setProblem(null)
                         if (!busy && !submission.pending && !submission.isWorking) setDraft(blank(day))
                       }}
-                      aria-label={t('calendar.newOn', { day: dayFormat.format(day) })}
+                      aria-label={
+                        isPhone
+                          ? t('calendar.openDay', { day: dayFormat.format(day) })
+                          : t('calendar.newOn', { day: dayFormat.format(day) })
+                      }
                     />
                   </Tooltip>
                 </div>

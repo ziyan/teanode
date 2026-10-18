@@ -24,6 +24,8 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   ChevronDownIcon,
+  CloseIcon,
+  PencilIcon,
   StarIcon,
   ForwardIcon,
   JunkIcon,
@@ -1098,10 +1100,12 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
             )}
           </form>
 
-          {/* Acting on a selection. Shown always rather than only once
-              something is selected, so the row does not appear and push the
-              list down at the moment somebody clicks a checkbox. */}
-          <div className="mailbox-actions">
+          {/* Acting on a selection. Shown whether or not something is selected,
+              so the row does not appear and push the list down at the moment
+              somebody clicks a checkbox, and while the list loads, so it does
+              not jump when the rows arrive. It is hidden only once the list
+              has loaded and is empty, when there is nothing to act on. */}
+          <div className="mailbox-actions" hidden={!loading && threads.length === 0}>
             <input
               type="checkbox"
               aria-label={t('mailbox.selectAll')}
@@ -1201,6 +1205,7 @@ function Folder({ folder, folders, itemId }: { folder: MailboxFolder; folders: M
               <Row
                 key={thread.threadId}
                 thread={thread}
+                isPriorityView={priority}
                 folderName={
                   everywhere && thread.item.folderId !== folder.id
                     ? folderLabelOf(folders, thread.item.folderId, t)
@@ -1430,6 +1435,7 @@ function useRowSwipe(onLeft?: () => void, onRight?: () => void) {
 
 function Row({
   thread,
+  isPriorityView,
   folderName,
   href,
   active,
@@ -1441,6 +1447,9 @@ function Row({
   onArchive,
 }: {
   thread: MailboxThread
+  // The Priority view is every message marked high, so the mark on each row
+  // would only repeat the view's name.
+  isPriorityView: boolean
   folderName?: string
   href: string
   active: boolean
@@ -1542,7 +1551,7 @@ function Row({
               conversation looks finished otherwise and the half-written reply
               is two folders away. */}
             {thread.hasDraft && <span className="mailbox-row-draft">{t('mailbox.draft')}</span>}
-            {item.insight && <InsightChips insight={item.insight} />}
+            {item.insight && <InsightChips insight={item.insight} isPriorityHidden={isPriorityView} />}
           </div>
           <div className="mailbox-row-subject">
             {folderName && <span className="mailbox-row-folder">{folderName}</span>}
@@ -1666,20 +1675,31 @@ const CATEGORY_LABELS: Record<string, Key> = {
 // of a word or two: a mark when it said the message matters today, the
 // category, and whether somebody is waiting on an answer. The summary is
 // its tooltip, where a hover finds it without the row growing a line.
-export function InsightChips({ insight }: { insight: MailInsight }) {
+export function InsightChips({
+  insight,
+  isPriorityHidden = false,
+}: {
+  insight: MailInsight
+  isPriorityHidden?: boolean
+}) {
   const { t } = useTranslation()
   const label = CATEGORY_LABELS[insight.category]
+  // One chip at most: a row also carries the sender, a folder tag, the
+  // checks and the time. Somebody waiting on an answer is the more useful
+  // thing to say, so it takes the place of the category.
+  const hasCategory = Boolean(insight.category) && insight.category !== 'other'
   const chips = (
     <span className="mailbox-row-insight">
-      {insight.priority === 'high' && (
+      {insight.priority === 'high' && !isPriorityHidden && (
         <span className="mailbox-row-priority" aria-label={t('mailbox.priorityHigh')}>
           !
         </span>
       )}
-      {insight.category && insight.category !== 'other' && (
-        <span className="mailbox-row-chip">{label ? t(label) : insight.category}</span>
+      {insight.needsReply ? (
+        <span className="mailbox-row-chip">{t('mailbox.needsReply')}</span>
+      ) : (
+        hasCategory && <span className="mailbox-row-chip">{label ? t(label) : insight.category}</span>
       )}
-      {insight.needsReply && <span className="mailbox-row-chip">{t('mailbox.needsReply')}</span>}
     </span>
   )
   return insight.summary ? <Tooltip label={insight.summary}>{chips}</Tooltip> : chips
@@ -2038,15 +2058,18 @@ function Reader({
     <>
       <div className="mailbox-pane-actions">
         <IconAction label={t('mailbox.backToList')} icon={<ArrowLeftIcon size={16} />} onClick={onBack} />
-        {draft && (
-          <button
-            type="button"
-            className="primary"
-            disabled={Boolean(writing)}
+        {/* Closing is not discarding: what was typed is saved as a draft on
+            the way out, and picking Reply again continues it. In the toolbar
+            rather than a row of its own, so the editor starts higher. */}
+        {writing && (
+          <IconAction label={t('mailbox.closeReply')} icon={<CloseIcon size={16} />} onClick={() => setWriting(null)} />
+        )}
+        {draft && !writing && (
+          <IconAction
+            label={t('mailbox.editDraft')}
+            icon={<PencilIcon size={16} />}
             onClick={() => setWriting({ kind: 'draft', itemId: draft.item.id })}
-          >
-            {t('mailbox.editDraft')}
-          </button>
+          />
         )}
         {!newest.item.draft && (
           <>
@@ -2175,7 +2198,8 @@ function Reader({
       </div>
 
       <div className="mailbox-pane-head">
-        <h2>{view.subject || t('mailbox.noSubject')}</h2>
+        {/* Not while writing: the composer has the subject as a field. */}
+        {!writing && <h2>{view.subject || t('mailbox.noSubject')}</h2>}
         {entries.length > 1 && (
           <p className="muted mailbox-thread-count">
             {t('mailbox.threadCount', { count: entries.length })}
@@ -2193,14 +2217,7 @@ function Reader({
       {view.summary && (view.summary.summary || view.summary.pending) && <ThreadSummaryStrip summary={view.summary} />}
 
       {writing && (
-        <div className="mailbox-thread-compose">
-          <div className="page-actions page-actions-end">
-            {/* Closing is not discarding: what was typed is saved as a draft
-                on the way out, and picking Reply again continues it. */}
-            <button type="button" onClick={() => setWriting(null)}>
-              {t('mailbox.closeReply')}
-            </button>
-          </div>
+        <div className={`mailbox-thread-compose${writing.kind === 'draft' ? ' is-draft' : ''}`}>
           <MailboxComposer
             key={`${writing.kind}-${writing.itemId}`}
             replyTo={writing.kind === 'forward' || writing.kind === 'draft' ? null : writing.itemId}

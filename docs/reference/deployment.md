@@ -249,6 +249,9 @@ files are named by their SHA-256 and never rewritten, so an incremental copy
 only ever adds. Give the storage a disk with room for the libraries: a phone's
 library is commonly tens to hundreds of gigabytes.
 
+A second machine can keep a live copy of both, and take old photo originals
+off the server's disk: [a standby, a mirror and an archive](second-machine.md).
+
 ## Keeping the server secret out of the database
 
 Every key the server stores (the domains' DKIM keys, the agent's provider

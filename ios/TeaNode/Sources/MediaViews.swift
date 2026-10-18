@@ -416,7 +416,7 @@ struct AgentPhotoViewer: View {
                 ContentUnavailableView {
                     Label("Cannot show this photo", systemImage: "exclamationmark.circle")
                 } description: {
-                    Text(problemText)
+                    Text(problemText.asReasonSentence)
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {

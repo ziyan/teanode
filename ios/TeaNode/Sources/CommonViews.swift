@@ -12,7 +12,7 @@ struct Toast: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottom) {
-                if let text = shownProblemText ?? doneText {
+                if let text = shownProblemText?.asReasonSentence ?? doneText {
                     let isProblem = shownProblemText != nil
                     HStack(spacing: 12) {
                         Label(text, systemImage: isProblem ? "exclamationmark.triangle" : "checkmark.circle")
@@ -80,6 +80,20 @@ struct Toast: ViewModifier {
     }
 }
 
+extension String {
+    /// A reason the server or the system gave, written as the sentence a
+    /// screen shows: trimmed, with a capital first letter and a full stop when
+    /// it ends without one. They come as phrases such as "photo storage is
+    /// unavailable". A text that is already a sentence is returned as it is.
+    var asReasonSentence: String {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return trimmed }
+        let capitalized = first.uppercased() + trimmed.dropFirst()
+        guard let last = capitalized.last, !".!?。！？…".contains(last) else { return capitalized }
+        return capitalized + "."
+    }
+}
+
 extension View {
     func toast(done doneText: Binding<String?>, problem problemText: Binding<String?>) -> some View {
         modifier(Toast(doneText: doneText, problemText: problemText))
@@ -105,7 +119,7 @@ struct LoadFailedView: View {
         ContentUnavailableView {
             Label("This could not be loaded", systemImage: "wifi.exclamationmark")
         } description: {
-            Text(verbatim: problemText)
+            Text(verbatim: problemText.asReasonSentence)
         } actions: {
             Button {
                 isRetrying = true
@@ -126,7 +140,7 @@ extension Error {
     /// Why a read failed, in words that say what to do next: the server's own
     /// reason when it answered and refused, else the connection advice.
     var loadProblemText: String {
-        refusalReason(orSay: String(localized: "Check your connection and try again."))
+        refusalReason(orSay: String(localized: "Check your connection and try again.")).asReasonSentence
     }
 }
 
@@ -374,6 +388,14 @@ extension LabelStyle where Self == TagLabelStyle {
 }
 
 extension View {
+    /// The line under a row starts at the row's edge, as under a row with no
+    /// symbol, instead of after the symbol, where a list starts it by default.
+    /// For the rows with a symbol in a section that also has rows without one,
+    /// so that every line in the section is as long.
+    func fullWidthRowSeparator() -> some View {
+        alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
+    }
+
     /// The side menu's plain list, when the list is shown in it.
     func menuListStyle(_ isMenu: Bool = true) -> some View {
         modifier(MenuListStyle(isMenu: isMenu))

@@ -3,8 +3,10 @@ import { useState } from 'react'
 import { graphql } from '../../api'
 import { Tag } from '../../components/common'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
+import { PencilIcon, SentIcon, TrashIcon } from '../../components/icons'
 import { SettingsEmpty, SettingsRow, SettingsSection } from '../../components/settingsList'
 import { useToast } from '../../components/toast'
+import { Tooltip } from '../../components/tooltip'
 import { useQuery } from '../../components/useQuery'
 import { useTranslation } from '../../i18n/i18n'
 
@@ -129,34 +131,50 @@ export function PhonesPage() {
               badge={stateOf(phone)}
               subtitle={detail.filter(Boolean).join(' · ')}
               actions={
-                <>
-                  <button
-                    type="button"
-                    disabled={busy === phone.id || !phone.canBeNotified}
-                    onClick={() =>
-                      void act(
-                        phone,
-                        () => graphql(PHONE_DOCUMENTS.TestAgentPhone, { phoneId: phone.id }),
-                        t('phones.tested', { name: phone.phoneName }),
-                      )
-                    }
-                  >
-                    {t('phones.test')}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy === phone.id}
-                    onClick={() => {
-                      setProblem(null)
-                      setEditing({ phone, phoneName: phone.phoneName, notificationKinds: phone.notificationKinds })
-                    }}
-                  >
-                    {t('common.edit')}
-                  </button>
-                  <button type="button" disabled={busy === phone.id} onClick={() => setRemoving(phone)}>
-                    {t('common.remove')}
-                  </button>
-                </>
+                <div className="row-actions">
+                  <Tooltip label={t('phones.test')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${phone.phoneName || t('phones.unnamed')}: ${t('phones.test')}`}
+                      disabled={busy === phone.id || !phone.canBeNotified}
+                      onClick={() =>
+                        void act(
+                          phone,
+                          () => graphql(PHONE_DOCUMENTS.TestAgentPhone, { phoneId: phone.id }),
+                          t('phones.tested', { name: phone.phoneName }),
+                        )
+                      }
+                    >
+                      <SentIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('common.edit')}>
+                    <button
+                      type="button"
+                      className="icon-action"
+                      aria-label={`${phone.phoneName || t('phones.unnamed')}: ${t('common.edit')}`}
+                      disabled={busy === phone.id}
+                      onClick={() => {
+                        setProblem(null)
+                        setEditing({ phone, phoneName: phone.phoneName, notificationKinds: phone.notificationKinds })
+                      }}
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label={t('common.remove')}>
+                    <button
+                      type="button"
+                      className="icon-action danger"
+                      aria-label={`${phone.phoneName || t('phones.unnamed')}: ${t('common.remove')}`}
+                      disabled={busy === phone.id}
+                      onClick={() => setRemoving(phone)}
+                    >
+                      <TrashIcon size={16} />
+                    </button>
+                  </Tooltip>
+                </div>
               }
             />
           )

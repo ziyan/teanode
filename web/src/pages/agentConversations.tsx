@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { graphql, openAgentConversation, startAgentConversation } from '../api'
 import { useAgentIdentity } from '../agentPreferences'
 import { ChatAvatars, UnreadCount, chatTitleOf } from '../components/agentChat'
-import { CONVERSATIONS, type Conversation } from '../components/agentDrawer'
+import { CONVERSATIONS, untitledConversationName, type Conversation } from '../components/agentDrawer'
 import { useBreadcrumbDetail } from '../components/breadcrumb'
 import { Loading } from '../components/common'
 import { HighlightText } from '../components/highlightText'
@@ -20,13 +20,23 @@ import { useOptionalSession } from '../session'
 // person's agent, or the chats with other people.
 type KindFilter = 'all' | 'agent' | 'chats'
 
+const KIND_FILTERS = [
+  { kindFilter: 'all', labelKey: 'agentConversations.kindAll' },
+  { kindFilter: 'agent', labelKey: 'agentConversations.kindAgent' },
+  { kindFilter: 'chats', labelKey: 'agentConversations.kindChats' },
+] as const
+
+function kindFilterOf(value: string | null): KindFilter {
+  return value === 'agent' || value === 'chats' ? value : 'all'
+}
+
 // The person's conversations with their agent, as tiles: the list the
 // drawer's picker holds, on a page wide enough to read what each was about.
 // The page lists and the drawer talks. A tile's title opens the conversation
 // in the drawer, and a new one is started there too, so there is one place a
 // conversation is carried on.
 export function AgentConversationsPage() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const toast = useToast()
   const navigate = useNavigate()
   const agent = useAgentIdentity()
@@ -49,13 +59,31 @@ export function AgentConversationsPage() {
   // Typed words narrow the tiles at once, by what each conversation is
   // called and by the summary the agent wrote of it.
   const [filter, setFilter] = useState('')
-  const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  // Which kind is shown is kept in the address ("?kind=chats"), so a reload
+  // or a link comes back to it.
+  const [parameters, setParameters] = useSearchParams()
+  // Only while there are chats to tell apart: an address that says chats,
+  // opened by somebody who has none, would show nothing with no control to
+  // go back to all of them.
+  const hasChats = (data?.ListAgentConversations ?? []).some((conversation) => conversation.kind === 'chat')
+  const kindFilter = hasChats ? kindFilterOf(parameters.get('kind')) : 'all'
+  const setKindFilter = (next: KindFilter) =>
+    setParameters(
+      (previous) => {
+        const changed = new URLSearchParams(previous)
+        if (next === 'all') changed.delete('kind')
+        else changed.set('kind', next)
+        return changed
+      },
+      { replace: true },
+    )
+  const untitledOf = (conversation: Conversation) => untitledConversationName(conversation, t, language)
   // What a conversation is called here: a chat by the people in it.
   const titleOf = (conversation: Conversation) =>
     conversation.kind === 'main'
       ? t('agentDrawer.main')
       : conversation.chat
-        ? chatTitleOf(conversation.chat, ownUserId, deletedNote, conversation.title || t('agentDrawer.untitled'))
+        ? chatTitleOf(conversation.chat, ownUserId, deletedNote, conversation.title || untitledOf(conversation))
         : conversation.title
   const conversations = useMemo(() => {
     const listed = (data?.ListAgentConversations ?? []).filter(
@@ -87,7 +115,6 @@ export function AgentConversationsPage() {
   // A link from the agent's memory names the conversation in the address
   // ("?conversation=...&message=..."): it opens in the drawer once, and the
   // address forgets it, so a reload does not open it again.
-  const [parameters, setParameters] = useSearchParams()
   const linkedConversationId = parameters.get('conversation') ?? ''
   const openedLink = useRef('')
   useEffect(() => {
@@ -114,28 +141,27 @@ export function AgentConversationsPage() {
   }
 
   const hasConversations = (data?.ListAgentConversations.length ?? 0) > 0
-  const hasChats = (data?.ListAgentConversations ?? []).some((conversation) => conversation.kind === 'chat')
 
   return (
     <>
-      <p className="muted">{t('agentConversations.intro', { name: agentLabel })}</p>
-      {/* Starting one first, then finding one: the button leads the row
-          and the search box takes the rest of it. */}
+      {/* Which kind, then the search box taking the rest of the row, then
+          starting one at its end. On a phone the button keeps only its
+          plus. */}
       <div className="conversation-toolbar">
-        <button type="button" className="primary with-icon" onClick={startNew}>
-          <PlusIcon size={16} />
-          {t('agentConversations.new')}
-        </button>
         {hasChats && (
-          <select
-            value={kindFilter}
-            aria-label={t('agentConversations.kindLabel')}
-            onChange={(event) => setKindFilter(event.target.value as KindFilter)}
-          >
-            <option value="all">{t('agentConversations.kindAll')}</option>
-            <option value="agent">{t('agentConversations.kindAgent')}</option>
-            <option value="chats">{t('agentConversations.kindChats')}</option>
-          </select>
+          <div className="segmented" role="group" aria-label={t('agentConversations.kindLabel')}>
+            {KIND_FILTERS.map((choice) => (
+              <button
+                key={choice.kindFilter}
+                type="button"
+                className={kindFilter === choice.kindFilter ? 'active' : undefined}
+                aria-pressed={kindFilter === choice.kindFilter}
+                onClick={() => setKindFilter(choice.kindFilter)}
+              >
+                {t(choice.labelKey)}
+              </button>
+            ))}
+          </div>
         )}
         {hasConversations && (
           <input
@@ -146,6 +172,15 @@ export function AgentConversationsPage() {
             onChange={(event) => setFilter(event.target.value)}
           />
         )}
+        <button
+          type="button"
+          className="primary with-icon conversation-new"
+          aria-label={t('agentConversations.new')}
+          onClick={startNew}
+        >
+          <PlusIcon size={16} />
+          <span className="hide-narrow">{t('agentConversations.new')}</span>
+        </button>
       </div>
       {loading && !data ? (
         <Loading />
@@ -176,10 +211,10 @@ export function AgentConversationsPage() {
                   ) : conversation.chat ? (
                     <>
                       <ChatAvatars chat={conversation.chat} ownUserId={ownUserId} deleted={deletedNote} size={20} />
-                      <HighlightText text={titleOf(conversation) || t('agentDrawer.untitled')} search={filter} />
+                      <HighlightText text={titleOf(conversation) || untitledOf(conversation)} search={filter} />
                     </>
                   ) : (
-                    <HighlightText text={conversation.title || t('agentDrawer.untitled')} search={filter} />
+                    <HighlightText text={conversation.title || untitledOf(conversation)} search={filter} />
                   )}
                 </span>
                 {/* What it is about: the agent's summary, else what it is
@@ -187,23 +222,23 @@ export function AgentConversationsPage() {
                 {/* A direct chat is titled by the person it is with, so a
                     line saying it is a chat with them repeats the title. */}
                 {conversation.chat?.chatKind === 'direct' && !conversation.summary ? null : (
-                <span
-                  className={conversation.summary ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
-                  id={`conversation-${conversation.id}-summary`}
-                >
-                  {conversation.summary ? (
-                    <HighlightText text={conversation.summary} search={filter} />
-                  ) : conversation.chat ? (
-                    t('chat.withPeople', {
-                      names: conversation.chat.members
-                        .filter((member) => member.userId !== ownUserId && !member.isRemoved)
-                        .map((member) => member.name?.trim() || member.username)
-                        .join(', '),
-                    })
-                  ) : (
-                    t('agentConversations.noSummary')
-                  )}
-                </span>
+                  <span
+                    className={conversation.summary ? 'conversation-tile-summary' : 'conversation-tile-summary muted'}
+                    id={`conversation-${conversation.id}-summary`}
+                  >
+                    {conversation.summary ? (
+                      <HighlightText text={conversation.summary} search={filter} />
+                    ) : conversation.chat ? (
+                      t('chat.withPeople', {
+                        names: conversation.chat.members
+                          .filter((member) => member.userId !== ownUserId && !member.isRemoved)
+                          .map((member) => member.name?.trim() || member.username)
+                          .join(', '),
+                      })
+                    ) : (
+                      t('agentConversations.noSummary')
+                    )}
+                  </span>
                 )}
                 <span className="tile-detail">
                   <RelativeTime value={conversation.lastAt} />
