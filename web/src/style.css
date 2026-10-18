@@ -15701,6 +15701,22 @@ button.herdr-question-head {
 .recording-title-link {
   font-weight: 600;
 }
+.recording-meta-line {
+  display: none;
+}
+@media (max-width: 760px) {
+  .recording-title-link {
+    display: block;
+  }
+  .recording-meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px var(--space-3);
+    margin-top: 2px;
+    font-size: 12px;
+  }
+}
 .recording-conversation {
   display: flex;
   flex-direction: column;

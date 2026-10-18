@@ -56,14 +56,17 @@ it('is a table with the recorded date, Date unknown, length, summary line and on
   expect(rows).toHaveLength(2)
   // The undated recording was created later, so it sorts first.
   expect(within(rows[0]).getByText('Untitled recording').className).toContain('muted')
-  expect(within(rows[0]).getByText('Date unknown').className).toContain('muted')
-  expect(within(rows[0]).getByText('Uploading')).toBeTruthy()
+  // The date and the status are in the Recorded and Status columns, and again
+  // under the title, which is where a phone shows them.
+  expect(within(rows[0]).getAllByText('Date unknown')[0].className).toContain('muted')
+  expect(within(rows[0]).getAllByText('Uploading')).toHaveLength(2)
   expect(within(rows[1]).getByText('Planning')).toBeTruthy()
-  expect(within(rows[1]).getByText(/2026/)).toBeTruthy()
+  expect(within(rows[1]).getAllByText(/2026/).length).toBeGreaterThan(0)
   expect(within(rows[1]).queryByText('Date unknown')).toBeNull()
   expect(within(rows[1]).getByText('Agreed the plan.')).toBeTruthy()
-  expect(within(rows[1]).getByText('Ready')).toBeTruthy()
-  expect(within(rows[1]).getByText('1:05')).toBeTruthy()
+  // Ready is what nearly every recording is, so it gets no pill.
+  expect(within(rows[1]).queryByText('Ready')).toBeNull()
+  expect(within(rows[1]).getAllByText('1:05').length).toBeGreaterThan(0)
 })
 
 it('orders by when it was recorded, not uploaded, and falls back to creation for undated ones', () => {

@@ -63,20 +63,33 @@ export function RecordingLibraryTable({
       filter: 'text',
       value: (recording) => recording.recordingTitle || t('recordings.untitled'),
       sort: (first, second) => first.recordingTitle.localeCompare(second.recordingTitle),
-      render: (recording) => (
-        <Link className="recording-title-link" to={`/recordings/${recording.id}`}>
-          {recording.recordingTitle ? (
-            recording.recordingTitle
-          ) : (
-            <span className="muted">{t('recordings.untitled')}</span>
-          )}
-        </Link>
-      ),
+      render: (recording) => {
+        const status = recordingStatus(recording, evidenceByRecordingId[recording.id])
+        return (
+          <>
+            <Link className="recording-title-link" to={`/recordings/${recording.id}`}>
+              {recording.recordingTitle ? (
+                recording.recordingTitle
+              ) : (
+                <span className="muted">{t('recordings.untitled')}</span>
+              )}
+            </Link>
+            {/* The Recorded, Length and Status columns are dropped on a
+                phone, so the same three things go under the title there. */}
+            <span className="recording-meta-line muted">
+              <RecordedAtText recordedAt={recording.recordedAt} />
+              {recording.timelineDurationMS > 0 && <span>{formatRecordingLength(recording.timelineDurationMS)}</span>}
+              {status !== 'ready' && <RecordingStatusTag status={status} />}
+            </span>
+          </>
+        )
+      },
     },
     {
       key: 'recordedAt',
       header: t('recordings.column.recordedAt'),
       width: '190px',
+      optional: true,
       sort: (first, second) => recordingSortTime(first) - recordingSortTime(second),
       render: (recording) => <RecordedAtText recordedAt={recording.recordedAt} />,
     },
@@ -84,6 +97,7 @@ export function RecordingLibraryTable({
       key: 'length',
       header: t('recordings.column.length'),
       width: '90px',
+      optional: true,
       numeric: true,
       sort: (first, second) => first.timelineDurationMS - second.timelineDurationMS,
       render: (recording) =>
@@ -100,12 +114,16 @@ export function RecordingLibraryTable({
       key: 'status',
       header: t('recordings.column.status'),
       width: '140px',
+      optional: true,
       filter: 'select',
       value: statusLabel,
       sort: (first, second) => statusLabel(first).localeCompare(statusLabel(second)),
-      render: (recording) => (
-        <RecordingStatusTag status={recordingStatus(recording, evidenceByRecordingId[recording.id])} />
-      ),
+      // Ready is what nearly every recording is, and a pill on every row
+      // says nothing; the ones that are not ready are the ones to notice.
+      render: (recording) => {
+        const status = recordingStatus(recording, evidenceByRecordingId[recording.id])
+        return status === 'ready' ? null : <RecordingStatusTag status={status} />
+      },
     },
   ]
   return (
