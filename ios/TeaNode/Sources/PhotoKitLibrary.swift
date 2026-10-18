@@ -41,17 +41,12 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
         return PhotoBackupListingStart(totalCount: totalCount, changeToken: changeToken)
     }
 
-    /// Photos made within this many seconds of each other are made at the same
-    /// moment as far as the listing is concerned: two readings of one date need
-    /// not agree to the last bit.
-    private static let sameMomentSeconds: TimeInterval = 0.001
-
-    /// One batch of the library, newest first, after the resume point. A batch
-    /// never ends inside a moment: past the limit it goes on while the next photo
-    /// was made at the moment of the last one taken, so that photos made at one
-    /// moment (a burst), whose order the library does not promise, are listed
-    /// together, and the next batch starts strictly before that moment. Photos
-    /// with no creation date come with the last batch.
+    /// One batch of the library, newest first, after the resume point. Where a
+    /// batch ends is decided by `PhotoBackupListingWindow`, which never ends it
+    /// inside a moment, so that photos made at one moment (a burst), whose order
+    /// the library does not promise, are listed together and the next batch
+    /// starts strictly before that moment. Photos with no creation date come with
+    /// the last batch.
     func listBatch(after resumePoint: PhotoBackupResumePoint?, limit: Int, includesHidden: Bool) async throws -> PhotoBackupListingBatch {
         let options = Self.fetchOptions(includesHidden: includesHidden)
         let datedOnly = NSPredicate(format: "creationDate != nil")
@@ -59,24 +54,22 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
         if let existing = options.predicate { predicates.append(existing) }
         if let resumePoint {
             predicates.append(
-                NSPredicate(format: "creationDate <= %@", resumePoint.creationDate.addingTimeInterval(-Self.sameMomentSeconds) as NSDate))
+                NSPredicate(format: "creationDate <= %@", PhotoBackupListingWindow.newestCreationDate(after: resumePoint) as NSDate))
         }
         options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         let result = PHAsset.fetchAssets(with: options)
+        let takeCount = PhotoBackupListingWindow.takeCount(candidateCount: result.count, limit: limit) { position in
+            result.object(at: position).creationDate ?? Date.distantPast
+        }
         var entries: [PhotoBackupLibraryEntry] = []
         var position = 0
-        while position < result.count {
+        while position < takeCount {
             let asset = result.object(at: position)
-            if entries.count >= max(1, limit), let lastDate = entries.last?.creationDate, let creationDate = asset.creationDate,
-                creationDate <= lastDate.addingTimeInterval(-Self.sameMomentSeconds)
-            {
-                break
-            }
             entries.append(PhotoBackupLibraryEntry(localIdentifier: asset.localIdentifier, creationDate: asset.creationDate))
             position += 1
         }
-        let isEndOfDatedItems = position >= result.count
+        let isEndOfDatedItems = takeCount >= result.count
         if isEndOfDatedItems {
             // The fetch leaves out the photos with no creation date; they are
             // listed with the last batch.
@@ -85,17 +78,19 @@ struct PhotoKitLibrary: PhotoBackupLibrary {
         return PhotoBackupListingBatch(entries: entries, isLast: isEndOfDatedItems)
     }
 
-    /// The items the library holds no creation date for, which are rare. Found by
-    /// sorting the other way, where they come first.
+    /// The items the library holds no creation date for, which are rare. Asked
+    /// for directly, since where the library sorts a missing date is not promised.
     private static func entriesWithoutCreationDate(includesHidden: Bool) -> [PhotoBackupLibraryEntry] {
         let options = fetchOptions(includesHidden: includesHidden)
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        let undatedOnly = NSPredicate(format: "creationDate == nil")
+        var predicates: [NSPredicate] = [undatedOnly]
+        if let existing = options.predicate { predicates.append(existing) }
+        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         let result = PHAsset.fetchAssets(with: options)
         var entries: [PhotoBackupLibraryEntry] = []
         var position = 0
         while position < result.count {
             let asset = result.object(at: position)
-            guard asset.creationDate == nil else { break }
             entries.append(PhotoBackupLibraryEntry(localIdentifier: asset.localIdentifier, creationDate: nil))
             position += 1
         }

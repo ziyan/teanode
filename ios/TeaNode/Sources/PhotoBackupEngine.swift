@@ -679,8 +679,11 @@ final class PhotoBackupEngine {
         let request = BGProcessingTaskRequest(identifier: Self.processingIdentifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = true
-        // Soon when files wait for the network, otherwise only a look for new photos.
-        request.earliestBeginDate = Date(timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(leftForLaterFileCount: status.leftForLaterFileCount + status.waitingFileCount))
+        // Soon when files wait for the network or the listing of the library is not
+        // over, otherwise only a look for new photos.
+        request.earliestBeginDate = Date(
+            timeIntervalSinceNow: PhotoBackupSchedule.earliestBeginDelaySeconds(
+                leftForLaterFileCount: status.leftForLaterFileCount + status.waitingFileCount, isListingUnfinished: status.isListingUnfinished))
         try? BGTaskScheduler.shared.submit(request)
     }
 
@@ -742,7 +745,7 @@ final class PhotoBackupEngine {
         if status.phase == .listing, let listedItemCount = status.listedItemCount {
             return String(localized: "Reading your photo library: \(listedItemCount.formatted()) of \(status.libraryItemCount.formatted())")
         }
-        return String(localized: "\(status.finishedFileCount) of \(status.plannedFileCount) files")
+        return String(localized: "\(status.shownFinishedFileCount) of \(status.plannedFileCount) files")
     }
 
     // MARK: Demo
