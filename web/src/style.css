@@ -746,7 +746,7 @@ a.tile:hover strong {
   margin-bottom: var(--space-4);
 }
 
-/* As tall as the box beside it, as in the mailbox's bar. */
+/* As tall as the box beside it, as the mailbox's list toolbar does. */
 .conversation-toolbar .segmented {
   flex: 0 0 auto;
   align-self: stretch;

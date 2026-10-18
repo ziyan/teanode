@@ -145,8 +145,8 @@ export function AgentConversationsPage() {
   return (
     <>
       {/* Which kind, then the search box taking the rest of the row, then
-          starting one at its end, as the mailbox's bar is laid out. On a
-          phone the button keeps only its plus. */}
+          starting one at its end. On a phone the button keeps only its
+          plus. */}
       <div className="conversation-toolbar">
         {hasChats && (
           <div className="segmented" role="group" aria-label={t('agentConversations.kindLabel')}>
