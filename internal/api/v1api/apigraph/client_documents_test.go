@@ -7,6 +7,7 @@ import (
 	"github.com/graphql-go/graphql/language/parser"
 	"github.com/graphql-go/graphql/language/source"
 
+	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/api"
 	"github.com/ziyan/teanode/internal/client"
 )
@@ -50,16 +51,31 @@ func TestClientDocumentsMatchTheSchema(test *testing.T) {
 		"CreateMailboxAppPassword": client.DocumentCreateMailboxAppPassword,
 		"DeleteMailboxAppPassword": client.DocumentDeleteMailboxAppPassword,
 		"GetMailProgramSettings":   client.DocumentGetMailProgramSettings,
-		"ListGroups":               client.DocumentListGroups,
-		"CreateGroup":              client.DocumentCreateGroup,
-		"UpdateGroup":              client.DocumentUpdateGroup,
-		"DeleteGroup":              client.DocumentDeleteGroup,
-		"ListRoles":                client.DocumentListRoles,
-		"ListPermissions":          client.DocumentListPermissions,
-		"CreateRole":               client.DocumentCreateRole,
-		"UpdateRole":               client.DocumentUpdateRole,
-		"DeleteRole":               client.DocumentDeleteRole,
-		"ListAuditEvents":          client.DocumentListAuditEvents,
+
+		"ListMailboxItems":     client.DocumentListMailboxItems,
+		"GetMailboxItem":       client.DocumentGetMailboxItem,
+		"GetMailboxThread":     client.DocumentGetMailboxThread,
+		"MoveMailboxItems":     client.DocumentMoveMailboxItems,
+		"SetMailboxItemFlags":  client.DocumentSetMailboxItemFlags,
+		"ReportMailboxJunk":    client.DocumentReportMailboxJunk,
+		"SendMailboxMessage":   client.DocumentSendMailboxMessage,
+		"SaveMailboxDraft":     client.DocumentSaveMailboxDraft,
+		"GetMailInvitation":    client.DocumentGetMailInvitation,
+		"AnswerMailInvitation": client.DocumentAnswerMailInvitation,
+
+		// And the agent's reading and answering of the same invitations.
+		"the agent reading an invitation":   mailbox.DocumentGetInvitation,
+		"the agent answering an invitation": mailbox.DocumentAnswerInvitation,
+		"ListGroups":                        client.DocumentListGroups,
+		"CreateGroup":                       client.DocumentCreateGroup,
+		"UpdateGroup":                       client.DocumentUpdateGroup,
+		"DeleteGroup":                       client.DocumentDeleteGroup,
+		"ListRoles":                         client.DocumentListRoles,
+		"ListPermissions":                   client.DocumentListPermissions,
+		"CreateRole":                        client.DocumentCreateRole,
+		"UpdateRole":                        client.DocumentUpdateRole,
+		"DeleteRole":                        client.DocumentDeleteRole,
+		"ListAuditEvents":                   client.DocumentListAuditEvents,
 
 		// The agent's own, which the three surfaces reach the same way:
 		// what a source is, what a question would carry, and the task

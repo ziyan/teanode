@@ -232,6 +232,65 @@ func GetContent(ctx context.Context, operations tools.Operations, mailId string)
 	return result.GetMailContent, nil
 }
 
+// InvitationView is the calendar invitation a message carried, as the reader
+// shows it above the message.
+type InvitationView struct {
+	Method        string `json:"method"`
+	Because       string `json:"because,omitempty"`
+	Summary       string `json:"summary,omitempty"`
+	Location      string `json:"location,omitempty"`
+	StartsAt      string `json:"startsAt,omitempty"`
+	EndsAt        string `json:"endsAt,omitempty"`
+	AllDay        bool   `json:"allDay"`
+	Cancelled     bool   `json:"cancelled"`
+	Organizer     string `json:"organizer,omitempty"`
+	Participation string `json:"participation,omitempty"`
+	Attendees     []struct {
+		Address       string `json:"address"`
+		Name          string `json:"name"`
+		Participation string `json:"participation"`
+		Role          string `json:"role"`
+	} `json:"attendees"`
+}
+
+const (
+	DocumentGetInvitation = `query ($itemId: String!) { GetMailInvitation(itemId: $itemId) {
+	method because summary location startsAt endsAt allDay cancelled organizer participation
+	attendees { address name participation role }
+} }`
+
+	DocumentAnswerInvitation = `mutation ($requestId: String, $itemId: String!, $answer: String!) { AnswerMailInvitation(requestId: $requestId, itemId: $itemId, answer: $answer) {
+	method because summary location startsAt endsAt allDay cancelled organizer participation
+	attendees { address name participation role }
+} }`
+)
+
+// GetInvitation is the invitation a message carried, or nil for a message
+// that carried none.
+func GetInvitation(ctx context.Context, operations tools.Operations, itemId string) (*InvitationView, error) {
+	var result struct {
+		GetMailInvitation *InvitationView `json:"GetMailInvitation"`
+	}
+	if err := operations.Execute(ctx, DocumentGetInvitation, map[string]any{"itemId": itemId}, &result); err != nil {
+		return nil, err
+	}
+	return result.GetMailInvitation, nil
+}
+
+// AnswerInvitation says whether the person is coming, which also writes to
+// whoever sent the invitation. answer is ACCEPTED, DECLINED or TENTATIVE.
+// The server answers a repeated requestId once, so a retry of the same call
+// does not mail the organizer again.
+func AnswerInvitation(ctx context.Context, operations tools.Operations, requestId, itemId, answer string) (*InvitationView, error) {
+	var result struct {
+		AnswerMailInvitation *InvitationView `json:"AnswerMailInvitation"`
+	}
+	if err := operations.Execute(ctx, DocumentAnswerInvitation, map[string]any{"requestId": requestId, "itemId": itemId, "answer": answer}, &result); err != nil {
+		return nil, err
+	}
+	return result.AnswerMailInvitation, nil
+}
+
 // MailboxOfItem is the granted mailbox an item is in, and its thread.
 func MailboxOfItem(ctx context.Context, operations tools.Operations, views []*MailboxView, itemId string) (*MailboxView, *ThreadView, error) {
 	thread, err := GetThread(ctx, operations, itemId)
