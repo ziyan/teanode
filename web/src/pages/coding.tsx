@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { graphql } from '../api'
+import { PageHeadingActions, useHeadingActionSlot } from '../components/breadcrumb'
 import { Loading } from '../components/common'
 import { announceHerdrAsking } from '../components/herdrPresence'
 import { ConfirmDialog } from '../components/dialog'
@@ -229,6 +230,7 @@ export function CodingPage() {
   const selectedComputer = parameters.get('computer') ?? ''
   const selectedPaneId = parameters.get('pane') ?? ''
   const [isOpening, setOpening] = useState(false)
+  const headingActionSlot = useHeadingActionSlot()
   // A session just opened, which the list does not name yet.
   const [justOpened, setJustOpened] = useState<HerdrSession | null>(null)
   // What has been typed into each session's box and not sent, kept while the
@@ -399,23 +401,24 @@ export function CodingPage() {
     })
   }
 
+  const openButton = (
+    <button type="button" onClick={() => setOpening(true)}>
+      <PlusIcon size={16} /> {t('herdr.open')}
+    </button>
+  )
+
   return (
     <div className="coding-frame">
       <div className={isReading ? 'coding-split reading' : 'coding-split'}>
         <div className="coding-list">
+          {/* The page's one action, level with its title; on a phone, whose
+              bar carries the title, at the top of the list it opens into. */}
           {computerNames.length > 0 ? (
-            <div className="list-toolbar coding-toolbar">
-              <Tooltip label={t('herdr.open')}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={t('herdr.open')}
-                  onClick={() => setOpening(true)}
-                >
-                  <PlusIcon size={18} />
-                </button>
-              </Tooltip>
-            </div>
+            headingActionSlot ? (
+              <PageHeadingActions>{openButton}</PageHeadingActions>
+            ) : (
+              <div className="coding-toolbar">{openButton}</div>
+            )
           ) : null}
           <div className="coding-list-rows">{listColumn}</div>
         </div>
