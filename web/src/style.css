@@ -1230,6 +1230,17 @@ button.conversation-tile:focus-visible {
   white-space: nowrap;
 }
 
+/* Tighter rows with a pointer: the mailbox's rail is two dozen rows and the
+   last three, Recordings, Coding and Finance, were below the fold of a
+   900px window behind a thin scrollbar. The drawer on a phone keeps its
+   full-height rows for a thumb. */
+@media (min-width: 901px) {
+  .sidebar nav a {
+    padding-top: 5px;
+    padding-bottom: 5px;
+  }
+}
+
 .sidebar nav a:hover {
   background: var(--sidebar-hover);
   color: var(--text);
@@ -1277,7 +1288,19 @@ button.conversation-tile:focus-visible {
   min-height: 0;
   min-width: 0;
   overflow-y: auto;
+  /* The scrollbar's room is kept whether or not the page needs one. A page
+     long enough to scroll was ten pixels narrower than a short one, so
+     switching between two tabs moved everything on them sideways. */
+  scrollbar-gutter: stable;
   padding: var(--space-6) max(32px, (100% - 1400px) / 2);
+}
+
+/* The mail and knowledge pages never scroll the content (their frames hold the
+   scrolling), so a strip kept for a scrollbar that is never drawn is only an
+   empty band at the window's edge on a classic scrollbar. */
+.content:has(> .mailbox-frame),
+.content:has(> .knowledge-frame) {
+  scrollbar-gutter: auto;
 }
 
 h2 {
@@ -2025,6 +2048,9 @@ label span {
 .error {
   color: var(--bad);
 }
+.success {
+  color: var(--good);
+}
 /* Monospace, and allowed to break inside a word — but only when the word
    cannot fit on a line of its own. That is the difference between
    overflow-wrap:anywhere and word-break:break-all, and it matters here: a
@@ -2366,17 +2392,34 @@ label span {
 }
 
 /* A row with more tabs past an edge fades out at that edge, so a row cut
-   between two tabs still says it goes on. */
+   between two tabs still says it goes on.
+
+   The fade covers the labels only. The strip's last three pixels (the rule
+   under the row and the active tab's underline) are a second mask layer
+   that is always opaque, so the underline of the tab you are on stays a
+   line instead of dissolving into a smudge at the edge. */
+.tabs.tabs-more-after,
+.tabs.tabs-more-before {
+  mask-image: var(--tabs-fade), linear-gradient(#000, #000);
+  mask-size:
+    100% 100%,
+    100% 3px;
+  mask-position:
+    0 0,
+    0 100%;
+  mask-repeat: no-repeat;
+}
+
 .tabs.tabs-more-after {
-  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+  --tabs-fade: linear-gradient(to right, #000 calc(100% - 56px), transparent);
 }
 
 .tabs.tabs-more-before {
-  mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent);
+  --tabs-fade: linear-gradient(to left, #000 calc(100% - 56px), transparent);
 }
 
 .tabs.tabs-more-before.tabs-more-after {
-  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+  --tabs-fade: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
 }
 
 /* A tab keeps its width in a row that scrolls; the default would squeeze them
@@ -3416,7 +3459,7 @@ body,
      head-icons (a page's rename and delete): each is a square, two or three
      fit beside a title. A row of words keeps the rule above, since beside
      the title it would squeeze it. */
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     column-gap: var(--space-3);
@@ -3424,23 +3467,23 @@ body,
     align-items: center;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child {
     display: contents;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) h3 {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) h3 {
     grid-row: 1;
     grid-column: 1;
     margin: 0;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) > div:first-child > p {
     grid-row: 2;
     grid-column: 1 / -1;
     margin-top: 4px;
   }
 
-  .settings-section-head:has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
+  .settings-section-head:has(h3):has(> div:first-child + :is(button, .head-icons):last-child) > :is(button, .head-icons) {
     grid-row: 1;
     grid-column: 2;
     margin-left: 0;
@@ -3460,19 +3503,23 @@ body,
     flex-wrap: wrap;
   }
 
-  /* A row whose only action is one icon keeps it beside the title: on a line
-     of its own it sat alone under an empty band, the row twice its height. */
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) {
+  /* A row whose actions are icons, up to three of them, keeps them beside
+     the title (SettingsRow adds has-icon-actions): on a line of their own
+     they sat alone under an empty band, the row twice its height, and with the name and the badge above them they
+     read as belonging to nothing. Four or more (the people page) do not fit
+     beside a name, and a word button does not either, so those still drop. */
+  .settings-row.has-icon-actions {
     flex-wrap: nowrap;
     align-items: flex-start;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-body {
+  .settings-row.has-icon-actions > .settings-row-body {
     min-width: 0;
   }
 
-  .settings-row:has(> .settings-row-actions > .icon-action:only-child) > .settings-row-actions {
+  .settings-row.has-icon-actions > .settings-row-actions {
     width: auto;
+    flex-wrap: nowrap;
   }
 
   /* A row about a person keeps the person's picture beside their name: with
@@ -5127,10 +5174,19 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   border-radius: var(--radius-2);
   background: var(--surface);
   color: var(--text);
+  /* The text size of a field (an input takes the page's 15px, and 16px on a
+     phone below), set here rather than inherited from the parent, so a
+     dropdown reads the same wherever it sits. */
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
   text-align: left;
   cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .select {
+    font-size: 16px;
+  }
 }
 
 /* A select holding a number needs the width of a number. The 160px above is
@@ -5144,8 +5200,16 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   width: 4.75rem;
 }
 
-.select:hover {
-  border-color: var(--muted);
+.select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.select:focus-visible {
+  /* The same darker border an input takes, and the ring a button that is not
+     a text field needs, so a keyboard can see where it is. */
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+  border-color: var(--text);
 }
 
 /* In a form, the width of an input; the list under it is the same. */
@@ -5213,6 +5277,13 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 }
 
 .select-value {
+  /* Not the small gray of a field's caption: inside a label the caption rule
+     (label span) reached the value of a dropdown too, so a dropdown showed
+     13px gray text, pushed up by the caption's bottom margin, beside the
+     input boxes' own text. */
+  color: inherit;
+  font-size: inherit;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

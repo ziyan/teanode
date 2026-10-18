@@ -1,5 +1,7 @@
+import { Children, Fragment, isValidElement } from 'react'
 import { Avatar } from './avatar'
 import { CopyIconButton } from './common'
+import { Tooltip } from './tooltip'
 import { useTranslation } from '../i18n/i18n'
 
 // The shape every list of account things takes: a heading with the one action
@@ -47,6 +49,36 @@ export function SettingsSection({
   )
 }
 
+// How many icon buttons (className "icon-action") a row's actions are, or -1
+// when there is anything else among them: a word button, a menu, a component
+// this cannot see into. Wrappers that only group (a fragment, a row-actions
+// div, a tooltip) are looked through.
+function iconActionCount(node: React.ReactNode): number {
+  let count = 0
+  for (const child of Children.toArray(node)) {
+    if (!isValidElement<{ className?: string; children?: React.ReactNode }>(child)) {
+      if (typeof child === 'string' && child.trim() === '') continue
+      return -1
+    }
+    const classNames = (child.props.className ?? '').split(/\s+/)
+    // A copy button is an icon button inside a tooltip of its own.
+    if ((child.type === 'button' && classNames.includes('icon-action')) || child.type === CopyIconButton) {
+      count += 1
+    } else if (
+      child.type === Fragment ||
+      child.type === Tooltip ||
+      (child.type === 'div' && classNames.includes('row-actions'))
+    ) {
+      const inner = iconActionCount(child.props.children)
+      if (inner < 0) return -1
+      count += inner
+    } else {
+      return -1
+    }
+  }
+  return count
+}
+
 export function SettingsRow({
   title,
   subtitle,
@@ -73,8 +105,11 @@ export function SettingsRow({
   // one person (a circle), so its text starts where the rows about people do.
   mark?: React.ReactNode
 }) {
+  // Up to three icons stay beside the title on a phone; the stylesheet keys on
+  // this class. More than that, or anything that is not an icon, drops below.
+  const iconActions = actions ? iconActionCount(actions) : 0
   return (
-    <div className="settings-row">
+    <div className={iconActions >= 1 && iconActions <= 3 ? 'settings-row has-icon-actions' : 'settings-row'}>
       {avatar ? <Avatar name={avatar} avatarUrl={avatarUrl} colorIndex={avatarColorIndex} size={28} /> : null}
       {!avatar && mark ? <span className="settings-row-mark">{mark}</span> : null}
       <div className="settings-row-body">

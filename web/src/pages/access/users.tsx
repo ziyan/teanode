@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { graphql, startImpersonation } from '../../api'
 import { ErrorMessage, Loading, Tag } from '../../components/common'
-import { CheckIcon, KeyIcon, PencilIcon, PeopleIcon, PlusIcon, TrashIcon, UserIcon } from '../../components/icons'
+import { CheckIcon, KeyIcon, PencilIcon, PeopleIcon, TrashIcon, UserIcon } from '../../components/icons'
 import { MenuButton } from '../../components/menuButton'
 import { Tooltip } from '../../components/tooltip'
 import { ConfirmDialog, FormDialog } from '../../components/dialog'
@@ -125,21 +125,18 @@ export function UsersTab() {
         description={members ? t('access.users.intro') : t('access.users.introNoMembers')}
         action={
           managesUsers ? (
-            <Tooltip label={t('access.users.new')}>
-              <button
-                className="icon-button"
-                type="button"
-                aria-label={t('access.users.new')}
-                onClick={() =>
-                  open(() => {
-                    setPersonDraft(EMPTY_PERSON)
-                    setAddingPerson(true)
-                  })
-                }
-              >
-                <PlusIcon size={16} />
-              </button>
-            </Tooltip>
+            <button
+              className="primary"
+              type="button"
+              onClick={() =>
+                open(() => {
+                  setPersonDraft(EMPTY_PERSON)
+                  setAddingPerson(true)
+                })
+              }
+            >
+              {t('access.users.new')}
+            </button>
           ) : undefined
         }
       >
@@ -160,15 +157,17 @@ export function UsersTab() {
                     knows them, which is the smaller fact. */}
                 {user.name || user.username}
                 {user.name ? <span className="muted access-user-username">{user.username}</span> : null}
-                {user.id === session.userId ? <span className="muted"> · {t('access.users.you')}</span> : null}
               </>
             }
             badge={
-              user.disabledAt ? (
-                <Tag value={t('access.users.disabled')} tone="bad" />
-              ) : !user.hasPassword ? (
-                <Tag value={t('access.users.noPassword')} tone="warn" />
-              ) : undefined
+              <>
+                {user.id === session.userId ? <Tag value={t('access.users.you')} /> : null}
+                {user.disabledAt ? (
+                  <Tag value={t('access.users.disabled')} tone="bad" />
+                ) : !user.hasPassword ? (
+                  <Tag value={t('access.users.noPassword')} tone="warn" />
+                ) : undefined}
+              </>
             }
             subtitle={user.email ? user.email : undefined}
             actions={

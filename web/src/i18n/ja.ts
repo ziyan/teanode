@@ -270,10 +270,6 @@ export const ja: Catalog = {
   'domains.credentials': '認証情報',
   'domains.dns': 'DNS',
   'domains.notPublished': '未公開あり',
-  'domains.aliasOne': 'エイリアス 1 件',
-  'domains.aliasOther': 'エイリアス {count} 件',
-  'domains.credentialOne': '認証情報 1 件',
-  'domains.credentialOther': '認証情報 {count} 件',
   'domains.viewMail': 'メールを見る',
   'domains.countOne': 'ドメイン 1 件',
   'domains.countOther': 'ドメイン {count} 件',
@@ -544,7 +540,6 @@ export const ja: Catalog = {
   'impersonation.returnFailed': '自分のアカウントに戻れませんでした',
 
   'settings.password.description': 'このアカウントのパスワードを変更します。',
-  'settings.profile.description': '呼び名、サインインに使う名前、通知の宛先。',
 
   'profile.title': 'プロフィール',
   'preferences.title': '環境設定',
@@ -634,6 +629,7 @@ export const ja: Catalog = {
   'tokens.createdAt': '作成 {time}',
   'tokens.lastUsedLabel': '最終使用',
   'tokens.actsAsName': '{username} として動作',
+  'tokens.neverExpires': '期限なし',
   'tokens.expiresAt': '{time} に失効',
   'tokens.shownOnce':
     'このトークンはハッシュのみが保存されるため、読み取れるのはこの一度だけです。管理者であっても後から復元できません。',
@@ -1013,7 +1009,7 @@ export const ja: Catalog = {
   'phones.notified': '通知オン',
   'phones.notRegistered': 'この電話では通知がオフ',
   'phones.lastFailed': '前回の通知に失敗',
-  'phones.test': 'テスト',
+  'phones.test': 'テスト通知を送る',
   'phones.tested': '{name} に通知を送りました。数秒で届くはずです。',
   'phones.editTitle': 'スマートフォンを編集',
   'phones.name': '名前',
@@ -2774,7 +2770,6 @@ export const ja: Catalog = {
   'mailbox.messageGone': 'このメッセージはもう保存されていません。',
   'mailbox.unreadCount': '未読 {count} 件',
   'mailboxSettings.tabGeneral': '一般',
-  'mailboxSettings.generalHint': '送信時に表示される名前と、メールの末尾に添える署名。',
   'mailboxSettings.tabFolders': 'フォルダー',
   'mailboxSettings.tabRules': 'ルール',
   'mailboxSettings.tabAutoReply': '自動返信',
