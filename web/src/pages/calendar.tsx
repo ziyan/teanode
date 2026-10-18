@@ -7,6 +7,7 @@ import { useCalendarMutation } from '../hooks/useCalendarMutation'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { Avatar } from '../components/avatar'
 import { FindATimeDialog } from '../components/calendarFindTime'
+import { CalendarRenameDialog } from '../components/calendarRename'
 import { CalendarShareDialog } from '../components/calendarShare'
 import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, LockIcon, PencilIcon, TrashIcon } from '../components/icons'
 import { Tooltip } from '../components/tooltip'
@@ -495,6 +496,7 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
     writeHidden(ownerId, next)
   }
   const [isSharing, setSharing] = useState(false)
+  const [isRenaming, setRenaming] = useState(false)
   const [isFindingTime, setFindingTime] = useState(false)
   // An event in a calendar shared read only, opened to be read.
   const [viewing, setViewing] = useState<CalendarEvent | null>(null)
@@ -1004,6 +1006,9 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
             </button>
             <button type="button" disabled={!calendarId} onClick={() => setSharing(true)}>
               {t('calendar.share')}
+            </button>
+            <button type="button" disabled={!calendarId} onClick={() => setRenaming(true)}>
+              {t('common.rename')}
             </button>
             <button
               className="primary"
@@ -1521,6 +1526,13 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
       )}
 
       {isSharing && calendar && <CalendarShareDialog calendar={calendar} onClose={() => setSharing(false)} />}
+      {isRenaming && calendar && (
+        <CalendarRenameDialog
+          calendar={calendar}
+          onClose={() => setRenaming(false)}
+          onSaved={() => calendars.reload()}
+        />
+      )}
       {isFindingTime && <FindATimeDialog ownUserId={ownerId} onClose={() => setFindingTime(false)} />}
 
       {deleting && !submission.pending && (

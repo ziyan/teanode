@@ -561,6 +561,12 @@ by name or id and makes its calendar, for an admin. All four are writes or
 reads, none is outward or destructive. A person has one calendar of events, so
 there is no action that makes another.
 
+The calendar page's Rename button, the iPhone app's Rename action and
+`teanode calendar set --name` all call `SaveCalendar`. A person has one calendar
+of events and one reminders list, both made by the server, so there is no
+operation that makes another calendar, and none of the surfaces offers to; the
+only calendar that is made on request is a circle's own (`CreateCircleCalendar`).
+
 ## The reminders list beside it
 
 Every person has one reminders list as well as one calendar. It is a
