@@ -22,10 +22,12 @@ struct DeviceSetupView: View {
                 Section {
                     if profile.hasExpired(at: now) {
                         Label("Setup link expired", systemImage: "clock").foregroundStyle(.secondary)
+                            .fullWidthRowSeparator()
                         Text("This setup link has expired. Existing device passwords remain active until you revoke them.")
                             .foregroundStyle(.secondary)
                     } else {
                         Label("Your setup profile is ready", systemImage: "checkmark.circle")
+                            .fullWidthRowSeparator()
                         if hasOpenedProfile {
                             Text("Profile download started").foregroundStyle(.secondary)
                         } else {
@@ -34,8 +36,10 @@ struct DeviceSetupView: View {
                             } label: {
                                 Label("Download profile", systemImage: "arrow.down.circle")
                             }
+                            .fullWidthRowSeparator()
                             if let profileURL = URL(string: profile.downloadLink) {
                                 ShareLink(item: profileURL)
+                                    .fullWidthRowSeparator()
                             }
                         }
                     }

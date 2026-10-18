@@ -46,20 +46,26 @@ struct RecordingTranscriptScreen: View {
                     )
                     LabeledContent("Provider model", value: transcriptRun.providerModelName)
                     if let processingError = model.transcriptView?.transcriptRun.processingErrorMessage, !processingError.isEmpty {
-                        Text(processingError).foregroundStyle(.secondary)
+                        Text(processingError.asReasonSentence).foregroundStyle(.secondary)
                     }
                 }
             }
             if !model.invalidations.isEmpty {
                 Section {
-                    Label("Speaker reference invalidated", systemImage: "exclamationmark.triangle")
+                    // A warning is orange with its symbol, not the green of the accent.
+                    Label {
+                        Text("Speaker reference invalidated")
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                    }
+                    .fullWidthRowSeparator()
                     Text(
                         "Generated speaker attribution from affected requests is uncertain. Your confirmed passage labels remain in place. Reprocessing is optional and can require another paid pass."
                     ).foregroundStyle(.secondary)
                     ForEach(model.invalidations) { invalidation in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(invalidation.invalidatedConfirmedName)
-                            Text(invalidation.invalidationMessage).font(.callout).foregroundStyle(.secondary)
+                            Text(invalidation.invalidationMessage.asReasonSentence).font(.callout).foregroundStyle(.secondary)
                             Text(
                                 invalidation.isReconciled
                                     ? String(localized: "Learning reconciled") : String(localized: "Learning reconciliation pending")

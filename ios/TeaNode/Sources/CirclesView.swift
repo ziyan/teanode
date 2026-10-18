@@ -161,6 +161,7 @@ struct CirclesView: View {
                 Text(verbatim: invitationDetails(invitation)).font(.footnote).foregroundStyle(Color(.secondaryLabel))
             }
             Button("Accept", systemImage: "checkmark") { answer(invitation, isAccepted: true) }
+                .fullWidthRowSeparator()
             Button("Decline", systemImage: "xmark") { answer(invitation, isAccepted: false) }
         } header: {
             if isFirst { Text("Invitations") }

@@ -50,7 +50,7 @@ struct MailThreadScreen: View {
                     // The pages of memory the message that was opened is linked to.
                     InMemoryCard(model: memory)
                 } else if let problemText {
-                    ContentUnavailableView("This conversation could not be read", systemImage: "envelope.badge", description: Text(problemText))
+                    ContentUnavailableView("This conversation could not be read", systemImage: "envelope.badge", description: Text(problemText.asReasonSentence))
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                 }
@@ -524,7 +524,7 @@ struct MessageCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let problemText {
-            Text(problemText).font(.footnote).foregroundStyle(.red)
+            Text(problemText.asReasonSentence).font(.footnote).foregroundStyle(.red)
         } else {
             ProgressView().frame(maxWidth: .infinity)
         }

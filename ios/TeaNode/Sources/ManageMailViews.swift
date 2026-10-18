@@ -707,6 +707,7 @@ struct AuditedMailView: View {
                 Button("Download .eml", systemImage: "arrow.down.doc") {
                     Task { await preview("/api/v1/mail/\(mailDetail.mail.id)/raw", name: "\(mailDetail.mail.id).eml") }
                 }
+                .fullWidthRowSeparator()
                 ForEach(content.presentAttachments, id: \.index) { attachment in
                     Button {
                         Task { await preview("/api/v1/mail/\(mailDetail.mail.id)/attachment/\(attachment.index)", name: attachment.filename) }
@@ -723,6 +724,7 @@ struct AuditedMailView: View {
                                 .foregroundStyle(Color(.secondaryLabel))
                         }
                     }
+                    .fullWidthRowSeparator()
                 }
             } else {
                 Text("The content of this message is no longer stored.")
@@ -2193,7 +2195,7 @@ private struct DomainSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Publish these with whoever runs DNS for this domain. Until the MX record is right, no mail arrives here at all.")
                 if let errorMessage = domain.dnsCheck?.errorMessage, !errorMessage.isEmpty {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label(errorMessage.asReasonSentence, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
             }
         }
@@ -2219,6 +2221,7 @@ private struct DomainSettingsView: View {
             Button(domain.logo == nil ? LocalizedStringKey("Upload a logo") : "Replace the logo", systemImage: "square.and.arrow.up") {
                 isPickingLogo = true
             }
+            .fullWidthRowSeparator()
             if domain.logo != nil {
                 Button("Remove the logo", systemImage: "trash", role: .destructive) { isRemovingLogo = true }
                     .confirmationDialog("Stop publishing this logo?", isPresented: $isRemovingLogo, titleVisibility: .visible) {
@@ -2448,7 +2451,7 @@ private struct DNSRecordView: View {
                         .foregroundStyle(Color(.secondaryLabel))
                 }
                 if let blockedReason = record.blockedReason, !blockedReason.isEmpty {
-                    Label(blockedReason, systemImage: "exclamationmark.triangle")
+                    Label(blockedReason.asReasonSentence, systemImage: "exclamationmark.triangle")
                         .font(.callout)
                         .foregroundStyle(.orange)
                 }

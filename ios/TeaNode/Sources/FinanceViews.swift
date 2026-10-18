@@ -1787,11 +1787,13 @@ struct AccountsView: View {
                         UIPasteboard.general.string = address
                         finance.doneText = String(localized: "Address copied")
                     }
+                    .fullWidthRowSeparator()
                 } else {
                     Text("You have no mailbox address to receive statements at.")
                         .foregroundStyle(.secondary)
                 }
                 Button("New address", systemImage: "arrow.clockwise") { isRegeneratingStatementAddress = true }
+                .fullWidthRowSeparator()
                 .confirmationDialog("New import address?", isPresented: $isRegeneratingStatementAddress, titleVisibility: .visible) {
                     Button("Make a new address", role: .destructive) {
                         Task {
@@ -1807,6 +1809,7 @@ struct AccountsView: View {
                 if statementImport.isEnabled == false {
                     Label("Importing is off. Turn the Imported statements source on to import again.", systemImage: "pause.circle")
                         .foregroundStyle(.secondary)
+                        .fullWidthRowSeparator()
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Last import").foregroundStyle(.secondary).font(.subheadline)
