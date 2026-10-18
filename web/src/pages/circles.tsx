@@ -479,7 +479,9 @@ function CircleDetail() {
         {error && !isNotFound(error) ? <ErrorMessage error={error} /> : null}
         <SettingsEmpty>{t('circles.notFound')}</SettingsEmpty>
         <p>
-          <Link to="/circles">{t('circles.title')}</Link>
+          <Link className="button" to="/circles">
+            {t('circles.open')}
+          </Link>
         </p>
       </>
     )
@@ -600,7 +602,9 @@ function CircleDetail() {
             <>
               <p>{t('circles.calendar.exists')}</p>
               <p>
-                <Link to="/calendar">{t('circles.calendar.open')}</Link>
+                <Link className="button" to="/calendar">
+                  {t('circles.calendar.open')}
+                </Link>
               </p>
             </>
           ) : isAdmin ? (
