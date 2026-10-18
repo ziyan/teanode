@@ -13,6 +13,7 @@ import (
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/agent/tools/mailbox"
 	"github.com/ziyan/teanode/internal/models"
+	"github.com/ziyan/teanode/internal/util/security"
 )
 
 func init() {
@@ -127,8 +128,14 @@ func previewAnswerInvitation(ctx context.Context, arguments json.RawMessage) str
 // id once. It comes from the call, the message and the answer, so a retried
 // confirmation of the same call reuses it and mails the organizer once. The
 // message and answer are in it because a provider may reuse call ids: a
-// repeat for another message or answer is another answer.
+// repeat for another message or answer is another answer. A call with no id
+// of its own (one made directly, over MCP, is always "direct") has nothing
+// to repeat, and gets a fresh id: otherwise accepting, declining and
+// accepting again would make the third look like a repeat of the first.
 func answerRequestId(callId, itemId, answer string) string {
+	if callId == "" || callId == "direct" {
+		return "answer-" + security.NewULID()
+	}
 	encoded, _ := json.Marshal([]string{"mail_act", "answer_invitation", callId, itemId, answer})
 	return fmt.Sprintf("answer-%x", sha256.Sum256(encoded))
 }

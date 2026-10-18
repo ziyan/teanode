@@ -372,8 +372,12 @@ func (self *Tool) WithHeldActions(permissions *models.EffectivePermissions) *Too
 	if !isChanged {
 		return self
 	}
+	given, isObject := self.Parameters["properties"].(map[string]any)
+	if !isObject {
+		return self
+	}
 	properties := map[string]any{}
-	for name, property := range self.Parameters["properties"].(map[string]any) {
+	for name, property := range given {
 		properties[name] = property
 	}
 	properties["action"] = EnumProperty("what to do", kept...)

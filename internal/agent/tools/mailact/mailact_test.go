@@ -269,3 +269,16 @@ func TestAnswerInvitationIsOfferedOnlyWithTheRightToSendAndUseTheCalendar(test *
 		test.Error("a call without the permissions reached the API")
 	}
 }
+
+// A call made directly has no id of its own, so two answers to one message
+// are two answers, not one repeated: the third of accept, decline, accept
+// must not be taken for the first.
+func TestADirectCallsAnswersAreNotTakenForRepeats(t *testing.T) {
+	first, second := answerRequestId("direct", "item-1", "ACCEPTED"), answerRequestId("direct", "item-1", "ACCEPTED")
+	if first == second {
+		t.Fatalf("two direct answers shared the id %q", first)
+	}
+	if answerRequestId("call-7", "item-1", "ACCEPTED") != answerRequestId("call-7", "item-1", "ACCEPTED") {
+		t.Fatal("a retried confirmation of one call must reuse its id")
+	}
+}
