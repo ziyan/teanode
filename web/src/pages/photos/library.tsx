@@ -56,6 +56,13 @@ import {
 } from '../../photos/api'
 import { usePhotosChanged } from '../../photos/changes'
 import {
+  countPhotosNewerThan,
+  pageIndexOfPlace,
+  parseOverviewScale,
+  type OverviewPeriod,
+  type OverviewScale,
+} from '../../photos/overview'
+import {
   NEARBY_KILOMETERS,
   isFoundByMeaningOnly,
   nearText,
@@ -80,7 +87,9 @@ import { hasPermission, useSession } from '../../session'
 import { albumAddress } from './albums'
 import { AddToAlbumMenu, AlbumTitleDialog, PhotoSections, useCircleChoices, type PhotoSection } from './albumControls'
 import { AddPhotosDialog, AlbumOwnerMark, ShareAlbumDialog } from './albumSharing'
+import { useShowDateRange, useVisibleDayRange } from './dateRange'
 import { PhotoGrid, type PhotoGrouping } from './grid'
+import { PhotoOverview } from './overview'
 import {
   FacePicture,
   MergePersonDialog,
@@ -89,7 +98,7 @@ import {
   personAddress,
   useDisplayedPersonName,
 } from './personControls'
-import { PhotoFilterMenu, PhotoIconAction, PhotoToolbar } from './toolbar'
+import { PhotoFilterMenu, PhotoIconAction, PhotoScaleSwitch, PhotoToolbar } from './toolbar'
 import { PhotoViewer } from './viewer'
 
 // The Photos page: the timeline of the person's library with its three
@@ -215,6 +224,13 @@ function AccountPhotosPage() {
   // is read again when the search changes or the person does something to it,
   // and not on a timer.
   const isSearching = searchText !== ''
+  // Years and Months are of the library or of the Favorites: not of the
+  // Trash (which is by the day it was emptied into), not of an album or a
+  // person (a few dozen photos at most that the grid shows whole), and not of
+  // a search, whose photos are in the order of how well they match.
+  const canUseOverview = !isInsideCollection && !isTrash && !isSearching
+  const overviewScale: OverviewScale | '' = canUseOverview ? parseOverviewScale(parameters.get('show')) : ''
+  const isOverview = overviewScale !== ''
 
   // ---- The search box and the address ----
 
@@ -277,6 +293,14 @@ function AccountPhotosPage() {
       const written = new URLSearchParams(previous)
       if (value) written.set(name, value)
       else written.delete(name)
+      written.delete('page')
+      return written
+    })
+  const setOverviewScale = (scale: OverviewScale | '') =>
+    setParameters((previous) => {
+      const written = new URLSearchParams(previous)
+      if (scale) written.set('show', scale)
+      else written.delete('show')
       written.delete('page')
       return written
     })
@@ -444,6 +468,16 @@ function AccountPhotosPage() {
   const previousEdgePhoto =
     needsPreviousEdge && previousEdge.data?.position === offset - 1 ? previousEdge.data.photo : null
   const nextEdgePhoto = needsNextEdge && nextEdge.data?.position === offset + photos.length ? nextEdge.data.photo : null
+
+  // The photos either side of the shown one that the viewer's strip draws: the
+  // page, and the neighbor on the page before or after at either end.
+  const viewerNeighbors = useMemo(
+    () =>
+      viewerIndex < 0
+        ? undefined
+        : [...(previousEdgePhoto ? [previousEdgePhoto] : []), ...photos, ...(nextEdgePhoto ? [nextEdgePhoto] : [])],
+    [viewerIndex, photos, previousEdgePhoto, nextEdgePhoto],
+  )
 
   const refresh = useCallback(() => {
     return Promise.all([
@@ -662,6 +696,33 @@ function AccountPhotosPage() {
       failedWith(caught)
     } finally {
       setIsBusy(false)
+    }
+  }
+
+  // ---- Years and Months ----
+
+  // Choosing a year or a month goes to the grid at the place where it starts:
+  // the page that holds the period's newest photo, and the photo itself
+  // brought to the top of the screen once that page has been read. Back comes
+  // back to the overview.
+  const [isChoosingPeriod, setIsChoosingPeriod] = useState(false)
+  async function showPeriodInGrid(period: OverviewPeriod) {
+    setIsChoosingPeriod(true)
+    try {
+      const place = await countPhotosNewerThan(filter, period)
+      const targetPageIndex = pageIndexOfPlace(place, pageSize)
+      const written = new URLSearchParams(location.search)
+      written.delete('show')
+      written.delete('page')
+      if (targetPageIndex > 0) written.set('page', String(targetPageIndex + 1))
+      navigate(
+        { pathname: basePath, search: written.toString() ? `?${written.toString()}` : '' },
+        { state: { revealPhotoId: period.photo.id } },
+      )
+    } catch (caught) {
+      failedWith(caught)
+    } finally {
+      setIsChoosingPeriod(false)
     }
   }
 
@@ -1022,9 +1083,29 @@ function AccountPhotosPage() {
   const isSelecting = isSelectionMode || selectedIds.size > 0
   // Nothing in the list and nothing asked for: no search or filter to offer.
   const isListEmpty = library.data !== null && photos.length === 0 && !isListStale && searchText === '' && !hasFilters
-  // Day headings are the timeline's. A search is in the order of how well it
-  // matches and is under none; the Trash is under the days it was filled.
-  const grouping: PhotoGrouping = isSearching ? 'none' : isTrash ? 'trash' : 'day'
+  // The Trash is under the days it was filled. Everything else is one grid,
+  // and the page says under its heading which days are on the screen.
+  const grouping: PhotoGrouping = isTrash ? 'trash' : 'none'
+
+  // The days of the cells on the screen, under the page's heading.
+  const listElement = useRef<HTMLDivElement>(null)
+  const isGridShown = !isOverview && !isListStale && library.data !== null
+  const visibleDayRange = useVisibleDayRange(listElement, photos, isGridShown && !isTrash)
+  useShowDateRange(visibleDayRange)
+
+  // Arriving from an overview, the photo that starts the period is brought to
+  // the top once it is on the page, and the address forgets it, so that coming
+  // back from a photo does not scroll again.
+  const revealPhotoId = (location.state as { revealPhotoId?: string } | null)?.revealPhotoId ?? ''
+  useEffect(() => {
+    if (!revealPhotoId || !isGridShown) return
+    const cell = Array.from(listElement.current?.querySelectorAll<HTMLElement>('[data-photo-id]') ?? []).find(
+      (candidate) => candidate.dataset.photoId === revealPhotoId,
+    )
+    if (!cell) return
+    cell.scrollIntoView?.({ block: 'start' })
+    navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: null })
+  }, [revealPhotoId, isGridShown, photos, location.pathname, location.search, navigate])
   // Said only once the names have answered: until then a photo found by a
   // person's or an album's name would be called a mere closest match.
   const isMeaningOnly =
@@ -1272,12 +1353,13 @@ function AccountPhotosPage() {
             )
           }
         >
+          {canUseOverview && !isListEmpty && <PhotoScaleSwitch scale={overviewScale} onChange={setOverviewScale} />}
           {isUploadShown && (
             <button type="button" className="primary" onClick={() => fileInput.current?.click()}>
               <UploadIcon size={16} /> {t('photos.upload')}
             </button>
           )}
-          {photos.length > 0 && (
+          {photos.length > 0 && !isOverview && (
             <button
               type="button"
               aria-pressed={isSelecting}
@@ -1361,8 +1443,15 @@ function AccountPhotosPage() {
           )}
           {isLibraryEmpty && <PhotoBackupGuide />}
         </>
+      ) : isOverview ? (
+        <PhotoOverview
+          scale={overviewScale}
+          filter={filter}
+          isChoosing={isChoosingPeriod}
+          onChoose={showPeriodInGrid}
+        />
       ) : (
-        <div className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
+        <div ref={listElement} className={isListStale ? 'photo-list is-loading' : 'photo-list'} aria-busy={isListStale}>
           <PhotoGrid
             photos={photos}
             grouping={grouping}
@@ -1375,7 +1464,7 @@ function AccountPhotosPage() {
         </div>
       )}
 
-      {(totalCount > pageSize || pageIndex > 0) && (
+      {!isOverview && (totalCount > pageSize || pageIndex > 0) && (
         <div className="list-foot">
           <span />
           <Pager
@@ -1417,6 +1506,7 @@ function AccountPhotosPage() {
           photo={viewerPhoto}
           previousPhoto={viewerPrevious}
           nextPhoto={viewerNext}
+          neighborPhotos={viewerNeighbors}
           isTrashed={Boolean(viewerPhoto.trashedAt) || isTrash}
           isBusy={isBusy}
           isPaused={

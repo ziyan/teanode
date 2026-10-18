@@ -5,6 +5,7 @@ import { Tooltip } from '../../components/tooltip'
 import { useTranslation } from '../../i18n/i18n'
 import type { PhotoKind } from '../../photos/api'
 import { FILTER_KINDS, parseDay } from '../../photos/filters'
+import type { OverviewScale } from '../../photos/overview'
 import { DateFormatHint } from './dateFormatHint'
 
 // The one row under the tabs that every page of Photos has: what the page
@@ -145,5 +146,39 @@ export function PhotoFilterMenu({
         </div>
       )}
     />
+  )
+}
+
+// The switch between the library as a grid (All) and as an overview with one
+// picture for each month or year. It is a group of buttons and not tabs: it
+// changes how the same photos are drawn, and it is in the address, so a link
+// and Back keep it.
+export function PhotoScaleSwitch({
+  scale,
+  onChange,
+}: {
+  scale: OverviewScale | ''
+  onChange: (scale: OverviewScale | '') => void
+}) {
+  const { t } = useTranslation()
+  const choices: { scale: OverviewScale | ''; label: string }[] = [
+    { scale: 'years', label: t('photos.scaleYears') },
+    { scale: 'months', label: t('photos.scaleMonths') },
+    { scale: '', label: t('photos.scaleAll') },
+  ]
+  return (
+    <div className="segmented photo-scale-switch" role="group" aria-label={t('photos.scaleGroup')}>
+      {choices.map((choice) => (
+        <button
+          key={choice.scale || 'all'}
+          type="button"
+          className={choice.scale === scale ? 'active' : ''}
+          aria-pressed={choice.scale === scale}
+          onClick={() => choice.scale !== scale && onChange(choice.scale)}
+        >
+          {choice.label}
+        </button>
+      ))}
+    </div>
   )
 }

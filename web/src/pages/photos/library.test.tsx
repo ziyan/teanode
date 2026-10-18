@@ -5,6 +5,7 @@ import { askAgentAbout, graphql } from '../../api'
 import { ToastProvider } from '../../components/toast'
 import { TranslationProvider } from '../../i18n/i18n'
 import { photoUploads } from '../../photos/uploadQueue'
+import { PhotoDateRangeLine } from './dateRange'
 import { PhotosPage } from './library'
 
 vi.mock('../../api', async (importOriginal) => ({
@@ -207,12 +208,15 @@ const show = (entry: string, links: { to: string; label: string }[] = []) =>
           {links.map((link) => (
             <Jump key={link.label} {...link} />
           ))}
-          <Routes>
-            <Route path="/photos" element={<PhotosPage />} />
-            <Route path="/photos/:photoId" element={<PhotosPage />} />
-            <Route path="/photos/albums/:photoAlbumId" element={<PhotosPage />} />
-            <Route path="/photos/albums/:photoAlbumId/:photoId" element={<PhotosPage />} />
-          </Routes>
+          {/* The line under the heading, which the layout of the pages draws. */}
+          <PhotoDateRangeLine>
+            <Routes>
+              <Route path="/photos" element={<PhotosPage />} />
+              <Route path="/photos/:photoId" element={<PhotosPage />} />
+              <Route path="/photos/albums/:photoAlbumId" element={<PhotosPage />} />
+              <Route path="/photos/albums/:photoAlbumId/:photoId" element={<PhotosPage />} />
+            </Routes>
+          </PhotoDateRangeLine>
         </MemoryRouter>
       </ToastProvider>
     </TranslationProvider>,
@@ -277,7 +281,7 @@ it('does not run a search again on the timer, and still refreshes a list that is
   cleanup()
   vi.mocked(graphql).mockClear()
   show('/photos')
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findAllByRole('button', { name: /^Open / })
   const first = searches()
   await act(async () => {
     await vi.advanceTimersByTimeAsync(11_000)
@@ -291,7 +295,7 @@ it('shows a photo that is not in the list once it is read, and never says it is 
   let finish: (answer: unknown) => void = () => {}
   readPhotoAnswer = () => new Promise((resolve) => (finish = resolve))
   show('/photos/photo-9')
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findAllByRole('button', { name: /^Open / })
   expect(screen.queryByText(/is not available/)).toBeNull()
   expect(screen.queryByRole('dialog', { name: 'Photo viewer' })).toBeNull()
   await act(async () => {
@@ -401,7 +405,7 @@ it('goes on across the pages: Next from the last photo of a page opens the first
 
 it('asks for the kind and the days in the address, and writes them back when they change', async () => {
   show('/photos?kind=video&from=2030-07-12&to=2030-07-14')
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findAllByRole('button', { name: /^Open / })
   const variables = callsTo('ListPhotos')[0]
   expect(variables.photoKind).toBe('video')
   const after = new Date(String(variables.takenAfter))
@@ -418,7 +422,7 @@ it('asks for the kind and the days in the address, and writes them back when the
 
 it('offers the kind of photo to keep, and writes the choice to the address', async () => {
   show('/photos')
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findAllByRole('button', { name: /^Open / })
   fireEvent.click(screen.getByRole('button', { name: 'Filter' }))
   fireEvent.click(await screen.findByRole('radio', { name: 'Videos' }))
   await waitFor(() => expect(address()).toBe('/photos?kind=video'))
@@ -428,7 +432,7 @@ it('offers the kind of photo to keep, and writes the choice to the address', asy
 
 it('dims the rows of the list that was left, until the rows of the new one arrive', async () => {
   show('/photos', [{ to: '/photos?view=trash', label: 'to trash' }])
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findAllByRole('button', { name: /^Open / })
   let finish: (answer: unknown) => void = () => {}
   listAnswer = () => new Promise((resolve) => (finish = resolve))
   fireEvent.click(screen.getByRole('button', { name: 'to trash' }))
@@ -629,7 +633,7 @@ it('says an album is shared with the person, and offers no sharing, adding or re
   albumOwnership = sharedWithMe
   library = bensPhotos()
   show('/photos/albums/album-1')
-  await screen.findByText('Friday, July 12, 2030')
+  await screen.findAllByRole('button', { name: /^Open / })
   expect(
     screen.getByText(
       'Shared with you. You can see these photos and save them. Where the photos were taken is not shown.',
@@ -825,13 +829,215 @@ it('says the browser’s zone when the photo has no offset of its own', async ()
 
 // ---- one toolbar on every page ----
 
-it('shows the timeline under day headings, and a search without them, in the order it ranks them', async () => {
+it('draws the timeline as one grid with no day headings, and the days on the screen under the heading', async () => {
+  library = [
+    photoFixture('photo-1', { takenAt: '2030-07-14T09:00:00Z' }),
+    photoFixture('photo-2', { takenAt: '2030-07-12T09:00:00Z' }),
+    photoFixture('photo-3', { takenAt: '2030-07-09T09:00:00Z' }),
+  ]
   show('/photos')
-  expect(await screen.findByText('Friday, July 12, 2030')).toBeTruthy()
-  cleanup()
+  await screen.findAllByRole('button', { name: /^Open / })
+  expect(screen.queryAllByRole('heading', { level: 2 })).toHaveLength(0)
+  expect(document.querySelectorAll('.photo-grid')).toHaveLength(1)
+  // A browser that cannot say what is on screen reads the whole page.
+  await waitFor(() =>
+    expect(screen.getByTestId('photo-date-range').textContent?.replace(/\s/g, ' ')).toBe('Jul 9 \u2013 14, 2030'),
+  )
+})
+
+it('says the days of the photos that are on the screen, and keeps the words when nothing is on screen for a moment', async () => {
+  const observers: { callback: IntersectionObserverCallback; targets: Element[] }[] = []
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      targets: Element[] = []
+      constructor(callback: IntersectionObserverCallback) {
+        observers.push({ callback, targets: this.targets })
+      }
+      observe(target: Element) {
+        this.targets.push(target)
+      }
+      disconnect() {}
+      unobserve() {}
+    },
+  )
+  library = [
+    photoFixture('photo-1', { takenAt: '2030-07-14T09:00:00Z' }),
+    photoFixture('photo-2', { takenAt: '2030-07-12T09:00:00Z' }),
+    photoFixture('photo-3', { takenAt: '2030-07-09T09:00:00Z' }),
+  ]
+  show('/photos')
+  await screen.findAllByRole('button', { name: /^Open / })
+  await waitFor(() => expect(observers.length).toBeGreaterThan(0))
+  const observer = observers[observers.length - 1]
+  const cell = (photoId: string) => observer.targets.find((target) => target.getAttribute('data-photo-id') === photoId)!
+  const scrollTo = (photoIds: string[], isIntersecting: boolean) =>
+    act(() => {
+      observer.callback(
+        photoIds.map((photoId) => ({ target: cell(photoId), isIntersecting }) as unknown as IntersectionObserverEntry),
+        {} as IntersectionObserver,
+      )
+    })
+  const words = () => screen.getByTestId('photo-date-range').textContent?.replace(/\s/g, ' ')
+  scrollTo(['photo-1', 'photo-2'], true)
+  await waitFor(() => expect(words()).toBe('Jul 12 \u2013 14, 2030'))
+  // Scrolled on: the first has gone, the last has come.
+  scrollTo(['photo-1'], false)
+  scrollTo(['photo-3'], true)
+  await waitFor(() => expect(words()).toBe('Jul 9 \u2013 12, 2030'))
+  // Nothing on screen for a moment: the words stay.
+  scrollTo(['photo-2', 'photo-3'], false)
+  expect(words()).toBe('Jul 9 \u2013 12, 2030')
+})
+
+it('says no days for a search, whose photos are not in the order of the days', async () => {
   show('/photos?search=kite')
   await screen.findByRole('button', { name: 'Open photo-1.jpg' })
   expect(screen.queryByText('Friday, July 12, 2030')).toBeNull()
+  expect(screen.getByTestId('photo-date-range').textContent).toBe('\u00a0')
+})
+
+// ---- Years, Months and All ----
+
+// A library the way the server keeps it for these questions: the photos newest
+// first, narrowed by the two ends of a date range, counted the same way.
+const serveDatedLibrary = (dates: string[]) => {
+  library = dates.map((date, index) => photoFixture(`dated-${index}`, { takenAt: `${date}T12:00:00Z` }))
+  const narrowed = (variables: Record<string, unknown>) =>
+    library
+      .filter(
+        (photo) =>
+          (!variables.takenAfter || new Date(photo.takenAt) >= new Date(String(variables.takenAfter))) &&
+          (!variables.takenBefore || new Date(photo.takenAt) < new Date(String(variables.takenBefore))) &&
+          (!variables.photoKind || photo.photoKind === variables.photoKind),
+      )
+      .sort((first, second) => second.takenAt.localeCompare(first.takenAt))
+  listAnswer = async (variables) => {
+    const offset = Number(variables.offset ?? 0)
+    return { ListPhotos: narrowed(variables).slice(offset, offset + Number(variables.pageSize)) }
+  }
+  extraAnswer = (document, variables) =>
+    document.includes('CountPhotos(') ? { CountPhotos: narrowed(variables).length } : undefined
+}
+const SMALL_DATED_LIBRARY = ['2031-03-20', '2030-12-25', '2030-07-12', '2030-07-02', '2029-01-15']
+const groupNamed = (name: string) => screen.queryByRole('group', { name })
+
+it('offers Years, Months and All over the library, with All chosen, and writes the choice to the address', async () => {
+  serveDatedLibrary(SMALL_DATED_LIBRARY)
+  show('/photos')
+  const group = await screen.findByRole('group', { name: 'Browse by' })
+  const pressed = (name: string) => within(group).getByRole('button', { name }).getAttribute('aria-pressed')
+  expect([pressed('Years'), pressed('Months'), pressed('All')]).toEqual(['false', 'false', 'true'])
+  fireEvent.click(within(group).getByRole('button', { name: 'Months' }))
+  await waitFor(() => expect(address()).toBe('/photos?show=months'))
+  expect(within(group).getByRole('button', { name: 'Months' }).getAttribute('aria-pressed')).toBe('true')
+  fireEvent.click(within(group).getByRole('button', { name: 'All' }))
+  await waitFor(() => expect(address()).toBe('/photos'))
+})
+
+it('shows a picture for each year that has photos, newest first', async () => {
+  serveDatedLibrary(SMALL_DATED_LIBRARY)
+  show('/photos?show=years')
+  await screen.findByRole('button', { name: 'Show 2031' })
+  const tiles = screen.getAllByRole('button', { name: /^Show \d{4}$/ })
+  expect(tiles.map((tile) => tile.getAttribute('aria-label'))).toEqual(['Show 2031', 'Show 2030', 'Show 2029'])
+  // The picture is the newest of the year.
+  expect(tiles[1].querySelector('img')?.getAttribute('src')).toBe('/large-dated-1')
+  // Under the heading, the years the library spans.
+  expect(screen.getByTestId('photo-date-range').textContent?.replace(/\s/g, ' ')).toBe('2029 \u2013 2031')
+})
+
+it('shows a picture for each month that has photos, under its year, and none for a month without', async () => {
+  serveDatedLibrary(SMALL_DATED_LIBRARY)
+  show('/photos?show=months')
+  await screen.findByRole('button', { name: 'Show December 2030' })
+  expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
+    '2031',
+    '2030',
+    '2029',
+  ])
+  const tiles = screen.getAllByRole('button', { name: /^Show [A-Z][a-z]+ \d{4}$/ })
+  expect(tiles.map((tile) => tile.getAttribute('aria-label'))).toEqual([
+    'Show March 2031',
+    'Show December 2030',
+    'Show July 2030',
+    'Show January 2029',
+  ])
+  // The month with two photos has the newer of them.
+  expect(tiles[2].querySelector('img')?.getAttribute('src')).toBe('/large-dated-2')
+})
+
+it('keeps what the filters keep, and has no Select, in an overview', async () => {
+  serveDatedLibrary(SMALL_DATED_LIBRARY)
+  show('/photos?show=years&from=2030-01-01')
+  await screen.findByRole('button', { name: 'Show 2030' })
+  // Nothing before the first day chosen is in an overview of the days chosen.
+  expect(screen.queryByRole('button', { name: 'Show 2029' })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Show 2031' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Select photos' })).toBeNull()
+})
+
+it('goes from a month to the grid at the page that starts it, with its first photo brought to the top', async () => {
+  // Thirty photos in December and thirty in July, on pages of twenty-five:
+  // July starts at the sixth photo of the second page.
+  const dates = [
+    ...Array.from({ length: 30 }, (_, index) => `2030-12-${String(30 - index).padStart(2, '0')}`),
+    ...Array.from({ length: 30 }, (_, index) => `2030-07-${String(30 - index).padStart(2, '0')}`),
+  ]
+  serveDatedLibrary(dates)
+  const revealed: (string | null)[] = []
+  Element.prototype.scrollIntoView = function (this: Element) {
+    revealed.push(this.getAttribute('data-photo-id'))
+  }
+  try {
+    show('/photos?show=months&rows=25')
+    fireEvent.click(await screen.findByRole('button', { name: 'Show July 2030' }))
+    await waitFor(() => expect(address()).toBe('/photos?rows=25&page=2'))
+    await screen.findAllByRole('button', { name: /^Open / })
+    await waitFor(() => expect(revealed).toEqual(['dated-30']))
+    // Once is enough: the address forgets it, and the grid is not scrolled again.
+    await sleep(50)
+    expect(revealed).toEqual(['dated-30'])
+    expect(screen.queryByRole('group', { name: 'Browse by' })).toBeTruthy()
+    expect(
+      within(screen.getByRole('group', { name: 'Browse by' }))
+        .getByRole('button', { name: 'All' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true')
+  } finally {
+    delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+  }
+})
+
+it('goes from a year to the first page when nothing is newer', async () => {
+  serveDatedLibrary(SMALL_DATED_LIBRARY)
+  show('/photos?show=years')
+  fireEvent.click(await screen.findByRole('button', { name: 'Show 2031' }))
+  await waitFor(() => expect(address()).toBe('/photos'))
+  await screen.findAllByRole('button', { name: /^Open / })
+})
+
+it('offers the switch for the Favorites, and not for the Trash, a search, an album or the empty library', async () => {
+  serveDatedLibrary(SMALL_DATED_LIBRARY)
+  show('/photos?view=favorites')
+  expect(await screen.findByRole('group', { name: 'Browse by' })).toBeTruthy()
+  cleanup()
+  show('/photos?view=trash&show=months')
+  await screen.findAllByRole('button', { name: /^Open / })
+  expect(groupNamed('Browse by')).toBeNull()
+  cleanup()
+  show('/photos?search=kite&show=months')
+  await screen.findAllByRole('button', { name: /^Open / })
+  expect(groupNamed('Browse by')).toBeNull()
+  cleanup()
+  show('/photos/albums/album-1?show=months')
+  await screen.findAllByRole('button', { name: /^Open / })
+  expect(groupNamed('Browse by')).toBeNull()
+  cleanup()
+  library = []
+  show('/photos')
+  await screen.findByText(/No photos/i)
+  expect(groupNamed('Browse by')).toBeNull()
 })
 
 it('says the closest matches when no photo has a word of the search, and not when one does', async () => {
