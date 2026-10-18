@@ -51,7 +51,8 @@ func newPhotoWorld(test *testing.T) *photoWorld {
 		test.Fatal(err)
 	}
 	test.Cleanup(func() { _ = files.Close() })
-	// Photos are off until an operator turns them on, so the world turns them on.
+	// Photos are on unless an operator turns them off; the world says so
+	// outright, so that no test depends on the default.
 	configuration := config.Example()
 	configuration.Services.Photos.IsEnabled = new(true)
 	// Signed addresses need the server's secret, which setup generates.

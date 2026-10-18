@@ -1029,9 +1029,10 @@ extension AppModel {
         if let readSession { accessSession = readSession }
     }
 
-    /// Whether Photos is offered: an operator turned it on for the server and
-    /// the person holds `photos:use`. It gates the Photos section, the rows
-    /// for Photo backup and People in Photos, and the backup switch.
+    /// Whether Photos is offered: the server has it on (it is, unless an
+    /// operator turned it off) and the person holds `photos:use`. It gates the
+    /// Photos section, the rows for Photo backup and People in Photos, and the
+    /// backup switch.
     var isPhotosOffered: Bool {
         PhotosAvailability.isOffered(isServiceEnabled: services?.isPhotosEnabled == true, session: accessSession)
     }
