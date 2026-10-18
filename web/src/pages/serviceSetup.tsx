@@ -11,7 +11,7 @@ import { useTranslation } from '../i18n/i18n'
 import type { HostedServiceKey } from '../services'
 import { MailSetupPage } from './setup'
 
-const CAPABILITIES = `isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isAssistantEnabled hasPendingServiceRestart hasCompletedSetup`
+const CAPABILITIES = `isMailRoutingEnabled isMailboxEnabled isCalendarEnabled isRemindersEnabled isContactsEnabled isPhotosEnabled isPhotosChosen isAssistantEnabled hasPendingServiceRestart hasCompletedSetup`
 // Beside the services: what waits for a restart, and whether the person
 // setting up has turned on an agent of their own, which is the last switch
 // between an enabled assistant and a conversation.
