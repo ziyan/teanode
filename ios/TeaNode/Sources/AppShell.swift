@@ -175,7 +175,7 @@ struct MainView: View {
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
                 if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
-                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`).
+                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`).
                 if let chat = DemoServer.openedChat { conversation = chat }
             #endif
         }

@@ -270,9 +270,9 @@ struct ConversationView: View {
                     ReplyBar(reply: reference, onCancel: drop)
                 }
             }
-            // The agents an @ in the box offers, above the keyboard.
+            // The agents an @ in the box offers, above the composer.
             if !model.mentionSuggestions.isEmpty {
-                MentionRow(agents: model.mentionSuggestions) { agent in model.choose(mention: agent) }
+                MentionMenu(agents: model.mentionSuggestions) { agent in model.choose(mention: agent) }
             }
             // The steps sit behind the composer and stick out above it,
             // sliding up from behind it when a turn makes a list and back
