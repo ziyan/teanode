@@ -122,6 +122,22 @@ somebody who manages accounts. None of them is a new operation. The account is
 made first, so one that could not be put in is kept, and trying again adds it
 rather than meeting "taken".
 
+## The agent's circle tool
+
+The agent can do what the person can with a circle, through the same
+operations and with the same refusals, as one `circle` tool
+(`internal/agent/tools/circle`) whose actions are named as the `teanode circle`
+subcommands are. Reading (`list`, `show`, `people`) is a read. `create`,
+`rename` and `withdraw` (taking back an invitation nobody has answered, which
+the admin can send again) are writes. `invite`, `add`, `accept`, `decline` and
+`role` are granting, in both directions of a role change, because each gives
+or takes away somebody's way in. `delete`, `remove` and `leave` are
+destructive. Each of the risky ones shows the person a card that names the
+circle, as above, and the member by name and username, looked up when the card
+is drawn. Removing and changing a role take a username, as the command line
+does, and look up the account id the schema wants in the circle's own members.
+An invitation is accepted or declined only on the person's word.
+
 ## Who sees whom
 
 A person sees other people only through the circles they share: name,
