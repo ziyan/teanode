@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.178.4] - 2026-10-18
+
+### Changed
+
+- On the iPhone, Location's Places and Sharing show no list of people; the people sharing with you are under Visits. (#579)
+
+### Fixed
+
+- The iPhone's Location page no longer says "in 0 sec." for a position taken just now. (#579)
+
 ## [0.178.3] - 2026-10-18
 
 ### Fixed
