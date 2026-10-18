@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.171.1] - 2026-10-18
+
+### Fixed
+
+- A mail or chat archive read from an attached computer no longer converts every attachment it has already sent again on each page, which kept LibreOffice busy on that computer for hours without progress. (#545)
+
 ## [0.171.0] - 2026-10-17
 
 ### Added
