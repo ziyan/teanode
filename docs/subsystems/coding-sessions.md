@@ -46,8 +46,12 @@ on the session's own computer, else by the git remotes against the profile's
 tool: it exits 0, shows nothing, and writes what went wrong to `hook.log` in
 the user's cache directory. The same blocks are on the memory tool's
 `checkout` action, the API (`ReadAgentCodingContext`,
-`RecallAgentCodingMemory`), `teanode agent memory checkout` and the Recall
-dialog. The decision is
+`RecallAgentCodingMemory`), `teanode agent memory checkout`, the Recall
+dialog and the iPhone's Coding menu ("What a session sees"). Reading a
+computer's new sessions now, which the hooks ask after each answer, is the
+memory tool's `capture` action, `CaptureAgentCodingSession`, `teanode agent
+memory capture`, "Read new sessions" on the Coding page and the iPhone's
+Coding menu. The decision is
 `docs/decisions/20261009-coding-sessions-are-shown-memory-by-hooks.md`.
 
 ## The agent into sessions

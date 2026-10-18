@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -212,6 +213,15 @@ func newAgentGraphCommands() []*cli.Command {
 				&cli.BoolFlag{Name: "everywhere", Usage: "with --prompt, recall from all of memory rather than the checkout's project and what it links to"},
 			},
 			Action: runAgentGraphCheckout,
+		},
+		{
+			Name:      "capture",
+			Usage:     "read a computer's new Claude Code or Codex sessions now, so the latest answer is searchable within a minute rather than at the source's next pass; what the hooks ask after each answer",
+			ArgsUsage: "<claude-code|codex>",
+			Flags: []cli.Flag{JSONFlag(),
+				&cli.StringFlag{Name: "computer", Usage: "the computer whose sessions to read, as attached; this one's host name by default", Sources: cli.EnvVars("TEANODE_COMPUTER_NAME")},
+			},
+			Action: runAgentGraphCapture,
 		},
 		{
 			Name:      "evaluate",
@@ -3075,6 +3085,36 @@ func runAgentMemoryCheckRuns(ctx context.Context, command *cli.Command) error {
 		rows = append(rows, []string{run.ID, finished, fmt.Sprint(run.QuestionCount), strings.Join(scores, ", "), fmt.Sprintf("%.2f", run.Cost)})
 	}
 	return printTable([]string{"RUN", "FINISHED", "QUESTIONS", "SCORES", "COST"}, rows)
+}
+
+// runAgentGraphCapture asks the computer's sources of a coding tool's
+// transcripts to read again now, as the hooks do after each answer.
+func runAgentGraphCapture(ctx context.Context, command *cli.Command) error {
+	assistant := command.Args().First()
+	if !slices.Contains(hookTools, assistant) {
+		return fmt.Errorf("say whose sessions to read: %s", strings.Join(hookTools, " or "))
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	computerName := computerNameOf(command)
+	isAsked, err := client.CaptureAgentCodingSession(ctx, connection, computerName, assistant)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(map[string]any{"isAsked": isAsked, "computerName": computerName, "assistant": assistant})
+	}
+	if !isAsked {
+		_, _ = fmt.Fprintf(command.Root().Writer, "Nothing: no enabled %s source reads sessions on %s.\n", assistant, computerName)
+		if command.String("computer") == "" {
+			_, _ = fmt.Fprintln(command.Root().Writer, "If the computer is attached under another name, pass --computer with that name.")
+		}
+		return nil
+	}
+	_, _ = fmt.Fprintf(command.Root().Writer, "Reading the new %s sessions on %s again; they are searchable within a minute.\n", assistant, computerName)
+	return nil
 }
 
 // runAgentGraphCheckout prints what a coding session in a directory is
