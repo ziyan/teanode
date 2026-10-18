@@ -1253,6 +1253,18 @@ it('offers no upload in the Trash, and says how long each day of it has left', a
   expect(await screen.findByRole('button', { name: 'Upload photos' })).toBeTruthy()
 })
 
+it('draws no blank toolbar band above an empty Trash, and keeps the one above a Trash with photos', async () => {
+  library = []
+  show('/photos?view=trash')
+  await screen.findByText('The Trash is empty.')
+  expect(document.querySelector('.photo-toolbar')).toBeNull()
+  cleanup()
+  library = ['photo-1'].map((id) => photoFixture(id, { trashedAt: new Date().toISOString() }))
+  show('/photos?view=trash')
+  expect(await screen.findByRole('button', { name: 'Select photos' })).toBeTruthy()
+  expect(document.querySelector('.photo-toolbar')).not.toBeNull()
+})
+
 it('offers to show a restored photo in the library', async () => {
   library = library.map((photo) => ({ ...photo, trashedAt: new Date().toISOString() }))
   extraAnswer = (document) => (document.includes('RestorePhotos(') ? { RestorePhotos: 1 } : undefined)
