@@ -387,9 +387,10 @@ is that none of them can do something the others cannot. `teanode calendar
 list|show|add|edit|remove|free|calendars|set` is the whole of it from a
 terminal (and `share|shares|unshare|circle`, under Sharing below); for the
 agent it is one tool, `calendar`, whose action is `agenda`, `free`,
-`free_together`, `shares`, `share`, `unshare`, `add`, `edit` or `remove`: the
-same abilities, under one name, because a catalog with a name per verb is a
-catalog a model reads less carefully.
+`free_together`, `shares`, `share`, `unshare`, `add`, `edit`, `remove`,
+`request`, `stop`, `set` or `circle`: the same abilities, under one name,
+because a catalog with a name per verb is a catalog a model reads less
+carefully.
 
 Two things make the agent's set different from the other two.
 
@@ -540,7 +541,8 @@ colleagues is accepted, to share the calendar with them, as the Circles page
 does. The command line: `teanode calendar
 share|shares|unshare|circle`, `list --owner`, `free --with`. The agent's
 `calendar` tool has the actions `agenda`, `free`, `free_together`, `shares`,
-`share`, `unshare`, `add`, `edit` and `remove`: `agenda` takes `owner` (a
+`share`, `unshare`, `add`, `edit`, `remove`, `request`, `stop`, `set` and
+`circle`: `agenda` takes `owner` (a
 username, or `everyone`) to read what others shared, `free_together` takes
 `with` (usernames), `share` takes `with` (a username, which wins over a circle of the same name, or a circle by its id
 or name; a name more than one circle has is refused with the ids and sizes of
@@ -549,6 +551,15 @@ about first; adding to a circle's calendar is the person's own change, and to an
 `edit` it is outward. What the agent reads of other people's calendars it reads
 as the person, at the level each was shared at, and only when the person has
 given it their own calendar.
+
+`request` takes `request_id` and looks a calendar change up after an uncertain
+response, `stop` takes the same and stops one that has not completed (a change
+that has is reported, never undone), `set` renames the person's own calendar or
+changes how it is shown (`name`, `description`, `color`, `timezone`,
+`week_start`; what it leaves out stays as it is), and `circle` takes a circle
+by name or id and makes its calendar, for an admin. All four are writes or
+reads, none is outward or destructive. A person has one calendar of events, so
+there is no action that makes another.
 
 ## The reminders list beside it
 
