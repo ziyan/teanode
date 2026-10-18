@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.171.4] - 2026-10-18
+
+### Fixed
+
+- Photo uploads sent together from one phone no longer fail now and then with "the upload could not be stored". (#544)
+- In the dashboard's photo viewer, the pencil beside the date opens the date dialog on the first click. (#544)
+- Asking the agent for a person's photos no longer fails with "invalid arguments", and its photo listings no longer leave out favorites, videos or Live Photos it was not asked to. (#552)
+
 ## [0.171.3] - 2026-10-18
 
 ### Changed
