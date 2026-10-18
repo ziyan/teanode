@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.172.2] - 2026-10-18
+
+### Fixed
+
+- iPhone app: the app switcher shows the app in the appearance chosen in Settings, not partly in the system's. (#549)
+
 ## [0.172.1] - 2026-10-18
 
 ### Fixed
