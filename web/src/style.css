@@ -11847,6 +11847,13 @@ main.content:has(> .knowledge-frame) {
   align-items: center;
 }
 
+/* Where every button is made 40px tall for a thumb, the line is too. */
+@media (max-width: 760px) {
+  .photo-person-cell .photo-person-title {
+    min-height: 40px;
+  }
+}
+
 .photo-person-cell .face-picture.is-large {
   width: min(100%, 112px);
   height: auto;
