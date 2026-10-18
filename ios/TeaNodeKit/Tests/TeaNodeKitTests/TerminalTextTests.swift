@@ -24,6 +24,12 @@ final class TerminalTextTests: XCTestCase {
         XCTAssertNil(runs[1].foreground)
     }
 
+    func testAFullColorWrittenWithColons() {
+        let runs = terminalRuns("\u{1B}[38:2::10:20:30mone\u{1B}[38:2:40:50:60mtwo")
+        XCTAssertEqual(runs[0].foreground, TerminalColor(red: 10, green: 20, blue: 30))
+        XCTAssertEqual(runs[1].foreground, TerminalColor(red: 40, green: 50, blue: 60))
+    }
+
     func testTextWithoutCodesIsOneRun() {
         XCTAssertEqual(terminalRuns("$ npm test").map(\.text), ["$ npm test"])
     }

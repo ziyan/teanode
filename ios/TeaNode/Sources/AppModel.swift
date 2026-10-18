@@ -961,15 +961,13 @@ extension AppModel {
     /// than at the next slow ask.
     func noteCodingAsking(_ askingCount: Int) { codingAskingCount = askingCount }
 
-    /// Asks which computers run herdr, and how many sessions ask. Computers that cannot be asked leave
-    /// what is known; the section on screen is not taken away under the
-    /// person (isKeeping).
-    func refreshCodingPresence(isKeeping: Bool) async {
+    /// Asks which computers run herdr, and how many sessions ask. A server
+    /// that cannot be asked leaves what is known.
+    func refreshCodingPresence() async {
         guard let connection, services?.isAssistantEnabled == true,
             let list = try? await connection.herdrSessions()
         else { return }
-        let hasComputers = !list.computerNames.isEmpty
-        if hasComputers || !isKeeping { hasCodingComputers = hasComputers }
+        hasCodingComputers = !list.computerNames.isEmpty
         codingAskingCount = list.sessions.filter(\.isAsking).count
     }
 

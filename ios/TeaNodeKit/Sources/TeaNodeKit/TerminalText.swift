@@ -101,8 +101,12 @@ public func terminalRuns(_ text: String) -> [TerminalRun] {
             continue
         }
         let parameters = afterIntroducer[afterIntroducer.startIndex..<end]
-        let numbers = parameters.isEmpty ? [0] : parameters.split(separator: ";", omittingEmptySubsequences: false).flatMap {
-            $0.split(separator: ":", omittingEmptySubsequences: false)
+        let numbers = parameters.isEmpty ? [0] : parameters.split(separator: ";", omittingEmptySubsequences: false).flatMap { group in
+            var parts = group.split(separator: ":", omittingEmptySubsequences: false)
+            // The colon form of a full color may name a color space before
+            // the red, green and blue, often empty: 38:2::r:g:b.
+            if parts.count == 6, ["38", "48"].contains(parts[0]), parts[1] == "2" { parts.remove(at: 2) }
+            return parts
         }.map { Int($0) ?? 0 }
         applyTerminalCodes(numbers, to: &style)
         rest = afterIntroducer[afterIntroducer.index(after: end)...]

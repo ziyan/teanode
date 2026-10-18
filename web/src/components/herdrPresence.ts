@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { graphql } from '../api'
 import { useQuery } from './useQuery'
@@ -41,15 +41,17 @@ export function announceHerdrAsking(askingCount: number) {
 // useHerdrPresence says whether a computer reports herdr, and how many of
 // the person's coding sessions ask something.
 export function useHerdrPresence(isAsked: boolean): HerdrPresence {
-  const [askCount, setAskCount] = useState(0)
-  const [announced, setAnnounced] = useState<{ askingCount: number; askCount: number } | null>(null)
+  const [recheckCount, setRecheckCount] = useState(0)
+  // A count the Coding page announced, and when: it stands until an answer
+  // to an ask the rail started after it arrives.
+  const [announced, setAnnounced] = useState<{ askingCount: number; announcedAt: number } | null>(null)
   useEffect(() => {
     if (!isAsked) return
     let askedAt = Date.now()
     const recheck = () => {
       if (document.visibilityState !== 'visible' || Date.now() - askedAt < RECHECK_MS) return
       askedAt = Date.now()
-      setAskCount((count) => count + 1)
+      setRecheckCount((count) => count + 1)
     }
     const timer = window.setInterval(recheck, RECHECK_MS)
     document.addEventListener('visibilitychange', recheck)
@@ -63,33 +65,36 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
   useEffect(() => {
     const onAnnounced = (event: Event) => {
       const askingCount = (event as CustomEvent<number>).detail
-      if (typeof askingCount === 'number') setAnnounced({ askingCount, askCount })
+      if (typeof askingCount === 'number') setAnnounced({ askingCount, announcedAt: Date.now() })
     }
     window.addEventListener(ASKING_EVENT, onAnnounced)
     return () => window.removeEventListener(ASKING_EVENT, onAnnounced)
-  }, [askCount])
+  }, [])
+  // What the rail's own ask last answered, kept through a failed recheck, so
+  // a row the person already had does not vanish for one lost request.
+  const [known, setKnown] = useState<HerdrPresence | null>(null)
   const { data, error } = useQuery(
-    async () =>
-      isAsked
-        ? { ...(await graphql<HerdrPresenceData>(HERDR_PRESENCE)), isAsked: true }
-        : { ListAgentHerdrSessions: { computerNames: [], sessions: [] }, isAsked: false },
-    [isAsked, askCount],
+    async () => {
+      if (!isAsked) return { ListAgentHerdrSessions: { computerNames: [], sessions: [] }, isAsked: false }
+      const askedAt = Date.now()
+      const answer = await graphql<HerdrPresenceData>(HERDR_PRESENCE)
+      // Every answer replaces a count announced before it was asked, even
+      // one the same as the last answer.
+      setAnnounced((previous) => (previous && previous.announcedAt < askedAt ? null : previous))
+      return { ...answer, isAsked: true }
+    },
+    [isAsked, recheckCount],
     { refresh: false },
   )
-  // The last answer stands through a failed recheck, so a row the person
-  // already had does not vanish for one lost request.
-  const lastKnown = useRef<HerdrPresence | null>(null)
-  if (!isAsked) return { isPresent: false, askingCount: 0 }
-  if (data?.isAsked && !error) {
+  useEffect(() => {
+    if (!data?.isAsked || error) return
     const list = data.ListAgentHerdrSessions
-    lastKnown.current = {
+    setKnown({
       isPresent: list.computerNames.length > 0,
       askingCount: list.sessions.filter((session) => session.herdrSessionState === 'asking').length,
-    }
-  }
-  // A count the Coding page announced since the last ask is the newer one.
-  const askingCount =
-    announced && announced.askCount === askCount ? announced.askingCount : (lastKnown.current?.askingCount ?? 0)
-  if (lastKnown.current !== null) return { isPresent: lastKnown.current.isPresent, askingCount }
-  return { isPresent: error ? false : null, askingCount: 0 }
+    })
+  }, [data, error])
+  if (!isAsked) return { isPresent: false, askingCount: 0 }
+  if (known === null) return { isPresent: error ? false : null, askingCount: 0 }
+  return { isPresent: known.isPresent, askingCount: announced ? announced.askingCount : known.askingCount }
 }

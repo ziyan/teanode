@@ -351,6 +351,9 @@ func (self *Agent) OpenHerdrSession(ctx context.Context, agentId, computerName, 
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(paneId) != "" && !attached.HasFeature(computer.FeatureHerdrOpenBeside) {
+		return nil, fmt.Errorf("the program on %s is too old to open a tab beside a session; update teanode there and restart it", attached.name)
+	}
 	// A coding agent takes a while to start: up to a minute is waited for.
 	session, err := askHerdr[computer.HerdrSession](ctx, attached, "herdr_open", &computer.HerdrArguments{
 		Directory: directory, CodingAgentKind: codingAgentKind, AgentName: agentName, ShouldSkipPermissions: shouldSkipPermissions, PaneID: paneId,

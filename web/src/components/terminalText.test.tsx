@@ -24,6 +24,13 @@ it('reads the 256 colors and resets', () => {
   expect(applyCodes({ foreground: 'red' }, [39])).toEqual({})
 })
 
+it('reads a full color written with colons, with or without its color space', () => {
+  const { container } = render(<TerminalText text={'\x1b[38:2::10:20:30mone\x1b[38:2:40:50:60mtwo'} />)
+  const spans = [...container.querySelectorAll('span')]
+  expect(spans[0].style.color).toBe('rgb(10, 20, 30)')
+  expect(spans[1].style.color).toBe('rgb(40, 50, 60)')
+})
+
 it('writes the text as text, never as markup', () => {
   const { container } = render(<TerminalText text={'<b>not bold</b>'} />)
   expect(container.querySelector('b')).toBeNull()

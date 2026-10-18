@@ -307,6 +307,9 @@ func runHerdr(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 		asked.ShouldSkipPermissions = arguments.ShouldSkipPermissions
 		wait = 90 * time.Second
 		if asked.PaneID != "" {
+			if holder, ok := attached.(tools.FeatureHolder); !ok || !holder.HasFeature(deviceComputer.FeatureHerdrOpenBeside) {
+				return nil, fmt.Errorf("the program on %s is too old to open a tab beside a session; ask the person to update teanode there and restart it", attached.Name())
+			}
 			note = "opened a new session beside " + asked.PaneID
 		} else {
 			note = "opened " + arguments.CodingAgent + " in " + arguments.Directory

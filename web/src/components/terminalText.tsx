@@ -101,6 +101,16 @@ function cssOf(style: TerminalStyle): CSSProperties | undefined {
   return Object.keys(css).length > 0 ? css : undefined
 }
 
+// numbersOf reads a code's numbers. The colon form of a full color may name
+// a color space before the red, green and blue, often empty: 38:2::r:g:b.
+function numbersOf(parameters: string): number[] {
+  return parameters.split(';').flatMap((group) => {
+    const parts = group.split(':')
+    if (parts.length === 6 && (parts[0] === '38' || parts[0] === '48') && parts[1] === '2') parts.splice(2, 1)
+    return parts.map((each) => Number(each || 0))
+  })
+}
+
 // Built from the escape character's code, which a literal in the pattern
 // would be flagged for.
 const CODE = new RegExp(String.fromCharCode(27) + '\\[([0-9;:]*)m', 'g')
@@ -120,7 +130,7 @@ export function TerminalText({ text, className }: { text: string; className?: st
         </span>,
       )
     }
-    const numbers = match[1] === '' ? [0] : match[1].split(/[;:]/).map((each) => Number(each || 0))
+    const numbers = match[1] === '' ? [0] : numbersOf(match[1])
     style = applyCodes(style, numbers)
     last = match.index + match[0].length
   }

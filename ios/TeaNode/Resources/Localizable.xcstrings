@@ -5861,6 +5861,22 @@
         }
       }
     },
+    "Idle": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待機中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空闲"
+          }
+        }
+      }
+    },
     "Name in herdr": {
       "localizations": {
         "ja": {
@@ -6177,6 +6193,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "这会结束 %3$@ 上 %2$@ 中的 %1$@ 并关闭其窗格。对话会保留在历史中。"
+          }
+        }
+      }
+    },
+    "This session is no longer open.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このセッションはもう開いていません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个会话已不再打开。"
           }
         }
       }

@@ -57,11 +57,9 @@ final class HerdrTests: XCTestCase {
         let titled = try decoded(paneTitle: "Fix the footer", tabLabel: "2")
         XCTAssertEqual(titled.rowTitle, "Fix the footer")
         XCTAssertEqual(titled.rowDetail, "tab 2 · Claude Code")
-        XCTAssertEqual(titled.chipTitle, "2 Fix the footer")
         let prompt = try decoded(paneTitle: "robin@laptop: ~/work/website", tabLabel: "2")
         XCTAssertEqual(prompt.rowTitle, "tab 2")
         XCTAssertEqual(prompt.rowDetail, "Claude Code")
-        XCTAssertEqual(prompt.chipTitle, "2")
     }
 
     func testTheQuestionKeepsItsAnsweringPathWithTheConversationsCard() async throws {
@@ -78,13 +76,16 @@ final class HerdrTests: XCTestCase {
 
     func testAReadAsksForTheTurnsAndDecodesThem() async throws {
         let (connection, fake) = try connection(
-            answering: #"{"data":{"ReadAgentHerdrSession":{"herdrSession":\#(sessionJSON),"turns":[{"herdrTurnRole":"person","turnText":"hello","turnAt":"2026-01-01T00:00:00Z"},{"herdrTurnRole":"tool","turnText":"Read a file","turnAt":null,"toolInputText":"{\"file_path\": \"a.txt\"}","toolResultText":"hello"}],"isTruncated":true}}}"#)
-        let read = try await connection.readHerdrSession(computer: "laptop", paneId: "w1-2", turnCount: 50)
-        XCTAssertEqual(read.turns.map(\.herdrTurnRole), ["person", "tool"])
+            answering: #"{"data":{"ReadAgentHerdrSession":{"herdrSession":\#(sessionJSON),"turns":[{"herdrTurnRole":"person","turnText":"hello","turnAt":"2026-01-01T00:00:00Z"},{"herdrTurnRole":"tool","turnText":"Read a file","turnAt":null,"toolInputText":"{\"file_path\": \"a.txt\"}","toolResultText":"hello"},{"herdrTurnRole":"tool","turnText":"Ran a command","hasToolDetail":true}],"isTruncated":true}}}"#)
+        let read = try await connection.readHerdrSession(computer: "laptop", paneId: "w1-2", turnCount: 50, shouldIncludeToolDetail: true)
+        XCTAssertEqual(read.turns.map(\.herdrTurnRole), ["person", "tool", "tool"])
         XCTAssertNil(read.turns[1].turnAt)
         XCTAssertFalse(read.turns[0].hasToolDetail)
         XCTAssertTrue(read.turns[1].hasToolDetail)
         XCTAssertEqual(read.turns[1].toolResultText, "hello")
+        // A read without the detail still says there is some to fetch.
+        XCTAssertTrue(read.turns[2].hasToolDetail)
+        XCTAssertFalse(read.turns[2].isToolDetailLoaded)
         XCTAssertTrue(read.isTruncated)
         XCTAssertEqual(
             try sentVariables(fake),

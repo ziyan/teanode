@@ -39,11 +39,15 @@ type fakeHerdr struct {
 	startRefusals []string
 	// afterKeys, when set, changes the screens once keys are pressed.
 	afterKeys func(paneId string, keys []string)
+	// stateChangeCount is herdr's state_change_seq, moved by every setAgent.
+	stateChangeCount int
+	// readCounts are how many times each pane's screen was read.
+	readCounts map[string]int
 }
 
 func startFakeHerdr(t *testing.T, home string) *fakeHerdr {
 	t.Helper()
-	fake := &fakeHerdr{screens: map[string]string{}, coloredScreens: map[string]string{}}
+	fake := &fakeHerdr{screens: map[string]string{}, coloredScreens: map[string]string{}, readCounts: map[string]int{}}
 	path := filepath.Join(home, ".config", "herdr", "herdr.sock")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
@@ -89,6 +93,7 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 	case "tab.list":
 		result = map[string]any{"type": "tab_list", "tabs": self.tabs}
 	case "agent.read":
+		self.readCounts[target]++
 		text := self.screens[target]
 		if request.Params["format"] == "ansi" && request.Params["strip_ansi"] == false {
 			text = self.coloredScreens[target]
@@ -163,8 +168,9 @@ func (self *fakeHerdr) serve(connection net.Conn) {
 func (self *fakeHerdr) setAgent(paneId, codingAgentKind, herdrStatus, codingSessionId, screen string) {
 	self.mutex.Lock()
 	defer self.mutex.Unlock()
+	self.stateChangeCount++
 	agent := map[string]any{"pane_id": paneId, "agent": codingAgentKind, "agent_status": herdrStatus,
-		"cwd": "~/src/example", "terminal_title_stripped": "Example work"}
+		"cwd": "~/src/example", "terminal_title_stripped": "Example work", "state_change_seq": self.stateChangeCount}
 	if codingSessionId != "" {
 		agent["agent_session"] = map[string]any{"value": codingSessionId}
 	}
@@ -1174,5 +1180,36 @@ func TestAToolCallCarriesItsInputAndWhatItAnswered(t *testing.T) {
 	}
 	if len(turns) != 1 || turns[0].ToolResultText != "README.md" || !strings.Contains(turns[0].ToolInputText, `"ls"`) {
 		t.Errorf("codex: %+v", turns)
+	}
+}
+
+func TestAPaneThatDidNotChangeIsNotReadAgain(t *testing.T) {
+	home := t.TempDir()
+	fake := startFakeHerdr(t, home)
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "idle", "", readHerdrFixture(t, "claude-idle"))
+	herdr := NewHerdr(home)
+	listForTest(t, herdr)
+	listForTest(t, herdr)
+	reads := func() int {
+		fake.mutex.Lock()
+		defer fake.mutex.Unlock()
+		return fake.readCounts["w1:p1"]
+	}
+	if reads() != 1 {
+		t.Fatalf("an idle pane herdr says nothing new about was read %d times", reads())
+	}
+	// Keys typed into it are a change herdr does not report.
+	if err := herdr.client.sendKeys(context.Background(), "w1:p1", []string{"enter"}); err != nil {
+		t.Fatal(err)
+	}
+	listForTest(t, herdr)
+	if reads() != 2 {
+		t.Errorf("a pane typed into was read %d times, want 2", reads())
+	}
+	// And so is a change herdr reports.
+	fake.setAgent("w1:p1", CodingAgentKindClaude, "working", "", readHerdrFixture(t, "claude-idle"))
+	listForTest(t, herdr)
+	if reads() != 3 {
+		t.Errorf("a pane herdr says changed was read %d times, want 3", reads())
 	}
 }
