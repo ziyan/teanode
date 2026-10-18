@@ -6,7 +6,8 @@ import { uploadFiles } from '../upload'
 import {
   HERDR_DOCUMENTS,
   HerdrQuestionAnswer,
-  HerdrSessionDialog,
+  HerdrSendForm,
+  HerdrTurnsList,
   type HerdrQuestion,
   type HerdrSession,
 } from './herdrSessions'
@@ -131,14 +132,9 @@ it('uploads the files chosen and sends them with the text', async () => {
     promise: Promise.resolve({ attachments: [{ id: 'attachment-1' }] }),
     abort: vi.fn(),
   } as unknown as ReturnType<typeof uploadFiles>)
-  execute.mockImplementation((document: string) =>
-    Promise.resolve(
-      document === HERDR_DOCUMENTS.SendAgentHerdrSession
-        ? { SendAgentHerdrSession: idle }
-        : { ReadAgentHerdrSession: { herdrSession: idle, turns: [], isTruncated: false } },
-    ),
-  )
-  const { container } = render(<HerdrSessionDialog session={idle} onChanged={vi.fn()} onClose={vi.fn()} />)
+  execute.mockResolvedValue({ SendAgentHerdrSession: idle })
+  const sent = vi.fn()
+  const { container } = render(<HerdrSendForm session={idle} onSent={sent} />)
   const picture = new File(['picture'], 'error.png', { type: 'image/png' })
   const picker = container.ownerDocument.querySelector('.herdr-send input[type="file"]') as HTMLInputElement
   fireEvent.change(picker, { target: { files: [picture] } })
@@ -153,5 +149,67 @@ it('uploads the files chosen and sends them with the text', async () => {
     text: '',
     attachmentIds: ['attachment-1'],
   })
+  expect(sent).toHaveBeenCalledWith(idle)
   expect(screen.queryByText('error.png')).toBeNull()
+})
+
+it('sends on Ctrl with Enter, and not while the session asks', async () => {
+  const idle: HerdrSession = { ...session, herdrSessionState: 'idle' }
+  execute.mockResolvedValue({ SendAgentHerdrSession: idle })
+  const { rerender } = render(<HerdrSendForm session={idle} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder')
+  fireEvent.change(box, { target: { value: 'run the tests' } })
+  fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true })
+  await waitFor(() => expect(execute).toHaveBeenCalled())
+  expect(execute.mock.calls[0][1]).toMatchObject({ text: 'run the tests' })
+  rerender(<HerdrSendForm session={session} onSent={vi.fn()} />)
+  expect((screen.getByLabelText('herdr.sendPlaceholder') as HTMLTextAreaElement).disabled).toBe(true)
+})
+
+it('draws person turns as bubbles, agent turns as text and tool turns as one line', () => {
+  const { container } = render(
+    <HerdrTurnsList
+      turns={[
+        { herdrTurnRole: 'person', turnText: 'fix the build' },
+        { herdrTurnRole: 'agent', turnText: 'Looking at **it** now' },
+        { herdrTurnRole: 'tool', turnText: 'Edit(main.go)' },
+      ]}
+    />,
+  )
+  expect(container.querySelector('.agent-line.user')?.textContent).toBe('fix the build')
+  expect(container.querySelector('.agent-line.assistant strong')?.textContent).toBe('it')
+  expect(container.querySelector('.agent-line.tool')?.textContent).toBe('Edit(main.go)')
+})
+
+it('opens a tool call to its whole input and what it answered', () => {
+  const { container } = render(
+    <HerdrTurnsList
+      turns={[
+        {
+          herdrTurnRole: 'tool',
+          turnText: 'Bash: npm test',
+          toolInputText: '{\n  "command": "npm test"\n}',
+          toolResultText: '4 passed',
+        },
+      ]}
+    />,
+  )
+  const details = container.querySelector('details.herdr-tool') as HTMLDetailsElement
+  expect(details.querySelector('summary')?.textContent).toBe('Bash: npm test')
+  expect(details.open).toBe(false)
+  fireEvent.click(details.querySelector('summary') as HTMLElement)
+  expect([...details.querySelectorAll('pre')].map((pre) => pre.textContent)).toEqual([
+    '{\n  "command": "npm test"\n}',
+    '4 passed',
+  ])
+})
+
+it('attaches a pasted picture, and leaves pasted text to the box', () => {
+  render(<HerdrSendForm session={session} onSent={vi.fn()} />)
+  const box = screen.getByLabelText('herdr.sendPlaceholder')
+  const picture = new File(['png bytes'], 'image.png', { type: 'image/png' })
+  fireEvent.paste(box, { clipboardData: { files: [picture], getData: () => '' } })
+  expect(screen.getByText(/^pasted-\d+-1\.png$/)).toBeTruthy()
+  fireEvent.paste(box, { clipboardData: { files: [], getData: () => 'some text' } })
+  expect(screen.getAllByText(/^pasted-/)).toHaveLength(1)
 })

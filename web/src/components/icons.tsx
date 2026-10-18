@@ -1006,6 +1006,16 @@ export function LocationIcon(props: IconProps) {
   )
 }
 
+// CodeIcon is a pair of angle brackets: the coding sessions.
+export function CodeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m8 7-5 5 5 5" />
+      <path d="m16 7 5 5-5 5" />
+    </Icon>
+  )
+}
+
 // Download: an arrow into a tray, for saving a file from the server.
 export function DownloadIcon(props: IconProps) {
   return (

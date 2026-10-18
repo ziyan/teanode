@@ -295,6 +295,10 @@ jobs:
             shoot "$recording_screen-dark" dark large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
             shoot "$recording_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab recordings -TeaNodeScreen "$recording_screen"
           done
+          shoot coding-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding
+          shoot coding-session-light light large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-dark dark large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
+          shoot coding-session-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab coding -TeaNodeScreen coding-session
           shoot contacts-light light large -TeaNodeDemo -TeaNodeTab contacts
           shoot contacts-dark dark large -TeaNodeDemo -TeaNodeTab contacts
           shoot menu-dark dark large -TeaNodeDemo -TeaNodeMenu
