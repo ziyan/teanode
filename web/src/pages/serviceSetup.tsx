@@ -69,6 +69,11 @@ export function SetupPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [problem, setProblem] = useState<unknown>()
   const [isSaved, setIsSaved] = useState(false)
+  // Whether the operator ticked or unticked Photos on this page. The server
+  // stores any value it is sent as a choice, and Photos is ticked from the
+  // start because it is on by default, so a save that did not mention it must
+  // not send it, or saving only Calendar would mark Photos as chosen.
+  const [isPhotosTouched, setIsPhotosTouched] = useState(false)
   useEffect(() => {
     if (data) {
       const isChoosingPhotos = chooseOnArrival.current === 'photos'
@@ -200,7 +205,13 @@ export function SetupPage() {
     setIsSaving(true)
     setProblem(undefined)
     try {
-      const variables = Object.fromEntries(hostedKeys.map((serviceKey) => [serviceKey, choices[serviceKey]]))
+      const isPhotosSent =
+        isPhotosTouched || isHereForPhotos || choices.isPhotosEnabled !== setup.selectedServices.isPhotosEnabled
+      const variables = Object.fromEntries(
+        hostedKeys
+          .filter((serviceKey) => serviceKey !== 'isPhotosEnabled' || isPhotosSent)
+          .map((serviceKey) => [serviceKey, choices[serviceKey]]),
+      )
       await graphql(UPDATE, {
         ...variables,
         ...(hasCompletedSetup ? { hasCompletedSetup: true } : {}),
@@ -208,6 +219,7 @@ export function SetupPage() {
       })
       setIsSaved(true)
       setIsReviewing(false)
+      setIsPhotosTouched(false)
       await reload()
       window.dispatchEvent(new Event('focus'))
       // Finishing changes nothing on this page; it changes where signing in
@@ -253,6 +265,7 @@ export function SetupPage() {
               checked={choices[serviceKey]}
               disabled={isSaving || (serviceKey === 'isMailboxEnabled' && !choices.isMailRoutingEnabled)}
               onChange={(event) => {
+                if (serviceKey === 'isPhotosEnabled') setIsPhotosTouched(true)
                 setChoices({
                   ...choices,
                   [serviceKey]: event.target.checked,

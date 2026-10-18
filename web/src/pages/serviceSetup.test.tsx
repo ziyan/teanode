@@ -195,3 +195,62 @@ it('shows the note about keeping data only when something is turned off', async 
   fireEvent.click(screen.getByRole('button', { name: 'Review your choices' }))
   expect(screen.getByText(/Turning a service off keeps its data/)).toBeTruthy()
 })
+
+// The server stores whatever it is sent as a choice, and Photos is ticked on a
+// new server only because it is on by default. A save that sent it anyway would
+// mark Photos chosen, and the sign-in would then skip the welcome page.
+function updatesSent() {
+  return vi
+    .mocked(graphql)
+    .mock.calls.filter(([document]) => document.includes('UpdateServices'))
+    .map(([, variables]) => variables as Record<string, unknown>)
+}
+
+async function saveChoices() {
+  const original = vi.mocked(graphql).getMockImplementation()!
+  vi.mocked(graphql).mockImplementation(async (document, variables) =>
+    document.includes('UpdateServices') ? ({ UpdateServices: none } as never) : original(document, variables),
+  )
+  fireEvent.click(screen.getByRole('button', { name: 'Review your choices' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Apply choices' }))
+  await screen.findByText('Choices saved')
+}
+
+it('does not send Photos when saving other services on a new server', async () => {
+  answer({ selected: { isPhotosEnabled: true }, running: { isPhotosEnabled: true } })
+  renderSetup()
+  await screen.findByText(/Photos is running/)
+  const checkbox = (name: string) => screen.getByText(name, { selector: 'strong' }).closest('label')!.querySelector('input')!
+  fireEvent.click(checkbox('Calendar'))
+  fireEvent.click(checkbox('Contacts'))
+  await saveChoices()
+  const [variables] = updatesSent()
+  expect(variables).toMatchObject({ isCalendarEnabled: true, isContactsEnabled: true })
+  expect(variables).not.toHaveProperty('isPhotosEnabled')
+})
+
+it('sends Photos when the operator unticks or ticks it on this page', async () => {
+  answer({ selected: { isPhotosEnabled: true }, running: { isPhotosEnabled: true } })
+  renderSetup()
+  const photos = (await screen.findByText('Photos', { selector: 'strong' })).closest('label')!.querySelector('input')!
+  fireEvent.click(photos)
+  await saveChoices()
+  expect(updatesSent()[0]).toMatchObject({ isPhotosEnabled: false })
+})
+
+it('sends Photos from a preset that turns it off', async () => {
+  answer({ selected: { isPhotosEnabled: true, isCalendarEnabled: true }, running: { isPhotosEnabled: true } })
+  renderSetup()
+  await screen.findByText(/Photos is running/)
+  fireEvent.click(screen.getByRole('button', { name: 'Personal assistant' }))
+  await saveChoices()
+  expect(updatesSent()[0]).toMatchObject({ isPhotosEnabled: false })
+})
+
+it('sends Photos as chosen when sent here for them, even though it is already on', async () => {
+  answer({ selected: { isPhotosEnabled: true }, running: { isPhotosEnabled: true } })
+  renderSetup('/manage/server/setup?choose=photos')
+  await screen.findByText(/Photos is running/)
+  await saveChoices()
+  expect(updatesSent()[0]).toMatchObject({ isPhotosEnabled: true })
+})
