@@ -444,6 +444,24 @@ export function CalendarPage() {
   const session = useSession()
   return <CalendarPageForAccount key={session.userId ?? ''} ownerId={session.userId ?? ''} />
 }
+// The width at which the month's seven columns no longer hold a day's events:
+// the same breakpoint the stylesheet turns them into dots at.
+const PHONE_QUERY = '(max-width: 640px)'
+
+function useIsPhone(): boolean {
+  // matchMedia is not there under every test environment, and a missing one
+  // is a wide screen.
+  const [isPhone, setPhone] = useState(() => window.matchMedia?.(PHONE_QUERY).matches ?? false)
+  useEffect(() => {
+    if (!window.matchMedia) return
+    const query = window.matchMedia(PHONE_QUERY)
+    const listen = () => setPhone(query.matches)
+    query.addEventListener('change', listen)
+    return () => query.removeEventListener('change', listen)
+  }, [])
+  return isPhone
+}
+
 function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   const submission = useCalendarMutation(ownerId)
   const { t } = useTranslation()
@@ -456,7 +474,12 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
   // The reminders address is the reminders list, which a link from the agent's
   // memory ("/reminders?reminder=...") relies on.
   const isRemindersAddress = useLocation().pathname.startsWith('/reminders')
-  const requestedView = (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : 'month')
+  const isPhone = useIsPhone()
+  // A phone opens on the agenda, a list that needs no sideways room; the
+  // month is a tab away and keeps working there, with dots for the events.
+  const [opensOnAgenda] = useState(isPhone)
+  const requestedView =
+    (parameters.get('view') as View) || (isRemindersAddress ? 'reminders' : opensOnAgenda ? 'agenda' : 'month')
   const view =
     serviceCapabilities?.isCalendarEnabled === false
       ? 'reminders'
@@ -1058,16 +1081,29 @@ function CalendarPageForAccount({ ownerId }: { ownerId: string }) {
                       a button inside a button is not a thing, and the empty
                       part of a day is the natural place to press to put
                       something in it. */}
-                  <Tooltip label={t('calendar.newOn', { day: dayFormat.format(day) })}>
+                  {/* On a phone the events are dots, so a press on the day opens
+                      the day, where they are written out. */}
+                  <Tooltip
+                    label={
+                      isPhone
+                        ? t('calendar.openDay', { day: dayFormat.format(day) })
+                        : t('calendar.newOn', { day: dayFormat.format(day) })
+                    }
+                  >
                     <button
                       type="button"
                       className="calendar-day-add"
-                      disabled={!!submission.pending || submission.isWorking || busy}
+                      disabled={!isPhone && (!!submission.pending || submission.isWorking || busy)}
                       onClick={() => {
+                        if (isPhone) return move({ view: 'day', on: day })
                         setProblem(null)
                         if (!busy && !submission.pending && !submission.isWorking) setDraft(blank(day))
                       }}
-                      aria-label={t('calendar.newOn', { day: dayFormat.format(day) })}
+                      aria-label={
+                        isPhone
+                          ? t('calendar.openDay', { day: dayFormat.format(day) })
+                          : t('calendar.newOn', { day: dayFormat.format(day) })
+                      }
                     />
                   </Tooltip>
                 </div>

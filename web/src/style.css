@@ -10756,13 +10756,57 @@ button.with-icon {
    day is still a day. The day view and the agenda are the ones worth reaching
    for on a phone, and neither needs sideways room. */
 @media (max-width: 640px) {
+  /* Seven columns of a phone's width cannot hold a chip with a time and a
+     title, so an event is a dot in its calendar's color here and the day,
+     which a press on it opens, writes them out. */
   .calendar-month {
-    display: grid;
-    min-width: 40rem;
+    grid-template-rows: auto repeat(6, minmax(4.5rem, 1fr));
   }
 
-  .calendar-month-scroll {
-    overflow-x: auto;
+  .calendar-month .calendar-day {
+    min-height: 4.5rem;
+    padding: 0.15rem;
+    align-items: center;
+  }
+
+  .calendar-month .calendar-day-entries {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-content: flex-start;
+    gap: 3px;
+    /* Two rows of dots at most: the day has the rest. */
+    max-height: 22px;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .calendar-month .calendar-entry {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--leaf);
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .calendar-month .calendar-entry.calendar-busy-block {
+    background: var(--muted);
+    opacity: 0.5;
+  }
+
+  .calendar-month .calendar-entry > * {
+    display: none;
+  }
+
+  .calendar-month .calendar-weekday {
+    padding: 0.4rem 0;
+    letter-spacing: 0;
   }
 
   .calendar-grid-scroll {
