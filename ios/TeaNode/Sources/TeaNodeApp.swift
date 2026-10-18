@@ -557,7 +557,8 @@ struct SettingsForm: View {
                 if let connection = app.connection {
                     Section("Your account") {
                         NavigationLink {
-                            PreferencesView(connection: connection)
+                            // A new name or picture shows in the accounts above at once.
+                            PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                         } label: {
                             Label("Profile", systemImage: "person.crop.circle")
                         }
@@ -799,7 +800,7 @@ struct SettingsForm: View {
                 case "circle-detail", "circle-detail-operator": CircleDetailDemoScreen(connection: connection)
                 case "skill-share-sheet": SkillSharingView(connection: connection)
                 case "skill-share-call": SkillShareCallsView(connection: connection, share: DemoServer.lentSkillShare) {}
-                case "settings-picture": PreferencesView(connection: connection)
+                case "settings-picture": PreferencesView(connection: connection) { saved in app.profileSaved(saved) }
                 default: EmptyView()
                 }
             }
@@ -924,15 +925,20 @@ struct AccountsSection: View {
                 Button {
                     Task { await app.switchTo(account) }
                 } label: {
+                    // The person as their server shows them: picture and name,
+                    // with the username beside the server it signs in to.
+                    let profile = app.accountProfiles[account.accountKey]
                     HStack(spacing: 12) {
-                        Text(String(account.username.prefix(1)).uppercased())
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.accentColor, in: .circle)
+                        AvatarView(
+                            name: profile?.displayName ?? account.username, avatarUrl: profile?.avatarUrl,
+                            colorIndex: profile?.avatarColorIndex, size: 36, account: account
+                        )
+                        let displayName = profile?.displayName ?? account.username
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(account.username).foregroundStyle(.primary)
-                            Text(account.server.host).font(.footnote).foregroundStyle(.secondary)
+                            Text(displayName).foregroundStyle(.primary)
+                            // The username only when the name above is not it.
+                            Text(verbatim: displayName == account.username ? account.server.host : "\(account.username) · \(account.server.host)")
+                                .font(.footnote).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if account.accountKey == app.account?.accountKey {
@@ -940,6 +946,7 @@ struct AccountsSection: View {
                         }
                     }
                 }
+                .task(id: account.accountKey) { await app.loadProfile(of: account) }
                 .swipeActions {
                     if account.accountKey != app.account?.accountKey {
                         Button("Sign out", role: .destructive) { signingOut = account }
