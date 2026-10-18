@@ -130,6 +130,33 @@ const (
 	waitingRow = `{"id":"photo-three","photoKind":"picture","photoProcessingState":"waiting"}`
 )
 
+// A model that fills in every field it is shown sends false, zero and the
+// first choice of each list for the ones it has no view on: none of them
+// narrows the listing.
+func TestAListingWithEveryFieldFilledInNarrowsOnlyByWhatNamesSomething(test *testing.T) {
+	current := newRun(test, map[string]string{"ListPhotos": `[` + pictureRow + `]`})
+	if _, err := current.call(map[string]any{
+		"operation": "person-photos", "face_group_id": "group-one", "page_size": 6, "offset": 0,
+		"is_favorite": false, "is_trashed": false, "photo_kind": "any", "search_text": "", "taken_after": "", "taken_before": "",
+		"near_latitude": 0, "near_longitude": 0, "near_distance_kilometers": 0, "share_level": "view", "source": "conversation",
+	}); err != nil {
+		test.Fatal(err)
+	}
+	asked := current.operations.asked("ListPhotos")
+	if len(asked) != 1 || asked[0]["faceGroupId"] != "group-one" || asked[0]["isFavorite"] != nil || asked[0]["photoKind"] != nil ||
+		asked[0]["nearLatitude"] != nil || asked[0]["nearDistanceKilometers"] != nil {
+		test.Fatalf("the listing asked %v", asked)
+	}
+	// A distance with a point is a place to narrow by, and true a flag.
+	if _, err := current.call(map[string]any{"operation": "list", "is_favorite": true, "photo_kind": "video", "near_latitude": 10, "near_longitude": 20, "near_distance_kilometers": 5}); err != nil {
+		test.Fatal(err)
+	}
+	asked = current.operations.asked("ListPhotos")
+	if len(asked) != 2 || asked[1]["isFavorite"] != true || asked[1]["photoKind"] != "video" || asked[1]["nearDistanceKilometers"] != 5.0 {
+		test.Fatalf("the listing asked %v", asked[1])
+	}
+}
+
 func TestListAnswersCompactRowsInThePersonsZoneAndSaysHowToPage(test *testing.T) {
 	current := newRun(test, map[string]string{
 		"ListPhotos":  `[` + pictureRow + `,` + videoRow + `,` + waitingRow + `]`,
@@ -169,7 +196,7 @@ func TestListAnswersCompactRowsInThePersonsZoneAndSaysHowToPage(test *testing.T)
 		test.Fatalf("paging: %+v", answer)
 	}
 	asked := current.operations.asked("ListPhotos")
-	if len(asked) != 1 || asked[0]["searchText"] != "Example" || asked[0]["pageSize"] != 3 || asked[0]["offset"] != nil || asked[0]["isFavorite"] != false || asked[0]["takenAfter"] != "2025-01-01T00:00:00Z" {
+	if len(asked) != 1 || asked[0]["searchText"] != "Example" || asked[0]["pageSize"] != 3 || asked[0]["offset"] != nil || asked[0]["isFavorite"] != nil || asked[0]["takenAfter"] != "2025-01-01T00:00:00Z" {
 		test.Fatalf("the listing asked %v", asked)
 	}
 	for _, arguments := range []map[string]any{{"operation": "list", "page_size": 101}, {"operation": "list", "photo_kind": "gif"}, {"operation": "list", "taken_before": "last blue moon"}} {
