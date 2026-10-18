@@ -184,6 +184,9 @@ func (self *Store) serveStatus(response http.ResponseWriter, request *http.Reque
 		return
 	}
 	self.setProgress(response, upload)
+	// The offset changes with every part that arrives, and the draft requires
+	// that a cache never answers for it.
+	response.Header().Set("Cache-Control", "no-store")
 	response.WriteHeader(http.StatusNoContent)
 }
 
