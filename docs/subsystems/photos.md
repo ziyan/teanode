@@ -81,7 +81,11 @@ taken) travels in `X-Photo-*` headers, since a background upload's body is
 nothing but the file. Only `X-Photo-Client-ID` is required. When the request
 names its content type, a type the library does not keep is refused with a 415
 before a byte is read; a request that names none, or `application/octet-stream`,
-is judged by its file name and its bytes once they have all arrived.
+is judged by its file name and its bytes once they have all arrived. A
+picture whose first bytes are a JPEG, PNG, GIF or HEIC is kept as that type
+whatever it was sent as, because an iPhone sends a picture saved from a
+message as `image.jpeg` in whichever format it is; processing reads those
+bytes again before it picks a decoder, for files kept before this check.
 
 The body is stored in parts of at most 8 MiB as it arrives, each with a
 receipt row once it is whole, so the offset a client is told is always bytes

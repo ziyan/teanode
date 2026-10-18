@@ -42,15 +42,16 @@ function ServiceOff({ isOperator }: { isOperator: boolean }) {
     <div className="card">
       <h2>{t('services.unavailable')}</h2>
       <p>{t('services.unavailableDetail')}</p>
-      <p>
-        <Link to={homePath(session)}>{t('services.back')}</Link>
+      <div className="page-actions">
+        <Link className="button" to={homePath(session)}>
+          {t('services.back')}
+        </Link>
         {isOperator && (
-          <>
-            {' · '}
-            <Link to="/manage/server/setup">{t('services.openSetup')}</Link>
-          </>
+          <Link className="button" to="/manage/server/setup">
+            {t('services.openSetup')}
+          </Link>
         )}
-      </p>
+      </div>
     </div>
   )
 }
