@@ -741,16 +741,30 @@ a.tile:hover strong {
    as a field is allowed to be rather than as wide as the page. */
 .conversation-toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
 }
 
+/* As tall as the box beside it, as in the mailbox's bar. */
+.conversation-toolbar .segmented {
+  flex: 0 0 auto;
+  align-self: stretch;
+}
+
+.conversation-toolbar .segmented button {
+  height: 100%;
+}
+
 .conversation-toolbar input[type='search'] {
-  flex: 1 1 220px;
+  flex: 1 1 0;
   min-width: 0;
-  max-width: 420px;
+}
+
+/* At the row's end even when there is no search box to push it there. */
+.conversation-toolbar .conversation-new {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 /* auto-fill rather than the band's auto-fit: one conversation is one tile's
