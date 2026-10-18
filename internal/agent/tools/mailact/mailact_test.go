@@ -278,7 +278,8 @@ func TestADirectCallsAnswersAreNotTakenForRepeats(t *testing.T) {
 	if first == second {
 		t.Fatalf("two direct answers shared the id %q", first)
 	}
-	if answerRequestId("call-7", "item-1", "ACCEPTED") != answerRequestId("call-7", "item-1", "ACCEPTED") {
+	asked, askedAgain := answerRequestId("call-7", "item-1", "ACCEPTED"), answerRequestId("call-7", "item-1", "ACCEPTED")
+	if asked != askedAgain {
 		t.Fatal("a retried confirmation of one call must reuse its id")
 	}
 }
