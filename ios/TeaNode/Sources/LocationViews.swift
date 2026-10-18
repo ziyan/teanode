@@ -84,6 +84,8 @@ struct LocationScreen: View {
             GeometryReader { proxy in
                 VStack(spacing: 0) {
                     LocationMapHeader(model: model, recorder: recorder)
+                        // Pictures on a map stay map-sized, as in Maps.
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                         .frame(height: proxy.size.height * mapHeightFraction)
                     LocationPeopleRows(model: model)
                     if let person = model.selectedPerson {
@@ -105,6 +107,9 @@ struct LocationScreen: View {
                         }
                     }
                 }
+                // The grouped gray of the lists, so the card of people stands
+                // out from it as the lists' rows do.
+                .background(Color(.systemGroupedBackground))
             }
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)

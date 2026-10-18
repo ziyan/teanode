@@ -11,9 +11,12 @@ import TeaNodeKit
 /// map, one row says how many and opens a screen of their own.
 struct LocationPeopleRows: View {
     let model: LocationModel
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    /// The most people given a row of their own under the map.
-    private static let mostRows = 3
+    /// The most people given a row of their own under the map. At the
+    /// accessibility text sizes a row is as tall as a third of the map, so
+    /// everyone is one row away instead.
+    private var mostRows: Int { dynamicTypeSize.isAccessibilitySize ? 0 : 3 }
 
     var body: some View {
         if model.location != nil || !model.people.isEmpty {
@@ -21,7 +24,7 @@ struct LocationPeopleRows: View {
             // rows starts under the names, not under the pictures.
             VStack(spacing: 0) {
                 LocationOwnRow(model: model, isHighlightedWhenChosen: true)
-                if model.people.count > Self.mostRows {
+                if model.people.count > mostRows {
                     LocationPeopleDivider()
                     NavigationLink(value: LocationRoute.people) {
                         HStack(spacing: 12) {
@@ -64,6 +67,11 @@ struct LocationPeopleRows: View {
             .clipShape(.rect(cornerRadius: 22, style: .continuous))
             .padding(.horizontal)
             .padding(.vertical, 12)
+            // The rows keep their height and the list under them gives way.
+            // Past the first accessibility size the text here stops growing,
+            // so the rows still leave the list room on the screen.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -151,8 +159,11 @@ struct LocationChosenPersonCard: View {
 /// LocationPeopleDivider is the line between two people, starting where
 /// their names do.
 struct LocationPeopleDivider: View {
+    /// The picture's width, grown with the text as AvatarView grows it.
+    @ScaledMetric(relativeTo: .headline) private var avatarDiameter = LocationPersonRow.avatarSize
+
     var body: some View {
-        Divider().padding(.leading, 16 + LocationPersonRow.avatarSize + 12)
+        Divider().padding(.leading, 16 + avatarDiameter + 12)
     }
 }
 
