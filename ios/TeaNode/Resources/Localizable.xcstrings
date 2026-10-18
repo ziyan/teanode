@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Use the three-letter code, such as USD.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USD のように3文字のコードで入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用三个字母的代码，例如 USD。"
+          }
+        }
+      }
+    },
     "Yours": {
       "localizations": {
         "ja": {
@@ -60192,22 +60208,6 @@
         }
       }
     },
-    "Share %@": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@を共有"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "共享%@"
-          }
-        }
-      }
-    },
     "Shared %@ with %@.": {
       "localizations": {
         "ja": {
@@ -62470,22 +62470,6 @@
         }
       }
     },
-    "usd": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd"
-          }
-        }
-      }
-    },
     "This shares %lld pages: this one and everything under it.": {
       "localizations": {
         "ja": {
@@ -63452,22 +63436,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "每笔"
-          }
-        }
-      }
-    },
-    "Use the three-letter code, such as usd.": {
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "usd のように3文字のコードで入力してください。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请使用三个字母的代码，例如 usd。"
           }
         }
       }

@@ -101,6 +101,11 @@ struct ConversationsSheet: View {
     @State private var isStartingGroup = false
     /// The row a screenshot scrolls to, to show the rows that start a chat.
     private static let messageSomeoneRowId = "message-someone"
+    /// The room the last rows are given at the bottom of the side menu: the
+    /// search field floats over the bottom of the list there, and without it
+    /// the last chats cannot be scrolled clear of the field. It grows with the
+    /// text, as the field does.
+    @ScaledMetric(relativeTo: .body) private var searchFieldClearance: CGFloat = 56
 
     var body: some View {
         NavigationStack {
@@ -209,6 +214,7 @@ struct ConversationsSheet: View {
             // Ready once the rows were read: a failed read leaves no rows, and
             // giving up on the kept place then would lose it.
             .remembersScroll(scrollOffsetPoints: scrollOffsetPoints, isReady: isLoaded && problemText == nil, isPaused: !words.isEmpty)
+            .contentMargins(.bottom, isPanel ? searchFieldClearance : 0, for: .scrollContent)
             .searchable(text: $words, prompt: Text("Search conversations"))
             .task(id: words) {
                 // A quarter of a second after the last key, as the drawer
@@ -578,9 +584,18 @@ struct SettingsForm: View {
                             NavigationLink {
                                 CirclesView(connection: connection)
                             } label: {
-                                Label("Circles", systemImage: "person.2")
+                                // The count is in the label, as the Photo backup row's status is: a
+                                // badge on the link itself is drawn after the chevron.
+                                HStack {
+                                    Label("Circles", systemImage: "person.2")
+                                    Spacer()
+                                    if openCircleInvitationCount > 0 {
+                                        Text(openCircleInvitationCount, format: .number)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .accessibilityElement(children: .combine)
                             }
-                            .badge(openCircleInvitationCount)
                         }
                         NavigationLink {
                             ChangePasswordView(connection: connection)

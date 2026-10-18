@@ -306,7 +306,7 @@ struct ShareSkillSheet: View {
                 _personId = State(initialValue: "sam")
                 _paymentLimit = State(initialValue: "100.00")
                 _monthlyLimit = State(initialValue: "400.00")
-                _currency = State(initialValue: "usd")
+                _currency = State(initialValue: "USD")
             }
         #endif
     }
@@ -351,6 +351,8 @@ struct ShareSkillSheet: View {
                             Text(verbatim: person.pickerLabel).tag(person.userId)
                         }
                     }
+                } header: {
+                    Text(verbatim: skill.name).fontDesign(.monospaced)
                 } footer: {
                     Text("Their agent is offered the tools you choose. Your computer must be connected for a tool to run, and you can stop sharing at any time.")
                 }
@@ -364,7 +366,9 @@ struct ShareSkillSheet: View {
                                 })
                         ) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: tool.name).fontDesign(.monospaced)
+                                // In words, as the conversation names a tool; the raw name is for the
+                                // server and the person who wrote the skill.
+                                Text(verbatim: ToolWords.name(tool.name))
                                 Group {
                                     if tool.isAmountDeclared {
                                         Text("Spends money. Calls within your limits go ahead; bigger ones wait for you.")
@@ -406,13 +410,15 @@ struct ShareSkillSheet: View {
                             Text(verbatim: unreadableAmountText).font(.footnote).foregroundStyle(.red)
                         }
                         LabeledContent("Currency") {
-                            TextField("usd", text: $currency)
-                                .textInputAutocapitalization(.never)
+                            // Typed as capitals, as a currency code is written; `code` is what
+                            // the server is sent.
+                            TextField("Currency", text: Binding(get: { currency }, set: { currency = $0.uppercased() }), prompt: Text(verbatim: "USD"))
+                                .textInputAutocapitalization(.characters)
                                 .autocorrectionDisabled()
                                 .multilineTextAlignment(.trailing)
                         }
                         if isCurrencyBad {
-                            Text("Use the three-letter code, such as usd.").font(.footnote).foregroundStyle(.red)
+                            Text("Use the three-letter code, such as USD.").font(.footnote).foregroundStyle(.red)
                         }
                     }
                 } footer: {
@@ -425,7 +431,9 @@ struct ShareSkillSheet: View {
                     }
                 }
             }
-            .navigationTitle("Share \(skill.name)")
+            // The skill's name is in the first section: a long one does not fit a
+            // title at the largest text, and a title cannot wrap.
+            .navigationTitle("Share a skill")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
