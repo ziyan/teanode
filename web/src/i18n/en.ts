@@ -6043,6 +6043,7 @@ export const en = {
   'location.off': 'Location is not turned on for your account. Ask whoever runs this server to allow it.',
   'location.mapLabel': 'Map of where people are',
   'location.you': 'You',
+  'location.browserHere': 'On the map is where this browser is, within {meters} m. Nothing is recorded until the TeaNode app on your phone records it.',
   'location.nowhere': 'No position has been recorded yet. The TeaNode app on your phone records where you go, and it appears here.',
   'location.atSince': 'At {place} since {time}',
   'location.lastSeen': 'Last seen',

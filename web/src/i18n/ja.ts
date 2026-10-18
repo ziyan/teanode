@@ -5962,6 +5962,7 @@ export const ja: Catalog = {
   'location.off': 'このアカウントでは位置情報が有効になっていません。このサーバーの管理者に有効にしてもらってください。',
   'location.mapLabel': '人の居場所を示す地図',
   'location.you': 'あなた',
+  'location.browserHere': '地図にはこのブラウザの位置を表示しています（誤差 {meters} m 以内）。スマートフォンの TeaNode アプリが記録するまで、位置は保存されません。',
   'location.nowhere': 'まだ位置が記録されていません。スマートフォンの TeaNode アプリがあなたの行き先を記録し、ここに表示します。',
   'location.atSince': '{time}から{place}',
   'location.lastSeen': '最後に確認',

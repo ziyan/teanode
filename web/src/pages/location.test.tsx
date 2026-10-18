@@ -549,7 +549,7 @@ it('shows where the browser is on the map when the person has no position, once 
 
   expect((await screen.findByTestId('map')).getAttribute('data-people')).toBe('')
   fireEvent.click(await screen.findByRole('button', { name: 'Show where I am' }))
-  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('You'))
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('Person A'))
   expect(screen.queryByRole('button', { name: 'Show where I am' })).toBeNull()
 })
 
@@ -562,7 +562,7 @@ it('reads the browser position at once when the permission is already granted', 
   })
   renderAt('/location')
 
-  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('You'))
+  await waitFor(() => expect(screen.getByTestId('map').getAttribute('data-people')).toBe('Person A'))
   Object.defineProperty(navigator, 'permissions', { configurable: true, value: undefined })
 })
 
