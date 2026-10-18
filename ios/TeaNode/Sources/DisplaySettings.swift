@@ -27,6 +27,15 @@ enum Appearance: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The scheme SwiftUI is told to draw in; nil follows the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
     /// Sets every window of the app, so sheets and alerts follow too: a
     /// preferredColorScheme of nil leaves an open sheet in the last choice
     /// rather than returning it to the system's.
