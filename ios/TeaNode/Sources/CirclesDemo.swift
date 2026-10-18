@@ -275,12 +275,12 @@
                 #"{"data":{"ReadAgentConversation":{"conversation":\#(conversation),"todos":[],"messages":[\#(messages.joined(separator: ","))],"total":\#(messages.count)},"ListAgentInteractions":[]}}"#
         }
 
-        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`
-        /// or `chat-members`), or nil for any other screen.
+        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`,
+        /// `chat-members` or `chat-mention`), or nil for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
             case "chat-direct": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
-            case "chat-group", "chat-members": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
+            case "chat-group", "chat-members", "chat-mention": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }
         }
