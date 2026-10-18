@@ -215,6 +215,10 @@ final class PhotosModel {
     var faceGroups: [PhotoFaceGroup]?
     var faceGroupsFailureText: String?
     var isHiddenPeopleShown = false
+    /// Whether the person has hidden at least one person, as the last read of
+    /// the groups of faces found; the People screen offers to show hidden
+    /// people only then. See PhotoPeople.swift.
+    var hasHiddenPeople = false
     /// The kind and days the library, Favorites and Trash are narrowed to.
     var photoFilter = PhotoFilter()
     /// The circles the person is in, for making an album for one; empty until read.
@@ -307,7 +311,7 @@ final class PhotosModel {
     }
 
     var isPeopleShown: Bool {
-        library?.isFaceRecognitionAvailable == true || !(faceGroups ?? []).isEmpty
+        library?.isFaceRecognitionAvailable == true || !(faceGroups ?? []).isEmpty || hasHiddenPeople
     }
 
     private func fetchPage(_ key: PhotoListKey, beforePhotoId: String? = nil, pageSize: Int = PhotoPaging.pageSize) async throws -> [Photo] {
@@ -1110,11 +1114,16 @@ struct PhotosScreen: View {
                     NewAlbumMenu(model: model)
                 }
             } else if model.section == .people {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
-                    } label: {
-                        Label("More", systemImage: "ellipsis")
+                // The menu holds only the switch for hidden people, so with nobody hidden there is
+                // nothing to put in it and no button. It stays while the switch is on, so that it can
+                // be turned off again.
+                if model.hasHiddenPeople || model.isHiddenPeopleShown {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
+                        } label: {
+                            Label("More", systemImage: "ellipsis")
+                        }
                     }
                 }
             } else {
