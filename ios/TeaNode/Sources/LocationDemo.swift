@@ -25,11 +25,14 @@
             let osmCategory: String
             let visitCount: Int
             let lastVisitDaysAgo: Int
+            var isAddressTyped = false
 
-            var json: String {
+            var json: String { json(isAddressTyped: isAddressTyped) }
+
+            func json(isAddressTyped: Bool) -> String {
                 let lastVisit = DemoServer.demoTime(daysAgo: lastVisitDaysAgo, hour: 8, minute: 5)
                 return #"""
-                    {"id":"\#(id)","userId":"robin","placeName":"\#(name)","isNamedByPerson":\#(isNamedByPerson),"placeLabel":"\#(label)","latitudeDegrees":\#(latitudeDegrees),"longitudeDegrees":\#(longitudeDegrees),"radiusMeters":\#(radiusMeters),"osmType":"way","osmId":1001,"osmName":"\#(name)","osmCategory":"\#(osmCategory)","addressText":"","visitCount":\#(visitCount),"lastVisitAt":"\#(lastVisit)","namingErrorMessage":"","createdAt":"2026-09-01T08:00:00Z","updatedAt":"2026-09-01T08:00:00Z"}
+                    {"id":"\#(id)","userId":"robin","placeName":"\#(name)","isNamedByPerson":\#(isNamedByPerson),"placeLabel":"\#(label)","latitudeDegrees":\#(latitudeDegrees),"longitudeDegrees":\#(longitudeDegrees),"radiusMeters":\#(radiusMeters),"osmType":"way","osmId":1001,"osmName":"\#(name)","osmCategory":"\#(osmCategory)","addressText":"\#(isAddressTyped ? "12 Elm Street, Exampleton" : "")","isAddressTyped":\#(isAddressTyped),"visitCount":\#(visitCount),"lastVisitAt":"\#(lastVisit)","namingErrorMessage":"","createdAt":"2026-09-01T08:00:00Z","updatedAt":"2026-09-01T08:00:00Z"}
                     """#
             }
         }
@@ -49,7 +52,7 @@
                 radiusMeters: 200, osmCategory: "leisure=park", visitCount: 9, lastVisitDaysAgo: 0),
             Place(
                 id: cafePlaceId, name: "Corner Café", isNamedByPerson: false, label: "", latitudeDegrees: 10.5025, longitudeDegrees: 20.5030,
-                radiusMeters: 60, osmCategory: "amenity=cafe", visitCount: 5, lastVisitDaysAgo: 0),
+                radiusMeters: 60, osmCategory: "amenity=cafe", visitCount: 5, lastVisitDaysAgo: 0, isAddressTyped: true),
         ]
 
         // Two invented people sharing with the person: the first at "Where I
@@ -60,7 +63,7 @@
         /// One of their places, which belongs to them and not to the person.
         static func sharedPlaceJSON(userId: String, id: String, name: String, label: String, latitude: Double, longitude: Double) -> String {
             #"""
-            {"id":"\#(id)","userId":"\#(userId)","placeName":"\#(name)","isNamedByPerson":true,"placeLabel":"\#(label)","latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"radiusMeters":100,"osmType":"way","osmId":2001,"osmName":"\#(name)","osmCategory":"","addressText":"","visitCount":12,"lastVisitAt":"\#(CalendarDates.text(Date()))","namingErrorMessage":"","createdAt":"2026-09-01T08:00:00Z","updatedAt":"2026-09-01T08:00:00Z"}
+            {"id":"\#(id)","userId":"\#(userId)","placeName":"\#(name)","isNamedByPerson":true,"placeLabel":"\#(label)","latitudeDegrees":\#(latitude),"longitudeDegrees":\#(longitude),"radiusMeters":100,"osmType":"way","osmId":2001,"osmName":"\#(name)","osmCategory":"","addressText":"","isAddressTyped":false,"visitCount":12,"lastVisitAt":"\#(CalendarDates.text(Date()))","namingErrorMessage":"","createdAt":"2026-09-01T08:00:00Z","updatedAt":"2026-09-01T08:00:00Z"}
             """#
         }
 
@@ -250,6 +253,10 @@
                 return
                     #"{"data":{"SearchPlaces":{"foundPlaces":[{"placeName":"Riverside Park Kiosk","osmType":"node","osmId":1004,"osmCategory":"shop=kiosk","addressText":"","latitudeDegrees":10.5042,"longitudeDegrees":20.5062,"distanceMeters":55,"placeId":null},{"placeName":"Riverside Park","osmType":"way","osmId":1001,"osmCategory":"leisure=park","addressText":"","latitudeDegrees":10.5040,"longitudeDegrees":20.5060,"distanceMeters":35,"placeId":"place-park"}],"nextOffset":null}}}"#
             }
+            if query.contains("SearchAddresses(") {
+                return
+                    #"{"data":{"SearchAddresses":[{"placeName":"12 Elm Street","osmType":"way","osmId":2001,"osmCategory":"building=house","addressText":"12 Elm Street, Exampleton","latitudeDegrees":10.5012,"longitudeDegrees":20.5031,"distanceMeters":0,"placeId":null,"placeLabel":"","isNamedByPerson":false},{"placeName":"12 Elm Street","osmType":"way","osmId":2002,"osmCategory":"building=apartments","addressText":"12 Elm Street, Sampleford","latitudeDegrees":11.2200,"longitudeDegrees":21.1100,"distanceMeters":0,"placeId":null,"placeLabel":"","isNamedByPerson":false},{"placeName":"12 Elm Street","osmType":"way","osmId":2003,"osmCategory":"building=house","addressText":"12 Elm Street, Mockton","latitudeDegrees":9.8800,"longitudeDegrees":19.7700,"distanceMeters":0,"placeId":null,"placeLabel":"","isNamedByPerson":false}]}}"#
+            }
             if query.contains("ListLocationPoints(") {
                 var from = Date.distantPast
                 var until = Date.distantFuture
@@ -259,7 +266,9 @@
             }
             if query.contains("SavePlace(") {
                 let place = LocationDemo.place(variables["placeId"] as? String ?? LocationDemo.parkPlaceId)
-                return #"{"data":{"SavePlace":\#(place.json)}}"#
+                // An empty address text gives the address back to the map.
+                let isAddressCleared = (variables["addressText"] as? String)?.isEmpty == true
+                return #"{"data":{"SavePlace":\#(place.json(isAddressTyped: place.isAddressTyped && !isAddressCleared))}}"#
             }
             if query.contains("CheckIn(") { return #"{"data":{"CheckIn":\#(LocationDemo.visits[0].json)}}"# }
             if query.contains("ForgetPlace(") { return #"{"data":{"ForgetPlace":true}}"# }

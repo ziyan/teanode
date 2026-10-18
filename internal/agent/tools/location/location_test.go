@@ -241,7 +241,7 @@ func TestSearchAndNearbyAreAroundWhereTheyWere(t *testing.T) {
 func TestWritesAndTheirRisks(t *testing.T) {
 	merged := tools.Build().Get("location")
 	risks := map[string]tools.Risk{
-		"now": tools.RiskRead, "visits": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead,
+		"now": tools.RiskRead, "visits": tools.RiskRead, "places": tools.RiskRead, "nearby": tools.RiskRead, "search": tools.RiskRead, "find_address": tools.RiskRead,
 		"people": tools.RiskRead, "shares": tools.RiskRead, "set_up": tools.RiskRead,
 		"save_place": tools.RiskWrite, "check_in": tools.RiskWrite, "unshare": tools.RiskWrite,
 		"forget_place": tools.RiskDestructive, "erase": tools.RiskDestructive, "share": tools.RiskGranting,
@@ -302,6 +302,12 @@ func TestCheckInSendsAFoundPlaceAsItWasFound(t *testing.T) {
 	}
 	if answer["is_checked_in"] != true || answer["place_id"] != "p5" {
 		t.Errorf("the answer: %v", answer)
+	}
+	if _, _, err := act(t, runOf(operations), "check_in", `{"latitude_degrees":40,"longitude_degrees":-75,"accuracy_meters":850.5}`, false); err != nil {
+		t.Fatal(err)
+	}
+	if sent = operations.sent["CheckIn"]; sent["accuracyMeters"] != 850.5 {
+		t.Errorf("the accuracy was sent: %v", sent)
 	}
 	if _, _, err := act(t, runOf(operations), "check_in", `{}`, false); err == nil {
 		t.Error("a check-in needs a place")
@@ -453,5 +459,75 @@ func TestAPlaceIsCalledByTheNameThePersonGaveThenTheLabelThenTheMap(t *testing.T
 		if got := placeDisplayName(&place); got != expected {
 			t.Errorf("%+v is called %q, expected %q", place, got, expected)
 		}
+	}
+}
+
+// Finding an address asks for matches anywhere and gives back what save_place
+// takes: the address and the position of each match.
+func TestFindAddressGivesWhatSavePlaceTakes(t *testing.T) {
+	operations := &routing{answers: map[string]string{
+		"SearchAddresses": `[{"placeName":"6 Rue Example","addressText":"6 Rue Example, Exampleton, Testland","latitudeDegrees":40.5,"longitudeDegrees":-75.5,"distanceMeters":1200.4},
+			{"placeName":"8 Rue Example","addressText":"8 Rue Example, Exampleton, Testland","latitudeDegrees":40.6,"longitudeDegrees":-75.6,"distanceMeters":0,"placeId":"p9","placeLabel":"work"}]`,
+		"SavePlace": `{"id":"p1","placeName":"6 Rue Example","placeLabel":"home","radiusMeters":75,"isNamedByPerson":false,"addressText":"6 Rue Example, Exampleton, Testland"}`,
+	}}
+	answer, _, err := act(t, runOf(operations), "find_address", `{"query":" 6 rue example ","limit":3}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sent := operations.sent["SearchAddresses"]; sent["query"] != "6 rue example" || sent["limitCount"] != 3 {
+		t.Errorf("the words and the count: %v", sent)
+	}
+	addresses := answer["addresses"].([]any)
+	first, second := addresses[0].(map[string]any), addresses[1].(map[string]any)
+	if len(addresses) != 2 || first["address_text"] != "6 Rue Example, Exampleton, Testland" || first["latitude_degrees"] != 40.5 || first["longitude_degrees"] != -75.5 {
+		t.Errorf("what save_place takes: %v", addresses)
+	}
+	if second["place_id"] != "p9" || second["is_the_persons_place"] != true {
+		t.Errorf("a match that is already their place says so: %v", second)
+	}
+	if _, _, err := act(t, runOf(operations), "find_address", `{}`, false); err == nil {
+		t.Error("an address search needs words")
+	}
+
+	saved, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","place_label":"home","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":" 6 Rue Example, Exampleton, Testland "}`, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := operations.sent["SavePlace"]
+	if sent["addressText"] != "6 Rue Example, Exampleton, Testland" || sent["latitudeDegrees"] != 40.5 || sent["longitudeDegrees"] != -75.5 || sent["placeLabel"] != "home" || sent["placeName"] != nil {
+		t.Errorf("the address and its position were sent: %v", sent)
+	}
+	if saved["place_display_name"] != "Home" {
+		t.Errorf("the place is called by its label: %v", saved)
+	}
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_label":"home","address_text":"6 Rue Example"}`, false); err == nil || !strings.Contains(err.Error(), "position of the address") {
+		t.Errorf("an address without its position or a place: %v", err)
+	}
+	// An address no map knows is kept as typed on a place that stays.
+	delete(operations.sent, "SavePlace")
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","address_text":" 12 Lane Example "}`, false); err != nil {
+		t.Errorf("an address as typed: %v", err)
+	}
+	if sent := operations.sent["SavePlace"]; sent["addressText"] != "12 Lane Example" || sent["latitudeDegrees"] != nil || sent["placeId"] != "p1" {
+		t.Errorf("only the address was sent: %v", sent)
+	}
+	// A blank address with a place takes the typed one away; without one it means nothing.
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_id":"p1","address_text":"  "}`, false); err != nil {
+		t.Errorf("a blank address takes the typed one away: %v", err)
+	}
+	if sent := operations.sent["SavePlace"]; sent["addressText"] != "" {
+		t.Errorf("the blank address was sent: %v", sent)
+	}
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_label":"home","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"  "}`, false); err == nil {
+		t.Error("a blank address makes no place")
+	}
+	// Making home from an address needs no place_id.
+	if _, _, err := act(t, runOf(operations), "save_place", `{"place_label":"home","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"6 Rue Example, Exampleton, Testland"}`, false); err != nil {
+		t.Errorf("a place made from an address: %v", err)
+	}
+	merged := tools.Build().Get("location")
+	line := merged.PreviewLine(context.Background(), json.RawMessage(`{"action":"save_place","latitude_degrees":40.5,"longitude_degrees":-75.5,"address_text":"6 Rue Example"}`))
+	if !strings.Contains(line, "6 Rue Example") || strings.Contains(line, `":`) {
+		t.Errorf("the card says %q", line)
 	}
 }

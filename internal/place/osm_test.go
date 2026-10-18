@@ -93,6 +93,10 @@ func nominatimServer(t *testing.T, requests *[]string) *httptest.Server {
 				say(writer, `{"osm_type":"node","osm_id":55,"lat":"15.000000","lon":"25.000000","category":"place","type":"house","name":"","display_name":"7, Exampleton, Testland","address":{"suburb":"Old Quarter","city":"Exampleton"}}`)
 			case query.Get("lat") == "16.000000" && query.Get("layer") == "address":
 				say(writer, `{"osm_type":"node","osm_id":56,"lat":"16.000000","lon":"26.000000","category":"place","type":"house","name":"","display_name":"1-2-3, Elm Quarter, Exampleville, Testland","address":{"house_number":"1-2-3","suburb":"Elm Quarter","city":"Exampleville"}}`)
+			case query.Get("lat") == "17.000000" && query.Get("layer") == "poi":
+				say(writer, `{"osm_type":"way","osm_id":61,"lat":"17.000000","lon":"27.000000","category":"amenity","type":"parking","name":"Example Car Park","display_name":"Example Car Park, Sample Street, Exampleton, Testland"}`)
+			case query.Get("lat") == "17.000000" && query.Get("layer") == "address":
+				say(writer, `{"osm_type":"way","osm_id":62,"lat":"17.000000","lon":"27.000000","category":"highway","type":"residential","name":"","display_name":"9, Sample Street, Exampleton, Testland","address":{"house_number":"9","road":"Sample Street","city":"Exampleton"}}`)
 			case query.Get("lat") == "12.000000" && query.Get("layer") == "address":
 				say(writer, `{"error":"Unable to geocode"}`)
 			case query.Get("lat") == "13.000000":
@@ -196,6 +200,48 @@ func TestNominatimDoesNotNameAPointAfterAnElevatorOrAHouseNumber(t *testing.T) {
 	found, err = provider.Name(context.Background(), 16, 26)
 	if err != nil || found == nil || found.PlaceName != "Elm Quarter" {
 		t.Errorf("a number and no road: %+v, %v", found, err)
+	}
+}
+
+// A car park is street furniture, not a place a person goes to: a point next
+// to one takes the address, as with an elevator.
+func TestACarParkDoesNotNameAPlace(t *testing.T) {
+	t.Parallel()
+
+	var nominatimRequests, photonRequests []string
+	nominatim := nominatimServer(t, &nominatimRequests)
+	defer nominatim.Close()
+	photon := photonServer(t, &photonRequests)
+	defer photon.Close()
+	for name, provider := range map[string]Provider{
+		"nominatim": &nominatimProvider{requester: newTestRequester(nominatim)},
+		"photon":    &photonProvider{requester: newTestRequester(photon)},
+	} {
+		found, err := provider.Name(context.Background(), 17, 27)
+		if err != nil || found == nil || found.PlaceName != "9 Sample Street" || strings.Contains(found.PlaceName, "Car Park") {
+			t.Errorf("%s named the point after the car park: %+v, %v", name, found, err)
+		}
+	}
+}
+
+func TestEveryKindOfStreetFurnitureIsNotAPlace(t *testing.T) {
+	t.Parallel()
+
+	for _, category := range []string{
+		"amenity=parking", "amenity=parking_space", "amenity=parking_entrance", "amenity=bicycle_parking",
+		"amenity=motorcycle_parking", "amenity=bench", "amenity=waste_basket", "amenity=waste_disposal",
+		"amenity=recycling", "amenity=vending_machine", "amenity=post_box", "amenity=telephone",
+		"amenity=drinking_water", "amenity=toilets", "amenity=shelter", "amenity=charging_station",
+		"highway=elevator", "barrier=gate", "man_made=mast", "place=house",
+	} {
+		if !isNotAPlace(category) {
+			t.Errorf("%s is not a place a person goes to", category)
+		}
+	}
+	for _, category := range []string{"amenity=cafe", "amenity=library", "leisure=park", "shop=bakery"} {
+		if isNotAPlace(category) {
+			t.Errorf("%s is a place a person goes to", category)
+		}
 	}
 }
 
@@ -304,6 +350,11 @@ func photonServer(t *testing.T, requests *[]string) *httptest.Server {
 			if request.URL.Query().Get("lat") == "14.000000" {
 				say(writer, `{"type":"FeatureCollection","features":[
 					{"type":"Feature","geometry":{"type":"Point","coordinates":[24,14]},"properties":{"osm_type":"N","osm_id":88,"osm_key":"highway","osm_value":"elevator","name":"Example Avenue","street":"Rue Example","housenumber":"6","city":"Exampleton"}}]}`)
+				return
+			}
+			if request.URL.Query().Get("lat") == "17.000000" {
+				say(writer, `{"type":"FeatureCollection","features":[
+					{"type":"Feature","geometry":{"type":"Point","coordinates":[27,17]},"properties":{"osm_type":"W","osm_id":61,"osm_key":"amenity","osm_value":"parking","name":"Example Car Park","street":"Sample Street","housenumber":"9","city":"Exampleton"}}]}`)
 				return
 			}
 			if request.URL.Query().Get("lat") == "16.000000" {

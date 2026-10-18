@@ -61,11 +61,25 @@ var notAPlaceCategories = map[string]bool{
 	"highway": true, "railway": true, "public_transport": true, "barrier": true, "power": true, "man_made": true,
 }
 
+// notAPlaceCategoryValues are the "key=value" categories, under keys that
+// also hold places a person goes to (amenity), of things that are only
+// furniture of a street or a car park: a parking lot or space, a bench, a
+// bin, a post box. Naming a place after one would call a person's home
+// "Parking" because a car park is next to it.
+var notAPlaceCategoryValues = map[string]bool{
+	"amenity=parking": true, "amenity=parking_space": true, "amenity=parking_entrance": true,
+	"amenity=bicycle_parking": true, "amenity=motorcycle_parking": true, "amenity=bench": true,
+	"amenity=waste_basket": true, "amenity=waste_disposal": true, "amenity=recycling": true,
+	"amenity=vending_machine": true, "amenity=post_box": true, "amenity=telephone": true,
+	"amenity=drinking_water": true, "amenity=toilets": true, "amenity=shelter": true,
+	"amenity=charging_station": true,
+}
+
 // isNotAPlace says whether an OpenStreetMap category ("key=value") is one of
 // those a person does not go to, or a bare house (which is an address).
 func isNotAPlace(osmCategory string) bool {
 	key, _, _ := strings.Cut(osmCategory, "=")
-	return notAPlaceCategories[key] || osmCategory == "place=house"
+	return notAPlaceCategories[key] || notAPlaceCategoryValues[osmCategory] || osmCategory == "place=house"
 }
 
 // addressName is the name for a place the map has no name for, built from its
@@ -87,6 +101,18 @@ func addressName(houseNumber, road, neighborhood, city string) string {
 	return ""
 }
 
+// addressLine joins the parts of an address that are not empty, starting with
+// the one that names it.
+func addressLine(parts ...string) string {
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" && (len(kept) == 0 || kept[len(kept)-1] != part) {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, ", ")
+}
+
 // Provider names points and finds places from OpenStreetMap data. Every call
 // waits its turn behind the one limiter all providers in the process share.
 type Provider interface {
@@ -98,6 +124,14 @@ type Provider interface {
 	// the radius. An empty query asks what is near the point instead of
 	// matching words, which is what a check-in list wants.
 	Search(ctx context.Context, query string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*Found, error)
+
+	// Addresses finds the addresses matching words anywhere, best match first,
+	// at most limitCount of them, for a person who types where a place is.
+	// DistanceMeters is left at zero (the caller knows from where). AddressText
+	// starts with the part that names the match (house number and road, or the
+	// name of a place), which is what a place without a name of its own is
+	// called by.
+	Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error)
 }
 
 // NewProvider makes the provider the configuration names, or nil with no error
@@ -323,4 +357,10 @@ func nearest(found []*Found, latitudeDegrees, longitudeDegrees, radiusMeters flo
 // wants limitCount, since the ones nearest are not the ones it lists first.
 func searchFetchCount(limitCount int) int {
 	return min(max(limitCount, 1)*3, 40)
+}
+
+// addressFetchCount is how many matches to ask a provider for when the person
+// wants limitCount: as many, since nothing is dropped for being far.
+func addressFetchCount(limitCount int) int {
+	return min(max(limitCount, 1), 40)
 }

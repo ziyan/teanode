@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -726,6 +728,261 @@ func TestListSharedLocationsDescribesEverySharer(t *testing.T) {
 		hasVisit := person["openVisit"] != nil
 		if person["latestPoint"] == nil || hasVisit != (person["username"] == world.ada.Username) {
 			t.Errorf("%v", person)
+		}
+	}
+}
+
+// providerRequests are the paths the address provider was asked for. The
+// naming job asks from its own goroutine, so they are read under the mutex.
+type providerRequests struct {
+	mutex sync.Mutex
+	paths []string
+}
+
+// asked returns the paths asked for so far.
+func (self *providerRequests) asked() []string {
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
+	return append([]string(nil), self.paths...)
+}
+
+// waitForNaming waits for the naming job's reverse lookup of a new place, and
+// then forgets every path, so that what the naming asked for is not mistaken
+// for what a later step asks for.
+func (self *providerRequests) waitForNaming(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		self.mutex.Lock()
+		isNamed := slices.ContainsFunc(self.paths, func(path string) bool { return strings.HasPrefix(path, "/reverse") })
+		if isNamed {
+			self.paths = nil
+		}
+		self.mutex.Unlock()
+		if isNamed {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the new place was never named: %v", self.asked())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// addressProvider answers an address search for invented addresses and records
+// the paths it was asked for, so that a test can tell a search from a reverse
+// lookup (which would be the naming job replacing a typed address).
+func (self *locationWorld) addressProvider(t *testing.T) *providerRequests {
+	t.Helper()
+	requests := &providerRequests{}
+	provider := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests.mutex.Lock()
+		requests.paths = append(requests.paths, request.URL.Path+"?"+request.URL.RawQuery)
+		requests.mutex.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/search" {
+			_, _ = response.Write([]byte(`{"osm_type":"node","osm_id":42,"lat":"40.5","lon":"-75.5","category":"amenity","type":"cafe","name":"Corner Cafe","display_name":"Corner Cafe, 1 Elm Street"}`))
+			return
+		}
+		_, _ = response.Write([]byte(`[
+			{"osm_type":"node","osm_id":71,"lat":"40.500000","lon":"-75.500000","category":"place","type":"house","name":"","display_name":"6, Rue Example, Exampleton","address":{"house_number":"6","road":"Rue Example","city":"Exampleton","country":"Testland"}},
+			{"osm_type":"node","osm_id":72,"lat":"40.600000","lon":"-75.600000","category":"place","type":"house","name":"","display_name":"8, Rue Example, Exampleton","address":{"house_number":"8","road":"Rue Example","city":"Exampleton","country":"Testland"}}
+		]`))
+	}))
+	t.Cleanup(provider.Close)
+	if err := self.graph.config.Update(func(configuration *config.Configuration) error {
+		configuration.Places.ProviderKind = config.PlacesProviderNominatim
+		configuration.Places.ProviderURL = provider.URL
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return requests
+}
+
+// An address search is refused while the provider is off, asks without a box
+// around any position, and tells which matches are where the caller has a place.
+func TestSearchAddressesFromTheProvider(t *testing.T) {
+	world := newLocationWorld(t)
+	const search = `query { SearchAddresses(query: "6 rue example") { placeName addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson } }`
+	if message := world.refused(t, world.ada, search); !strings.Contains(message, "operator") || !strings.Contains(message, "OpenStreetMap") {
+		t.Errorf("whose switch it is: %s", message)
+	}
+
+	requests := world.addressProvider(t)
+	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.6001, longitudeDegrees: -75.6001, placeLabel: "work") { id } }`)
+
+	rows := world.call(t, world.ada, search)["SearchAddresses"].([]any)
+	if len(rows) != 2 {
+		t.Fatalf("the matches: %v", rows)
+	}
+	first, second := rows[0].(map[string]any), rows[1].(map[string]any)
+	if first["placeName"] != "6 Rue Example" || first["addressText"] != "6 Rue Example, Exampleton, Testland" || first["distanceMeters"].(float64) != 0 || first["placeId"] != nil {
+		t.Errorf("the first match with no position reported: %v", first)
+	}
+	if second["placeId"] == nil || second["placeLabel"] != "work" {
+		t.Errorf("a match where the caller has a place says so: %v", second)
+	}
+	// The new place was named by a reverse lookup of its own; the search is
+	// the one request that is not.
+	searches := 0
+	asked := requests.asked()
+	for _, path := range asked {
+		if strings.HasPrefix(path, "/search?") {
+			searches++
+			if strings.Contains(path, "viewbox") || strings.Contains(path, "bounded") {
+				t.Errorf("the search was limited to a box: %v", path)
+			}
+		}
+	}
+	if searches != 1 {
+		t.Errorf("the provider was asked %v", asked)
+	}
+
+	// With a reported position the distances are from it.
+	world.report(t, world.ada, pointInput(40.5, -75.5, ago(time.Minute)), "")
+	rows = world.call(t, world.ada, search)["SearchAddresses"].([]any)
+	if rows[0].(map[string]any)["distanceMeters"].(float64) > 5 || rows[1].(map[string]any)["distanceMeters"].(float64) < 1000 {
+		t.Errorf("distances from the latest position: %v", rows)
+	}
+
+	world.refused(t, world.ada, `query { SearchAddresses(query: "   ") { placeName } }`)
+	world.refused(t, world.ada, fmt.Sprintf(`query { SearchAddresses(query: %q) { placeName } }`, strings.Repeat("a", 201)))
+	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", limitCount: 21) { placeName } }`)
+	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", limitCount: 0) { placeName } }`)
+	if message := world.refused(t, world.makeNobody(t), search); !strings.Contains(message, "not found") {
+		t.Errorf("a person without the permission: %s", message)
+	}
+}
+
+// A labeled place moved to an address keeps its label, holds the address, is
+// called by the first part of it, and is left alone by the naming job.
+func TestSavePlaceMovedToATypedAddress(t *testing.T) {
+	world := newLocationWorld(t)
+	requests := world.addressProvider(t)
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.0, longitudeDegrees: -74.0, placeLabel: "home") { id } }`)["SavePlace"].(map[string]any)
+	placeId := made["id"].(string)
+	requests.waitForNaming(t)
+
+	if message := world.refused(t, world.ada, `mutation { SavePlace(placeLabel: "home", addressText: "6 Rue Example, Exampleton") { id } }`); !strings.Contains(message, "position of the address") {
+		t.Errorf("an address without its position and without a place: %s", message)
+	}
+
+	saved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.5, longitudeDegrees: -75.5, addressText: "6 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText osmId osmType osmName osmCategory latitudeDegrees longitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if saved["id"] != placeId || saved["placeLabel"] != "home" || saved["placeName"] != "6 Rue Example" || saved["isNamedByPerson"] != false ||
+		saved["addressText"] != "6 Rue Example, Exampleton, Testland" || saved["latitudeDegrees"] != 40.5 || saved["longitudeDegrees"] != -75.5 {
+		t.Errorf("the place moved to the address: %v", saved)
+	}
+	if saved["osmId"] != nil || saved["osmType"] != "" || saved["osmName"] != "" || saved["osmCategory"] != "" {
+		t.Errorf("what was said about the old position stayed: %v", saved)
+	}
+
+	// The naming job has nothing to claim, and nothing was asked of the provider.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed the place: %v, %v", claimed, err)
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+	if asked := requests.asked(); len(asked) != 0 {
+		t.Errorf("the provider was asked after the address was typed: %v", asked)
+	}
+
+	// A name the person gave stays theirs.
+	world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, placeName: "Our flat") { id } }`, placeId))
+	named := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.6, longitudeDegrees: -75.6, addressText: "8 Rue Example, Exampleton, Testland") { placeName isNamedByPerson addressText } }`, placeId))["SavePlace"].(map[string]any)
+	if named["placeName"] != "Our flat" || named["isNamedByPerson"] != true || named["addressText"] != "8 Rue Example, Exampleton, Testland" {
+		t.Errorf("the person's name for it: %v", named)
+	}
+}
+
+// An address the place provider does not know is kept as typed, on a place
+// that stays where it is, keeps its label, and is not named again.
+func TestSavePlaceKeepsATypedAddressWithoutMovingThePlace(t *testing.T) {
+	world := newLocationWorld(t)
+	requests := world.addressProvider(t)
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.0, longitudeDegrees: -74.0, placeLabel: "home") { id } }`)["SavePlace"].(map[string]any)
+	placeId := made["id"].(string)
+	requests.waitForNaming(t)
+
+	saved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, addressText: "  12 Lane Example, Exampleton ") { id placeName placeLabel isNamedByPerson addressText latitudeDegrees longitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if saved["id"] != placeId || saved["latitudeDegrees"] != 41.0 || saved["longitudeDegrees"] != -74.0 || saved["placeLabel"] != "home" ||
+		saved["addressText"] != "12 Lane Example, Exampleton" || saved["placeName"] != "12 Lane Example" || saved["isNamedByPerson"] != false {
+		t.Errorf("the address as typed, where the place was: %v", saved)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed the place: %v, %v", claimed, err)
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+	if asked := requests.asked(); len(asked) != 0 {
+		t.Errorf("the provider was asked after the address was typed: %v", asked)
+	}
+
+	// Moving the place onto the house keeps the address as typed, and the
+	// naming job leaves it alone.
+	moved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 41.2, longitudeDegrees: -74.2) { addressText isAddressTyped placeName latitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if moved["addressText"] != "12 Lane Example, Exampleton" || moved["isAddressTyped"] != true || moved["placeName"] != "12 Lane Example" || moved["latitudeDegrees"] != 41.2 {
+		t.Errorf("the move lost the typed address: %v", moved)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed a place with a typed address: %v, %v", claimed, err)
+		}
+	})
+
+	// An empty address takes it away, and the place is named again.
+	cleared := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, addressText: "") { addressText isAddressTyped } }`, placeId))["SavePlace"].(map[string]any)
+	if cleared["isAddressTyped"] != false {
+		t.Errorf("the typed address was not taken away: %v", cleared)
+	}
+}
+
+// A check-in keeps the accuracy the device reported on its visit.
+func TestCheckInKeepsTheAccuracy(t *testing.T) {
+	world := newLocationWorld(t)
+	answer := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 40.0, longitudeDegrees: -75.0, accuracyMeters: 850) { accuracyMeters } }`)["CheckIn"].(map[string]any)
+	if answer["accuracyMeters"] != 850.0 {
+		t.Errorf("the accuracy was not kept on the visit: %v", answer)
+	}
+	world.refused(t, world.ada, `mutation { CheckIn(latitudeDegrees: 41.0, longitudeDegrees: -75.0, accuracyMeters: -1) { id } }`)
+	plain := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 42.0, longitudeDegrees: -75.0) { accuracyMeters } }`)["CheckIn"].(map[string]any)
+	if plain["accuracyMeters"] != 0.0 {
+		t.Errorf("no accuracy was given: %v", plain)
+	}
+}
+
+// Typing an address for home uses the place the caller already has there, and
+// makes one that is not renamed when there is none.
+func TestMakingHomeFromAnAddressReusesAnOwnPlaceThere(t *testing.T) {
+	world := newLocationWorld(t)
+	requests := world.addressProvider(t)
+
+	existing := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.5, longitudeDegrees: -75.5, placeName: "Piano teacher") { id } }`)["SavePlace"].(map[string]any)["id"].(string)
+	home := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.5001, longitudeDegrees: -75.5001, placeLabel: "home", addressText: "6 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText } }`)["SavePlace"].(map[string]any)
+	if home["id"] != existing || home["placeLabel"] != "home" || home["placeName"] != "Piano teacher" || home["addressText"] != "6 Rue Example, Exampleton, Testland" {
+		t.Errorf("home was not the place that is there: %v", home)
+	}
+	listed := world.call(t, world.ada, `query { ListPlaces { places { id } } }`)["ListPlaces"].(map[string]any)["places"].([]any)
+	if len(listed) != 1 {
+		t.Errorf("a second place was made at the same address: %v", listed)
+	}
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.5, longitudeDegrees: -76.5, placeLabel: "work", addressText: "8 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText } }`)["SavePlace"].(map[string]any)
+	if made["id"] == existing || made["placeLabel"] != "work" || made["placeName"] != "8 Rue Example" || made["isNamedByPerson"] != false || made["addressText"] != "8 Rue Example, Exampleton, Testland" {
+		t.Errorf("a new place at the typed address: %v", made)
+	}
+	time.Sleep(300 * time.Millisecond)
+	asked := requests.asked()
+	for _, path := range asked {
+		if strings.HasPrefix(path, "/reverse") {
+			t.Errorf("the provider was asked to name a place with a typed address: %v", asked)
 		}
 	}
 }

@@ -35,6 +35,7 @@ type Place struct {
 	OSMName            string     `json:"osmName"`
 	OSMCategory        string     `json:"osmCategory"`
 	AddressText        string     `json:"addressText"`
+	IsAddressTyped     bool       `json:"isAddressTyped"`
 	VisitCount         int        `json:"visitCount"`
 	LastVisitAt        *time.Time `json:"lastVisitAt"`
 	NamingErrorMessage string     `json:"namingErrorMessage"`
@@ -113,7 +114,7 @@ const (
 	locationPointFields = `latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource`
 
 	placeFields = `id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters
-    osmType osmId osmName osmCategory addressText visitCount lastVisitAt namingErrorMessage createdAt updatedAt`
+    osmType osmId osmName osmCategory addressText isAddressTyped visitCount lastVisitAt namingErrorMessage createdAt updatedAt`
 
 	placeVisitFields = `id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
     place { ` + placeFields + ` }`
@@ -155,20 +156,26 @@ const (
   }
 }`
 
+	DocumentSearchAddresses = `query ($query: String!, $limitCount: Int) {
+  SearchAddresses(query: $query, limitCount: $limitCount) {
+    ` + foundPlaceFields + `
+  }
+}`
+
 	DocumentListLocationPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + locationPointFields + ` }
 }`
 
-	DocumentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float) {
-  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) {
+	DocumentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
+  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) {
     ` + placeFields + `
   }
 }`
 
 	DocumentForgetPlace = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
 
-	DocumentCheckIn = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
-  CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
+	DocumentCheckIn = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String, $accuracyMeters: Float) {
+  CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText, accuracyMeters: $accuracyMeters) {
     ` + placeVisitFields + `
   }
 }`
@@ -337,6 +344,22 @@ func SearchPlaces(ctx context.Context, connection *Client, search PlaceSearch) (
 	return result.SearchPlaces, nil
 }
 
+// SearchAddresses is the addresses matching words, anywhere, best first. A
+// limitCount of zero is the server's default.
+func SearchAddresses(ctx context.Context, connection *Client, query string, limitCount int) ([]*FoundPlace, error) {
+	variables := map[string]any{"query": query}
+	if limitCount > 0 {
+		variables["limitCount"] = limitCount
+	}
+	var result struct {
+		SearchAddresses []*FoundPlace `json:"SearchAddresses"`
+	}
+	if err := connection.Execute(ctx, DocumentSearchAddresses, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchAddresses, nil
+}
+
 // ListLocationPoints is the positions of up to two days, oldest first, of the
 // caller or, with a userId, of somebody who shares their history with them.
 func ListLocationPoints(ctx context.Context, connection *Client, userId string, from, until time.Time) ([]*LocationPoint, error) {
@@ -363,6 +386,12 @@ type PlaceChange struct {
 	LatitudeDegrees  *float64
 	LongitudeDegrees *float64
 	RadiusMeters     *float64
+
+	// AddressText is an address picked from SearchAddresses, given with the
+	// coordinates of that match. With a PlaceID and no coordinates it is an
+	// address the provider does not know: the place stays where it is. The
+	// address is kept as typed. Empty takes the typed address away.
+	AddressText *string
 }
 
 // SavePlace names, labels, moves or resizes a place, or makes one when there
@@ -386,6 +415,9 @@ func SavePlace(ctx context.Context, connection *Client, change PlaceChange) (*Pl
 	}
 	if change.RadiusMeters != nil {
 		variables["radiusMeters"] = *change.RadiusMeters
+	}
+	if change.AddressText != nil {
+		variables["addressText"] = *change.AddressText
 	}
 	var result struct {
 		SavePlace *Place `json:"SavePlace"`
@@ -415,6 +447,10 @@ type CheckInAt struct {
 	OSMID            int64
 	OSMCategory      string
 	AddressText      string
+
+	// AccuracyMeters is how far off the position may be, as the device said;
+	// nil sends none.
+	AccuracyMeters *float64
 }
 
 // CheckIn records that the caller is at a place now.
@@ -443,6 +479,9 @@ func CheckIn(ctx context.Context, connection *Client, at CheckInAt) (*PlaceVisit
 	}
 	if at.AddressText != "" {
 		variables["addressText"] = at.AddressText
+	}
+	if at.AccuracyMeters != nil {
+		variables["accuracyMeters"] = *at.AccuracyMeters
 	}
 	var result struct {
 		CheckIn *PlaceVisit `json:"CheckIn"`

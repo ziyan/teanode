@@ -34,6 +34,7 @@ type photonFeature struct {
 		City        string `json:"city"`
 		District    string `json:"district"`
 		Locality    string `json:"locality"`
+		State       string `json:"state"`
 		Country     string `json:"country"`
 	} `json:"properties"`
 }
@@ -164,4 +165,38 @@ func (self *photonProvider) Search(ctx context.Context, query string, latitudeDe
 		return nil, err
 	}
 	return nearest(answer.found(), latitudeDegrees, longitudeDegrees, radiusMeters, limitCount), nil
+}
+
+// Addresses asks for matches anywhere: no point to lean toward, so the words
+// alone decide.
+func (self *photonProvider) Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	var answer photonAnswer
+	if err := self.get(ctx, "/api", url.Values{
+		"q":     {query},
+		"limit": {strconv.Itoa(addressFetchCount(limitCount))},
+	}, &answer); err != nil {
+		return nil, err
+	}
+	found := make([]*Found, 0, len(answer.Features))
+	for index := range answer.Features {
+		feature := answer.Features[index]
+		properties := &feature.Properties
+		if isNotAPlace(properties.OSMKey + "=" + properties.OSMValue) {
+			properties.Name = ""
+		}
+		candidate := feature.toFound()
+		if candidate == nil {
+			continue
+		}
+		// The first part of the address is what the match is called: a house
+		// by its number and road, anything else by its name.
+		candidate.AddressText = addressLine(candidate.PlaceName, firstText(properties.Locality, properties.District), properties.City,
+			properties.State, properties.Country)
+		found = append(found, candidate)
+	}
+	return found[:min(len(found), addressFetchCount(limitCount))], nil
 }

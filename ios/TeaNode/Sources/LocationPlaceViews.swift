@@ -14,7 +14,12 @@ struct LocationPlaceScreen: View {
     @State private var visits: [PlaceVisit] = []
     @State private var nextVisitOffset: Int?
     @State private var isConfirmingForget = false
+    @State private var isChangingAddress = false
     @State private var isLoadingVisits = false
+    /// Where the person tapped on the map: shown as the new pin until they
+    /// move the place there or keep it where it was.
+    @State private var tappedCoordinate: CLLocationCoordinate2D?
+    @State private var isMoving = false
     @Environment(\.dismiss) private var dismiss
 
     init(model: LocationModel, place: LocationPlace) {
@@ -40,19 +45,73 @@ struct LocationPlaceScreen: View {
                         Label(label.title, systemImage: label.symbolName).tag(label.rawValue)
                     }
                 }
-            } footer: {
-                if !place.addressText.isEmpty { Text(verbatim: place.addressText) }
             }
             Section {
-                Map(position: $position, interactionModes: []) {
-                    MapCircle(center: place.coordinate, radius: radiusMeters)
-                        .foregroundStyle(.tint.opacity(0.2))
-                        .stroke(.tint, lineWidth: 2)
-                    Marker(place.shownName, systemImage: place.symbolName, coordinate: place.coordinate)
+                LabeledContent("Address") {
+                    if place.addressText.isEmpty {
+                        Text("No address").foregroundStyle(.secondary)
+                    } else {
+                        Text(verbatim: place.addressText).multilineTextAlignment(.trailing)
+                    }
+                }
+                Button {
+                    isChangingAddress = true
+                } label: {
+                    Label("Change address", systemImage: "magnifyingglass")
+                }
+                .frame(minHeight: 44)
+                if place.isAddressTyped {
+                    Button {
+                        Task { await useMapAddress() }
+                    } label: {
+                        Label("Use the map's address", systemImage: "map")
+                    }
+                    .frame(minHeight: 44)
+                }
+            }
+            Section {
+                // A tap on the map names the new position; the pin shows it
+                // before anything is saved. The map stays fixed so the tap
+                // is not mistaken for a pan.
+                MapReader { mapProxy in
+                    Map(position: $position, interactionModes: []) {
+                        MapCircle(center: shownCoordinate, radius: radiusMeters)
+                            .foregroundStyle(.tint.opacity(0.2))
+                            .stroke(.tint, lineWidth: 2)
+                        Marker(place.shownName, systemImage: place.symbolName, coordinate: shownCoordinate)
+                    }
+                    .onTapGesture { point in
+                        if let coordinate = mapProxy.convert(point, from: .local) { tappedCoordinate = coordinate }
+                    }
                 }
                 .frame(height: 180)
                 .listRowInsets(EdgeInsets())
                 .accessibilityLabel("Map of the place and its radius")
+                .accessibilityHint("Tap to choose a new position for the place")
+                if tappedCoordinate != nil {
+                    Button {
+                        Task { await move(to: tappedCoordinate) }
+                    } label: {
+                        Label("Move the place here", systemImage: "mappin.and.ellipse")
+                    }
+                    .disabled(isMoving)
+                    .frame(minHeight: 44)
+                    Button {
+                        tappedCoordinate = nil
+                        focusMap()
+                    } label: {
+                        Label("Keep it where it was", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(isMoving)
+                    .frame(minHeight: 44)
+                }
+                Button {
+                    Task { await moveToPhone() }
+                } label: {
+                    Label("Use where I am now", systemImage: "location.fill")
+                }
+                .disabled(isMoving)
+                .frame(minHeight: 44)
                 LabeledContent("Radius") {
                     Text(verbatim: LocationText.radius(radiusMeters))
                 }
@@ -62,7 +121,9 @@ struct LocationPlaceScreen: View {
                     if !isEditing { Task { await saveRadius() } }
                 }
             } footer: {
-                Text("A visit counts as here when you are within this distance of the center of the place.")
+                Text(
+                    "Tap the map to choose a new position for the place. A visit counts as here when you are within this distance of the center of the place."
+                )
             }
             Section {
                 ForEach(visits) { visit in
@@ -102,8 +163,20 @@ struct LocationPlaceScreen: View {
         }
         .navigationTitle(place.shownName)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $isChangingAddress) {
+            LocationAddressScreen(
+                model: model,
+                keepAsTyped: { typedText in await keepAddress(typedText) }
+            ) { address in
+                await moveHere(to: address)
+            }
+        }
         .task {
             focusMap()
+            #if DEBUG
+                // `-TeaNodeScreen location-address`: the address screen over this one.
+                if DemoServer.isRequested, DemoServer.screen == "location-address" { isChangingAddress = true }
+            #endif
             visits = []
             nextVisitOffset = nil
             await loadVisits()
@@ -122,8 +195,55 @@ struct LocationPlaceScreen: View {
         .onDisappear { Task { await saveName() } }
     }
 
+    /// Where the pin is drawn: the tapped position until it is saved or dropped.
+    private var shownCoordinate: CLLocationCoordinate2D { tappedCoordinate ?? place.coordinate }
+
     private func focusMap() {
-        position = .region(MKCoordinateRegion(center: place.coordinate, latitudinalMeters: radiusMeters * 3.2, longitudinalMeters: radiusMeters * 3.2))
+        position = .region(MKCoordinateRegion(center: shownCoordinate, latitudinalMeters: radiusMeters * 3.2, longitudinalMeters: radiusMeters * 3.2))
+    }
+
+    /// Saves the place at a position the person chose on the map. The
+    /// server keeps the address it had; the person can change that too.
+    private func move(to coordinate: CLLocationCoordinate2D?) async {
+        guard let coordinate else { return }
+        isMoving = true
+        defer { isMoving = false }
+        guard
+            let saved = await model.save(
+                PlaceChange(placeId: place.id, latitudeDegrees: coordinate.latitude, longitudeDegrees: coordinate.longitude))
+        else { return }
+        place = saved
+        tappedCoordinate = nil
+        focusMap()
+        model.doneText = String(localized: "Moved \(saved.shownName)")
+    }
+
+    /// Moves the place to where the phone is: its position is exact, unlike
+    /// a guess from the network.
+    private func moveToPhone() async {
+        isMoving = true
+        defer { isMoving = false }
+        guard let reading = await model.currentReading() else { return }
+        await move(to: CLLocationCoordinate2D(latitude: reading.latitudeDegrees, longitude: reading.longitudeDegrees))
+    }
+
+    /// Keeps the words the person typed as the place's address and leaves
+    /// the place where it is, for an address the map does not know. Nil when
+    /// it worked, else the reason, for the address screen to say.
+    private func keepAddress(_ typedText: String) async -> String? {
+        let result = await model.saveAddress(PlaceChange(placeId: place.id, addressText: typedText))
+        guard let saved = result.saved else { return result.refusalText }
+        place = saved
+        model.doneText = String(localized: "Kept the address as typed")
+        return nil
+    }
+
+    /// Gives the typed address back to the map: an empty address text makes
+    /// the server name the place from OpenStreetMap again.
+    private func useMapAddress() async {
+        guard let saved = await model.save(PlaceChange(placeId: place.id, addressText: "")) else { return }
+        place = saved
+        model.doneText = String(localized: "The map will name this place again.")
     }
 
     /// Saves the name when the person changed it. An emptied box puts the
@@ -139,6 +259,20 @@ struct LocationPlaceScreen: View {
             place = saved
             nameText = saved.placeName
         }
+    }
+
+    /// Moves the place to the address the person chose and gives it that
+    /// address; the map then shows the new position. Nil when it worked, else
+    /// the reason, for the address screen to say.
+    private func moveHere(to address: FoundPlace) async -> String? {
+        let result = await model.saveAddress(
+            PlaceChange(
+                placeId: place.id, latitudeDegrees: address.latitudeDegrees, longitudeDegrees: address.longitudeDegrees,
+                addressText: address.chosenAddressText))
+        guard let saved = result.saved else { return result.refusalText }
+        place = saved
+        focusMap()
+        return nil
     }
 
     private func saveRadius() async {
@@ -366,7 +500,8 @@ struct CheckInSheet: View {
         guard let position else { return }
         isCheckingIn = true
         defer { isCheckingIn = false }
-        let target = CheckInTarget.position(latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees)
+        let target = CheckInTarget.position(
+            latitudeDegrees: position.latitudeDegrees, longitudeDegrees: position.longitudeDegrees, accuracyMeters: positionAccuracyMeters)
         if let refusalText = await model.checkIn(target, placeName: nil) {
             problemText = refusalText
         } else {

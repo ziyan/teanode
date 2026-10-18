@@ -61,6 +61,10 @@ extension FoundPlace {
         return addressText.isEmpty ? nil : addressText
     }
 
+    /// The words saved as a place's address when the person picks this match:
+    /// its address, or its name when the provider gave no address.
+    var chosenAddressText: String { addressText.isEmpty ? placeName : addressText }
+
     /// The label's symbol for a labeled place of the person's, else nil.
     var labelSymbolName: String? { label?.symbolName }
 }

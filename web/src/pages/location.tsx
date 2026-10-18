@@ -8,6 +8,7 @@ import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
 import { MoreIcon } from '../components/icons'
 import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
+import { LocationAddressChooser } from '../components/locationAddressChooser'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
 import {
   dayKeyOf,
@@ -89,8 +90,10 @@ const LIST_PLACES = `query ($userId: String, $placeLabel: String, $query: String
     places { ${PLACE_FIELDS} } nextOffset
   }
 }`
-const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $radiusMeters: Float) {
-  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, radiusMeters: $radiusMeters) { id }
+const SAVE_PLACE = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $radiusMeters: Float,
+  $latitudeDegrees: Float, $longitudeDegrees: Float, $addressText: String) {
+  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, radiusMeters: $radiusMeters,
+    latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, addressText: $addressText) { id }
 }`
 const FORGET_PLACE = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
 const ERASE_LOCATION_HISTORY = `mutation ($from: DateTime, $until: DateTime) {
@@ -194,6 +197,7 @@ function LocationContent({ userId }: { userId: string }) {
   const [isReadingBrowser, setIsReadingBrowser] = useState(false)
   const [editingPlace, setEditingPlace] = useState<Place | null>(null)
   const [forgettingPlace, setForgettingPlace] = useState<Place | null>(null)
+  const [addressPlace, setAddressPlace] = useState<Place | null>(null)
   // What the person is asked to erase: one day, or everything.
   const [erasing, setErasing] = useState<{ range: DayRange | null } | null>(null)
   const [placesSearchText, setPlacesSearchText] = useState(placesQuery)
@@ -410,13 +414,13 @@ function LocationContent({ userId }: { userId: string }) {
     ],
     [views, selectedUserId, viewedUserId, hasNoOwnPosition, browserPosition],
   )
+  // The same places whatever the tab: the places of the list and of the
+  // visits shown, once each. A map that changed with the tab redrew itself and
+  // moved on every switch.
   const mapPlaces: MapPlace[] = useMemo(() => {
-    const shown =
-      tab === 'places'
-        ? placeRows
-        : tab === 'visits'
-          ? [...new Map(visitRows.map((visit) => [visit.place.id, visit.place])).values()]
-          : []
+    const shown = [
+      ...new Map([...placeRows, ...visitRows.map((visit) => visit.place)].map((place) => [place.id, place])).values(),
+    ]
     return shown.map((place) => ({
       id: place.id,
       placeName: placeTitle(place, t),
@@ -426,7 +430,7 @@ function LocationContent({ userId }: { userId: string }) {
       radiusMeters: place.radiusMeters,
       isSelected: place.id === selectedPlaceId,
     }))
-  }, [tab, placeRows, visitRows, selectedPlaceId, t])
+  }, [placeRows, visitRows, selectedPlaceId, t])
   const path = useMemo(
     () => (pointList ?? []).map(({ latitudeDegrees, longitudeDegrees }) => ({ latitudeDegrees, longitudeDegrees })),
     [pointList],
@@ -964,6 +968,19 @@ function LocationContent({ userId }: { userId: string }) {
             setForgettingPlace(editingPlace)
             setEditingPlace(null)
           }}
+          onChangeAddress={() => {
+            setDialogProblem(null)
+            setAddressPlace(editingPlace)
+            setEditingPlace(null)
+          }}
+          onUseMapAddress={async () => {
+            const isDone = await act(
+              () => graphql(SAVE_PLACE, { placeId: editingPlace.id, addressText: '' }),
+              t('location.mapAddressBack'),
+              t('location.placeFailed'),
+            )
+            if (isDone) setEditingPlace(null)
+          }}
           onSave={async (variables) => {
             const isDone = await act(
               () => graphql(SAVE_PLACE, { placeId: editingPlace.id, ...variables }),
@@ -973,6 +990,31 @@ function LocationContent({ userId }: { userId: string }) {
               t('location.placeFailed'),
             )
             if (isDone) setEditingPlace(null)
+          }}
+        />
+      )}
+
+      {addressPlace && (
+        <LocationAddressChooser
+          title={t('location.changeAddress')}
+          onClose={() => setAddressPlace(null)}
+          onKeepTyped={async (addressText) => {
+            // Only the words change: the place stays where it is.
+            await graphql(SAVE_PLACE, { placeId: addressPlace.id, addressText })
+            toast.done(t('location.addressKept', { address: addressText }))
+            setAddressPlace(null)
+            reloadAll()
+          }}
+          onChoose={async (match) => {
+            await graphql(SAVE_PLACE, {
+              placeId: addressPlace.id,
+              latitudeDegrees: match.latitudeDegrees,
+              longitudeDegrees: match.longitudeDegrees,
+              addressText: match.addressText,
+            })
+            toast.done(t('location.addressMoved', { address: match.addressText }))
+            setAddressPlace(null)
+            reloadAll()
           }}
         />
       )}
@@ -1024,18 +1066,31 @@ function LocationContent({ userId }: { userId: string }) {
   )
 }
 
-type PlaceChanges = { placeName?: string; placeLabel?: string; radiusMeters?: number }
+type PlaceChanges = {
+  placeName?: string
+  placeLabel?: string
+  radiusMeters?: number
+  latitudeDegrees?: number
+  longitudeDegrees?: number
+}
+
+const NO_MAP_PEOPLE: MapPerson[] = []
 
 // PlaceEditor changes one place: what it is called, the label that gives it an
 // icon and a meaning ("home"), and how far from its point still counts as
-// being there. Only what the person changed is sent, so a name the map chose
-// is not turned into one the person gave by saving the radius.
+// being there. A small map shows the place with its radius: the pin is
+// dragged, or the map clicked, to put the place exactly where it is, which
+// matters where OpenStreetMap does not know the street. Only what the person
+// changed is sent, so a name the map chose is not turned into one the person
+// gave by saving the radius.
 function PlaceEditor({
   place,
   isBusy,
   error,
   onClose,
   onForget,
+  onChangeAddress,
+  onUseMapAddress,
   onSave,
 }: {
   place: Place
@@ -1043,12 +1098,18 @@ function PlaceEditor({
   error: string | null
   onClose: () => void
   onForget: () => void
+  onChangeAddress: () => void
+  onUseMapAddress: () => void
   onSave: (changes: PlaceChanges) => Promise<void>
 }) {
   const { t } = useTranslation()
   const [placeName, setPlaceName] = useState(place.placeName)
   const [placeLabel, setPlaceLabel] = useState(place.placeLabel)
   const [radiusText, setRadiusText] = useState(String(Math.round(place.radiusMeters)))
+  const [position, setPosition] = useState({
+    latitudeDegrees: place.latitudeDegrees,
+    longitudeDegrees: place.longitudeDegrees,
+  })
   const radiusMeters = Number(radiusText)
   const isRadiusValid =
     radiusText.trim() !== '' && radiusMeters >= MINIMUM_RADIUS_METERS && radiusMeters <= MAXIMUM_RADIUS_METERS
@@ -1057,6 +1118,24 @@ function PlaceEditor({
   if (placeName.trim() !== place.placeName.trim()) changes.placeName = placeName.trim()
   if (placeLabel !== place.placeLabel) changes.placeLabel = placeLabel
   if (isRadiusValid && radiusMeters !== Math.round(place.radiusMeters)) changes.radiusMeters = radiusMeters
+  if (position.latitudeDegrees !== place.latitudeDegrees || position.longitudeDegrees !== place.longitudeDegrees) {
+    changes.latitudeDegrees = position.latitudeDegrees
+    changes.longitudeDegrees = position.longitudeDegrees
+  }
+  const mapPlaces = useMemo(
+    (): MapPlace[] => [
+      {
+        id: place.id,
+        placeName: placeTitle(place, t),
+        placeLabel,
+        latitudeDegrees: position.latitudeDegrees,
+        longitudeDegrees: position.longitudeDegrees,
+        radiusMeters: isRadiusValid ? radiusMeters : place.radiusMeters,
+        isSelected: true,
+      },
+    ],
+    [place, placeLabel, position, isRadiusValid, radiusMeters, t],
+  )
 
   return (
     <FormDialog
@@ -1082,6 +1161,27 @@ function PlaceEditor({
           onChange={(event) => setPlaceName(event.target.value)}
         />
       </label>
+      <LocationMap
+        isCompact
+        people={NO_MAP_PEOPLE}
+        places={mapPlaces}
+        onPlaceMoved={(latitudeDegrees, longitudeDegrees) => setPosition({ latitudeDegrees, longitudeDegrees })}
+      />
+      <p className="muted">{t('location.placeMapHint')}</p>
+      <div className="location-address-row">
+        <span className="location-address-text">
+          <span className="muted">{t('location.address')}</span>
+          <span>{place.addressText.trim() || t('location.noAddress')}</span>
+        </span>
+        <button type="button" onClick={onChangeAddress}>
+          {t('location.changeAddress')}
+        </button>
+        {place.isAddressTyped && (
+          <button type="button" disabled={isBusy} onClick={onUseMapAddress}>
+            {t('location.useMapAddress')}
+          </button>
+        )}
+      </div>
       <label>
         {t('location.placeLabel')}
         <select value={placeLabel} onChange={(event) => setPlaceLabel(event.target.value)}>

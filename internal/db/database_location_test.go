@@ -1245,3 +1245,119 @@ func TestFilterLocationGranteesAndTheOwnersPermission(t *testing.T) {
 		}
 	})
 }
+
+// An address the person typed is kept: the place is named already, so the
+// naming job leaves it, even for a move within its radius, and it is called by
+// the first part of the address unless the person named it.
+func TestAPlaceSavedWithATypedAddressKeepsItAndIsNotNamedAgain(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-address")
+		now := time.Now()
+		labeled := locationPlace(t, tx, userId, "", 10.5)
+		home := models.PlaceLabelHome
+		if _, err := tx.SavePlace(userId, labeled.ID, db.PlaceChanges{PlaceLabel: &home}); err != nil {
+			t.Fatalf("SavePlace: %s", err)
+		}
+		if err := tx.SetPlaceNamed(labeled.ID, nil, &db.NamedPlace{PlaceName: "Example Park", OSMType: models.OSMTypeWay, OSMID: 42, OSMCategory: "leisure=park", AddressText: "Elm Street"}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+
+		latitude, longitude := 10.7, 20.7
+		addressText := "6 Rue Example, Exampleton, Exampleland"
+		saved, err := tx.SavePlace(userId, labeled.ID, db.PlaceChanges{LatitudeDegrees: &latitude, LongitudeDegrees: &longitude, AddressText: &addressText, MovedPlaceName: "Exampleton"})
+		if err != nil || saved.PlaceLabel != models.PlaceLabelHome || saved.AddressText != addressText || saved.PlaceName != "6 Rue Example" || saved.IsNamedByPerson ||
+			saved.OSMName != "" || saved.OSMType != "" || saved.OSMID != 0 || saved.OSMCategory != "" || saved.NamedAt == nil || saved.NamingClaimedAt != nil {
+			t.Fatalf("a place moved to an address: %+v, %v", saved, err)
+		}
+		if claimed, err := tx.ClaimPlaceToName(labeled.ID, now); err != nil || claimed != nil {
+			t.Errorf("the naming job would name a place with a typed address: %v, %v", claimed, err)
+		}
+
+		// A move within the radius drops the old object as well.
+		near := locationPlace(t, tx, userId, "", 11.5)
+		if err := tx.SetPlaceNamed(near.ID, nil, &db.NamedPlace{PlaceName: "Other Park", OSMType: models.OSMTypeNode, OSMID: 43}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		nearLatitude, nearLongitude := 11.5001, 20.5001
+		typed, blank := "12 Lane Example, Exampleton", "  "
+		nudged, err := tx.SavePlace(userId, near.ID, db.PlaceChanges{LatitudeDegrees: &nearLatitude, LongitudeDegrees: &nearLongitude, AddressText: &addressText})
+		if err != nil || nudged.OSMID != 0 || nudged.OSMName != "" || nudged.AddressText != addressText {
+			t.Errorf("a nudge to an address kept the old object: %+v, %v", nudged, err)
+		}
+
+		// With no position the place stays and keeps what the provider said about
+		// it, but takes the address and is not named again.
+		unmoved, err := tx.SavePlace(userId, near.ID, db.PlaceChanges{AddressText: &typed})
+		if err != nil || unmoved.AddressText != typed || unmoved.LatitudeDegrees != nudged.LatitudeDegrees || unmoved.NamedAt == nil {
+			t.Errorf("an address with no position: %+v, %v", unmoved, err)
+		}
+		kept := locationPlace(t, tx, userId, "", 12.5)
+		if err := tx.SetPlaceNamed(kept.ID, nil, &db.NamedPlace{PlaceName: "Third Park", OSMType: models.OSMTypeNode, OSMID: 44, OSMCategory: "leisure=park"}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		stayed, err := tx.SavePlace(userId, kept.ID, db.PlaceChanges{AddressText: &typed})
+		if err != nil || stayed.OSMID != 44 || stayed.OSMName != "Third Park" || stayed.AddressText != typed || stayed.PlaceName != "12 Lane Example" {
+			t.Errorf("the provider's object stays when only the address is typed: %+v, %v", stayed, err)
+		}
+		if !unmoved.IsAddressTyped {
+			t.Errorf("an address that was typed says so: %+v", unmoved)
+		}
+		// A blank address takes the typed one away and lets the place be named.
+		cleared, err := tx.SavePlace(userId, near.ID, db.PlaceChanges{AddressText: &blank})
+		if err != nil || cleared.IsAddressTyped || cleared.AddressText != "" || cleared.NamedAt != nil {
+			t.Errorf("a blank address: %+v, %v", cleared, err)
+		}
+	})
+}
+
+// An address kept as typed stays when the place is moved onto the house: only
+// what the map said about the old position goes, the place stays named, and
+// the naming job leaves it alone. A blank address takes it away, and the
+// place is then named from the map again.
+func TestATypedAddressSurvivesMovingThePlaceAndABlankOneTakesItAway(t *testing.T) {
+	database, release := dbtest.AcquireDatabase(t)
+	defer release()
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		userId := locationUser(t, tx, "location-typed-address")
+		now := time.Now()
+		place := locationPlace(t, tx, userId, "", 10.5)
+		if err := tx.SetPlaceNamed(place.ID, nil, &db.NamedPlace{PlaceName: "Example Park", OSMType: models.OSMTypeWay, OSMID: 42, OSMCategory: "leisure=park", AddressText: "Elm Street"}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+
+		typed := "12 Lane Example, Exampleton"
+		kept, err := tx.SavePlace(userId, place.ID, db.PlaceChanges{AddressText: &typed})
+		if err != nil || !kept.IsAddressTyped || kept.AddressText != typed || kept.PlaceName != "12 Lane Example" || kept.OSMID != 42 {
+			t.Fatalf("an address kept as typed: %+v, %v", kept, err)
+		}
+
+		// Far past the radius: the pin goes onto the house.
+		latitude, longitude := 10.6, 20.6
+		moved, err := tx.SavePlace(userId, place.ID, db.PlaceChanges{LatitudeDegrees: &latitude, LongitudeDegrees: &longitude, MovedPlaceName: "Exampleton"})
+		if err != nil || !moved.IsAddressTyped || moved.AddressText != typed || moved.PlaceName != "12 Lane Example" || moved.NamedAt == nil ||
+			moved.LatitudeDegrees != latitude || moved.OSMID != 0 || moved.OSMName != "" || moved.OSMType != "" || moved.OSMCategory != "" {
+			t.Fatalf("the move lost the typed address: %+v, %v", moved, err)
+		}
+		if claimed, err := tx.ClaimPlaceToName(place.ID, now); err != nil || claimed != nil {
+			t.Errorf("the naming job would take a place with a typed address: %v, %v", claimed, err)
+		}
+		// Even a stray answer from the provider does not replace it.
+		if err := tx.SetPlaceNamed(place.ID, nil, &db.NamedPlace{PlaceName: "Other", AddressText: "Elm Street"}, "", now); err != nil {
+			t.Fatalf("SetPlaceNamed: %s", err)
+		}
+		if again, err := tx.GetPlace(userId, place.ID); err != nil || again.AddressText != typed {
+			t.Errorf("an answer replaced the typed address: %+v, %v", again, err)
+		}
+
+		empty := ""
+		cleared, err := tx.SavePlace(userId, place.ID, db.PlaceChanges{AddressText: &empty})
+		if err != nil || cleared.IsAddressTyped || cleared.AddressText != "" || cleared.NamedAt != nil {
+			t.Fatalf("an empty address: %+v, %v", cleared, err)
+		}
+		if claimed, err := tx.ClaimPlaceToName(place.ID, now); err != nil || claimed == nil {
+			t.Errorf("the naming job should take the place again: %v, %v", claimed, err)
+		}
+	})
+}

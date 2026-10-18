@@ -87,6 +87,9 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
     /// Such as "amenity=cafe".
     public let osmCategory: String
     public let addressText: String
+    /// Whether the person typed the address, so the map no longer names the
+    /// place.
+    public let isAddressTyped: Bool
     public let visitCount: Int
     public let lastVisitAt: String?
     /// Why the name could not be looked up, when it could not.
@@ -105,8 +108,8 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
     public init(
         id: String, userId: String = "", placeName: String, isNamedByPerson: Bool = false, placeLabel: String = "", latitudeDegrees: Double,
         longitudeDegrees: Double, radiusMeters: Double = 75, osmType: String = "", osmId: Int64? = nil, osmName: String = "",
-        osmCategory: String = "", addressText: String = "", visitCount: Int = 0, lastVisitAt: String? = nil, namingErrorMessage: String = "",
-        createdAt: String = "", updatedAt: String = ""
+        osmCategory: String = "", addressText: String = "", isAddressTyped: Bool = false, visitCount: Int = 0, lastVisitAt: String? = nil,
+        namingErrorMessage: String = "", createdAt: String = "", updatedAt: String = ""
     ) {
         self.id = id
         self.userId = userId
@@ -121,6 +124,7 @@ public struct LocationPlace: Codable, Identifiable, Hashable, Sendable {
         self.osmName = osmName
         self.osmCategory = osmCategory
         self.addressText = addressText
+        self.isAddressTyped = isAddressTyped
         self.visitCount = visitCount
         self.lastVisitAt = lastVisitAt
         self.namingErrorMessage = namingErrorMessage
@@ -392,10 +396,13 @@ public struct PlaceChange: Sendable, Equatable {
     public var latitudeDegrees: Double?
     public var longitudeDegrees: Double?
     public var radiusMeters: Double?
+    /// The address the person chose, sent with the position it belongs to:
+    /// the server moves the place there and keeps this text as its address.
+    public var addressText: String?
 
     public init(
         placeId: String? = nil, placeName: String? = nil, placeLabel: String? = nil, latitudeDegrees: Double? = nil,
-        longitudeDegrees: Double? = nil, radiusMeters: Double? = nil
+        longitudeDegrees: Double? = nil, radiusMeters: Double? = nil, addressText: String? = nil
     ) {
         self.placeId = placeId
         self.placeName = placeName
@@ -403,6 +410,7 @@ public struct PlaceChange: Sendable, Equatable {
         self.latitudeDegrees = latitudeDegrees
         self.longitudeDegrees = longitudeDegrees
         self.radiusMeters = radiusMeters
+        self.addressText = addressText
     }
 
     var variables: [String: JSONValue] {
@@ -413,6 +421,7 @@ public struct PlaceChange: Sendable, Equatable {
         if let latitudeDegrees { variables["latitudeDegrees"] = .number(latitudeDegrees) }
         if let longitudeDegrees { variables["longitudeDegrees"] = .number(longitudeDegrees) }
         if let radiusMeters { variables["radiusMeters"] = .number(radiusMeters) }
+        if let addressText { variables["addressText"] = .string(addressText.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return variables
     }
 }
@@ -420,17 +429,22 @@ public struct PlaceChange: Sendable, Equatable {
 /// CheckInTarget is where a check-in is made: a place of the person's own,
 /// a place found nearby, or just a position, where the server uses the
 /// person's own place there or makes a new one and names it afterwards.
+/// A position may carry how precise the device says it is, in meters; the
+/// server stores it on the visit. Negative or not a number means unknown and
+/// is not sent.
 public enum CheckInTarget: Sendable, Equatable {
     case place(String)
     case found(FoundPlace)
-    case position(latitudeDegrees: Double, longitudeDegrees: Double)
+    case position(latitudeDegrees: Double, longitudeDegrees: Double, accuracyMeters: Double? = nil)
 
     var variables: [String: JSONValue] {
         switch self {
         case .place(let placeId):
             return ["placeId": .string(placeId)]
-        case .position(let latitudeDegrees, let longitudeDegrees):
-            return ["latitudeDegrees": .number(latitudeDegrees), "longitudeDegrees": .number(longitudeDegrees)]
+        case .position(let latitudeDegrees, let longitudeDegrees, let accuracyMeters):
+            var variables: [String: JSONValue] = ["latitudeDegrees": .number(latitudeDegrees), "longitudeDegrees": .number(longitudeDegrees)]
+            if let accuracyMeters, accuracyMeters.isFinite, accuracyMeters >= 0 { variables["accuracyMeters"] = .number(accuracyMeters) }
+            return variables
         case .found(let found):
             return [
                 "latitudeDegrees": .number(found.latitudeDegrees), "longitudeDegrees": .number(found.longitudeDegrees),
@@ -448,13 +462,13 @@ extension Documents {
         latitudeDegrees longitudeDegrees accuracyMeters altitudeMeters speedMetersPerSecond courseDegrees measuredAt locationSource
         """
     static let locationPlaceFields = """
-        id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText
+        id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
         visitCount lastVisitAt namingErrorMessage createdAt updatedAt
         """
     static let placeVisitFields = """
         id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
         place {
-          id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText
+          id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
           visitCount lastVisitAt namingErrorMessage createdAt updatedAt
         }
         """
@@ -464,7 +478,7 @@ extension Documents {
         openVisit {
           id arrivedAt departedAt durationSeconds latitudeDegrees longitudeDegrees accuracyMeters visitSource
           place {
-            id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText
+            id userId placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmType osmId osmName osmCategory addressText isAddressTyped
             visitCount lastVisitAt namingErrorMessage createdAt updatedAt
           }
         }
@@ -505,6 +519,11 @@ extension Documents {
           }
         }
         """
+    public static let searchAddresses = """
+        query ($query: String!, $limitCount: Int) {
+          SearchAddresses(query: $query, limitCount: $limitCount) { \(foundPlaceFields) }
+        }
+        """
     public static let locationPoints = """
         query ($userId: String, $from: DateTime!, $until: DateTime!) {
           ListLocationPoints(userId: $userId, from: $from, until: $until) { \(locationPointFields) }
@@ -516,8 +535,8 @@ extension Documents {
         }
         """
     public static let savePlace = """
-        mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float) {
-          SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) {
+        mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
+          SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) {
             \(locationPlaceFields)
           }
         }
@@ -526,8 +545,8 @@ extension Documents {
         mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }
         """
     public static let checkIn = """
-        mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
-          CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
+        mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $accuracyMeters: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
+          CheckIn(placeId: $placeId, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, accuracyMeters: $accuracyMeters, placeName: $placeName, osmType: $osmType, osmId: $osmId, osmCategory: $osmCategory, addressText: $addressText) {
             \(placeVisitFields)
           }
         }
@@ -565,7 +584,7 @@ extension Documents {
     /// The location documents, for the server's schema check.
     public static let locationDocuments: [String: String] = [
         "location": location, "locationVisits": locationVisits, "locationPlaces": locationPlaces, "nearbyPlaces": nearbyPlaces,
-        "searchPlaces": searchPlaces, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
+        "searchPlaces": searchPlaces, "searchAddresses": searchAddresses, "locationPoints": locationPoints, "reportLocation": reportLocation, "savePlace": savePlace,
         "forgetPlace": forgetPlace, "checkIn": checkIn, "eraseLocationHistory": eraseLocationHistory,
         "sharedLocations": sharedLocations, "locationShares": locationShares, "shareLocation": shareLocation,
         "unshareLocation": unshareLocation, "locationEvents": locationEvents,
@@ -637,6 +656,16 @@ extension Connection {
         if offset > 0 { variables["offset"] = .number(Double(offset)) }
         if let limitCount { variables["limitCount"] = .number(Double(limitCount)) }
         return try await execute(Documents.searchPlaces, variables: variables, as: Answer.self).SearchPlaces
+    }
+
+    /// Addresses matching words, best first, from the place provider and
+    /// anywhere in the world, not near a position. `distanceMeters` is from
+    /// the person's latest position when the server has one, else 0.
+    public func searchAddresses(query: String, limitCount: Int? = nil) async throws -> [FoundPlace] {
+        struct Answer: Decodable, Sendable { let SearchAddresses: [FoundPlace] }
+        var variables: [String: JSONValue] = ["query": .string(query)]
+        if let limitCount { variables["limitCount"] = .number(Double(limitCount)) }
+        return try await execute(Documents.searchAddresses, variables: variables, as: Answer.self).SearchAddresses
     }
 
     /// The points of a stretch of at most two days, for drawing the path.

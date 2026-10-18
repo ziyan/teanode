@@ -33,7 +33,7 @@ final class LocationTests: XCTestCase {
     private let placeAnswer = #"""
         {"id":"place-1","userId":"user-1","placeName":"Fixture Park","isNamedByPerson":false,"placeLabel":"","latitudeDegrees":10.5,
          "longitudeDegrees":20.5,"radiusMeters":75,"osmType":"way","osmId":123456789012,"osmName":"Fixture Park","osmCategory":"leisure=park",
-         "addressText":"","visitCount":3,"lastVisitAt":"2024-01-02T10:00:00.123456789Z","namingErrorMessage":"",
+         "addressText":"","isAddressTyped":false,"visitCount":3,"lastVisitAt":"2024-01-02T10:00:00.123456789Z","namingErrorMessage":"",
          "createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-02T10:00:00Z"}
         """#
 
@@ -96,6 +96,17 @@ final class LocationTests: XCTestCase {
             ])
     }
 
+    func testAPlaceKnowsWhetherItsAddressWasTyped() throws {
+        let mapAddressed = try JSONDecoder().decode(LocationPlace.self, from: Data(placeAnswer.utf8))
+        XCTAssertFalse(mapAddressed.isAddressTyped)
+        let typedAnswer = placeAnswer.replacingOccurrences(
+            of: #""addressText":"","isAddressTyped":false,"#, with: #""addressText":"3 Fixture Row","isAddressTyped":true,"#)
+        let typed = try JSONDecoder().decode(LocationPlace.self, from: Data(typedAnswer.utf8))
+        XCTAssertTrue(typed.isAddressTyped)
+        XCTAssertEqual(typed.addressText, "3 Fixture Row")
+        XCTAssertTrue(Documents.savePlace.contains("isAddressTyped"))
+    }
+
     func testReadsPlacesAndNearbyPlaces() async throws {
         let (placesConnection, _) = connection(answering: #"{"data":{"ListPlaces":{"places":[\#(placeAnswer)],"nextOffset":null}}}"#)
         let page = try await placesConnection.locationPlaces()
@@ -143,10 +154,68 @@ final class LocationTests: XCTestCase {
         XCTAssertEqual(try sentVariables(fake.sent[3]), ["placeId": .string("place-1")])
     }
 
+    func testSavesAnAddressWithItsPosition() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SavePlace":\#(placeAnswer)}}"#)
+        try await connection.savePlace(
+            PlaceChange(
+                placeId: "place-1", latitudeDegrees: 10.5, longitudeDegrees: 20.5, addressText: "  12 Elm Street, Exampleton "))
+        try await connection.savePlace(
+            PlaceChange(placeLabel: "home", latitudeDegrees: 10.5, longitudeDegrees: 20.5, addressText: "12 Elm Street, Exampleton"))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            [
+                "placeId": .string("place-1"), "latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5),
+                "addressText": .string("12 Elm Street, Exampleton"),
+            ])
+        // No place identifier: the server makes the place, or uses the one holding the position.
+        XCTAssertEqual(
+            try sentVariables(fake.sent[1]),
+            [
+                "placeLabel": .string("home"), "latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5),
+                "addressText": .string("12 Elm Street, Exampleton"),
+            ])
+        XCTAssertTrue(Documents.savePlace.contains("$addressText: String"))
+        XCTAssertTrue(Documents.savePlace.contains("addressText: $addressText"))
+    }
+
+    func testSearchesAddressesAnywhere() async throws {
+        let (connection, fake) = connection(
+            answering: #"""
+                {"data":{"SearchAddresses":[{"placeName":"12 Elm Street","osmType":"way","osmId":9001,"osmCategory":"building=house",
+                 "addressText":"12 Elm Street, Exampleton","latitudeDegrees":10.5,"longitudeDegrees":20.5,"distanceMeters":0,
+                 "placeId":null,"placeLabel":"","isNamedByPerson":false}]}}
+                """#)
+        let found = try await connection.searchAddresses(query: "12 Elm Street", limitCount: 8)
+        XCTAssertEqual(found.map(\.addressText), ["12 Elm Street, Exampleton"])
+        XCTAssertEqual(found.first?.latitudeDegrees, 10.5)
+        XCTAssertNil(found.first?.placeId)
+        XCTAssertEqual(try sentVariables(fake.sent[0]), ["query": .string("12 Elm Street"), "limitCount": .number(8)])
+        XCTAssertTrue(Documents.searchAddresses.contains("SearchAddresses(query: $query, limitCount: $limitCount)"))
+    }
+
+    func testKeepsAnAddressAsTypedWithoutMovingThePlace() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"SavePlace":\#(placeAnswer)}}"#)
+        try await connection.savePlace(PlaceChange(placeId: "place-1", addressText: " 3 Fixture Row, Exampleton "))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]), ["placeId": .string("place-1"), "addressText": .string("3 Fixture Row, Exampleton")])
+    }
+
     func testChecksInAtAPositionWithOnlyItsCoordinates() async throws {
         let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
         try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5))
         XCTAssertEqual(try sentVariables(fake.sent[0]), ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5)])
+    }
+
+    func testChecksInAtAPositionWithHowPreciseItIs() async throws {
+        let (connection, fake) = connection(answering: #"{"data":{"CheckIn":\#(visitAnswer)}}"#)
+        try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: 850))
+        // The phone could not tell: negative, so nothing is claimed.
+        try await connection.checkIn(.position(latitudeDegrees: 10.5, longitudeDegrees: 20.5, accuracyMeters: -1))
+        XCTAssertEqual(
+            try sentVariables(fake.sent[0]),
+            ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5), "accuracyMeters": .number(850)])
+        XCTAssertEqual(try sentVariables(fake.sent[1]), ["latitudeDegrees": .number(10.5), "longitudeDegrees": .number(20.5)])
+        XCTAssertTrue(Documents.checkIn.contains("accuracyMeters: $accuracyMeters"))
     }
 
     func testChecksInAtAPlaceOrAFoundPlace() async throws {
@@ -203,7 +272,7 @@ final class LocationTests: XCTestCase {
     }
 
     func testEveryLocationDocumentIsRegistered() {
-        for name in ["location", "locationVisits", "locationPlaces", "reportLocation", "savePlace", "checkIn", "locationEvents"] {
+        for name in ["location", "locationVisits", "locationPlaces", "reportLocation", "savePlace", "searchAddresses", "checkIn", "locationEvents"] {
             XCTAssertNotNil(Documents.locationDocuments[name], name)
         }
     }

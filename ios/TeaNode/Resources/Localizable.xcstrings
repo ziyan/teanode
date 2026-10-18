@@ -60406,6 +60406,310 @@
         }
       }
     },
+    "No address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有地址"
+          }
+        }
+      }
+    },
+    "Change address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を変更"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更改地址"
+          }
+        }
+      }
+    },
+    "Use where I am now": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在地を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用我现在的位置"
+          }
+        }
+      }
+    },
+    "Move the place here": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所をここへ移動"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将地点移到此处"
+          }
+        }
+      }
+    },
+    "Keep it where it was": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の位置のままにする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持原位置"
+          }
+        }
+      }
+    },
+    "Tap to choose a new position for the place": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップして場所の新しい位置を選びます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按以选择地点的新位置"
+          }
+        }
+      }
+    },
+    "Moved %@": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@を移動しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已移动%@"
+          }
+        }
+      }
+    },
+    "Kept the address as typed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力したとおりに住所を保存しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已按输入内容保存地址"
+          }
+        }
+      }
+    },
+    "Use the map's address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図の住所を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用地图上的地址"
+          }
+        }
+      }
+    },
+    "The map will name this place again.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この場所は地図の名前に戻ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此地点将重新使用地图上的名称。"
+          }
+        }
+      }
+    },
+    "Nothing on the map matches %@.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図上に「%@」に一致するものはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图上没有与“%@”匹配的结果。"
+          }
+        }
+      }
+    },
+    "Not found on the map. Go back and use where I am now, or label a place Home and move its pin on that place's screen.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地図に見つかりませんでした。戻って「現在地を使う」を選ぶか、場所に「自宅」のラベルを付けて、その場所の画面でピンを動かしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地图上没有找到。请返回并使用“我现在的位置”，或将某个地点标为“家”，再在该地点的页面中移动图钉。"
+          }
+        }
+      }
+    },
+    "Keep this address as typed": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力したとおりに住所を保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按输入内容保存此地址"
+          }
+        }
+      }
+    },
+    "The place stays where it is and shows these words as its address.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "場所は今の位置のままで、この文字が住所として表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点保持原位置，并将这些文字显示为其地址。"
+          }
+        }
+      }
+    },
+    "Type my address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入我的地址"
+          }
+        }
+      }
+    },
+    "Finds your address and labels it as Home.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を探して、「自宅」のラベルを付けます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找你的地址，并标为“家”。"
+          }
+        }
+      }
+    },
+    "Type an address and press Search": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を入力して「検索」を押してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入地址，然后点“搜索”"
+          }
+        }
+      }
+    },
+    "The place moves to the match you tap and keeps its address.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タップした候補の位置に場所が移り、その住所が保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地点会移到你点选的结果处，并保留该地址。"
+          }
+        }
+      }
+    },
+    "Type an address": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住所を入力"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入地址"
+          }
+        }
+      }
+    },
     "Try again from a place with a shop, park or building on the map, or find a place by its name.": {
       "localizations": {
         "ja": {
@@ -60422,18 +60726,18 @@
         }
       }
     },
-    "A visit counts as here when you are within this distance of the center of the place.": {
+    "Tap the map to choose a new position for the place. A visit counts as here when you are within this distance of the center of the place.": {
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "場所の中心からこの距離以内にいるとき、ここへの訪問として数えます。"
+            "value": "地図をタップして場所の新しい位置を選びます。場所の中心からこの距離以内にいるとき、ここへの訪問として数えます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当您与地点中心的距离在此范围内时，就算作到访此处。"
+            "value": "点按地图以选择地点的新位置。当您与地点中心的距离在此范围内时，就算作到访此处。"
           }
         }
       }

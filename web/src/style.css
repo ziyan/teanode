@@ -18392,6 +18392,21 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   }
 }
 
+/* The map inside the place editor, after the rule above so a phone keeps it
+   small too. */
+.location-map-compact {
+  height: 220px;
+  border-radius: var(--radius-2);
+  overflow: hidden;
+}
+
+.location-keep-typed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .photo-circle-chip {
   display: inline-flex;
   flex: 0 0 auto;
@@ -18925,4 +18940,18 @@ label.checkbox.is-plain > span > .muted {
   gap: var(--space-2) var(--space-3);
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--border);
+}
+
+.location-address-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.location-address-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

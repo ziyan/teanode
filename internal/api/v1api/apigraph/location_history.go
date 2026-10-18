@@ -55,6 +55,10 @@ type LocationQuery interface {
 	// reported to be. Needs location:use.
 	SearchPlaces(ctx context.Context, arguments SearchPlacesArguments) (*FoundPlacePageView, error)
 
+	// Addresses matching the words, from the place provider, anywhere (not near
+	// a position), best match first. Needs location:use.
+	SearchAddresses(ctx context.Context, arguments SearchAddressesArguments) ([]*FoundPlaceView, error)
+
 	// The positions of up to two days, oldest first, for drawing the path
 	// taken. Needs location:use.
 	ListLocationPoints(ctx context.Context, arguments ListLocationPointsArguments) ([]*LocationPointView, error)
@@ -177,6 +181,10 @@ type PlaceView struct {
 	OSMName     string `json:"osmName"`
 	OSMCategory string `json:"osmCategory"`
 	AddressText string `json:"addressText"`
+
+	// IsAddressTyped says AddressText is one the person typed: moving the
+	// place keeps it and OpenStreetMap does not replace it.
+	IsAddressTyped bool `json:"isAddressTyped"`
 
 	// VisitCount and LastVisitAt are filled in where a place is listed or
 	// saved, and are zero and null where it is shown as part of a visit.
@@ -338,6 +346,14 @@ type SearchPlacesArguments struct {
 	LimitCount *int `json:"limitCount" graphapi:"nullable"`
 }
 
+type SearchAddressesArguments struct {
+	// Query is 1 to 200 characters.
+	Query string `json:"query"`
+
+	// LimitCount is 8 by default and at most 20.
+	LimitCount *int `json:"limitCount" graphapi:"nullable"`
+}
+
 type ListLocationPointsArguments struct {
 	// UserID is whose positions; empty is the caller's own.
 	UserID string `json:"userId" graphapi:"nullable"`
@@ -400,6 +416,19 @@ type SavePlaceArguments struct {
 	LatitudeDegrees  *float64 `json:"latitudeDegrees" graphapi:"nullable"`
 	LongitudeDegrees *float64 `json:"longitudeDegrees" graphapi:"nullable"`
 	RadiusMeters     *float64 `json:"radiusMeters" graphapi:"nullable"`
+
+	// AddressText is an address picked from SearchAddresses, given with the
+	// latitudeDegrees and longitudeDegrees of that match. The place moves
+	// there and keeps this address, which the place provider does not replace
+	// afterwards; a place the person did not name is called by its first part.
+	// A new place (no placeID) at a position inside one of the caller's own
+	// places is that place changed. With a placeID and no coordinates the
+	// place stays where it is and only its address is set, for an address the
+	// place provider does not know; without a placeID the position is needed.
+	// The address is then kept as typed (isAddressTyped): moving the place
+	// later keeps it. An empty address takes the typed address away and lets
+	// the place be named from OpenStreetMap again.
+	AddressText *string `json:"addressText" graphapi:"nullable"`
 }
 
 type ForgetPlaceArguments struct {
@@ -417,6 +446,10 @@ type CheckInArguments struct {
 	OSMID            *int64   `json:"osmId" graphapi:"nullable"`
 	OSMCategory      string   `json:"osmCategory" graphapi:"nullable"`
 	AddressText      string   `json:"addressText" graphapi:"nullable"`
+
+	// AccuracyMeters is how far off the position may be, as the device said;
+	// it is kept on the visit. Left out, the visit records no accuracy (0).
+	AccuracyMeters *float64 `json:"accuracyMeters" graphapi:"nullable"`
 }
 
 type EraseLocationHistoryArguments struct {
@@ -459,6 +492,11 @@ const (
 	// searchQueryMostRunes bounds the words of a search, which go to the
 	// place provider.
 	searchQueryMostRunes = 200
+
+	// addressLimitDefault and addressLimitMost bound the matches of an address
+	// search.
+	addressLimitDefault = 8
+	addressLimitMost    = 20
 
 	// nearbyOwnPlacesMost is how many of the person's own places a nearby
 	// listing shows.
@@ -591,7 +629,7 @@ func describePlace(found *models.Place) *PlaceView {
 		ID: found.ID, UserID: found.UserID, PlaceName: found.PlaceName, IsNamedByPerson: found.IsNamedByPerson,
 		PlaceLabel: string(found.PlaceLabel), LatitudeDegrees: found.LatitudeDegrees, LongitudeDegrees: found.LongitudeDegrees,
 		RadiusMeters: found.RadiusMeters, OSMType: found.OSMType, OSMName: found.OSMName, OSMCategory: found.OSMCategory,
-		AddressText: found.AddressText, VisitCount: found.VisitCount, LastVisitAt: found.LastVisitAt,
+		AddressText: found.AddressText, IsAddressTyped: found.IsAddressTyped, VisitCount: found.VisitCount, LastVisitAt: found.LastVisitAt,
 		NamingErrorMessage: found.NamingErrorMessage, CreatedAt: found.CreatedAt, UpdatedAt: found.UpdatedAt,
 	}
 	if found.OSMID != 0 {
@@ -1064,6 +1102,82 @@ func (self *graph) SearchPlaces(ctx context.Context, arguments SearchPlacesArgum
 	return page, nil
 }
 
+// SearchAddresses waits on the place provider, so it reads in phases for the
+// reason ListNearbyPlaces does. The distances are from where the caller was
+// last reported to be, and zero without a position.
+func (self *graph) SearchAddresses(ctx context.Context, arguments SearchAddressesArguments) ([]*FoundPlaceView, error) {
+	query := strings.TrimSpace(arguments.Query)
+	if query == "" {
+		return nil, fmt.Errorf("%w: type some of the address", api.ErrInvalidArguments)
+	}
+	if utf8.RuneCountInString(query) > searchQueryMostRunes {
+		return nil, fmt.Errorf("%w: search for at most %d characters", api.ErrInvalidArguments, searchQueryMostRunes)
+	}
+	limitCount := addressLimitDefault
+	if arguments.LimitCount != nil {
+		limitCount = *arguments.LimitCount
+	}
+	if limitCount < 1 || limitCount > addressLimitMost {
+		return nil, fmt.Errorf("%w: ask for 1 to %d addresses", api.ErrInvalidArguments, addressLimitMost)
+	}
+	var userId string
+	var latest *models.LocationPoint
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		principal, err := self.requireLocationPerson(phaseContext)
+		if err != nil {
+			return err
+		}
+		userId = principal.User.ID
+		latest, err = self.transaction(phaseContext).GetLatestLocationPoint(userId)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	provider, err := self.placeProvider()
+	if err != nil {
+		return nil, err
+	}
+	if err := self.allowPlaceLookup(userId); err != nil {
+		return nil, err
+	}
+	found, err := provider.Addresses(ctx, query, limitCount)
+	if err != nil {
+		return nil, placeProviderFailure(err)
+	}
+	if len(found) > limitCount {
+		found = found[:limitCount]
+	}
+	var ownPlaces []*models.Place
+	if err := self.readInPhase(ctx, func(phaseContext context.Context) error {
+		if _, err := self.requireLocationPerson(phaseContext); err != nil {
+			return err
+		}
+		tx := self.transaction(phaseContext)
+		ownPlaces = make([]*models.Place, len(found))
+		for index, each := range found {
+			var err error
+			if ownPlaces[index], err = tx.FindPlaceAt(userId, each.LatitudeDegrees, each.LongitudeDegrees); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	views := make([]*FoundPlaceView, 0, len(found))
+	for index, each := range found {
+		if latest != nil {
+			each.DistanceMeters = place.DistanceMeters(latest.LatitudeDegrees, latest.LongitudeDegrees, each.LatitudeDegrees, each.LongitudeDegrees)
+		}
+		placeId := ""
+		if ownPlaces[index] != nil {
+			placeId = ownPlaces[index].ID
+		}
+		views = append(views, describeFoundPlace(each, placeId, ownPlaces[index]))
+	}
+	return views, nil
+}
+
 // searchCenter is the position a search is around: the one given, one of the
 // caller's places, or where the caller was last reported to be.
 func (self *graph) searchCenter(tx db.Transaction, userId string, arguments SearchPlacesArguments) (float64, float64, error) {
@@ -1487,10 +1601,35 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 			return nil, err
 		}
 	}
+	// An empty address takes a typed address away, so it is not an address
+	// to keep: only a place that exists has one to take away.
+	addressText := ""
+	if arguments.AddressText != nil {
+		addressText = strings.TrimSpace(*arguments.AddressText)
+		if addressText != "" && arguments.LatitudeDegrees == nil && strings.TrimSpace(arguments.PlaceID) == "" {
+			return nil, fmt.Errorf("%w: give the position of the address too: latitudeDegrees and longitudeDegrees", api.ErrInvalidArguments)
+		}
+	}
 	tx := self.transaction(ctx)
 	userId := principal.User.ID
 
 	placeId := strings.TrimSpace(arguments.PlaceID)
+	if placeId == "" && addressText != "" {
+		// Typing an address for home makes the place, or labels the one the
+		// caller already has there, as a check-in does; two places at one
+		// address would split the visits. One change of a person's location
+		// at a time, as in CheckIn.
+		if err := tx.LockLocation(userId); err != nil {
+			return nil, err
+		}
+		holding, err := tx.FindPlaceAt(userId, *arguments.LatitudeDegrees, *arguments.LongitudeDegrees)
+		if err != nil {
+			return nil, locationFailure(err)
+		}
+		if holding != nil {
+			placeId = holding.ID
+		}
+	}
 	var saved *models.Place
 	if placeId == "" {
 		if arguments.LatitudeDegrees == nil {
@@ -1510,6 +1649,15 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 		} else {
 			made.PlaceName = placeNameFor(made.LatitudeDegrees, made.LongitudeDegrees)
 		}
+		// A typed address is named already: the provider is not asked what is
+		// there, since that would replace the address the person chose.
+		if addressText != "" {
+			now := time.Now()
+			made.AddressText, made.NamedAt = addressText, &now
+			if !made.IsNamedByPerson {
+				made.PlaceName = strings.TrimSpace(strings.SplitN(addressText, ",", 2)[0])
+			}
+		}
 		if err := self.requireNewPlaceAllowance(userId); err != nil {
 			return nil, err
 		}
@@ -1517,7 +1665,7 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 			return nil, locationFailure(err)
 		}
 		self.takeNewPlacesAfterCommit(tx, userId, 1)
-		if !saved.IsNamedByPerson {
+		if !saved.IsNamedByPerson && saved.NamedAt == nil {
 			detached := context.WithoutCancel(ctx)
 			tx.AfterCommit(func() { self.namePlacesNow(detached, []*models.Place{saved}) })
 		}
@@ -1525,6 +1673,10 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 		changes := db.PlaceChanges{
 			PlaceName: arguments.PlaceName, PlaceLabel: placeLabel, LatitudeDegrees: arguments.LatitudeDegrees,
 			LongitudeDegrees: arguments.LongitudeDegrees, RadiusMeters: arguments.RadiusMeters,
+		}
+		if arguments.AddressText != nil {
+			// Empty takes the typed address away.
+			changes.AddressText = &addressText
 		}
 		// A place moved farther than its radius forgets what was learned about
 		// the old position and is called after its new city until it is named
@@ -1561,6 +1713,13 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 	principal, err := self.requireLocationPerson(ctx)
 	if err != nil {
 		return nil, err
+	}
+	accuracyMeters := float64(0)
+	if arguments.AccuracyMeters != nil {
+		accuracyMeters = *arguments.AccuracyMeters
+		if !(accuracyMeters >= 0) || math.IsInf(accuracyMeters, 0) {
+			return nil, fmt.Errorf("%w: an accuracy is zero or more meters", api.ErrInvalidArguments)
+		}
 	}
 	tx := self.transaction(ctx)
 	userId := principal.User.ID
@@ -1624,7 +1783,7 @@ func (self *graph) CheckIn(ctx context.Context, arguments CheckInArguments) (*Pl
 
 	visit := &models.PlaceVisit{
 		PlaceID: checkedIn.ID, ArrivedAt: &now, LatitudeDegrees: checkedIn.LatitudeDegrees, LongitudeDegrees: checkedIn.LongitudeDegrees,
-		VisitSource: models.VisitSourceCheckIn, ClientVisitKey: "check_in:" + checkedIn.ID + ":" + now.UTC().Format(time.RFC3339Nano),
+		AccuracyMeters: accuracyMeters, VisitSource: models.VisitSourceCheckIn, ClientVisitKey: "check_in:" + checkedIn.ID + ":" + now.UTC().Format(time.RFC3339Nano),
 	}
 	if _, err := tx.PutPlaceVisit(userId, visit); err != nil {
 		return nil, locationFailure(err)

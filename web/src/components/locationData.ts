@@ -22,6 +22,7 @@ export type Place = {
   osmName: string
   osmCategory: string
   addressText: string
+  isAddressTyped: boolean
   visitCount: number
   lastVisitAt: string | null
 }
@@ -64,7 +65,7 @@ export type FoundPlace = {
 
 export const POINT_FIELDS = 'latitudeDegrees longitudeDegrees accuracyMeters measuredAt'
 export const PLACE_FIELDS =
-  'id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText visitCount lastVisitAt'
+  'id placeName isNamedByPerson placeLabel latitudeDegrees longitudeDegrees radiusMeters osmName osmCategory addressText isAddressTyped visitCount lastVisitAt'
 export const VISIT_FIELDS = `id arrivedAt departedAt durationSeconds place { ${PLACE_FIELDS} }`
 export const PERSON_FIELDS = `userId username name avatarUrl avatarColorIndex shareLevel
   latestPoint { ${POINT_FIELDS} } openVisit { id arrivedAt place { ${PLACE_FIELDS} } }`

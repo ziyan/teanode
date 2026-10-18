@@ -13,6 +13,7 @@ struct LocationSetupList: View {
     /// Starts the permission flow: When In Use, then Always.
     let allowLocation: () -> Void
     @State private var isWorking = false
+    @State private var isTypingAddress = false
 
     var body: some View {
         let setup = model.setup
@@ -29,6 +30,13 @@ struct LocationSetupList: View {
                     symbolName: "house", isDone: setup.isHomeDone, isEnabled: !isWorking && recorder.isAuthorizedToLocate
                 ) {
                     run { await model.markHome() }
+                }
+                LocationSetupRow(
+                    title: String(localized: "Type my address"),
+                    detail: String(localized: "Finds your address and labels it as Home."),
+                    symbolName: "text.magnifyingglass", isDone: setup.isHomeDone, isEnabled: !isWorking
+                ) {
+                    isTypingAddress = true
                 }
                 ForEach(setup.familyCircles) { circle in
                     let isShared = setup.isShared(with: circle)
@@ -59,6 +67,11 @@ struct LocationSetupList: View {
                 Button("Not now") { model.dismissSetup() }
             } footer: {
                 Text("Not now hides this. You can still allow location in the settings, label a place under Places, and share under Sharing.")
+            }
+        }
+        .navigationDestination(isPresented: $isTypingAddress) {
+            LocationAddressScreen(model: model) { address in
+                await model.markHome(atAddress: address)
             }
         }
     }
