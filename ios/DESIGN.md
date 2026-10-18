@@ -153,8 +153,10 @@ the iPhone's layout.
 - Anything that the system shows as a popover on the iPad (a share sheet, a
   confirmation) needs an anchor: attach a confirmation to its control, and give
   a share sheet presented from code a source view and rectangle.
-- The iPad turns every way. CI photographs it in landscape and portrait
-  (`-TeaNodeOrientation landscape` or `portrait` in the demo).
+- The iPad turns every way, and the column is there in both: what decides
+  is the width of the window, not the way the iPad is held. CI photographs it
+  upright only, since an iPad app that turns every way follows how the
+  simulator is held and cannot turn itself.
 
 ## Motion and feel
 

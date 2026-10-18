@@ -1,7 +1,6 @@
 #if DEBUG
     import Foundation
     import TeaNodeKit
-    import UIKit
 
     #if canImport(FoundationNetworking)
         import FoundationNetworking
@@ -562,31 +561,6 @@
         /// Whether a screenshot opens with the side menu out: `-TeaNodeMenu`.
         static var isMenuRequested: Bool {
             ProcessInfo.processInfo.arguments.contains("-TeaNodeMenu")
-        }
-
-        /// The orientation a screenshot is taken in, for an iPad: `-TeaNodeOrientation
-        /// landscape` or `portrait`. Nothing is asked for without it, and an iPhone,
-        /// which only turns upright, refuses a landscape request.
-        static var requestedOrientations: UIInterfaceOrientationMask? {
-            let arguments = ProcessInfo.processInfo.arguments
-            guard let index = arguments.firstIndex(of: "-TeaNodeOrientation"), index + 1 < arguments.count else { return nil }
-            switch arguments[index + 1] {
-            case "landscape": return .landscapeRight
-            case "portrait": return .portrait
-            default: return nil
-            }
-        }
-
-        /// Turns the window to the orientation `-TeaNodeOrientation` asked for. The
-        /// window scene is there when the first screen draws, but a request made in
-        /// the same moment is dropped, so it waits for the window to settle.
-        @MainActor
-        static func turnToRequestedOrientation() async {
-            guard isRequested, let orientations = requestedOrientations else { return }
-            try? await Task.sleep(for: .milliseconds(500))
-            let windowScenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            guard let windowScene = windowScenes.first else { return }
-            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: orientations)) { _ in }
         }
 
         static let contacts = #"""

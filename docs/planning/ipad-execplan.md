@@ -24,6 +24,8 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 - The agent's chat list in the column (`ConversationsSheet`) is `.searchable` inside a `NavigationStack`, and keeps `searchFieldClearance` at the bottom for the iPhone's bottom search field. On an iPad iOS may place the field in the column's bar instead, which would leave that bottom space empty; CI's iPad screenshots show which. Not changed without seeing it.
 - There is no `TabView` in the app, so the tab bar that iPadOS 26 moves to the top never appears.
 
+- The first CI run asked the window to turn with `requestGeometryUpdate` and took the landscape pictures sideways: iPadOS ignores the request from an app that turns every way, which follows how the device is held, and the simulator is held upright. `simctl` cannot turn a simulator. The orientation argument and the landscape pictures were taken out; the column depends on the window's width, which is regular in both orientations on a full screen iPad, so landscape uses the same layout, but it is checked on a device, not in CI.
+
 ## Decision Log
 
 - Decision: the column appears whenever the window's horizontal size class is regular, in both orientations; at compact width the iPhone's sliding menu stays. Rationale: the person asked for the menu to stay open with the screen adjusting to landscape or portrait; the size class is what iPadOS gives an app for "is there room", and it already turns compact in Slide Over and narrow Split View, where a column would leave no room for the screen. Date: 2026-10-18.
@@ -88,4 +90,4 @@ Every change is in source and CI; nothing touches the server or the database. Re
 
 ## Interfaces and Dependencies
 
-No new libraries. New: `EnvironmentValues.isMenuPinned: Bool` (default `false`), and the demo's `-TeaNodeOrientation` argument. `SidePanel`'s public shape (`isOpen`, `isOpenedFromAnywhere`, `panel`, `content`) is unchanged.
+No new libraries. New: `EnvironmentValues.isMenuPinned: Bool` (default `false`), `SidePanel`'s public shape (`isOpen`, `isOpenedFromAnywhere`, `panel`, `content`) is unchanged.

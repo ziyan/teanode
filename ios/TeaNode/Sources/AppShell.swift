@@ -186,10 +186,6 @@ struct MainView: View {
                 try? await Task.sleep(for: .milliseconds(800))
                 isMenuOpen = true
             }
-            .task {
-                // `-TeaNodeOrientation landscape` or `portrait`: the iPad turned for a screenshot.
-                await DemoServer.turnToRequestedOrientation()
-            }
         #endif
         .onAppear {
             if let kept = app.keptSection {

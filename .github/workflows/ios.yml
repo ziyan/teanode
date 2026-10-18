@@ -230,18 +230,6 @@ jobs:
             xcrun simctl terminate "$device" "$bundle" 2>/dev/null || true
             xcrun simctl launch "$device" "$bundle" "$@"
             settle "screenshots/$name.png"
-            # A window turned to landscape on a simulator held upright may be
-            # captured upright, with the screen on its side: turn the picture
-            # so that it reads, as an iPad held sideways shows it.
-            case "$name" in
-              *-landscape|store-ipad/*)
-                pixel_width=$(sips -g pixelWidth "screenshots/$name.png" | awk '/pixelWidth/ {print $2}')
-                pixel_height=$(sips -g pixelHeight "screenshots/$name.png" | awk '/pixelHeight/ {print $2}')
-                if [ "$pixel_height" -gt "$pixel_width" ]; then
-                  sips -r 270 "screenshots/$name.png" >/dev/null
-                fi
-                ;;
-            esac
             case "$name" in
               recordings-*|recording-*|device-setup-*|knowledge-records-*|conversation-long-message-*)
                 # The screen may still be loading its demo answers: look
@@ -581,7 +569,7 @@ jobs:
           shoot store/6-conversation-dark dark large -TeaNodeDemo
 
           # The iPad: the same app with the side menu as a column that stays
-          # open beside the screen, turned both ways. The phone is shut down
+          # open beside the screen, upright. The phone is shut down
           # first, so two simulators are not up at once, and the iPad has its
           # own appearance and text size to set.
           xcrun simctl shutdown "$device"
@@ -590,18 +578,19 @@ jobs:
           xcrun simctl boot "$device"
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
-          shoot ipad-conversation-landscape light large -TeaNodeDemo -TeaNodeOrientation landscape
-          shoot ipad-conversation-portrait light large -TeaNodeDemo -TeaNodeOrientation portrait
-          shoot ipad-mail-landscape dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeOrientation landscape
-          shoot ipad-photos-landscape light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library -TeaNodeOrientation landscape
-          shoot ipad-location-portrait light large -TeaNodeDemo -TeaNodeTab location -TeaNodeOrientation portrait
-          # The App Store's iPad set, in landscape, with the same status bar.
+          shoot ipad-conversation-light light large -TeaNodeDemo
+          shoot ipad-conversation-dark dark large -TeaNodeDemo
+          shoot ipad-mail-dark dark large -TeaNodeDemo -TeaNodeTab mail
+          shoot ipad-photos-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
+          shoot ipad-location-light light large -TeaNodeDemo -TeaNodeTab location
+          shoot ipad-calendar-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar
+          # The App Store's iPad set, upright, with the same status bar.
           xcrun simctl status_bar "$device" override --time 9:41 --batteryState charged --batteryLevel 100 --wifiBars 3 --cellularBars 4 --operatorName ""
           mkdir -p screenshots/store-ipad
-          shoot store-ipad/1-conversation light large -TeaNodeDemo -TeaNodeOrientation landscape
-          shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail -TeaNodeOrientation landscape
-          shoot store-ipad/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeOrientation landscape
-          shoot store-ipad/4-goals light large -TeaNodeDemo -TeaNodeTab goals -TeaNodeOrientation landscape
+          shoot store-ipad/1-conversation light large -TeaNodeDemo
+          shoot store-ipad/2-mail light large -TeaNodeDemo -TeaNodeTab mail
+          shoot store-ipad/3-calendar light large -TeaNodeDemo -TeaNodeTab calendar
+          shoot store-ipad/4-goals light large -TeaNodeDemo -TeaNodeTab goals
 
       - name: Keep the screenshots
         if: always()
