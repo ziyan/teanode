@@ -26,6 +26,8 @@ type messageServer struct {
 	*httptest.Server
 	lock  sync.Mutex
 	calls map[string]map[string]any
+	// replies replace the standard answer to an operation, by its name.
+	replies map[string]string
 }
 
 func newMessageServer(test *testing.T, addresses ...string) *messageServer {
@@ -49,7 +51,8 @@ func newMessageServer(test *testing.T, addresses ...string) *messageServer {
 		"SendMailboxMessage":   `{"mail":{"id":"mail-sent"},"item":{"id":"item-sent","folderId":"folder-sent"}}`,
 		"SaveMailboxDraft":     `{"id":"item-draft","folderId":"folder-drafts","draft":true}`,
 		"GetMailInvitation":    `{"id":"invitation-one","method":"REQUEST","summary":"Planning","location":"Room 4","startsAt":"2031-03-04T10:00:00Z","organizer":"ann@example.org","participation":"NEEDS-ACTION","attendees":[{"address":"you@example.com","participation":"NEEDS-ACTION"}]}`,
-		"AnswerMailInvitation": `{"id":"invitation-one","method":"REQUEST","participation":"ACCEPTED","attendees":[]}`,
+		"AnswerMailInvitation": `{"id":"invitation-one","method":"REQUEST","participation":"ACCEPTED","organizer":"ann@example.org","attendees":[]}`,
+		"GetMailboxThread":     `{"threadId":"thread-one","subject":"Lunch","items":[{"folderId":"folder-inbox","item":{"id":"item-two","mailId":"mail-two"}},{"folderId":"folder-inbox","item":{"id":"item-one","mailId":"mail-one"}}]}`,
 	}
 	server.Server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		if strings.Contains(request.URL.Path, "/attachment/") {
@@ -70,6 +73,9 @@ func newMessageServer(test *testing.T, addresses ...string) *messageServer {
 			if strings.Contains(document.Query, operation+"(") || (operation == "ListMailboxes" && strings.Contains(document.Query, "ListMailboxes")) {
 				server.lock.Lock()
 				server.calls[operation] = document.Variables
+				if reply, isReplaced := server.replies[operation]; isReplaced {
+					answer = reply
+				}
 				server.lock.Unlock()
 				_, _ = response.Write([]byte(`{"data":{"` + operation + `":` + answer + `}}`))
 				return
@@ -452,5 +458,84 @@ func TestMailboxMessageParity(test *testing.T) {
 		} else if row.action != "" && !toolActions[row.tool][row.action] {
 			test.Errorf("the tool %s has no action %s, for %s", row.tool, row.action, row.operation)
 		}
+	}
+}
+
+// The same name twice does not end the save: the second file gets a number
+// before its extension, and nothing already in the directory is replaced.
+func TestSaveAttachmentsNumbersAFileWhoseNameIsTaken(test *testing.T) {
+	server := newMessageServer(test)
+	server.replies = map[string]string{"GetMailContent": `{"mailId":"mail-one","available":true,"text":"Two pictures","attachments":[{"index":0,"filename":"image.png","contentType":"image/png","size":5},{"index":1,"filename":"image.png","contentType":"image/png","size":5}]}`}
+	directory := filepath.Join(test.TempDir(), "saved")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		test.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "image (2).png"), []byte("mine"), 0o600); err != nil {
+		test.Fatal(err)
+	}
+
+	if _, err := server.run(test, "message", "show", "item-one", "--save-attachments", directory); err != nil {
+		test.Fatal(err)
+	}
+	for name, wanted := range map[string]string{"image.png": "%PDF-", "image (2).png": "mine", "image (3).png": "%PDF-"} {
+		written, err := os.ReadFile(filepath.Join(directory, name))
+		if err != nil || string(written) != wanted {
+			test.Errorf("%s holds %q, %v; wanted %q", name, written, err, wanted)
+		}
+	}
+}
+
+// A message with only an HTML part is printed, and one whose text is gone
+// does not stop the conversation around it.
+func TestShowFallsBackToHTMLAndSurvivesAMessageThatIsGone(test *testing.T) {
+	server := newMessageServer(test)
+	server.replies = map[string]string{"GetMailContent": `{"mailId":"mail-one","available":true,"text":"","html":"<p>Only HTML</p>","headers":[{"key":"Subject","value":"Lunch"}]}`}
+	printed, err := server.run(test, "message", "show", "item-one")
+	if err != nil || !strings.Contains(printed, "<p>Only HTML</p>") || !strings.Contains(printed, "Subject:") {
+		test.Errorf("an HTML-only message printed %q, %v", printed, err)
+	}
+
+	server.replies = map[string]string{"GetMailContent": `{"mailId":"mail-one","available":false}`}
+	printed, err = server.run(test, "message", "show", "item-one", "--thread")
+	if err != nil {
+		test.Fatalf("a message that is gone ended the thread: %v", err)
+	}
+	if strings.Count(printed, "no longer stored") != 2 || !strings.Contains(printed, "item-one") || !strings.Contains(printed, "item-two") {
+		test.Errorf("the thread %q does not hold a line for each message", printed)
+	}
+}
+
+// An answer carries a request identifier, so repeating it with the same one
+// does not mail the organizer twice; a new answer gets a new one.
+func TestInvitationAnswerSendsARequestIdentifierAndReusesOnRetry(test *testing.T) {
+	server := newMessageServer(test)
+	if _, err := server.run(test, "invitation", "answer", "item-one", "accept"); err != nil {
+		test.Fatal(err)
+	}
+	first, _ := server.variables("AnswerMailInvitation")["requestId"].(string)
+	if first == "" {
+		test.Fatal("no request identifier was sent")
+	}
+	if _, err := server.run(test, "invitation", "answer", "item-one", "accept"); err != nil {
+		test.Fatal(err)
+	}
+	if second, _ := server.variables("AnswerMailInvitation")["requestId"].(string); second == "" || second == first {
+		test.Errorf("a new answer reused %q", second)
+	}
+	printed, err := server.run(test, "invitation", "answer", "item-one", "accept", "--request-id", first)
+	if err != nil {
+		test.Fatal(err)
+	}
+	if retried := server.variables("AnswerMailInvitation")["requestId"]; retried != first {
+		test.Errorf("a retry sent %v, not %q", retried, first)
+	}
+	if !strings.Contains(printed, "ann@example.org") {
+		test.Errorf("the answer %q does not say who was mailed", printed)
+	}
+
+	server.replies = map[string]string{"AnswerMailInvitation": `{"id":"invitation-one","method":"REQUEST","participation":"ACCEPTED","attendees":[]}`}
+	printed, err = server.run(test, "invitation", "answer", "item-one", "accept")
+	if err != nil || strings.Contains(printed, "organizer has been told") || !strings.Contains(printed, "answered accepted") {
+		test.Errorf("an event with no organizer printed %q, %v", printed, err)
 	}
 }

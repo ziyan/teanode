@@ -113,8 +113,8 @@ const (
 		SaveMailboxDraft(mailboxId: $mailboxId, message: $message) ` + mailboxItemFields + `
 	}`
 	DocumentGetMailInvitation    = `query ($itemId: String!) { GetMailInvitation(itemId: $itemId) ` + invitationFields + ` }`
-	DocumentAnswerMailInvitation = `mutation ($itemId: String!, $answer: String!) {
-		AnswerMailInvitation(itemId: $itemId, answer: $answer) ` + invitationFields + `
+	DocumentAnswerMailInvitation = `mutation ($requestId: String, $itemId: String!, $answer: String!) {
+		AnswerMailInvitation(requestId: $requestId, itemId: $itemId, answer: $answer) ` + invitationFields + `
 	}`
 )
 
@@ -296,12 +296,13 @@ func GetMailInvitation(ctx context.Context, connection *Client, itemId string) (
 
 // AnswerMailInvitation says whether the person is coming: ACCEPTED,
 // DECLINED or TENTATIVE. The person's own copy is marked and the answer is
-// mailed to whoever asked.
-func AnswerMailInvitation(ctx context.Context, connection *Client, itemId, answer string) (*MailInvitation, error) {
+// mailed to whoever asked. A retry reuses requestId, which is how the server
+// knows it is the same answer and does not mail the organizer twice.
+func AnswerMailInvitation(ctx context.Context, connection *Client, requestId, itemId, answer string) (*MailInvitation, error) {
 	var result struct {
 		AnswerMailInvitation *MailInvitation `json:"AnswerMailInvitation"`
 	}
-	variables := map[string]any{"itemId": itemId, "answer": answer}
+	variables := map[string]any{"requestId": requestId, "itemId": itemId, "answer": answer}
 	if err := connection.Execute(ctx, DocumentAnswerMailInvitation, variables, &result); err != nil {
 		return nil, err
 	}

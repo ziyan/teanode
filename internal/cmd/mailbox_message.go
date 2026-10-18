@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/mail"
@@ -35,7 +36,7 @@ func newMessageCommand() *cli.Command {
 				Flags: []cli.Flag{
 					JSONFlag(), mailboxFlag(),
 					&cli.StringFlag{Name: "folder", Usage: "which folder, by name or identifier; the Inbox by default"},
-					&cli.BoolFlag{Name: "everywhere", Usage: "every folder of the mailbox at once"},
+					&cli.BoolFlag{Name: "everywhere", Usage: "every folder of the mailbox at once; with --unread, --flagged or --has-attachment the server leaves out Junk and Trash"},
 					&cli.BoolFlag{Name: "unread", Usage: "only unread messages"},
 					&cli.BoolFlag{Name: "flagged", Usage: "only flagged messages"},
 					&cli.BoolFlag{Name: "has-attachment", Usage: "only messages with an attachment"},
@@ -307,9 +308,12 @@ func runMessageShow(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+// errMessageNotStored says the text of a message is gone from the server.
+var errMessageNotStored = errors.New("the message is no longer stored; retention removed it, or it arrived before storage was configured")
+
 func printMessage(command *cli.Command, item *client.MailboxItem, content *client.MailContent) error {
 	if !content.Available {
-		return fmt.Errorf("the message is no longer stored; retention removed it, or it arrived before storage was configured")
+		return errMessageNotStored
 	}
 	fields := [][2]string{}
 	for _, wanted := range shownHeaders {
@@ -333,7 +337,10 @@ func printMessage(command *cli.Command, item *client.MailboxItem, content *clien
 		}
 		body = content.HTML
 	} else if body == "" && content.HTML != "" {
-		return fmt.Errorf("the message has no text part; pass --html for the HTML")
+		// A message with only an HTML part is still a message to read; the
+		// note says what is printed, and --html asks for it on purpose.
+		fmt.Fprintln(os.Stderr, "note: the message has no text part, so its HTML part is printed")
+		body = content.HTML
 	}
 	fmt.Println()
 	fmt.Println(messageText(body))
@@ -377,7 +384,11 @@ func showThread(ctx context.Context, command *cli.Command, connection *client.Cl
 		if index != len(thread.Items)-1 {
 			fmt.Printf("\n%s\n\n", strings.Repeat("-", 72))
 		}
-		if err := printMessage(command, entry.Item, content); err != nil {
+		// One message whose text is gone must not hide the rest of the
+		// conversation.
+		if err := printMessage(command, entry.Item, content); errors.Is(err, errMessageNotStored) {
+			fmt.Printf("id: %s\n(%s)\n", entry.Item.ID, err)
+		} else if err != nil {
 			return err
 		}
 	}
@@ -400,11 +411,10 @@ func saveAttachments(ctx context.Context, connection *client.Client, mailId stri
 		if err != nil {
 			return fmt.Errorf("cannot fetch attachment %d: %w", attachment.Index, err)
 		}
-		path := filepath.Join(directory, name)
-		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		file, path, err := createAttachmentFile(directory, name)
 		if err != nil {
 			_ = response.Body.Close()
-			return fmt.Errorf("cannot write %s: %w", path, err)
+			return err
 		}
 		written, err := io.Copy(file, response.Body)
 		_ = response.Body.Close()
@@ -417,6 +427,29 @@ func saveAttachments(ctx context.Context, connection *client.Client, mailId stri
 		fmt.Printf("wrote %s (%d bytes)\n", path, written)
 	}
 	return nil
+}
+
+// createAttachmentFile makes a new file for an attachment, never an existing
+// one. Two attachments may carry the same name, and a name already in the
+// directory may be anything, so a taken name gets a number before its
+// extension ("image (2).png") instead of ending the save.
+func createAttachmentFile(directory, name string) (*os.File, string, error) {
+	extension := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, extension)
+	for attempt := 1; ; attempt++ {
+		candidate := name
+		if attempt > 1 {
+			candidate = fmt.Sprintf("%s (%d)%s", stem, attempt, extension)
+		}
+		path := filepath.Join(directory, candidate)
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err == nil {
+			return file, path, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, "", fmt.Errorf("cannot write %s: %w", path, err)
+		}
+	}
 }
 
 func runMessageMove(ctx context.Context, command *cli.Command) error {
@@ -646,8 +679,11 @@ func newInvitationCommand() *cli.Command {
 				Description: "Needs the right to send mail and to use the calendar, as the dashboard's buttons do.\n\n" +
 					"  teanode mailbox invitation answer <message-id> accept",
 				ArgsUsage: "<message-id> <accept|tentative|decline>",
-				Flags:     []cli.Flag{JSONFlag()},
-				Action:    runInvitationAnswer,
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.StringFlag{Name: "request-id", Usage: "to repeat an answer that may have gone through, pass the request identifier printed on the first try; the organizer is mailed once"},
+				},
+				Action: runInvitationAnswer,
 			},
 		},
 	}
@@ -735,13 +771,24 @@ func runInvitationAnswer(ctx context.Context, command *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	invitation, err := client.AnswerMailInvitation(ctx, connection, itemId, answer)
+	requestId := command.String("request-id")
+	if requestId == "" {
+		requestId = security.NewULID()
+	}
+	fmt.Fprintf(os.Stderr, "request %s\n", requestId)
+	invitation, err := client.AnswerMailInvitation(ctx, connection, requestId, itemId, answer)
 	if err != nil {
-		return describeNotFound(command, err, "an invitation on message "+itemId)
+		return describeNotFound(command, fmt.Errorf("%w (if it may have gone through, repeat with --request-id %s)", err, requestId), "an invitation on message "+itemId)
 	}
 	if command.Bool("json") {
 		return PrintJSON(invitation)
 	}
-	fmt.Printf("answered %s; the organizer has been told\n", strings.ToLower(answer))
+	// The server mails nobody when the event names no organizer, so the
+	// answer is not claimed to have reached anyone unless one is named.
+	if invitation.Organizer != "" {
+		fmt.Printf("answered %s; mailed to %s\n", strings.ToLower(answer), invitation.Organizer)
+	} else {
+		fmt.Printf("answered %s\n", strings.ToLower(answer))
+	}
 	return nil
 }
