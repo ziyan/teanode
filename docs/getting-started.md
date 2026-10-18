@@ -292,7 +292,10 @@ box, then **Message someone**. Every circle has a chat of its own.
   loopback, which a phone cannot reach), so a server reached at
   `http://localhost` or a local address needs a TLS address first (see
   "Photos and the iPhone app" in `reference/deployment.md`). Deleting a photo
-  on the phone leaves it here. A library is large: put the storage
+  on the phone leaves it here. A photo placed nowhere or in the wrong town
+  gets **Change location** in its details (or for several chosen photos),
+  which picks a city from a list bundled with the server: no map service to
+  set up. A library is large: put the storage
   (`storage.directory`, or the S3 bucket) on a disk with room for it, and back
   it up with the database. **Manage → Server → Setup** turns it off, or turns
   on Calendar, Contacts and the rest; the page says what starts after a
