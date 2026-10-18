@@ -34,9 +34,10 @@ struct TeaNodeApp: App {
             // up before would stay in the old one.
             .id(language)
             .environment(\.locale, language.locale)
-            // The windows' style alone did not reach the pictures the app
-            // switcher keeps, so SwiftUI is told the chosen scheme as well;
-            // apply() still sets the windows, which System (nil here) needs.
+            // The windows' style alone appeared not to reach the pictures the
+            // app switcher keeps (a dark chat showed there with light parts),
+            // so SwiftUI is told the chosen scheme as well; apply() still sets
+            // the windows, which System (nil here) needs.
             .preferredColorScheme(appearance.colorScheme)
             // After the choice is stored, so the windows' style is the last
             // thing set whichever way the change went.

@@ -37,11 +37,11 @@ enum Appearance: String, CaseIterable, Identifiable {
     }
 
     /// Sets every window of the app and every sheet open in it. The app's
-    /// root is also given `colorScheme` as its preferredColorScheme, which
-    /// reaches what the window's style does not (the pictures the app
-    /// switcher keeps); but a preferredColorScheme of nil leaves an open sheet
-    /// in the last choice rather than returning it to the system's, so the
-    /// sheets are set here as well.
+    /// root is also given `colorScheme` as its preferredColorScheme, for the
+    /// pictures the app switcher keeps, which the windows' style appeared not
+    /// to reach; but a preferredColorScheme of nil leaves an open sheet in the
+    /// last choice rather than returning it to the system's, so the sheets
+    /// are set here as well.
     @MainActor
     func apply() {
         for scene in UIApplication.shared.connectedScenes {
