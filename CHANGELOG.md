@@ -6,6 +6,14 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.178.1] - 2026-10-18
+
+### Fixed
+
+- A new server whose operator saved services other than Photos still opens on the welcome page, which asks for the model key. (#575)
+- The People page says when everyone found is hidden; a photo shared from the full-screen view in a chat is the original file; any file in a chat can be shared; the Mail side menu opens on its folders. (#575)
+- The iPhone photo library scrolls smoothly and shows three photos to a row. (#575)
+
 ## [0.178.0] - 2026-10-18
 
 ### Added
