@@ -142,17 +142,21 @@ struct ChatTypingLine: View {
 /// MentionMenu offers the agents an @ in the composer can ask, as the
 /// dashboard's list does: a row for each with its symbol, its name and whose
 /// it is, the person's own first, then those whose owners let the others ask.
-/// It sits above the composer, shows about five rows and scrolls for more. A
+/// It sits above the composer on glass, shows about five rows (two at the
+/// largest text sizes) and scrolls for more. A
 /// tap puts the agent's name in the words and addresses the message to it.
 struct MentionMenu: View {
     let agents: [AddressableAgent]
     let onChoose: (AddressableAgent) -> Void
     @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 56
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The height of all the rows, measured, since a scroll view would
     /// otherwise take all the room it is offered even for one row.
     @State private var rowsHeight: CGFloat = 0
 
-    private static var visibleRowCount: CGFloat { 5 }
+    /// Rows shown before the rest scroll: fewer at the largest text sizes, so
+    /// the menu above the keyboard leaves room for the chat.
+    private var visibleRowCount: CGFloat { dynamicTypeSize.isAccessibilitySize ? 2 : 5 }
 
     var body: some View {
         ScrollView {
@@ -164,10 +168,13 @@ struct MentionMenu: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { rowsHeight = $0 }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(height: min(rowsHeight, rowHeight * Self.visibleRowCount))
-        .background(.regularMaterial, in: .rect(cornerRadius: 18, style: .continuous))
+        .frame(height: min(rowsHeight, rowHeight * visibleRowCount))
         .clipShape(.rect(cornerRadius: 18, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color(.separator), lineWidth: 0.5) }
+        // Glass, as the composer under it is: the menu floats over the chat.
+        .glassEffect(.regular, in: .rect(cornerRadius: 18, style: .continuous))
+        // Not drawn until the rows are measured, so it does not show as an
+        // empty strip for a moment first.
+        .opacity(rowsHeight == 0 ? 0 : 1)
         .padding(.horizontal)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Agents you can ask here")
@@ -194,6 +201,8 @@ private struct MentionMenuRow: View {
                         .foregroundStyle(.primary)
                         .frame(width: symbolSide, height: symbolSide)
                         .background(Color(.tertiarySystemFill), in: .circle)
+                        // Read as the name and whose agent it is, not "sparkles".
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(agent.name)
                             .font(.body.weight(.semibold))

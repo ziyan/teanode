@@ -164,6 +164,10 @@ final class ConversationModel {
     private let draftKey: String
 
     private func saveDraft() {
+        #if DEBUG
+            // What a screenshot typed is not the next screenshot's draft.
+            if DemoServer.isRequested { return }
+        #endif
         if draft.isEmpty {
             UserDefaults.standard.removeObject(forKey: draftKey)
         } else {
