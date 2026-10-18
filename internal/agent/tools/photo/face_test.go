@@ -115,6 +115,29 @@ func TestPeopleListsGroupsWithTheirNamesAndSaysAnUnnamedOneIsNobodyYet(test *tes
 	}
 }
 
+// person-read is the one group, as teanode photo people read gives it: who
+// names it, its counts and the face it is shown by.
+func TestPersonReadGivesOneGroupWithItsNameCountsAndCover(test *testing.T) {
+	current := newRun(test, map[string]string{
+		"ReadPhotoFaceGroup": `{"id":"group-one","contactId":"contact-one","contactName":"Ada Example","faceCount":9,"photoCount":7,"coverPhotoFaceId":"face-cover"}`,
+	})
+	result, err := current.call(map[string]any{"operation": "person-read", "face_group_id": " group-one "})
+	if err != nil || !result.Untrusted {
+		test.Fatalf("%v %v", result, err)
+	}
+	for _, want := range []string{`"face_group_id":"group-one"`, `"contact_name":"Ada Example"`, `"face_count":9`, `"photo_count":7`, `"cover_photo_face_id":"face-cover"`} {
+		if !strings.Contains(result.Content, want) {
+			test.Errorf("the answer lacks %s: %s", want, result.Content)
+		}
+	}
+	if asked := current.operations.asked("ReadPhotoFaceGroup"); len(asked) != 1 || asked[0]["photoFaceGroupId"] != "group-one" {
+		test.Fatalf("%v", asked)
+	}
+	if _, err := current.call(map[string]any{"operation": "person-read"}); err == nil || !strings.Contains(err.Error(), "face_group_id") {
+		test.Fatalf("%v", err)
+	}
+}
+
 func TestAPersonsPhotosAreAskedForByGroupOrByContact(test *testing.T) {
 	current := newRun(test, map[string]string{"ListPhotos": `[` + pictureRow + `]`})
 	if _, err := current.call(map[string]any{"operation": "person-photos", "face_group_id": " group-one "}); err != nil {
@@ -276,6 +299,7 @@ func TestSwitchingFacesOnOrOffAsksFirstAndTheRestOfThePeopleOperationsDoNot(test
 		line      string
 	}{
 		{map[string]any{"operation": "people"}, tools.RiskRead, "List the people found in the photos"},
+		{map[string]any{"operation": "person-read", "face_group_id": "x"}, tools.RiskRead, "Read one person found in the photos"},
 		{map[string]any{"operation": "person-photos", "face_group_id": "x"}, tools.RiskRead, "List the photos of a person"},
 		{map[string]any{"operation": "person-name"}, tools.RiskWrite, "Say who a group of faces is, by a contact"},
 		{map[string]any{"operation": "person-merge"}, tools.RiskWrite, "Put groups of faces together as one person"},
@@ -361,7 +385,7 @@ func TestTheToolDeclaresEveryParameterItsOperationsTakeAndTellsTheAgentNotToGues
 			enum = append(enum, name.(string))
 		}
 	}
-	for _, name := range []string{"people", "person-photos", "person-name", "person-unname", "person-hide", "person-remove-face", "person-merge", "faces", "album-cover"} {
+	for _, name := range []string{"people", "person-read", "person-photos", "person-name", "person-unname", "person-hide", "person-remove-face", "person-merge", "faces", "album-cover"} {
 		found := false
 		for _, candidate := range enum {
 			found = found || candidate == name

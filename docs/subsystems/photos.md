@@ -373,12 +373,19 @@ there is more `next_offset` out (with the count, `matching_photo_count` for phot
 `total_count` for the rest), as the mail and memory tools do. `library` gives
 `photo_count` for all items, videos among them, as albums count them, and `video_count` for the
 videos in it. `set-date` (a write) corrects the date a photo was taken, from an
-RFC 3339 time with an offset, as `teanode photo date` and the viewer's change of
-date do. Turning faces on is of the risk class granting and turning them off is
+RFC 3339 time with an offset, as `teanode photo set-date` and the viewer's change of
+date do. `delete` (photos that are in the Trash) and `empty-trash` delete forever,
+as `teanode photo delete` and `empty-trash` do, and are destructive: they ask the
+person every time. `person-read` gives one group of faces, as `teanode photo people
+read` does, and `person-photos` its photos. Turning faces on is of the risk class granting and turning them off is
 destructive: finding faces is a privacy choice either way, so both ask.
 `album-share` and `album-unshare` are of the risk class granting, as the
 calendar's share is, so they ask the person unless they allowed it, and the
-card names the album and the people. `look` does not queue a description of
+card names the album and the people. `album-share-update` changes one share by
+its id (`teanode photo album share-update`, the same `UpdatePhotoAlbumShare` the
+dashboard and the phone use) and sets both the level and whether places are
+included to what it is given: it is granting when the level is `contribute` or
+places are on, and an ordinary write when it keeps or narrows a share. `look` does not queue a description of
 somebody else's photo: a description belongs to the library of its owner.
 
 ## The iPhone

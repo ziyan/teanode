@@ -23,6 +23,8 @@ func facePreviewOf(asked arguments) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
 	case "people":
 		return "List the people found in the photos", true
+	case "person-read":
+		return "Read one person found in the photos", true
 	case "person-photos":
 		return "List the photos of a person", true
 	case "person-name":
@@ -61,7 +63,7 @@ func facePreviewOf(asked arguments) (string, bool) {
 // groups are called and which are listed, and the person can change them back.
 func faceRiskOf(asked arguments) (tools.Risk, bool) {
 	switch strings.ToLower(strings.TrimSpace(asked.Operation)) {
-	case "people", "person-photos":
+	case "people", "person-read", "person-photos":
 		return tools.RiskRead, true
 	case "person-name", "person-merge", "person-unname", "person-hide", "person-remove-face":
 		return tools.RiskWrite, true
@@ -114,6 +116,30 @@ func people(ctx context.Context, current tools.Run, asked *arguments) (*tools.Re
 	}
 	answer["people"] = page
 	result, err := tools.JSONResult(answer)
+	if err != nil {
+		return nil, err
+	}
+	result.Untrusted = true
+	return result, nil
+}
+
+// personRead gives one group of faces: who it is named by, how many faces and
+// photos it has and the face it is shown by. Its photos are person-photos.
+func personRead(ctx context.Context, executor client.Executor, asked *arguments) (*tools.Result, error) {
+	faceGroupId := strings.TrimSpace(asked.FaceGroupID)
+	if faceGroupId == "" {
+		return nil, errors.New("person-read needs face_group_id; people gives them")
+	}
+	group, err := client.ReadPhotoFaceGroup(ctx, executor, faceGroupId)
+	if err != nil {
+		return nil, err
+	}
+	row := groupRow(group)
+	if group.CoverPhotoFaceID != "" {
+		row["cover_photo_face_id"] = group.CoverPhotoFaceID
+	}
+	row["note"] = "person-photos with this face_group_id lists their photos"
+	result, err := tools.JSONResult(row)
 	if err != nil {
 		return nil, err
 	}

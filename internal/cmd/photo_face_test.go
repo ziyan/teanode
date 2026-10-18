@@ -126,11 +126,11 @@ func TestPeopleListPrintsATableOrJSON(test *testing.T) {
 
 func TestPeopleShowSaysWhenThePersonIsYou(test *testing.T) {
 	server := newPhotoFaceServer(test)
-	_, table, err := server.run(test, "people", "show", "group-4")
+	_, table, err := server.run(test, "people", "read", "group-4")
 	if err != nil || !strings.Contains(table, "Ada Example (you)") {
 		test.Fatalf("%v:\n%s", err, table)
 	}
-	_, table, err = server.run(test, "people", "show", "group-1")
+	_, table, err = server.run(test, "people", "read", "group-1")
 	if err != nil || strings.Contains(table, "(you)") {
 		test.Fatalf("%v:\n%s", err, table)
 	}
@@ -138,7 +138,7 @@ func TestPeopleShowSaysWhenThePersonIsYou(test *testing.T) {
 
 func TestPeopleShowListsThePersonAndTheirPhotos(test *testing.T) {
 	server := newPhotoFaceServer(test)
-	_, table, err := server.run(test, "people", "show", "group-1", "--limit", "7", "--continue-after", "photo-9")
+	_, table, err := server.run(test, "people", "read", "group-1", "--limit", "7", "--continue-after", "photo-9")
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestPeopleShowListsThePersonAndTheirPhotos(test *testing.T) {
 	if variables["faceGroupId"] != "group-1" || variables["pageSize"] != float64(7) || variables["beforePhotoId"] != "photo-9" {
 		test.Fatalf("%v", variables)
 	}
-	_, output, err := server.run(test, "people", "show", "group-1", "--json")
+	_, output, err := server.run(test, "people", "read", "group-1", "--json")
 	var shown struct {
 		Person models.PhotoFaceGroup `json:"person"`
 		Photos []models.Photo        `json:"photos"`
@@ -158,7 +158,7 @@ func TestPeopleShowListsThePersonAndTheirPhotos(test *testing.T) {
 	if err != nil || json.Unmarshal([]byte(output), &shown) != nil || shown.Person.ID != "group-1" || len(shown.Photos) != 1 {
 		test.Fatalf("%v: %s", err, output)
 	}
-	for _, arguments := range [][]string{{"people", "show"}, {"people", "show", "group-1", "--limit", "501"}} {
+	for _, arguments := range [][]string{{"people", "read"}, {"people", "read", "group-1", "--limit", "501"}} {
 		if _, _, err := server.run(test, arguments...); err == nil {
 			test.Fatalf("%v was accepted", arguments)
 		}
@@ -275,7 +275,7 @@ func TestFacesOffDeletesWhatWasFoundSoItAsksFirst(test *testing.T) {
 
 func TestShowNamesThePeopleInAPhotoAndLibrarySaysWhetherFacesAreFound(test *testing.T) {
 	server := newPhotoFaceServer(test)
-	_, shown, err := server.run(test, "show", "photo-1")
+	_, shown, err := server.run(test, "read", "photo-1")
 	if err != nil {
 		test.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestPhotoFaceParity(test *testing.T) {
 		toolOperations []string
 	}{
 		"ListPhotoFaceGroups":      {client.DocumentListPhotoFaceGroups, []string{"people list"}, []string{"people"}},
-		"ReadPhotoFaceGroup":       {client.DocumentReadPhotoFaceGroup, []string{"people show"}, []string{"person-photos"}},
+		"ReadPhotoFaceGroup":       {client.DocumentReadPhotoFaceGroup, []string{"people read"}, []string{"person-read", "person-photos"}},
 		"NamePhotoFaceGroup":       {client.DocumentNamePhotoFaceGroup, []string{"people name"}, []string{"person-name"}},
 		"UnnamePhotoFaceGroup":     {client.DocumentUnnamePhotoFaceGroup, []string{"people unname"}, []string{"person-unname"}},
 		"MergePhotoFaceGroups":     {client.DocumentMergePhotoFaceGroups, []string{"people merge"}, []string{"person-merge"}},

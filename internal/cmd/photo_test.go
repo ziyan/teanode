@@ -49,13 +49,13 @@ func TestPhotoParity(test *testing.T) {
 		// How much of a date range a search by what is in the pictures cannot
 		// see into: said beside a search of a range.
 		"CountUndescribedPhotos": {client.DocumentCountUndescribedPhotos, []string{"list"}, []string{"list"}},
-		"ReadPhoto":              {client.DocumentReadPhoto, []string{"show", "download"}, []string{"read", "look", "show"}},
+		"ReadPhoto":              {client.DocumentReadPhoto, []string{"read", "download"}, []string{"read", "look", "show"}},
 		"ReadPhotoLibrary":       {client.DocumentReadPhotoLibrary, []string{"library"}, []string{"library"}},
 		// For a player that cannot send the person's sign-in; neither the
 		// command line nor the agent plays anything.
 		"PhotoPlaybackAddress": {client.DocumentPhotoPlaybackAddress, nil, nil},
 		// Marking a favorite and correcting a date are both an update of the photo.
-		"UpdatePhoto":   {client.DocumentUpdatePhoto, []string{"favorite", "date"}, []string{"favorite", "set-date"}},
+		"UpdatePhoto":   {client.DocumentUpdatePhoto, []string{"favorite", "set-date"}, []string{"favorite", "set-date"}},
 		"TrashPhotos":   {client.DocumentTrashPhotos, []string{"trash"}, []string{"trash"}},
 		"RestorePhotos": {client.DocumentRestorePhotos, []string{"restore"}, []string{"restore"}},
 		// Making the previews of photos again: a person whose photo failed, or
@@ -64,10 +64,9 @@ func TestPhotoParity(test *testing.T) {
 		// What an uploader asks to decide what to skip; the agent keeps no
 		// files of its own to upload.
 		"FindPhotos": {client.DocumentFindPhotos, []string{"upload"}, nil},
-		// Forever. The agent can move photos to the trash and back, and
-		// only the person empties it.
-		"DeletePhotos":    {client.DocumentDeletePhotos, []string{"delete"}, nil},
-		"EmptyPhotoTrash": {client.DocumentEmptyPhotoTrash, []string{"empty-trash"}, nil},
+		// Forever. The agent's call asks the person first.
+		"DeletePhotos":    {client.DocumentDeletePhotos, []string{"delete"}, []string{"delete"}},
+		"EmptyPhotoTrash": {client.DocumentEmptyPhotoTrash, []string{"empty-trash"}, []string{"empty-trash"}},
 		// Asking for a description is a person looking at one photo, or the
 		// agent looking at some.
 		"DescribePhoto": {client.DocumentDescribePhoto, []string{"describe"}, []string{"describe", "look"}},
@@ -78,7 +77,7 @@ func TestPhotoParity(test *testing.T) {
 
 		// Albums. The command line's are subcommands of album.
 		"ListPhotoAlbums":       {client.DocumentListPhotoAlbums, []string{"album list"}, []string{"album-list"}},
-		"ReadPhotoAlbum":        {client.DocumentReadPhotoAlbum, []string{"album show"}, []string{"album-read"}},
+		"ReadPhotoAlbum":        {client.DocumentReadPhotoAlbum, []string{"album read"}, []string{"album-read"}},
 		"CreatePhotoAlbum":      {client.DocumentCreatePhotoAlbum, []string{"album create"}, []string{"album-create"}},
 		"RenamePhotoAlbum":      {client.DocumentRenamePhotoAlbum, []string{"album rename"}, []string{"album-rename"}},
 		"DeletePhotoAlbum":      {client.DocumentDeletePhotoAlbum, []string{"album delete"}, []string{"album-delete"}},
@@ -88,11 +87,11 @@ func TestPhotoParity(test *testing.T) {
 		"SetPhotoAlbumCover":    {client.DocumentSetPhotoAlbumCover, []string{"album cover"}, []string{"album-cover"}},
 
 		// Sharing an album with a person or a circle. Sharing again with the
-		// same grantee changes the level, which is how the command line and
-		// the agent change one; the dashboard and the phone edit a row of the
-		// sheet by its identifier, which is UpdatePhotoAlbumShare.
+		// same grantee changes what they have; changing one share by its
+		// identifier, as the dashboard and the phone edit a row of the sheet,
+		// is UpdatePhotoAlbumShare.
 		"SharePhotoAlbum":       {client.DocumentSharePhotoAlbum, []string{"album share"}, []string{"album-share"}},
-		"UpdatePhotoAlbumShare": {client.DocumentUpdatePhotoAlbumShare, nil, nil},
+		"UpdatePhotoAlbumShare": {client.DocumentUpdatePhotoAlbumShare, []string{"album share-update"}, []string{"album-share-update"}},
 		"RemovePhotoAlbumShare": {client.DocumentRemovePhotoAlbumShare, []string{"album unshare"}, []string{"album-unshare"}},
 		"ListPhotoAlbumShares":  {client.DocumentListPhotoAlbumShares, []string{"album shares"}, []string{"album-shares"}},
 		// Keeping a photo of a shared album in one's own library.
@@ -328,6 +327,8 @@ func newPhotoServer(test *testing.T) *photoServer {
 				_, _ = response.Write([]byte(`{"data":{"SharePhotoAlbum":{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"` + asked.Variables["granteeUserId"].(string) + `","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
 			case strings.Contains(asked.Query, "ListPhotoAlbumShares("):
 				_, _ = response.Write([]byte(`{"data":{"ListPhotoAlbumShares":[{"id":"share-person","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"view","isLocationIncluded":false},{"id":"share-circle","photoAlbumId":"album-1","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true}]}}`))
+			case strings.Contains(asked.Query, "UpdatePhotoAlbumShare("):
+				_, _ = response.Write([]byte(`{"data":{"UpdatePhotoAlbumShare":{"id":"` + asked.Variables["photoAlbumShareId"].(string) + `","photoAlbumId":"album-1","granteeUserId":"user-ben","granteeUsername":"ben","shareLevel":"` + asked.Variables["shareLevel"].(string) + `","isLocationIncluded":` + fmt.Sprint(asked.Variables["isLocationIncluded"]) + `}}}`))
 			case strings.Contains(asked.Query, "RemovePhotoAlbumShare("):
 				_, _ = response.Write([]byte(`{"data":{"RemovePhotoAlbumShare":true}}`))
 			case strings.Contains(asked.Query, "UpdatePhoto("):
@@ -690,7 +691,7 @@ func TestTheLibraryCommandUsesTheDashboardsWords(test *testing.T) {
 // sent as it was given: the offset is the one the photo is shown at.
 func TestDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *testing.T) {
 	server := newPhotoServer(test)
-	output, _, err := server.run(test, "date", "photo-1", "2025-07-12T14:30:00+09:00")
+	output, _, err := server.run(test, "set-date", "photo-1", "2025-07-12T14:30:00+09:00")
 	if err != nil || !strings.Contains(output, "photo-1 was taken 2025-07-12 14:30 (UTC+09:00)") {
 		test.Fatalf("%v %q", err, output)
 	}
@@ -700,7 +701,7 @@ func TestDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *test
 	}
 	count := len(server.documents)
 	for _, arguments := range [][]string{
-		{"date", "photo-1", "2025-07-12T14:30:00"}, {"date", "photo-1", "2025-07-12"}, {"date", "photo-1", "yesterday"}, {"date", "photo-1"}, {"date", "photo-1", "2025-07-12T14:30:00Z", "extra"},
+		{"set-date", "photo-1", "2025-07-12T14:30:00"}, {"set-date", "photo-1", "2025-07-12"}, {"set-date", "photo-1", "yesterday"}, {"set-date", "photo-1"}, {"set-date", "photo-1", "2025-07-12T14:30:00Z", "extra"},
 	} {
 		if _, _, err := server.run(test, arguments...); err == nil {
 			test.Errorf("%v was accepted", arguments)
@@ -709,7 +710,7 @@ func TestDateCorrectsWhenAPhotoWasTakenAndRefusesATimeWithoutAnOffset(test *test
 	if len(server.documents) != count {
 		test.Fatal("a date that was refused reached the server")
 	}
-	if _, _, err := server.run(test, "date", "photo-1", "2025-07-12T05:30:00Z"); err != nil {
+	if _, _, err := server.run(test, "set-date", "photo-1", "2025-07-12T05:30:00Z"); err != nil {
 		test.Fatalf("a time on UTC: %v", err)
 	}
 }
