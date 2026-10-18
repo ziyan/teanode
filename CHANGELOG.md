@@ -6,6 +6,12 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.177.1] - 2026-10-18
+
+### Security
+
+- The dashboard's map uses MapLibre 6.4.1, which fixes a flaw in how map credits are cleaned. (#571)
+
 ## [0.177.0] - 2026-10-18
 
 ### Added
