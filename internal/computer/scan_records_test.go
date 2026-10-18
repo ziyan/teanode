@@ -1050,3 +1050,61 @@ func TestWhatARecordSaidSaysThatItContinues(t *testing.T) {
 		t.Fatalf("a long message is its opening and says it continues: %q", said)
 	}
 }
+
+// An attachment the server already holds is not read again. Reading is
+// what costs, a LibreOffice run for a spreadsheet, and a page resumed
+// inside a file reads the file from its start: a mailbox of many threads
+// sent every document before the cursor through LibreOffice on every
+// page. One the server has lost since is read after all.
+func TestAnAttachmentTheServerHoldsIsNotReadAgain(t *testing.T) {
+	notes := []byte("the boiler is serviced every autumn\n")
+	root, scan := recordsIn(t, map[string]string{"files/notes.txt": string(notes)})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"chat","channel":"house","at":"2026-08-14T09:30:00Z","author":"sam","text":"the notes",`+
+			`"attachments":[{"path":"files/notes.txt","name":"notes.txt","contentType":"text/plain"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	readings := 0
+	previous := attachmentReader
+	attachmentReader = func(ctx context.Context, path string, content []byte) (string, string, error) {
+		readings++
+		return previous(ctx, path, content)
+	}
+	defer func() { attachmentReader = previous }()
+	id := "posts.jsonl#" + hashOfBytes(notes)
+
+	first, err := scan(&ScanArguments{Known: map[string]string{}})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if entry := entriesOfKind(first.Entries, KindAttachment)[id]; entry.Text != string(notes) || readings != 1 {
+		t.Fatalf("a new attachment is read once: %d readings, %+v", readings, entry)
+	}
+
+	second, err := scan(&ScanArguments{Known: map[string]string{id: hashOfBytes(notes)}})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if entry := entriesOfKind(second.Entries, KindAttachment)[id]; !entry.Unchanged || entry.Text != "" {
+		t.Fatalf("a held attachment is named as unchanged with no text: %+v", entry)
+	}
+	if readings != 1 {
+		t.Fatalf("a held attachment was read again: %d readings", readings)
+	}
+
+	// The same file served from the cache, on a page of a pass whose
+	// server no longer holds the attachment.
+	folder := &recordsFolder{options: &Options{Home: t.TempDir()}, root: root, maxAttachmentBytes: maxAttachmentBytes(0),
+		known: map[string]string{id: hashOfBytes(notes)}, unread: map[string]unreadAttachment{}}
+	forgetRecords()
+	if _, err := recordEntries(context.Background(), folder, "posts.jsonl", false); err != nil {
+		t.Fatalf("recordEntries: %s", err)
+	}
+	third, err := scan(&ScanArguments{Known: map[string]string{}, After: "posts.jsonl"})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if entry := entriesOfKind(third.Entries, KindAttachment)[id]; entry.Unchanged || entry.Text != string(notes) {
+		t.Fatalf("an attachment the server lost is read and sent: %+v", entry)
+	}
+}

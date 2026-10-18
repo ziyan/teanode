@@ -161,6 +161,22 @@ type recordsFolder struct {
 
 	// videos is what this page has left for making sheets of frames.
 	videos videoBudget
+
+	// known is what the server already holds, external identifier to
+	// hash, for the pass this page belongs to.
+	known map[string]string
+
+	// unread is the attachments whose text was not read because the
+	// server held them already, by external identifier: what reading
+	// one after all needs, should the page find the server without it.
+	unread map[string]unreadAttachment
+}
+
+// unreadAttachment is an attachment whose reading was put off: the
+// record's description of it and where its bytes are.
+type unreadAttachment struct {
+	attachment recordAttachment
+	path       string
 }
 
 // scanRecords reads a folder of JSON lines, one record a line, in the
@@ -174,6 +190,8 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 	folder := &recordsFolder{
 		options: options, root: root,
 		maxAttachmentBytes: maxAttachmentBytes(arguments.MaxAttachmentBytes),
+		known:              arguments.Known,
+		unread:             map[string]unreadAttachment{},
 	}
 	if strings.EqualFold(strings.TrimSpace(arguments.Format), FormatTyped) {
 		typed, err := openTyped(root, arguments)
@@ -353,6 +371,16 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 			if arguments.Known[entry.ExternalID] == entry.Hash {
 				entry.Unchanged = true
 				entry.Text = ""
+			} else if postponed, isPostponed := folder.unread[entry.ExternalID]; isPostponed && entry.Unchanged {
+				// Its reading was put off because the server held it,
+				// and the server no longer does: read it now.
+				attachment := postponed.attachment
+				text, err := folder.attachmentText(ctx, &attachment, postponed.path)
+				entry.Unchanged = false
+				if err != nil {
+					entry.Refused = err.Error()
+				}
+				entry.Text = text
 			}
 			carried += len(entry.Text)
 			result.Entries = append(result.Entries, entry)
@@ -611,6 +639,9 @@ func recordEntries(ctx context.Context, folder *recordsFolder, relative string, 
 	if recordsCache.root == folder.root && recordsCache.name == relative && recordsCache.script == fromScript &&
 		recordsCache.modified.Equal(modified) && recordsCache.size == size &&
 		recordsCache.maxAttachmentBytes == folder.maxAttachmentBytes {
+		for id, postponed := range recordsCache.unread {
+			folder.unread[id] = postponed
+		}
 		return recordsCache.entries, nil
 	}
 	entries, err := readRecordsAnywhere(ctx, folder, relative, fromScript)
@@ -620,6 +651,12 @@ func recordEntries(ctx context.Context, folder *recordsFolder, relative string, 
 	recordsCache.root, recordsCache.name, recordsCache.script = folder.root, relative, fromScript
 	recordsCache.modified, recordsCache.size, recordsCache.entries = modified, size, entries
 	recordsCache.maxAttachmentBytes = folder.maxAttachmentBytes
+	recordsCache.unread = map[string]unreadAttachment{}
+	for id, postponed := range folder.unread {
+		if strings.HasPrefix(id, relative+"#") {
+			recordsCache.unread[id] = postponed
+		}
+	}
 	return entries, nil
 }
 
@@ -641,7 +678,7 @@ func forgetRecords() {
 	defer recordsCache.mutex.Unlock()
 	recordsCache.root, recordsCache.name, recordsCache.script = "", "", false
 	recordsCache.modified, recordsCache.size, recordsCache.entries = time.Time{}, 0, nil
-	recordsCache.maxAttachmentBytes = 0
+	recordsCache.maxAttachmentBytes, recordsCache.unread = 0, nil
 }
 
 var recordsCache struct {
@@ -657,6 +694,9 @@ var recordsCache struct {
 	// maxAttachmentBytes is the bound the entries were read under, since
 	// it decides which of them were refused.
 	maxAttachmentBytes int64
+	// unread is the attachments of the entries whose reading was put
+	// off, so that a page served from here can still read one.
+	unread map[string]unreadAttachment
 }
 
 // refreshRecords runs the folder's refresh script, which is what fills
@@ -960,6 +1000,19 @@ func (self *recordsFolder) attachmentsOf(ctx context.Context, relative string, o
 		seen[entry.ExternalID] = true
 		entry.Hash, entry.Size = hash, read
 		entry.Metadata = self.attachmentMetadata(path, name, attachment.ContentType, one)
+		// One the server already holds under this hash is not read
+		// again. Reading is what costs here: a spreadsheet or a deck is
+		// a LibreOffice run, and a page that resumes inside a file reads
+		// the file from its start, so a mailbox of tens of thousands of
+		// threads put every document before the cursor through
+		// LibreOffice on every page, and a page cut short by a restart
+		// started that over.
+		if self.known[entry.ExternalID] == hash {
+			entry.Unchanged = true
+			self.unread[entry.ExternalID] = unreadAttachment{attachment: *attachment, path: path}
+			entries = append(entries, entry)
+			continue
+		}
 		text, err := self.attachmentText(ctx, attachment, path)
 		if err != nil {
 			// A scan whose pages are not all read yet. Sent now with no
@@ -1016,7 +1069,7 @@ func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recor
 		if err != nil {
 			return "", nil
 		}
-		read, _, err := textOf(ctx, path, content)
+		read, _, err := attachmentReader(ctx, path, content)
 		if isPagesUnread(err) {
 			return "", err
 		}
@@ -1027,6 +1080,10 @@ func (self *recordsFolder) attachmentText(ctx context.Context, attachment *recor
 	}
 	return text, nil
 }
+
+// attachmentReader is what reads an attachment's text: textOf, held in a
+// variable so a test can count how often an attachment is read.
+var attachmentReader = textOf
 
 // neverText says whether a file is one of the kinds no reader here turns
 // into words, judged by what it is called rather than by opening it.
