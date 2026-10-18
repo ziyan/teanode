@@ -122,8 +122,8 @@ func NewLocationCommand() *cli.Command {
 				Name:  "checkin",
 				Usage: "record that you are at a place now",
 				Description: "Give one of your places with --place, or a position with --latitude and --longitude,\n" +
-					"which checks you in at the nearest place OpenStreetMap knows there. The visit in\n" +
-					"progress ends.",
+					"which checks you in at your own place that holds the position, or makes a new\n" +
+					"place there and names it from OpenStreetMap shortly. The visit in progress ends.",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "place", Usage: "one of your places, by id"},
@@ -700,24 +700,10 @@ func runLocationCheckIn(ctx context.Context, command *cli.Command) error {
 	}
 	at := client.CheckInAt{PlaceID: placeId}
 	if latitude != nil {
-		// The nearest named place there: one of the person's own if they have
-		// one, otherwise what OpenStreetMap found.
-		found, err := client.ListNearbyPlaces(ctx, connection, *latitude, *longitude, nil)
-		if err != nil {
-			return describeError(command, err)
-		}
-		if len(found) == 0 {
-			return fmt.Errorf("nothing is named at that position; make a place there with 'teanode location save --latitude %v --longitude %v --name <name>', then check in with --place", *latitude, *longitude)
-		}
-		nearest := found[0]
-		if nearest.PlaceID != nil {
-			at = client.CheckInAt{PlaceID: *nearest.PlaceID}
-		} else {
-			at = client.CheckInAt{
-				LatitudeDegrees: &nearest.LatitudeDegrees, LongitudeDegrees: &nearest.LongitudeDegrees, PlaceName: nearest.PlaceName,
-				OSMType: nearest.OSMType, OSMID: nearest.OSMID, OSMCategory: nearest.OSMCategory, AddressText: nearest.AddressText,
-			}
-		}
+		// Coordinates alone: the server uses one of your places that holds the
+		// position, or makes a new one, called after its city until
+		// OpenStreetMap names it.
+		at = client.CheckInAt{LatitudeDegrees: latitude, LongitudeDegrees: longitude}
 	}
 	visit, err := client.CheckIn(ctx, connection, at)
 	if err != nil {
@@ -727,6 +713,9 @@ func runLocationCheckIn(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(visit)
 	}
 	fmt.Printf("checked in at %s (%s)\n", forTerminal(placeLine(visit.Place)), visit.Place.ID)
+	if latitude != nil && visit.Place.VisitCount <= 1 && !visit.Place.IsNamedByPerson && visit.Place.OSMName == "" && visit.Place.AddressText == "" {
+		fmt.Println("this made a new place here; it is named from OpenStreetMap shortly")
+	}
 	return nil
 }
 

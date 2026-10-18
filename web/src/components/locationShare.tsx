@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { Key, useTranslation } from '../i18n/i18n'
@@ -47,6 +47,7 @@ const UNSHARE = `mutation ($shareId: String!) { UnshareLocation(shareId: $shareI
 export function LocationSharing() {
   const { t, plural } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const shares = useQuery(() => graphql<{ ListLocationShares: Share[] }>(LIST_SHARES), [], { refresh: false })
   const choices = useQuery(
     async () => {
@@ -149,7 +150,9 @@ export function LocationSharing() {
         <>
           <p className="muted">{t('location.shareNoPeople')}</p>
           <p>
-            <Link to="/circles">{t('circles.open')}</Link>
+            <button type="button" onClick={() => navigate('/circles')}>
+              {t('circles.open')}
+            </button>
           </p>
         </>
       ) : (

@@ -143,7 +143,8 @@ func init() {
 				Name: "location_check_in", Family: tools.FamilyGeneral, Risk: tools.RiskWrite, Permissions: locationPermissions,
 				Description: "Record that the person is at a place now, which ends the visit in progress. Give 'place_id' for one of their places, " +
 					"or a place that nearby or search found: its place_name, latitude_degrees and longitude_degrees, and its osm_type, osm_id, osm_category and address_text as they were given. " +
-					"A found place becomes one of the person's places.",
+					"A found place becomes one of the person's places. With only latitude_degrees and longitude_degrees, it is the person's own place that holds the position, " +
+					"or else a new place that is called after its city and named from OpenStreetMap shortly (is_new_place_named_shortly).",
 				Parameters: tools.Object(map[string]any{
 					"place_id":          placeIdProperty,
 					"place_name":        tools.StringProperty("for a found place: its name, as nearby or search gave it"),

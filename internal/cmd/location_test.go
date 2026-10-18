@@ -271,16 +271,17 @@ func TestLocationSaveSendsOnlyWhatWasGiven(test *testing.T) {
 	}
 }
 
-// checkin at a point checks in at the nearest place found, which is one of
-// the person's own when they have one there.
-func TestLocationCheckInAtAPointUsesTheNearestPlace(test *testing.T) {
+// checkin at a point sends the coordinates alone: the server uses the
+// person's own place there or makes one.
+func TestLocationCheckInAtAPointSendsOnlyTheCoordinates(test *testing.T) {
 	server, called := locationServer(test)
 	if _, err := runLocationCommand(test, server, "checkin", "--latitude", "40.0005", "--longitude", "-75.0003"); err != nil {
 		test.Fatal(err)
 	}
 	variables := called("CheckIn")
-	if variables["placeName"] != "Corner Cafe" || variables["osmId"] != float64(42) || variables["osmType"] != "node" || variables["placeId"] != nil {
-		test.Errorf("the nearest found place, with what the map called it: %v", variables)
+	if variables["latitudeDegrees"] != 40.0005 || variables["longitudeDegrees"] != -75.0003 ||
+		variables["placeName"] != nil || variables["osmId"] != nil || variables["osmType"] != nil || variables["placeId"] != nil {
+		test.Errorf("the coordinates alone: %v", variables)
 	}
 	if _, err := runLocationCommand(test, server, "checkin", "--place", "p1"); err != nil {
 		test.Fatal(err)

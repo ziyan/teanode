@@ -171,6 +171,45 @@ func TestVisitsAtOnePlaceAndNamingIt(t *testing.T) {
 	}
 }
 
+// A check-in with coordinates alone uses the person's own place whose radius
+// holds the point, and otherwise makes a place called after its city that is
+// not yet named, so that it is named from OpenStreetMap after the commit.
+func TestCheckInWithCoordinatesOnly(t *testing.T) {
+	world := newLocationWorld(t)
+	placeAt := func(placeId string) *models.Place {
+		var found *models.Place
+		dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+			var err error
+			if found, err = tx.GetPlace(world.ada.ID, placeId); err != nil {
+				t.Fatalf("GetPlace: %s", err)
+			}
+		})
+		return found
+	}
+	checkIn := func(latitude, longitude float64) string {
+		answer := world.call(t, world.ada, fmt.Sprintf(`mutation { CheckIn(latitudeDegrees: %v, longitudeDegrees: %v) { `+visitFieldsForTest+` } }`, latitude, longitude))["CheckIn"].(map[string]any)
+		return answer["place"].(map[string]any)["id"].(string)
+	}
+
+	made := checkIn(40.0, -75.0)
+	if placeAt(made).NamedAt != nil {
+		t.Errorf("a place made from coordinates alone is left for OpenStreetMap to name")
+	}
+	// A few meters away is inside the same place, whether or not it is named.
+	if again := checkIn(40.00005, -75.00005); again != made {
+		t.Errorf("the person's own place that holds the point is used: %s, then %s", made, again)
+	}
+	// Far away is a place of its own.
+	if far := checkIn(41.0, -75.0); far == made {
+		t.Errorf("a point outside every place makes a new one")
+	}
+	// A found place, with its name, is still named at once.
+	found := world.call(t, world.ada, `mutation { CheckIn(latitudeDegrees: 42.0, longitudeDegrees: -75.0, placeName: "Corner Cafe", osmType: "node", osmId: 7) { place { id } } }`)["CheckIn"].(map[string]any)
+	if placeAt(found["place"].(map[string]any)["id"].(string)).NamedAt == nil {
+		t.Errorf("a found place arrives named")
+	}
+}
+
 // A check-in ends the visit in progress and starts one, at an existing place or
 // a found one.
 func TestCheckInEndsTheVisitInProgress(t *testing.T) {

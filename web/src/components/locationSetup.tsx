@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
 import { hasPermission, useSession } from '../session'
-import { readBrowserLocation } from './browserLocation'
+import { COARSE_ACCURACY_METERS, readFreshBrowserLocation } from './browserLocation'
 import { Tag } from './common'
 import { nearestPlaceHolding } from './locationData'
 import { SettingsRow, SettingsSection } from './settingsList'
@@ -12,16 +12,12 @@ import { useToast } from './toast'
 import { useQuery } from './useQuery'
 
 // The first time a person opens Location with no position recorded, this
-// stands where the empty map would be: install the phone app (only a phone
+// stands under the map: install the phone app (only a phone
 // records in the background; that row is a pointer to Devices and has no
 // done state), mark where home is (from the browser's position), and, for each
 // family circle the person is in, share where they are. Each row that can be
 // done says whether it is, worked out from the server and not stored; "Not
 // now" puts the setup away for good.
-
-// A browser that knows where it is only to within this many meters (an answer
-// from the Wi-Fi network or the address) would label a place beside the house.
-const HOME_MAXIMUM_ACCURACY_METERS = 300
 
 type FamilyCircle = { id: string; name: string; circleKind: string }
 type SharedWith = { granteeCircleId: string | null }
@@ -44,6 +40,7 @@ const SHARE = `mutation ($granteeCircleId: String, $shareLevel: String!) {
 export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
   const { t } = useTranslation()
   const toast = useToast()
+  const navigate = useNavigate()
   const session = useSession()
   const canUseCircles = hasPermission(session.permissions, 'circle:use')
   const [isBusy, setIsBusy] = useState(false)
@@ -83,12 +80,12 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
   async function markHome() {
     setIsBusy(true)
     try {
-      const position = await readBrowserLocation()
+      const position = await readFreshBrowserLocation()
       if (position.latitudeDegrees === undefined || position.longitudeDegrees === undefined) {
         toast.failed(t('location.checkInNoPosition'))
         return
       }
-      if (position.accuracyMeters !== undefined && position.accuracyMeters > HOME_MAXIMUM_ACCURACY_METERS) {
+      if (position.accuracyMeters !== undefined && position.accuracyMeters > COARSE_ACCURACY_METERS) {
         toast.failed(t('location.setupHomeCoarse', { accuracyMeters: Math.round(position.accuracyMeters) }))
         return
       }
@@ -133,8 +130,13 @@ export function LocationSetup({ onDismiss }: { onDismiss: () => void }) {
       }
     >
       <SettingsRow
-        title={<Link to="/settings/devices">{t('location.setupInstall')}</Link>}
+        title={t('location.setupInstall')}
         subtitle={t('location.setupInstallNote')}
+        actions={
+          <button type="button" onClick={() => navigate('/settings/devices')}>
+            {t('location.setupInstallButton')}
+          </button>
+        }
       />
       <SettingsRow
         title={t('location.setupHome')}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { graphql } from '../api'
 import { useTranslation } from '../i18n/i18n'
-import { readBrowserLocation } from './browserLocation'
+import { COARSE_ACCURACY_METERS, readFreshBrowserLocation } from './browserLocation'
 import { ConfirmDialog } from './dialog'
 import { FoundPlace, foundPlaceNamed, placeSubtitle, placeTitle } from './locationData'
 import { PlaceLabelIcon } from './placeLabelIcon'
@@ -30,9 +30,11 @@ const CHECK_IN = `mutation ($placeId: String, $latitudeDegrees: Float, $longitud
 type Position = { latitudeDegrees: number; longitudeDegrees: number }
 type SearchPage = { foundPlaces: FoundPlace[]; nextOffset: number | null }
 
-// LocationCheckInDialog asks the browser where it is, lists what has a name
-// near there, nearest first, and records that the person is at the one they
-// press. "Find a place" searches by words, around the same position, and its
+// LocationCheckInDialog asks the browser where it is (a fresh, precise fix),
+// says how precise it is, lists "Check in here" and then what has a name near
+// there, nearest first, and records that the person is at the one they press.
+// "Check in here" sends only the coordinates; the server uses the person's own
+// place that holds them, or makes one. "Find a place" searches by words, around the same position, and its
 // answers are checked in to the same way. A failure to find where the person
 // is, or what is near, is a toast and the dialog goes: there is nothing in it
 // to correct, and a refusal of the browser's question is not something to
@@ -42,6 +44,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
   const { t } = useTranslation()
   const toast = useToast()
   const [position, setPosition] = useState<Position | null>(null)
+  const [accuracyMeters, setAccuracyMeters] = useState<number | null>(null)
   const [foundPlaces, setFoundPlaces] = useState<FoundPlace[] | null>(null)
   const [searchText, setSearchText] = useState('')
   // What was searched for, and what it found; null while the nearby places are
@@ -57,7 +60,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
   useEffect(() => {
     let isCurrent = true
     void (async () => {
-      const browserPosition = await readBrowserLocation()
+      const browserPosition = await readFreshBrowserLocation()
       if (!isCurrent) return
       if (browserPosition.latitudeDegrees === undefined || browserPosition.longitudeDegrees === undefined) {
         toast.failed(t('location.checkInNoPosition'))
@@ -69,6 +72,7 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
         longitudeDegrees: browserPosition.longitudeDegrees,
       }
       setPosition(here)
+      setAccuracyMeters(browserPosition.accuracyMeters ?? null)
       try {
         const answer = await graphql<{ ListNearbyPlaces: FoundPlace[] }>(LIST_NEARBY_PLACES, here)
         if (isCurrent) setFoundPlaces(answer.ListNearbyPlaces)
@@ -114,25 +118,31 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
     void search(query, 0)
   }
 
-  async function checkIn(foundPlace: FoundPlace) {
+  async function checkIn(foundPlace: FoundPlace | null) {
     setIsBusy(true)
     setProblem(null)
     try {
       await graphql(
         CHECK_IN,
-        foundPlace.placeId
-          ? { placeId: foundPlace.placeId }
-          : {
-              latitudeDegrees: foundPlace.latitudeDegrees,
-              longitudeDegrees: foundPlace.longitudeDegrees,
-              placeName: foundPlace.placeName,
-              osmType: foundPlace.osmType,
-              osmId: foundPlace.osmId,
-              osmCategory: foundPlace.osmCategory,
-              addressText: foundPlace.addressText,
-            },
+        foundPlace === null
+          ? { latitudeDegrees: position?.latitudeDegrees, longitudeDegrees: position?.longitudeDegrees }
+          : foundPlace.placeId
+            ? { placeId: foundPlace.placeId }
+            : {
+                latitudeDegrees: foundPlace.latitudeDegrees,
+                longitudeDegrees: foundPlace.longitudeDegrees,
+                placeName: foundPlace.placeName,
+                osmType: foundPlace.osmType,
+                osmId: foundPlace.osmId,
+                osmCategory: foundPlace.osmCategory,
+                addressText: foundPlace.addressText,
+              },
       )
-      toast.done(t('location.checkedIn', { place: placeTitle(foundPlaceNamed(foundPlace), t) }))
+      toast.done(
+        foundPlace === null
+          ? t('location.checkedInHere')
+          : t('location.checkedIn', { place: placeTitle(foundPlaceNamed(foundPlace), t) }),
+      )
       onCheckedIn()
       onClose()
     } catch (failure) {
@@ -170,6 +180,26 @@ export function LocationCheckInDialog({ onClose, onCheckedIn }: { onClose: () =>
               {t('location.findPlaceButton')}
             </button>
           </form>
+          {position !== null && accuracyMeters !== null && (
+            <p className="muted">
+              {accuracyMeters > COARSE_ACCURACY_METERS
+                ? t('location.checkInCoarse', { accuracyMeters: Math.round(accuracyMeters) })
+                : t('location.checkInPrecision', { accuracyMeters: Math.round(accuracyMeters) })}
+            </p>
+          )}
+          {position !== null && !searched && (
+            <div className="location-nearby">
+              <button type="button" className="location-row" disabled={isBusy} onClick={() => void checkIn(null)}>
+                <span className="location-row-icon">
+                  <PlaceLabelIcon placeLabel="" />
+                </span>
+                <span className="location-row-body">
+                  <strong>{t('location.checkInHere')}</strong>
+                  <span className="muted">{t('location.checkInHereNote')}</span>
+                </span>
+              </button>
+            </div>
+          )}
           {shownPlaces === null && <p className="muted">{t('location.checkInFinding')}</p>}
           {shownPlaces !== null && shownPlaces.length === 0 && (
             <p className="muted">{t(searched ? 'location.placesNoMatch' : 'location.checkInNothing')}</p>
