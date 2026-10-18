@@ -5188,11 +5188,19 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   border-radius: var(--radius-2);
   background: var(--surface);
   color: var(--text);
-  /* The text size of a field, so a dropdown and an input in one row read the
-     same. */
+  /* The text size of a field (an input takes the page's 15px, and 16px on a
+     phone below), set here rather than inherited from the parent, so a
+     dropdown reads the same wherever it sits. */
   font: inherit;
+  font-size: 15px;
   text-align: left;
   cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .select {
+    font-size: 16px;
+  }
 }
 
 /* A select holding a number needs the width of a number. The 160px above is
@@ -5211,7 +5219,10 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
 }
 
 .select:focus-visible {
-  outline: none;
+  /* The same darker border an input takes, and the ring a button that is not
+     a text field needs, so a keyboard can see where it is. */
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
   border-color: var(--text);
 }
 
