@@ -16078,8 +16078,21 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   border-right: 1px solid var(--border);
 }
 
+/* On a phone, where the heading is not drawn, the way to open a session sits
+   at the top of the list, at the right. */
 .coding-toolbar {
+  display: flex;
   justify-content: flex-end;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+/* On a phone the list starts right under the top bar, as a list app's does,
+   rather than below the page's usual top margin. */
+@media (max-width: 600px) {
+  main.content:has(> .coding-frame) {
+    padding-top: 0;
+  }
 }
 
 .coding-list-rows {

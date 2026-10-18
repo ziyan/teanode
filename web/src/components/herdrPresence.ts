@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { graphql } from '../api'
 import { useQuery } from './useQuery'
@@ -70,9 +70,6 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
     window.addEventListener(ASKING_EVENT, onAnnounced)
     return () => window.removeEventListener(ASKING_EVENT, onAnnounced)
   }, [])
-  // What the rail's own ask last answered, kept through a failed recheck, so
-  // a row the person already had does not vanish for one lost request.
-  const [known, setKnown] = useState<HerdrPresence | null>(null)
   const { data, error } = useQuery(
     async () => {
       if (!isAsked) return { ListAgentHerdrSessions: { computerNames: [], sessions: [] }, isAsked: false }
@@ -86,14 +83,17 @@ export function useHerdrPresence(isAsked: boolean): HerdrPresence {
     [isAsked, recheckCount],
     { refresh: false },
   )
-  useEffect(() => {
-    if (!data?.isAsked || error) return
+  // What the rail's own ask last answered; a failed recheck leaves the last
+  // answer in data, so a row the person already had does not vanish for one
+  // lost request.
+  const known = useMemo<HerdrPresence | null>(() => {
+    if (!data?.isAsked) return null
     const list = data.ListAgentHerdrSessions
-    setKnown({
+    return {
       isPresent: list.computerNames.length > 0,
       askingCount: list.sessions.filter((session) => session.herdrSessionState === 'asking').length,
-    })
-  }, [data, error])
+    }
+  }, [data])
   if (!isAsked) return { isPresent: false, askingCount: 0 }
   if (known === null) return { isPresent: error ? false : null, askingCount: 0 }
   return { isPresent: known.isPresent, askingCount: announced ? announced.askingCount : known.askingCount }
