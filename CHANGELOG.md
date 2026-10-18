@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.172.0] - 2026-10-18
+
+### Added
+
+- The command line reads, files, flags and sends your own mail (`teanode mailbox message`), and answers calendar invitations that arrived by mail (`teanode mailbox invitation`); the assistant can read and, with your confirmation, answer such invitations. (#558)
+
+### Fixed
+
+- The dashboard's calendar, drafts, mail list, contacts, recordings, knowledge graph and conversations pages fit a phone and line up on a desktop. (#561)
+
 ## [0.171.6] - 2026-10-18
 
 ### Fixed
