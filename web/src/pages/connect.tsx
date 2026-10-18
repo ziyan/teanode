@@ -40,8 +40,14 @@ function isOnAPhone(): boolean {
   return window.matchMedia('(pointer: coarse)').matches && window.matchMedia('(max-width: 900px)').matches
 }
 
+// Where the way back leads: the page that sent the person here, when it said so
+// with ?from=. Only the places that link here are named, so an address cannot
+// choose where a link on this page goes.
+const PHOTOS_WAY_BACK = { path: '/photos', label: 'connect.backToPhotos' } as const
+
 export function ConnectPage() {
   const { t } = useTranslation()
+  const wayBack = new URLSearchParams(window.location.search).get('from') === 'photos' ? PHOTOS_WAY_BACK : null
   const [code, setCode] = useState<ConnectCode | null>(null)
   const [isMaking, setIsMaking] = useState(false)
   const [isExpired, setIsExpired] = useState(false)
@@ -111,8 +117,8 @@ export function ConnectPage() {
       )}
 
       {/* The page is a card of its own, outside the dashboard's frame: the way back is here. */}
-      <a className="connect-back" href="/settings/devices">
-        {t('connect.back')}
+      <a className="connect-back" href={wayBack?.path ?? '/settings/devices'}>
+        {t(wayBack?.label ?? 'connect.back')}
       </a>
     </AuthCard>
   )

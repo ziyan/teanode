@@ -2295,6 +2295,7 @@ export const en = {
   'connect.expired': 'That code has expired.',
   'connect.newCode': 'Make a new code',
   'connect.back': 'Back to Devices',
+  'connect.backToPhotos': 'Back to Photos',
   'connect.making': 'Making a code…',
   'connect.failed': 'The code could not be made.',
   'authorize.askedFor': 'It asked to be sent to',
@@ -5427,6 +5428,8 @@ export const en = {
   'photoBackup.needsHttps':
     'The iPhone app needs this server on an https address, and {address} is not one a phone can use. Put the server behind https first, then sign in with that address. {guide}',
   'photoBackup.httpsGuide': 'How to put the server on https',
+  'photoBackup.connectHint':
+    'Quickest: scan a code with the iPhone camera. It opens the app, or the App Store if the app is not installed yet, and signs it in as you.',
   'deviceSetup.noServicesPhotos':
     'Mail, Calendar, Reminders and Contacts are not set up on this server. Photos is backed up with the TeaNode app, above.',
   'photos.search': 'Search photos',
@@ -5445,7 +5448,13 @@ export const en = {
   'photos.upload': 'Upload photos',
   'photos.dropToUpload': 'Drop photos and videos here to upload them',
   'photos.uploadIgnored': 'Some files were not pictures or videos and were left out.',
-  'photos.emptyLibrary': 'No photos yet. Upload some, or turn on backup in the iPhone app.',
+  'photos.emptyLibrary': 'No photos yet. Upload some, or turn on photo backup in the iPhone app.',
+  'photos.emptyLibraryWays': 'No photos yet. There are three ways to add some.',
+  'photos.wayComputerTitle': 'Upload from this computer',
+  'photos.wayComputer': 'Choose photos and videos, or drop them anywhere on this page.',
+  'photos.wayCommandLineTitle': 'Upload from the command line',
+  'photos.wayCommandLine': 'Sign in once, then upload a folder. A photo the library already has is skipped. {guide}',
+  'photos.wayCommandLineGuide': 'The command line guide',
   'photos.emptyFavorites': 'No favorites yet. Choose the heart on a photo to keep it here.',
   'photos.emptyTrash': 'The Trash is empty.',
   'photos.emptySearch': 'No photos match your search.',
