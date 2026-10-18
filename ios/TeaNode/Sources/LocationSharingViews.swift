@@ -36,6 +36,8 @@ struct LocationSharingList: View {
                                 Text(verbatim: LocationModel.shareName(of: share)).foregroundStyle(Color(.label))
                                 Text(share.level?.title ?? share.shareLevel).font(.footnote).foregroundStyle(Color(.secondaryLabel))
                             }
+                            // A menu's label centers wrapped lines; rows start on the left.
+                            .multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(Color(.secondaryLabel)).accessibilityHidden(true)
                         }
