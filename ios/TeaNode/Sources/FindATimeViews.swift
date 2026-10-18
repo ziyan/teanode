@@ -49,8 +49,13 @@ struct FindATimeScreen: View {
                     }
                 }
                 Section {
-                    DayPickerRow(title: "First day", day: $question.firstDay, earliest: .distantPast)
-                    DayPickerRow(title: "Last day", day: $question.lastDay, earliest: question.firstDay)
+                    // Both days bounded the same way: a picker with a range and
+                    // one without were drawn in two date styles side by side.
+                    // There is nothing to find before today.
+                    DatePicker(
+                        "First day", selection: $question.firstDay, in: Calendar.current.startOfDay(for: Date())...,
+                        displayedComponents: .date)
+                    DatePicker("Last day", selection: $question.lastDay, in: question.firstDay..., displayedComponents: .date)
                     DatePicker("Earliest hour", selection: $earliest, displayedComponents: .hourAndMinute)
                     DatePicker("Latest hour", selection: $latest, displayedComponents: .hourAndMinute)
                 }
@@ -180,36 +185,5 @@ struct FindATimeScreen: View {
     private static func minutes(of time: Date) -> Int {
         let parts = Calendar.current.dateComponents([.hour, .minute], from: time)
         return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
-    }
-}
-
-/// DayPickerRow is a day to pick, written the same way in every row. The
-/// compact date picker chooses a long or a short form of the date by itself,
-/// so two rows side by side could read "Oct 18, 2026" and "10/24/26" in pills
-/// of different widths. Here the words are drawn once, and the system's
-/// picker sits invisible on top of them so a tap still opens its calendar.
-private struct DayPickerRow: View {
-    let title: LocalizedStringKey
-    @Binding var day: Date
-    /// The first day that may be picked.
-    let earliest: Date
-
-    var body: some View {
-        HStack {
-            // The picker over the words carries the title for VoiceOver.
-            Text(title)
-                .accessibilityHidden(true)
-            Spacer()
-            Text(day.formatted(date: .abbreviated, time: .omitted))
-                .accessibilityHidden(true)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(.tertiarySystemFill), in: .capsule)
-                .overlay {
-                    DatePicker(title, selection: $day, in: earliest..., displayedComponents: .date)
-                        .labelsHidden()
-                        .colorMultiply(.clear)
-                }
-        }
     }
 }
