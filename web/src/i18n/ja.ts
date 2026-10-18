@@ -5770,6 +5770,7 @@ export const ja: Catalog = {
   'chat.addPeople': 'メンバーを追加',
   'chat.members': 'メンバー',
   'chat.admin': '管理者',
+  'chat.you': 'あなた',
   'chat.removeMember': '外す',
   'chat.removeMemberTitle': '{name}を外しますか？',
   'chat.removeMemberBody': '{name}は{title}の新しいメッセージを見られなくなります。これまでの内容は残ります。',

@@ -5845,6 +5845,7 @@ export const en = {
   'chat.addPeople': 'Add people',
   'chat.members': 'Members',
   'chat.admin': 'Admin',
+  'chat.you': 'You',
   'chat.removeMember': 'Remove',
   'chat.removeMemberTitle': 'Remove {name}?',
   'chat.removeMemberBody': '{name} will not see new messages in {title}. What was said stays.',

@@ -5544,6 +5544,7 @@ export const zh: Catalog = {
   'chat.addPeople': '添加成员',
   'chat.members': '成员',
   'chat.admin': '管理员',
+  'chat.you': '你',
   'chat.removeMember': '移除',
   'chat.removeMemberTitle': '移除 {name}？',
   'chat.removeMemberBody': '{name} 将看不到 {title} 里的新消息，已发的消息会保留。',

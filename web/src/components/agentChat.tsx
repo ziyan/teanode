@@ -1093,7 +1093,7 @@ export function ChatMembersDialog({
                       agent is said by the switches below, not here. */}
                   <span className="chat-member-text">
                     <span className="chat-member-name">{name}</span>
-                    {member.userId === ownUserId ? <span className="muted">{t('circles.you')}</span> : null}
+                    {member.userId === ownUserId ? <span className="muted">{t('chat.you')}</span> : null}
                     {member.memberRole === 'admin' && chat.chatKind === 'group' ? (
                       <Tag value={t('chat.admin')} />
                     ) : null}

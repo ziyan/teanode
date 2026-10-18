@@ -17464,6 +17464,13 @@ body.has-recording-bar .content {
   min-width: 0;
 }
 
+/* A tag longer than the row (some languages say a lot) wraps inside it
+   rather than running over the button beside it. */
+.chat-member-text .tag {
+  max-width: 100%;
+  white-space: normal;
+}
+
 .chat-member-name {
   min-width: 0;
   max-width: 100%;
