@@ -142,9 +142,9 @@ struct ChatTypingLine: View {
 /// MentionMenu offers the agents an @ in the composer can ask, as the
 /// dashboard's list does: a row for each with its symbol, its name and whose
 /// it is, the person's own first, then those whose owners let the others ask.
-/// It sits above the composer on glass, shows about five rows (two at the
-/// largest text sizes) and scrolls for more. A
-/// tap puts the agent's name in the words and addresses the message to it.
+/// It sits above the composer on glass, shows about five rows (one at the
+/// largest text sizes) and scrolls for more. A tap puts the agent's name in
+/// the words and addresses the message to it.
 struct MentionMenu: View {
     let agents: [AddressableAgent]
     let onChoose: (AddressableAgent) -> Void
@@ -154,9 +154,10 @@ struct MentionMenu: View {
     /// otherwise take all the room it is offered even for one row.
     @State private var rowsHeight: CGFloat = 0
 
-    /// Rows shown before the rest scroll: fewer at the largest text sizes, so
-    /// the menu above the keyboard leaves room for the chat.
-    private var visibleRowCount: CGFloat { dynamicTypeSize.isAccessibilitySize ? 2 : 5 }
+    /// Rows shown before the rest scroll: one at the largest text sizes, where
+    /// a row is about three times as tall, so the menu above the keyboard
+    /// leaves room for the chat.
+    private var visibleRowCount: CGFloat { dynamicTypeSize.isAccessibilitySize ? 1 : 5 }
 
     var body: some View {
         ScrollView {
@@ -208,8 +209,8 @@ private struct MentionMenuRow: View {
                             .font(.body.weight(.semibold))
                             .foregroundStyle(.primary)
                         // Most agents keep the name "Agent", so whose it is
-                        // tells two of them apart, as above their messages.
-                        Text(agent.isOwn ? String(localized: "Your agent") : ChatWords.agentOf(agent.ownerName))
+                        // tells two of them apart, in the dashboard's words.
+                        Text(agent.isOwn ? String(localized: "Yours") : agent.ownerName)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
