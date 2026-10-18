@@ -112,16 +112,6 @@ struct MenuBrand: ToolbarContent {
 struct MainView: View {
     let connection: Connection
 
-    /// Where the conversations in the side menu start: nothing kept, until it
-    /// is first scrolled, except for the screenshot of a kept place
-    /// (`-TeaNodeScreen conversations-restored`), which shows the menu
-    /// coming back 120 points down.
-    private static var demoConversationsScrollOffsetPoints: CGFloat? {
-        #if DEBUG
-            if DemoServer.isRequested, DemoServer.screen == "conversations-restored" { return 120 }
-        #endif
-        return nil
-    }
     @Environment(AppModel.self) private var app
     @Environment(\.scenePhase) private var scenePhase
     @State private var section = AppSection.agent
@@ -131,11 +121,17 @@ struct MainView: View {
     @State private var mailPlace: MailPlace?
     @State private var finance: FinanceModel
     @State private var financePart = FinancePart.spending
+    /// The photo library, held here so the side menu can list its collections
+    /// as it lists the mail folders.
+    @State private var photos: PhotosModel
+    /// Whether the photo backup screen is open on the Photos part; the side
+    /// menu's Photo backup row sets it.
+    @State private var isShowingPhotoBackup = false
     @State private var composing: ComposeStart?
-    /// How far the side menu's lists are scrolled. The menu is drawn anew
-    /// each time it opens, so the place is kept here, and not across launches.
-    @State private var conversationsScrollOffsetPoints: CGFloat? = MainView.demoConversationsScrollOffsetPoints
-    @State private var mailScrollOffsetPoints: CGFloat?
+    /// How many times the side menu has been opened, for what it reads again
+    /// each time. The menu itself is kept while closed, so its lists stay
+    /// where they were scrolled.
+    @State private var menuOpeningCount = 0
     /// Whether the services, the agent's identity and the chats have been
     /// read once. Until then it is not known whether the agent is on, and
     /// drawing the conversation or the offer to turn the agent on would be a
@@ -146,19 +142,17 @@ struct MainView: View {
         self.connection = connection
         _mail = State(initialValue: MailModel(connection: connection, username: username))
         _finance = State(initialValue: FinanceModel(connection: connection))
+        _photos = State(initialValue: PhotosModel.start(connection: connection))
     }
 
     var body: some View {
         SidePanel(isOpen: $isMenuOpen, isOpenedFromAnywhere: section != .mail && section != .location) {
             SideMenu(
-                connection: connection, mail: mail, section: $section, conversation: $conversation, mailPlace: $mailPlace,
-                financePart: $financePart, composing: $composing,
-                conversationsScrollOffsetPoints: $conversationsScrollOffsetPoints, mailScrollOffsetPoints: $mailScrollOffsetPoints
+                connection: connection, mail: mail, photos: photos, section: $section, conversation: $conversation, mailPlace: $mailPlace,
+                financePart: $financePart, isShowingPhotoBackup: $isShowingPhotoBackup, composing: $composing, openingCount: menuOpeningCount
             ) {
                 isMenuOpen = false
             }
-            // Read again each time it opens, for what changed meanwhile.
-            .id(isMenuOpen ? "open" : "closed")
         } content: {
             screen
                 .environment(\.openMenu, OpenMenu { isMenuOpen = true })
@@ -167,6 +161,21 @@ struct MainView: View {
         .sheet(item: $composing) { start in
             ComposeView(mail: mail, start: start).environment(mail)
         }
+        .onChange(of: isMenuOpen) { _, isOpen in
+            if isOpen { menuOpeningCount += 1 }
+        }
+        #if DEBUG
+            .task(id: app.canChat) {
+                // `-TeaNodeScreen conversations-restored`: the menu, once it has
+                // scrolled to its chats (a second after it does, in the list),
+                // closed and opened again, to show it opens where it was left.
+                guard DemoServer.isRequested, DemoServer.screen == "conversations-restored", app.canChat else { return }
+                try? await Task.sleep(for: .seconds(3))
+                isMenuOpen = false
+                try? await Task.sleep(for: .milliseconds(800))
+                isMenuOpen = true
+            }
+        #endif
         .onAppear {
             if let kept = app.keptSection {
                 section = kept
@@ -175,9 +184,10 @@ struct MainView: View {
             #if DEBUG
                 if let tab = DemoServer.tab, let chosen = AppSection(rawValue: tab) { section = chosen }
                 if DemoServer.screen?.hasPrefix("net-worth") == true { financePart = .netWorth }
+                if DemoServer.screen?.hasPrefix("finance-") == true { financePart = .accounts }
                 if DemoServer.isMenuRequested { isMenuOpen = true }
                 if DemoServer.isRequested, DemoServer.tab == "coding" { app.noteCodingComputers() }
-                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`).
+                // A chat opened for a screenshot (`-TeaNodeScreen chat-direct`, `chat-group`, `chat-members`, `chat-mention`).
                 if let chat = DemoServer.openedChat { conversation = chat }
             #endif
         }
@@ -400,7 +410,7 @@ struct MainView: View {
         case .contacts:
             ContactsScreen(connection: connection)
         case .photos:
-            PhotosScreen(connection: connection)
+            PhotosScreen(model: photos, isShowingBackup: $isShowingPhotoBackup)
         case .goals:
             GoalsScreen(connection: connection)
         case .ideas:
@@ -500,15 +510,16 @@ struct KnowledgeStack: View {
 struct SideMenu: View {
     let connection: Connection
     let mail: MailModel
+    let photos: PhotosModel
     @Binding var section: AppSection
     @Binding var conversation: AgentConversation?
     @Binding var mailPlace: MailPlace?
     @Binding var financePart: FinancePart
+    @Binding var isShowingPhotoBackup: Bool
     @Binding var composing: ComposeStart?
-    /// How far the conversations and the mail folders are scrolled, kept by
-    /// the main view because the menu is drawn anew each time it opens.
-    @Binding var conversationsScrollOffsetPoints: CGFloat?
-    @Binding var mailScrollOffsetPoints: CGFloat?
+    /// How many times the menu has been opened: the conversations are read
+    /// again each time.
+    let openingCount: Int
     let onClose: () -> Void
     @Environment(AppModel.self) private var app
 
@@ -517,7 +528,7 @@ struct SideMenu: View {
         case .agent:
             ConversationsSheet(
                 connection: connection, isPanel: true, currentId: conversation?.id, leading: AnyView(sections),
-                scrollOffsetPoints: $conversationsScrollOffsetPoints
+                openingCount: openingCount
             ) { chosen in
                 conversation = chosen
                 onClose()
@@ -525,8 +536,7 @@ struct SideMenu: View {
         case .mail:
             NavigationStack {
                 MailboxesList(
-                    mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections),
-                    scrollOffsetPoints: $mailScrollOffsetPoints
+                    mail: mail, current: mailPlace, composing: $composing, leading: AnyView(sections)
                 ) { chosen in
                     mailPlace = chosen
                     onClose()
@@ -536,26 +546,67 @@ struct SideMenu: View {
             }
         case .finance:
             NavigationStack {
-                List {
-                    Section { sections }
+                ScrollViewReader { scroller in
+                    List {
+                        Section { sections }
+                            .listSectionSeparator(.hidden)
+                        Section("Finance") {
+                            ForEach(FinancePart.allCases) { part in
+                                Button {
+                                    financePart = part
+                                    onClose()
+                                } label: {
+                                    Label(part.title, systemImage: part.systemImage)
+                                        .foregroundStyle(.primary)
+                                }
+                                .menuRow(isSelected: financePart == part)
+                            }
+                        }
                         .listSectionSeparator(.hidden)
-                    Section("Finance") {
-                        ForEach(FinancePart.allCases) { part in
+                        .id(Self.partItemsSectionId)
+                    }
+                    .menuListStyle()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { MenuBrand() }
+                    .task { await showPartItems(scroller) }
+                }
+            }
+        case .photos:
+            NavigationStack {
+                ScrollViewReader { scroller in
+                    List {
+                        Section { sections }
+                            .listSectionSeparator(.hidden)
+                        Section("Photos") {
+                            ForEach(photos.sections) { collection in
+                                Button {
+                                    photos.section = collection
+                                    // A backup screen left open would stay over the collection chosen.
+                                    isShowingPhotoBackup = false
+                                    onClose()
+                                } label: {
+                                    Label(collection.title, systemImage: collection.symbolName)
+                                        .foregroundStyle(.primary)
+                                }
+                                .menuRow(isSelected: photos.section == collection)
+                            }
                             Button {
-                                financePart = part
+                                isShowingPhotoBackup = true
                                 onClose()
                             } label: {
-                                Label(part.title, systemImage: part.systemImage)
+                                Label("Photo backup", systemImage: "icloud.and.arrow.up")
                                     .foregroundStyle(.primary)
                             }
-                            .menuRow(isSelected: financePart == part)
+                            .menuRow(isSelected: false)
                         }
+                        .listSectionSeparator(.hidden)
+                        .id(Self.partItemsSectionId)
                     }
-                    .listSectionSeparator(.hidden)
+                    .menuListStyle()
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { MenuBrand() }
+                    .task { await showPartItems(scroller) }
                 }
-                .menuListStyle()
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { MenuBrand() }
             }
         default:
             NavigationStack {
@@ -570,6 +621,21 @@ struct SideMenu: View {
         }
     }
 
+    /// The id of the section that lists the items of the part on screen, under the list of the parts.
+    private static let partItemsSectionId = "partItems"
+
+    /// Scrolls the menu down to the items of the part on screen, as it opens: they are what the
+    /// person opened the menu for, and under all the parts they would otherwise start below the
+    /// bottom of the screen. The list is not scrolled past its end, so the parts stay in view
+    /// above the items for as long as there is room. The menu is drawn anew each time it opens,
+    /// so this runs each time. The list is given a moment to lay out its rows first, since a
+    /// scroll asked for before that finds nothing to scroll to.
+    private func showPartItems(_ scroller: ScrollViewProxy) async {
+        try? await Task.sleep(for: .milliseconds(50))
+        guard !Task.isCancelled else { return }
+        scroller.scrollTo(Self.partItemsSectionId, anchor: .top)
+    }
+
     private var sections: some View {
         ForEach(AppSection.allCases.filter { app.isSectionAvailable($0) }) { part in
             Button {
@@ -577,10 +643,10 @@ struct SideMenu: View {
                     onClose()
                 } else {
                     section = part
-                    // The agent's conversations, the mail folders and the
-                    // finance sections stay open to choose from; the other
-                    // parts open at once.
-                    if part != .agent, part != .mail, part != .finance { onClose() }
+                    // The agent's conversations, the mail folders, the
+                    // finance sections and the photo collections stay open to
+                    // choose from; the other parts open at once.
+                    if part != .agent, part != .mail, part != .finance, part != .photos { onClose() }
                 }
             } label: {
                 // The part on screen is marked by its color and weight; the

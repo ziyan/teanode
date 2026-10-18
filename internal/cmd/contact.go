@@ -79,6 +79,13 @@ func NewContactCommand() *cli.Command {
 				Action:    runContactBookRemove,
 			},
 			{
+				Name:      "remove-picture",
+				Usage:     "take the picture off a contact and leave the rest of it",
+				ArgsUsage: "<id>",
+				Flags:     []cli.Flag{JSONFlag(), ForceFlag()},
+				Action:    runContactBookRemovePicture,
+			},
+			{
 				Name:      "me",
 				Usage:     "say which contact is you, so your agent knows your own addresses; with no id, say who it thinks you are",
 				ArgsUsage: "[id]",
@@ -304,6 +311,46 @@ func runContactBookRemove(ctx context.Context, command *cli.Command) error {
 		return describeError(command, err)
 	}
 	fmt.Printf("forgot %s\n", displayed(contact))
+	return nil
+}
+
+func runContactBookRemovePicture(ctx context.Context, command *cli.Command) error {
+	if command.Args().Len() < 1 {
+		return fmt.Errorf("which contact: 'teanode contact list' says their ids")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	id := command.Args().First()
+	contact, err := client.GetContact(ctx, connection, id)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if contact == nil {
+		return fmt.Errorf("no such contact")
+	}
+	if !contact.HasPhoto {
+		// The contact as it is, the same shape the removal answers with.
+		if command.Bool("json") {
+			return PrintJSON(contact)
+		}
+		fmt.Printf("%s has no picture\n", displayed(contact))
+		return nil
+	}
+	if err := confirm(command, fmt.Sprintf(
+		"This takes the picture off %s. Devices synchronizing your address book will lose it too.",
+		displayed(contact))); err != nil {
+		return err
+	}
+	kept, err := client.RemoveContactPicture(ctx, connection, id)
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		return PrintJSON(kept)
+	}
+	fmt.Printf("took the picture off %s\n", displayed(contact))
 	return nil
 }
 

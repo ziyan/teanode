@@ -25,6 +25,8 @@ struct TaxesView: View {
     @State private var isTakingPicture = false
     @State private var mailInAddress: TaxDocumentAddress?
     @State private var isRegeneratingAddress = false
+    @State private var isTypingPaystub = false
+    @State private var isTypingTaxForm = false
 
     /// This year and the four before it.
     private var taxYears: [Int] {
@@ -123,6 +125,7 @@ struct TaxesView: View {
                             .tint(.red)
                         }
                     }
+                    Button("Type in a tax form", systemImage: "square.and.pencil") { isTypingTaxForm = true }
                 }
             }
             if !paystubs.isEmpty {
@@ -143,6 +146,7 @@ struct TaxesView: View {
                             .tint(.red)
                         }
                     }
+                    Button("Type in a paystub", systemImage: "square.and.pencil") { isTypingPaystub = true }
                 }
             }
         }
@@ -169,6 +173,12 @@ struct TaxesView: View {
         .refreshable { await load() }
         .overlay {
             if !isLoaded { ProgressView() }
+        }
+        .sheet(isPresented: $isTypingPaystub) {
+            PaystubEntryView(currencyCode: finance.reportingCurrency, today: finance.today) { Task { await load() } }
+        }
+        .sheet(isPresented: $isTypingTaxForm) {
+            TaxFormEntryView(taxYear: taxYear) { Task { await load() } }
         }
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems, maxSelectionCount: 10, matching: .images)
         .cameraPicker(isPresented: $isTakingPicture) { picture in
@@ -247,6 +257,9 @@ struct TaxesView: View {
                 Button("Camera", systemImage: "camera") { isTakingPicture = true }
             }
             Button("Files", systemImage: "folder") { isPickingFiles = true }
+            Divider()
+            Button("Type in a paystub", systemImage: "square.and.pencil") { isTypingPaystub = true }
+            Button("Type in a tax form", systemImage: "square.and.pencil") { isTypingTaxForm = true }
         } label: {
             Label("Add tax documents", systemImage: "plus")
         }
@@ -1040,6 +1053,7 @@ struct PaystubDetailView: View {
                         Label("Delete paystub", systemImage: "trash")
                     }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                     .confirmationDialog("Delete this paystub?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete paystub", role: .destructive) {
                             Task {
@@ -1264,6 +1278,7 @@ struct TaxFormDetailView: View {
                     Label("Delete form", systemImage: "trash")
                 }
                 .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Delete this form?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete form", role: .destructive) {
                         Task {

@@ -73,14 +73,30 @@ type PhotoFaceOperation interface {
 	ListPhotoFaces(userId string, photoIds []string) ([]*models.PhotoFace, error)
 	GetPhotoFace(userId, photoFaceId string) (*models.PhotoFace, error)
 
+	// FindPhotoFaceForContactPicture finds the face of a group to cut a
+	// contact's picture from: the one detected with the highest confidence
+	// among those that take up at least MinimumContactPictureFaceAreaFraction
+	// of their photo, in the person's own photos that are not in the trash and
+	// have a large preview. It is ErrNotFound when no face qualifies.
+	FindPhotoFaceForContactPicture(userId, photoFaceGroupId string) (*models.PhotoFace, error)
+
 	// NamePhotoFaceGroup names a group by a contact, which must be in one of
 	// the person's own address books. Another contact replaces the one it had.
-	NamePhotoFaceGroup(userId, photoFaceGroupId, addressBookId, contactId string) (*models.PhotoFaceGroup, error)
+	// A contact names one person: when it already names another of the
+	// person's groups the two are one person, and the group already named
+	// takes the faces of both and keeps its own cover. The group that answers
+	// is the one left, and mergedPhotoFaceGroupId is the group that was put
+	// into it, empty when nothing was merged. The group left is hidden only
+	// when both were hidden.
+	NamePhotoFaceGroup(userId, photoFaceGroupId, addressBookId, contactId string) (group *models.PhotoFaceGroup, mergedPhotoFaceGroupId string, err error)
 	UnnamePhotoFaceGroup(userId, photoFaceGroupId string) (*models.PhotoFaceGroup, error)
 
 	// MergePhotoFaceGroups moves the faces of the other groups into the
 	// first and deletes them. The first keeps its own contact; when it has
 	// none it takes the contact of the first other group that has one.
+	// A group holds one face of a photo, so of the faces of a photo that two
+	// groups each had, the one the person confirmed stays, else the one most
+	// like the group; the others are in no group and not confirmed.
 	MergePhotoFaceGroups(userId string, photoFaceGroupIds []string) (*models.PhotoFaceGroup, error)
 
 	// RemovePhotoFaceFromGroup takes a face out of its group into a group of
@@ -94,6 +110,13 @@ type PhotoFaceOperation interface {
 // named needs to be listed: a pair of faces is more often a chance likeness
 // than a person.
 const MinimumUnnamedPhotoFaceGroupFaceCount = 3
+
+// MinimumContactPictureFaceAreaFraction is the share of its photo a face's box
+// must cover to be cut into a contact's picture: a face smaller than that is
+// a few dozen pixels of the large preview, and a picture made of it is blown
+// up and blurred. A person alone in the frame is around a tenth of it; a face
+// in a group of four or five about a thirtieth.
+const MinimumContactPictureFaceAreaFraction = 0.03
 
 // MaximumMergedPhotoFaceGroups bounds how many groups one merge names.
 const MaximumMergedPhotoFaceGroups = 50
@@ -655,6 +678,26 @@ func (self *transaction) GetPhotoFace(userId, photoFaceId string) (*models.Photo
 	return photoFaceFromRow(&rows[0]), nil
 }
 
+func (self *transaction) FindPhotoFaceForContactPicture(userId, photoFaceGroupId string) (*models.PhotoFace, error) {
+	if userId == "" || photoFaceGroupId == "" {
+		return nil, ErrNotFound
+	}
+	var rows []photoFaceRow
+	if err := self.tx.Raw(photoFacesQuery+`
+		AND photo.trashed_at IS NULL AND photo_face.photo_face_group_id = ?
+		AND photo_face.box_width_fraction * photo_face.box_height_fraction >= ?
+		AND EXISTS (SELECT 1 FROM photo_preview WHERE photo_preview.photo_id = photo.id AND photo_preview.photo_preview_size = ?)
+		ORDER BY photo_face.detection_score DESC, photo_face.box_width_fraction * photo_face.box_height_fraction DESC, photo_face.id
+		LIMIT 1`,
+		userId, photoMarkedForDeletion, photoFaceGroupId, MinimumContactPictureFaceAreaFraction, models.PhotoPreviewLarge).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, ErrNotFound
+	}
+	return photoFaceFromRow(&rows[0]), nil
+}
+
 // lockPhotoFaceGroup finds a group of the person's and locks it, so that two
 // changes to one group are made one after the other.
 func (self *transaction) lockPhotoFaceGroup(userId, photoFaceGroupId string) (*photoFaceGroupModel, error) {
@@ -682,31 +725,68 @@ func (self *transaction) refreshSearchDocumentsOfPhotoFaceGroups(photoFaceGroupI
 	return self.refreshPhotoSearchDocuments("photo.id IN (SELECT photo_id FROM photo_face WHERE photo_face_group_id = ANY(?))", pq.Array(photoFaceGroupIds))
 }
 
-func (self *transaction) NamePhotoFaceGroup(userId, photoFaceGroupId, addressBookId, contactId string) (*models.PhotoFaceGroup, error) {
+func (self *transaction) NamePhotoFaceGroup(userId, photoFaceGroupId, addressBookId, contactId string) (*models.PhotoFaceGroup, string, error) {
 	if addressBookId == "" || contactId == "" {
-		return nil, ErrInvalidArguments
+		return nil, "", ErrInvalidArguments
 	}
-	if _, err := self.lockPhotoFaceGroup(userId, photoFaceGroupId); err != nil {
-		return nil, err
+	// Merging deletes a group, which grouping a photo's faces could be adding
+	// a face to, and two namings with one contact must not both find that
+	// no other group has it.
+	if err := self.LockPhotoFaceGrouping(userId); err != nil {
+		return nil, "", err
+	}
+	named, err := self.lockPhotoFaceGroup(userId, photoFaceGroupId)
+	if err != nil {
+		return nil, "", err
 	}
 	// The contact is in an address book that is the person's, or it is not
 	// found: whose it is is not the caller's business.
 	var contactCount int64
 	if err := self.tx.Table("contact").Joins("JOIN addressbook ON addressbook.id = contact.addressbook_id").
 		Where("contact.addressbook_id = ? AND contact.id = ? AND addressbook.user_id = ?", addressBookId, contactId, userId).Count(&contactCount).Error; err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if contactCount == 0 {
-		return nil, ErrNotFound
+		return nil, "", ErrNotFound
 	}
-	if err := self.tx.Model(&photoFaceGroupModel{}).Where("id = ?", photoFaceGroupId).
-		Updates(map[string]any{"addressbook_id": addressBookId, "contact_id": contactId, "updated_at": photoNow()}).Error; err != nil {
-		return nil, err
+	// The groups the contact names already, the oldest first: the oldest stays
+	// if more than one does, which only a database from before a contact named
+	// one person can have.
+	var alreadyNamed []photoFaceGroupModel
+	if err := self.tx.Where("user_id = ? AND addressbook_id = ? AND contact_id = ? AND id <> ?", userId, addressBookId, contactId, photoFaceGroupId).
+		Order("created_at, id").Find(&alreadyNamed).Error; err != nil {
+		return nil, "", err
 	}
-	if err := self.refreshSearchDocumentsOfPhotoFaceGroups([]string{photoFaceGroupId}); err != nil {
-		return nil, err
+	if len(alreadyNamed) == 0 {
+		if err := self.tx.Model(&photoFaceGroupModel{}).Where("id = ?", photoFaceGroupId).
+			Updates(map[string]any{"addressbook_id": addressBookId, "contact_id": contactId, "updated_at": photoNow()}).Error; err != nil {
+			return nil, "", err
+		}
+		if err := self.refreshSearchDocumentsOfPhotoFaceGroups([]string{photoFaceGroupId}); err != nil {
+			return nil, "", err
+		}
+		group, err := self.GetPhotoFaceGroup(userId, photoFaceGroupId)
+		return group, "", err
 	}
-	return self.GetPhotoFaceGroup(userId, photoFaceGroupId)
+	// Both are one person. The group already named is the first, so it keeps
+	// its contact, its cover and the faces of the others.
+	isHidden := named.IsHidden
+	mergedIds := make([]string, 0, len(alreadyNamed)+1)
+	for _, other := range alreadyNamed {
+		isHidden = isHidden && other.IsHidden
+		mergedIds = append(mergedIds, other.ID)
+	}
+	merged, err := self.MergePhotoFaceGroups(userId, append(mergedIds, photoFaceGroupId))
+	if err != nil {
+		return nil, "", err
+	}
+	// Naming a person you hid with a contact you listed is meant to list them.
+	if merged.IsHidden != isHidden {
+		if merged, err = self.HidePhotoFaceGroup(userId, merged.ID, isHidden); err != nil {
+			return nil, "", err
+		}
+	}
+	return merged, photoFaceGroupId, nil
 }
 
 func (self *transaction) UnnamePhotoFaceGroup(userId, photoFaceGroupId string) (*models.PhotoFaceGroup, error) {
@@ -786,10 +866,64 @@ func (self *transaction) MergePhotoFaceGroups(userId string, photoFaceGroupIds [
 	if err := self.recomputePhotoFaceGroup(target.ID); err != nil {
 		return nil, err
 	}
+	if err := self.separateFacesOfOnePhoto(target.ID); err != nil {
+		return nil, err
+	}
 	if err := self.refreshSearchDocumentsOfPhotoFaceGroups([]string{target.ID}); err != nil {
 		return nil, err
 	}
 	return self.GetPhotoFaceGroup(userId, target.ID)
+}
+
+// separateFacesOfOnePhoto makes a group hold at most one face of each photo
+// again after a merge put the faces of two groups together. A photo does not
+// hold the same person twice, and groupFaces never puts two faces of one photo
+// in one group; two groups of one person can each have a different face of the
+// same photo, and a merge brings those together.
+//
+// Of the faces of a photo in the group the one kept is the one the person
+// confirmed, else the one most like the group's vector sum (the cosine
+// similarity, compared with the sum of all the faces, those that leave
+// included). The others leave: they are in no group and not confirmed, as a
+// face too small to group is, and the group's vector, count and cover are made
+// again from the faces that stay. migrations/0242 does the same over the groups
+// already named with one contact, in SQL of the same shape.
+func (self *transaction) separateFacesOfOnePhoto(photoFaceGroupId string) error {
+	return self.tx.Exec(`
+		WITH ranked AS (
+			SELECT photo_face.id, photo_face.photo_face_group_id AS group_id,
+				row_number() OVER (
+					PARTITION BY photo_face.photo_id
+					ORDER BY photo_face.is_group_confirmed DESC, similarity.value DESC, photo_face.id) AS place
+			FROM photo_face
+			JOIN photo_face_group ON photo_face_group.id = photo_face.photo_face_group_id
+			CROSS JOIN LATERAL (
+				SELECT COALESCE(sum(pair.face_number::float8 * pair.group_number::float8)
+					/ NULLIF(sqrt(sum(pair.face_number::float8 ^ 2)) * sqrt(sum(pair.group_number::float8 ^ 2)), 0), 0) AS value
+				FROM unnest(photo_face.face_vector, photo_face_group.group_vector_sum) AS pair(face_number, group_number)
+			) similarity
+			WHERE photo_face.photo_face_group_id = ?
+		), leaving AS (
+			SELECT id, group_id FROM ranked WHERE place > 1
+		), removed AS (
+			UPDATE photo_face SET photo_face_group_id = NULL, is_group_confirmed = false
+			FROM leaving WHERE photo_face.id = leaving.id
+			RETURNING photo_face.id
+		)
+		UPDATE photo_face_group SET
+			group_vector_sum = COALESCE((
+				SELECT array_agg(sums.total ORDER BY sums.position) FROM (
+					SELECT numbers.position, sum(numbers.number) AS total
+					FROM photo_face, unnest(photo_face.face_vector) WITH ORDINALITY AS numbers(number, position)
+					WHERE photo_face.photo_face_group_id = photo_face_group.id AND photo_face.id NOT IN (SELECT id FROM leaving)
+					GROUP BY numbers.position
+				) sums), photo_face_group.group_vector_sum),
+			face_group_vector_count = (
+				SELECT count(*) FROM photo_face
+				WHERE photo_face.photo_face_group_id = photo_face_group.id AND photo_face.id NOT IN (SELECT id FROM leaving)),
+			cover_photo_face_id = CASE WHEN cover_photo_face_id IN (SELECT id FROM leaving) THEN NULL ELSE cover_photo_face_id END,
+			updated_at = ?
+		WHERE id IN (SELECT group_id FROM leaving)`, photoFaceGroupId, photoNow()).Error
 }
 
 func (self *transaction) RemovePhotoFaceFromGroup(userId, photoFaceId string) (*models.PhotoFaceGroup, error) {

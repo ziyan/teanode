@@ -39,7 +39,14 @@ type PhotoFaceMutation interface {
 	// address books. It needs the Contacts service and contacts:use, because
 	// the address book is the one list of people; a client that lets the
 	// person type a new name makes the contact first with SaveContact.
-	NamePhotoFaceGroup(context.Context, NamePhotoFaceGroupArguments) (*models.PhotoFaceGroup, error)
+	//
+	// A contact names one person. When it already names another of the
+	// person's groups the two are merged: the answer is the group that was
+	// already named, with the faces of both, and mergedPhotoFaceGroupId is
+	// the group that went into it. When the contact has no picture, it is
+	// given one cut from the group's best face, and isContactPictureSet says
+	// so; a picture the contact has is never replaced.
+	NamePhotoFaceGroup(context.Context, NamePhotoFaceGroupArguments) (*NamedPhotoFaceGroup, error)
 	UnnamePhotoFaceGroup(context.Context, PhotoFaceGroupArguments) (*models.PhotoFaceGroup, error)
 
 	// MergePhotoFaceGroups moves the faces of the other groups into the first
@@ -82,6 +89,22 @@ type NamePhotoFaceGroupArguments struct {
 	ContactID string `json:"contactId"`
 }
 
+// NamedPhotoFaceGroup is what naming a group answers: the group as it is now,
+// and what else the naming did.
+type NamedPhotoFaceGroup struct {
+	// PhotoFaceGroup is the group that is named. When the contact named
+	// another group already it is that one, with the faces of both.
+	PhotoFaceGroup *models.PhotoFaceGroup `json:"photoFaceGroup"`
+
+	// MergedPhotoFaceGroupID is the group that was put into PhotoFaceGroup
+	// and no longer exists; empty when nothing was merged.
+	MergedPhotoFaceGroupID string `json:"mergedPhotoFaceGroupId"`
+
+	// IsContactPictureSet says the contact had no picture and was given one,
+	// cut from a face of the group.
+	IsContactPictureSet bool `json:"isContactPictureSet"`
+}
+
 // MergePhotoFaceGroupsArguments names the groups to put into one, at least two
 // and at most 50. The first is the one that stays.
 type MergePhotoFaceGroupsArguments struct {
@@ -102,20 +125,31 @@ type SetPhotoFaceRecognitionArguments struct {
 }
 
 // withGroupPictureAddresses fills in where each group's picture is fetched
-// from: the picture of its cover face.
-func withGroupPictureAddresses(groups ...*models.PhotoFaceGroup) {
+// from: the picture of its cover face. It also says which group is the caller
+// themselves: the one named by ownContactId, the contact that is the caller's
+// own card (User.ContactID). Nothing is ever the caller's own when ownContactId
+// is empty.
+func withGroupPictureAddresses(ownContactId string, groups ...*models.PhotoFaceGroup) {
 	for _, group := range groups {
 		if group.CoverPhotoFaceID != "" {
 			group.FacePictureURL = api.PhotoFacePicturePath(group.CoverPhotoFaceID)
 		}
+		group.IsOwnContact = isOwnContact(ownContactId, group.ContactID)
 	}
 }
 
 // withFacePictureAddresses is the same for faces.
-func withFacePictureAddresses(faces ...*models.PhotoFace) {
+func withFacePictureAddresses(ownContactId string, faces ...*models.PhotoFace) {
 	for _, face := range faces {
 		face.FacePictureURL = api.PhotoFacePicturePath(face.ID)
+		face.IsOwnContact = isOwnContact(ownContactId, face.ContactID)
 	}
+}
+
+// isOwnContact is whether the contact that names a group, empty for a group
+// nobody named, is the caller's own.
+func isOwnContact(ownContactId, groupContactId string) bool {
+	return ownContactId != "" && groupContactId == ownContactId
 }
 
 func (self *graph) ListPhotoFaceGroups(ctx context.Context, arguments ListPhotoFaceGroupsArguments) ([]*models.PhotoFaceGroup, error) {
@@ -127,7 +161,7 @@ func (self *graph) ListPhotoFaceGroups(ctx context.Context, arguments ListPhotoF
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(groups...)
+	withGroupPictureAddresses(principal.User.ContactID, groups...)
 	return groups, nil
 }
 
@@ -140,7 +174,7 @@ func (self *graph) ReadPhotoFaceGroup(ctx context.Context, arguments PhotoFaceGr
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -148,7 +182,7 @@ func (self *graph) ReadPhotoFaceGroup(ctx context.Context, arguments PhotoFaceGr
 // choosing from the address book, so a server without Contacts, or an account
 // that may not use it, cannot name anybody, and is told what to turn on rather
 // than that the contact was not found.
-func (self *graph) NamePhotoFaceGroup(ctx context.Context, arguments NamePhotoFaceGroupArguments) (*models.PhotoFaceGroup, error) {
+func (self *graph) NamePhotoFaceGroup(ctx context.Context, arguments NamePhotoFaceGroupArguments) (*NamedPhotoFaceGroup, error) {
 	principal, err := self.requirePhotosPerson(ctx)
 	if err != nil {
 		return nil, err
@@ -166,12 +200,16 @@ func (self *graph) NamePhotoFaceGroup(ctx context.Context, arguments NamePhotoFa
 	if err != nil {
 		return nil, err
 	}
-	group, err := self.transaction(ctx).NamePhotoFaceGroup(principal.User.ID, arguments.PhotoFaceGroupID, book.ID, contact.ID)
+	group, mergedPhotoFaceGroupId, err := self.transaction(ctx).NamePhotoFaceGroup(principal.User.ID, arguments.PhotoFaceGroupID, book.ID, contact.ID)
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
-	return group, nil
+	isContactPictureSet, err := self.giveContactPictureFromGroup(ctx, principal, contact, group.ID)
+	if err != nil {
+		return nil, err
+	}
+	withGroupPictureAddresses(principal.User.ContactID, group)
+	return &NamedPhotoFaceGroup{PhotoFaceGroup: group, MergedPhotoFaceGroupID: mergedPhotoFaceGroupId, IsContactPictureSet: isContactPictureSet}, nil
 }
 
 func (self *graph) UnnamePhotoFaceGroup(ctx context.Context, arguments PhotoFaceGroupArguments) (*models.PhotoFaceGroup, error) {
@@ -183,7 +221,7 @@ func (self *graph) UnnamePhotoFaceGroup(ctx context.Context, arguments PhotoFace
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -196,7 +234,7 @@ func (self *graph) MergePhotoFaceGroups(ctx context.Context, arguments MergePhot
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -209,7 +247,7 @@ func (self *graph) RemovePhotoFaceFromGroup(ctx context.Context, arguments Photo
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 
@@ -222,7 +260,7 @@ func (self *graph) HidePhotoFaceGroup(ctx context.Context, arguments HidePhotoFa
 	if err != nil {
 		return nil, translateError(err)
 	}
-	withGroupPictureAddresses(group)
+	withGroupPictureAddresses(principal.User.ContactID, group)
 	return group, nil
 }
 

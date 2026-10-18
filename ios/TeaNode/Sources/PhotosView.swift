@@ -2,14 +2,15 @@ import SwiftUI
 import TeaNodeKit
 import UIKit
 
-/// PhotoSection is what the segmented control under the title chooses: three
-/// lists of photos, the albums and the people.
+/// PhotoSection is what the side menu's collections choose: three lists of
+/// photos, the albums and the people. The name of the one on show is the
+/// large title.
 enum PhotoSection: String, CaseIterable, Identifiable {
     case library, favorites, albums, people, trash
 
     var id: String { rawValue }
 
-    /// The name in the segmented control.
+    /// The name in the side menu and the large title.
     var title: String {
         switch self {
         case .library: String(localized: "Library")
@@ -17,6 +18,17 @@ enum PhotoSection: String, CaseIterable, Identifiable {
         case .albums: String(localized: "Albums")
         case .people: String(localized: "photos.people", defaultValue: "People")
         case .trash: String(localized: "Trash")
+        }
+    }
+
+    /// The symbol next to the name in the side menu.
+    var symbolName: String {
+        switch self {
+        case .library: "photo.on.rectangle"
+        case .favorites: "heart"
+        case .albums: "rectangle.stack"
+        case .people: "person.crop.circle"
+        case .trash: "trash"
         }
     }
 
@@ -28,6 +40,23 @@ enum PhotoSection: String, CaseIterable, Identifiable {
         case .favorites: .favorites
         case .trash: .trash
         case .albums, .people: nil
+        }
+    }
+}
+
+/// PhotoScale is how much of the library the switch at the bottom of the
+/// screen takes in at once: a picture for each year, a picture for each month,
+/// or every photo.
+enum PhotoScale: String, CaseIterable, Identifiable {
+    case years, months, all
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .years: String(localized: "photos.scaleYears", defaultValue: "Years")
+        case .months: String(localized: "photos.scaleMonths", defaultValue: "Months")
+        case .all: String(localized: "photos.scaleAll", defaultValue: "All")
         }
     }
 }
@@ -192,6 +221,19 @@ final class PhotosModel {
     private(set) var circles: [PeopleCircle] = []
     var doneText: String?
     var problemText: String?
+    /// What can be done next beside the words in doneText. The buttons belong
+    /// to the words they were set with (see showDone): any other message put
+    /// in doneText afterwards shows without them, so Change and Remove never
+    /// sit beside a message that is about something else.
+    var doneButtons: [ToastButton] {
+        get { doneText != nil && doneText == doneButtonsText ? storedDoneButtons : [] }
+        set {
+            storedDoneButtons = newValue
+            doneButtonsText = newValue.isEmpty ? nil : doneText
+        }
+    }
+    private var storedDoneButtons: [ToastButton] = []
+    private var doneButtonsText: String?
     /// The title being asked for, by an alert on whichever screen raised it.
     var albumTitleRequest: AlbumTitleRequest?
 
@@ -203,6 +245,12 @@ final class PhotosModel {
     /// the Kit names what went wrong and the app writes the words.
     func describe(_ error: Error) -> String {
         AppModel.shared.describe(error)
+    }
+
+    /// Says what was done, with the buttons that go with these words.
+    func showDone(_ text: String, buttons: [ToastButton]) {
+        doneText = text
+        doneButtons = buttons
     }
 
     /// Makes a list of just these photos, for a viewer opened on photos the
@@ -252,7 +300,7 @@ final class PhotosModel {
         if library?.isFaceRecognitionAvailable == false, faceGroups == nil { await reloadFaceGroups(isQuiet: true) }
     }
 
-    /// The choices of the segmented control: People only when faces can be
+    /// The collections the side menu lists: People only when faces can be
     /// found, or people were found before, or it is the one being looked at.
     var sections: [PhotoSection] {
         PhotoSection.allCases.filter { $0 != .people || isPeopleShown || section == .people }
@@ -738,32 +786,10 @@ private struct PhotoFollowID: Equatable {
     let hasWaitingPhotos: Bool
 }
 
-/// OpenedPhoto is the photo the viewer was opened on.
-struct OpenedPhoto: Identifiable {
-    let id: String
-}
-
-/// PhotosScreen is the person's photo library: a grid by day with Library,
-/// Favorites, Albums and Trash under the title, a Select mode, and a viewer
-/// for one photo.
-struct PhotosScreen: View {
-    @State private var model: PhotosModel
-    @State private var opened: OpenedPhoto?
-    @State private var isConfirmingEmptyTrash = false
-    @State private var isSelecting = false
-    @State private var selectedPhotoIds: Set<String> = []
-    @State private var isConfirmingTrashOfSelection = false
-    @State private var isConfirmingDeleteOfSelection = false
-    /// What is typed in the library's search field.
-    @State private var searchText = ""
-    @State private var isChoosingDates = false
-    #if DEBUG
-        @State private var isDemoViewerOpened = false
-        @State private var isDemoAlbumOpened = false
-        @State private var isDemoPersonOpened = false
-    #endif
-
-    init(connection: Connection) {
+extension PhotosModel {
+    /// The model the app shell holds for the Photos part. In a debug build a
+    /// screenshot launch argument can start it on another collection or with a filter.
+    static func start(connection: Connection) -> PhotosModel {
         let model = PhotosModel(connection: connection)
         #if DEBUG
             // `-TeaNodeScreen photos-trash` opens on the Trash, and
@@ -785,7 +811,53 @@ struct PhotosScreen: View {
                 model.photoFilter = PhotoFilter(photoKindFilter: .video)
             }
         #endif
-        _model = State(initialValue: model)
+        return model
+    }
+}
+
+/// OpenedPhoto is the photo the viewer was opened on.
+struct OpenedPhoto: Identifiable {
+    let id: String
+}
+
+/// PhotosScreen is the person's photo library: a large title with the days of
+/// the photos on screen under it, an edge to edge grid (or a picture for each
+/// month or year), a Select mode, Years, Months and All with Search floating at
+/// the bottom, and a viewer for one photo. The collections and the photo backup
+/// are in the side menu.
+struct PhotosScreen: View {
+    /// Owned by the app shell, which also draws the collections in the side menu.
+    @Bindable var model: PhotosModel
+    /// Whether the photo backup screen is pushed; the side menu's Photo backup row sets it.
+    @Binding var isShowingBackup: Bool
+    @State private var opened: OpenedPhoto?
+    @State private var isConfirmingEmptyTrash = false
+    @State private var isSelecting = false
+    @State private var selectedPhotoIds: Set<String> = []
+    @State private var isConfirmingTrashOfSelection = false
+    @State private var isConfirmingDeleteOfSelection = false
+    /// What is typed in the library's search field.
+    @State private var searchText = ""
+    /// Whether the search field is out: the Search button at the bottom brings it up.
+    @State private var isSearchPresented = false
+    @State private var isChoosingDates = false
+    /// How much of the library the switch at the bottom shows.
+    @State private var scale = PhotoScale.all
+    /// The days the photos on screen were taken on, as "Oct 3 to 6, 2026": kept up
+    /// as the grid scrolls. Empty until the grid has said what is on screen.
+    @State private var dateRangeText = ""
+    /// The photo the grid is to scroll to once it is on screen: the first of the
+    /// month or year that was pressed in Months or Years.
+    @State private var pendingJumpPhotoId: String?
+    #if DEBUG
+        @State private var isDemoViewerOpened = false
+        @State private var isDemoAlbumOpened = false
+        @State private var isDemoPersonOpened = false
+    #endif
+
+    init(model: PhotosModel, isShowingBackup: Binding<Bool>) {
+        self.model = model
+        _isShowingBackup = isShowingBackup
         #if DEBUG
             // `-TeaNodeScreen photos-select` starts in Select mode with two photos chosen.
             if DemoServer.isRequested, DemoServer.screen == "photos-select" {
@@ -798,7 +870,13 @@ struct PhotosScreen: View {
                 _isSelecting = State(initialValue: true)
                 _selectedPhotoIds = State(initialValue: ["demo-t1"])
             }
-            if DemoServer.isRequested, DemoServer.screen == "photos-search" { _searchText = State(initialValue: "harbor") }
+            if DemoServer.isRequested, DemoServer.screen == "photos-search" {
+                _searchText = State(initialValue: "harbor")
+                _isSearchPresented = State(initialValue: true)
+            }
+            // `photos-library-months` and `photos-library-years` are the library under Months and Years.
+            if DemoServer.isRequested, DemoServer.screen == "photos-library-months" { _scale = State(initialValue: .months) }
+            if DemoServer.isRequested, DemoServer.screen == "photos-library-years" { _scale = State(initialValue: .years) }
             if DemoServer.isRequested, DemoServer.screen == "photos-filter-dates" { _isChoosingDates = State(initialValue: true) }
         #endif
     }
@@ -816,28 +894,67 @@ struct PhotosScreen: View {
     private var selectedPhotos: [Photo] { photos.filter { selectedPhotoIds.contains($0.id) } }
     private var canSelect: Bool { (model.section == .library || model.section == .favorites || model.section == .trash) && !photos.isEmpty }
 
+    /// Whether the switch of Years, Months and All is offered: for the library
+    /// and the favorites, not while words are searched for or photos are chosen.
+    private var isScaleOffered: Bool {
+        (model.section == .library || model.section == .favorites) && searchWords == nil && !isSelecting
+    }
+
+    /// How much of the list is shown: every photo wherever the switch is not offered.
+    private var activeScale: PhotoScale { isScaleOffered ? scale : .all }
+
+    /// What the bar at the bottom floats over the list: the switch, and under
+    /// the library the Search button. It gives way to the search field and to the
+    /// bar of Select mode.
+    private var isBottomBarShown: Bool { isScaleOffered && !isSearchPresented }
+
+    /// How many photos from the top are read for the date range before the grid
+    /// has said which are on screen.
+    private static let firstScreenPhotoCount = 15
+
+    /// The days of the photos on screen, under the title. The Trash is listed by
+    /// when photos were moved there, and a search by match, so neither has one.
+    private var subtitleText: String {
+        guard activeScale == .all, !isSelecting, searchWords == nil, model.section != .trash, key != nil else { return "" }
+        if !dateRangeText.isEmpty { return dateRangeText }
+        return PhotoOverview.dateRangeText(of: Array(photos.prefix(Self.firstScreenPhotoCount))) ?? ""
+    }
+
+    /// Keeps the range under the title to the photos the grid has on screen.
+    private func updateDateRange(visiblePhotoIds: [String]) {
+        guard activeScale == .all else { return }
+        let visibleIds = Set(visiblePhotoIds)
+        let visiblePhotos = photos.filter { visibleIds.contains($0.id) }
+        guard !visiblePhotos.isEmpty, let text = PhotoOverview.dateRangeText(of: visiblePhotos), text != dateRangeText else { return }
+        dateRangeText = text
+    }
+
     var body: some View {
         NavigationStack {
             content
-                .modifier(LibrarySearch(isActive: model.section == .library, text: $searchText))
-                .navigationTitle(isSelecting ? selectionTitle : String(localized: "Photos"))
+                .modifier(LibrarySearch(isActive: model.section == .library, text: $searchText, isPresented: $isSearchPresented))
+                // The large title is the collection on show, with the days of the photos on screen
+                // under it; the other collections are in the side menu.
+                .navigationTitle(isSelecting ? selectionTitle : model.section.title)
+                .navigationSubtitle(subtitleText)
+                .navigationBarTitleDisplayMode(.large)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    VStack(spacing: 8) {
-                        Picker("Show", selection: $model.section) {
-                            ForEach(model.sections) { section in
-                                Text(section.title).tag(section)
-                            }
+                    if let photoNearFilter = model.photoFilter.photoNearFilter, model.section.collection != nil {
+                        PhotoNearChip(photoNearFilter: photoNearFilter) {
+                            model.photoFilter.photoNearFilter = nil
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        if let photoNearFilter = model.photoFilter.photoNearFilter, model.section.collection != nil {
-                            PhotoNearChip(photoNearFilter: photoNearFilter) {
-                                model.photoFilter.photoNearFilter = nil
-                            }
-                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
                     }
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if isBottomBarShown {
+                        PhotoScaleBar(scale: $scale, isSearchOffered: model.section == .library) {
+                            isSearchPresented = true
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                    }
                 }
                 .toolbar { toolbarContent }
                 .withoutSwipeBack()
@@ -881,7 +998,13 @@ struct PhotosScreen: View {
                 .task(id: PhotoFollowID(key: key, hasWaitingPhotos: key.map { model.hasWaitingPhotos(in: $0) } ?? false)) {
                     if let key, model.hasWaitingPhotos(in: key) { await model.followWaitingPhotos(in: key) }
                 }
-                .onChange(of: model.section) { _, _ in endSelection() }
+                .onChange(of: model.section) { _, _ in
+                    endSelection()
+                    isSearchPresented = false
+                }
+                .onChange(of: key) { _, _ in dateRangeText = "" }
+                .onChange(of: scale) { _, _ in dateRangeText = "" }
+                .navigationDestination(isPresented: $isShowingBackup) { PhotoBackupView(connection: model.connection) }
                 // Typing in the search field changes the list under the chosen photos.
                 .onChange(of: searchWords) { _, _ in endSelection() }
                 .onChange(of: model.photoFilter) { _, _ in endSelection() }
@@ -903,7 +1026,7 @@ struct PhotosScreen: View {
         .fullScreenCover(item: $opened) { opened in
             PhotoViewer(model: model, listKey: key ?? .library, openedPhotoId: opened.id)
         }
-        .toast(done: $model.doneText, problem: $model.problemText)
+        .toast(done: $model.doneText, problem: $model.problemText, buttons: $model.doneButtons)
         #if DEBUG
             // `-TeaNodeScreen photos-album` opens the first album, `photos-share` the same with its
             // share sheet over it (`photos-share-stop` with the question before a share is stopped), and
@@ -927,12 +1050,19 @@ struct PhotosScreen: View {
                 if DemoServer.isRequested, DemoServer.screen == "photos-person", model.faceGroups?.first != nil { isDemoPersonOpened = true }
             }
             // `-TeaNodeScreen photos-viewer` opens the viewer on the first photo,
-            // `photos-viewer-described` opens it with Info over it, and
+            // `photos-viewer-described` and `photos-viewer-info` open it with Info over it,
+            // `photos-viewer-hidden` opens it with the bars hidden,
+            // `photos-video-viewer` opens it on a video, and
             // `photos-viewer-failed` opens Info over a photo that could not be made ready.
             .task(id: model.photos(in: .library).first?.id) {
                 let screen = DemoServer.screen
-                guard DemoServer.isRequested, ["photos-viewer", "photos-viewer-described", "photos-viewer-failed", "photos-change-date"].contains(screen ?? ""), !isDemoViewerOpened else { return }
-                let photoId = screen == "photos-viewer-failed" ? "demo-08" : model.photos(in: .library).first?.id
+                guard DemoServer.isRequested, ["photos-viewer", "photos-viewer-described", "photos-viewer-info", "photos-viewer-hidden", "photos-video-viewer", "photos-viewer-failed", "photos-change-date"].contains(screen ?? ""), !isDemoViewerOpened else { return }
+                let photoId: String?
+                switch screen {
+                case "photos-viewer-failed": photoId = "demo-08"
+                case "photos-video-viewer": photoId = "demo-03"
+                default: photoId = model.photos(in: .library).first?.id
+                }
                 if let photoId {
                     isDemoViewerOpened = true
                     opened = OpenedPhoto(id: photoId)
@@ -961,19 +1091,7 @@ struct PhotosScreen: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         MenuButton()
-        if model.section == .albums {
-            ToolbarItem(placement: .primaryAction) {
-                NewAlbumMenu(model: model)
-            }
-        } else if model.section == .people {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
-                } label: {
-                    Label("More", systemImage: "ellipsis")
-                }
-            }
-        } else if isSelecting {
+        if isSelecting {
             ToolbarItem(placement: .primaryAction) {
                 Button("Done") { endSelection() }
             }
@@ -985,37 +1103,51 @@ struct PhotosScreen: View {
                     onEnd: endSelection)
             }
         } else {
-            if searchWords == nil, model.section == .library || model.section == .favorites || model.section == .trash {
+            // The collections are in the side menu; the bar has the filter, Select and what is
+            // particular to a collection.
+            if model.section == .albums {
                 ToolbarItem(placement: .primaryAction) {
-                    PhotoFilterMenu(model: model, isChoosingDates: $isChoosingDates)
+                    NewAlbumMenu(model: model)
                 }
-            }
-            if model.section != .trash {
-                ToolbarItem(placement: .primaryAction) {
-                    NavigationLink {
-                        PhotoBackupView(connection: model.connection)
-                    } label: {
-                        Label("Photo backup", systemImage: "icloud.and.arrow.up")
-                    }
-                }
-            }
-            if canSelect {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Select") { isSelecting = true }
-                }
-            }
-            if model.section == .trash, !photos.isEmpty {
+            } else if model.section == .people {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
-                            .tint(.red)
+                        Toggle("Show hidden", systemImage: "eye.slash", isOn: Bindable(model).isHiddenPeopleShown)
                     } label: {
                         Label("More", systemImage: "ellipsis")
                     }
-                    .confirmationDialog("Empty the Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
-                        Button("Delete forever", role: .destructive) { Task { await model.emptyTrash() } }
-                    } message: {
-                        Text("These photos will be deleted forever. This cannot be undone.")
+                }
+            } else {
+                if searchWords == nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        PhotoFilterMenu(model: model, isChoosingDates: $isChoosingDates)
+                    }
+                }
+                // The filter and Select share one glass capsule, as at the top of
+                // the Photos app.
+                if canSelect {
+                    ToolbarItem(placement: .primaryAction) {
+                        // An icon like the others in the bar, the circled check
+                        // the size of the circled filter beside it.
+                        Button("Select", systemImage: "checkmark.circle") {
+                            scale = .all
+                            isSelecting = true
+                        }
+                    }
+                }
+                if model.section == .trash, !photos.isEmpty {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Button("Empty Trash", systemImage: "trash", role: .destructive) { isConfirmingEmptyTrash = true }
+                                .tint(.red)
+                        } label: {
+                            Label("More", systemImage: "ellipsis")
+                        }
+                        .confirmationDialog("Empty the Trash?", isPresented: $isConfirmingEmptyTrash, titleVisibility: .visible) {
+                            Button("Delete forever", role: .destructive) { Task { await model.emptyTrash() } }
+                        } message: {
+                            Text("These photos will be deleted forever. This cannot be undone.")
+                        }
                     }
                 }
             }
@@ -1048,26 +1180,7 @@ struct PhotosScreen: View {
                         }
                     }
                 } else {
-                    ScrollView {
-                        if model.section == .trash, let retentionDays = model.library?.trashRetentionDays, retentionDays > 0 {
-                            Text("Photos in the Trash are deleted forever after \(retentionDays) days.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal)
-                                .padding(.bottom, 4)
-                        }
-                        PhotoGrid(
-                            listing: listing, listKey: key, model: model, scope: .library, isSelecting: isSelecting, selectedPhotoIds: $selectedPhotoIds,
-                            trashRetentionDays: model.library?.trashRetentionDays
-                        ) { photo in
-                            opened = OpenedPhoto(id: photo.id)
-                        }
-                        // What the library holds, under the last photo, as the dashboard counts it.
-                        if model.section == .library, searchWords == nil, !model.photoFilter.isActive, let library = model.library {
-                            PhotoLibrarySummary(library: library)
-                        }
-                    }
+                    photosScroll(listing: listing, key: key)
                 }
             } else if let failureText = model.failureText(key) {
                 ScrollView {
@@ -1088,6 +1201,70 @@ struct PhotosScreen: View {
     }
 }
 
+extension PhotosScreen {
+    /// The photos of a list, as the grid of every photo or as a picture for each
+    /// month or year. A press on a month or a year goes to the grid, scrolled to
+    /// its first photo.
+    @ViewBuilder
+    fileprivate func photosScroll(listing: PhotoListing, key: PhotoListKey) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                if model.section == .trash, let retentionDays = model.library?.trashRetentionDays, retentionDays > 0 {
+                    Text("Photos in the Trash are deleted forever after \(retentionDays) days.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .padding(.bottom, 4)
+                }
+                switch activeScale {
+                case .all:
+                    PhotoGrid(
+                        listing: listing, listKey: key, model: model, scope: .library, isSelecting: isSelecting, selectedPhotoIds: $selectedPhotoIds,
+                        trashRetentionDays: model.library?.trashRetentionDays
+                    ) { photo in
+                        opened = OpenedPhoto(id: photo.id)
+                    }
+                    .onAppear {
+                        // Coming from a month or a year: scroll to where it begins.
+                        guard let photoId = pendingJumpPhotoId else { return }
+                        proxy.scrollTo(photoId, anchor: .top)
+                        pendingJumpPhotoId = nil
+                    }
+                case .months:
+                    PhotoOverviewList(
+                        items: PhotoOverview.months(listing.photos).map { PhotoOverviewItem(month: $0) }, aspectRatio: 1.6, titleFont: .title2.bold(), listing: listing,
+                        listKey: key, model: model
+                    ) { item in
+                        jump(to: item)
+                    }
+                case .years:
+                    PhotoOverviewList(
+                        items: PhotoOverview.years(listing.photos).map { PhotoOverviewItem(year: $0) }, aspectRatio: 1, titleFont: .largeTitle.bold(), listing: listing,
+                        listKey: key, model: model
+                    ) { item in
+                        jump(to: item)
+                    }
+                }
+                // What the library holds, under the last photo, as the dashboard counts it.
+                if model.section == .library, searchWords == nil, !model.photoFilter.isActive, let library = model.library {
+                    PhotoLibrarySummary(library: library)
+                }
+            }
+            // The grid says which photos are on screen; the first and last of them are the days under the title.
+            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.4) { visiblePhotoIds in
+                updateDateRange(visiblePhotoIds: visiblePhotoIds)
+            }
+        }
+    }
+
+    /// Shows the grid of every photo, scrolled to where a month or a year begins.
+    fileprivate func jump(to item: PhotoOverviewItem) {
+        pendingJumpPhotoId = item.newestPhotoId
+        scale = .all
+    }
+}
+
 /// LibrarySearch puts the search field on the library: the same words as the
 /// dashboard's field, over the same search. It is applied only where it
 /// searches (not under Favorites, Albums, People or Trash, and not while
@@ -1095,13 +1272,19 @@ struct PhotosScreen: View {
 private struct LibrarySearch: ViewModifier {
     let isActive: Bool
     @Binding var text: String
+    /// Whether the field is out. The Search button at the bottom of the library
+    /// brings it up; until then the field is put away above the title.
+    @Binding var isPresented: Bool
 
     func body(content: Content) -> some View {
-        if isActive {
+        // Only while it is out or holds a search: attached all the time, the
+        // system shows the field above the grid, and the Search button at the
+        // bottom is then a second way to the same thing.
+        if isActive && (isPresented || !text.isEmpty) {
             // The field is narrow: it says "Search photos", as the dashboard's
             // does, and VoiceOver reads what it looks through.
             content.searchable(
-                text: $text, placement: .navigationBarDrawer(displayMode: .always),
+                text: $text, isPresented: $isPresented, placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: Text("Search photos").accessibilityLabel(Text("Search places, files, cameras, descriptions")))
         } else {
             content
@@ -1145,7 +1328,7 @@ struct PhotoTrashSelectionToolbar: ToolbarContent {
     }
 }
 
-/// PhotoGrid is the photos of a list in days, as squares. It is the library's
+/// PhotoGrid is the photos of a list as squares. It is the library's
 /// grid and an album's: both open a photo with a tap, and in Select mode a tap
 /// chooses it instead.
 struct PhotoGrid: View {
@@ -1164,7 +1347,9 @@ struct PhotoGrid: View {
     let onOpen: (Photo) -> Void
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 2)], spacing: 2) {
+        // Squares with a hairline between them, edge to edge: five across on a phone held
+        // upright, and more on a wider screen.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 1)], spacing: 1) {
             if listKey.photoCollection == .trash {
                 // The Trash is listed by when photos were moved there, so its
                 // groups are the days they were moved on, each with when it goes.
@@ -1176,16 +1361,13 @@ struct PhotoGrid: View {
                     }
                 }
             } else {
-                ForEach(listing.days) { day in
-                    Section {
-                        cells(of: day.photos)
-                    } header: {
-                        // A search lists the best match first, in one group.
-                        if !listing.isRanked { PhotoDayHeader(day: day) }
-                    }
-                }
+                // One run of squares, newest first, with no heading for each day: the days
+                // under the title say what is on screen. A search lists the best match first.
+                cells(of: listing.photos)
             }
         }
+        // The squares are what the screen asks which of them are on show.
+        .scrollTargetLayout()
         if listing.isLoadingPage {
             ProgressView()
                 .padding()
@@ -1205,6 +1387,7 @@ struct PhotoGrid: View {
                     onOpen(photo)
                 }
             }
+            .id(photo.id)
         }
     }
 }
@@ -1245,30 +1428,6 @@ struct PhotoTrashDayHeader: View {
     private var daysLeftText: String? {
         guard let daysLeft = day.daysLeft else { return nil }
         return daysLeft == 0 ? String(localized: "Deleted forever today") : String(localized: "Deleted forever in \(daysLeft) days")
-    }
-}
-
-/// PhotoDayHeader is the date above the photos of one day.
-struct PhotoDayHeader: View {
-    let day: PhotoDay
-
-    var body: some View {
-        Text(title)
-            .font(.headline)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.top, 14)
-            .padding(.bottom, 6)
-            .accessibilityAddTraits(.isHeader)
-    }
-
-    private var title: String {
-        guard let noon = day.noonUTC else { return String(localized: "Unknown date") }
-        // The day is written in UTC, the zone it was made in, so that it names
-        // the day the photos were taken on wherever the phone is.
-        var style = Date.FormatStyle(timeZone: TimeZone(secondsFromGMT: 0) ?? .gmt).weekday(.abbreviated).month(.abbreviated).day()
-        if day.year != Calendar.current.component(.year, from: Date()) { style = style.year() }
-        return noon.formatted(style)
     }
 }
 
@@ -1380,20 +1539,14 @@ struct PhotoCell: View {
             .accessibilityHidden(true)
     }
 
-    // Light text on a dark pill, whatever the picture under it is.
+    // The length at the bottom right, light with a shadow whatever the picture under it is.
     private var durationBadge: some View {
-        Label {
-            Text(PhotoTimeline.durationText(milliseconds: photo.durationMS))
-        } icon: {
-            Image(systemName: "play.fill")
-        }
-        .font(.caption2.weight(.semibold))
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .foregroundStyle(.white)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
-        .background(.black.opacity(0.5), in: .capsule)
-        .padding(4)
+        Text(PhotoTimeline.durationText(milliseconds: photo.durationMS))
+            .font(.caption2.weight(.semibold))
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.6), radius: 2)
+            .padding(4)
     }
 
     private var favoriteBadge: some View {

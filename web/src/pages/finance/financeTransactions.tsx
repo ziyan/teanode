@@ -778,28 +778,30 @@ export function FinanceTransactionsSection() {
           <input type="search" value={typed} onChange={(event) => setTyped(event.target.value)} />
         </label>
       </div>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={filters.isUncategorized}
-          onChange={(event) =>
-            setFilters((previous) => ({
-              ...previous,
-              isUncategorized: event.target.checked,
-              spendingCategoryId: event.target.checked ? '' : previous.spendingCategoryId,
-            }))
-          }
-        />
-        {t('finance.onlyUncategorized')}
-      </label>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={filters.isDuplicateIncluded}
-          onChange={(event) => setFilters((previous) => ({ ...previous, isDuplicateIncluded: event.target.checked }))}
-        />
-        {t('finance.showDuplicates')}
-      </label>
+      <div className="finance-filter-ticks">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={filters.isUncategorized}
+            onChange={(event) =>
+              setFilters((previous) => ({
+                ...previous,
+                isUncategorized: event.target.checked,
+                spendingCategoryId: event.target.checked ? '' : previous.spendingCategoryId,
+              }))
+            }
+          />
+          {t('finance.onlyUncategorized')}
+        </label>
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={filters.isDuplicateIncluded}
+            onChange={(event) => setFilters((previous) => ({ ...previous, isDuplicateIncluded: event.target.checked }))}
+          />
+          {t('finance.showDuplicates')}
+        </label>
+      </div>
     </>
   )
 

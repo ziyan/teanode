@@ -328,16 +328,37 @@ jobs:
           shoot spending-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen spending-groups
           shoot net-worth-chosen-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth-chosen
           shoot net-worth-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen net-worth
+          # An investment account's trades, and the preview of transaction rows before they are imported.
+          shoot finance-trades-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-trades
+          shoot finance-trades-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-trades
+          shoot finance-import-preview-light light large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-preview
+          shoot finance-import-preview-dark dark large -TeaNodeDemo -TeaNodeTab finance -TeaNodeScreen finance-import-preview
           shoot mail-menu-dark dark large -TeaNodeDemo -TeaNodeTab mail -TeaNodeMenu
           shoot ideas-light light large -TeaNodeDemo -TeaNodeTab ideas
           shoot goals-light light large -TeaNodeDemo -TeaNodeTab goals
-          # Photos, from invented photos drawn by the demo server: the library by day, the viewer on its
+          # The side menu on Photos: the collections and the photo backup under the parts.
+          shoot photos-menu-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
+          shoot photos-menu-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeMenu
+          # Photos, from invented photos drawn by the demo server: the library as a grid, the viewer on its
           # first photo, the Trash, and a library with nothing in it.
           shoot photos-library-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-library-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-library-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library
           shoot photos-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
           shoot photos-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          shoot photos-viewer-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer
+          # The viewer as the Photos app lays it out: Info over it, and after a tap with the bars and the strip gone.
+          shoot photos-viewer-info-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
+          shoot photos-viewer-info-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-info
+          shoot photos-viewer-hidden-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-hidden
+          # A video in the viewer, stopped a third of the way in so that its controls are on screen.
+          shoot photos-video-viewer-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          shoot photos-video-viewer-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-video-viewer
+          # The library under Months and Years (Library, All is photos-library above).
+          shoot photos-library-months-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
+          shoot photos-library-months-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-months
+          shoot photos-library-years-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-years
+          shoot photos-library-years-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-library-years
           shoot photos-trash-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-trash-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
           shoot photos-trash-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash
@@ -349,10 +370,12 @@ jobs:
           shoot photos-album-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-album-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-album
           shoot photos-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
+          shoot photos-select-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-select
           # Search over the library, Select mode in the Trash, and Info over a photo that could not be made ready.
           shoot photos-search-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
           shoot photos-search-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-search
           shoot photos-trash-select-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
+          shoot photos-trash-select-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-trash-select
           shoot photos-viewer-failed-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           shoot photos-viewer-failed-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
           shoot photos-viewer-failed-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-viewer-failed
@@ -400,6 +423,7 @@ jobs:
           # A picture the agent sent, with Save to my library (opened from Settings).
           shoot photos-conversation-card-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
+          shoot photos-conversation-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           # Photo backup, off and part way through a library, with invented counts (opened from Settings).
           shoot photos-backup-off-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
           shoot photos-backup-off-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-backup-off
@@ -482,19 +506,19 @@ jobs:
             shoot "$circles_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen "$circles_screen"
           done
           # The conversation list with two chats among the agent's, and the
-          # chats: a direct one, a circle's, and its members sheet.
+          # chats: a direct one, a circle's, its members sheet, and the menu of agents an @ offers.
           shoot conversations-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
           shoot conversations-dark dark large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
           shoot conversations-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations
-          # The same menu opened again 120 points down, as a place it kept: set beside the one above, its rows sit 120 points higher.
+          # The same menu scrolled to its chats, then closed and opened again: it should look like the one above, not start at the top.
           shoot conversations-restored-light light large -TeaNodeDemo -TeaNodeMenu -TeaNodeScreen conversations-restored
-          for chat_screen in chat-direct chat-group chat-members; do
+          for chat_screen in chat-direct chat-group chat-members chat-mention; do
             shoot "$chat_screen-light" light large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-dark" dark large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
             shoot "$chat_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeScreen "$chat_screen"
           done
-          # Calendars other people shared, the screen that shares the person's own, and the one that finds a time they are all free.
-          for calendar_screen in calendar-shared calendar-share-sheet calendar-find-time; do
+          # Calendars other people shared, the list of calendars with its rename row, the screen that shares the person's own, and the one that finds a time they are all free.
+          for calendar_screen in calendar-shared calendar-sheet calendar-share-sheet calendar-find-time; do
             shoot "$calendar_screen-light" light large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
             shoot "$calendar_screen-dark" dark large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"
             shoot "$calendar_screen-largest-text" light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab calendar -TeaNodeScreen "$calendar_screen"

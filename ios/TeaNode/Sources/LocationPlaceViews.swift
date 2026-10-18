@@ -150,6 +150,8 @@ struct LocationPlaceScreen: View {
                 } label: {
                     Label("Forget this place", systemImage: "trash").foregroundStyle(.red)
                 }
+                .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Forget \(place.shownName)?", isPresented: $isConfirmingForget, titleVisibility: .visible) {
                     Button("Forget this place", role: .destructive) {
                         Task {

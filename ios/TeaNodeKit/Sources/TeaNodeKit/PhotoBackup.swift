@@ -176,6 +176,11 @@ public enum PhotoBackupHeader {
     /// person already has, and does not count it against their room.
     public static let declaredSha256 = "X-Photo-Declared-SHA256"
     public static let contentType = "Content-Type"
+    /// The resumable upload protocol's own headers: where the bytes of a request
+    /// go in the upload, whether they are the last, and how long the file is.
+    public static let uploadOffset = "Upload-Offset"
+    public static let uploadComplete = "Upload-Complete"
+    public static let uploadLength = "Upload-Length"
     /// The server's answer to a finished upload names the photo in this.
     public static let photoId = "X-Photo-ID"
 }
@@ -334,6 +339,30 @@ public enum PhotoBackupPlanner {
     }
 }
 
+/// PhotoBackupPartialUpload is the upload the server made for a file that has
+/// not been sent whole yet. It is kept in the index so that a file cut off part
+/// way (paused, the app killed, a connection the system gave up on) goes on from
+/// the byte the server has, instead of being sent again from the first.
+public struct PhotoBackupPartialUpload: Codable, Equatable, Sendable {
+    /// The path of the upload on the server, such as `/api/v1/photos/uploads/<id>`.
+    /// Only the path is kept: the server's own address is the account's, and the
+    /// scheme and host in the server's answer depend on its proxy.
+    public let uploadPath: String
+    /// The size of the file the upload was made for. A file exported again with
+    /// another size is not the one the server has a part of.
+    public let sizeBytes: Int64
+    /// The SHA-256 of that file, in lowercase hexadecimal. The same digest told
+    /// the server what the file would hash to; an exported file that hashes to
+    /// something else is not the one the server has a part of.
+    public let sha256: String
+
+    public init(uploadPath: String, sizeBytes: Int64, sha256: String) {
+        self.uploadPath = uploadPath
+        self.sizeBytes = sizeBytes
+        self.sha256 = sha256
+    }
+}
+
 /// PhotoBackupRoleRecord is what the index knows of one file of an item.
 public struct PhotoBackupRoleRecord: Codable, Equatable, Sendable {
     public var isOnServer: Bool
@@ -344,16 +373,20 @@ public struct PhotoBackupRoleRecord: Codable, Equatable, Sendable {
     /// How often the server refused the file itself.
     public var refusalCount: Int
     public var refusalFailure: PhotoBackupFailure?
+    /// The upload the server holds a part of this file in, while there is one.
+    /// Nil in an index written before uploads could be continued.
+    public var partialUpload: PhotoBackupPartialUpload?
 
     public init(
         isOnServer: Bool = false, serverPhotoId: String? = nil, assetModificationDate: Date? = nil, refusalCount: Int = 0,
-        refusalFailure: PhotoBackupFailure? = nil
+        refusalFailure: PhotoBackupFailure? = nil, partialUpload: PhotoBackupPartialUpload? = nil
     ) {
         self.isOnServer = isOnServer
         self.serverPhotoId = serverPhotoId
         self.assetModificationDate = assetModificationDate
         self.refusalCount = refusalCount
         self.refusalFailure = refusalFailure
+        self.partialUpload = partialUpload
     }
 }
 
@@ -743,12 +776,43 @@ public actor PhotoBackupIndex {
         didChange()
     }
 
-    /// Notes that the server refused a file itself.
+    /// The upload the server made for this file, if one is kept.
+    public func partialUpload(localIdentifier: String, role: PhotoBackupFileRole) -> PhotoBackupPartialUpload? {
+        contents.records[localIdentifier]?.roles[role.rawValue]?.partialUpload
+    }
+
+    /// Notes the upload the server made for a file, so that a file cut off part
+    /// way goes on from the byte the server has, also after the app was closed.
+    /// Written with the next change after `secondsBetweenWrites`, and when the
+    /// app goes to the background (`flush`): a crash in between loses the
+    /// address, and the file then starts over in an upload of its own.
+    public func markUploadStarted(localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, partialUpload: PhotoBackupPartialUpload) {
+        var record = contents.records[localIdentifier] ?? PhotoBackupRecord(clientPhotoId: clientPhotoId)
+        var state = record.roles[role.rawValue] ?? PhotoBackupRoleRecord()
+        state.partialUpload = partialUpload
+        record.roles[role.rawValue] = state
+        store(record, for: localIdentifier)
+        didChange()
+    }
+
+    /// Forgets the upload kept for a file: the server no longer has it, or the
+    /// file is no longer the one it has a part of.
+    public func forgetPartialUpload(localIdentifier: String, role: PhotoBackupFileRole) {
+        guard var record = contents.records[localIdentifier], var state = record.roles[role.rawValue], state.partialUpload != nil else { return }
+        state.partialUpload = nil
+        record.roles[role.rawValue] = state
+        store(record, for: localIdentifier)
+        didChange()
+    }
+
+    /// Notes that the server refused a file itself. The upload it was sent in
+    /// is over, whatever the server did with it.
     public func markRefused(localIdentifier: String, clientPhotoId: String, role: PhotoBackupFileRole, failure: PhotoBackupFailure) {
         var record = contents.records[localIdentifier] ?? PhotoBackupRecord(clientPhotoId: clientPhotoId)
         var state = record.roles[role.rawValue] ?? PhotoBackupRoleRecord()
         state.refusalCount += 1
         state.refusalFailure = failure
+        state.partialUpload = nil
         record.roles[role.rawValue] = state
         store(record, for: localIdentifier)
         didChange()

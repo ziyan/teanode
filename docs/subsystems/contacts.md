@@ -204,6 +204,8 @@ server's to decide rather than the card's — a media type tells a browser how
 to treat bytes, and that is not an instruction to take from a contact
 somebody synchronized.
 
+The server writes one too: naming a group of faces in Photos with a contact that has no picture sets one cut from the person's face (a version 4 `PHOTO`, about 50 kilobytes), and never replaces a picture a card has. `RemoveContactPicture` takes it off again and leaves the rest of the card.
+
 A picture is why the megabyte limit on a card matters in practice. One
 photograph from a phone is around three hundred kilobytes; two would be close
 to the limit, and a card over it is refused with `507`.

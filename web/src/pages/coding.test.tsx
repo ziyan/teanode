@@ -6,7 +6,7 @@ import { graphql } from '../api'
 import { HERDR_DOCUMENTS, type HerdrSession } from '../components/herdrSessions'
 import { ToastProvider } from '../components/toast'
 import { TranslationProvider } from '../i18n/i18n'
-import { CodingPage, groupSessions } from './coding'
+import { CAPTURE_CODING_SESSION, CodingPage, groupSessions } from './coding'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -369,4 +369,57 @@ it('switches between the turns and the screen with one floating button', async (
   fireEvent.click(screen.getByRole('button', { name: 'Show the screen' }))
   expect(screen.getByTestId('where').textContent).toContain('view=screen')
   expect(screen.getByRole('button', { name: 'Show the turns' })).toBeTruthy()
+})
+
+it("reads a computer's new sessions for each coding tool it has sessions of", async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document === HERDR_DOCUMENTS.ListAgentHerdrSessions) return { ListAgentHerdrSessions: list }
+    if (document === CAPTURE_CODING_SESSION) return { CaptureAgentCodingSession: true }
+    throw new Error(`unexpected document ${document}`)
+  })
+  renderAt('/coding')
+  await screen.findByText('laptop')
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for laptop' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Read new sessions' }))
+  await waitFor(() =>
+    expect(execute).toHaveBeenCalledWith(CAPTURE_CODING_SESSION, { computerName: 'laptop', assistant: 'claude-code' }),
+  )
+  expect(execute).toHaveBeenCalledWith(CAPTURE_CODING_SESSION, { computerName: 'laptop', assistant: 'codex' })
+  expect(execute).not.toHaveBeenCalledWith(CAPTURE_CODING_SESSION, { computerName: 'desk', assistant: 'claude-code' })
+  expect(
+    await screen.findByText('Reading the new sessions on laptop. They are searchable within a minute.'),
+  ).toBeTruthy()
+})
+
+it('says so when no source reads the computer sessions', async () => {
+  execute.mockImplementation(async (document: string) => {
+    if (document === HERDR_DOCUMENTS.ListAgentHerdrSessions) return { ListAgentHerdrSessions: list }
+    if (document === CAPTURE_CODING_SESSION) return { CaptureAgentCodingSession: false }
+    throw new Error(`unexpected document ${document}`)
+  })
+  renderAt('/coding')
+  await screen.findByText('desk')
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for desk' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Read new sessions' }))
+  expect(await screen.findByText('No source reads the coding sessions on desk.')).toBeTruthy()
+  expect(execute).toHaveBeenCalledWith(CAPTURE_CODING_SESSION, { computerName: 'desk', assistant: 'claude-code' })
+})
+
+it('says both when one coding tool is read and another is refused', async () => {
+  execute.mockImplementation(async (document: string, variables?: { assistant?: string }) => {
+    if (document === HERDR_DOCUMENTS.ListAgentHerdrSessions) return { ListAgentHerdrSessions: list }
+    if (document === CAPTURE_CODING_SESSION) {
+      if (variables?.assistant === 'codex') throw new Error('the computer is not attached')
+      return { CaptureAgentCodingSession: true }
+    }
+    throw new Error(`unexpected document ${document}`)
+  })
+  renderAt('/coding')
+  await screen.findByText('laptop')
+  fireEvent.click(screen.getByRole('button', { name: 'Actions for laptop' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Read new sessions' }))
+  expect(
+    await screen.findByText('Reading the new sessions on laptop. They are searchable within a minute.'),
+  ).toBeTruthy()
+  expect(await screen.findByText(/the computer is not attached/)).toBeTruthy()
 })

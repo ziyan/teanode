@@ -226,7 +226,7 @@ function SpendingByMonthPanel({
 function SpendingByDayPanel({ month }: { month: string }) {
   const { t } = useTranslation()
   return (
-    <SettingsSection card title={t('finance.spendingTitle')} description={t('finance.spendingHint')}>
+    <SettingsSection card title={t('finance.spendingTitle')}>
       <SpendingByDayChart month={month} />
     </SettingsSection>
   )

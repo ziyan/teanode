@@ -14,6 +14,7 @@ struct BudgetsView: View {
     @State private var editingBudget: BudgetDraft?
     @State private var editingCategory: CategoryDraft?
     @State private var editingRule: RuleDraft?
+    @State private var isSuggestingRules = false
 
     var body: some View {
         List {
@@ -86,6 +87,7 @@ struct BudgetsView: View {
                     }
                 }
                 Button("New rule", systemImage: "plus") { editingRule = RuleDraft() }
+                Button("Suggest rules", systemImage: "sparkles") { isSuggestingRules = true }
             } header: {
                 Text("Rules")
             } footer: {
@@ -103,6 +105,9 @@ struct BudgetsView: View {
         }
         .sheet(item: $editingRule) { draft in
             RuleEditor(draft: draft) { Task { await load() } }
+        }
+        .sheet(isPresented: $isSuggestingRules) {
+            SuggestRulesSheet { Task { await load() } }
         }
     }
 
@@ -890,6 +895,7 @@ struct ReceiptsView: View {
     @State private var isUnmatchedOnly = false
     @State private var searchText = ""
     @State private var isLoaded = false
+    @State private var isTypingReceipt = false
 
     var body: some View {
         List {
@@ -913,6 +919,18 @@ struct ReceiptsView: View {
         }
         .navigationTitle("Receipts")
         .searchable(text: $searchText, prompt: "Merchant")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isTypingReceipt = true
+                } label: {
+                    Label("Type in a receipt", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $isTypingReceipt) {
+            ReceiptEntryView(currencyCode: finance.reportingCurrency, today: finance.today) { Task { await load() } }
+        }
         .task(id: "\(isUnmatchedOnly)-\(searchText)") { await load() }
         .refreshable { await load() }
         .overlay {
@@ -1057,6 +1075,7 @@ struct ReceiptDetailView: View {
                     Label("Delete receipt", systemImage: "trash")
                 }
                 .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Delete this receipt?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete receipt", role: .destructive) {
                         Task {
@@ -1163,6 +1182,11 @@ struct FinanceSetupView: View {
                 Text("Link through SimpleFIN")
             } footer: {
                 Text("A setup token works once. To link through Plaid, use the dashboard.")
+            }
+            Section {
+                NavigationLink("Bring an existing connection") {
+                    ImportCredentialView { Task { await load() } }
+                }
             }
             Section {
                 TextField("Currency (USD)", text: $currency).textInputAutocapitalization(.characters)

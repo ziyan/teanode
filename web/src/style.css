@@ -122,13 +122,20 @@ td a:hover {
   overflow: hidden;
 }
 
+/* What follows the name on the bar ("You") keeps its place when the name is
+   long enough to be cut. */
+.crumb-note {
+  flex: 0 0 auto;
+  font-weight: 400;
+}
+
 /* The label inside it, not the crumb: a crumb is a flex row — the chevron and
    the word — and text-overflow says nothing about a flex item, so a subject
    too long for the bar was cut off mid-word with no sign that there was more
    of it. The word itself is what has to give way, and an ellipsis is what
    says so. */
 .topbar .breadcrumb .crumb.current > a,
-.topbar .breadcrumb .crumb.current > span:not(.separator) {
+.topbar .breadcrumb .crumb.current > span:not(.separator):not(.crumb-note) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3220,6 +3227,14 @@ body,
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
+}
+
+/* What follows the name in the heading, such as "You": smaller and muted, so
+   the name stays what the heading says. */
+.page-heading-note {
+  font-size: var(--text-body);
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 /* When the page's action sits under the title, the two are one header block
@@ -8195,6 +8210,39 @@ button.agent-reaction:focus-visible {
   font-size: var(--text-label);
 }
 
+/* The finance tables' last column is the one the agent's floating button
+   covers where a window is narrow, so it keeps the button's width of room
+   at its end; scrolling to the end brings it clear. */
+@media (max-width: 900px) {
+  .finance-credit-table th:last-child,
+  .finance-credit-table td:last-child,
+  .finance-transactions-table .table-surface th:last-child,
+  .finance-transactions-table .table-surface td:last-child {
+    padding-right: 64px;
+  }
+}
+
+/* On a phone the credit table gives its card name two lines and its cells
+   less padding, so the Used column is reached with a short scroll. */
+@media (max-width: 600px) {
+  .finance-credit-table th,
+  .finance-credit-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-credit-table td:first-child {
+    min-width: 7rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .finance-credit-table th:last-child,
+  .finance-credit-table td:last-child {
+    padding-right: 64px;
+  }
+}
+
 /* A table wider than its panel scrolls sideways inside it, staying a
    table. Without this the usage table pushed its card, and then the whole
    page, wider than the window. */
@@ -10415,6 +10463,7 @@ button.with-icon {
 
 .calendar-bar-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -11946,7 +11995,9 @@ main.content:has(> .knowledge-frame) {
   flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1);
+  /* The gap inside the link, so that the picture, the line and the count are
+     as far apart whether they are one link or a link and two lines beside it. */
+  gap: 2px;
   min-width: 0;
   padding: var(--space-2);
   border-radius: var(--radius-2);
@@ -11965,7 +12016,9 @@ main.content:has(> .knowledge-frame) {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  max-width: 100%;
+  /* The whole width of the tile, so that the picture's percentage width is
+     the tile's and not that of the longest word under it. */
+  width: 100%;
   color: var(--text);
   text-decoration: none;
 }
@@ -11989,14 +12042,19 @@ main.content:has(> .knowledge-frame) {
   font-size: var(--text-body);
 }
 
-/* Where the tag and the Name button go: as tall as the button, with or
-   without one, so that a tile that is named is no shorter than one that is not. */
-.photo-person-foot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
+/* The line under the picture is as tall as the Name button, which takes the
+   place of the name on a person nobody has named, so that every tile is one
+   height and naming a person does not move the rows under them. */
+.photo-person-cell .photo-person-title {
   min-height: 32px;
+  align-items: center;
+}
+
+/* Where every button is made 40px tall for a thumb, the line is too. */
+@media (max-width: 760px) {
+  .photo-person-cell .photo-person-title {
+    min-height: 40px;
+  }
 }
 
 .photo-person-cell .face-picture.is-large {
@@ -12007,7 +12065,26 @@ main.content:has(> .knowledge-frame) {
   font-size: 40px;
 }
 
+/* The name and, for the person's own group, "You" after it: the name gives way
+   to an ellipsis, the "You" does not. */
+.photo-person-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.photo-you {
+  flex: 0 0 auto;
+  font-size: var(--text-label);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .photo-person-name {
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   font-weight: 600;
@@ -12133,11 +12210,24 @@ main.content:has(> .knowledge-frame) {
   text-decoration: none;
 }
 
+/* An unnamed person is a button that opens the naming dialog: it looks like
+   the link a named person is, with no button chrome of its own. */
+.photo-viewer-person-name-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .photo-viewer-person-link:hover .photo-viewer-person-name {
   text-decoration: underline;
 }
 
 .photo-viewer-person-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -12325,6 +12415,31 @@ label.checkbox.is-plain input {
 .contact-picker-empty {
   margin: 0;
   padding: var(--space-3);
+}
+
+/* The dialog that holds the list is never taller than the window: the list
+   shrinks first, and what is still too tall scrolls inside the dialog with
+   Cancel and Save kept in view. */
+.dialog:has(.contact-picker) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - var(--space-4) * 2);
+  overflow-y: auto;
+}
+
+.dialog:has(.contact-picker) > * {
+  flex: 0 0 auto;
+}
+
+.dialog:has(.contact-picker) > .contact-picker {
+  flex: 0 1 auto;
+}
+
+/* The line under the list is under it. A hint under a field pulls itself up
+   to sit close to the field; under a box that scrolls it pulled up into the
+   last row. */
+.contact-picker + .field-hint {
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 /* A picture or a file a fact was read out of, under the fact. Small
@@ -14069,6 +14184,23 @@ button.idea-history-title {
    two to a line and then one on a phone. */
 .finance-filters {
   margin-bottom: var(--space-3);
+  /* Top-aligned, so the words over each field sit on one line: a dropdown
+     is a little taller than a date, and aligned by their bottoms its words
+     rode higher than the date's. */
+  align-items: flex-start;
+}
+
+/* The ticks under the filters: side by side while they fit, each box kept
+   with its words, wrapping between ticks rather than inside one. */
+.finance-filter-ticks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+}
+
+.finance-filter-ticks > label.checkbox {
+  margin-bottom: 0;
+  white-space: nowrap;
 }
 
 .finance-filters > label {
@@ -15318,6 +15450,19 @@ button.idea-history-title {
     overflow-wrap: anywhere;
     line-height: 1.35;
   }
+
+  /* The charges a receipt matched take two or three short lines, so the
+     Matched column is read without scrolling to the end of a long one. */
+  .finance-receipt-matched {
+    min-width: 8rem;
+    max-width: 10rem;
+  }
+
+  .finance-receipt-matched .link {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
 }
 
 /* What it is matched to is its own part of the receipt, set apart from
@@ -15447,10 +15592,26 @@ button.idea-history-title {
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
-    min-width: 9rem;
-    max-width: 14rem;
+    min-width: 7rem;
+    max-width: 10rem;
     white-space: normal;
     line-height: 1.35;
+  }
+
+  /* Width reclaimed for the category, the column the row is for: the cells
+     pad less and the dropdown is only as wide as its words need. */
+  .finance-transactions-table .table-surface th,
+  .finance-transactions-table .table-surface td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .finance-category-cell {
+    min-width: 9rem;
+  }
+
+  .finance-category-cell .select {
+    min-width: 0;
   }
 }
 
@@ -16226,6 +16387,123 @@ body.has-recording-bar .content {
   white-space: nowrap;
 }
 
+/* --- recording by hand -------------------------------------------------
+   The dialogs that record a receipt, a paystub, a tax form or the rows of
+   a statement. Their fields sit in a grid that folds to one column on a
+   phone; a repeated line (a receipt line, a box, a row) is a bordered group
+   of its own fields with its remove button at the end. */
+.finance-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dialog.dialog-wide:has(.finance-entry-fields) {
+  max-width: min(780px, calc(100vw - 32px));
+}
+
+.finance-entry-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  column-gap: var(--space-3);
+}
+
+.finance-entry-label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.finance-entry-fields > div {
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-rate {
+  margin-top: var(--space-1);
+}
+
+.finance-entry-lines {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  min-width: 0;
+}
+
+.finance-entry-lines legend {
+  padding: 0 var(--space-1);
+  font-weight: 600;
+}
+
+.finance-entry-line {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  column-gap: var(--space-2);
+  align-items: end;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-line .finance-entry-wide {
+  grid-column: span 2;
+}
+
+.finance-entry-line .finance-entry-line-number {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-1);
+}
+
+.finance-entry-line .finance-entry-line-remove {
+  justify-self: end;
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-preview {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.finance-entry-preview p {
+  margin: var(--space-1) 0;
+}
+
+.finance-entry-candidates {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.finance-entry-candidates li {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
+}
+
+.finance-entry-rows-table {
+  margin-top: var(--space-2);
+}
+
+.finance-entry-rows-table caption {
+  text-align: left;
+  color: var(--muted);
+  font-size: 13px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.finance-entry-rows-table td,
+.finance-entry-rows-table th {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .finance-entry-line .finance-entry-wide {
+    grid-column: span 1;
+  }
+}
+
 /* --- the Coding page -------------------------------------------------------
    The frame takes the height left on the page, as the knowledge and the mail
    pages do, so the transcript scrolls inside it and the box to type into
@@ -16300,20 +16578,31 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   position: sticky;
   top: 0;
   z-index: 1;
+  display: flex;
+  align-items: stretch;
   margin: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--field);
   font-size: inherit;
+}
+
+/* The computer's menu sits at the end of its header, on the same ground. */
+.coding-computer h3 .menu-button {
+  flex: 0 0 auto;
+  align-self: center;
+  margin-right: 6px;
 }
 
 .coding-computer-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 40px;
   padding: 8px 10px;
   border: 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--field);
+  background: transparent;
   color: inherit;
   font: inherit;
   font-weight: 600;
@@ -16724,6 +17013,16 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   background: var(--sidebar-hover);
 }
 
+/* The actions of a page that are behind the More button on a phone: rows of a
+   menu, each an icon and its name, the ones that remove something in red. */
+.photo-toolbar-menu .photo-icon-actions {
+  display: contents;
+}
+
+.photo-toolbar-menu button.is-dangerous {
+  color: var(--bad);
+}
+
 .photo-filter-button.active {
   border-color: var(--border-strong);
   background: var(--field);
@@ -16844,18 +17143,20 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin-top: 0;
 }
 
+/* A hairline between square cells, edge to edge of the content, as many across
+   as the width has room for: more on a wide window, five on a phone. */
 .photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 1px;
 }
 
 .photo-cell {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
-  border-radius: 4px;
   background: var(--field);
+  scroll-margin-top: var(--space-4);
 }
 
 .photo-open {
@@ -17047,14 +17348,57 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   }
 }
 
-/* --- the viewer --- */
+/* --- the viewer ---
+   A photo on black and nothing over it but what is needed: the day and time
+   at the top between a way back and the few controls that belong to the
+   picture, a strip of the photos either side along the foot, and under it the
+   actions in three groups (save a copy at the left, the ones used most in a
+   capsule in the middle, Move to Trash at the right). Always dark, in a light
+   dashboard too: a photograph is judged against black. */
+@property --photo-viewer-fade {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
+@property --photo-chrome-fade {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
 .photo-viewer {
+  --background: #000000;
+  --surface: #1c1c1e;
+  --border: #2c2c2e;
+  --border-strong: #48484a;
+  --field: #1c1c1e;
+  --sidebar-hover: #2c2c2e;
+  --text: #f5f5f7;
+  --muted: #a1a1a6;
+  --accent: #f5f5f7;
+  --accent-text: #18181b;
+  --accent-hover: #ffffff;
+  --bad: #ff6b6b;
+  --good: #4ade80;
+  --photo-glass: rgb(255 255 255 / 14%);
+  --photo-glass-hover: rgb(255 255 255 / 24%);
+
   position: fixed;
   inset: 0;
   z-index: 40;
   display: flex;
-  background: var(--background);
+  background: rgb(0 0 0 / var(--photo-viewer-fade, 1));
   color: var(--text);
+  color-scheme: dark;
+  /* The fade follows a finger while it drags, and settles when it lets go. */
+  transition:
+    --photo-viewer-fade 180ms ease-out,
+    --photo-chrome-fade 180ms ease-out;
+}
+
+.photo-viewer.is-dragging {
+  transition: none;
 }
 
 .photo-viewer-main {
@@ -17064,40 +17408,121 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   min-width: 0;
 }
 
+.photo-viewer-bar,
+.photo-viewer-strip,
+.photo-viewer-actions,
+.photo-viewer-details {
+  opacity: var(--photo-chrome-fade, 1);
+}
+
+/* The way back, the day and time, and what belongs to the picture itself. The
+   title is in the middle of the window whatever is at either end. */
 .photo-viewer-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   padding-top: calc(var(--space-2) + env(safe-area-inset-top));
 }
 
-.photo-viewer-spacer {
-  flex: 1 1 auto;
+.photo-viewer-bar-start,
+.photo-viewer-bar-end,
+.photo-viewer-actions-start,
+.photo-viewer-actions-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.photo-viewer-bar .icon-button.is-on,
-.photo-live-button.is-on {
+.photo-viewer-bar-end,
+.photo-viewer-actions-end {
+  justify-content: flex-end;
+}
+
+.photo-viewer-title {
+  margin: 0;
+  padding: 5px 20px;
+  border-radius: var(--radius-round);
+  background: var(--photo-glass);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.photo-viewer-title time {
+  display: block;
+}
+
+.photo-viewer-date,
+.photo-viewer-time {
+  display: block;
+  white-space: nowrap;
+}
+
+.photo-viewer-time {
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 450;
+}
+
+/* The round glass button every control of the viewer is, 44px to hit. */
+.photo-viewer .photo-round-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--photo-glass);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.photo-viewer .photo-round-button:hover:not(:disabled) {
+  background: var(--photo-glass-hover);
+  color: var(--text);
+}
+
+.photo-viewer .photo-round-button:disabled {
+  opacity: 0.45;
+}
+
+.photo-viewer .photo-round-button.is-on {
   background: var(--accent);
   color: var(--accent-text);
 }
 
-.photo-viewer-bar .photo-favorite.is-on {
+.photo-viewer .photo-round-button.danger {
+  color: var(--bad);
+}
+
+.photo-viewer .photo-favorite.is-on {
   background: transparent;
   color: var(--bad);
 }
 
-.photo-viewer-bar .photo-favorite.is-on svg {
+.photo-viewer .photo-favorite.is-on:hover:not(:disabled) {
+  background: var(--photo-glass-hover);
+  color: var(--bad);
+}
+
+.photo-viewer .photo-favorite.is-on svg {
   fill: currentColor;
 }
 
 .photo-live-button {
   padding: 4px 12px;
   border-radius: var(--radius-round);
+  background: var(--photo-glass);
+  color: var(--text);
   font-size: 12px;
   font-weight: 650;
   touch-action: none;
   user-select: none;
+}
+
+.photo-live-button.is-on {
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .photo-viewer-stage {
@@ -17107,13 +17532,53 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   align-items: center;
   justify-content: center;
   min-height: 0;
-  padding: 0 var(--space-3) var(--space-3);
+}
+
+/* A finger on a picture is a drag to close, a swipe to the next photo, a pinch
+   or a drag of a zoomed picture: the browser does not take it for a scroll or
+   a zoom of the page. */
+.photo-viewer-stage.is-zoomable {
+  touch-action: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.photo-viewer-stage.is-zoomed .photo-viewer-picture {
+  cursor: grab;
+}
+
+.photo-viewer-stage.is-zoomed.is-panning .photo-viewer-picture {
+  cursor: grabbing;
 }
 
 .photo-viewer-picture {
   position: relative;
   width: 100%;
   height: 100%;
+  transform-origin: center;
+}
+
+/* A zoom the button or a double click asked for glides; one that follows the
+   wheel or the fingers must not lag behind them. */
+.photo-viewer-picture.is-easing {
+  transition: transform 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-viewer-picture.is-easing {
+    transition: none;
+  }
+}
+
+/* The photo's own file, over the preview it replaces once it has arrived. */
+.photo-original {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.photo-original.is-ready {
+  opacity: 1;
 }
 
 .photo-fitted,
@@ -17133,27 +17598,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 .photo-viewer-video {
   background: #000;
-  border-radius: var(--radius-2);
-}
-
-.photo-viewer-zoom {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  cursor: zoom-out;
-}
-
-.photo-zoomed {
-  display: block;
-  max-width: none;
-  margin: auto;
-}
-
-/* A picture the browser cannot draw as it is, zoomed from the large
-   preview: twice the size of the window. */
-.photo-zoomed-preview {
-  width: 200%;
-  height: auto;
 }
 
 .photo-viewer-message {
@@ -17176,6 +17620,9 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   margin: 0;
 }
 
+/* Previous and next over the photo, for a mouse: they are there while the
+   pointer is on the picture or the keyboard is on them. A touch screen turns
+   the page with a swipe and the strip, and has no use for them. */
 .photo-viewer-step {
   position: absolute;
   top: 50%;
@@ -17183,13 +17630,14 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   transform: translateY(-50%);
+  border: none;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  box-shadow: var(--shadow-raised);
+  background: rgb(40 40 44 / 80%);
+  color: var(--text);
 }
 
 .photo-viewer-previous {
@@ -17198,6 +17646,128 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 .photo-viewer-next {
   right: var(--space-3);
+}
+
+@media (hover: hover) {
+  .photo-viewer-step {
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .photo-viewer-stage:hover .photo-viewer-step,
+  .photo-viewer-step:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .photo-viewer-step {
+    display: none;
+  }
+}
+
+/* The photos either side, small and square, the one shown larger. It scrolls
+   sideways with no bar, and the photo shown is kept in the middle of it. */
+.photo-viewer-strip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 80px;
+  padding: 0 var(--space-3);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.photo-viewer-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.photo-strip-item {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--surface);
+  opacity: 0.8;
+  transition:
+    width 150ms ease,
+    opacity 150ms ease;
+}
+
+.photo-strip-item:hover:not(:disabled) {
+  background: var(--surface);
+  opacity: 1;
+}
+
+.photo-strip-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-strip-item.is-current {
+  width: 64px;
+  margin: 0 var(--space-1);
+  border-radius: 3px;
+  opacity: 1;
+}
+
+.photo-strip-item:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+/* The actions in three places: save a copy, the capsule of what is done most,
+   and Move to Trash. The capsule is in the middle of the window whatever is at
+   either end. */
+.photo-viewer-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+
+.photo-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-round);
+  background: var(--photo-glass);
+}
+
+.photo-viewer .photo-action-group .photo-round-button {
+  background: transparent;
+}
+
+.photo-viewer .photo-action-group .photo-round-button:hover:not(:disabled) {
+  background: var(--photo-glass-hover);
+}
+
+.photo-viewer .photo-action-group .photo-round-button.is-on {
+  background: var(--accent);
+}
+
+/* Save to my library, for a photo that is somebody else's: the words stay on a
+   wide screen, and are an icon on a phone. */
+.photo-viewer .photo-action-group .photo-save-button {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.photo-viewer .photo-action-group .photo-save-button:hover:not(:disabled) {
+  background: var(--photo-glass-hover);
 }
 
 .photo-viewer-details {
@@ -17254,9 +17824,14 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
     overscroll-behavior: contain;
   }
 
-  .photo-viewer-step {
-    width: 36px;
-    height: 36px;
+  /* The strip does not fit with the details open: the picture would be left
+     a sliver. It comes back when they are closed. */
+  .photo-viewer.has-details .photo-viewer-strip {
+    display: none;
+  }
+
+  .photo-viewer.has-details .photo-viewer-actions {
+    padding-bottom: var(--space-2);
   }
 }
 
@@ -17421,7 +17996,7 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
 
 @media (max-width: 600px) {
   .photo-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   /* The width of the screen, standing above the agent's button; the toasts
@@ -18877,16 +19452,6 @@ main.content:has(> .coding-frame) > :not(.coding-frame) {
   vertical-align: middle;
 }
 
-/* On a phone the viewer's bar holds more icons than the width has room for
-   (an album's photo has the cover and the take-out beside the usual ones), and
-   the last, Details, was pushed off the edge. They wrap to a second line, still
-   in one row of the viewer's own padding. */
-@media (max-width: 600px) {
-  .photo-viewer-bar {
-    flex-wrap: wrap;
-    row-gap: 0;
-  }
-}
 
 /* --- photos, the second look ------------------------------------------------
    One toolbar under one strip of tabs, rows that say what they are, and a hit
@@ -18963,14 +19528,20 @@ label.checkbox.is-plain > span > .muted {
     text-align: center;
   }
 
-  /* The tools take the line and the actions are the one under it, at its
-     right. */
+  /* One row: the tools take the room the actions leave. What does not fit
+     is behind the More button, so the row never wraps onto a second line of
+     a different length. */
+  .photo-toolbar {
+    flex-wrap: nowrap;
+  }
+
   .photo-toolbar-tools {
-    flex-basis: 100%;
+    flex: 1 1 0;
   }
 
   .photo-toolbar-actions {
-    flex: 1 1 100%;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
   }
 
   /* Whatever is touched is at least 44px each way. */
@@ -18987,20 +19558,20 @@ label.checkbox.is-plain > span > .muted {
 
   .photo-selection-bar .icon-button,
   .photo-viewer .icon-button,
-  .photo-viewer-bar .photo-save-button,
+  .photo-viewer-actions .photo-save-button,
   .photo-tray .icon-button {
     width: 44px;
     height: 44px;
   }
 
-  .photo-viewer-bar .photo-save-button,
-  .photo-viewer-bar .photo-live-button {
+  .photo-viewer-bar .photo-live-button,
+  .photo-viewer-actions .photo-save-button {
     min-height: 44px;
   }
 
   /* An icon like its neighbors on a phone: the words stay for a screen reader,
-     and the bar keeps to one line. */
-  .photo-viewer-bar .photo-save-button {
+     and the capsule keeps to the width. */
+  .photo-viewer-actions .photo-save-button {
     justify-content: center;
     padding: 0;
     border-color: transparent;
@@ -19008,7 +19579,7 @@ label.checkbox.is-plain > span > .muted {
     box-shadow: none;
   }
 
-  .photo-viewer-bar .photo-save-button .photo-save-label {
+  .photo-viewer-actions .photo-save-button .photo-save-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -19021,14 +19592,9 @@ label.checkbox.is-plain > span > .muted {
     padding-inline: 2px;
   }
 
-  .photo-viewer-bar {
-    gap: 0;
-    padding-inline: 4px;
-  }
-
-  .photo-viewer-step {
-    width: 44px;
-    height: 44px;
+  .photo-viewer-bar,
+  .photo-viewer-actions {
+    padding-inline: var(--space-2);
   }
 
   .photo-viewer-person-not,
@@ -19060,7 +19626,7 @@ label.checkbox.is-plain > span > .muted {
     min-height: 44px;
   }
 
-  .photo-person-foot {
+  .photo-person-cell .photo-person-title {
     min-height: 44px;
   }
 
@@ -19168,6 +19734,10 @@ label.checkbox.is-plain > span > .muted {
     min-height: 44px;
   }
 
+  .photo-toolbar-menu button {
+    min-height: 44px;
+  }
+
   .photo-person-head-body button {
     min-height: 44px;
   }
@@ -19265,4 +19835,172 @@ label.checkbox.is-plain > span > .muted {
   padding: 0;
   border: none;
   background: none;
+}
+
+/* --- photos, the look of a photo library ------------------------------------
+   The days on the screen under the heading, a switch between the grid and an
+   overview by year or month, and the overview's big pictures. */
+
+/* The line under the page's heading: which days the photos on the screen were
+   taken on. It is part of the heading's block, so the heading's own margin
+   under it is taken away. */
+.page-heading-row:has(+ .photo-date-range) {
+  margin-bottom: 2px;
+}
+
+.photo-date-range {
+  margin: 0 0 var(--space-2);
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The switch in the toolbar: the segmented group, at the height of the
+   buttons beside it, the chosen one filled. */
+.photo-scale-switch {
+  align-self: stretch;
+  min-height: 40px;
+  border-radius: var(--radius-2);
+}
+
+.photo-scale-switch button {
+  min-width: 56px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-body);
+}
+
+.photo-scale-switch button.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.photo-scale-switch button.active:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* The overview: one big picture for each month (under its year), or for each
+   year. */
+.photo-overview {
+  transition: opacity 120ms ease;
+}
+
+.photo-overview.is-choosing {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.photo-overview-year + .photo-overview-year {
+  margin-top: var(--space-6);
+}
+
+.photo-overview-heading {
+  margin: 0 0 var(--space-2);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.photo-overview-waiting {
+  min-height: 160px;
+  background: var(--field);
+  opacity: 0.5;
+}
+
+.photo-period-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 2px;
+}
+
+.photo-period-grid.is-years {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.photo-period {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 3;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--field);
+  color: #fff;
+  cursor: pointer;
+}
+
+.photo-period:hover:not(:disabled) {
+  background: var(--field);
+}
+
+.photo-period:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.photo-period .photo-image {
+  position: absolute;
+  inset: 0;
+}
+
+/* The name sits on a shade at the foot, so that it can be read over any
+   picture. */
+.photo-period-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: var(--space-5) var(--space-3) var(--space-2);
+  background: linear-gradient(to top, rgb(0 0 0 / 60%), rgb(0 0 0 / 0%));
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 40%);
+}
+
+.photo-period-grid.is-years .photo-period-label {
+  font-size: 24px;
+}
+
+@media (max-width: 600px) {
+  .photo-period-grid,
+  .photo-period-grid.is-years {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .photo-period-label,
+  .photo-period-grid.is-years .photo-period-label {
+    padding-inline: var(--space-2);
+    font-size: 16px;
+  }
+
+  /* On a phone the switch floats over the grid at the foot of the screen,
+     where a thumb is, as a capsule of its own; the toolbar keeps its two rows.
+     The page has room under it for the last row to be read. */
+  .photo-scale-switch {
+    position: fixed;
+    bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+    left: 50%;
+    z-index: 5;
+    min-height: 48px;
+    transform: translateX(-50%);
+    border-color: var(--border-strong);
+    border-radius: var(--radius-round);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: var(--shadow-floating);
+    backdrop-filter: blur(12px);
+  }
+
+  .photo-scale-switch button {
+    min-width: 64px;
+    min-height: 44px;
+  }
+
+  .photos-page:has(.photo-scale-switch) {
+    padding-bottom: 72px;
+  }
 }

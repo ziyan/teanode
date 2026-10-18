@@ -321,6 +321,160 @@ func TestAlbumShareAsksTheNameOfThePersonOrCircleAndSharesAtALevel(test *testing
 	}
 }
 
+// The two shares the update tests change: a person who may only view and sees
+// where the photos were taken, and a circle that may add photos and sees
+// where they were taken too.
+const (
+	updateShareRows = `[` +
+		`{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"view","isLocationIncluded":true},` +
+		`{"id":"share-two","photoAlbumId":"album-own","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true},` +
+		`{"id":"share-three","photoAlbumId":"album-own","granteeUserId":"user-cai","granteeUsername":"cai","granteeName":"Cai Example","shareLevel":"view","isLocationIncluded":false}]`
+	updatedShareRow = `{"id":"share-one","photoAlbumId":"album-own","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"contribute","isLocationIncluded":true}`
+)
+
+// album-share-update changes only the settings the call names. The server
+// writes the level and the places together, so the one left out is sent as the
+// share has it: stopping somebody adding photos must not take the places away.
+func TestAlbumShareUpdateChangesOnlyWhatIsNamed(test *testing.T) {
+	current := newRun(test, map[string]string{"ListPhotoAlbumShares": updateShareRows, "UpdatePhotoAlbumShare": updatedShareRow})
+	result, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "share_level": "Contribute"})
+	if err != nil || !result.Untrusted {
+		test.Fatalf("%v %v", result, err)
+	}
+	for _, want := range []string{`"share_id":"share-one"`, `"share_level":"contribute"`, `"is_location_included":true`, `"person":"ben"`} {
+		if !strings.Contains(result.Content, want) {
+			test.Fatalf("%s lacks %s", result.Content, want)
+		}
+	}
+	// The places were left out and are on in the share, so they stay on.
+	asked := current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 1 || asked[0]["photoAlbumShareId"] != "share-one" || asked[0]["shareLevel"] != "contribute" || asked[0]["isLocationIncluded"] != true {
+		test.Fatalf("an omitted is_location_included was not kept: %v", asked)
+	}
+	// Stopping a circle adding photos keeps the places it sees.
+	if _, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-two", "share_level": "view"}); err != nil {
+		test.Fatal(err)
+	}
+	asked = current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 2 || asked[1]["photoAlbumShareId"] != "share-two" || asked[1]["shareLevel"] != "view" || asked[1]["isLocationIncluded"] != true {
+		test.Fatalf("narrowing the level took the places away: %v", asked)
+	}
+	// Taking the places away keeps the level the share has.
+	if _, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-two", "is_location_included": false}); err != nil {
+		test.Fatal(err)
+	}
+	asked = current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 3 || asked[2]["shareLevel"] != "contribute" || asked[2]["isLocationIncluded"] != false {
+		test.Fatalf("an omitted share_level was not kept: %v", asked)
+	}
+	// Turning the places on, on a share that has them off, keeps its level.
+	if _, err := current.call(map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-three", "is_location_included": true}); err != nil {
+		test.Fatal(err)
+	}
+	asked = current.operations.asked("UpdatePhotoAlbumShare")
+	if len(asked) != 4 || asked[3]["shareLevel"] != "view" || asked[3]["isLocationIncluded"] != true {
+		test.Fatalf("%v", asked)
+	}
+}
+
+// A call that names what the share already has changes nothing, and says so
+// without asking the server to write.
+func TestAlbumShareUpdateThatChangesNothingMakesNoCall(test *testing.T) {
+	current := newRun(test, map[string]string{"ListPhotoAlbumShares": updateShareRows, "UpdatePhotoAlbumShare": updatedShareRow})
+	for _, arguments := range []map[string]any{
+		{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-two", "share_level": "contribute"},
+		{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-two", "is_location_included": true},
+		{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-three", "share_level": "view", "is_location_included": false},
+	} {
+		result, err := current.call(arguments)
+		if err != nil || !strings.Contains(result.Content, "nothing changed") {
+			test.Fatalf("%v: %v %v", arguments, result, err)
+		}
+	}
+	if asked := current.operations.asked("UpdatePhotoAlbumShare"); len(asked) != 0 {
+		test.Fatalf("a call that changes nothing reached the server: %v", asked)
+	}
+}
+
+func TestAlbumShareUpdateRefusesWhatItCannotDo(test *testing.T) {
+	current := newRun(test, map[string]string{"ListPhotoAlbumShares": updateShareRows, "UpdatePhotoAlbumShare": updatedShareRow})
+	for name, arguments := range map[string]struct {
+		arguments map[string]any
+		message   string
+	}{
+		"no album":                {map[string]any{"operation": "album-share-update", "share_id": "share-one", "share_level": "view"}, "album_id"},
+		"no share":                {map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_level": "view"}, "share_id"},
+		"nothing to change":       {map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one"}, "share_level"},
+		"a level not one":         {map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one", "share_level": "owner"}, "view or contribute"},
+		"a share the album lacks": {map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-elsewhere", "share_level": "view"}, "album-shares"},
+	} {
+		if _, err := current.call(arguments.arguments); err == nil || !strings.Contains(err.Error(), arguments.message) {
+			test.Errorf("changing a share with %s: %v, want a message with %q", name, err, arguments.message)
+		}
+	}
+	if asked := current.operations.asked("UpdatePhotoAlbumShare"); len(asked) != 0 {
+		test.Fatalf("a change that was refused reached the server: %v", asked)
+	}
+}
+
+// The person is asked when the call could give somebody more (contribute, or
+// places on), judged from the arguments alone, and not when it only names view
+// or places off. The card reads the share and the album, and says whose share
+// of which album becomes what and what stays.
+func TestAlbumShareUpdateAsksWhenItCouldWidenAndTheCardNamesWhatChanges(test *testing.T) {
+	current := newRun(test, map[string]string{"ReadPhotoAlbum": albumRowJson, "ListPhotoAlbumShares": updateShareRows})
+	photoTool := tools.Build().Get("photo")
+	for _, scenario := range []struct {
+		arguments map[string]any
+		risk      tools.Risk
+		line      string
+		plainLine string
+	}{
+		{
+			map[string]any{"share_level": "contribute"}, tools.RiskGranting,
+			`Change the share of "Picnic" with "Ben Example" to view and add photos, keeping where the photos were taken`, "Change an album share to view and add photos",
+		},
+		{
+			map[string]any{"share_id": "share-three", "is_location_included": true}, tools.RiskGranting,
+			`Change the share of "Picnic" with "Cai Example" to show where the photos were taken`, "Change an album share to show where the photos were taken",
+		},
+		{
+			map[string]any{"share_id": "share-two", "share_level": "view"}, tools.RiskWrite,
+			`Change the share of "Picnic" with everyone in "Home" to view only, keeping where the photos were taken`, "Change an album share to view only",
+		},
+		{
+			map[string]any{"share_level": "view", "is_location_included": false}, tools.RiskWrite,
+			`Change the share of "Picnic" with "Ben Example" to hide where the photos were taken`, "Change an album share to view only, and hide where the photos were taken",
+		},
+		{
+			map[string]any{"share_id": "share-two", "is_location_included": false}, tools.RiskWrite,
+			`Change the share of "Picnic" with everyone in "Home" to hide where the photos were taken`, "Change an album share to hide where the photos were taken",
+		},
+		{
+			// Asked about although the share has it already: riskOf cannot see
+			// the share. The card says that nothing changes.
+			map[string]any{"share_id": "share-two", "share_level": "contribute"}, tools.RiskGranting,
+			`Change the share of "Picnic" with everyone in "Home": it is already like that, so nothing changes`, "Change an album share to view and add photos",
+		},
+	} {
+		arguments := map[string]any{"operation": "album-share-update", "album_id": "album-own", "share_id": "share-one"}
+		for key, value := range scenario.arguments {
+			arguments[key] = value
+		}
+		encoded, _ := json.Marshal(arguments)
+		if risk := riskOf(encoded); risk != scenario.risk {
+			test.Errorf("%v is %s, want %s", scenario.arguments, risk, scenario.risk)
+		}
+		if line := photoTool.PreviewLine(tools.WithRun(test.Context(), current), encoded); line != scenario.line {
+			test.Errorf("%v: the card says %q, want %q", scenario.arguments, line, scenario.line)
+		}
+		// Without a run to look the share up in, the card says what the call names.
+		if line := photoTool.PreviewLine(test.Context(), encoded); line != scenario.plainLine {
+			test.Errorf("%v: the plain card says %q, want %q", scenario.arguments, line, scenario.plainLine)
+		}
+	}
+}
+
 func TestAlbumSharesAndUnshareUseTheSharedOperations(test *testing.T) {
 	current := newRun(test, map[string]string{
 		"ListPhotoAlbumShares":  `[{"id":"share-one","granteeUserId":"user-ben","granteeUsername":"ben","granteeName":"Ben Example","shareLevel":"view"},{"id":"share-two","granteeCircleId":"circle-home","granteeCircleName":"Home","shareLevel":"contribute","isLocationIncluded":true}]`,

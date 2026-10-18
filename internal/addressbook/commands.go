@@ -124,6 +124,86 @@ func (self *Commands) Delete(ctx context.Context, principal *access.Principal, c
 	})
 }
 
+// SetPicture puts a picture on a contact that has none, and answers whether it
+// did. A contact that has a picture keeps it: the one a phone put there, or the
+// person chose, is not replaced by one made for them. The contact is locked
+// first, so a picture is not put over one that arrives while this runs.
+func (self *Commands) SetPicture(ctx context.Context, principal *access.Principal, contactId string, jpegPicture []byte) (*models.Contact, bool, error) {
+	if err := principal.RequireService(models.ServiceContacts); err != nil {
+		return nil, false, err
+	}
+	if !canUseContacts(principal) {
+		return nil, false, db.ErrNotFound
+	}
+	var kept *models.Contact
+	var isSet bool
+	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+		existing, _, err := ownContact(transaction, principal.User.ID, contactId)
+		if err != nil {
+			return err
+		}
+		if contacts.HasPhoto([]byte(existing.Card)) {
+			kept = existing
+			return nil
+		}
+		parsed, err := contacts.WithPhoto([]byte(existing.Card), jpegPicture)
+		if err != nil {
+			return fmt.Errorf("%w: %s", db.ErrInvalidArguments, err)
+		}
+		if kept, err = transaction.PutContact(withCard(existing, parsed)); err != nil {
+			return err
+		}
+		isSet = true
+		return nil
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return kept, isSet, nil
+}
+
+// RemovePicture takes the picture off a contact. A contact with none is left as
+// it is, and that is not an error.
+func (self *Commands) RemovePicture(ctx context.Context, principal *access.Principal, contactId string) (*models.Contact, error) {
+	if err := principal.RequireService(models.ServiceContacts); err != nil {
+		return nil, err
+	}
+	if !canUseContacts(principal) {
+		return nil, db.ErrNotFound
+	}
+	var kept *models.Contact
+	err := self.transactions.TransactionContext(ctx, func(transaction db.Transaction) error {
+		existing, _, err := ownContact(transaction, principal.User.ID, contactId)
+		if err != nil {
+			return err
+		}
+		if !contacts.HasPhoto([]byte(existing.Card)) {
+			kept = existing
+			return nil
+		}
+		parsed, err := contacts.WithoutPhoto([]byte(existing.Card))
+		if err != nil {
+			return fmt.Errorf("%w: %s", db.ErrInvalidArguments, err)
+		}
+		kept, err = transaction.PutContact(withCard(existing, parsed))
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return kept, nil
+}
+
+// withCard is the contact with the card it has been given, and what is read
+// out of the card.
+func withCard(existing *models.Contact, parsed *contacts.Parsed) *models.Contact {
+	return &models.Contact{
+		ID: existing.ID, AddressBookID: existing.AddressBookID, CreatedAt: existing.CreatedAt,
+		UID: parsed.UID, ETag: contacts.ETag(parsed.Card), Card: string(parsed.Card),
+		Name: parsed.Name, Organization: parsed.Organization, Emails: parsed.Emails, Phones: parsed.Phones,
+	}
+}
+
 func canUseContacts(principal *access.Principal) bool {
 	return principal != nil && principal.User != nil && principal.Permissions != nil && principal.Permissions.Has(models.PermissionContactsUse)
 }

@@ -53,6 +53,8 @@ struct LocationSettingsView: View {
                     // The icon takes the tint unless it is colored too.
                     Label("Erase positions and visits", systemImage: "trash").foregroundStyle(.red)
                 }
+                .tint(.red)
+                .actionColor(isDestructive: true)
                 .disabled(isErasing)
                 .confirmationDialog("Erase your positions and visits?", isPresented: $isConfirmingErase, titleVisibility: .visible) {
                     Button("Erase positions and visits", role: .destructive) {

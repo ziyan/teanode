@@ -16,6 +16,9 @@ export const SAME_IN_EVERY_LANGUAGE: ReadonlySet<Key> = new Set<Key>([
   // The name of a US tax form, printed this way on the form itself and
   // on every return that asks for it.
   'finance.taxW2',
+  // An exchange rate written the way it is quoted everywhere: currency
+  // codes and a number around an equals sign, with no word in it.
+  'finance.entryExchangeRate',
   // Protocol names, which is what the two web listeners are called in every
   // language and in the configuration file beside them.
   'domains.dns',

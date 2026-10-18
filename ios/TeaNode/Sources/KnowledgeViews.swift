@@ -1534,6 +1534,7 @@ struct ContactPickerSheet: View {
                 if !currentContactId.isEmpty {
                     Button("Unlink contact", systemImage: "person.crop.circle.badge.minus", role: .destructive) { onChoose("") }
                         .tint(.red)
+                        .actionColor(isDestructive: true)
                         .fullWidthRowSeparator()
                 }
                 ForEach(contacts) { contact in

@@ -14,6 +14,8 @@ export interface PhotoFaceGroup {
   contactId: string
   contactAddressBookId: string
   contactName: string
+  // Whether the contact is the person's own, so that the group is them.
+  isOwnContact: boolean
   // Counted over photos that are not in the Trash.
   faceCount: number
   photoCount: number
@@ -24,16 +26,17 @@ export interface PhotoFaceGroup {
 }
 
 const PHOTO_FACE_GROUP_FIELDS =
-  'id createdAt updatedAt contactId contactAddressBookId contactName faceCount photoCount facePictureUrl coverPhotoFaceId isHidden'
+  'id createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl coverPhotoFaceId isHidden'
 
 export const PEOPLE_DOCUMENTS = {
   ListPhotoFaceGroups: `query ($isHiddenIncluded: Boolean) { ListPhotoFaceGroups(isHiddenIncluded: $isHiddenIncluded) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
   ReadPhotoFaceGroup: `query ($photoFaceGroupId: String!) { ReadPhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
-  NamePhotoFaceGroup: `mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
+  NamePhotoFaceGroup: `mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { photoFaceGroup { ${PHOTO_FACE_GROUP_FIELDS} } mergedPhotoFaceGroupId isContactPictureSet } }`,
   UnnamePhotoFaceGroup: `mutation ($photoFaceGroupId: String!) { UnnamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
   MergePhotoFaceGroups: `mutation ($photoFaceGroupIds: [String!]!) { MergePhotoFaceGroups(photoFaceGroupIds: $photoFaceGroupIds) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
   RemovePhotoFaceFromGroup: `mutation ($photoFaceId: String!) { RemovePhotoFaceFromGroup(photoFaceId: $photoFaceId) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
   HidePhotoFaceGroup: `mutation ($photoFaceGroupId: String!, $isHidden: Boolean!) { HidePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, isHidden: $isHidden) { ${PHOTO_FACE_GROUP_FIELDS} } }`,
+  RemoveContactPicture: 'mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }',
   SetPhotoFaceRecognition: 'mutation ($isEnabled: Boolean!) { SetPhotoFaceRecognition(isEnabled: $isEnabled) }',
   ListAddressBooks: 'query { ListAddressBooks { id name } }',
   ListContacts: `query ($addressBookId: String!, $query: String, $first: Int) {
@@ -61,12 +64,28 @@ export async function readPhotoFaceGroup(photoFaceGroupId: string, signal?: Abor
   return answer.ReadPhotoFaceGroup
 }
 
-export async function namePhotoFaceGroup(photoFaceGroupId: string, contactId: string): Promise<PhotoFaceGroup> {
-  const answer = await graphql<{ NamePhotoFaceGroup: PhotoFaceGroup }>(PEOPLE_DOCUMENTS.NamePhotoFaceGroup, {
+// What naming a group answered. A contact names one person, so a contact that
+// named another group already merges the two: photoFaceGroup is the group
+// that was named already, with the faces of both, and mergedPhotoFaceGroupId
+// is the group that went into it (empty when nothing was merged). A contact
+// that had no picture is given one cut from a face of the group.
+export interface NamedPhotoFaceGroup {
+  photoFaceGroup: PhotoFaceGroup
+  mergedPhotoFaceGroupId: string
+  isContactPictureSet: boolean
+}
+
+export async function namePhotoFaceGroup(photoFaceGroupId: string, contactId: string): Promise<NamedPhotoFaceGroup> {
+  const answer = await graphql<{ NamePhotoFaceGroup: NamedPhotoFaceGroup }>(PEOPLE_DOCUMENTS.NamePhotoFaceGroup, {
     photoFaceGroupId,
     contactId,
   })
   return answer.NamePhotoFaceGroup
+}
+
+// Takes the picture off a contact and leaves the rest of the card.
+export async function removeContactPicture(contactId: string): Promise<void> {
+  await graphql(PEOPLE_DOCUMENTS.RemoveContactPicture, { id: contactId })
 }
 
 export async function unnamePhotoFaceGroup(photoFaceGroupId: string): Promise<PhotoFaceGroup> {

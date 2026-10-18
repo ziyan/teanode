@@ -18,6 +18,7 @@ import {
   STATEMENT_IMPORT,
   StatementImport,
 } from './financeApi'
+import { TransactionRowsDialog } from './financeImportPreview'
 import { statementImportSummary } from './statementImportSummary'
 
 // The statement import: for an account no provider reaches, such as a card
@@ -35,6 +36,7 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
   )
   const [busy, setBusy] = useState(false)
   const [isRegenerating, setIsRegenerating] = useState(false)
+  const [isAddingRows, setIsAddingRows] = useState(false)
   const picker = useRef<HTMLInputElement | null>(null)
   const statementImport = data?.StatementImport
   const last = statementImport?.lastStatementImport
@@ -85,14 +87,19 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
         title={t('finance.statementTitle')}
         description={t('finance.statementHint')}
         action={
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || !statementImport}
-            onClick={() => picker.current?.click()}
-          >
-            {t('finance.statementUpload')}
-          </button>
+          <div className="finance-entry-actions">
+            <button type="button" disabled={busy} onClick={() => setIsAddingRows(true)}>
+              {t('finance.entryAddTransactions')}
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || !statementImport}
+              onClick={() => picker.current?.click()}
+            >
+              {t('finance.statementUpload')}
+            </button>
+          </div>
         }
       >
         <input
@@ -158,6 +165,15 @@ export function FinanceStatementImportSection({ onImported }: { onImported?: () 
           </>
         ) : null}
       </SettingsSection>
+      {isAddingRows ? (
+        <TransactionRowsDialog
+          onImported={() => {
+            void reload()
+            onImported?.()
+          }}
+          onClose={() => setIsAddingRows(false)}
+        />
+      ) : null}
       {isRegenerating ? (
         <ConfirmDialog
           title={t('finance.statementRegenerate')}

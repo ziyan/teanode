@@ -141,6 +141,7 @@ struct CodingScreen: View {
     @State private var model: CodingModel
     @State private var path = NavigationPath()
     @State private var isOpening = false
+    @State private var tool: CodingTool?
     @State private var doneText: String?
     @State private var problemText: String?
 
@@ -210,6 +211,9 @@ struct CodingScreen: View {
             .toolbar {
                 MenuButton()
                 ToolbarItem(placement: .topBarTrailing) {
+                    codingMenu
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isOpening = true
                     } label: {
@@ -240,6 +244,13 @@ struct CodingScreen: View {
                     path.append(CodingTarget(computer: session.computer, paneId: session.paneId))
                 }
             }
+            .sheet(item: $tool) { tool in
+                let computerNames = model.list?.computerNames ?? []
+                switch tool {
+                case .hooks: CodingHooksSheet(computerNames: computerNames, connection: connection)
+                case .preview: CodingPreviewSheet(computerNames: computerNames, connection: connection)
+                }
+            }
             #if DEBUG
                 // A screenshot of a session with its
                 // transcript (`-TeaNodeScreen coding-session`).
@@ -251,6 +262,54 @@ struct CodingScreen: View {
             #endif
         }
         .toast(done: $doneText, problem: $problemText)
+    }
+}
+
+extension CodingScreen {
+    /// What the list does besides opening a session: set up the hooks, see
+    /// what a session is shown, and read new sessions now.
+    fileprivate var codingMenu: some View {
+        let computerNames = model.list?.computerNames ?? []
+        return Menu {
+            Button("Set up hooks", systemImage: "link") { tool = .hooks }
+            Button("What a session sees", systemImage: "text.viewfinder") { tool = .preview }
+            Menu {
+                ForEach(computerNames, id: \.self) { computer in
+                    Menu {
+                        Button {
+                            Task { await readNewSessions(computer: computer, assistant: "claude-code", assistantName: "Claude Code") }
+                        } label: {
+                            Text(verbatim: "Claude Code")
+                        }
+                        Button {
+                            Task { await readNewSessions(computer: computer, assistant: "codex", assistantName: "Codex") }
+                        } label: {
+                            Text(verbatim: "Codex")
+                        }
+                    } label: {
+                        Text(verbatim: computer)
+                    }
+                }
+            } label: {
+                Label("Read new sessions", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .disabled(computerNames.isEmpty)
+        } label: {
+            Label("Coding actions", systemImage: "ellipsis.circle")
+        }
+    }
+
+    fileprivate func readNewSessions(computer: String, assistant: String, assistantName: String) async {
+        do {
+            let isAsked = try await connection.captureCodingSession(computerName: computer, assistant: assistant)
+            if isAsked {
+                doneText = String(localized: "Reading new \(assistantName) sessions on \(computer)")
+            } else {
+                problemText = String(localized: "No source reads \(assistantName) sessions on \(computer).")
+            }
+        } catch {
+            problemText = app.describe(error)
+        }
     }
 }
 
@@ -672,6 +731,7 @@ struct CodingSessionView: View {
             } label: {
                 Label("Close tab", systemImage: "xmark.circle")
             }
+            .tint(.red)
             .disabled(session.isWorking)
         } label: {
             Label("Actions", systemImage: "ellipsis.circle")

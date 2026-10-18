@@ -379,10 +379,8 @@ struct CircleDetailView: View {
                     if isSent { invitationDraft = CircleInvitationDraft() }
                 }
             } label: {
-                // A label inside the button rather than the title and symbol
-                // given to it: given to it, the symbol kept the green while the
-                // disabled words went to black, two colors on one button.
                 Label("Send invitation", systemImage: "paperplane")
+                    .actionColor()
             }
             .disabled(!invitationDraft.canSubmit)
         } header: {
@@ -440,6 +438,7 @@ struct CircleDetailView: View {
                 Button("Rename circle", systemImage: "pencil") { isRenaming = true }
                 Button("Delete circle", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                     .confirmationDialog("Delete \(circle.name)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                         Button("Delete circle", role: .destructive) {
                             Task {
@@ -455,6 +454,7 @@ struct CircleDetailView: View {
             }
             Button("Leave circle", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { isConfirmingLeave = true }
                 .tint(.red)
+                .actionColor(isDestructive: true)
                 .confirmationDialog("Leave the circle \(circle.name)?", isPresented: $isConfirmingLeave, titleVisibility: .visible) {
                     Button("Leave circle", role: .destructive) {
                         Task {

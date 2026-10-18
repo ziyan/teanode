@@ -9,6 +9,8 @@ import Foundation
 public struct AgentCalendar: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
+    /// What it is for; nil when it has none written.
+    public let description: String?
     /// What its events are painted, as "#rrggbb"; nil when none was chosen.
     public let colour: String?
     public let timezone: String?
@@ -68,13 +70,14 @@ public struct AgentCalendar: Codable, Identifiable, Hashable, Sendable {
     }
 
     public init(
-        id: String, name: String, colour: String? = nil, timezone: String? = nil, weekStart: String? = nil, calendarKind: String? = nil,
-        shareLevel: String? = nil, ownerUserId: String? = nil, ownerName: String? = nil, ownerAvatarUrl: String? = nil,
-        ownerAvatarColorIndex: Int? = nil, circleId: String? = nil, circleName: String? = nil, isCircleCalendar: Bool? = nil,
-        colorIndex: Int? = nil
+        id: String, name: String, description: String? = nil, colour: String? = nil, timezone: String? = nil, weekStart: String? = nil,
+        calendarKind: String? = nil, shareLevel: String? = nil, ownerUserId: String? = nil, ownerName: String? = nil,
+        ownerAvatarUrl: String? = nil, ownerAvatarColorIndex: Int? = nil, circleId: String? = nil, circleName: String? = nil,
+        isCircleCalendar: Bool? = nil, colorIndex: Int? = nil
     ) {
         self.id = id
         self.name = name
+        self.description = description
         self.colour = colour
         self.timezone = timezone
         self.weekStart = weekStart
@@ -400,7 +403,7 @@ extension Documents {
     public static let calendars = """
         query {
           ListCalendars {
-            id name colour timezone weekStart calendarKind
+            id name description colour timezone weekStart calendarKind
             shareLevel ownerUserId ownerName ownerAvatarUrl ownerAvatarColorIndex circleId circleName isCircleCalendar colorIndex
           }
         }
@@ -461,6 +464,11 @@ extension Documents {
     public static let calendarShareCircles = """
         query { ListCircles { id name members { userId } } }
         """
+    public static let saveCalendar = """
+        mutation ($id: String!, $name: String, $description: String, $colour: String, $timezone: String, $weekStart: String) {
+          SaveCalendar(id: $id, name: $name, description: $description, colour: $colour, timezone: $timezone, weekStart: $weekStart) { id name }
+        }
+        """
     public static let createCircleCalendar = """
         mutation ($circleId: String!) { CreateCircleCalendar(circleId: $circleId) { id } }
         """
@@ -506,6 +514,9 @@ extension Documents {
     public static let deleteContact = """
         mutation ($id: String!) { DeleteContact(id: $id) }
         """
+    public static let removeContactPicture = """
+        mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }
+        """
     public static let myContact = """
         query { AgentGraphPage(path: "self") { contact { id } } }
         """
@@ -520,10 +531,10 @@ extension Documents {
         "calendarRequest": calendarRequest, "cancelCalendarRequest": cancelCalendarRequest,
         "calendarShares": calendarShares, "shareCalendar": shareCalendar, "unshareCalendar": unshareCalendar,
         "calendarSharePeople": calendarSharePeople, "calendarShareCircles": calendarShareCircles,
-        "createCircleCalendar": createCircleCalendar,
+        "createCircleCalendar": createCircleCalendar, "saveCalendar": saveCalendar,
         "reminders": reminders, "saveReminder": saveReminder, "setReminderDone": setReminderDone,
         "deleteReminder": deleteReminder, "addressBooks": addressBooks, "contacts": contacts, "contact": contact,
-        "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "myContact": myContact, "setMyContact": setMyContact,
+        "saveContact": saveContact, "importContact": importContact, "deleteContact": deleteContact, "removeContactPicture": removeContactPicture, "myContact": myContact, "setMyContact": setMyContact,
     ]
 }
 
@@ -590,6 +601,24 @@ extension Connection {
     public func calendarShareCircles() async throws -> [CalendarShareCircle] {
         struct Answer: Decodable, Sendable { let ListCircles: [CalendarShareCircle] }
         return try await execute(Documents.calendarShareCircles, as: Answer.self).ListCircles
+    }
+
+    /// Renames a calendar of the person's own. The server replaces every field
+    /// it is sent, so the ones the app does not change go back as the calendar
+    /// holds them: leaving them out would clear its description, its color, the
+    /// zone a new event is written in and the day its weeks start on.
+    public func saveCalendar(_ calendar: AgentCalendar, name: String) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Saved: Decodable, Sendable { let id: String }
+            let SaveCalendar: Saved
+        }
+        _ = try await execute(
+            Documents.saveCalendar,
+            variables: [
+                "id": .string(calendar.id), "name": .string(name), "description": .string(calendar.description ?? ""),
+                "colour": .string(calendar.colour ?? ""), "timezone": .string(calendar.timezone ?? ""),
+                "weekStart": .string(calendar.weekStart ?? ""),
+            ], as: Answer.self)
     }
 
     /// Makes the calendar a circle keeps for itself. Admins only.
@@ -721,6 +750,15 @@ extension Connection {
     public func deleteContact(_ id: String) async throws {
         struct Answer: Decodable, Sendable { let DeleteContact: Bool? }
         _ = try await execute(Documents.deleteContact, variables: ["id": .string(id)], as: Answer.self)
+    }
+
+    /// Takes the picture off a contact and leaves the rest of the card.
+    public func removeContactPicture(_ id: String) async throws {
+        struct Answer: Decodable, Sendable {
+            struct Contact: Decodable, Sendable { let id: String }
+            let RemoveContactPicture: Contact
+        }
+        _ = try await execute(Documents.removeContactPicture, variables: ["id": .string(id)], as: Answer.self)
     }
 
     /// The contact that is the person themselves, if one is marked.

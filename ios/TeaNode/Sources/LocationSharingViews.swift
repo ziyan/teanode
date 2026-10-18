@@ -29,6 +29,7 @@ struct LocationSharingList: View {
                             }
                         }
                         Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
+                            .tint(.red)
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -51,6 +52,7 @@ struct LocationSharingList: View {
                     }
                     .swipeActions {
                         Button("Stop sharing", systemImage: "person.badge.minus", role: .destructive) { stopping = share }
+                            .tint(.red)
                     }
                 }
             } header: {

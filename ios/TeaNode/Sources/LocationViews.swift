@@ -446,6 +446,8 @@ struct LocationDayScreen: View {
                             } label: {
                                 Label("Erase this day", systemImage: "trash").foregroundStyle(.red)
                             }
+                            .tint(.red)
+                            .actionColor(isDestructive: true)
                                 .disabled(isErasing)
                                 .frame(minHeight: 44)
                                 .confirmationDialog(

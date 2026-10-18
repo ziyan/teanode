@@ -33,9 +33,12 @@ type PhotoFace struct {
 	// ContactID and ContactName are those of the face's group, empty while
 	// the group is unnamed. FacePictureURL is where the face's picture is
 	// fetched from. All three are worked out when the face is read.
+	// IsOwnContact is set by whoever answers the caller: it says the group's
+	// contact is the caller's own (User.ContactID), so the face is them.
 	ContactID      string `json:"contactId" gorm:"-"`
 	ContactName    string `json:"contactName" gorm:"-"`
 	FacePictureURL string `json:"facePictureUrl" gorm:"-"`
+	IsOwnContact   bool   `json:"isOwnContact" gorm:"-"`
 }
 
 // PhotoFaceGroup is the faces the server believes are one person. It is
@@ -62,6 +65,11 @@ type PhotoFaceGroup struct {
 	FacePictureURL string `json:"facePictureUrl"`
 
 	IsHidden bool `json:"isHidden"`
+
+	// IsOwnContact says the contact that names the group is the caller's own
+	// (User.ContactID), so the group is the caller themselves. It is set by
+	// whoever answers the caller, and is false for a group nobody named.
+	IsOwnContact bool `json:"isOwnContact"`
 
 	// CoverPhotoFaceID is the face the group is shown by; the id of
 	// FacePictureURL.

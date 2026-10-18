@@ -15,7 +15,8 @@ upload into a photo, the processing job, faces and their groups, album
 suggestions, signed playback addresses and cleanup. It knows the database and
 the blob store and nothing about HTTP routes or GraphQL.
 
-`internal/picture` reads pictures and videos: decoding JPEG and PNG upright,
+`internal/picture` reads pictures and videos: decoding JPEG, PNG, GIF and WebP
+upright (WebP through the Go team's `golang.org/x/image/webp`),
 scaling, EXIF from JPEG and HEIC, HEIC through libheif's `heif-dec`, and video
 through `ffprobe` and `ffmpeg`. `internal/place` names the city a photo was
 taken in from a table bundled with the server. `internal/faces` runs
@@ -54,8 +55,10 @@ Everything known about a photo is a row; the bytes are blobs in the store
   picture uploaded twice, or by two people, is stored once. Each person's
   quota still counts every file they own.
 - `photo_preview` is a smaller copy made for showing: `small` (400 pixels on
-  the long side), `large` (2048) and, for a video, `video` (H.264, 1280).
-  Previews can always be made again; nothing depends on them being kept.
+  the long side), `large` (2048) and, for a video or a Live Photo (from its
+  video, which an iPhone records as HEVC that many browsers cannot play),
+  `video` (H.264, 1280). Previews can always be made again; nothing depends
+  on them being kept.
 - `photo_client_alias` is another name an uploader has for a photo that is
   there already (see Uploads).
 - `photo_upload` and `photo_upload_part` are a file on its way in.
@@ -82,10 +85,19 @@ nothing but the file. Only `X-Photo-Client-ID` is required. When the request
 names its content type, a type the library does not keep is refused with a 415
 before a byte is read; a request that names none, or `application/octet-stream`,
 is judged by its file name and its bytes once they have all arrived. A
-picture whose first bytes are a JPEG, PNG, GIF or HEIC is kept as that type
+picture whose first bytes are a JPEG, PNG, GIF, WebP or HEIC is kept as that type
 whatever it was sent as, because an iPhone sends a picture saved from a
 message as `image.jpeg` in whichever format it is; processing reads those
 bytes again before it picks a decoder, for files kept before this check.
+
+A client that cannot see an answer before its request ends, as a background
+upload on a phone cannot, makes the upload first: a `POST` with
+`Upload-Complete: ?0`, `Upload-Length` and no body answers 201 with the
+upload's address and `Upload-Offset: 0`, and the bytes follow in a `PATCH` at
+the offset `HEAD` reports, which ends with `Upload-Complete: ?1`. The `X-Photo-*`
+headers and the declared digest belong to the `POST`; the `PATCH` does not
+repeat them, and a `PATCH` whose bytes do not hash to the digest ends the upload
+(`internal/photo/upload_test.go` has the cases).
 
 The body is stored in parts of at most 8 MiB as it arrives, each with a
 receipt row once it is whole, so the offset a client is told is always bytes
@@ -183,7 +195,7 @@ decodes every top-level picture and not only the primary one: each is bounded
 picture that does not say its size is refused. Thumbnails, auxiliary pictures
 and the tiles of a grid (`thmb`, `auxl`, `dimg`) are not top-level. The pixels
 of all of them are taken from the same budget decoded JPEGs use for as long as
-`heif-dec` runs. A PNG or GIF with a side over
+`heif-dec` runs. A PNG, GIF or WebP with a side over
 65535 pixels is refused from its header too: a strip a billion pixels wide is
 under the pixel limit and would still make the scaler allocate a row of
 gigabytes. The size a JPEG's EXIF block gives is swapped for an orientation of
@@ -251,7 +263,31 @@ nobody until the person names it by choosing a contact, or making one; the
 agent never names a face by guessing. A group nobody has named is listed as a
 person once it has at least three faces
 (`MinimumUnnamedPhotoFaceGroupFaceCount`); a pair is more often a chance
-likeness. A named group is always listed. The agent's photo tool can take a name off a
+likeness. A named group is always listed. When the contact that names a group
+is the person's own card (`users.contact_id`, the card the agent knows as
+them), the group is them: `PhotoFaceGroup.isOwnContact` and
+`PhotoFace.isOwnContact` say so, the agent's tool rows carry `is_you`, the
+command line writes "(you)" after the name, and the iPhone shows "You".
+It is set per request from the caller's own user row, and is false for an
+unnamed group and for a face in somebody else's shared photo, whose names are
+the owner's. A contact names one person. Naming a group
+with a contact that already names another of the person's groups merges the two
+inside `NamePhotoFaceGroup`: the group already named stays, with the faces of
+both and its own cover, and the person is hidden only if both were. A group never holds two faces of one photo, so when two groups each had a different face of one photo, the face the person confirmed stays, else the one whose vector is most like the merged group's sum (cosine), and the other is in no group and not confirmed (the face is still in the photo, but no pass groups it again until the photo's faces are found again); this holds for `person-merge` and the merge button as well. The answer
+carries the group left, `mergedPhotoFaceGroupId` (the one that went into it;
+the tool says `merged_into`, the command line "merged with") and
+`isContactPictureSet`. Groups that were named with one contact before this was
+so were merged once by migration 0242. When the contact has no picture it is
+given one: the face of the group with the highest detection confidence among
+those whose box covers at least `MinimumContactPictureFaceAreaFraction` (3
+percent) of their photo, in the person's own photos out of the Trash, cut square
+from the large preview with 40 percent of room on each side, at most 512 pixels,
+as a JPEG set as the card's `PHOTO` (so CardDAV clients see it; `contact_picture_set`
+in the tool, "used a face as their picture" on the command line). A picture a
+contact has is never replaced, and a photo that cannot be read leaves the naming
+done and the contact as it was. `RemoveContactPicture` takes a picture off; it is
+the toast's Remove and is on every surface of the address book. The agent's photo
+tool can take a name off a
 group (`person-unname`), hide a group or list it again (`person-hide`, with
 `is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
 face is not that person (`person-remove-face`, with the `photo_face_id` that
@@ -347,17 +383,37 @@ nothing into the person's library unless they ask (`save-shared`).
 Every operation of the tool that answers a list (`list`, `album-list`,
 `album-read`, which gives the album's photos, `people`, `person-photos` and
 `album-shares`) gives a page at a time: `page_size` and `offset` in, and when
-there is more `next_offset` out (with the count, `matching_photo_count` for photos,
-`total_count` for the rest), as the mail and memory tools do. `library` gives
-`photo_count` for all items, videos among them, as albums count them, and `video_count` for the
-videos in it. `set-date` (a write) corrects the date a photo was taken, from an
-RFC 3339 time with an offset, as `teanode photo date` and the viewer's change of
-date do. Turning faces on is of the risk class granting and turning them off is
-destructive: finding faces is a privacy choice either way, so both ask.
+there is more `next_offset` out (with the count, `matching_photo_count` for
+photos, `total_count` for the rest), as the mail and memory tools do. `library`
+gives `photo_count` for all items, videos among them, as albums count them, and
+`video_count` for the videos in it. `set-date` (a write) corrects the date a
+photo was taken, from an RFC 3339 time with an offset, as `teanode photo
+set-date` and the viewer's change of date do. `delete` (photos that are in the
+Trash) and `empty-trash` delete forever, as `teanode photo delete` and
+`empty-trash` do, and are destructive: they ask the person every time. `delete`
+says how many went and, when some did not, that the others were not in the Trash
+and were left alone. `person-read` gives one group of faces, as `teanode photo
+people read` does, and `person-photos` its photos. Turning faces on is of the
+risk class granting and turning them off is destructive: finding faces is a
+privacy choice either way, so both ask.
+
 `album-share` and `album-unshare` are of the risk class granting, as the
-calendar's share is, so they ask the person unless they allowed it, and the
-card names the album and the people. `look` does not queue a description of
-somebody else's photo: a description belongs to the library of its owner.
+calendar's share is, so they ask the person unless they allowed it, and the card
+names the album and the people. `album-share-update` changes one share (`teanode
+photo album share-update`, the same `UpdatePhotoAlbumShare` the dashboard and
+the phone use). It takes the album as well as the share, reads the album's
+shares, and changes only the settings the call names, `share_level` and
+`is_location_included`: the operation writes both, so the one left out is sent
+as the share has it, and stopping somebody adding photos does not take the
+places away. A call that names what the share already has makes no request and
+says that nothing changed. The risk class is judged from the arguments alone,
+since the share is not known at that point: a call that names `contribute` or
+places on is granting, even when the share has that setting already, and any
+other call can only keep or take away access, so it is an ordinary write with no
+card. The card for a granting call reads the album and the share, names the
+album and the person or circle, and says what changes and what stays, or that
+nothing changes. `look` does not queue a description of somebody else's photo: a
+description belongs to the library of its owner.
 
 ## The iPhone
 
@@ -388,6 +444,15 @@ queued first; files that have to come down from iCloud come after them, so
 that the queue fills fast and one slow download does not stand in front of the
 rest.
 
+Every file goes up as an upload made first (see Uploads), so that its address
+is known before a byte is sent. The pass creates the upload with a small
+request of its own (`PhotoBackupRequest.makeCreation`, sent through
+`PhotoBackupUploadClient` while the app runs, since the background session takes
+upload tasks only), keeps the address in the index
+(`PhotoBackupRoleRecord.partialUpload`: the path, the file's size and its
+SHA-256), and hands the background session a `PATCH` of the exported file at
+offset 0.
+
 What continues and what waits:
 
 - Files already queued continue with the app closed. The backup screen says
@@ -414,6 +479,43 @@ What continues and what waits:
   on with the next file. Before this, one such file held up the pass and every
   later attempt to start one, because a pass already running is joined, not
   started twice.
+
+### Continuing a file that was cut off
+
+A file can be cut off: the person pauses backup, the app is killed, or the
+connection drops and iOS gives up on the task. The server keeps the whole parts
+it received, so the next try sends only what it lacks. When a file with a kept
+address is queued again, `PhotoBackupCoordinator.prepareSending`:
+
+- exports the file again (a pause deletes the exported copies, to give the room
+  back) and compares its size and SHA-256 with the ones kept. A file that is not
+  the same bytes is not continued: the old upload is left to the server, which
+  ends an unfinished upload of the same photo and file when a new one starts.
+- asks the server where the upload is (`HEAD`). The answers are: an offset, and
+  the file goes on from there; complete, and the photo is recorded from the
+  `X-Photo-ID` it names without sending a byte (the case of an answer that was
+  lost); gone (404, or an offset past the end of the file), and a new upload is
+  made and the file goes up from its first byte. A question that cannot be
+  answered (no network, the server failing, a sign-in refused) queues nothing and
+  keeps the address for the next pass.
+- writes the bytes from the offset into `<exported name>.tail` in the outgoing
+  folder, since a background upload reads a file, and deletes the whole exported
+  file at once. The queue counts the rest, not the whole file. The rest is
+  deleted when its task ends, whatever the outcome; one left by a killed app is
+  deleted by the next pass like any file nothing queued refers to. The rest is
+  written only if it is at most half of the free space, because the whole file
+  is on the phone until it is done; otherwise the file starts over from its
+  first byte, which needs no room beyond the file.
+
+An offset equal to the file's size means the server has every byte and has not
+completed the upload: the rest is empty and its `PATCH`, at the end of the file
+with `Upload-Complete: ?1`, completes it.
+
+The address is written to the index with the next change after thirty seconds,
+and when the app goes to the background, like the rest of it. A kill between
+two writes loses the address, and the file then starts over in an upload of its
+own. A file whose digest could not be worked out is sent the same way but its
+address is not kept.
 
 ### Reading a large library
 

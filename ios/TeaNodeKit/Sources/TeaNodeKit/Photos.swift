@@ -238,11 +238,14 @@ public struct PhotoFace: Codable, Identifiable, Hashable, Sendable {
     /// Those of the face's group; empty while the group is unnamed.
     public let contactId: String
     public let contactName: String
+    /// Whether the group's contact is the person's own card, so the face is
+    /// them. A server that does not say has no such face.
+    public let isOwnContact: Bool
     public let facePictureUrl: String
 
     public init(
         id: String, photoId: String, boxLeftFraction: Double = 0, boxTopFraction: Double = 0, boxWidthFraction: Double = 0, boxHeightFraction: Double = 0,
-        photoFaceGroupId: String = "", contactId: String = "", contactName: String = "", facePictureUrl: String = ""
+        photoFaceGroupId: String = "", contactId: String = "", contactName: String = "", isOwnContact: Bool = false, facePictureUrl: String = ""
     ) {
         self.id = id
         self.photoId = photoId
@@ -253,7 +256,23 @@ public struct PhotoFace: Codable, Identifiable, Hashable, Sendable {
         self.photoFaceGroupId = photoFaceGroupId
         self.contactId = contactId
         self.contactName = contactName
+        self.isOwnContact = isOwnContact
         self.facePictureUrl = facePictureUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        photoId = try container.decode(String.self, forKey: .photoId)
+        boxLeftFraction = try container.decode(Double.self, forKey: .boxLeftFraction)
+        boxTopFraction = try container.decode(Double.self, forKey: .boxTopFraction)
+        boxWidthFraction = try container.decode(Double.self, forKey: .boxWidthFraction)
+        boxHeightFraction = try container.decode(Double.self, forKey: .boxHeightFraction)
+        photoFaceGroupId = try container.decode(String.self, forKey: .photoFaceGroupId)
+        contactId = try container.decode(String.self, forKey: .contactId)
+        contactName = try container.decode(String.self, forKey: .contactName)
+        isOwnContact = try container.decodeIfPresent(Bool.self, forKey: .isOwnContact) ?? false
+        facePictureUrl = try container.decode(String.self, forKey: .facePictureUrl)
     }
 
     /// Whether the face is in a group, which is a person to open.
@@ -270,6 +289,9 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
     public let contactId: String
     public let contactAddressBookId: String
     public let contactName: String
+    /// Whether that contact is the person's own card, so the group is them. A
+    /// server that does not say has no such group.
+    public let isOwnContact: Bool
     /// Counted over photos that are not in the Trash.
     public let faceCount: Int
     public let photoCount: Int
@@ -280,7 +302,7 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
 
     public init(
         id: String, createdAt: String = "", updatedAt: String = "", contactId: String = "", contactAddressBookId: String = "", contactName: String = "",
-        faceCount: Int = 0, photoCount: Int = 0, facePictureUrl: String = "", coverPhotoFaceId: String = "", isHidden: Bool = false
+        isOwnContact: Bool = false, faceCount: Int = 0, photoCount: Int = 0, facePictureUrl: String = "", coverPhotoFaceId: String = "", isHidden: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -288,6 +310,7 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
         self.contactId = contactId
         self.contactAddressBookId = contactAddressBookId
         self.contactName = contactName
+        self.isOwnContact = isOwnContact
         self.faceCount = faceCount
         self.photoCount = photoCount
         self.facePictureUrl = facePictureUrl
@@ -295,11 +318,48 @@ public struct PhotoFaceGroup: Codable, Identifiable, Hashable, Sendable {
         self.isHidden = isHidden
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        contactId = try container.decode(String.self, forKey: .contactId)
+        contactAddressBookId = try container.decode(String.self, forKey: .contactAddressBookId)
+        contactName = try container.decode(String.self, forKey: .contactName)
+        isOwnContact = try container.decodeIfPresent(Bool.self, forKey: .isOwnContact) ?? false
+        faceCount = try container.decode(Int.self, forKey: .faceCount)
+        photoCount = try container.decode(Int.self, forKey: .photoCount)
+        facePictureUrl = try container.decode(String.self, forKey: .facePictureUrl)
+        coverPhotoFaceId = try container.decode(String.self, forKey: .coverPhotoFaceId)
+        isHidden = try container.decode(Bool.self, forKey: .isHidden)
+    }
+
     /// The name of the contact, without the spaces round it.
     public var trimmedContactName: String { contactName.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Whether a contact names the group.
     public var isNamed: Bool { !trimmedContactName.isEmpty }
+}
+
+/// NamedPhotoFaceGroup is what naming a group answered. A contact names one
+/// person, so a contact that named another group already merges the two:
+/// `photoFaceGroup` is the group that was named already, with the faces of
+/// both, and `mergedPhotoFaceGroupId` is the group that went into it, empty
+/// when nothing was merged. A contact that had no picture was given one cut
+/// from a face of the group.
+public struct NamedPhotoFaceGroup: Decodable, Hashable, Sendable {
+    public let photoFaceGroup: PhotoFaceGroup
+    public let mergedPhotoFaceGroupId: String
+    public let isContactPictureSet: Bool
+
+    public init(photoFaceGroup: PhotoFaceGroup, mergedPhotoFaceGroupId: String = "", isContactPictureSet: Bool = false) {
+        self.photoFaceGroup = photoFaceGroup
+        self.mergedPhotoFaceGroupId = mergedPhotoFaceGroupId
+        self.isContactPictureSet = isContactPictureSet
+    }
+
+    /// Whether another group was put into this one.
+    public var isMerged: Bool { !mergedPhotoFaceGroupId.isEmpty }
 }
 
 /// PhotoDetail is one photo with its files, previews, the albums it is in, its
@@ -696,7 +756,7 @@ extension Documents {
         photoDescription descriptionVisibleText describedAt isDescriptionRequested
         """
     static let photoFaceFields = """
-        id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName facePictureUrl
+        id photoId boxLeftFraction boxTopFraction boxWidthFraction boxHeightFraction photoFaceGroupId contactId contactName isOwnContact facePictureUrl
         """
     public static let readPhoto = """
         query ($photoId: String!) {
@@ -780,7 +840,7 @@ extension Documents {
         mutation ($photoAlbumId: String!, $photoId: String!) { SetPhotoAlbumCover(photoAlbumId: $photoAlbumId, photoId: $photoId) { \(photoAlbumFields) } }
         """
     static let photoFaceGroupFields = """
-        id createdAt updatedAt contactId contactAddressBookId contactName faceCount photoCount facePictureUrl coverPhotoFaceId isHidden
+        id createdAt updatedAt contactId contactAddressBookId contactName isOwnContact faceCount photoCount facePictureUrl coverPhotoFaceId isHidden
         """
     public static let listPhotoFaceGroups = """
         query ($isHiddenIncluded: Boolean) { ListPhotoFaceGroups(isHiddenIncluded: $isHiddenIncluded) { \(photoFaceGroupFields) } }
@@ -789,7 +849,7 @@ extension Documents {
         query ($photoFaceGroupId: String!) { ReadPhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { \(photoFaceGroupFields) } }
         """
     public static let namePhotoFaceGroup = """
-        mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { \(photoFaceGroupFields) } }
+        mutation ($photoFaceGroupId: String!, $contactId: String!) { NamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId, contactId: $contactId) { photoFaceGroup { \(photoFaceGroupFields) } mergedPhotoFaceGroupId isContactPictureSet } }
         """
     public static let unnamePhotoFaceGroup = """
         mutation ($photoFaceGroupId: String!) { UnnamePhotoFaceGroup(photoFaceGroupId: $photoFaceGroupId) { \(photoFaceGroupFields) } }
@@ -1453,9 +1513,11 @@ extension Connection {
         ).ReadPhotoFaceGroup
     }
 
-    /// Names a group by a contact from the person's address books.
-    public func namePhotoFaceGroup(_ photoFaceGroupId: String, contactId: String) async throws -> PhotoFaceGroup {
-        struct Answer: Decodable, Sendable { let NamePhotoFaceGroup: PhotoFaceGroup }
+    /// Names a group by a contact from the person's address books. A contact
+    /// names one person, so a contact that names another of the person's groups
+    /// merges the two; the answer says what happened.
+    public func namePhotoFaceGroup(_ photoFaceGroupId: String, contactId: String) async throws -> NamedPhotoFaceGroup {
+        struct Answer: Decodable, Sendable { let NamePhotoFaceGroup: NamedPhotoFaceGroup }
         return try await execute(
             Documents.namePhotoFaceGroup, variables: ["photoFaceGroupId": .string(photoFaceGroupId), "contactId": .string(contactId)], as: Answer.self
         ).NamePhotoFaceGroup

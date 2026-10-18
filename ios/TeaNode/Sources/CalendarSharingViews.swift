@@ -4,8 +4,8 @@ import TeaNodeKit
 /// CalendarListSheet is the calendars the person reaches: their own, their
 /// circles' and the ones shared with them, each with its color and whose it
 /// is, and a switch to show or hide it. What is hidden is hidden on this
-/// phone only. Below the list are the ways to share their own calendar and
-/// to make a circle's.
+/// phone only. Below the list are the ways to rename and share their own
+/// calendar and to make a circle's.
 struct CalendarListSheet: View {
     let model: CalendarModel
     @Environment(\.dismiss) private var dismiss
@@ -13,6 +13,8 @@ struct CalendarListSheet: View {
     @State private var problemText: String?
     @State private var doneText: String?
     @State private var isWorking = false
+    @State private var isRenaming = false
+    @State private var newName = ""
     #if DEBUG
         /// Whether the share screen is pushed for a screenshot.
         @State private var isShowingDemoShare = false
@@ -36,6 +38,16 @@ struct CalendarListSheet: View {
                     Text("Calendars you hide here stay hidden on this phone only.")
                 }
                 if let own = model.calendar {
+                    Section {
+                        Button {
+                            newName = own.name
+                            isRenaming = true
+                        } label: {
+                            Label("Rename my calendar", systemImage: "pencil")
+                                .actionColor()
+                        }
+                        .disabled(isWorking)
+                    }
                     Section {
                         NavigationLink {
                             CalendarShareScreen(model: model, calendar: own)
@@ -64,6 +76,7 @@ struct CalendarListSheet: View {
                                         ? String(localized: "Make a family calendar for \(circle.name)")
                                         : String(localized: "Make a shared calendar for \(circle.name)"),
                                     systemImage: "calendar.badge.plus")
+                                .actionColor()
                             }
                             .disabled(isWorking)
                         }
@@ -80,6 +93,11 @@ struct CalendarListSheet: View {
                 }
             }
             .task { await findCirclesWithoutCalendar() }
+            .alert("Rename your calendar", isPresented: $isRenaming) {
+                TextField("Calendar name", text: $newName)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") { rename() }
+            }
             #if DEBUG
                 // `-TeaNodeScreen calendar-share-sheet`: Share my calendar, open in the sheet.
                 .navigationDestination(isPresented: $isShowingDemoShare) {
@@ -109,6 +127,25 @@ struct CalendarListSheet: View {
         guard let circles = try? await model.connection.circles() else { return }
         let withCalendar = Set(model.calendars.compactMap(\.circleId))
         circlesWithoutCalendar = circles.filter { $0.isAdmin && !withCalendar.contains($0.id) }
+    }
+
+    /// Renames the person's own calendar. Nothing is sent for an empty name or
+    /// the name it already has.
+    private func rename() {
+        guard let own = model.calendar else { return }
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != own.name else { return }
+        isWorking = true
+        Task {
+            do {
+                try await model.connection.saveCalendar(own, name: name)
+                doneText = String(localized: "Calendar renamed")
+                await model.reloadCalendars()
+            } catch {
+                problemText = error.refusalReason(orSay: String(localized: "That did not work. Check your connection and try again."))
+            }
+            isWorking = false
+        }
     }
 
     private func make(for circle: PeopleCircle) {

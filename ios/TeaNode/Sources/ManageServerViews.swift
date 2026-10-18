@@ -1073,6 +1073,7 @@ private struct SSOFormView: View {
                         draft.wrappedValue.providers.removeAll { $0.id == shown.id }
                     }
                     .tint(.red)
+                    .actionColor(isDestructive: true)
                 } header: {
                     Text(verbatim: shown.name.isEmpty ? shown.providerId : shown.name)
                 } footer: {
@@ -1322,6 +1323,7 @@ struct ServerAboutView: View {
                 Label(isRestarting ? LocalizedStringKey("Restarting…") : "Restart this instance", systemImage: "arrow.clockwise")
             }
             .tint(.red)
+            .actionColor(isDestructive: true)
             .disabled(isRestarting)
             .confirmationDialog("Restart this instance?", isPresented: $isConfirmingRestart, titleVisibility: .visible, presenting: serverStatus) { _ in
                 Button("Yes, restart it", role: .destructive) {
@@ -3337,6 +3339,7 @@ struct AgentProviderForm: View {
                     draft.modelPrices.removeAll { $0.id == shown.id }
                 }
                 .tint(.red)
+                .actionColor(isDestructive: true)
             } header: {
                 Text("Prices for particular models")
             }
@@ -4469,6 +4472,7 @@ private struct InstalledSkillView: View {
                     }
                     Button("Remove", systemImage: "trash", role: .destructive) { isRemoving = true }
                         .tint(.red)
+                        .actionColor(isDestructive: true)
                         .confirmationDialog("Remove \(skillName)?", isPresented: $isRemoving, titleVisibility: .visible) {
                             Button("Remove", role: .destructive) {
                                 Task {

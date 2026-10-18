@@ -71,7 +71,7 @@
                 return session.replacingOccurrences(of: #""user:manage","#, with: "")
             }
             if query.contains("ListCalendarFreeBusy") { return calendarFreeBusyAnswer(variables: variables) }
-            if let screen, ["calendar-shared", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
+            if let screen, ["calendar-shared", "calendar-sheet", "calendar-share-sheet", "calendar-find-time"].contains(screen) {
                 if query.contains("ListCalendars") { return #"{"data":{"ListCalendars":[\#(sharedCalendarsJSON)]}}"# }
                 if query.contains("ListCalendarEvents"), screen == "calendar-shared" { return sharedCalendarEvents(variables: variables, body: body) }
             }
@@ -277,12 +277,12 @@
                 #"{"data":{"ReadAgentConversation":{"conversation":\#(conversation),"todos":[],"messages":[\#(messages.joined(separator: ","))],"total":\#(messages.count)},"ListAgentInteractions":[]}}"#
         }
 
-        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`
-        /// or `chat-members`), or nil for any other screen.
+        /// The chat a screenshot opens (`-TeaNodeScreen chat-direct`, `chat-group`,
+        /// `chat-members` or `chat-mention`), or nil for any other screen.
         static var openedChat: AgentConversation? {
             switch screen ?? "" {
             case "chat-direct": AgentConversation(id: "chat-sam", kind: "chat", title: nil, summary: nil, lastAt: nil)
-            case "chat-group", "chat-members": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
+            case "chat-group", "chat-members", "chat-mention": AgentConversation(id: "chat-home", kind: "chat", title: "Home", summary: nil, lastAt: nil)
             default: nil
             }
         }

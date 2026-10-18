@@ -193,6 +193,34 @@ func TestTwoFacesOfOnePhotoAreNeverPutInOneGroup(test *testing.T) {
 	}
 }
 
+// A photo's faces take their groups best match first: a face that only
+// somewhat resembles a person, found before them in the same photo, does not
+// take their group and leave them a group of their own.
+func TestTheFaceMostLikeAPersonTakesTheirGroupWhicheverIsFoundFirst(test *testing.T) {
+	fixture := newFixture(test)
+	reader := &fakeFaceReader{scripts: map[int][]*faces.FoundFace{
+		0: {scriptedFace(0, 0.1, 0.95, 0.2)},
+		// A look-alike first, at 50 degrees, and then the person again.
+		1: {scriptedFace(50, 0.1, 0.95, 0.2), scriptedFace(0, 0.6, 0.95, 0.2)},
+	}}
+	fixture.store.SetFaceReader(reader, nil)
+	fixture.sendPicture("alone", 0)
+	fixture.process()
+	fixture.sendPicture("with-a-look-alike", 1)
+	fixture.process()
+	person := fixture.facesOf(fixture.photoByClientId("alone").ID)
+	together := fixture.facesOf(fixture.photoByClientId("with-a-look-alike").ID)
+	if len(person) != 1 || person[0].PhotoFaceGroupID == "" || len(together) != 2 {
+		test.Fatalf("%+v %+v", person, together)
+	}
+	for _, face := range together {
+		isThePerson := face.BoxLeftFraction > 0.5
+		if isInTheirGroup := face.PhotoFaceGroupID == person[0].PhotoFaceGroupID; isInTheirGroup != isThePerson || face.PhotoFaceGroupID == "" {
+			test.Fatalf("the face at %v: %+v", face.BoxLeftFraction, together)
+		}
+	}
+}
+
 func TestAFaceReaderThatFailsLeavesThePhotoReadyAndIsTriedAgainLater(test *testing.T) {
 	fixture := newFixture(test)
 	reader := &fakeFaceReader{scripts: map[int][]*faces.FoundFace{0: {scriptedFace(0, 0.1, 0.95, 0.2)}}, err: errors.New("faces: the program was killed")}

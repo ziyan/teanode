@@ -30,6 +30,7 @@ func (self *fakeRun) Headless() bool                          { return false }
 func (self *fakeRun) CanAsk() bool                            { return !self.Headless() }
 func (self *fakeRun) Configuration() *config.Configuration    { return config.Default() }
 func (self *fakeRun) Offered() []*tools.Tool                  { return nil }
+func (self *fakeRun) Owner() *models.User                     { return nil }
 
 func find(t *testing.T, name string) *tools.Tool {
 	t.Helper()
@@ -859,4 +860,418 @@ func TestReactingToANamedMessageAsksAndAChatTheyCannotReadIsNotThere(t *testing.
 	if missingErr == nil || missingErr.Error() != `there is no message "no-such-message"` {
 		t.Errorf("a message that does not exist: %v", missingErr)
 	}
+}
+
+// changingOperations answers the operations that change a chat as the API
+// does, with the conversation they changed, and the people the person shares
+// a circle with, and records what it was asked.
+type changingOperations struct {
+	documents []string
+	variables []map[string]any
+	people    []map[string]any
+}
+
+func (self *changingOperations) Execute(_ context.Context, document string, variables map[string]any, result any) error {
+	self.documents = append(self.documents, document)
+	self.variables = append(self.variables, variables)
+	target, ok := result.(*map[string]any)
+	if !ok {
+		return nil
+	}
+	answer := map[string]any{
+		"id": "a-conversation", "title": "Weekend plans",
+		"chat": map[string]any{"chatId": "a-chat", "chatKind": "group", "isMuted": false, "members": []map[string]any{
+			{"userId": "u1", "username": "act-owner", "name": "Example Owner", "memberRole": "admin"},
+			{"userId": "u2", "username": "act-friend", "name": "Example Friend", "memberRole": "member"},
+		}},
+	}
+	switch {
+	case strings.Contains(document, "ListCirclePeople"):
+		*target = map[string]any{"ListCirclePeople": self.people}
+	case strings.Contains(document, "MarkChatRead"):
+		*target = map[string]any{"MarkChatRead": true}
+	case strings.Contains(document, "LeaveChat"):
+		*target = map[string]any{"LeaveChat": true}
+	case strings.Contains(document, "DeleteChatMessage"):
+		*target = map[string]any{"DeleteChatMessage": true}
+	case strings.Contains(document, "EditChatMessage"):
+		*target = map[string]any{"EditChatMessage": map[string]any{"id": "a-message"}}
+	default:
+		// The name of the operation is the first word after the opening brace.
+		name := strings.Fields(strings.SplitN(document, "{", 2)[1])[0]
+		*target = map[string]any{strings.SplitN(name, "(", 2)[0]: answer}
+	}
+	return nil
+}
+
+func (self *changingOperations) Permissions() *models.EffectivePermissions { return nil }
+
+// lastCall is the operation the API was asked last: its document's name and
+// the variables.
+func (self *changingOperations) lastCall(t *testing.T) (string, map[string]any) {
+	t.Helper()
+	if len(self.documents) == 0 {
+		t.Fatal("the API was asked nothing")
+	}
+	index := len(self.documents) - 1
+	return self.documents[index], self.variables[index]
+}
+
+// The actions that change a chat cost what they give away or cannot give back:
+// adding people and letting the others ask the agent give a way in, taking
+// somebody out, leaving and deleting a message cannot be undone by the person
+// alone, and the rest is the person's own view or words. A call that does not
+// say which way a switch goes is judged as the one that gives.
+func TestChatActionsAreJudgedByWhatTheyCost(t *testing.T) {
+	tool := find(t, "conversation")
+	for arguments, expected := range map[string]tools.Risk{
+		`{"action":"direct","username":"act-friend"}`:                               tools.RiskWrite,
+		`{"action":"group","title":"Weekend plans","usernames":["act-friend"]}`:     tools.RiskWrite,
+		`{"action":"rename","conversation_id":"c","title":"Plans"}`:                 tools.RiskWrite,
+		`{"action":"add_members","conversation_id":"c","usernames":["act-friend"]}`: tools.RiskGranting,
+		`{"action":"remove_member","conversation_id":"c","username":"act-friend"}`:  tools.RiskDestructive,
+		`{"action":"leave","conversation_id":"c"}`:                                  tools.RiskDestructive,
+		`{"action":"mute","conversation_id":"c"}`:                                   tools.RiskWrite,
+		`{"action":"mark_read","conversation_id":"c"}`:                              tools.RiskWrite,
+		`{"action":"edit","chat_message_id":"m","text":"on my way"}`:                tools.RiskOutward,
+		`{"action":"delete_message","chat_message_id":"m"}`:                         tools.RiskDestructive,
+		`{"action":"remember","conversation_id":"c","is_on":true}`:                  tools.RiskWrite,
+		`{"action":"remember","conversation_id":"c","is_on":false}`:                 tools.RiskWrite,
+		`{"action":"others_may_ask","conversation_id":"c","is_on":true}`:            tools.RiskGranting,
+		`{"action":"others_may_ask","conversation_id":"c"}`:                         tools.RiskGranting,
+		`{"action":"others_may_ask","conversation_id":"c","is_on":false}`:           tools.RiskWrite,
+		`{"action":"list"}`: tools.RiskRead,
+	} {
+		raw := json.RawMessage(arguments)
+		if risk := tool.RiskFor(raw); risk != expected {
+			t.Errorf("%s is %s, not %s", arguments, risk, expected)
+		}
+		wantsAsking := expected != tools.RiskRead && expected != tools.RiskWrite
+		if asks := tools.NeedsConfirmation(tool, raw, nil, nil); asks != wantsAsking {
+			t.Errorf("%s asks the person: %v", arguments, asks)
+		}
+	}
+}
+
+// Each action runs the operation the person's own screens run, with the
+// arguments of the command line: people by username turned into account ids,
+// the chat by the person's conversation for it. The cards of the ones that ask
+// name the chat and the people and say what happens.
+func TestChatActionsRunTheOperationsAndAskInPlainWords(t *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(t)
+	defer closeDatabase()
+
+	operations := &changingOperations{people: []map[string]any{
+		{"userId": "u2", "username": "act-friend", "name": "Example Friend"},
+		{"userId": "u3", "username": "act-neighbor", "name": "Example Neighbor"},
+	}}
+	run := &chattingRun{fakeRun: &fakeRun{database: database}, operations: operations}
+	var weekend *models.AgentConversation
+	var friendsMessage *models.ChatMessage
+	var friend, neighbor *models.User
+	dbtest.RunTransactionOn(t, database, func(tx db.Transaction) {
+		owner, err := tx.CreateUser(&models.User{Username: "act-owner", Name: "Example Owner"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if friend, err = tx.CreateUser(&models.User{Username: "act-friend", Name: "Example Friend"}); err != nil {
+			t.Fatal(err)
+		}
+		if neighbor, err = tx.CreateUser(&models.User{Username: "act-neighbor", Name: "Example Neighbor"}); err != nil {
+			t.Fatal(err)
+		}
+		if run.agent, err = tx.CreateAgent(&models.Agent{UserID: owner.ID, Enabled: true, Name: "Bertie"}); err != nil {
+			t.Fatal(err)
+		}
+		chat, err := tx.CreateGroupChat(owner.ID, "Weekend plans", []string{friend.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if weekend, err = tx.EnsureChatConversation(run.agent.ID, chat.ID); err != nil {
+			t.Fatal(err)
+		}
+		if friendsMessage, err = tx.AppendChatMessage(&models.ChatMessage{ChatID: chat.ID, AuthorUserID: friend.ID, AuthorName: "Example Friend", Body: "the moorings are booked"}); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(3 * time.Millisecond)
+		// The agent's own row in the chat's conversation is newer than the
+		// last thing anybody said, and is not a message of the chat.
+		if _, err := tx.AppendAgentMessage(&models.AgentMessage{ConversationID: weekend.ID, Role: "assistant", Content: "noted"}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	// The members' account ids are the real ones, which the canned circle
+	// does not know.
+	operations.people[0]["userId"], operations.people[1]["userId"] = friend.ID, neighbor.ID
+
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+	call := func(arguments string) (*tools.Result, error) {
+		return tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(arguments)})
+	}
+	chatId := weekend.ID
+
+	// Opening a chat and starting a group turn usernames into account ids.
+	result, err := call(`{"action":"direct","username":"@Act-Neighbor"}`)
+	if err != nil {
+		t.Fatalf("direct: %s", err)
+	}
+	document, variables := operations.lastCall(t)
+	if !strings.Contains(document, "OpenDirectChat(userId: $userId)") || variables["userId"] != neighbor.ID {
+		t.Errorf("direct asked %s with %v", document, variables)
+	}
+	if !result.Untrusted || !strings.Contains(result.Content, "Weekend plans") {
+		t.Errorf("a chat's title and people were chosen by others: %+v", result)
+	}
+	if _, err := call(`{"action":"group","title":" Picnic ","usernames":["act-friend","act-neighbor","ACT-FRIEND"]}`); err != nil {
+		t.Fatalf("group: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "CreateGroupChat(title: $title, userIds: $userIds)") || variables["title"] != "Picnic" ||
+		fmt.Sprint(variables["userIds"]) != fmt.Sprint([]string{friend.ID, neighbor.ID}) {
+		t.Errorf("group asked %s with %v", document, variables)
+	}
+	// Somebody the person shares no circle with is refused before anything
+	// is asked, in the words of the circle tool.
+	asked := len(operations.documents)
+	for _, arguments := range []string{
+		`{"action":"group","usernames":["act-stranger"]}`,
+		`{"action":"direct","username":"act-stranger"}`,
+		`{"action":"group","usernames":[]}`,
+		`{"action":"direct"}`,
+	} {
+		if _, err := call(arguments); err == nil {
+			t.Errorf("%s was accepted", arguments)
+		}
+	}
+	if _, err := call(`{"action":"direct","username":"act-stranger"}`); err == nil || !strings.Contains(err.Error(), "circle tool") {
+		t.Errorf("a stranger: %v", err)
+	}
+	for _, document := range operations.documents[asked:] {
+		if !strings.Contains(document, "ListCirclePeople") {
+			t.Errorf("a refused call reached the API with %s", document)
+		}
+	}
+
+	// A title, and who is in the chat: only somebody not already in it is
+	// added, and the card names the people.
+	if _, err := call(`{"action":"rename","conversation_id":"` + chatId + `","title":"Plans"}`); err != nil {
+		t.Fatalf("rename: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "RenameChat(") || variables["conversationId"] != chatId || variables["title"] != "Plans" {
+		t.Errorf("rename asked %s with %v", document, variables)
+	}
+	adding := `{"action":"add_members","conversation_id":"` + chatId + `","usernames":["act-friend","act-neighbor"]}`
+	if _, err := call(adding); err != nil {
+		t.Fatalf("add_members: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "AddChatMembers(") || variables["conversationId"] != chatId ||
+		fmt.Sprint(variables["userIds"]) != fmt.Sprint([]string{neighbor.ID}) {
+		t.Errorf("add_members asked %s with %v: the friend is in already", document, variables)
+	}
+	asked = len(operations.documents)
+	already, err := call(`{"action":"add_members","conversation_id":"` + chatId + `","usernames":["act-friend"]}`)
+	if err != nil || !strings.Contains(already.Content, "already in this chat") {
+		t.Errorf("adding somebody who is in: %v %v", already, err)
+	}
+	if len(operations.documents)-asked != 1 {
+		t.Errorf("adding nobody still asked the API: %v", operations.documents[asked:])
+	}
+	if line := tool.PreviewLine(ctx, json.RawMessage(adding)); line != `Add "Example Friend", "Example Neighbor" to the chat "Weekend plans", who then read everything said there from now on` {
+		t.Errorf("the card for adding says %q", line)
+	}
+
+	// Taking out is by username, or by an exact name only one person has.
+	for _, who := range []string{"act-friend", "Example Friend"} {
+		if _, err := call(`{"action":"remove_member","conversation_id":"` + chatId + `","username":"` + who + `"}`); err != nil {
+			t.Fatalf("remove_member %s: %s", who, err)
+		}
+		document, variables = operations.lastCall(t)
+		if !strings.Contains(document, "RemoveChatMember(") || variables["userId"] != friend.ID {
+			t.Errorf("remove_member asked %s with %v", document, variables)
+		}
+	}
+	if _, err := call(`{"action":"remove_member","conversation_id":"` + chatId + `","username":"act-neighbor"}`); err == nil || !strings.Contains(err.Error(), "is not in this chat") {
+		t.Errorf("taking out somebody who is not in the chat: %v", err)
+	}
+	removing := json.RawMessage(`{"action":"remove_member","conversation_id":"` + chatId + `","username":"act-friend"}`)
+	if line := tool.PreviewLine(ctx, removing); line != `Remove "Example Friend" from the chat "Weekend plans". They will not see new messages there; what was said stays` {
+		t.Errorf("the card for removing says %q", line)
+	}
+
+	leaving := json.RawMessage(`{"action":"leave","conversation_id":"` + chatId + `"}`)
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c2", Arguments: leaving}); err != nil {
+		t.Fatalf("leave: %s", err)
+	}
+	if document, variables = operations.lastCall(t); !strings.Contains(document, "LeaveChat(") || variables["conversationId"] != chatId {
+		t.Errorf("leave asked %s with %v", document, variables)
+	}
+	if line := tool.PreviewLine(ctx, leaving); !strings.Contains(line, `Leave the chat "Weekend plans"`) || !strings.Contains(line, "an admin of the group has to add them again") {
+		t.Errorf("the card for leaving says %q", line)
+	}
+
+	// Muting: for good by default as the dashboard does it, until a length of
+	// time or a time, and off. A time that has passed is not a mute.
+	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `"}`); err != nil {
+		t.Fatalf("mute: %s", err)
+	}
+	if document, variables = operations.lastCall(t); !strings.Contains(document, "MuteChat(") || variables["mutedUntil"] != "2999-01-01T00:00:00Z" {
+		t.Errorf("mute asked %s with %v", document, variables)
+	}
+	before := time.Now()
+	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `","until":"8h"}`); err != nil {
+		t.Fatalf("mute for 8h: %s", err)
+	}
+	_, variables = operations.lastCall(t)
+	ends, err := time.Parse(time.RFC3339, fmt.Sprint(variables["mutedUntil"]))
+	if err != nil || ends.Before(before.Add(8*time.Hour-time.Minute)) || ends.After(before.Add(8*time.Hour+time.Minute)) {
+		t.Errorf("mute for 8h ends at %v (%v)", variables["mutedUntil"], err)
+	}
+	future := time.Now().Add(48 * time.Hour).UTC().Truncate(time.Second)
+	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `","until":"` + future.Format(time.RFC3339) + `"}`); err != nil {
+		t.Fatalf("mute until a time: %s", err)
+	}
+	if _, variables = operations.lastCall(t); variables["mutedUntil"] != future.Format(time.RFC3339) {
+		t.Errorf("mute until %s asked %v", future, variables)
+	}
+	if _, err := call(`{"action":"mute","conversation_id":"` + chatId + `","is_muted":false}`); err != nil {
+		t.Fatalf("unmute: %s", err)
+	}
+	if _, variables = operations.lastCall(t); variables["mutedUntil"] != nil {
+		t.Errorf("unmute asked %v", variables)
+	}
+	for _, arguments := range []string{
+		`{"action":"mute","conversation_id":"` + chatId + `","until":"2020-01-01 09:00"}`,
+		`{"action":"mute","conversation_id":"` + chatId + `","until":"next whenever"}`,
+		`{"action":"mute","conversation_id":"` + chatId + `","is_muted":false,"until":"8h"}`,
+	} {
+		if _, err := call(arguments); err == nil {
+			t.Errorf("%s was accepted", arguments)
+		}
+	}
+
+	// Read through the newest thing somebody said, not the agent's own row.
+	if _, err := call(`{"action":"mark_read","conversation_id":"` + chatId + `"}`); err != nil {
+		t.Fatalf("mark_read: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "MarkChatRead(") || variables["throughMessageId"] != friendsMessage.ID {
+		t.Errorf("mark_read asked %s with %v", document, variables)
+	}
+
+	// Edit and delete name the message read gave.
+	if _, err := call(`{"action":"edit","chat_message_id":"` + friendsMessage.ID + `","text":" on my way "}`); err != nil {
+		t.Fatalf("edit: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "EditChatMessage(") || variables["messageId"] != friendsMessage.ID || variables["message"] != "on my way" {
+		t.Errorf("edit asked %s with %v", document, variables)
+	}
+	deleting := json.RawMessage(`{"action":"delete_message","chat_message_id":"` + friendsMessage.ID + `"}`)
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c3", Arguments: deleting}); err != nil {
+		t.Fatalf("delete_message: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "DeleteChatMessage(") || variables["messageId"] != friendsMessage.ID {
+		t.Errorf("delete_message asked %s with %v", document, variables)
+	}
+	if line := tool.PreviewLine(ctx, deleting); line != `Delete the message "the moorings are booked" from "Example Friend" in the chat "Weekend plans" for everybody there, who will see "Message deleted" in its place` {
+		t.Errorf("the card for deleting says %q", line)
+	}
+	editing := json.RawMessage(`{"action":"edit","chat_message_id":"` + friendsMessage.ID + `","text":"on my way"}`)
+	if line := tool.PreviewLine(ctx, editing); line != `Change the message "the moorings are booked" from "Example Friend" in the chat "Weekend plans" to say "on my way"; everybody there reads it as yours, marked edited, and what it said before is not kept` {
+		t.Errorf("the card for editing says %q", line)
+	}
+	// A message of a chat the person has no conversation for is not quoted.
+	if line := tool.PreviewLine(ctx, json.RawMessage(`{"action":"delete_message","chat_message_id":"no-such-message"}`)); strings.Contains(line, "moorings") || !strings.HasPrefix(line, "Delete a message in a chat") {
+		t.Errorf("the card for deleting a message that is not there says %q", line)
+	}
+
+	// What the person's agent does in the chat: remembering it is the
+	// person's own switch, letting the others ask it gives them a way in.
+	if _, err := call(`{"action":"remember","conversation_id":"` + chatId + `","is_on":true}`); err != nil {
+		t.Fatalf("remember: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "SetChatAgentReading(") || variables["isAgentReading"] != true {
+		t.Errorf("remember asked %s with %v", document, variables)
+	}
+	asking := json.RawMessage(`{"action":"others_may_ask","conversation_id":"` + chatId + `","is_on":true}`)
+	if _, err := tool.Run(ctx, &tools.Call{ID: "c4", Arguments: asking}); err != nil {
+		t.Fatalf("others_may_ask: %s", err)
+	}
+	document, variables = operations.lastCall(t)
+	if !strings.Contains(document, "SetChatAgentAskableByOthers(") || variables["isAgentAskableByOthers"] != true {
+		t.Errorf("others_may_ask asked %s with %v", document, variables)
+	}
+	if line := tool.PreviewLine(ctx, asking); !strings.Contains(line, `Let everyone in the chat "Weekend plans" ask the agent there`) || !strings.Contains(line, "nothing of the person's") {
+		t.Errorf("the card for letting the others ask says %q", line)
+	}
+	asked = len(operations.documents)
+	if _, err := call(`{"action":"others_may_ask","conversation_id":"` + chatId + `"}`); err == nil {
+		t.Error("a switch that was not said was accepted")
+	}
+	if len(operations.documents) != asked {
+		t.Error("a switch that was not said reached the API")
+	}
+
+	// A conversation that is not the person's chat is not looked up.
+	if _, err := call(`{"action":"remove_member","conversation_id":"nobody-has-this","username":"act-friend"}`); err == nil || !strings.Contains(err.Error(), "there is no chat") {
+		t.Errorf("a chat that is not there: %v", err)
+	}
+
+	// Who is in a chat is read with usernames, which the actions take.
+	read, _, err := func() (map[string]any, *tools.Result, error) {
+		result, err := call(`{"action":"read","conversation_id":"` + chatId + `"}`)
+		if err != nil {
+			return nil, nil, err
+		}
+		var answer map[string]any
+		_ = json.Unmarshal([]byte(result.Content), &answer)
+		return answer, result, nil
+	}()
+	if err != nil {
+		t.Fatalf("read: %s", err)
+	}
+	people, _ := read["people_in_it"].([]any)
+	if len(people) != 2 || people[1].(map[string]any)["username"] != "act-friend" || people[0].(map[string]any)["role"] != "admin" {
+		t.Errorf("who is in the chat: %v", read["people_in_it"])
+	}
+}
+
+// A turn somebody else asked for, in a chat, can read that chat and do nothing
+// else, and that includes changing it.
+func TestAHeldRunChangesNoChat(t *testing.T) {
+	run := &heldRun{fakeRun: &fakeRun{agent: &models.Agent{ID: "agent-1", UserID: "user-1"}}, heldTo: "the-chat"}
+	ctx := tools.WithRun(context.Background(), run)
+	tool := find(t, "conversation")
+	for _, action := range chatActionsForTest() {
+		_, err := tool.Run(ctx, &tools.Call{ID: "c1", Arguments: json.RawMessage(`{"action":"` + action + `","conversation_id":"the-chat"}`)})
+		if err == nil || !strings.Contains(err.Error(), "you can only read the chat you are in") {
+			t.Errorf("%s in a held turn: %v", action, err)
+		}
+	}
+}
+
+// chatActionsForTest are the actions the tool lists besides the ones that
+// read and speak, as its own schema says.
+func chatActionsForTest() []string {
+	var actions []string
+	for _, tool := range tools.Build().All() {
+		if tool.Name != "conversation" {
+			continue
+		}
+		properties, _ := tool.Parameters["properties"].(map[string]any)
+		action, _ := properties["action"].(map[string]any)
+		for _, name := range action["enum"].([]string) {
+			switch name {
+			case "search", "list", "read", "react", "send":
+			default:
+				actions = append(actions, name)
+			}
+		}
+	}
+	return actions
 }

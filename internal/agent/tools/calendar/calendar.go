@@ -12,6 +12,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/agent/tools"
 	"github.com/ziyan/teanode/internal/calendar"
+	"github.com/ziyan/teanode/internal/client"
 	"github.com/ziyan/teanode/internal/models"
 )
 
@@ -104,6 +105,81 @@ func init() {
 					"share_id": tools.StringProperty("the share, as the identifier shares gives"),
 				}, "share_id"),
 				Run: runUnshare,
+			},
+			{
+				Name: "calendar_request", Family: tools.FamilyAccount, Risk: tools.RiskRead,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Look up a calendar change after an uncertain response, by its request identifier: " +
+					"whether it completed, and which calendar and event it was for, even when the event has been deleted since. " +
+					"Every save and removal of an event carries a request identifier, which the command line prints before it changes anything. " +
+					"No completed request found may mean the original request is still in progress.",
+				Parameters: tools.Object(map[string]any{
+					"request_id": tools.StringProperty("the request identifier of the calendar change"),
+				}, "request_id"),
+				Run: runRequest,
+			},
+			{
+				// A write and not a destructive: stopping records that the
+				// request may not run, which loses nothing -- the change can
+				// be asked for again under a new identifier -- and a request
+				// that already completed is reported, never undone.
+				Name: "calendar_stop", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Stop a calendar change that has not completed, by its request identifier, so that it can no longer execute. " +
+					"A change that already completed is reported and is not undone: use edit or remove for that. " +
+					"Use it to resolve an uncertain request before discarding it.",
+				Parameters: tools.Object(map[string]any{
+					"request_id": tools.StringProperty("the request identifier of the calendar change to stop"),
+				}, "request_id"),
+				Preview: tools.PreviewOf(func(call struct {
+					RequestID string `json:"request_id"`
+				}) string {
+					return "Stop the calendar change " + tools.Named(call.RequestID, "that is pending") + " from executing"
+				}),
+				Run: runStop,
+			},
+			{
+				Name: "calendar_set", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Rename the person's own calendar, or change how it is shown. Only what you give is changed. " +
+					"A person has one calendar of events, so this does not make another; " +
+					"a circle's own calendar is made with circle.",
+				Parameters: tools.Object(map[string]any{
+					"name":        tools.StringProperty("what to call it"),
+					"description": tools.StringProperty("what it is for"),
+					"color":       tools.StringProperty("what a client paints it, as #rrggbb"),
+					"timezone":    tools.StringProperty("the zone a new event is written in, as an IANA name"),
+					"week_start":  tools.EnumProperty("the day a week is drawn from", "sunday", "monday"),
+				}),
+				Preview: tools.PreviewOf(func(call struct {
+					Name string `json:"name"`
+				}) string {
+					if strings.TrimSpace(call.Name) != "" {
+						return "Rename your calendar to " + tools.Named(call.Name, "")
+					}
+					return "Change how your calendar is shown"
+				}),
+				Run: runSet,
+			},
+			{
+				Name: "calendar_circle", Family: tools.FamilyAccount, Risk: tools.RiskWrite,
+				Permissions: []models.Permission{models.PermissionCalendarUse},
+				Description: "Make the calendar a circle keeps for itself, which everyone in the circle reads and writes. " +
+					"Only an admin of the circle can, and a circle has one. Its events cannot have guests.",
+				Parameters: tools.Object(map[string]any{
+					"circle": tools.StringProperty("the circle, by its name or id, from circle list; a name that more than one circle has is refused with their ids"),
+					"name":   tools.StringProperty("what to call the calendar; the circle's name by default"),
+				}, "circle"),
+				PreviewIn: func(ctx context.Context, arguments json.RawMessage) string {
+					var call struct {
+						Circle string `json:"circle"`
+					}
+					if err := json.Unmarshal(arguments, &call); err != nil {
+						return ""
+					}
+					return "Make the calendar of " + circleWords(ctx, call.Circle) + ", which everyone in it reads and writes"
+				},
+				Run: runCircle,
 			},
 			{
 				// A write, so the person is asked before anything is put in
@@ -211,10 +287,12 @@ func init() {
 		},
 			// One calendar tool, whose actions are the members below: reading
 			// the diary, finding a free hour alone or with others, sharing it
-			// and listing or taking back those shares, and putting something in
-			// it, changing it and taking it out. The risk of each is the
-			// action's own: the agenda is a read, sharing is granting, an event
-			// with guests on it is outward, and removing one cannot be undone.
+			// and listing or taking back those shares, putting something in
+			// it, changing it and taking it out, looking up or stopping a change
+			// whose answer never came, renaming the calendar and making a
+			// circle's. The risk of each is the action's own: the agenda is a
+			// read, sharing is granting, an event with guests on it is outward,
+			// and removing one cannot be undone.
 			tools.Group{
 				Name: "calendar", Family: tools.FamilyAccount,
 				Description: "The person's own calendar (synchronized over CalDAV), the calendars other people and their circles share with them, and sharing the person's own.",
@@ -228,6 +306,10 @@ func init() {
 					{Action: "add", Tool: "calendar_add"},
 					{Action: "edit", Tool: "calendar_edit"},
 					{Action: "remove", Tool: "calendar_remove"},
+					{Action: "request", Tool: "calendar_request"},
+					{Action: "stop", Tool: "calendar_stop"},
+					{Action: "set", Tool: "calendar_set"},
+					{Action: "circle", Tool: "calendar_circle"},
 				},
 			},
 		)
@@ -262,7 +344,10 @@ func outwardWhenAnybodyIsTold(arguments json.RawMessage) tools.Risk {
 type calendarEntry struct {
 	ID               string `json:"id"`
 	Name             string `json:"name"`
+	Description      string `json:"description"`
+	Colour           string `json:"colour"`
 	Timezone         string `json:"timezone"`
+	WeekStart        string `json:"weekStart"`
 	AgentGranted     bool   `json:"agentGranted"`
 	CalendarKind     string `json:"calendarKind"`
 	ShareLevel       string `json:"shareLevel"`
@@ -296,7 +381,7 @@ func calendarsOf(ctx context.Context, operations tools.Operations) ([]*calendarE
 		ListCalendars []*calendarEntry `json:"ListCalendars"`
 	}
 	if err := operations.Execute(ctx,
-		`query { ListCalendars { id name timezone agentGranted calendarKind shareLevel ownerUserId ownerUsername
+		`query { ListCalendars { id name description colour timezone weekStart agentGranted calendarKind shareLevel ownerUserId ownerUsername
 		   ownerName circleId circleName isCircleCalendar } }`, nil, &result); err != nil {
 		return nil, err
 	}
@@ -316,20 +401,30 @@ func calendarsOf(ctx context.Context, operations tools.Operations) ([]*calendarE
 // circles', are read through this one's grant: an agent that has not been given
 // the diary has not been given what their family put in it either.
 func theCalendar(ctx context.Context, operations tools.Operations) (string, string, error) {
-	calendars, err := calendarsOf(ctx, operations)
+	calendar, err := ownCalendar(ctx, operations)
 	if err != nil {
 		return "", "", err
 	}
+	return calendar.ID, calendar.Timezone, nil
+}
+
+// ownCalendar is the calendar theCalendar names, with everything the server
+// keeps about it, for a call that changes how it is shown.
+func ownCalendar(ctx context.Context, operations tools.Operations) (*calendarEntry, error) {
+	calendars, err := calendarsOf(ctx, operations)
+	if err != nil {
+		return nil, err
+	}
 	if len(calendars) == 0 {
-		return "", "", fmt.Errorf("there is no calendar")
+		return nil, fmt.Errorf("there is no calendar")
 	}
 	for _, calendar := range calendars {
 		// The events calendar: the reminders list is the reminder tool's.
 		if calendar.isOwn() && calendar.AgentGranted && calendar.CalendarKind != string(models.CalendarReminders) {
-			return calendar.ID, calendar.Timezone, nil
+			return calendar, nil
 		}
 	}
-	return "", "", fmt.Errorf("they have not given you their calendar; it is a switch on their agent's page, beside the mailboxes")
+	return nil, fmt.Errorf("they have not given you their calendar; it is a switch on their agent's page, beside the mailboxes")
 }
 
 // targetCalendar is the calendar a call works on: the person's own, or when it
@@ -1094,4 +1189,170 @@ func eventPreview(shape string) func(context.Context, json.RawMessage) string {
 		}
 		return said
 	}
+}
+
+// requestArguments name a calendar change by the identifier it was sent under.
+type requestArguments struct {
+	RequestID string `json:"request_id"`
+}
+
+// requestOf is the identifier of the request a call names, refusing a call
+// that names none in the words the command line uses.
+func requestOf(call *tools.Call) (string, error) {
+	arguments, err := tools.DecodeArguments[requestArguments](call)
+	if err != nil {
+		return "", err
+	}
+	requestId := strings.TrimSpace(arguments.RequestID)
+	if requestId == "" {
+		return "", fmt.Errorf("say which request: give request_id, the identifier the command line printed before it changed the calendar")
+	}
+	return requestId, nil
+}
+
+// completedRequest is a request that committed, as the server remembers it. It
+// outlives the event and the calendar it was for.
+type completedRequest struct {
+	RequestID   string `json:"requestId"`
+	CalendarID  string `json:"calendarId"`
+	ObjectID    string `json:"objectId"`
+	Operation   string `json:"operation"`
+	CompletedAt string `json:"completedAt"`
+	IsMissing   bool   `json:"isMissing"`
+}
+
+// runRequest looks a request up without repeating the change it was for.
+func runRequest(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	requestId, err := requestOf(call)
+	if err != nil {
+		return nil, err
+	}
+	// The diary has to have been given for any of it, as everywhere here.
+	if _, _, err := theCalendar(ctx, run.Operations()); err != nil {
+		return nil, err
+	}
+	var result struct {
+		GetCalendarRequest *completedRequest `json:"GetCalendarRequest"`
+	}
+	if err := run.Operations().Execute(ctx, client.DocumentGetCalendarRequest, map[string]any{"requestId": requestId}, &result); err != nil {
+		return nil, err
+	}
+	receipt := result.GetCalendarRequest
+	if receipt == nil {
+		// Not proof that it will never complete: a request still in
+		// flight has no receipt yet.
+		return tools.JSONResult(map[string]any{
+			"request":   requestId,
+			"completed": false,
+			"note":      "no completed request found; the original request may still be in progress",
+		})
+	}
+	said := map[string]any{
+		"request":      receipt.RequestID,
+		"completed":    true,
+		"operation":    receipt.Operation,
+		"calendar":     receipt.CalendarID,
+		"event":        receipt.ObjectID,
+		"completed_at": receipt.CompletedAt,
+	}
+	if receipt.IsMissing {
+		said["note"] = "the event no longer exists"
+	}
+	return tools.JSONResult(said)
+}
+
+// runStop stops a request that has not committed.
+func runStop(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	requestId, err := requestOf(call)
+	if err != nil {
+		return nil, err
+	}
+	if _, _, err := theCalendar(ctx, run.Operations()); err != nil {
+		return nil, err
+	}
+	var result struct {
+		CancelCalendarRequest *completedRequest `json:"CancelCalendarRequest"`
+	}
+	if err := run.Operations().Execute(ctx, client.DocumentCancelCalendarRequest, map[string]any{"requestId": requestId}, &result); err != nil {
+		return nil, err
+	}
+	receipt := result.CancelCalendarRequest
+	if receipt == nil {
+		return tools.JSONResult(map[string]any{
+			"request": requestId,
+			"stopped": true,
+			"note":    "stopped; this request can no longer execute",
+		})
+	}
+	// The change went through before the stop arrived, and stopping never
+	// undoes a change or the mail that went with it.
+	return tools.JSONResult(map[string]any{
+		"request":           requestId,
+		"stopped":           false,
+		"already_completed": true,
+		"calendar":          receipt.CalendarID,
+		"event":             receipt.ObjectID,
+		"note":              "already completed; the change was not undone",
+	})
+}
+
+// runSet renames the person's own calendar, or changes how it is shown.
+//
+// The server replaces every field it is sent, so what the call leaves out is
+// sent back as the calendar holds it, the way the command line's set does.
+func runSet(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	run, err := tools.RunFrom(ctx)
+	if err != nil {
+		return nil, err
+	}
+	arguments, err := tools.DecodeArguments[struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+		Color       *string `json:"color"`
+		Timezone    *string `json:"timezone"`
+		WeekStart   *string `json:"week_start"`
+	}](call)
+	if err != nil {
+		return nil, err
+	}
+	if arguments.Name == nil && arguments.Description == nil && arguments.Color == nil &&
+		arguments.Timezone == nil && arguments.WeekStart == nil {
+		return nil, fmt.Errorf("say what to change: name, description, color, timezone or week_start")
+	}
+	kept, err := ownCalendar(ctx, run.Operations())
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{
+		"id": kept.ID, "name": kept.Name, "description": kept.Description, "colour": kept.Colour,
+		"timezone": kept.Timezone, "weekStart": kept.WeekStart,
+	}
+	for name, given := range map[string]*string{
+		"name": arguments.Name, "description": arguments.Description, "colour": arguments.Color,
+		"timezone": arguments.Timezone, "weekStart": arguments.WeekStart,
+	} {
+		if given != nil {
+			variables[name] = strings.TrimSpace(*given)
+		}
+	}
+	var result struct {
+		SaveCalendar struct {
+			Name      string `json:"name"`
+			Timezone  string `json:"timezone"`
+			WeekStart string `json:"weekStart"`
+		} `json:"SaveCalendar"`
+	}
+	if err := run.Operations().Execute(ctx, client.DocumentSaveCalendar, variables, &result); err != nil {
+		return nil, err
+	}
+	saved := result.SaveCalendar
+	return tools.JSONResult(map[string]any{"calendar": saved.Name, "timezone": saved.Timezone, "week_start": saved.WeekStart})
 }

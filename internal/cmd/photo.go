@@ -59,7 +59,7 @@ func NewPhotoCommand() *cli.Command {
 				},
 				Action: runPhotoList,
 			},
-			{Name: "show", Usage: "everything known about a photo", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoShow},
+			{Name: "read", Usage: "everything known about a photo", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoRead},
 			{
 				Name: "describe", Usage: "have the assistant look at a photo and write what is in it, so that a search finds it by that", ArgsUsage: "<id>",
 				Flags:  []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "again", Usage: "write a new description of a photo that has one"}},
@@ -88,8 +88,8 @@ func NewPhotoCommand() *cli.Command {
 				Action: runPhotoSave,
 			},
 			{
-				Name: "date", Usage: "correct the date a photo was taken: an RFC 3339 time whose offset is the place's, such as 2025-07-12T14:30:00+09:00", ArgsUsage: "<id> <time>",
-				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoDate,
+				Name: "set-date", Usage: "correct the date a photo was taken: an RFC 3339 time whose offset is the place's, such as 2025-07-12T14:30:00+09:00", ArgsUsage: "<id> <time>",
+				Flags: []cli.Flag{JSONFlag()}, Action: runPhotoSetDate,
 			},
 			{Name: "favorite", Usage: "make a photo a favorite", ArgsUsage: "<id>", Flags: []cli.Flag{JSONFlag(), &cli.BoolFlag{Name: "off", Usage: "take it out of the favorites"}}, Action: runPhotoFavorite},
 			{Name: "trash", Usage: "move photos to the Trash", ArgsUsage: "<id>...", Flags: []cli.Flag{JSONFlag()}, Action: runPhotoTrash},
@@ -298,10 +298,10 @@ func printPhotoTable(photos []*models.Photo) error {
 	return printTable(headers, rows)
 }
 
-func runPhotoShow(ctx context.Context, command *cli.Command) error {
+func runPhotoRead(ctx context.Context, command *cli.Command) error {
 	photoId := command.Args().First()
 	if photoId == "" {
-		return usage("usage: teanode photo show <id>")
+		return usage("usage: teanode photo read <id>")
 	}
 	connection, err := openClient(command)
 	if err != nil {
@@ -380,7 +380,7 @@ func runPhotoDescribe(ctx context.Context, command *cli.Command) error {
 	}
 	switch {
 	case photo.IsDescriptionRequested:
-		_, _ = fmt.Fprintf(command.Writer, "%s: describing; it takes a few seconds, then teanode photo show %s has it\n", photo.ID, photo.ID)
+		_, _ = fmt.Fprintf(command.Writer, "%s: describing; it takes a few seconds, then teanode photo read %s has it\n", photo.ID, photo.ID)
 	case photo.DescribedAt != nil:
 		_, _ = fmt.Fprintf(command.Writer, "%s: already described (add --again to write a new description)\n%s\n", photo.ID, forTerminal(photo.PhotoDescription))
 	default:
@@ -838,12 +838,12 @@ func runPhotoSave(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
-// runPhotoDate corrects the date a photo was taken. The offset of the time is
+// runPhotoSetDate corrects the date a photo was taken. The offset of the time is
 // the offset the photo is shown at, so it is required: a time with no offset
 // would be read on the server's clock, which is not where the photo was taken.
-func runPhotoDate(ctx context.Context, command *cli.Command) error {
+func runPhotoSetDate(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() != 2 {
-		return usage("usage: teanode photo date <id> <time>, such as 2025-07-12T14:30:00+09:00 (the offset is the place's)")
+		return usage("usage: teanode photo set-date <id> <time>, such as 2025-07-12T14:30:00+09:00 (the offset is the place's)")
 	}
 	photoId := command.Args().First()
 	takenAt, err := parsePhotoTakenAt(command.Args().Get(1))
@@ -919,7 +919,13 @@ func runPhotoMove(ctx context.Context, command *cli.Command, move func(context.C
 	if command.Bool("json") {
 		return PrintJSON(map[string]int{countName: count})
 	}
-	_, _ = fmt.Fprintf(command.Writer, "%s %d of %d photos\n", verb, count, len(photoIds))
+	_, _ = fmt.Fprintf(command.Writer, "%s %d of %d photos", verb, count, len(photoIds))
+	// Only photos in the Trash are deleted, and the server leaves the rest
+	// alone, so a lower count needs saying why.
+	if countName == "deletedCount" && count < len(photoIds) {
+		_, _ = fmt.Fprint(command.Writer, "; the others were not in the Trash and were left alone")
+	}
+	_, _ = fmt.Fprintln(command.Writer)
 	return nil
 }
 
@@ -960,7 +966,7 @@ func runPhotoEmptyTrash(ctx context.Context, command *cli.Command) error {
 	if command.Bool("json") {
 		return PrintJSON(map[string]int{"deletedCount": count})
 	}
-	_, _ = fmt.Fprintf(command.Writer, "deleted %d photos forever\n", count)
+	_, _ = fmt.Fprintf(command.Writer, "deleted %s forever\n", client.PhotosCountText(count))
 	return nil
 }
 

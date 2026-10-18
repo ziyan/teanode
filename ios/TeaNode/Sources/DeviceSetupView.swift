@@ -101,7 +101,7 @@ struct DeviceSetupView: View {
                     Button {
                         Task { await create() }
                     } label: {
-                        if isCreating { ProgressView() } else { Label("Create setup profile", systemImage: "iphone") }
+                        if isCreating { ProgressView() } else { Label("Create setup profile", systemImage: "iphone").actionColor() }
                     }
                     .disabled(isCreating || !selection.canCreateProfile(capabilities: capabilities))
                 } footer: {

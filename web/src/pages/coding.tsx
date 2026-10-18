@@ -50,6 +50,20 @@ import { useTranslation } from '../i18n/i18n'
 // idle, and the list every 5. Switching tabs here only changes what is
 // viewed; "Show on computer" is what moves herdr's own screen.
 
+// CAPTURE_CODING_SESSION asks the sources reading a coding tool's transcripts
+// on a computer to read again now: the call the hooks make after each answer.
+export const CAPTURE_CODING_SESSION = `mutation ($computerName: String!, $assistant: String!) {
+  CaptureAgentCodingSession(computerName: $computerName, assistant: $assistant)
+}`
+
+// codingAssistantOf is the source type reading a coding agent's transcripts;
+// null for a pane herdr has not yet told apart.
+function codingAssistantOf(codingAgentKind: string): string | null {
+  if (codingAgentKind === 'claude') return 'claude-code'
+  if (codingAgentKind === 'codex') return 'codex'
+  return null
+}
+
 const LIST_EVERY_MS = 5_000
 const BUSY_EVERY_MS = 3_000
 const IDLE_EVERY_MS = 15_000
@@ -292,6 +306,37 @@ export function CodingPage() {
     if (closedComputers.length > 0) changed.closed = closedComputers.join(',')
     setParameters(changed)
   }
+  // Asks for the computer's new sessions to be read now, once for each coding
+  // tool it has sessions of, so the latest answers are searchable in a minute.
+  const readNewSessions = async (computer: string, computerSessions: HerdrSession[]) => {
+    const assistants = [
+      ...new Set(
+        computerSessions.flatMap((session) => {
+          const assistant = codingAssistantOf(session.codingAgentKind)
+          return assistant ? [assistant] : []
+        }),
+      ),
+    ]
+    if (assistants.length === 0) {
+      toast.failure(null, t('herdr.noSourceReads', { computer }))
+      return
+    }
+    // Each coding tool on its own, so one refused does not hide another read.
+    const answers = await Promise.allSettled(
+      assistants.map((assistant) =>
+        graphql<{ CaptureAgentCodingSession: boolean }>(CAPTURE_CODING_SESSION, {
+          computerName: computer,
+          assistant,
+        }),
+      ),
+    )
+    const refused = answers.find((answer) => answer.status === 'rejected')
+    const isAnyAsked = answers.some((answer) => answer.status === 'fulfilled' && answer.value.CaptureAgentCodingSession)
+    if (isAnyAsked) toast.done(t('herdr.readingNewSessions', { computer }))
+    if (refused) toast.failure(refused.reason, t('herdr.readNewSessionsFailed'))
+    else if (!isAnyAsked) toast.failure(null, t('herdr.noSourceReads', { computer }))
+  }
+
   const toggleComputer = (computer: string) => {
     const closed = closedComputers.includes(computer)
       ? closedComputers.filter((each) => each !== computer)
@@ -353,6 +398,23 @@ export function CodingPage() {
                   .join(' · ')}
               </span>
             </button>
+            <MenuButton
+              label={t('herdr.computerActions', { computer: group.computer })}
+              className="icon-button"
+              icon={<MoreIcon size={16} />}
+              render={(closeMenu) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    closeMenu()
+                    void readNewSessions(group.computer, sessions)
+                  }}
+                >
+                  {t('herdr.readNewSessions')}
+                </button>
+              )}
+            />
           </h3>
           {isClosed
             ? null

@@ -51,6 +51,12 @@ type GraphSearching interface {
 // checkout holding the directory.
 type CodingRemembering interface {
 	CodingMemory(ctx context.Context, directory, computerName, prompt string) (string, error)
+
+	// CaptureCodingSession asks the sources reading a coding tool's
+	// transcripts on a computer to read again now, so that a session's
+	// latest answer is searchable within a minute. False where no source
+	// fits. assistant is claude-code or codex.
+	CaptureCodingSession(ctx context.Context, computerName, assistant string) (bool, error)
 }
 
 // KnowledgeSearching is searching what the person pointed their agent at

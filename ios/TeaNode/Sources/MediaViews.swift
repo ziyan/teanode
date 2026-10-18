@@ -152,6 +152,9 @@ struct ZoomablePicture: UIViewRepresentable {
     /// (the person paged to another) goes back to its whole size, so that it is
     /// not still zoomed when it is paged back to.
     var isCurrent = true
+    /// What a single tap does, such as hiding the bars around the picture. A
+    /// double tap zooms instead, and does not count as one.
+    var onSingleTap: (() -> Void)?
 
     func makeUIView(context: Context) -> UIScrollView {
         let scrollView = UIScrollView()
@@ -179,6 +182,10 @@ struct ZoomablePicture: UIViewRepresentable {
         let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.zoomOnDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
+        let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tapOnce(_:)))
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        scrollView.addGestureRecognizer(singleTap)
         return scrollView
     }
 
@@ -188,22 +195,29 @@ struct ZoomablePicture: UIViewRepresentable {
         // nothing, and would keep it: a zoomed photo then pages instead of
         // panning. Every update hands it the binding as it is now.
         context.coordinator.isZoomed = $isZoomed
+        context.coordinator.onSingleTap = onSingleTap
         if !isCurrent, scrollView.zoomScale > 1 {
             scrollView.setZoomScale(1, animated: false)
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(isZoomed: $isZoomed)
+        Coordinator(isZoomed: $isZoomed, onSingleTap: onSingleTap)
     }
 
     @MainActor
     final class Coordinator: NSObject, UIScrollViewDelegate {
         var isZoomed: Binding<Bool>
+        var onSingleTap: (() -> Void)?
         weak var imageView: UIImageView?
 
-        init(isZoomed: Binding<Bool>) {
+        init(isZoomed: Binding<Bool>, onSingleTap: (() -> Void)?) {
             self.isZoomed = isZoomed
+            self.onSingleTap = onSingleTap
+        }
+
+        @objc func tapOnce(_ recognizer: UITapGestureRecognizer) {
+            onSingleTap?()
         }
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
@@ -280,6 +294,7 @@ struct AttachmentView: View {
 struct FileCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var shareAddress: URL?
     @State private var openedPhotoId: OpenedPhoto?
     /// The photo made of this file once the person kept it in their library.
@@ -294,32 +309,95 @@ struct FileCard: View {
     /// Whether the file is a picture or video that can be kept as a photo.
     private var canBeKept: Bool { photoId == nil && (file.isImage || file.isVideo) && !file.isArtifact && app.isPhotosOffered }
 
-    var body: some View {
-        AgentBubble {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label {
-                        Text(verbatim: file.size > 0 ? "\(file.name) · \(file.size.formatted(.byteCount(style: .file)))" : file.name)
-                    } icon: {
-                        Image(systemName: "paperclip")
-                    }
-                    .font(.subheadline)
-                    .lineLimit(1)
-                    Spacer(minLength: 8)
-                    if let photoId {
-                        // A photo the agent showed opens in the app's photo
-                        // viewer, where it can be favorited, saved or shared.
-                        Button("Open in Photos") { openedPhotoId = OpenedPhoto(id: photoId) }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                    } else {
-                        Button("Open") {
-                            Task { await app.preview(file.path, name: file.name) }
-                        }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                    }
+    /// The file's name, and its size when the server says it. The name is cut in the middle when
+    /// it does not fit, so that the extension stays visible; it is never wrapped, since a name
+    /// is broken at its own hyphens and dots into pieces that read as separate words. At the
+    /// accessibility sizes the size goes on a line of its own, so that it does not take the
+    /// name's width.
+    private var header: some View {
+        let layout =
+            dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+        let sizeText = file.size.formatted(.byteCount(style: .file))
+        return layout {
+            CardHeader(systemImage: "paperclip", title: file.name)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if file.size > 0 {
+                Text(verbatim: dynamicTypeSize.isAccessibilitySize ? sizeText : "· \(sizeText)")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// What can be done with the file, one full-width button each, the main
+    /// one first: keeping a picture or video in the library when that is
+    /// offered, otherwise opening it.
+    private var actionButtons: some View {
+        VStack(spacing: 10) {
+            if canBeKept {
+                keepButton
+                    .buttonStyle(.borderedProminent)
+                openButton
+                    .buttonStyle(.bordered)
+            } else {
+                openButton
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .buttonBorderShape(.capsule)
+        .controlSize(.large)
+    }
+
+    @ViewBuilder
+    private var openButton: some View {
+        if let photoId {
+            // A photo the agent showed opens in the app's photo viewer, where
+            // it can be favorited, saved or shared.
+            Button {
+                openedPhotoId = OpenedPhoto(id: photoId)
+            } label: {
+                Text("Open in Photos")
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+        } else {
+            Button {
+                Task { await app.preview(file.path, name: file.name) }
+            } label: {
+                Text("Open")
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// Keeps the picture or video as a photo in TeaNode's library.
+    private var keepButton: some View {
+        Button {
+            Task { await keepInLibrary() }
+        } label: {
+            Group {
+                if isSavingToLibrary {
+                    ProgressView()
+                } else {
+                    Label("Save to my library", systemImage: "photo.badge.plus")
+                        .multilineTextAlignment(.center)
                 }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .disabled(isSavingToLibrary)
+    }
+
+    var body: some View {
+        // The cards' shared surface, as wide as the other cards in the conversation, with the
+        // actions below the file as full-width buttons rather than small capsules beside its name.
+        CardSurface {
+            VStack(alignment: .leading, spacing: 12) {
+                header
                 if file.isImage {
                     RemotePicture(path: file.path, name: file.name)
                 } else if file.isVideo || file.isAudio {
@@ -331,26 +409,12 @@ struct FileCard: View {
                         ProgressView()
                     }
                 }
-                if canBeKept {
-                    // Keeps the picture or video as a photo in TeaNode's library.
-                    Button {
-                        Task { await keepInLibrary() }
-                    } label: {
-                        if isSavingToLibrary {
-                            ProgressView()
-                        } else {
-                            Label("Save to my library", systemImage: "photo.badge.plus")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                    .disabled(isSavingToLibrary)
-                }
                 if !file.caption.isEmpty {
                     Text(file.caption)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+                actionButtons
             }
         }
         .sensoryFeedback(.success, trigger: savedPhotoId)

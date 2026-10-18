@@ -2,7 +2,7 @@
 // photo library, and reads what a picture or a video says about itself: when
 // and where it was taken, and with what.
 //
-// Pictures are decoded in Go (JPEG, PNG and GIF). HEIC and HEIF go through
+// Pictures are decoded in Go (JPEG, PNG, GIF and WebP). HEIC and HEIF go through
 // libheif's heif-dec and video through ffmpeg and ffprobe, both child
 // processes, so the server itself stays free of C code.
 package picture
@@ -22,6 +22,8 @@ import (
 	// Registered for image.Decode; JPEG comes with the encoder above.
 	_ "image/gif"
 	_ "image/png"
+
+	_ "golang.org/x/image/webp"
 )
 
 // MaximumPixels is the largest picture Decode will decode: 64 megapixels. The
@@ -39,14 +41,14 @@ const MaximumSidePixels = 65535
 // longer than MaximumSidePixels.
 var ErrTooLarge = errors.New("picture: the picture is too large")
 
-// ReadSize reads the size of a JPEG, PNG or GIF from its header, and refuses
+// ReadSize reads the size of a JPEG, PNG, GIF or WebP from its header, and refuses
 // one that is empty, has more than MaximumPixels pixels or has a side longer
 // than MaximumSidePixels. It is what a caller asks before it decodes, to learn
 // what the decoded picture will take.
 func ReadSize(content []byte) (widthPixels, heightPixels int, err error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(content))
 	if err != nil {
-		return 0, 0, fmt.Errorf("picture: not a JPEG, PNG or GIF: %w", err)
+		return 0, 0, fmt.Errorf("picture: not a JPEG, PNG, GIF or WebP: %w", err)
 	}
 	if config.Width <= 0 || config.Height <= 0 || config.Width > MaximumSidePixels || config.Height > MaximumSidePixels ||
 		int64(config.Width)*int64(config.Height) > MaximumPixels {
@@ -55,7 +57,7 @@ func ReadSize(content []byte) (widthPixels, heightPixels int, err error) {
 	return config.Width, config.Height, nil
 }
 
-// Decode decodes a JPEG, PNG or GIF. A JPEG that its EXIF orientation says is
+// Decode decodes a JPEG, PNG, GIF or WebP. A JPEG that its EXIF orientation says is
 // turned comes back as a view of the pixels as they are stored, seen the right
 // way up, because every picture written later loses the tag that said so and a
 // phone's photo would lie on its side. The view turns nothing: it costs no copy

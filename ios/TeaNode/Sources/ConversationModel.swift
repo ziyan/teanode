@@ -164,6 +164,10 @@ final class ConversationModel {
     private let draftKey: String
 
     private func saveDraft() {
+        #if DEBUG
+            // What a screenshot typed is not the next screenshot's draft.
+            if DemoServer.isRequested { return }
+        #endif
         if draft.isEmpty {
             UserDefaults.standard.removeObject(forKey: draftKey)
         } else {
@@ -235,6 +239,8 @@ final class ConversationModel {
             if DemoServer.isRequested, DemoServer.screen == "chat-direct" {
                 typing.note(userId: "sam", name: "Sam", at: Date().addingTimeInterval(60 * 60))
             }
+            // `-TeaNodeScreen chat-mention`: an @ typed in the box, so the menu of agents it offers is open.
+            if DemoServer.isRequested, DemoServer.screen == "chat-mention", draft.isEmpty { draft = "@" }
         #endif
         loadSharedOwnersIfCited()
         // A chat is people: no ideas to start it with, and no call to the

@@ -121,8 +121,13 @@ accent, every string in the String Catalog in all three languages.
   `role: .destructive` gets red words from its role but its symbol takes the
   app's green tint, so it carries `.tint(.red)` straight after it;
   `make check-button-colors` fails on one that does not, and
-  `node ios/scripts/check-button-colors.mjs --fix` adds it. Never color the
-  words and the symbol separately.
+  `node ios/scripts/check-button-colors.mjs --fix` adds it. In a form or
+  list row the tint does not reach the symbol, so a destructive button there
+  also takes `.actionColor(isDestructive: true)` after it, which the check
+  wants too. A list button that can be disabled, or an action in a plain list
+  such as the side menu, takes `.actionColor()`: disabled there, the words
+  turn black and the symbol stays green, and a plain list draws the words in
+  the text color. Never color the words and the symbol separately.
 
 ## Comments
 

@@ -468,8 +468,10 @@ func TestPhotoFileQuotaReplacementAndProcessing(test *testing.T) {
 		}
 	})
 	// A refused file leaves nothing behind, and one that fits makes the photo
-	// a Live Photo without queuing it again.
+	// a Live Photo and queues it again for the video preview, without finding
+	// its faces again: the picture did not change.
 	dbtest.MarkPhotoReady(test, database, photo.ID)
+	dbtest.Exec(test, database, "UPDATE photo SET faces_found_at = now() WHERE id = '"+photo.ID+"'")
 	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
 		if _, err := transaction.SetPhotoFile(ownerId, photo.ID, &models.PhotoFile{PhotoFileRole: models.PhotoFileRoleLiveVideo, BlobSHA256: liveDigest, FileSizeBytes: 150}, 0); err != nil {
 			test.Fatal(err)
@@ -478,8 +480,11 @@ func TestPhotoFileQuotaReplacementAndProcessing(test *testing.T) {
 		if err != nil {
 			test.Fatal(err)
 		}
-		if reloaded.PhotoKind != models.PhotoKindLivePhoto || reloaded.PhotoProcessingState != models.PhotoProcessingReady {
+		if reloaded.PhotoKind != models.PhotoKindLivePhoto || reloaded.PhotoProcessingState != models.PhotoProcessingWaiting || reloaded.ProcessingClaimedAt != nil {
 			test.Fatalf("after a live video: %s %s", reloaded.PhotoKind, reloaded.PhotoProcessingState)
+		}
+		if reloaded.FacesFoundAt == nil {
+			test.Fatal("a live video made the faces be found again")
 		}
 		if usedBytes, err := transaction.PhotoUsedBytes(ownerId); err != nil || usedBytes != 300 {
 			test.Fatalf("used %d: %v", usedBytes, err)
@@ -1026,7 +1031,7 @@ func TestReadyPhotosWithoutASmallPreviewAreQueuedAgain(test *testing.T) {
 		if _, err := transaction.UpsertPhotoPreview(ownerId, &models.PhotoPreview{PhotoID: with.ID, PhotoPreviewSize: models.PhotoPreviewSmall, ContentType: "image/jpeg", PreviewSizeBytes: 3}); err != nil {
 			test.Fatal(err)
 		}
-		requeued, err := transaction.RequeuePhotosWithoutPreviews(10)
+		requeued, err := transaction.RequeuePhotosWithoutPreviews(10, false)
 		if err != nil || requeued != 1 {
 			test.Fatalf("requeued %d: %v", requeued, err)
 		}
@@ -1040,7 +1045,87 @@ func TestReadyPhotosWithoutASmallPreviewAreQueuedAgain(test *testing.T) {
 		if found, _ = transaction.GetPhoto(ownerId, waiting.ID); found.PhotoProcessingState != models.PhotoProcessingWaiting {
 			test.Fatal("a waiting photo changed")
 		}
-		if again, err := transaction.RequeuePhotosWithoutPreviews(10); err != nil || again != 0 {
+		if again, err := transaction.RequeuePhotosWithoutPreviews(10, false); err != nil || again != 0 {
+			test.Fatalf("queued again %d: %v", again, err)
+		}
+	})
+}
+
+func TestReadyLivePhotosWithoutAVideoPreviewAreQueuedAgainOncePerVideo(test *testing.T) {
+	database, closeDatabase := dbtest.AcquireDatabase(test)
+	defer closeDatabase()
+	ownerId := dbtest.CreateUser(test, database, "photo-requeue-live-owner")
+	videoCameLast := newTestPhoto(test, database, ownerId, "video-came-last", nil)
+	withVideoPreview := newTestPhoto(test, database, ownerId, "with-video-preview", nil)
+	workedOnSince := newTestPhoto(test, database, ownerId, "worked-on-since", nil)
+	plainPicture := newTestPhoto(test, database, ownerId, "plain-picture", nil)
+	liveIds := []string{videoCameLast.ID, withVideoPreview.ID, workedOnSince.ID}
+	upsertSmallPreview := func(photoId string) {
+		dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+			if _, err := transaction.UpsertPhotoPreview(ownerId, &models.PhotoPreview{PhotoID: photoId, PhotoPreviewSize: models.PhotoPreviewSmall, ContentType: "image/jpeg", PreviewSizeBytes: 3}); err != nil {
+				test.Fatal(err)
+			}
+		})
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		for _, photoId := range liveIds {
+			digest := photoDigest("live video of " + photoId)
+			if _, err := transaction.InsertPhotoBlobIfAbsent(&models.PhotoBlob{BlobSHA256: digest, BlobSizeBytes: 50}); err != nil {
+				test.Fatal(err)
+			}
+			if _, err := transaction.SetPhotoFile(ownerId, photoId, &models.PhotoFile{PhotoFileRole: models.PhotoFileRoleLiveVideo, BlobSHA256: digest, FileSizeBytes: 50, ContentType: "video/quicktime"}, 0); err != nil {
+				test.Fatal(err)
+			}
+		}
+		if _, err := transaction.UpsertPhotoPreview(ownerId, &models.PhotoPreview{PhotoID: withVideoPreview.ID, PhotoPreviewSize: models.PhotoPreviewVideo, ContentType: "video/mp4", PreviewSizeBytes: 3}); err != nil {
+			test.Fatal(err)
+		}
+	})
+	for _, photoId := range append(append([]string(nil), liveIds...), plainPicture.ID) {
+		upsertSmallPreview(photoId)
+		dbtest.MarkPhotoReady(test, database, photoId)
+	}
+	// One video arrived a day after the previews were made, as one does when
+	// the photo was ready before its video was sent. Another arrived three
+	// days before them: the photo was worked on after it and has no video
+	// preview, so its video cannot be made into one.
+	dbtest.Exec(test, database, "UPDATE photo_preview SET created_at = now() - interval '2 days' WHERE photo_preview_size = 'small'")
+	dbtest.Exec(test, database, "UPDATE photo_file SET created_at = now() - interval '1 day' WHERE photo_id = '"+videoCameLast.ID+"'")
+	dbtest.Exec(test, database, "UPDATE photo_file SET created_at = now() - interval '3 days' WHERE photo_id IN ('"+workedOnSince.ID+"', '"+withVideoPreview.ID+"')")
+	stateOf := func(transaction db.Transaction, photoId string) models.PhotoProcessingState {
+		found, err := transaction.GetPhoto(ownerId, photoId)
+		if err != nil {
+			test.Fatal(err)
+		}
+		return found.PhotoProcessingState
+	}
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		// Without the programs a video is read with, none is put back.
+		if requeued, err := transaction.RequeuePhotosWithoutPreviews(10, false); err != nil || requeued != 0 {
+			test.Fatalf("requeued %d without the video programs: %v", requeued, err)
+		}
+		requeued, err := transaction.RequeuePhotosWithoutPreviews(10, true)
+		if err != nil || requeued != 1 {
+			test.Fatalf("requeued %d: %v", requeued, err)
+		}
+		for photoId, wantState := range map[string]models.PhotoProcessingState{
+			videoCameLast.ID:    models.PhotoProcessingWaiting,
+			withVideoPreview.ID: models.PhotoProcessingReady,
+			workedOnSince.ID:    models.PhotoProcessingReady,
+			plainPicture.ID:     models.PhotoProcessingReady,
+		} {
+			if got := stateOf(transaction, photoId); got != wantState {
+				test.Fatalf("photo %s is %s, want %s", photoId, got, wantState)
+			}
+		}
+	})
+	// It is worked on again and the video still cannot be made into a
+	// preview: the previews are made again and the photo is ready, and it is
+	// not put back a second time for the same video.
+	upsertSmallPreview(videoCameLast.ID)
+	dbtest.MarkPhotoReady(test, database, videoCameLast.ID)
+	dbtest.RunTransactionOn(test, database, func(transaction db.Transaction) {
+		if again, err := transaction.RequeuePhotosWithoutPreviews(10, true); err != nil || again != 0 {
 			test.Fatalf("queued again %d: %v", again, err)
 		}
 	})

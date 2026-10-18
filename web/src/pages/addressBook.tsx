@@ -49,6 +49,8 @@ const GET = `query ($id: String!) {
 
 const DELETE = `mutation ($id: String!) { DeleteContact(id: $id) }`
 
+const REMOVE_PICTURE = `mutation ($id: String!) { RemoveContactPicture(id: $id) { id hasPhoto } }`
+
 type AddressBook = { id: string; name: string; description?: string; contacts: number }
 type Address = {
   label?: string
@@ -89,6 +91,8 @@ type Draft = {
   postalCode: string
   country: string
   addresses: Address[]
+  // Whether the card carries a picture, which can be taken off here.
+  hasPhoto: boolean
 }
 
 const empty: Draft = {
@@ -104,6 +108,7 @@ const empty: Draft = {
   postalCode: '',
   country: '',
   addresses: [],
+  hasPhoto: false,
 }
 
 // Where a contact's picture is served from. It lives inside the card as
@@ -153,6 +158,8 @@ export function AddressBookPage() {
 
   const [draft, setDraft] = useState<Draft | null>(null)
   const [deleting, setDeleting] = useState<Contact | null>(null)
+  // Whether the picture of the contact being edited is being asked about.
+  const [isRemovingPicture, setIsRemovingPicture] = useState(false)
   // A link from the agent's memory names the card in the address: the card
   // opens, once, as if its row had been chosen.
   const [parameters, setParameters] = useSearchParams()
@@ -213,6 +220,7 @@ export function AddressBookPage() {
           postalCode: first.postalCode ?? '',
           country: first.country ?? '',
           addresses: kept,
+          hasPhoto: full.hasPhoto ?? false,
         })
       } catch (failure) {
         toast.failure(failure, t('addressBook.failed'))
@@ -230,6 +238,7 @@ export function AddressBookPage() {
   }, [linkedContactId, edit])
   const closeDraft = () => {
     setDraft(null)
+    setIsRemovingPicture(false)
     if (linkedContactId)
       setParameters(
         (previous) => {
@@ -433,7 +442,8 @@ export function AddressBookPage() {
           busy={busy}
           error={problem}
           canSubmit={draft.name.trim().length > 0 || lines(draft.emails).length > 0}
-          onClose={closeDraft}
+          // Escape and the scrim belong to the question while it is asked.
+          onClose={() => !isRemovingPicture && closeDraft()}
           onSubmit={() =>
             void run(
               () =>
@@ -542,8 +552,48 @@ export function AddressBookPage() {
               onChange={(event) => setDraft({ ...draft, note: event.target.value })}
             />
           </label>
+          {editing && draft.hasPhoto ? (
+            <div className="form-row">
+              <SenderLogo name={draft.name || lines(draft.emails)[0] || ''} src={photoAddress(draft.id)} size={40} />
+              <button
+                type="button"
+                className="danger"
+                disabled={busy}
+                onClick={() => {
+                  setProblem(null)
+                  setIsRemovingPicture(true)
+                }}
+              >
+                {t('addressBook.removePicture')}
+              </button>
+            </div>
+          ) : null}
           {editing ? <InMemory recordKind="contact" recordId={draft.id} /> : null}
         </FormDialog>
+      )}
+
+      {draft && isRemovingPicture && (
+        <ConfirmDialog
+          title={t('addressBook.removePicture')}
+          body={t('addressBook.removePictureConfirm', {
+            name: draft.name.trim() || lines(draft.emails)[0] || '',
+          })}
+          confirmLabel={t('addressBook.removePicture')}
+          busy={busy}
+          error={problem}
+          onConfirm={() =>
+            void run(
+              () => graphql(REMOVE_PICTURE, { id: draft.id }),
+              t('addressBook.pictureRemoved', { name: draft.name.trim() || lines(draft.emails)[0] || '' }),
+            ).then((done) => {
+              if (done) {
+                setIsRemovingPicture(false)
+                setDraft((previous) => (previous ? { ...previous, hasPhoto: false } : previous))
+              }
+            })
+          }
+          onClose={() => setIsRemovingPicture(false)}
+        />
       )}
 
       {deleting && (
