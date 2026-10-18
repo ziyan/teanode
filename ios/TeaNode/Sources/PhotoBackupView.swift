@@ -167,8 +167,12 @@ struct PhotoBackupContent: View {
                     Text("Photos and videos go up over Wi-Fi unless you allow mobile data. The Hidden album is left out unless you include it.")
                 }
                 Section {
-                    Button("Back up now", systemImage: "icloud.and.arrow.up", action: backUpNow)
-                        .disabled(isWorking || status.phase == .needsSignIn || status.isPaused)
+                    // While paused, Resume backup is the one way on; a Back up now
+                    // that could not be used would only look like a second one.
+                    if !status.isPaused {
+                        Button("Back up now", systemImage: "icloud.and.arrow.up", action: backUpNow)
+                            .disabled(isWorking || status.phase == .needsSignIn)
+                    }
                     if status.isPaused {
                         Button("Resume backup", systemImage: "play.circle", action: togglePause)
                             .disabled(isWorking)
