@@ -96,7 +96,7 @@ func init() {
 			{
 				Name: "settings_update", Family: tools.FamilyServer, Risk: tools.RiskDestructive, Permissions: manage,
 				Description: "Change one section of the server's settings. Give the section and the fields to set, exactly as settings_get shows them -- settings describe says what each one is and means; a secret left out or shown redacted is kept. The agent section holds the providers, the models, the tool policy and the limits. A connected server is easier to add with connected_server, which declares and connects it in one place.",
-				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("the section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, proxy, upgrade, session, passkey, listen, identity, geoip, photos, resolver, agent, s3, route53"), "values": map[string]any{"type": "object", "description": "the fields to set"}}, "section", "values"),
+				Parameters:  tools.Object(map[string]any{"section": tools.StringProperty("the section: smtp, submission, imap, relay, antispam, antivirus, certificates, storage, sso, proxy, upgrade, session, passkey, listen, identity, geoip, photos, places, resolver, agent, s3, route53"), "values": map[string]any{"type": "object", "description": "the fields to set"}}, "section", "values"),
 				Preview: tools.PreviewOf(func(call struct {
 					Section string         `json:"section"`
 					Values  map[string]any `json:"values"`
@@ -133,7 +133,7 @@ func init() {
 						return nil, err
 					}
 					section := strings.TrimSpace(arguments.Section)
-					inputs := map[string]string{"s3": "S3ParametersInput", "route53": "Route53ParametersInput", "antivirus": "ServiceParametersInput", "antispam": "AntispamParametersInput", "relay": "RelayParametersInput", "submission": "SubmissionParametersInput", "imap": "IMAPParametersInput", "sso": "SSOParametersInput", "proxy": "ProxyParametersInput", "upgrade": "UpgradeParametersInput", "certificates": "CertificateParametersInput", "smtp": "SMTPParametersInput", "resolver": "ResolverParametersInput", "session": "SessionParametersInput", "passkey": "PasskeyParametersInput", "listen": "ListenParametersInput", "identity": "IdentityParametersInput", "storage": "StorageParametersInput", "geoip": "GeoIPParametersInput", "photos": "PhotosParametersInput", "agent": "AgentParametersInput"}
+					inputs := map[string]string{"s3": "S3ParametersInput", "route53": "Route53ParametersInput", "antivirus": "ServiceParametersInput", "antispam": "AntispamParametersInput", "relay": "RelayParametersInput", "submission": "SubmissionParametersInput", "imap": "IMAPParametersInput", "sso": "SSOParametersInput", "proxy": "ProxyParametersInput", "upgrade": "UpgradeParametersInput", "certificates": "CertificateParametersInput", "smtp": "SMTPParametersInput", "resolver": "ResolverParametersInput", "session": "SessionParametersInput", "passkey": "PasskeyParametersInput", "listen": "ListenParametersInput", "identity": "IdentityParametersInput", "storage": "StorageParametersInput", "geoip": "GeoIPParametersInput", "photos": "PhotosParametersInput", "places": "PlacesParametersInput", "agent": "AgentParametersInput"}
 					input, ok := inputs[section]
 					if !ok {
 						return nil, fmt.Errorf("there is no settings section %q", section)

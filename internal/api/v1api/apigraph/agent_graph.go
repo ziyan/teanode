@@ -2312,6 +2312,9 @@ func (self *graph) SaveAgentKnowledgeSource(ctx context.Context, arguments SaveA
 		if source.Kind == models.SourceChat {
 			return nil, fmt.Errorf("%w: a chat is remembered from the chat itself: turn on \"My agent remembers this chat\" in its members panel", api.ErrInvalidArguments)
 		}
+		if source.Kind == models.SourceLocation {
+			return nil, fmt.Errorf("%w: a location source is made by the TeaNode app on your iPhone when it records where you go", api.ErrInvalidArguments)
+		}
 		return nil, fmt.Errorf("%w: a %s source is made by linking an institution, from the Finance tab of the agent page, teanode finance link-plaid or link-simplefin, or the finance tool", api.ErrInvalidArguments, source.Kind)
 	}
 	return tx.PutAgentSource(source)

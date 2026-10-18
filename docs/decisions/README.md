@@ -205,3 +205,14 @@ computer, why a call above them, or on a share set to ask every time,
 waits for the owner's approval, and why the whole skill is never handed over.
 All five are proposed; their plan is
 `docs/planning/circles-and-chats-execplan.md`.
+
+`20261017-a-location-is-shared-at-a-level.md` says what each share level of
+a person's location shows (where they are now, or that and where they have been),
+why reach is decided at each call and a shortfall is "not found", why a viewer
+never sees the owner's own records about a place, and why the agent does not
+repeat another person's location into a chat.
+`20261017-places-are-named-from-openstreetmap.md` says where place names come
+from, what leaves the server for them (the position of each new place, to a
+provider the operator chooses and can turn off), and why the person's own name
+always wins. Both are proposed; their plan is
+`docs/planning/location-execplan.md`.

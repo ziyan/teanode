@@ -106,3 +106,20 @@ func TestCircleParity(test *testing.T) {
 		}
 	}
 }
+
+// Joining a family circle points at the commands that share the calendar and
+// where the person is, colleagues at the calendar's, and friends at nothing.
+func TestCircleSharingHint(test *testing.T) {
+	test.Parallel()
+
+	for circleKind, wanted := range map[string]string{
+		"family":     "you can share your calendar and where you are with it, if your account may use them: teanode calendar share, teanode location share",
+		"colleagues": "you can share your calendar with it, if your account may use it: teanode calendar share",
+		"friends":    "",
+		"":           "",
+	} {
+		if got := circleSharingHint(circleKind); got != wanted {
+			test.Errorf("%q says %q, want %q", circleKind, got, wanted)
+		}
+	}
+}

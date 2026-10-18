@@ -177,9 +177,8 @@ func (self *Agent) DirectTools(ctx context.Context, person *models.Agent, operat
 		case "ask_user", "tool_search":
 			continue
 		}
-		// Nor a tool that moves the dashboard or asks its browser: the
-		// caller is not in it.
-		if tool.DashboardOnly || tool.BrowserOnly {
+		// Nor a tool that moves the dashboard: the caller is not in it.
+		if tool.DashboardOnly {
 			continue
 		}
 		kept = append(kept, tool)
