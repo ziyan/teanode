@@ -1051,17 +1051,20 @@ func TestWhatARecordSaidSaysThatItContinues(t *testing.T) {
 	}
 }
 
-// An attachment the server already holds is not read again. Reading is
-// what costs, a LibreOffice run for a spreadsheet, and a page resumed
-// inside a file reads the file from its start: a mailbox of many threads
-// sent every document before the cursor through LibreOffice on every
-// page. One the server has lost since is read after all.
-func TestAnAttachmentTheServerHoldsIsNotReadAgain(t *testing.T) {
+// An attachment the server already holds is not read again, and one it
+// does not is read when it goes into a page. Reading is what costs, a
+// LibreOffice run for a spreadsheet, and every page of a file reads the
+// whole file: reading every attachment there put a mailbox of many
+// threads through LibreOffice before a page could send anything.
+func TestAnAttachmentIsReadOnlyWhenAPageSendsIt(t *testing.T) {
 	notes := []byte("the boiler is serviced every autumn\n")
-	root, scan := recordsIn(t, map[string]string{"files/notes.txt": string(notes)})
+	list := []byte("milk, eggs, bread\n")
+	root, scan := recordsIn(t, map[string]string{"files/notes.txt": string(notes), "files/list.txt": string(list)})
 	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
-		`{"id":"post:1","kind":"chat","channel":"house","at":"2026-08-14T09:30:00Z","author":"sam","text":"the notes",`+
-			`"attachments":[{"path":"files/notes.txt","name":"notes.txt","contentType":"text/plain"}]}`+"\n"), 0o644); err != nil {
+		`{"id":"post:1","kind":"page","title":"Boiler","at":"2026-08-14T09:30:00Z","author":"sam","text":"the notes",`+
+			`"attachments":[{"path":"files/notes.txt","name":"notes.txt","contentType":"text/plain"}]}`+"\n"+
+			`{"id":"post:2","kind":"page","title":"Shopping","at":"2026-08-15T09:30:00Z","author":"sam","text":"the list",`+
+			`"attachments":[{"path":"files/list.txt","name":"list.txt","contentType":"text/plain"}]}`+"\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %s", err)
 	}
 	readings := 0
@@ -1071,40 +1074,36 @@ func TestAnAttachmentTheServerHoldsIsNotReadAgain(t *testing.T) {
 		return previous(ctx, path, content)
 	}
 	defer func() { attachmentReader = previous }()
-	id := "posts.jsonl#" + hashOfBytes(notes)
+	notesId, listId := "posts.jsonl#"+hashOfBytes(notes), "posts.jsonl#"+hashOfBytes(list)
 
-	first, err := scan(&ScanArguments{Known: map[string]string{}})
+	// A page of one entry reads the one attachment it sends, not the
+	// other attachment further down the file.
+	first, err := scan(&ScanArguments{Known: map[string]string{}, Most: 1})
 	if err != nil {
 		t.Fatalf("RunScan: %s", err)
 	}
-	if entry := entriesOfKind(first.Entries, KindAttachment)[id]; entry.Text != string(notes) || readings != 1 {
-		t.Fatalf("a new attachment is read once: %d readings, %+v", readings, entry)
-	}
-
-	second, err := scan(&ScanArguments{Known: map[string]string{id: hashOfBytes(notes)}})
-	if err != nil {
-		t.Fatalf("RunScan: %s", err)
-	}
-	if entry := entriesOfKind(second.Entries, KindAttachment)[id]; !entry.Unchanged || entry.Text != "" {
-		t.Fatalf("a held attachment is named as unchanged with no text: %+v", entry)
+	if entry := entriesOfKind(first.Entries, KindAttachment)[notesId]; entry.Text != string(notes) {
+		t.Fatalf("the attachment in the page is sent with its text: %+v", first.Entries)
 	}
 	if readings != 1 {
-		t.Fatalf("a held attachment was read again: %d readings", readings)
+		t.Fatalf("a page of one entry read %d attachments", readings)
 	}
 
-	// The same file served from the cache, on a page of a pass whose
-	// server no longer holds the attachment.
-	folder := &recordsFolder{options: &Options{Home: t.TempDir()}, root: root, maxAttachmentBytes: maxAttachmentBytes(0),
-		known: map[string]string{id: hashOfBytes(notes)}, unread: map[string]unreadAttachment{}}
-	forgetRecords()
-	if _, err := recordEntries(context.Background(), folder, "posts.jsonl", false); err != nil {
-		t.Fatalf("recordEntries: %s", err)
-	}
-	third, err := scan(&ScanArguments{Known: map[string]string{}, After: "posts.jsonl"})
+	// A new pass where the server holds the first: it is named unchanged
+	// without being read, and only the second is read.
+	readings = 0
+	second, err := scan(&ScanArguments{Known: map[string]string{notesId: hashOfBytes(notes)}})
 	if err != nil {
 		t.Fatalf("RunScan: %s", err)
 	}
-	if entry := entriesOfKind(third.Entries, KindAttachment)[id]; entry.Unchanged || entry.Text != string(notes) {
-		t.Fatalf("an attachment the server lost is read and sent: %+v", entry)
+	attachments := entriesOfKind(second.Entries, KindAttachment)
+	if entry := attachments[notesId]; !entry.Unchanged || entry.Text != "" {
+		t.Fatalf("a held attachment is named as unchanged with no text: %+v", entry)
+	}
+	if entry := attachments[listId]; entry.Text != string(list) {
+		t.Fatalf("the attachment the server lacks is sent with its text: %+v", entry)
+	}
+	if readings != 1 {
+		t.Fatalf("read %d attachments, want only the one the server lacks", readings)
 	}
 }

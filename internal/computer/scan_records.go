@@ -162,18 +162,13 @@ type recordsFolder struct {
 	// videos is what this page has left for making sheets of frames.
 	videos videoBudget
 
-	// known is what the server already holds, external identifier to
-	// hash, for the pass this page belongs to.
-	known map[string]string
-
-	// unread is the attachments whose text was not read because the
-	// server held them already, by external identifier: what reading
-	// one after all needs, should the page find the server without it.
+	// unread is the attachments whose text is read only when they go
+	// into a page, by external identifier: what reading one needs.
 	unread map[string]unreadAttachment
 }
 
-// unreadAttachment is an attachment whose reading was put off: the
-// record's description of it and where its bytes are.
+// unreadAttachment is an attachment whose text has not been read yet:
+// the record's description of it and where its bytes are.
 type unreadAttachment struct {
 	attachment recordAttachment
 	path       string
@@ -190,7 +185,6 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 	folder := &recordsFolder{
 		options: options, root: root,
 		maxAttachmentBytes: maxAttachmentBytes(arguments.MaxAttachmentBytes),
-		known:              arguments.Known,
 		unread:             map[string]unreadAttachment{},
 	}
 	if strings.EqualFold(strings.TrimSpace(arguments.Format), FormatTyped) {
@@ -359,6 +353,14 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 				result.IsUnfinished = folder.typed != nil && folder.typed.isUnfinished
 				return result, nil
 			}
+			// What the server already holds is named and not sent again;
+			// an attachment it does not is read now, going into the page.
+			if arguments.Known[entry.ExternalID] == entry.Hash {
+				entry.Unchanged = true
+				entry.Text = ""
+			} else {
+				folder.readPostponed(ctx, &entry)
+			}
 			// A file a record came with that this program will not hand
 			// over -- too large, or not there any more --
 			// is one entry saying so, counted the way the walk counts a
@@ -366,21 +368,6 @@ func scanRecords(ctx context.Context, options *Options, root string, arguments *
 			// passed over rather than leaving the person to wonder.
 			if entry.Refused != "" {
 				result.Refused++
-			}
-			// What the server already holds is named and not sent again.
-			if arguments.Known[entry.ExternalID] == entry.Hash {
-				entry.Unchanged = true
-				entry.Text = ""
-			} else if postponed, isPostponed := folder.unread[entry.ExternalID]; isPostponed && entry.Unchanged {
-				// Its reading was put off because the server held it,
-				// and the server no longer does: read it now.
-				attachment := postponed.attachment
-				text, err := folder.attachmentText(ctx, &attachment, postponed.path)
-				entry.Unchanged = false
-				if err != nil {
-					entry.Refused = err.Error()
-				}
-				entry.Text = text
 			}
 			carried += len(entry.Text)
 			result.Entries = append(result.Entries, entry)
@@ -694,8 +681,8 @@ var recordsCache struct {
 	// maxAttachmentBytes is the bound the entries were read under, since
 	// it decides which of them were refused.
 	maxAttachmentBytes int64
-	// unread is the attachments of the entries whose reading was put
-	// off, so that a page served from here can still read one.
+	// unread is the attachments of the entries, whose text a page served
+	// from here reads as it sends them.
 	unread map[string]unreadAttachment
 }
 
@@ -1000,35 +987,39 @@ func (self *recordsFolder) attachmentsOf(ctx context.Context, relative string, o
 		seen[entry.ExternalID] = true
 		entry.Hash, entry.Size = hash, read
 		entry.Metadata = self.attachmentMetadata(path, name, attachment.ContentType, one)
-		// One the server already holds under this hash is not read
-		// again. Reading is what costs here: a spreadsheet or a deck is
-		// a LibreOffice run, and a page that resumes inside a file reads
-		// the file from its start, so a mailbox of tens of thousands of
-		// threads put every document before the cursor through
-		// LibreOffice on every page, and a page cut short by a restart
-		// started that over.
-		if self.known[entry.ExternalID] == hash {
-			entry.Unchanged = true
-			self.unread[entry.ExternalID] = unreadAttachment{attachment: *attachment, path: path}
-			entries = append(entries, entry)
-			continue
-		}
-		text, err := self.attachmentText(ctx, attachment, path)
-		if err != nil {
-			// A scan whose pages are not all read yet. Sent now with no
-			// text, it would be known by its hash on the next pass and
-			// never read again; held back with the reason, the next pass
-			// reads the rest of its pages and sends it then.
-			entry.Refused = err.Error()
-			entries = append(entries, entry)
-			continue
-		}
-		// The whole text, however long, the way a file in a tree is sent:
-		// the server cuts it into chunks and indexes every one.
-		entry.Text = text
+		// Its text is read when the entry goes into a page, not here.
+		// Reading is what costs: a spreadsheet or a deck is a
+		// LibreOffice run, and every page of a file reads the whole file,
+		// so reading here put every document of a mailbox of tens of
+		// thousands of threads through LibreOffice before the page could
+		// send anything. A page the server stopped waiting for was
+		// cancelled, kept nothing, and the next one started over.
+		self.unread[entry.ExternalID] = unreadAttachment{attachment: *attachment, path: path}
 		entries = append(entries, entry)
 	}
 	return entries
+}
+
+// readPostponed reads the text of an attachment going into a page, when
+// the server does not already hold it.
+func (self *recordsFolder) readPostponed(ctx context.Context, entry *ScanEntry) {
+	postponed, isPostponed := self.unread[entry.ExternalID]
+	if !isPostponed || entry.Refused != "" {
+		return
+	}
+	attachment := postponed.attachment
+	text, err := self.attachmentText(ctx, &attachment, postponed.path)
+	if err != nil {
+		// A scan whose pages are not all read yet. Sent now with no
+		// text, it would be known by its hash on the next pass and
+		// never read again; held back with the reason, the next pass
+		// reads the rest of its pages and sends it then.
+		entry.Refused = err.Error()
+		return
+	}
+	// The whole text, however long, the way a file in a tree is sent:
+	// the server cuts it into chunks and indexes every one.
+	entry.Text = text
 }
 
 // attachmentText is what a file says, where saying it costs nothing: the
