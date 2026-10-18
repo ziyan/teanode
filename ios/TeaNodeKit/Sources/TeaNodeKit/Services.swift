@@ -7,8 +7,8 @@ public struct ServiceCapabilities: Codable, Sendable, Equatable {
     public let isCalendarEnabled: Bool
     public let isRemindersEnabled: Bool
     public let isContactsEnabled: Bool
-    /// Whether the server keeps a photo library. Off until an operator turns
-    /// it on, and false in an answer from a server that predates Photos.
+    /// Whether the server keeps a photo library. On unless an operator turned
+    /// it off, and false in an answer from a server that predates Photos.
     public let isPhotosEnabled: Bool
     public let isAssistantEnabled: Bool
     public let hasPendingServiceRestart: Bool
