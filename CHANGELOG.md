@@ -6,6 +6,16 @@ Notable changes to TeaNode. The format follows
 
 ## [Unreleased]
 
+## [0.177.2] - 2026-10-18
+
+### Changed
+
+- Changing a place's address lists the matches nearest that place first, on the dashboard, the iPhone, the command line and for the agent. (#572)
+
+### Fixed
+
+- The iPhone's import preview names the new account the rows would go into in one line, and the trades list's note is footnote text. (#574)
+
 ## [0.177.1] - 2026-10-18
 
 ### Security
