@@ -5249,6 +5249,19 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
   white-space: nowrap;
 }
 
+/* Inside a field's label the value is what was chosen, not the field's name:
+   "label span" would draw it small and grey, like the name above it. */
+label .select-value {
+  display: block;
+  margin-bottom: 0;
+  color: var(--text);
+  font-size: inherit;
+}
+
+label .select-value.placeholder {
+  color: var(--muted);
+}
+
 .select-list {
   max-width: calc(100vw - 16px);
   position: fixed;

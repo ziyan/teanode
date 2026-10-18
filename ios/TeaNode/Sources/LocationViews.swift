@@ -99,8 +99,9 @@ struct LocationScreen: View {
                             }
                             .pickerStyle(.segmented)
                             .padding(.horizontal)
-                            .padding(.bottom, 8)
-                            content
+                            // The list under the tabs starts close to them,
+                            // not a grouped list's usual top gap away.
+                            content.contentMargins(.top, 8, for: .scrollContent)
                         }
                     }
                 }

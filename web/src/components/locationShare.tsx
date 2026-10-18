@@ -6,6 +6,7 @@ import { Key, useTranslation } from '../i18n/i18n'
 import { Tag } from './common'
 import { CloseIcon } from './icons'
 import { personLabel, personName } from './personLabel'
+import { Select } from './select'
 import { SettingsEmpty, SettingsRow, SettingsSection } from './settingsList'
 import { useToast } from './toast'
 import { Tooltip } from './tooltip'
@@ -164,38 +165,39 @@ export function LocationSharing() {
           }}
         >
           <label>
-            {t('location.shareWith')}
-            <select value={choice} onChange={(event) => setChoice(event.target.value)}>
-              <option value="">{t('location.shareChoose')}</option>
-              {people.length > 0 && (
-                <optgroup label={t('location.sharePeople')}>
-                  {people.map((person) => (
-                    <option key={person.userId} value={`user:${person.userId}`}>
-                      {personLabel(person)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {circles.length > 0 && (
-                <optgroup label={t('location.shareCircles')}>
-                  {circles.map((circle) => (
-                    <option key={circle.id} value={`circle:${circle.id}`}>
-                      {circleOption(circle)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+            <span>{t('location.shareWith')}</span>
+            <Select
+              block
+              value={choice}
+              label={t('location.shareWith')}
+              placeholder={t('location.shareChoose')}
+              options={[
+                ...people.map((person) => ({
+                  value: `user:${person.userId}`,
+                  label: personLabel(person),
+                  group: t('location.sharePeople'),
+                })),
+                ...circles.map((circle) => ({
+                  value: `circle:${circle.id}`,
+                  label: circleOption(circle),
+                  group: t('location.shareCircles'),
+                })),
+              ]}
+              onChange={setChoice}
+            />
           </label>
           <label>
-            {t('location.shareLevelLabel')}
-            <select value={shareLevel} onChange={(event) => setShareLevel(event.target.value as LocationShareLevel)}>
-              {LOCATION_SHARE_LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {t(`location.shareLevelName.${level}` as Key)}
-                </option>
-              ))}
-            </select>
+            <span>{t('location.shareLevelLabel')}</span>
+            <Select
+              block
+              value={shareLevel}
+              label={t('location.shareLevelLabel')}
+              options={LOCATION_SHARE_LEVELS.map((level) => ({
+                value: level,
+                label: t(`location.shareLevelName.${level}` as Key),
+              }))}
+              onChange={(value) => setShareLevel(value as LocationShareLevel)}
+            />
             <span className="muted">{t(`location.shareLevelHint.${shareLevel}` as Key)}</span>
           </label>
           <div className="page-actions">

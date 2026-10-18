@@ -203,6 +203,13 @@ export function LocationMap({
         ],
       }),
     )
+    // A compact credit starts open, which on a small map covers half of it;
+    // folded, it is the "i" button that opens it.
+    map.once('load', () => {
+      const attribution = container.current?.querySelector('.maplibregl-ctrl-attrib')
+      attribution?.classList.remove('maplibregl-compact-show')
+      attribution?.removeAttribute('open')
+    })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     const leafColor = readThemeColor('--leaf', '#729d39')
     const blueColor = readThemeColor('--avatar-7', '#2f5fb3')

@@ -34,6 +34,7 @@ import { PLACE_LABELS, PlaceLabelIcon } from '../components/placeLabelIcon'
 import { personName } from '../components/personLabel'
 import { RelativeTime } from '../components/relativeTime'
 import { SettingsEmpty, SettingsSection } from '../components/settingsList'
+import { Select } from '../components/select'
 import { Tabs, TabItem } from '../components/tabs'
 import { useToast } from '../components/toast'
 import { useQuery } from '../components/useQuery'
@@ -137,15 +138,16 @@ function LabelFilter({ value, onChange }: { value: string; onChange: (placeLabel
   const { t } = useTranslation()
   return (
     <label>
-      {t('location.placeLabel')}
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">{t('location.filterAllLabels')}</option>
-        {PLACE_LABELS.map((each) => (
-          <option key={each} value={each}>
-            {t(LABEL_KEYS[each] as Key)}
-          </option>
-        ))}
-      </select>
+      <span>{t('location.placeLabel')}</span>
+      <Select
+        value={value}
+        label={t('location.placeLabel')}
+        options={[
+          { value: '', label: t('location.filterAllLabels') },
+          ...PLACE_LABELS.map((each) => ({ value: each, label: t(LABEL_KEYS[each] as Key) })),
+        ]}
+        onChange={onChange}
+      />
     </label>
   )
 }
@@ -867,7 +869,7 @@ function LocationContent({ userId }: { userId: string }) {
         >
           <div className="location-day-picker">
             <label>
-              {t('location.searchPlaces')}
+              <span>{t('location.searchPlaces')}</span>
               <input
                 type="search"
                 value={placesSearchText}
@@ -1204,14 +1206,16 @@ function PlaceEditor({
         </div>
         <label>
           {t('location.placeLabel')}
-          <select value={placeLabel} onChange={(event) => setPlaceLabel(event.target.value)}>
-            <option value="">{t('location.label.none')}</option>
-            {PLACE_LABELS.map((each) => (
-              <option key={each} value={each}>
-                {t(LABEL_KEYS[each] as Key)}
-              </option>
-            ))}
-          </select>
+          <Select
+            block
+            value={placeLabel}
+            label={t('location.placeLabel')}
+            options={[
+              { value: '', label: t('location.label.none') },
+              ...PLACE_LABELS.map((each) => ({ value: each, label: t(LABEL_KEYS[each] as Key) })),
+            ]}
+            onChange={setPlaceLabel}
+          />
         </label>
         <div className="location-place-editor-group">
           <label htmlFor="location-place-radius">{t('location.placeRadius')}</label>
