@@ -235,6 +235,7 @@ struct PhotoSelectionToolbar: ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             Button("Move to Trash", systemImage: "trash", role: .destructive) { isConfirmingTrash = true }
+                .destructiveBarButtonStyle()
                 .disabled(isEmpty)
                 .confirmationDialog("Move these photos to the Trash?", isPresented: $isConfirmingTrash, titleVisibility: .visible) {
                     Button("Move to Trash", role: .destructive) {
@@ -320,10 +321,17 @@ struct PhotoAlbumsView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, PhotoAlbumLayout.horizontalPadding)
         .padding(.top, 12)
         .padding(.bottom, 8)
     }
+}
+
+/// PhotoAlbumLayout holds the one measure the album grids and the suggestion
+/// cards share, so a card lines up with the edges of the grid under it.
+enum PhotoAlbumLayout {
+    /// The space at the left and right of the album sections.
+    static let horizontalPadding: CGFloat = 16
 }
 
 /// PhotoAlbumCell is one album in the grid: its cover as a square, its title
@@ -402,16 +410,21 @@ struct PhotoSuggestionsSection: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Suggested")
                 .font(.headline)
-                .padding(.horizontal)
+                .padding(.horizontal, PhotoAlbumLayout.horizontalPadding)
                 .accessibilityAddTraits(.isHeader)
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(model.suggestions) { suggestion in
+                        // As wide as the album grids under it, so its edges line up with theirs;
+                        // with several suggestions each one is a page to swipe to.
                         PhotoSuggestionCard(suggestion: suggestion, model: model)
+                            .containerRelativeFrame(.horizontal) { containerWidth, _ in
+                                containerWidth - 2 * PhotoAlbumLayout.horizontalPadding
+                            }
                     }
                 }
                 .scrollTargetLayout()
-                .padding(.horizontal)
+                .padding(.horizontal, PhotoAlbumLayout.horizontalPadding)
             }
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.viewAligned)
@@ -448,14 +461,21 @@ struct PhotoSuggestionCard: View {
                         .lineLimit(2)
                 }
             }
-            Button("Create album") {
+            // Full width, and the title wraps at the large text sizes instead of ending in an
+            // ellipsis.
+            Button {
                 model.requestAlbumTitle(.suggestion(suggestion), scope: .library)
+            } label: {
+                Text("Create album")
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
         }
         .padding(14)
-        .frame(width: 300, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 18))
         .overlay { RoundedRectangle(cornerRadius: 18).strokeBorder(Color(.separator), lineWidth: 0.5) }
         .accessibilityElement(children: .contain)

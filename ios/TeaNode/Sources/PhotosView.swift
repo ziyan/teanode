@@ -1300,6 +1300,7 @@ struct PhotoTrashSelectionToolbar: ToolbarContent {
         ToolbarSpacer(.flexible, placement: .bottomBar)
         ToolbarItem(placement: .bottomBar) {
             Button("Delete forever", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
+                .destructiveBarButtonStyle()
                 .disabled(isEmpty)
                 .confirmationDialog("Delete these photos forever?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
                     Button("Delete forever", role: .destructive) {
@@ -1310,6 +1311,15 @@ struct PhotoTrashSelectionToolbar: ToolbarContent {
                     Text("This cannot be undone.")
                 }
         }
+    }
+}
+
+extension View {
+    /// Makes a button in a glass bar red. The bar draws its buttons in the tint
+    /// and leaves out the red that `role: .destructive` gives a button in a
+    /// list, so a button that deletes says so here, with its symbol.
+    func destructiveBarButtonStyle() -> some View {
+        tint(.red)
     }
 }
 
