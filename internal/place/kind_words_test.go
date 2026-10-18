@@ -14,6 +14,10 @@ type searchRecorder struct {
 
 func (self *searchRecorder) Name(context.Context, float64, float64) (*Found, error) { return nil, nil }
 
+func (self *searchRecorder) Addresses(context.Context, string, int) ([]*Found, error) {
+	return nil, nil
+}
+
 func (self *searchRecorder) Search(_ context.Context, query string, _, _, _ float64, _ int) ([]*Found, error) {
 	self.asked = append(self.asked, query)
 	return self.answers[query], nil

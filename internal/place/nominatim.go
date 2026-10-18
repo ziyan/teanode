@@ -145,3 +145,50 @@ func (self *nominatimProvider) Search(ctx context.Context, query string, latitud
 	}
 	return nearest(found, latitudeDegrees, longitudeDegrees, radiusMeters, limitCount), nil
 }
+
+// toAddressFound turns a result of an address search into a Found. What it is
+// called, and the first part of its address, follow the naming rules of a
+// reverse answer: a road, a stop or an elevator is called by the address it
+// stands at and not by what it is, and a house has no name but its number and
+// road.
+func (self *nominatimPlace) toAddressFound() *Found {
+	cleared := *self
+	if isNotAPlace(self.Category + "=" + self.ObjectType) {
+		cleared.Name = ""
+	}
+	found := cleared.toFound()
+	if found == nil {
+		return nil
+	}
+	found.IsChosenForPoint = false
+	if line := addressLine(found.PlaceName, self.addressPart("neighbourhood", "suburb", "quarter", "city_district"),
+		self.addressPart("city", "town", "village", "municipality", "hamlet"), self.addressPart("state", "province"),
+		self.addressPart("country")); line != "" {
+		found.AddressText = line
+	}
+	return found
+}
+
+// Addresses asks for matches anywhere: no viewbox, so the words alone decide.
+func (self *nominatimProvider) Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	var answers []nominatimPlace
+	if err := self.get(ctx, "/search", url.Values{
+		"format":         {"jsonv2"},
+		"q":              {query},
+		"addressdetails": {"1"},
+		"limit":          {strconv.Itoa(addressFetchCount(limitCount))},
+	}, &answers); err != nil {
+		return nil, err
+	}
+	found := make([]*Found, 0, len(answers))
+	for index := range answers {
+		if candidate := answers[index].toAddressFound(); candidate != nil {
+			found = append(found, candidate)
+		}
+	}
+	return found[:min(len(found), addressFetchCount(limitCount))], nil
+}

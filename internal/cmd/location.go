@@ -95,12 +95,25 @@ func NewLocationCommand() *cli.Command {
 				Action: runLocationSearch,
 			},
 			{
+				Name:      "addresses",
+				Usage:     "addresses matching words, anywhere, from OpenStreetMap, best match first",
+				ArgsUsage: "<words>",
+				Flags: []cli.Flag{
+					JSONFlag(),
+					&cli.IntFlag{Name: "first", Usage: "how many to show, at most 20", Value: 8},
+				},
+				Action: runLocationAddresses,
+			},
+			{
 				Name:      "save",
-				Usage:     "name, label, move or resize a place, or make one",
+				Usage:     "name, label, move or resize a place, give it an address, or make one",
 				ArgsUsage: "[place-id]",
 				Description: "With a place id, only what you give is changed. Without one, a new place is made\n" +
 					"at --latitude and --longitude. An empty --name goes back to OpenStreetMap's name, and\n" +
-					"--label none takes the label off.",
+					"--label none takes the label off.\n" +
+					"--address \"<words>\" looks the words up, takes the first match, and moves the place there\n" +
+					"with that address (see 'teanode location addresses'); to choose another match give its\n" +
+					"--latitude, --longitude and --address-text.",
 				Flags: []cli.Flag{
 					JSONFlag(),
 					&cli.StringFlag{Name: "name", Usage: "your name for the place"},
@@ -108,6 +121,8 @@ func NewLocationCommand() *cli.Command {
 					&cli.FloatFlag{Name: "radius", Usage: "how far from its center counts as being there, in meters"},
 					&cli.FloatFlag{Name: "latitude", Usage: "move the place, or put a new one, here"},
 					&cli.FloatFlag{Name: "longitude", Usage: "move the place, or put a new one, here"},
+					&cli.StringFlag{Name: "address", Usage: "words to look up: the place moves to the first match and keeps its address"},
+					&cli.StringFlag{Name: "address-text", Usage: "the address of the match at --latitude and --longitude, as 'teanode location addresses' prints it"},
 				},
 				Action: runLocationSave,
 			},
@@ -628,9 +643,50 @@ func runLocationSearch(ctx context.Context, command *cli.Command) error {
 	return nil
 }
 
+func addressRows(found []*client.FoundPlace) [][]string {
+	rows := make([][]string, 0, len(found))
+	for _, each := range found {
+		distance := "-"
+		if each.DistanceMeters > 0 {
+			distance = fmt.Sprintf("%.0f m", each.DistanceMeters)
+			if each.DistanceMeters >= 1000 {
+				distance = fmt.Sprintf("%.1f km", each.DistanceMeters/1000)
+			}
+		}
+		rows = append(rows, []string{each.AddressText, fmt.Sprintf("%.5f", each.LatitudeDegrees), fmt.Sprintf("%.5f", each.LongitudeDegrees), distance})
+	}
+	return rows
+}
+
+func runLocationAddresses(ctx context.Context, command *cli.Command) error {
+	words := strings.TrimSpace(strings.Join(command.Args().Slice(), " "))
+	if words == "" {
+		return usage("usage: teanode location addresses <words> [--first <count>]")
+	}
+	connection, err := openClient(command)
+	if err != nil {
+		return err
+	}
+	found, err := client.SearchAddresses(ctx, connection, words, int(command.Int("first")))
+	if err != nil {
+		return describeError(command, err)
+	}
+	if command.Bool("json") {
+		if found == nil {
+			found = []*client.FoundPlace{}
+		}
+		return PrintJSON(found)
+	}
+	if len(found) == 0 {
+		fmt.Println("no address found; try fewer words, or the street and the city")
+		return nil
+	}
+	return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(found))
+}
+
 func runLocationSave(ctx context.Context, command *cli.Command) error {
 	if command.Args().Len() > 1 {
-		return usage("usage: teanode location save [place-id] [--name <name>] [--label <label>] [--radius <meters>] [--latitude <degrees> --longitude <degrees>]")
+		return usage("usage: teanode location save [place-id] [--name <name>] [--label <label>] [--radius <meters>] [--latitude <degrees> --longitude <degrees>] [--address <words> | --address-text <address>]")
 	}
 	change := client.PlaceChange{PlaceID: strings.TrimSpace(command.Args().First())}
 	if command.IsSet("name") {
@@ -649,12 +705,42 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 		return err
 	}
 	change.LatitudeDegrees, change.LongitudeDegrees, change.RadiusMeters = latitude, longitude, radius
-	if change.PlaceID == "" && latitude == nil {
+	words := strings.TrimSpace(command.String("address"))
+	if command.IsSet("address") && words == "" {
+		return usage("--address needs some words of the address")
+	}
+	if command.IsSet("address-text") {
+		addressText := strings.TrimSpace(command.String("address-text"))
+		if addressText == "" {
+			return usage("--address-text needs the address")
+		}
+		if latitude == nil {
+			return usage("give the position of the address too: --latitude and --longitude")
+		}
+		change.AddressText = &addressText
+	}
+	if words != "" && (change.AddressText != nil || latitude != nil) {
+		return usage("--address looks the address up and takes its position; give either --address, or --latitude, --longitude and --address-text")
+	}
+	if change.PlaceID == "" && latitude == nil && words == "" {
 		return usage("give the place to change as <place-id>, or --latitude and --longitude to make a new one")
 	}
 	connection, err := openClient(command)
 	if err != nil {
 		return err
+	}
+	var otherMatches []*client.FoundPlace
+	if words != "" {
+		matches, err := client.SearchAddresses(ctx, connection, words, 5)
+		if err != nil {
+			return describeError(command, err)
+		}
+		if len(matches) == 0 {
+			return usage("no address matches " + words + "; 'teanode location addresses' shows what a search finds")
+		}
+		change.LatitudeDegrees, change.LongitudeDegrees = &matches[0].LatitudeDegrees, &matches[0].LongitudeDegrees
+		change.AddressText = &matches[0].AddressText
+		otherMatches = matches[1:]
 	}
 	saved, err := client.SavePlace(ctx, connection, change)
 	if err != nil {
@@ -664,6 +750,13 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 		return PrintJSON(saved)
 	}
 	fmt.Printf("%s (%s)\n", forTerminal(placeLine(saved)), saved.ID)
+	if words != "" {
+		fmt.Printf("address: %s\n", forTerminal(saved.AddressText))
+		if len(otherMatches) > 0 {
+			fmt.Println("if that was the wrong address, rerun with --latitude, --longitude and --address-text from one of these:")
+			return printTable([]string{"address", "latitude", "longitude", "distance"}, addressRows(otherMatches))
+		}
+	}
 	return nil
 }
 

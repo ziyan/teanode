@@ -155,12 +155,18 @@ const (
   }
 }`
 
+	DocumentSearchAddresses = `query ($query: String!, $limitCount: Int) {
+  SearchAddresses(query: $query, limitCount: $limitCount) {
+    ` + foundPlaceFields + `
+  }
+}`
+
 	DocumentListLocationPoints = `query ($userId: String, $from: DateTime!, $until: DateTime!) {
   ListLocationPoints(userId: $userId, from: $from, until: $until) { ` + locationPointFields + ` }
 }`
 
-	DocumentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float) {
-  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) {
+	DocumentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
+  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) {
     ` + placeFields + `
   }
 }`
@@ -337,6 +343,22 @@ func SearchPlaces(ctx context.Context, connection *Client, search PlaceSearch) (
 	return result.SearchPlaces, nil
 }
 
+// SearchAddresses is the addresses matching words, anywhere, best first. A
+// limitCount of zero is the server's default.
+func SearchAddresses(ctx context.Context, connection *Client, query string, limitCount int) ([]*FoundPlace, error) {
+	variables := map[string]any{"query": query}
+	if limitCount > 0 {
+		variables["limitCount"] = limitCount
+	}
+	var result struct {
+		SearchAddresses []*FoundPlace `json:"SearchAddresses"`
+	}
+	if err := connection.Execute(ctx, DocumentSearchAddresses, variables, &result); err != nil {
+		return nil, err
+	}
+	return result.SearchAddresses, nil
+}
+
 // ListLocationPoints is the positions of up to two days, oldest first, of the
 // caller or, with a userId, of somebody who shares their history with them.
 func ListLocationPoints(ctx context.Context, connection *Client, userId string, from, until time.Time) ([]*LocationPoint, error) {
@@ -363,6 +385,10 @@ type PlaceChange struct {
 	LatitudeDegrees  *float64
 	LongitudeDegrees *float64
 	RadiusMeters     *float64
+
+	// AddressText is an address picked from SearchAddresses; it needs the
+	// coordinates of that match.
+	AddressText *string
 }
 
 // SavePlace names, labels, moves or resizes a place, or makes one when there
@@ -386,6 +412,9 @@ func SavePlace(ctx context.Context, connection *Client, change PlaceChange) (*Pl
 	}
 	if change.RadiusMeters != nil {
 		variables["radiusMeters"] = *change.RadiusMeters
+	}
+	if change.AddressText != nil {
+		variables["addressText"] = *change.AddressText
 	}
 	var result struct {
 		SavePlace *Place `json:"SavePlace"`

@@ -87,6 +87,18 @@ func addressName(houseNumber, road, neighborhood, city string) string {
 	return ""
 }
 
+// addressLine joins the parts of an address that are not empty, starting with
+// the one that names it.
+func addressLine(parts ...string) string {
+	kept := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" && (len(kept) == 0 || kept[len(kept)-1] != part) {
+			kept = append(kept, part)
+		}
+	}
+	return strings.Join(kept, ", ")
+}
+
 // Provider names points and finds places from OpenStreetMap data. Every call
 // waits its turn behind the one limiter all providers in the process share.
 type Provider interface {
@@ -98,6 +110,14 @@ type Provider interface {
 	// the radius. An empty query asks what is near the point instead of
 	// matching words, which is what a check-in list wants.
 	Search(ctx context.Context, query string, latitudeDegrees, longitudeDegrees, radiusMeters float64, limitCount int) ([]*Found, error)
+
+	// Addresses finds the addresses matching words anywhere, best match first,
+	// at most limitCount of them, for a person who types where a place is.
+	// DistanceMeters is left at zero (the caller knows from where). AddressText
+	// starts with the part that names the match (house number and road, or the
+	// name of a place), which is what a place without a name of its own is
+	// called by.
+	Addresses(ctx context.Context, query string, limitCount int) ([]*Found, error)
 }
 
 // NewProvider makes the provider the configuration names, or nil with no error
@@ -323,4 +343,10 @@ func nearest(found []*Found, latitudeDegrees, longitudeDegrees, radiusMeters flo
 // wants limitCount, since the ones nearest are not the ones it lists first.
 func searchFetchCount(limitCount int) int {
 	return min(max(limitCount, 1)*3, 40)
+}
+
+// addressFetchCount is how many matches to ask a provider for when the person
+// wants limitCount: as many, since nothing is dropped for being far.
+func addressFetchCount(limitCount int) int {
+	return min(max(limitCount, 1), 40)
 }

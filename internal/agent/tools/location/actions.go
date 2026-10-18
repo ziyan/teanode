@@ -43,8 +43,13 @@ const (
     nextOffset foundPlaces { ` + foundFields + ` }
   }
 }`
-	documentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float) {
-  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters) { ` + placeFields + ` }
+	documentSearchAddresses = `query ($query: String!, $limitCount: Int) {
+  SearchAddresses(query: $query, limitCount: $limitCount) {
+    placeName osmType osmId osmCategory addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson
+  }
+}`
+	documentSavePlace = `mutation ($placeId: String, $placeName: String, $placeLabel: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $radiusMeters: Float, $addressText: String) {
+  SavePlace(placeId: $placeId, placeName: $placeName, placeLabel: $placeLabel, latitudeDegrees: $latitudeDegrees, longitudeDegrees: $longitudeDegrees, radiusMeters: $radiusMeters, addressText: $addressText) { ` + placeFields + ` }
 }`
 	documentForgetPlace = `mutation ($placeId: String!) { ForgetPlace(placeId: $placeId) }`
 	documentCheckIn     = `mutation ($placeId: String, $latitudeDegrees: Float, $longitudeDegrees: Float, $placeName: String, $osmType: String, $osmId: Int64, $osmCategory: String, $addressText: String) {
@@ -712,6 +717,44 @@ func runSearch(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	return untrusted(tools.JSONResult(answer))
 }
 
+type findAddressArguments struct {
+	Query string `json:"query"`
+	Limit *int   `json:"limit"`
+}
+
+// runFindAddress is the addresses matching words, anywhere, for a person who
+// says where a place is. The rows are the ones nearby and search give, so that
+// a match's address_text and coordinates go to save_place as they were found.
+func runFindAddress(ctx context.Context, call *tools.Call) (*tools.Result, error) {
+	arguments, err := tools.DecodeArguments[findAddressArguments](call)
+	if err != nil {
+		return nil, err
+	}
+	query := strings.TrimSpace(arguments.Query)
+	if query == "" {
+		return nil, fmt.Errorf("say which address to look for, in query")
+	}
+	here, err := scopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	variables := map[string]any{"query": query}
+	if arguments.Limit != nil {
+		variables["limitCount"] = *arguments.Limit
+	}
+	var result struct {
+		SearchAddresses []foundData `json:"SearchAddresses"`
+	}
+	if err := here.operations.Execute(ctx, documentSearchAddresses, variables, &result); err != nil {
+		return nil, err
+	}
+	rows := make([]map[string]any, 0, len(result.SearchAddresses))
+	for index := range result.SearchAddresses {
+		rows = append(rows, here.foundRow(&result.SearchAddresses[index]))
+	}
+	return untrusted(tools.JSONResult(map[string]any{"addresses": rows}))
+}
+
 func runSavePlace(ctx context.Context, call *tools.Call) (*tools.Result, error) {
 	arguments, err := tools.DecodeArguments[savePlaceArguments](call)
 	if err != nil {
@@ -743,6 +786,15 @@ func runSavePlace(ctx context.Context, call *tools.Call) (*tools.Result, error) 
 	}
 	if arguments.RadiusMeters != nil {
 		variables["radiusMeters"] = *arguments.RadiusMeters
+	}
+	if arguments.AddressText != nil {
+		if strings.TrimSpace(*arguments.AddressText) == "" {
+			return nil, fmt.Errorf("address_text is the address a match of find_address gave; leave it out to keep the address as it is")
+		}
+		if variables["latitudeDegrees"] == nil || variables["longitudeDegrees"] == nil {
+			return nil, fmt.Errorf("give the position of the address too: latitude_degrees and longitude_degrees of the match")
+		}
+		variables["addressText"] = strings.TrimSpace(*arguments.AddressText)
 	}
 	if variables["placeId"] == nil && (variables["latitudeDegrees"] == nil || variables["longitudeDegrees"] == nil) {
 		return nil, fmt.Errorf("say which place to change in place_id, or give latitude_degrees and longitude_degrees to make a new one")

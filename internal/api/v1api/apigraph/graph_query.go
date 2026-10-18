@@ -29,7 +29,7 @@ type queryExecution struct {
 // embeds it, and a survey is minutes of runs. A photo search embeds its words,
 // and the listing and the count both do, so both are here. A search for
 // places waits on the place provider, which answers one request a second.
-var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "ListNearbyPlaces": true}
+var isModelBackedQuery = map[string]bool{"RecallAgentMemory": true, "SurveyAgentMemory": true, "JudgeAgentRetrievalPlan": true, "ReadAgentCodingContext": true, "RecallAgentCodingMemory": true, "ListPhotos": true, "CountPhotos": true, "SearchPlaces": true, "SearchAddresses": true, "ListNearbyPlaces": true}
 
 // isTransactionFreeMutation is the mutations that do slow work, such as reading
 // and storing a file as large as a video, and so are not run inside the

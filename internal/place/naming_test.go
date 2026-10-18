@@ -23,6 +23,10 @@ func (self *scriptedProvider) Name(context.Context, float64, float64) (*Found, e
 	return self.found, self.err
 }
 
+func (self *scriptedProvider) Addresses(context.Context, string, int) ([]*Found, error) {
+	return nil, nil
+}
+
 func (self *scriptedProvider) Search(context.Context, string, float64, float64, float64, int) ([]*Found, error) {
 	return nil, nil
 }

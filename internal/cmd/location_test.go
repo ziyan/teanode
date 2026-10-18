@@ -40,6 +40,7 @@ func TestLocationParity(test *testing.T) {
 		"ListPlaces":           {"places", "places"},
 		"ListNearbyPlaces":     {"nearby", "nearby"},
 		"SearchPlaces":         {"search", "search"},
+		"SearchAddresses":      {"addresses", "find_address"},
 		"ListLocationPoints":   {"path", ""},
 		"ReportLocation":       {"", ""},
 		"SavePlace":            {"save", "save_place"},
@@ -114,6 +115,7 @@ func TestLocationParity(test *testing.T) {
 	// "<Operation>.<argument>.<surface>" is exempt for the reason given.
 	exempt := map[string]string{
 		"SearchPlaces.query.command":       "the words are the arguments of the subcommand",
+		"SearchAddresses.query.command":    "the words are the arguments of the subcommand",
 		"SearchPlaces.placeId.command":     "the flag is --near-place, since --place would read as a filter",
 		"ListLocationPoints.from.command":  "a day is given with --day",
 		"ListLocationPoints.until.command": "a day is given with --day",
@@ -168,7 +170,9 @@ func locationServer(test *testing.T) (*httptest.Server, func(string) map[string]
 		"ListPlaces": `{"places":[` + place + `]}`,
 		"ListNearbyPlaces": `[{"placeName":"Corner Cafe","osmType":"node","osmId":42,"osmCategory":"amenity=cafe","addressText":"1 Elm Street","latitudeDegrees":40.0006,"longitudeDegrees":-75.0004,"distanceMeters":15},
 			{"placeName":"Maple Park","latitudeDegrees":40.0001,"longitudeDegrees":-75.0001,"distanceMeters":90,"placeId":"p1"}]`,
-		"SearchPlaces":         `{"foundPlaces":[{"placeName":"Elm Playground","osmType":"way","osmId":7,"distanceMeters":900}]}`,
+		"SearchPlaces": `{"foundPlaces":[{"placeName":"Elm Playground","osmType":"way","osmId":7,"distanceMeters":900}]}`,
+		"SearchAddresses": `[{"placeName":"6 Rue Example","addressText":"6 Rue Example, Exampleton, Testland","latitudeDegrees":40.5,"longitudeDegrees":-75.5,"distanceMeters":0},
+			{"placeName":"8 Rue Example","addressText":"8 Rue Example, Exampleton, Testland","latitudeDegrees":40.6,"longitudeDegrees":-75.6,"distanceMeters":2500}]`,
 		"SavePlace":            place,
 		"ForgetPlace":          `true`,
 		"CheckIn":              `{"id":"v3","arrivedAt":"2026-10-17T12:00:00Z","place":` + place + `}`,
@@ -414,6 +418,63 @@ func TestAFoundPlaceLineNamesTheRowTheWayThePersonWould(test *testing.T) {
 	} {
 		if got := foundPlaceLine(found); got != expected {
 			test.Errorf("%+v is %q, want %q", found, got, expected)
+		}
+	}
+}
+
+// addresses lists the matches with their positions, and sends the count.
+func TestLocationAddressesListsMatches(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "addresses", "rue", "example", "--first", "3")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(output, "6 Rue Example, Exampleton, Testland") || !strings.Contains(output, "40.50000") || !strings.Contains(output, "-75.60000") || !strings.Contains(output, "2.5 km") {
+		test.Errorf("the matches: %q", output)
+	}
+	variables := called("SearchAddresses")
+	if variables["query"] != "rue example" || variables["limitCount"] != float64(3) {
+		test.Errorf("the words and the count were sent: %v", variables)
+	}
+	if _, err := runLocationCommand(test, server, "addresses"); err == nil {
+		test.Error("an address search needs words")
+	}
+}
+
+// save --address takes the first match, moves the place there with its
+// address, and lists the others so that the first being wrong can be undone.
+func TestLocationSaveAddressTakesTheFirstMatch(test *testing.T) {
+	server, called := locationServer(test)
+	output, err := runLocationCommand(test, server, "save", "p1", "--address", "rue example")
+	if err != nil {
+		test.Fatal(err)
+	}
+	variables := called("SavePlace")
+	if variables["placeId"] != "p1" || variables["latitudeDegrees"] != 40.5 || variables["longitudeDegrees"] != -75.5 ||
+		variables["addressText"] != "6 Rue Example, Exampleton, Testland" || variables["placeName"] != nil {
+		test.Errorf("the first match was sent: %v", variables)
+	}
+	if !strings.Contains(output, "address: ") || !strings.Contains(output, "8 Rue Example, Exampleton, Testland") || !strings.Contains(output, "--address-text") {
+		test.Errorf("the address chosen and the other matches: %q", output)
+	}
+
+	// The exact form sends what it was given and looks nothing up.
+	if _, err := runLocationCommand(test, server, "save", "p1", "--latitude", "40.6", "--longitude", "-75.6", "--address-text", "8 Rue Example, Exampleton, Testland"); err != nil {
+		test.Fatal(err)
+	}
+	variables = called("SavePlace")
+	if variables["latitudeDegrees"] != 40.6 || variables["addressText"] != "8 Rue Example, Exampleton, Testland" {
+		test.Errorf("the exact form: %v", variables)
+	}
+	for _, arguments := range [][]string{
+		{"save", "p1", "--address-text", "6 Rue Example"},
+		{"save", "p1", "--address", "   "},
+		{"save", "p1", "--address", "rue example", "--latitude", "40", "--longitude", "-75"},
+		{"save", "p1", "--address", "rue example", "--address-text", "6 Rue Example"},
+		{"save", "p1", "--latitude", "40", "--longitude", "-75", "--address-text", " "},
+	} {
+		if _, err := runLocationCommand(test, server, arguments...); err == nil {
+			test.Errorf("%v should be refused", arguments)
 		}
 	}
 }

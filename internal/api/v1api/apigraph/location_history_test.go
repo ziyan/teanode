@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -726,6 +727,168 @@ func TestListSharedLocationsDescribesEverySharer(t *testing.T) {
 		hasVisit := person["openVisit"] != nil
 		if person["latestPoint"] == nil || hasVisit != (person["username"] == world.ada.Username) {
 			t.Errorf("%v", person)
+		}
+	}
+}
+
+// addressProvider answers an address search for invented addresses and records
+// the paths it was asked for, so that a test can tell a search from a reverse
+// lookup (which would be the naming job replacing a typed address).
+func (self *locationWorld) addressProvider(t *testing.T, paths *[]string) {
+	t.Helper()
+	var mutex sync.Mutex
+	provider := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		mutex.Lock()
+		*paths = append(*paths, request.URL.Path+"?"+request.URL.RawQuery)
+		mutex.Unlock()
+		response.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/search" {
+			_, _ = response.Write([]byte(`{"osm_type":"node","osm_id":42,"lat":"40.5","lon":"-75.5","category":"amenity","type":"cafe","name":"Corner Cafe","display_name":"Corner Cafe, 1 Elm Street"}`))
+			return
+		}
+		_, _ = response.Write([]byte(`[
+			{"osm_type":"node","osm_id":71,"lat":"40.500000","lon":"-75.500000","category":"place","type":"house","name":"","display_name":"6, Rue Example, Exampleton","address":{"house_number":"6","road":"Rue Example","city":"Exampleton","country":"Testland"}},
+			{"osm_type":"node","osm_id":72,"lat":"40.600000","lon":"-75.600000","category":"place","type":"house","name":"","display_name":"8, Rue Example, Exampleton","address":{"house_number":"8","road":"Rue Example","city":"Exampleton","country":"Testland"}}
+		]`))
+	}))
+	t.Cleanup(provider.Close)
+	if err := self.graph.config.Update(func(configuration *config.Configuration) error {
+		configuration.Places.ProviderKind = config.PlacesProviderNominatim
+		configuration.Places.ProviderURL = provider.URL
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An address search is refused while the provider is off, asks without a box
+// around any position, and tells which matches are where the caller has a place.
+func TestSearchAddressesFromTheProvider(t *testing.T) {
+	world := newLocationWorld(t)
+	const search = `query { SearchAddresses(query: "6 rue example") { placeName addressText latitudeDegrees longitudeDegrees distanceMeters placeId placeLabel isNamedByPerson } }`
+	if message := world.refused(t, world.ada, search); !strings.Contains(message, "operator") || !strings.Contains(message, "OpenStreetMap") {
+		t.Errorf("whose switch it is: %s", message)
+	}
+
+	var paths []string
+	world.addressProvider(t, &paths)
+	world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.6001, longitudeDegrees: -75.6001, placeLabel: "work") { id } }`)
+
+	rows := world.call(t, world.ada, search)["SearchAddresses"].([]any)
+	if len(rows) != 2 {
+		t.Fatalf("the matches: %v", rows)
+	}
+	first, second := rows[0].(map[string]any), rows[1].(map[string]any)
+	if first["placeName"] != "6 Rue Example" || first["addressText"] != "6 Rue Example, Exampleton, Testland" || first["distanceMeters"].(float64) != 0 || first["placeId"] != nil {
+		t.Errorf("the first match with no position reported: %v", first)
+	}
+	if second["placeId"] == nil || second["placeLabel"] != "work" {
+		t.Errorf("a match where the caller has a place says so: %v", second)
+	}
+	// The new place was named by a reverse lookup of its own; the search is
+	// the one request that is not.
+	searches := 0
+	for _, path := range paths {
+		if strings.HasPrefix(path, "/search?") {
+			searches++
+			if strings.Contains(path, "viewbox") || strings.Contains(path, "bounded") {
+				t.Errorf("the search was limited to a box: %v", path)
+			}
+		}
+	}
+	if searches != 1 {
+		t.Errorf("the provider was asked %v", paths)
+	}
+
+	// With a reported position the distances are from it.
+	world.report(t, world.ada, pointInput(40.5, -75.5, ago(time.Minute)), "")
+	rows = world.call(t, world.ada, search)["SearchAddresses"].([]any)
+	if rows[0].(map[string]any)["distanceMeters"].(float64) > 5 || rows[1].(map[string]any)["distanceMeters"].(float64) < 1000 {
+		t.Errorf("distances from the latest position: %v", rows)
+	}
+
+	world.refused(t, world.ada, `query { SearchAddresses(query: "   ") { placeName } }`)
+	world.refused(t, world.ada, fmt.Sprintf(`query { SearchAddresses(query: %q) { placeName } }`, strings.Repeat("a", 201)))
+	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", limitCount: 21) { placeName } }`)
+	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", limitCount: 0) { placeName } }`)
+	if message := world.refused(t, world.makeNobody(t), search); !strings.Contains(message, "not found") {
+		t.Errorf("a person without the permission: %s", message)
+	}
+}
+
+// A labeled place moved to an address keeps its label, holds the address, is
+// called by the first part of it, and is left alone by the naming job.
+func TestSavePlaceMovedToATypedAddress(t *testing.T) {
+	world := newLocationWorld(t)
+	var paths []string
+	world.addressProvider(t, &paths)
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.0, longitudeDegrees: -74.0, placeLabel: "home") { id } }`)["SavePlace"].(map[string]any)
+	placeId := made["id"].(string)
+	// Let the naming of the new place finish, so that what it asks for is
+	// not mistaken for what the address asks for.
+	time.Sleep(500 * time.Millisecond)
+	paths = nil
+
+	if message := world.refused(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, addressText: "6 Rue Example, Exampleton") { id } }`, placeId)); !strings.Contains(message, "position of the address") {
+		t.Errorf("an address without its position: %s", message)
+	}
+	world.refused(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.5, longitudeDegrees: -75.5, addressText: "  ") { id } }`, placeId))
+
+	saved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.5, longitudeDegrees: -75.5, addressText: "6 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText osmId osmType osmName osmCategory latitudeDegrees longitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if saved["id"] != placeId || saved["placeLabel"] != "home" || saved["placeName"] != "6 Rue Example" || saved["isNamedByPerson"] != false ||
+		saved["addressText"] != "6 Rue Example, Exampleton, Testland" || saved["latitudeDegrees"] != 40.5 || saved["longitudeDegrees"] != -75.5 {
+		t.Errorf("the place moved to the address: %v", saved)
+	}
+	if saved["osmId"] != nil || saved["osmType"] != "" || saved["osmName"] != "" || saved["osmCategory"] != "" {
+		t.Errorf("what was said about the old position stayed: %v", saved)
+	}
+
+	// The naming job has nothing to claim, and nothing was asked of the provider.
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed the place: %v, %v", claimed, err)
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+	if len(paths) != 0 {
+		t.Errorf("the provider was asked after the address was typed: %v", paths)
+	}
+
+	// A name the person gave stays theirs.
+	world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, placeName: "Our flat") { id } }`, placeId))
+	named := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.6, longitudeDegrees: -75.6, addressText: "8 Rue Example, Exampleton, Testland") { placeName isNamedByPerson addressText } }`, placeId))["SavePlace"].(map[string]any)
+	if named["placeName"] != "Our flat" || named["isNamedByPerson"] != true || named["addressText"] != "8 Rue Example, Exampleton, Testland" {
+		t.Errorf("the person's name for it: %v", named)
+	}
+}
+
+// Typing an address for home uses the place the caller already has there, and
+// makes one that is not renamed when there is none.
+func TestMakingHomeFromAnAddressReusesAnOwnPlaceThere(t *testing.T) {
+	world := newLocationWorld(t)
+	var paths []string
+	world.addressProvider(t, &paths)
+
+	existing := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.5, longitudeDegrees: -75.5, placeName: "Piano teacher") { id } }`)["SavePlace"].(map[string]any)["id"].(string)
+	home := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.5001, longitudeDegrees: -75.5001, placeLabel: "home", addressText: "6 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText } }`)["SavePlace"].(map[string]any)
+	if home["id"] != existing || home["placeLabel"] != "home" || home["placeName"] != "Piano teacher" || home["addressText"] != "6 Rue Example, Exampleton, Testland" {
+		t.Errorf("home was not the place that is there: %v", home)
+	}
+	listed := world.call(t, world.ada, `query { ListPlaces { places { id } } }`)["ListPlaces"].(map[string]any)["places"].([]any)
+	if len(listed) != 1 {
+		t.Errorf("a second place was made at the same address: %v", listed)
+	}
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 41.5, longitudeDegrees: -76.5, placeLabel: "work", addressText: "8 Rue Example, Exampleton, Testland") { id placeName placeLabel isNamedByPerson addressText } }`)["SavePlace"].(map[string]any)
+	if made["id"] == existing || made["placeLabel"] != "work" || made["placeName"] != "8 Rue Example" || made["isNamedByPerson"] != false || made["addressText"] != "8 Rue Example, Exampleton, Testland" {
+		t.Errorf("a new place at the typed address: %v", made)
+	}
+	time.Sleep(300 * time.Millisecond)
+	for _, path := range paths {
+		if strings.HasPrefix(path, "/reverse") {
+			t.Errorf("the provider was asked to name a place with a typed address: %v", paths)
 		}
 	}
 }

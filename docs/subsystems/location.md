@@ -119,6 +119,28 @@ person's words (search) or position (check-in list) as the request. With the
 provider off, the check-in list is the person's own places near the position and
 searching is refused with the operator's switch named.
 
+**Typing an address.** A person can say where a place is instead of where they
+are, for home above all. `SearchAddresses` sends the words they typed to the
+same provider, with no position and no box around one (Nominatim `/search` with
+`addressdetails=1`, Photon `/api`), through the same shared limiter and the same
+12 lookups a minute for each account, and answers up to 20 matches (8 by
+default), best first, called by the same rules as a reverse answer: a match that
+is a road or a stop is called by its address, and a house by its number and
+road. Each match's `distanceMeters` is from the person's latest position, or 0
+when there is none, and its `placeId` is set where one of their own places holds
+the position. The person picks a match, and `SavePlace` takes its
+`addressText` with its `latitudeDegrees` and `longitudeDegrees`. The place moves
+there, keeps its label and any name the person gave it, and keeps that address:
+it is marked as named at once (`named_at`), so the naming job does not ask the
+provider what is there and replace it, and the OpenStreetMap name, object and
+kind of the old position are dropped, even for a move within the place's radius.
+A place the person did not name is called by the first part of the address.
+An address without a position is refused. Without a `placeId`, the same call
+makes the place, or changes the person's own place whose radius holds the
+position (as a check-in does), so typing an address for home never leaves two
+places at one address. The words the person typed leave the server for the
+provider, the same as a search does.
+
 **To the map host**, when the dashboard shows a map: the dashboard's content
 security policy allows nothing but this server, so the server fetches the style
 and the tiles from the one host of the configured style and hands them on. The
@@ -195,7 +217,8 @@ the person removes them there. The texts a person is shown say so.
 
 The agent has one `location` tool, whose actions are the CLI's subcommands plus
 `set_up`. It reads the same API as the person, with the same limits (50 visits
-or places a page and at most 200; 20 results of a search and at most 50), and
+or places a page and at most 200; 20 results of a search and at most 50; 8
+addresses and at most 20), and
 answers carry the untrusted mark.
 
 - **In a chat with other people**, the tool answers only about the owner's own

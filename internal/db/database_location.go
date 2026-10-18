@@ -203,6 +203,14 @@ type PlaceChanges struct {
 
 	RadiusMeters *float64
 
+	// AddressText is an address the person typed and picked from the
+	// provider's matches, and needs the coordinates of that match. The place
+	// moves there and keeps this address: it counts as named already, so the
+	// naming job does not replace it, and what a provider said about the old
+	// position (object, name, category) is dropped. A place the person did not
+	// name is called by the first part of the address.
+	AddressText *string
+
 	// MovedPlaceName is the name a place the person did not name takes when it
 	// moves farther than its radius: what was learned about the old position is
 	// dropped, and the place goes back to the name of its city until it is
@@ -681,6 +689,15 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 	if changes.PlaceName != nil && utf8.RuneCountInString(*changes.PlaceName) > placeNameMaximumLength {
 		return nil, fmt.Errorf("%w: a name is at most %d characters", ErrInvalidArguments, placeNameMaximumLength)
 	}
+	addressText := ""
+	if changes.AddressText != nil {
+		if changes.LatitudeDegrees == nil {
+			return nil, fmt.Errorf("%w: give the position of the address too", ErrInvalidArguments)
+		}
+		if addressText = cleanPlaceText(*changes.AddressText, placeAddressMaximumLength); addressText == "" {
+			return nil, fmt.Errorf("%w: an address needs some words", ErrInvalidArguments)
+		}
+	}
 
 	var locked placeModel
 	if err := lockRow(self.tx, &locked, placeId); err != nil || locked.UserID != userId {
@@ -746,6 +763,26 @@ func (self *transaction) SavePlace(userId, placeId string, changes PlaceChanges)
 			if !isNamedByPerson {
 				updates["place_name"] = cleanPlaceText(changes.MovedPlaceName, placeNameMaximumLength)
 			}
+		}
+	}
+	if changes.AddressText != nil {
+		// The address was said about the new position, so nothing the provider
+		// said about the old one stays, however short the move.
+		now := time.Now()
+		updates["osm_type"] = ""
+		updates["osm_id"] = nil
+		updates["osm_name"] = ""
+		updates["osm_category"] = ""
+		updates["address_text"] = addressText
+		updates["named_at"] = now
+		updates["naming_claimed_at"] = nil
+		updates["naming_error_message"] = ""
+		isNamedByPerson := locked.IsNamedByPerson
+		if value, isChanged := updates["is_named_by_person"].(bool); isChanged {
+			isNamedByPerson = value
+		}
+		if !isNamedByPerson {
+			updates["place_name"] = cleanPlaceText(strings.SplitN(addressText, ",", 2)[0], placeNameMaximumLength)
 		}
 	}
 	if changes.RadiusMeters != nil {
