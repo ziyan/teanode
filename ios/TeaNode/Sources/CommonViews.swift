@@ -411,6 +411,33 @@ struct MenuListStyle: ViewModifier {
     }
 }
 
+/// ReadableWidth keeps what is read in lines, such as a conversation or a
+/// mail, from running the whole width of a wide window, where a line of
+/// text is too long to follow. It is centered, and only where the window is
+/// wide: on the iPhone and in a narrow window it changes nothing.
+struct ReadableWidth: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// The widest the content gets, in points.
+    static var maximumWidth: CGFloat { 720 }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if horizontalSizeClass == .regular {
+            content
+                .frame(maxWidth: Self.maximumWidth)
+                .frame(maxWidth: .infinity)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Content kept to a width that reads well, centered; see ReadableWidth.
+    func readableWidth() -> some View { modifier(ReadableWidth()) }
+}
+
 /// WithoutSwipeBack turns off going back by swiping in the navigation stack
 /// it is in: from the edge, and, since iOS 26, from anywhere on the screen.
 /// The side menu opens with a drag to the right from anywhere, and the two

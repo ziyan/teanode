@@ -55,6 +55,7 @@ struct MailThreadScreen: View {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 200)
                 }
             }
+            .readableWidth()
             .padding()
         }
         .navigationBarTitleDisplayMode(.inline)

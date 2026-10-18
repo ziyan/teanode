@@ -12,13 +12,16 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 
 - [x] Milestone 1: the app builds for the iPad and runs in every orientation there. (2026-10-18; whether `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad` is accepted is known only from CI's build.)
 - [x] Milestone 2: the side menu is a column that stays open at regular width. (2026-10-18; compiles only in CI.)
-- [ ] Milestone 3: screens that read badly when wide are capped, and presenters work on the iPad.
+- [x] Milestone 3: screens that read badly when wide are capped, and presenters work on the iPad. (2026-10-18)
 - [ ] Milestone 4: CI photographs the iPad in landscape and portrait, and the App Store's iPad set.
 - [ ] Review until a round finds nothing; DESIGN.md says what the iPad does.
 
 ## Surprises & Discoveries
 
-- Nothing in the sources assumes a phone's screen: there is no `UIScreen.main`, no `userInterfaceIdiom` and no fixed width tied to the iPhone. `UIDevice.current.name` is used only to name the phone to the server, and `Device.modelIdentifier` is sent as the phone's model; the server's table of model names (`internal/models/phone_model_name.go`) already lists the iPads. There is no `TabView` in the app, so the tab bar that iPadOS 26 moves to the top never appears.
+- Nothing in the sources assumes a phone's screen: there is no `UIScreen.main`, no `userInterfaceIdiom` and no fixed width tied to the iPhone. `UIDevice.current.name` is used only to name the phone to the server, and `Device.modelIdentifier` is sent as the phone's model; the server's table of model names (`internal/models/phone_model_name.go`) already lists the iPads.
+- The photo grids (`PhotosView.swift`, `PhotoAlbums.swift`, `PhotoPeople.swift`) are adaptive `LazyVGrid`s and the map screens size the map as a fraction of the window's height, so they fill a wide window by themselves and were left alone. `ShareSheetPresenter` already had a source view and rectangle; it lacked `permittedArrowDirections = []`. There is no other `UIActivityViewController` or action-sheet `UIAlertController`, and every `ShareLink` and `confirmationDialog` is anchored by SwiftUI.
+- The agent's chat list in the column (`ConversationsSheet`) is `.searchable` inside a `NavigationStack`, and keeps `searchFieldClearance` at the bottom for the iPhone's bottom search field. On an iPad iOS may place the field in the column's bar instead, which would leave that bottom space empty; CI's iPad screenshots show which. Not changed without seeing it.
+- There is no `TabView` in the app, so the tab bar that iPadOS 26 moves to the top never appears.
 
 ## Decision Log
 
@@ -30,6 +33,8 @@ To see it working: install a debug build on an iPad simulator, open the demo (`-
 - Decision: the `onClose` given to `SideMenu` still sets `isMenuOpen` to false when the menu is a column, instead of doing nothing. Rationale: the column ignores `isMenuOpen`, so the observable result is the one the plan asks for, and a window that later turns compact (Slide Over) then finds the sliding menu closed instead of open. Date: 2026-10-18.
 - Decision: the chats in the column are read again from the loop that reports presence (`refreshPresence` in `MainView`), which already restarts when the scene phase, the part or the chosen chat changes and repeats every half minute, rather than from separate `onChange` handlers for the scene phase and the chosen chat. Rationale: one place covers the plan's two triggers (the app coming to the front, a new chat chosen) and also keeps the always-open list fresh while nothing is chosen, which the plan's triggers alone would leave stale. Date: 2026-10-18.
 - Decision: the column's width is `SidePanel.columnWidth` (320 points) and its rule, the horizontal size class being regular, is `Optional<UserInterfaceSizeClass>.isMenuColumn`, shared by `SidePanel` and `MainView`. Rationale: both must agree on when the menu is a column, and `SidePanel` is generic, so a static on it cannot be called from outside. Date: 2026-10-18.
+
+- Decision: the 720 point cap is one modifier, `readableWidth()` (`ReadableWidth` in `CommonViews.swift`), applied to the transcript's messages, to the conversation's bottom bar (the composer and the cards above it, so they line up with the messages) and to the mail thread's content; it changes nothing below regular width. Rationale: the plan names the transcript and the mail; leaving the composer the whole width of the window beside 720 point messages would look broken. Date: 2026-10-18.
 
 ## Outcomes & Retrospective
 

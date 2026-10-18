@@ -632,6 +632,8 @@ enum ShareSheetPresenter {
         // An iPad shows the sheet as a popover, which needs somewhere to point.
         controller.popoverPresentationController?.sourceView = top.view
         controller.popoverPresentationController?.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+        // No arrow: the point is the middle of the window, not a control.
+        controller.popoverPresentationController?.permittedArrowDirections = []
         top.present(controller, animated: true)
     }
 }
