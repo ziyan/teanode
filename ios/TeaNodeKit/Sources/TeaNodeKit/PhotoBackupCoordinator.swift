@@ -794,6 +794,10 @@ public actor PhotoBackupCoordinator {
     /// export; nil when it cannot be read.
     private let freeSpaceBytes: @Sendable () -> Int64?
     private let now: @Sendable () -> Date
+    /// Waits out an export's time limit. A test replaces it, so that a file
+    /// is given up on when the test says and not after a stretch of real time
+    /// that a slow machine can overrun for the files that are not stuck.
+    private let sleepForSeconds: @Sendable (TimeInterval) async -> Void
     private let fileManager: FileManager
     private let tailWriter: any PhotoBackupTailWriter
 
@@ -861,6 +865,9 @@ public actor PhotoBackupCoordinator {
         lookup: (any PhotoBackupServerLookup)?, network: any PhotoBackupNetwork, outgoingDirectory: URL, server: ServerAddress, accountKey: String,
         credential: PhotoBackupCredential, budget: PhotoBackupBudget = .standard, idleTimeoutSeconds: TimeInterval = 300, exportTimeoutSeconds: TimeInterval = 30 * 60,
         freeSpaceBytes: @escaping @Sendable () -> Int64? = { nil }, now: @escaping @Sendable () -> Date = { Date() },
+        sleepForSeconds: @escaping @Sendable (TimeInterval) async -> Void = { seconds in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+        },
         fileManager: FileManager = .default, batchSize: Int = PhotoBackupCoordinator.standardBatchSize, isPaused: Bool = false,
         tailWriter: any PhotoBackupTailWriter = PhotoBackupFileTailWriter()
     ) {
@@ -881,6 +888,7 @@ public actor PhotoBackupCoordinator {
         self.exportTimeoutSeconds = exportTimeoutSeconds
         self.freeSpaceBytes = freeSpaceBytes
         self.now = now
+        self.sleepForSeconds = sleepForSeconds
         self.fileManager = fileManager
         self.tailWriter = tailWriter
     }
@@ -1777,6 +1785,7 @@ public actor PhotoBackupCoordinator {
         let library = library
         let directory = outgoingDirectory
         let includesHidden = settings.includesHidden
+        let sleepForSeconds = sleepForSeconds
         let race = ExportRace(removingLateFilesIn: directory)
         currentExport = race
         defer { currentExport = nil }
@@ -1795,7 +1804,7 @@ public actor PhotoBackupCoordinator {
             }
             race.keep(
                 timer: Task.detached {
-                    try? await Task.sleep(nanoseconds: UInt64(max(0, timeoutSeconds) * 1_000_000_000))
+                    await sleepForSeconds(timeoutSeconds)
                     guard !Task.isCancelled else { return }
                     race.finish(.failure(PhotoBackupLibraryError.unavailable(.fileTookTooLongToRead)))
                 })
