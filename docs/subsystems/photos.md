@@ -478,9 +478,11 @@ What continues and what waits:
   it queues fewer files than it did.
 - When an upload finishes and the app is open, the app starts the next pass
   (`finished` says whether to), so the library is worked through as uploads
-  finish and not only when the app is next opened. Only an upload that went up
-  starts a pass. A file the server refused, or one it asked to wait for, does
-  not, so a file that always fails cannot start passes in a loop. Refusals are
+  finish and not only when the app is next opened. Only an upload that went up,
+  or one found to have moved on (described under "Continuing a file that was cut
+  off"), starts a pass. A file the server refused, or one it asked to wait for,
+  does not, so a file that always fails cannot start passes in a loop. Refusals
+  are
   counted per file and stop at three. After three server failures in a row a
   pass stops and the app tries again after a minute, then two, then four, up to
   a quarter of an hour; a longer `Retry-After` from the server stands.
@@ -508,8 +510,10 @@ address is queued again, `PhotoBackupCoordinator.prepareSending`:
 
 - exports the file again (a pause deletes the exported copies, to give the room
   back) and compares its size and SHA-256 with the ones kept. A file that is not
-  the same bytes is not continued: the old upload is left to the server, which
-  ends an unfinished upload of the same photo and file when a new one starts.
+  the same bytes is not continued: the app sends a `DELETE` for the old upload
+  (`PhotoBackupCoordinator.forgetKeptUpload`), and the server also ends an
+  unfinished upload of the same photo and file when a new one starts, in case
+  the `DELETE` did not arrive.
 - asks the server where the upload is (`HEAD`). The answers are: an offset, and
   the file goes on from there; complete, and the photo is recorded from the
   `X-Photo-ID` it names without sending a byte (the case of an answer that was
@@ -553,9 +557,10 @@ The file is not at fault and the server is not failing, so this is no error on
 the screen and no failure toward the three that stop a pass
 (`PhotoBackupOutcome.uploadMovedOn`). `finished` says to start a pass at once,
 which asks `HEAD` again: a new offset is continued from, and a gone upload makes
-a new one. A file for which this happens three times in a row is counted as the
-server failing, so that a file that is never where it is said to be cannot start
-passes without end.
+a new one. The first three times in a row for a file (`uploadMovedOnLimit`) each
+start a pass at once; the fourth is counted as the server failing, so that a
+file that is never where it is said to be cannot start passes without end. The
+count starts again when the file goes up.
 
 When the app forgets the address of an upload that the server may still hold
 (the file is not the same bytes any more, the offset is beyond the file, the
