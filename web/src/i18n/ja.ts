@@ -957,7 +957,7 @@ export const ja: Catalog = {
   'integrations.antivirusDescription': '受信メールを ClamAV でスキャンします。',
   'integrations.antispam': 'スパム判定',
   'integrations.tabSpam': '迷惑メール',
-  'nav.agent': 'エージェント',
+  'nav.chats': 'チャット',
   'server.tabAgents': 'エージェント',
   'profile.timezone': 'タイムゾーン',
   'profile.timezoneAuto': 'ブラウザに従う（{zone}）',
@@ -6050,7 +6050,7 @@ export const ja: Catalog = {
   'chat.tileUnread': '新着{count}件',
   'agentConversations.kindAll': 'すべて',
   'agentConversations.kindAgent': 'エージェント',
-  'agentConversations.kindChats': 'チャット',
+  'agentConversations.kindChats': 'ユーザー',
   'agentConversations.kindLabel': '表示',
   'skillShare.title': 'スキルを共有',
   'skillShare.intro':

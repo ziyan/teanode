@@ -149,7 +149,9 @@ struct ConversationsSheet: View {
                                 .id(Self.mainChatRowId)
                                 .menuRow(isSelected: currentId == nil)
                             } header: {
-                                if leading != nil { Text("Chats") }
+                                // In the side menu, whose own row for this part is Chats, the
+                                // agent's chats are headed by the agent.
+                                if leading != nil { Text(app.agentTitle) }
                             }
                             .listSectionSeparator(.hidden)
                         }

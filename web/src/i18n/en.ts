@@ -963,7 +963,7 @@ export const en = {
   'integrations.antispam': 'Spam scoring',
   'integrations.antispamDescription': 'How incoming mail is scored for spam, and what does the scoring.',
   'integrations.tabSpam': 'Spam',
-  'nav.agent': 'Agent',
+  'nav.chats': 'Chats',
   'server.tabAgents': 'Agents',
   'profile.timezone': 'Time zone',
   'profile.timezoneAuto': 'Follows my browser ({zone})',
@@ -6129,7 +6129,7 @@ export const en = {
   'chat.tileUnread': '{count} new',
   'agentConversations.kindAll': 'All',
   'agentConversations.kindAgent': 'Agent',
-  'agentConversations.kindChats': 'Chats',
+  'agentConversations.kindChats': 'People',
   'agentConversations.kindLabel': 'Show',
   'skillShare.title': 'Share a skill',
   'skillShare.intro':

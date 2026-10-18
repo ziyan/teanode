@@ -8,9 +8,11 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
-    func title(agentTitle: String) -> String {
+    /// The part's name in the side menu. The agent's part is Chats: it holds the
+    /// chats with people and groups as well as the agent's own.
+    var title: String {
         switch self {
-        case .agent: agentTitle
+        case .agent: String(localized: "Chats")
         case .goals: String(localized: "Goals")
         case .ideas: String(localized: "Ideas")
         case .mail: String(localized: "Mail")
@@ -642,13 +644,13 @@ struct SideMenu: View {
     /// The id of a row that lists one of the items of the part on screen, under the list of the parts.
     private static func partItemId(_ itemId: some Hashable) -> String { "partItem \(itemId)" }
 
-    /// Scrolls the menu down to the items of the part on screen, as it opens: they are what the
-    /// person opened the menu for, and under all the parts they would otherwise start below the
-    /// bottom of the screen. The last item is brought to the bottom, so the parts stay in view
-    /// above the items for as long as there is room. The menu is drawn anew each time it opens,
-    /// so this runs each time. A scroll asked for before the list has laid out its rows finds
-    /// nothing to scroll to, and the menu slides in as it opens, so the scroll is asked for once
-    /// the rows are there and again once the menu is in place.
+    /// Scrolls the menu down to the items of the part on screen: they are what the person opened
+    /// the menu for, and under all the parts they would otherwise start below the bottom of the
+    /// screen. The last item is brought to the bottom, so the parts stay in view above the items
+    /// for as long as there is room. It runs when the part's list first appears; after that the
+    /// menu, kept while closed, opens where it was left. A scroll asked for before the list has
+    /// laid out its rows finds nothing to scroll to, and the menu slides in as it opens, so the
+    /// scroll is asked for once the rows are there and again once the menu is in place.
     private func showPartItems(_ scroller: ScrollViewProxy, lastItemId: (some Hashable)?) async {
         guard let lastItemId else { return }
         for delay in [50, 400] {
@@ -674,7 +676,7 @@ struct SideMenu: View {
             } label: {
                 // The part on screen is marked by its color and weight; the
                 // highlight is kept for the conversation or folder chosen.
-                Label(part.title(agentTitle: app.agentTitle), systemImage: part.systemImage)
+                Label(part.title, systemImage: part.systemImage)
                     .fontWeight(section == part ? .semibold : .regular)
                     .foregroundStyle(section == part ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
             }
