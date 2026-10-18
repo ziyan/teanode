@@ -755,7 +755,7 @@ func runLocationSave(ctx context.Context, command *cli.Command) error {
 	if words != "" {
 		matches, err := client.SearchAddresses(ctx, connection, client.AddressSearch{Query: words, PlaceID: change.PlaceID, LimitCount: 5})
 		if err != nil {
-			return describeError(command, err)
+			return describeNotFound(command, err, "that place")
 		}
 		if len(matches) == 0 {
 			return usage("no address matches " + words + "; 'teanode location addresses' shows what a search finds")

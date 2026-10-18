@@ -137,7 +137,9 @@ pass the place whose address is being changed), else the person's latest
 position. The provider is asked to lean toward the center without keeping to it
 (Nominatim `/search` with `addressdetails=1` and a 50 km `viewbox` with
 `bounded=0`, Photon `/api` with `lat` and `lon`), for up to three times as many
-matches, which are then sorted by distance. With no center at all the words
+matches, which are then sorted by distance. The provider's best match stays in
+the list even when nearer ones would fill it, as its last row, so an address
+typed exactly is found in another town too. With no center at all the words
 alone decide, best match first, and `distanceMeters` is 0; otherwise it is from
 the center. A match's `placeId` is set where one of the person's own places
 holds the position. The person picks a match, and `SavePlace` takes its

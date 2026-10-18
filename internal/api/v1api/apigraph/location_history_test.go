@@ -866,7 +866,16 @@ func TestSearchAddressesFromTheProvider(t *testing.T) {
 		t.Errorf("nearest the position given first: %v", rows)
 	}
 	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", latitudeDegrees: 40.6) { placeName } }`)
-	world.refused(t, world.ada, `query { SearchAddresses(query: "elm", placeId: "no-such-place") { placeName } }`)
+	unknown := world.refused(t, world.ada, `query { SearchAddresses(query: "elm", placeId: "no-such-place") { placeName } }`)
+	// Another person's place is not found either, the same way, and its
+	// position is not searched around.
+	before := len(requests.asked())
+	if message := world.refused(t, world.ben, fmt.Sprintf(`query { SearchAddresses(query: "elm", placeId: %q) { placeName } }`, workId)); message != unknown {
+		t.Errorf("another person's place: %q, an unknown one: %q", message, unknown)
+	}
+	if after := len(requests.asked()); after != before {
+		t.Errorf("the provider was asked for another person's place: %v", requests.asked()[before:])
+	}
 
 	world.refused(t, world.ada, `query { SearchAddresses(query: "   ") { placeName } }`)
 	world.refused(t, world.ada, fmt.Sprintf(`query { SearchAddresses(query: %q) { placeName } }`, strings.Repeat("a", 201)))

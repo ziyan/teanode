@@ -384,14 +384,29 @@ func addressFetchCount(limitCount int, near *Position) int {
 
 // addressesNearestFirst is at most limitCount of the matches, nearest the
 // position first with their distances from it, or in the provider's order
-// with no position. Matches as far away keep the provider's order, which is
-// how well the words matched.
+// with no position. Matches at the same distance keep the provider's order,
+// which is how well the words matched. The provider's best match is kept even
+// when nearer ones would fill the list, as its last row (it is the farthest
+// shown), so typing an address exactly still finds it in another town.
 func addressesNearestFirst(found []*Found, near *Position, limitCount int) []*Found {
-	if near != nil {
-		for _, candidate := range found {
-			candidate.DistanceMeters = DistanceMeters(near.LatitudeDegrees, near.LongitudeDegrees, candidate.LatitudeDegrees, candidate.LongitudeDegrees)
-		}
-		sort.SliceStable(found, func(first, second int) bool { return found[first].DistanceMeters < found[second].DistanceMeters })
+	limitCount = max(limitCount, 1)
+	if near == nil || len(found) == 0 {
+		return found[:min(len(found), limitCount)]
 	}
-	return found[:min(len(found), max(limitCount, 1))]
+	best := found[0]
+	for _, candidate := range found {
+		candidate.DistanceMeters = DistanceMeters(near.LatitudeDegrees, near.LongitudeDegrees, candidate.LatitudeDegrees, candidate.LongitudeDegrees)
+	}
+	sort.SliceStable(found, func(first, second int) bool { return found[first].DistanceMeters < found[second].DistanceMeters })
+	if len(found) <= limitCount {
+		return found
+	}
+	kept := found[:limitCount]
+	for _, candidate := range kept {
+		if candidate == best {
+			return kept
+		}
+	}
+	kept[limitCount-1] = best
+	return kept
 }
