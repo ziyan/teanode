@@ -18,6 +18,7 @@ import (
 
 	"github.com/ziyan/teanode/internal/db"
 	"github.com/ziyan/teanode/internal/db/dbtest"
+	"github.com/ziyan/teanode/internal/faces"
 	"github.com/ziyan/teanode/internal/models"
 	"github.com/ziyan/teanode/internal/place"
 )
@@ -678,5 +679,204 @@ func TestOnlyAJpegsSizeIsSwappedByItsExifOrientation(test *testing.T) {
 		if widthPixels, heightPixels := fixture.store.ReadPictureMetadataSize(content, contentType); widthPixels != want[0] || heightPixels != want[1] {
 			test.Errorf("%s: %dx%d, want %dx%d", contentType, widthPixels, heightPixels, want[0], want[1])
 		}
+	}
+}
+
+// liveVideoContent is a short QuickTime movie like the one an iPhone records
+// beside a Live Photo, in HEVC when ffmpeg can write it, which is the kind
+// that browsers cannot play. It is generated, never a real recording.
+func liveVideoContent(test *testing.T) []byte {
+	test.Helper()
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		test.Skip("ffmpeg is not installed")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		test.Skip("ffprobe is not installed")
+	}
+	for _, encoder := range []string{"libx265", "libx264"} {
+		path := filepath.Join(test.TempDir(), "live.mov")
+		command := exec.Command("ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=15",
+			"-pix_fmt", "yuv420p", "-c:v", encoder, "-f", "mov", path)
+		if output, err := command.CombinedOutput(); err != nil {
+			test.Logf("%s cannot make a test video: %v: %s", encoder, err, output)
+			continue
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			test.Fatal(err)
+		}
+		return content
+	}
+	test.Skip("ffmpeg cannot make a test video")
+	return nil
+}
+
+// uploadLivePhoto sends a picture and the video beside it, and runs the
+// processing pass over them.
+func (self *fixture) uploadLivePhoto(clientPhotoId string, pictureContent, videoContent []byte) *models.Photo {
+	self.test.Helper()
+	self.expect(self.send(http.MethodPost, self.collectionUrl(), map[string]string{"Content-Type": "video/quicktime", "X-Photo-Client-ID": clientPhotoId, "X-Photo-File-Role": "liveVideo"}, videoContent), http.StatusCreated)
+	return self.uploadAndProcess(clientPhotoId, jpegHeaders(clientPhotoId, "X-Photo-Kind", "livePhoto"), pictureContent)
+}
+
+func TestALivePhotoGetsAPlayableVideoPreviewFromItsVideo(test *testing.T) {
+	video := liveVideoContent(test)
+	temporaryDirectory := test.TempDir()
+	test.Setenv("TMPDIR", temporaryDirectory)
+	fixture := newFixture(test)
+	found := fixture.uploadLivePhoto("live", smallJpeg(test, 90), video)
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.PhotoKind != models.PhotoKindLivePhoto {
+		test.Fatalf("%+v", found)
+	}
+	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
+		if preview, _ := fixture.previewOf(found.ID, photoPreviewSize); preview == nil || preview.ContentType != "image/jpeg" {
+			test.Fatalf("the %s preview: %+v", photoPreviewSize, preview)
+		}
+	}
+	playable, playableBytes := fixture.previewOf(found.ID, models.PhotoPreviewVideo)
+	if playable == nil || playable.ContentType != "video/mp4" || len(playableBytes) < 100 || string(playableBytes[4:8]) != "ftyp" || playable.WidthPixels != 320 || playable.HeightPixels != 240 {
+		test.Fatalf("the video preview: %+v", playable)
+	}
+	// The photo's size and length are those of the picture, not the video.
+	if found.DurationMS != 0 {
+		test.Fatalf("the picture has a length of %d ms", found.DurationMS)
+	}
+	if entries, err := os.ReadDir(temporaryDirectory); err != nil || len(entries) != 0 {
+		test.Fatalf("something was made in the system's temporary directory: %v %v", entries, err)
+	}
+	if entries, err := os.ReadDir(fixture.workDirectory); err != nil || len(entries) != 0 {
+		test.Fatalf("the work directory was left behind: %v %v", entries, err)
+	}
+	if promisedBytes := fixture.store.WorkSpacePromisedBytes(); promisedBytes != 0 {
+		test.Fatalf("%d bytes of room are still promised", promisedBytes)
+	}
+}
+
+// The phone sends a Live Photo's picture first, and it is ready before the
+// video arrives. The video then puts the photo back to waiting for its video
+// preview, and its faces, which come from the picture, are not found again.
+func TestALivePhotoWhoseVideoArrivesAfterItsPictureIsReadyGetsItsVideoPreviewWithoutFindingFacesAgain(test *testing.T) {
+	video := liveVideoContent(test)
+	fixture := newFixture(test)
+	reader := &fakeFaceReader{scripts: map[int][]*faces.FoundFace{0: {scriptedFace(0, 0.1, 0.95, 0.2)}}}
+	fixture.store.SetFaceReader(reader, nil)
+	found := fixture.uploadAndProcess("late-video", jpegHeaders("late-video", "X-Photo-Kind", "livePhoto"), smallJpeg(test, reddish[0]))
+	if found.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("%+v", found)
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewVideo); preview != nil {
+		test.Fatalf("a Live Photo with no video has a video preview: %+v", preview)
+	}
+	facesBefore := fixture.facesOf(found.ID)
+	foundAtBefore := fixture.facesFoundAt("late-video")
+	if len(facesBefore) != 1 || foundAtBefore == "never" || reader.callCount() != 1 {
+		test.Fatalf("%d faces, found at %s, %d reads", len(facesBefore), foundAtBefore, reader.callCount())
+	}
+
+	fixture.expect(fixture.send(http.MethodPost, fixture.collectionUrl(), map[string]string{"Content-Type": "video/quicktime", "X-Photo-Client-ID": "late-video", "X-Photo-File-Role": "liveVideo"}, video), http.StatusCreated)
+	if waiting := fixture.photoByClientId("late-video"); waiting.PhotoProcessingState != models.PhotoProcessingWaiting || waiting.ProcessingClaimedAt != nil {
+		test.Fatalf("the video left the photo %s", waiting.PhotoProcessingState)
+	}
+	fixture.process()
+	again := fixture.photoByClientId("late-video")
+	if again.PhotoProcessingState != models.PhotoProcessingReady || again.PhotoKind != models.PhotoKindLivePhoto {
+		test.Fatalf("%+v", again)
+	}
+	playable, _ := fixture.previewOf(found.ID, models.PhotoPreviewVideo)
+	if playable == nil || playable.ContentType != "video/mp4" {
+		test.Fatalf("the video preview: %+v", playable)
+	}
+	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
+		if preview, _ := fixture.previewOf(found.ID, photoPreviewSize); preview == nil {
+			test.Fatalf("no %s preview", photoPreviewSize)
+		}
+	}
+	if count := fixture.count("photo_preview"); count != "3" {
+		test.Fatalf("%s previews", count)
+	}
+	facesAfter := fixture.facesOf(found.ID)
+	if len(facesAfter) != 1 || facesAfter[0].ID != facesBefore[0].ID || fixture.facesFoundAt("late-video") != foundAtBefore || reader.callCount() != 1 {
+		test.Fatalf("the faces were found again: %+v, %d reads", facesAfter, reader.callCount())
+	}
+}
+
+func TestALivePhotoWithABrokenVideoIsStillReadyWithItsPictures(test *testing.T) {
+	// The programs must be there for the video to be tried at all.
+	liveVideoContent(test)
+	fixture := newFixture(test)
+	found := fixture.uploadLivePhoto("broken", smallJpeg(test, 91), randomBytes(3000, 77))
+	if found.PhotoProcessingState != models.PhotoProcessingReady || found.PhotoKind != models.PhotoKindLivePhoto || found.ProcessingAttemptCount != 0 {
+		test.Fatalf("%+v", found)
+	}
+	for _, photoPreviewSize := range []models.PhotoPreviewSize{models.PhotoPreviewSmall, models.PhotoPreviewLarge} {
+		if preview, _ := fixture.previewOf(found.ID, photoPreviewSize); preview == nil {
+			test.Fatalf("no %s preview", photoPreviewSize)
+		}
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewVideo); preview != nil {
+		test.Fatalf("a broken video has a preview: %+v", preview)
+	}
+	if entries, err := os.ReadDir(fixture.workDirectory); err != nil || len(entries) != 0 {
+		test.Fatalf("the work directory was left behind: %v %v", entries, err)
+	}
+}
+
+func TestAReadyLivePhotoWithoutAVideoPreviewIsMadeAgainOnce(test *testing.T) {
+	video := liveVideoContent(test)
+	fixture := newFixture(test)
+	found := fixture.uploadLivePhoto("older", smallJpeg(test, 92), video)
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewVideo); preview == nil {
+		test.Fatal("the video preview was not made")
+	}
+	// As a Live Photo processed before video previews were made: ready, with
+	// no video preview, and a video that arrived after its other previews.
+	fixture.age("DELETE FROM photo_preview WHERE photo_preview_size = 'video'")
+	fixture.age("UPDATE photo_preview SET created_at = now() - interval '3 days'")
+	// An idle pass takes it back, and the next one makes the preview.
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	if again := fixture.photoByClientId("older"); again.PhotoProcessingState != models.PhotoProcessingWaiting {
+		test.Fatalf("the photo is %s", again.PhotoProcessingState)
+	}
+	if err := fixture.store.Process(test.Context(), 4); err != nil {
+		test.Fatal(err)
+	}
+	again := fixture.photoByClientId("older")
+	if again.PhotoProcessingState != models.PhotoProcessingReady {
+		test.Fatalf("the photo is %s", again.PhotoProcessingState)
+	}
+	if playable, _ := fixture.previewOf(again.ID, models.PhotoPreviewVideo); playable == nil || playable.ContentType != "video/mp4" {
+		test.Fatalf("the video preview: %+v", playable)
+	}
+}
+
+// A video that cannot be made into a preview leaves its photo ready without
+// one, and the photo is not put back for it again and again.
+func TestAReadyLivePhotoWithAVideoThatCannotBeReadIsNotMadeAgainEveryDay(test *testing.T) {
+	liveVideoContent(test)
+	fixture := newFixture(test)
+	found := fixture.uploadLivePhoto("unreadable", smallJpeg(test, 93), randomBytes(3000, 78))
+	fixture.age("UPDATE photo_preview SET created_at = now() - interval '3 days'")
+	// The video arrived after the previews were made, so one more attempt is
+	// made, which fails the same way.
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := fixture.store.Process(test.Context(), 4); err != nil {
+			test.Fatal(err)
+		}
+		fixture.age("UPDATE photo SET updated_at = now() - interval '3 days'")
+	}
+	// Every later pass leaves the photo as it is.
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := fixture.store.Process(test.Context(), 4); err != nil {
+			test.Fatal(err)
+		}
+		if again := fixture.photoByClientId("unreadable"); again.PhotoProcessingState != models.PhotoProcessingReady {
+			test.Fatalf("pass %d: the photo is %s", attempt, again.PhotoProcessingState)
+		}
+		fixture.age("UPDATE photo SET updated_at = now() - interval '3 days'")
+	}
+	if preview, _ := fixture.previewOf(found.ID, models.PhotoPreviewVideo); preview != nil {
+		test.Fatalf("an unreadable video has a preview: %+v", preview)
 	}
 }

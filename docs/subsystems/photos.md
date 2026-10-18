@@ -54,8 +54,10 @@ Everything known about a photo is a row; the bytes are blobs in the store
   picture uploaded twice, or by two people, is stored once. Each person's
   quota still counts every file they own.
 - `photo_preview` is a smaller copy made for showing: `small` (400 pixels on
-  the long side), `large` (2048) and, for a video, `video` (H.264, 1280).
-  Previews can always be made again; nothing depends on them being kept.
+  the long side), `large` (2048) and, for a video or a Live Photo (from its
+  video, which an iPhone records as HEVC that many browsers cannot play),
+  `video` (H.264, 1280). Previews can always be made again; nothing depends
+  on them being kept.
 - `photo_client_alias` is another name an uploader has for a photo that is
   there already (see Uploads).
 - `photo_upload` and `photo_upload_part` are a file on its way in.
@@ -254,7 +256,24 @@ them), the group is them: `PhotoFaceGroup.isOwnContact` and
 command line writes "(you)" after the name, and the iPhone shows "You".
 It is set per request from the caller's own user row, and is false for an
 unnamed group and for a face in somebody else's shared photo, whose names are
-the owner's. The agent's photo tool can take a name off a
+the owner's. A contact names one person. Naming a group
+with a contact that already names another of the person's groups merges the two
+inside `NamePhotoFaceGroup`: the group already named stays, with the faces of
+both and its own cover, and the person is hidden only if both were. A group never holds two faces of one photo, so when two groups each had a different face of one photo, the face the person confirmed stays, else the one whose vector is most like the merged group's sum (cosine), and the other is in no group and not confirmed (the face is still in the photo, but no pass groups it again until the photo's faces are found again); this holds for `person-merge` and the merge button as well. The answer
+carries the group left, `mergedPhotoFaceGroupId` (the one that went into it;
+the tool says `merged_into`, the command line "merged with") and
+`isContactPictureSet`. Groups that were named with one contact before this was
+so were merged once by migration 0242. When the contact has no picture it is
+given one: the face of the group with the highest detection confidence among
+those whose box covers at least `MinimumContactPictureFaceAreaFraction` (3
+percent) of their photo, in the person's own photos out of the Trash, cut square
+from the large preview with 40 percent of room on each side, at most 512 pixels,
+as a JPEG set as the card's `PHOTO` (so CardDAV clients see it; `contact_picture_set`
+in the tool, "used a face as their picture" on the command line). A picture a
+contact has is never replaced, and a photo that cannot be read leaves the naming
+done and the contact as it was. `RemoveContactPicture` takes a picture off; it is
+the toast's Remove and is on every surface of the address book. The agent's photo
+tool can take a name off a
 group (`person-unname`), hide a group or list it again (`person-hide`, with
 `is_hidden`; `people` with `is_hidden_included` finds the hidden ones), say one
 face is not that person (`person-remove-face`, with the `photo_face_id` that
