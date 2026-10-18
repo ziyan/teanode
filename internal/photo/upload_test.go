@@ -186,6 +186,105 @@ func TestAnUploadResumesFromWhereItGotToWithEitherGenerationOfHeaders(test *test
 	}
 }
 
+// An upload made with no bytes at all, and its bytes sent afterwards in one
+// request, which is how a client that cannot see an answer until its request
+// ends (a background upload on a phone) learns the upload's address first.
+func TestAnUploadMadeWithNoBytesAnswersItsAddressAndTakesTheWholeFileFromTheStart(test *testing.T) {
+	fixture := newFixture(test)
+	picture := smallJpeg(test, 41)
+	created := fixture.send(http.MethodPost, fixture.collectionUrl(),
+		jpegHeaders("no-bytes-first", "Upload-Complete", "?0", "Upload-Length", strconv.Itoa(len(picture)), "X-Photo-Declared-SHA256", digestOf(picture)), nil)
+	fixture.expect(created, http.StatusCreated)
+	location := created.header.Get("Location")
+	if location == "" || !strings.Contains(location, "/photos/uploads/") || created.interimLocation != location {
+		test.Fatalf("the address was %q, and the 104 said %q", location, created.interimLocation)
+	}
+	if created.header.Get("Upload-Offset") != "0" || created.header.Get("Upload-Complete") != "?0" || created.header.Get("Upload-Length") != strconv.Itoa(len(picture)) {
+		test.Fatalf("an upload with no bytes said %v", created.header)
+	}
+	if fixture.photoByClientId("no-bytes-first") != nil {
+		test.Fatal("a photo exists before a byte has arrived")
+	}
+	status := fixture.send(http.MethodHead, location, nil, nil)
+	fixture.expect(status, http.StatusNoContent)
+	if status.header.Get("Upload-Offset") != "0" {
+		test.Fatalf("HEAD said %v", status.header)
+	}
+
+	patched := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": "0", "Upload-Complete": "?1"}, picture)
+	fixture.expect(patched, http.StatusCreated)
+	found := fixture.photoByClientId("no-bytes-first")
+	if found == nil || patched.header.Get("X-Photo-ID") != found.ID || patched.header.Get("Upload-Complete") != "?1" {
+		test.Fatalf("the finished upload said %v", patched.header)
+	}
+	if !bytes.Equal(fixture.files.get(models.PhotoBlobFileID(digestOf(picture))), picture) {
+		test.Fatal("the blob is not the picture")
+	}
+}
+
+// The rest of a file sent after a cut: the file is declared with its digest
+// when the upload is made, the first request is cut off, and the rest, from
+// the offset the server reports, makes the file whole. The headers that
+// describe the file are not sent again.
+func TestTheRestOfAFileCompletesAnUploadMadeWithNoBytesAndHoldsItToTheDeclaredDigest(test *testing.T) {
+	fixture := newFixture(test)
+	whole := randomBytes(8<<20+4321, 42)
+	created := fixture.send(http.MethodPost, fixture.collectionUrl(),
+		jpegHeaders("rest-after-a-cut", "Upload-Complete", "?0", "Upload-Length", strconv.Itoa(len(whole)), "X-Photo-Declared-SHA256", digestOf(whole)), nil)
+	fixture.expect(created, http.StatusCreated)
+	location := created.header.Get("Location")
+	// A first request that got one whole part through.
+	cut := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": "0", "Upload-Complete": "?0"}, whole[:8<<20])
+	fixture.expect(cut, http.StatusNoContent)
+	status := fixture.send(http.MethodHead, location, nil, nil)
+	if status.header.Get("Upload-Offset") != strconv.Itoa(8<<20) {
+		test.Fatalf("HEAD said %v", status.header)
+	}
+	rest := fixture.send(http.MethodPatch, location, map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": status.header.Get("Upload-Offset"), "Upload-Complete": "?1"}, whole[8<<20:])
+	fixture.expect(rest, http.StatusCreated)
+	if fixture.photoByClientId("rest-after-a-cut") == nil || !bytes.Equal(fixture.files.get(models.PhotoBlobFileID(digestOf(whole))), whole) {
+		test.Fatal("the two requests did not make the file")
+	}
+
+	// A rest that does not hash to the digest the upload was made with is
+	// refused and ends the upload, which a client then finds gone.
+	other := fixture.send(http.MethodPost, fixture.collectionUrl(),
+		jpegHeaders("rest-of-another-file", "Upload-Complete", "?0", "Upload-Length", "1000", "X-Photo-Declared-SHA256", digestOf(randomBytes(1000, 43))), nil)
+	fixture.expect(other, http.StatusCreated)
+	wrong := fixture.send(http.MethodPatch, other.header.Get("Location"), map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": "0", "Upload-Complete": "?1"}, randomBytes(1000, 44))
+	fixture.expect(wrong, http.StatusBadRequest)
+	fixture.expect(fixture.send(http.MethodHead, other.header.Get("Location"), nil, nil), http.StatusNotFound)
+	if fixture.photoByClientId("rest-of-another-file") != nil {
+		test.Fatal("bytes that failed their digest were kept")
+	}
+}
+
+// All the bytes are there and the upload is not complete: the case of a client
+// whose last request was cut off after the last part. An empty rest at the end
+// of the file completes it.
+func TestAnEmptyRestAtTheEndOfTheFileCompletesAnUploadThatHasEveryByte(test *testing.T) {
+	fixture := newFixture(test)
+	picture := smallJpeg(test, 45)
+	created := fixture.send(http.MethodPost, fixture.collectionUrl(),
+		jpegHeaders("every-byte", "Upload-Complete", "?0", "Upload-Length", strconv.Itoa(len(picture)), "X-Photo-Declared-SHA256", digestOf(picture)), picture)
+	fixture.expect(created, http.StatusCreated)
+	if created.header.Get("Upload-Offset") != strconv.Itoa(len(picture)) || created.header.Get("Upload-Complete") != "?0" {
+		test.Fatalf("an upload with every byte said %v", created.header)
+	}
+	completed := fixture.send(http.MethodPatch, created.header.Get("Location"), map[string]string{"Content-Type": "application/partial-upload", "Upload-Offset": strconv.Itoa(len(picture)), "Upload-Complete": "?1"}, nil)
+	fixture.expect(completed, http.StatusCreated)
+	found := fixture.photoByClientId("every-byte")
+	if found == nil || completed.header.Get("X-Photo-ID") != found.ID {
+		test.Fatalf("the completed upload said %v", completed.header)
+	}
+	// And asking again says it is done, with the photo, which is how a client
+	// whose answer was lost finds out.
+	done := fixture.send(http.MethodHead, created.header.Get("Location"), nil, nil)
+	if done.header.Get("Upload-Complete") != "?1" || done.header.Get("X-Photo-ID") != found.ID {
+		test.Fatalf("HEAD after completion said %v", done.header)
+	}
+}
+
 func TestAnIncompletePatchAnswersNoContentWithTheNewOffset(test *testing.T) {
 	fixture := newFixture(test)
 	first := randomBytes(1000, 2)
