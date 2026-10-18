@@ -56,8 +56,9 @@ export function DomainsPage() {
 
   // The DNS column exists to point at a domain whose records are missing or
   // unchecked. When every domain has published everything it would be a column
-  // of empty cells, so it is left out until one needs it.
-  const hasDnsToShow = domains.some((entry) => describeRecords(entry, t) !== t('domains.allPublished'))
+  // of empty cells, so it is left out until one needs it. Until the list has
+  // arrived it is kept, so that it does not pop in when the first rows do.
+  const hasDnsToShow = !data || domains.some((entry) => recordState(entry) !== 'published')
 
   const columns = useMemo<Column<Domain>[]>(() => {
     const everyColumn: Column<Domain>[] = [
@@ -184,14 +185,22 @@ export function DomainsPage() {
   )
 }
 
+// Whether a domain's DNS records are all published, not (all) published, or
+// not checked yet. The words below and the column's visibility both follow it.
+function recordState(entry: Domain): 'notChecked' | 'published' | 'missing' {
+  const records = entry.records?.records ?? []
+  if (records.length === 0) {
+    return 'notChecked'
+  }
+  return records.every((record) => record.verified || record.optional) ? 'published' : 'missing'
+}
+
 // The value the filter and the sort see: the same three states the tag shows,
 // so narrowing to "not published" is narrowing to what the color says.
 function describeRecords(entry: Domain, t: ReturnType<typeof useTranslation>['t']): string {
-  const records = entry.records?.records ?? []
-  if (records.length === 0) {
+  const state = recordState(entry)
+  if (state === 'notChecked') {
     return t('domains.notChecked')
   }
-  return records.every((record) => record.verified || record.optional)
-    ? t('domains.allPublished')
-    : t('domains.notPublished')
+  return state === 'published' ? t('domains.allPublished') : t('domains.notPublished')
 }
