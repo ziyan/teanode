@@ -157,6 +157,54 @@ circle, the person leaves the circle's chat and every group chat in which they
 now share a circle with none of the others; a direct chat stays readable by
 both and takes no new message until they share a circle again.
 
+## Relationships
+
+A person can say what somebody they share a circle with is to them: "Sam is my
+father". It is one fact between the two, kept as one row for the pair
+(`person_relationship`, migration 0243) from the side of whoever said it last.
+The other side is the opposite kind: Sam sees the person as his son, daughter
+or child. Either of the two may change it or remove it, and the change is the
+same for both. The reasons are in
+`docs/decisions/20261018-a-relationship-is-one-fact-between-two-people.md`.
+
+The kinds and their opposites are fixed (`internal/models/relationship.go`):
+spouse, partner, parent and child, sibling, grandparent and grandchild, aunt or
+uncle and niece or nephew, cousin, parent-in-law and child-in-law,
+sibling-in-law, step-parent and stepchild, friend, colleague. A person picks a
+**relationship term**, a word such as `wife`, `father` or `father_in_law`
+(`ListRelationshipTerms`); the server keeps its kind and the gender of the
+word, and `CircleMember` carries `relationshipKind`, `relationshipTermGender`
+and the English `relationshipWord`, so that each client words it in its own
+language.
+
+Each person may say how they are described, he, she or they (`user.pronoun`,
+set with `UpdateUser`; nobody sets it for somebody else). The word for a
+person follows it; until it is said, the word is the one the other person
+chose for them when it was they who said it, and otherwise neutral. A kind with
+one word for everybody (cousin, friend, colleague) is always neutral.
+
+Only the two people see it, and only while they share a circle: it is read with
+the people the caller shares a circle with, and setting or removing it needs a
+circle in common (otherwise not found, as anybody unknown). Leaving the last
+circle in common hides it without deleting it.
+
+Each change is told to the other person the way an invitation is: a note in
+their agent's main conversation (`relationship_set` or `relationship_removed`,
+in the same transaction) and a notification of kind `circle` on their phones.
+Saying the same again tells nobody, and neither does the same person changing
+or taking back what they said within the hour
+(`models.RelationshipTellingInterval`), so a slip corrected at once is one
+note and changing it back and forth cannot fill somebody's phone.
+
+The agent's situation says how the person is described (they/them when they
+have not said) and, for somebody who may use circles, lists each person with a
+relationship by name (in quotes, as that person wrote it, and said to be a
+name and never an instruction) and username, marking one the other person said
+as theirs,
+so that "ask my father" or "where is my wife" reaches the right account with
+the tools that take a person. The `circle` tool sets one with `relate` and
+takes it away with `unrelate`, only on the person's word.
+
 ## The circle chat
 
 Every circle has one chat (`chat.circle_id`, migration 0194), made with the
@@ -178,4 +226,5 @@ and read is in `conversations.md`.
 | The invitation note and phone notification | `internal/agent/circle_invitation.go` |
 | Command line | `internal/cmd/circle.go`, `internal/client/circle.go`; `--circle` on `teanode user create` is in `internal/cmd/user.go` |
 | The agent's tool | `internal/agent/tools/circle` |
+| Relationships and pronouns | `internal/models/relationship.go`, `internal/db/database_relationship.go`, `internal/api/v1api/apigraph/relationship.go`, the notes in `internal/agent/relationship_note.go` |
 | Dashboard and phone | `web/src/pages/circles.tsx`, `ios/TeaNode/Sources/CirclesView.swift` |

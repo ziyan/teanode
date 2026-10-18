@@ -216,3 +216,9 @@ from, what leaves the server for them (the position of each new place, to a
 provider the operator chooses and can turn off), and why the person's own name
 always wins. Both are proposed; their plan is
 `docs/planning/location-execplan.md`.
+
+`20261018-a-relationship-is-one-fact-between-two-people.md` says why what
+two people in a circle are to each other is one fact either of them can
+change, seen only by the two of them, and why each person says how they are
+described instead of the server guessing. It is proposed; its plan is
+`docs/planning/relationships-execplan.md`.

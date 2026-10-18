@@ -186,6 +186,7 @@ type Transaction interface {
 	RoleOperation
 	GroupOperation
 	CircleOperation
+	RelationshipOperation
 	CalendarShareOperation
 	LocationOperation
 	LocationLockOperation

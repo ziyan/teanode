@@ -39,9 +39,14 @@ type CircleQuery interface {
 	ListCircleInvitations(ctx context.Context) ([]*CircleInvitation, error)
 
 	// Everybody the caller shares any circle with, once each: the people a
-	// chat or a share can be offered to. Their memberRole is empty, because a
-	// role belongs to one circle. Needs circle:use.
+	// chat or a share can be offered to, with what each is to the caller.
+	// Their memberRole is empty, because a role belongs to one circle. Needs
+	// circle:use.
 	ListCirclePeople(ctx context.Context) ([]*CircleMember, error)
+
+	// Every word a relationship can be said with, in the order they are
+	// offered: wife, father, aunt_or_uncle. Needs circle:use.
+	ListRelationshipTerms(ctx context.Context) ([]*RelationshipTerm, error)
 }
 
 // CircleMutation changes circles and who is in them.
@@ -87,6 +92,18 @@ type CircleMutation interface {
 	// account the operator made for somebody who will not set it up
 	// themselves. Needs user:manage.
 	AddCircleMember(ctx context.Context, arguments AddCircleMemberArguments) (*Circle, error)
+
+	// Say what somebody the caller shares a circle with is to them: "father",
+	// "wife". The other side is filled in from it (the caller is their son),
+	// and they are told. It is one fact between the two: either may change or
+	// remove it, for both. Returns the person as the caller now sees them.
+	// Needs circle:use and a circle in common.
+	SetPersonRelationship(ctx context.Context, arguments SetPersonRelationshipArguments) (*CircleMember, error)
+
+	// Take away what the caller and somebody are to each other, whichever of
+	// them said it. The other person is told. True when there was one. Needs
+	// circle:use and a circle in common.
+	RemovePersonRelationship(ctx context.Context, arguments RemovePersonRelationshipArguments) (bool, error)
 }
 
 // Circle is a named set of people on this server who know each other.
@@ -132,6 +149,19 @@ type CircleMember struct {
 	// When they joined the circle; in the list of everybody the caller
 	// shares a circle with, the earliest they joined any of them
 	JoinedAt time.Time `json:"joinedAt"`
+
+	// What this person is to the caller, such as parent or spouse, or empty
+	// when neither of them has said. Only the two of them see it.
+	RelationshipKind string `json:"relationshipKind"`
+
+	// The gender of the word to show for it: masculine, feminine or neutral.
+	// It follows how this person said they are described, or the word the
+	// caller chose for them.
+	RelationshipTermGender string `json:"relationshipTermGender"`
+
+	// That word in English, such as father or wife; empty when there is no
+	// relationship
+	RelationshipWord string `json:"relationshipWord"`
 }
 
 // CircleInvitation asks one person to join one circle.
@@ -158,19 +188,45 @@ type CircleInvitation struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-func describeCircleMember(member *models.CircleMember) *CircleMember {
+// describeCircleMember is one person as the caller sees them, with what they
+// are to the caller when relationships has it: the caller's relationships by
+// the other person's account id.
+func describeCircleMember(member *models.CircleMember, callerUserId string, relationships map[string]*models.PersonRelationship) *CircleMember {
 	described := &CircleMember{
 		UserID:           member.UserID,
 		MemberRole:       string(member.MemberRole),
 		JoinedAt:         member.JoinedAt,
 		AvatarColorIndex: avatar.InitialColorIndex(member.UserID),
 	}
+	var pronoun models.Pronoun
 	if member.User != nil {
 		described.Username = member.User.Username
 		described.Name = member.User.Name
 		described.AvatarURL = avatarUrl(member.User)
+		pronoun = member.User.Pronoun
+	}
+	if relationship := relationships[member.UserID]; relationship != nil && member.UserID != callerUserId {
+		relationshipKind := relationship.KindFor(callerUserId)
+		termGender := relationship.TermGenderFor(callerUserId, pronoun)
+		described.RelationshipKind = string(relationshipKind)
+		described.RelationshipTermGender = string(termGender)
+		described.RelationshipWord = relationshipKind.Word(termGender)
 	}
 	return described
+}
+
+// relationshipsOf is a person's relationships, by the other person's account
+// id.
+func (self *graph) relationshipsOf(ctx context.Context, userId string) (map[string]*models.PersonRelationship, error) {
+	relationships, err := self.transaction(ctx).ListPersonRelationships(userId)
+	if err != nil {
+		return nil, err
+	}
+	byUserId := make(map[string]*models.PersonRelationship, len(relationships))
+	for _, relationship := range relationships {
+		byUserId[relationship.Other(userId)] = relationship
+	}
+	return byUserId, nil
 }
 
 func describeCircleInvitation(invitation *models.CircleInvitation) *CircleInvitation {
@@ -194,7 +250,7 @@ func describeCircleInvitation(invitation *models.CircleInvitation) *CircleInvita
 // describeCircle is a circle as the caller sees it. The waiting invitations
 // are the circle's own and are shown only to its admins, so they are passed
 // in by the caller who has already decided that.
-func describeCircle(circle *models.Circle, callerUserId string, pending []*models.CircleInvitation) *Circle {
+func describeCircle(circle *models.Circle, callerUserId string, pending []*models.CircleInvitation, relationships map[string]*models.PersonRelationship) *Circle {
 	described := &Circle{
 		ID:                 circle.ID,
 		Name:               circle.Name,
@@ -207,7 +263,7 @@ func describeCircle(circle *models.Circle, callerUserId string, pending []*model
 		described.MemberRole = string(member.MemberRole)
 	}
 	for _, member := range circle.Members {
-		described.Members = append(described.Members, describeCircleMember(member))
+		described.Members = append(described.Members, describeCircleMember(member, callerUserId, relationships))
 	}
 	if described.MemberRole == string(models.MemberRoleAdmin) {
 		for _, invitation := range pending {
@@ -227,7 +283,11 @@ func (self *graph) circleFor(ctx context.Context, circle *models.Circle, callerU
 			return nil, err
 		}
 	}
-	return describeCircle(circle, callerUserId, pending), nil
+	relationships, err := self.relationshipsOf(ctx, callerUserId)
+	if err != nil {
+		return nil, err
+	}
+	return describeCircle(circle, callerUserId, pending, relationships), nil
 }
 
 // translateCircleError turns what a membership change says into what the API
@@ -297,9 +357,13 @@ func (self *graph) ListCirclePeople(ctx context.Context) ([]*CircleMember, error
 	if err != nil {
 		return nil, err
 	}
+	relationships, err := self.relationshipsOf(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
 	described := make([]*CircleMember, 0, len(people))
 	for _, person := range people {
-		described = append(described, describeCircleMember(person))
+		described = append(described, describeCircleMember(person, user.ID, relationships))
 	}
 	return described, nil
 }
@@ -325,7 +389,9 @@ func (self *graph) CreateCircle(ctx context.Context, arguments CreateCircleArgum
 		return nil, translateError(err)
 	}
 	log.Noticef("%s made the circle %q", user.Username, created.Name)
-	return describeCircle(created, user.ID, nil), nil
+	// A new circle has only its maker in it, who has no relationship with
+	// themselves.
+	return describeCircle(created, user.ID, nil, nil), nil
 }
 
 type RenameCircleArguments struct {
