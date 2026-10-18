@@ -128,6 +128,17 @@ accent, every string in the String Catalog in all three languages.
   `make check-button-colors` fails on a symbol without its color, and
   `node ios/scripts/check-button-colors.mjs --fix` adds it. Never color the
   words and the symbol separately.
+- **A drag that moves the screen fires nothing under it.** The side menu's
+  drag slides the screen with the finger, so the touch never leaves the row,
+  photo or person it began on, and a tap that is allowed to run beside the
+  drag fires when the finger lifts: the menu opened and so did the photo. A
+  gesture that moves what is under the finger (the menu's drag, a drag to
+  close a viewer) runs beside no other gesture except a scroll view's pan
+  that scrolls the other way, and it does not start on something that
+  scrolls in its own direction and can still scroll back. A new gesture
+  says in its delegate which gestures may run beside it, and a new screen
+  is tried with a swipe right that starts on a row, on a picture and on a
+  sideways strip.
 
 ## Comments
 

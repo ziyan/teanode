@@ -299,6 +299,13 @@ extension Optional where Wrapped == UserInterfaceSizeClass {
     var isMenuColumn: Bool { self == UserInterfaceSizeClass.regular }
 }
 
+extension UIScrollView {
+    /// Whether its content is wider than it is, so that it scrolls sideways.
+    fileprivate var isScrollableSideways: Bool {
+        contentSize.width > bounds.width - adjustedContentInset.left - adjustedContentInset.right + 1
+    }
+}
+
 /// SidePanelPan is the side panel's drag, as a UIKit pan so that it can
 /// cancel the touches of what is under the finger when it starts.
 struct SidePanelPan: UIGestureRecognizerRepresentable {
@@ -355,6 +362,13 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
             // A drag on a chart reads its values; it never opens the panel.
             let startInWindow = CGPoint(x: pan.location(in: nil).x - pan.translation(in: nil).x, y: pan.location(in: nil).y)
             if SidePanelExclusions.shared.contains(startInWindow) { return false }
+            // A drag to the right that starts on something scrolled sideways
+            // away from its start (a code block, a strip of attachments, a
+            // terminal) scrolls it back, as the finger asks, rather than
+            // opening the menu over it as well.
+            if let scrollView = Self.sidewaysScrollView(at: start, in: view), scrollView.contentOffset.x > -scrollView.adjustedContentInset.left + 1 {
+                return false
+            }
             return shouldBegin(start, pan.velocity(in: view))
         }
 
@@ -363,8 +377,22 @@ struct SidePanelPan: UIGestureRecognizerRepresentable {
         /// pan runs beside it: a tap was allowed to as well, and since the
         /// screen moves with the finger, the touch never left the photo or
         /// row it began on, which then opened as the menu did.
+        /// A scroll view that scrolls sideways does not run beside it either:
+        /// one drag would both scroll it and open the menu.
         func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
-            other is UIPanGestureRecognizer
+            guard other is UIPanGestureRecognizer else { return false }
+            if let scrollView = other.view as? UIScrollView, scrollView.isScrollableSideways { return false }
+            return true
+        }
+
+        /// The innermost view under a point that scrolls sideways, if any.
+        private static func sidewaysScrollView(at point: CGPoint, in view: UIView) -> UIScrollView? {
+            var candidate = view.hitTest(point, with: nil)
+            while let current = candidate, current !== view {
+                if let scrollView = current as? UIScrollView, scrollView.isScrollableSideways { return scrollView }
+                candidate = current.superview
+            }
+            return nil
         }
     }
 }

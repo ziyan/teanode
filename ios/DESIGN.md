@@ -131,6 +131,10 @@ its pull request is opened.
   rule, since the same screen is the iPhone's.
 - In the side menu itself a swipe left closes it, so its rows have no swipe
   actions at all: everything a row offers is in its long-press menu.
+- The swipe that opens the side menu never presses what it starts on: a row,
+  a photo or a person under the finger does not open as the menu does, and a
+  sideways strip scrolled away from its start scrolls back instead of opening
+  the menu (`SidePanelPan` in `CommonViews.swift`).
 
 ## The iPad
 
