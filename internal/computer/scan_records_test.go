@@ -1050,3 +1050,60 @@ func TestWhatARecordSaidSaysThatItContinues(t *testing.T) {
 		t.Fatalf("a long message is its opening and says it continues: %q", said)
 	}
 }
+
+// An attachment the server already holds is not read again, and one it
+// does not is read when it goes into a page. Reading is what costs, a
+// LibreOffice run for a spreadsheet, and every page of a file reads the
+// whole file: reading every attachment there put a mailbox of many
+// threads through LibreOffice before a page could send anything.
+func TestAnAttachmentIsReadOnlyWhenAPageSendsIt(t *testing.T) {
+	notes := []byte("the boiler is serviced every autumn\n")
+	list := []byte("milk, eggs, bread\n")
+	root, scan := recordsIn(t, map[string]string{"files/notes.txt": string(notes), "files/list.txt": string(list)})
+	if err := os.WriteFile(filepath.Join(root, "posts.jsonl"), []byte(
+		`{"id":"post:1","kind":"page","title":"Boiler","at":"2026-08-14T09:30:00Z","author":"sam","text":"the notes",`+
+			`"attachments":[{"path":"files/notes.txt","name":"notes.txt","contentType":"text/plain"}]}`+"\n"+
+			`{"id":"post:2","kind":"page","title":"Shopping","at":"2026-08-15T09:30:00Z","author":"sam","text":"the list",`+
+			`"attachments":[{"path":"files/list.txt","name":"list.txt","contentType":"text/plain"}]}`+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	readings := 0
+	previous := attachmentReader
+	attachmentReader = func(ctx context.Context, path string, content []byte) (string, string, error) {
+		readings++
+		return previous(ctx, path, content)
+	}
+	defer func() { attachmentReader = previous }()
+	notesId, listId := "posts.jsonl#"+hashOfBytes(notes), "posts.jsonl#"+hashOfBytes(list)
+
+	// A page of one entry reads the one attachment it sends, not the
+	// other attachment further down the file.
+	first, err := scan(&ScanArguments{Known: map[string]string{}, Most: 1})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	if entry := entriesOfKind(first.Entries, KindAttachment)[notesId]; entry.Text != string(notes) {
+		t.Fatalf("the attachment in the page is sent with its text: %+v", first.Entries)
+	}
+	if readings != 1 {
+		t.Fatalf("a page of one entry read %d attachments", readings)
+	}
+
+	// A new pass where the server holds the first: it is named unchanged
+	// without being read, and only the second is read.
+	readings = 0
+	second, err := scan(&ScanArguments{Known: map[string]string{notesId: hashOfBytes(notes)}})
+	if err != nil {
+		t.Fatalf("RunScan: %s", err)
+	}
+	attachments := entriesOfKind(second.Entries, KindAttachment)
+	if entry := attachments[notesId]; !entry.Unchanged || entry.Text != "" {
+		t.Fatalf("a held attachment is named as unchanged with no text: %+v", entry)
+	}
+	if entry := attachments[listId]; entry.Text != string(list) {
+		t.Fatalf("the attachment the server lacks is sent with its text: %+v", entry)
+	}
+	if readings != 1 {
+		t.Fatalf("read %d attachments, want only the one the server lacks", readings)
+	}
+}

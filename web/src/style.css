@@ -1874,6 +1874,12 @@ button.link:hover:not(:disabled) {
   cursor: pointer;
 }
 
+/* Beside a label's words the quiet anchor is a box in the line, not text. */
+label > span > .button-quiet {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
 .button-quiet:hover:not(:disabled) {
   border-color: var(--border);
   background: var(--sidebar-hover);
@@ -2421,14 +2427,22 @@ label span {
 
 .tabs .tab-action {
   align-self: center;
-  padding: 8px 12px;
-  font-size: var(--text-body);
-  color: var(--accent);
-  text-decoration: none;
 }
 
-.tabs .tab-action:hover {
-  text-decoration: underline;
+/* The tabs' own button rules take the box off a button; an action beside the
+   tabs is an ordinary button and keeps it. */
+.tabs button.tab-action {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 14px;
+  margin-right: 0;
+}
+
+.tabs button.tab-action:hover:not(:disabled) {
+  background: var(--sidebar-hover);
+  color: var(--text);
 }
 
 @media (max-width: 600px) {
@@ -2549,6 +2563,8 @@ label span {
   min-height: 30px;
 }
 
+/* A row of the menu like its options, in the menu's own text color: accent
+   text with no box reads as a link. */
 .menu-clear {
   width: 100%;
   margin-bottom: 4px;
@@ -2556,7 +2572,7 @@ label span {
   border: none;
   border-radius: var(--radius-1);
   background: none;
-  color: var(--accent);
+  color: var(--text);
   font: inherit;
   font-size: var(--text-label);
   text-align: left;
@@ -7052,16 +7068,8 @@ main.content:has(> .mailbox-frame) > :not(.mailbox-frame) {
    the transcript, styled as the divider is, gone once everything is in. */
 .agent-drawer-earlier {
   align-self: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font: inherit;
   font-size: 0.85em;
-  padding: 6px 10px;
-}
-
-.agent-drawer-earlier:hover:not(:disabled) {
-  text-decoration: underline;
+  padding: 4px 10px;
 }
 
 .agent-drawer-empty {
@@ -13002,7 +13010,6 @@ label.checkbox.is-plain input {
 }
 
 .connect-here {
-  display: inline-block;
   margin-top: var(--space-2);
 }
 
@@ -13868,6 +13875,11 @@ button.idea-history-title {
    panel is from the next. */
 .finance-pointer {
   margin: 0 0 var(--space-4);
+}
+
+/* The pointer's own margin is the space below; the actions row adds none. */
+.finance-pointer .page-actions {
+  margin-bottom: 0;
 }
 
 /* An amount column in the shared table reads down by its decimal places,
@@ -16102,6 +16114,18 @@ body.has-recording-bar .content {
   margin-bottom: 0;
 }
 
+/* Clear filters is a button with a box, as wide as its words, among the
+   form's fields rather than a row of the menu it sits in. */
+.menu .photo-filter-clear {
+  align-self: flex-start;
+  width: auto;
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  font-weight: 550;
+}
+
 .photo-filter-kinds {
   margin: 0;
   padding: 0;
@@ -16118,10 +16142,6 @@ body.has-recording-bar .content {
 .photo-filter-kinds label.checkbox {
   margin-top: 0;
   padding: 6px 0;
-}
-
-.photo-filter-form .menu-clear {
-  margin-bottom: 0;
 }
 
 /* The same strip of tabs on every page. */

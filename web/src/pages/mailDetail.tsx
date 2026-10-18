@@ -603,7 +603,7 @@ export function MessageContent({
             </button>
             {/* A real link, so the browser saves it the way it saves anything
               else, and middle-click and "save as" both work. */}
-            <a className="tab-action" href={`/api/v1/mail/${mailId}/raw`} download>
+            <a className="button tab-action" href={`/api/v1/mail/${mailId}/raw`} download>
               {t('mailDetail.download')}
             </a>
           </div>
