@@ -1251,7 +1251,7 @@ export const en = {
   'agentDrawer.backToConversation': 'Back to the main chat',
   'agentDrawer.search': 'Find a chat…',
   'agentDrawer.nothingFound': 'Nothing matches.',
-  'agentConversations.intro': 'Your conversations with {name}. Open one to carry it on in the chat box.',
+  'agentConversations.untitledOn': 'Conversation {date}',
   'agentConversations.search': 'Find a conversation…',
   'agentConversations.new': 'New conversation',
   'agentConversations.empty': 'There are no conversations yet. Start one and it will be listed here.',

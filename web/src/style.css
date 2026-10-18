@@ -751,6 +751,15 @@ a.tile:hover strong {
   flex: 1 1 220px;
   min-width: 0;
   max-width: 420px;
+  /* The size of the search box on every other page's list. */
+  padding-block: 5px;
+  font-size: var(--text-label);
+}
+
+.conversation-toolbar select {
+  width: auto;
+  padding-block: 5px;
+  font-size: var(--text-label);
 }
 
 /* auto-fill rather than the band's auto-fit: one conversation is one tile's

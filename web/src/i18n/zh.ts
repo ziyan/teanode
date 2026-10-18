@@ -1203,7 +1203,7 @@ export const zh: Catalog = {
   'agentDrawer.backToConversation': '回到主聊天',
   'agentDrawer.search': '查找聊天…',
   'agentDrawer.nothingFound': '没有匹配的对话。',
-  'agentConversations.intro': '你和{name}的对话。打开一个，在聊天框里接着聊。',
+  'agentConversations.untitledOn': '{date}的对话',
   'agentConversations.search': '查找对话…',
   'agentConversations.new': '新对话',
   'agentConversations.empty': '还没有对话。开始一个，它就会出现在这里。',

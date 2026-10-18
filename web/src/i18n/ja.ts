@@ -1249,7 +1249,7 @@ export const ja: Catalog = {
   'agentDrawer.backToConversation': 'メインチャットに戻る',
   'agentDrawer.search': 'チャットを探す…',
   'agentDrawer.nothingFound': '一致する会話はありません。',
-  'agentConversations.intro': '{name}との会話です。開くとチャットボックスで続けられます。',
+  'agentConversations.untitledOn': '{date}の会話',
   'agentConversations.search': '会話を探す…',
   'agentConversations.new': '新しい会話',
   'agentConversations.empty': '会話はまだありません。始めるとここに表示されます。',
