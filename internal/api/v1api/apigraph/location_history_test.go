@@ -944,6 +944,38 @@ func TestSavePlaceKeepsATypedAddressWithoutMovingThePlace(t *testing.T) {
 	}
 }
 
+// A place made from coordinates and a typed address, with no placeId, says the
+// address is typed, and moving it afterwards without an address keeps the
+// address and the name and leaves the place to the naming job no more than
+// before.
+func TestSavePlaceMadeFromATypedAddressKeepsItWhenMoved(t *testing.T) {
+	world := newLocationWorld(t)
+	requests := world.addressProvider(t)
+
+	made := world.call(t, world.ada, `mutation { SavePlace(latitudeDegrees: 40.5, longitudeDegrees: -75.5, addressText: "6 Rue Example, Exampleton, Testland") { id placeName addressText isAddressTyped } }`)["SavePlace"].(map[string]any)
+	placeId := made["id"].(string)
+	if made["isAddressTyped"] != true || made["addressText"] != "6 Rue Example, Exampleton, Testland" || made["placeName"] != "6 Rue Example" {
+		t.Fatalf("a new place at a typed address: %v", made)
+	}
+
+	moved := world.call(t, world.ada, fmt.Sprintf(`mutation { SavePlace(placeId: %q, latitudeDegrees: 40.7, longitudeDegrees: -75.7) { addressText isAddressTyped placeName latitudeDegrees } }`, placeId))["SavePlace"].(map[string]any)
+	if moved["addressText"] != "6 Rue Example, Exampleton, Testland" || moved["isAddressTyped"] != true || moved["placeName"] != "6 Rue Example" || moved["latitudeDegrees"] != 40.7 {
+		t.Errorf("the move lost the typed address: %v", moved)
+	}
+	dbtest.RunTransactionOn(t, world.database, func(tx db.Transaction) {
+		claimed, err := tx.ClaimPlaceToName(placeId, time.Now())
+		if err != nil || claimed != nil {
+			t.Errorf("the naming job claimed a place with a typed address: %v, %v", claimed, err)
+		}
+	})
+	time.Sleep(300 * time.Millisecond)
+	for _, path := range requests.asked() {
+		if strings.HasPrefix(path, "/reverse") {
+			t.Errorf("the provider was asked to name the place: %v", requests.asked())
+		}
+	}
+}
+
 // A check-in keeps the accuracy the device reported on its visit.
 func TestCheckInKeepsTheAccuracy(t *testing.T) {
 	world := newLocationWorld(t)

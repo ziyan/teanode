@@ -6184,4 +6184,5 @@ export const en = {
   'location.keepAddressTypedNote': 'Keeps "{address}" as the address, without moving the place.',
   'location.addressKept': 'Kept the address {address}',
   'location.placeMapHint': 'Drag the pin, or click the map, to put the place exactly where it is. Save to keep it.',
+  'location.saveBeforeAddress': 'Save your changes first: changing the address closes this window.',
 }

@@ -6102,4 +6102,5 @@ export const ja: Catalog = {
   'location.keepAddressTypedNote': '「{address}」を住所として保存します。場所は動かしません。',
   'location.addressKept': '住所「{address}」を保存しました',
   'location.placeMapHint': 'ピンをドラッグするか地図をクリックして、場所を正確な位置に置きます。保存すると反映されます。',
+  'location.saveBeforeAddress': '住所を変更する前に、変更を保存してください。住所の変更でこのウィンドウが閉じます。',
 }

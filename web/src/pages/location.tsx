@@ -6,7 +6,7 @@ import { Avatar } from '../components/avatar'
 import { PageHeadingActions } from '../components/breadcrumb'
 import { ErrorMessage, Loading, Tag } from '../components/common'
 import { ConfirmDialog, FormDialog } from '../components/dialog'
-import { MoreIcon } from '../components/icons'
+import { MoreIcon, PencilIcon } from '../components/icons'
 import { isLocationPermissionGranted, readFreshBrowserLocation } from '../components/browserLocation'
 import { LocationAddressChooser } from '../components/locationAddressChooser'
 import { LocationCheckInDialog } from '../components/locationCheckIn'
@@ -1122,6 +1122,8 @@ function PlaceEditor({
     changes.latitudeDegrees = position.latitudeDegrees
     changes.longitudeDegrees = position.longitudeDegrees
   }
+  // Changing the address closes the editor, which would throw these away.
+  const hasPendingChanges = Object.keys(changes).length > 0
   const mapPlaces = useMemo(
     (): MapPlace[] => [
       {
@@ -1143,7 +1145,7 @@ function PlaceEditor({
       submitLabel={t('common.save')}
       busy={isBusy}
       error={error}
-      canSubmit={isRadiusValid && Object.keys(changes).length > 0}
+      canSubmit={isRadiusValid && hasPendingChanges}
       onClose={onClose}
       onSubmit={() => void onSave(changes)}
       otherAction={
@@ -1152,68 +1154,90 @@ function PlaceEditor({
         </button>
       }
     >
-      <label>
-        {t('location.placeName')}
-        <input
-          type="text"
-          value={placeName}
-          placeholder={place.osmName}
-          onChange={(event) => setPlaceName(event.target.value)}
-        />
-      </label>
-      <LocationMap
-        isCompact
-        people={NO_MAP_PEOPLE}
-        places={mapPlaces}
-        onPlaceMoved={(latitudeDegrees, longitudeDegrees) => setPosition({ latitudeDegrees, longitudeDegrees })}
-      />
-      <p className="muted">{t('location.placeMapHint')}</p>
-      <div className="location-address-row">
-        <span className="location-address-text">
-          <span className="muted">{t('location.address')}</span>
-          <span>{place.addressText.trim() || t('location.noAddress')}</span>
-        </span>
-        <button type="button" onClick={onChangeAddress}>
-          {t('location.changeAddress')}
-        </button>
-        {place.isAddressTyped && (
-          <button type="button" disabled={isBusy} onClick={onUseMapAddress}>
-            {t('location.useMapAddress')}
-          </button>
-        )}
+      <div className="location-place-editor">
+        <label>
+          {t('location.placeName')}
+          <input
+            type="text"
+            value={placeName}
+            placeholder={place.osmName}
+            onChange={(event) => setPlaceName(event.target.value)}
+          />
+        </label>
+        <div className="location-place-editor-group">
+          <LocationMap
+            isCompact
+            people={NO_MAP_PEOPLE}
+            places={mapPlaces}
+            onPlaceMoved={(latitudeDegrees, longitudeDegrees) => setPosition({ latitudeDegrees, longitudeDegrees })}
+          />
+          <p className="muted">{t('location.placeMapHint')}</p>
+        </div>
+        <div className="location-place-editor-group">
+          <span>{t('location.address')}</span>
+          <div className="location-address-row">
+            <span className="location-address-text">{place.addressText.trim() || t('location.noAddress')}</span>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t('location.changeAddress')}
+              title={t('location.changeAddress')}
+              disabled={isBusy || hasPendingChanges}
+              onClick={onChangeAddress}
+            >
+              <PencilIcon size={16} />
+            </button>
+          </div>
+          {place.isAddressTyped && (
+            <div>
+              <button
+                type="button"
+                className="button-quiet"
+                disabled={isBusy || hasPendingChanges}
+                onClick={onUseMapAddress}
+              >
+                {t('location.useMapAddress')}
+              </button>
+            </div>
+          )}
+          {hasPendingChanges && <p className="muted">{t('location.saveBeforeAddress')}</p>}
+        </div>
+        <label>
+          {t('location.placeLabel')}
+          <select value={placeLabel} onChange={(event) => setPlaceLabel(event.target.value)}>
+            <option value="">{t('location.label.none')}</option>
+            {PLACE_LABELS.map((each) => (
+              <option key={each} value={each}>
+                {t(LABEL_KEYS[each] as Key)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="location-place-editor-group">
+          <label htmlFor="location-place-radius">{t('location.placeRadius')}</label>
+          <div className="location-radius-row">
+            <input
+              id="location-place-radius"
+              type="number"
+              min={MINIMUM_RADIUS_METERS}
+              max={MAXIMUM_RADIUS_METERS}
+              step={5}
+              value={radiusText}
+              onChange={(event) => setRadiusText(event.target.value)}
+            />
+            <input
+              type="range"
+              min={MINIMUM_RADIUS_METERS}
+              max={MAXIMUM_RADIUS_METERS}
+              step={25}
+              value={isRadiusValid ? radiusMeters : MINIMUM_RADIUS_METERS}
+              aria-label={t('location.placeRadius')}
+              onChange={(event) => setRadiusText(event.target.value)}
+            />
+          </div>
+        </div>
+        <PlaceVisits placeId={place.id} />
       </div>
-      <label>
-        {t('location.placeLabel')}
-        <select value={placeLabel} onChange={(event) => setPlaceLabel(event.target.value)}>
-          <option value="">{t('location.label.none')}</option>
-          {PLACE_LABELS.map((each) => (
-            <option key={each} value={each}>
-              {t(LABEL_KEYS[each] as Key)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        {t('location.placeRadius')}
-        <input
-          type="number"
-          min={MINIMUM_RADIUS_METERS}
-          max={MAXIMUM_RADIUS_METERS}
-          step={5}
-          value={radiusText}
-          onChange={(event) => setRadiusText(event.target.value)}
-        />
-      </label>
-      <input
-        type="range"
-        min={MINIMUM_RADIUS_METERS}
-        max={MAXIMUM_RADIUS_METERS}
-        step={25}
-        value={isRadiusValid ? radiusMeters : MINIMUM_RADIUS_METERS}
-        aria-label={t('location.placeRadius')}
-        onChange={(event) => setRadiusText(event.target.value)}
-      />
-      <PlaceVisits placeId={place.id} />
     </FormDialog>
   )
 }

@@ -104,6 +104,10 @@ extension LocationPoint {
 }
 
 enum LocationText {
+    /// A reading worse than this many meters is rough: the check-in sheet
+    /// says so and "Use where I am now" refuses it.
+    static let roughAccuracyMeters = 100.0
+
     /// How long a visit was, such as "1 hr, 25 min".
     static func duration(_ duration: Duration) -> String {
         if duration < .seconds(60) { return String(localized: "Under a minute") }

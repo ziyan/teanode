@@ -18942,16 +18942,62 @@ label.checkbox.is-plain > span > .muted {
   border-top: 1px solid var(--border);
 }
 
+/* The place editor is a column of fields with one gap between them, and a
+   smaller one between a field's name and what it holds. */
+.location-place-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.location-place-editor label,
+.location-place-editor-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.location-place-editor p,
+.location-place-editor h4,
+.location-place-editor .location-place-visits {
+  margin: 0;
+}
+
+.location-place-editor section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .location-address-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .location-address-text {
-  display: flex;
-  flex-direction: column;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* The box for the exact number beside the slider for a rough one. */
+.location-radius-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.location-radius-row input[type='number'] {
+  width: 96px;
+  flex: 0 0 auto;
+}
+
+.location-radius-row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
 }

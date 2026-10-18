@@ -158,6 +158,12 @@ func TestLocationParity(test *testing.T) {
 // world and records the variables of each by operation name.
 func locationServer(test *testing.T) (*httptest.Server, func(string) map[string]any) {
 	test.Helper()
+	return locationServerAnswering(test, nil)
+}
+
+// locationServerAnswering is locationServer with some of its answers replaced.
+func locationServerAnswering(test *testing.T, replacements map[string]string) (*httptest.Server, func(string) map[string]any) {
+	test.Helper()
 	var lock sync.Mutex
 	calls := map[string]map[string]any{}
 	place := `{"id":"p1","userId":"u-ada","placeName":"Maple Park","placeLabel":"","radiusMeters":75,"visitCount":2,"isNamedByPerson":false}`
@@ -179,6 +185,9 @@ func locationServer(test *testing.T) (*httptest.Server, func(string) map[string]
 		"EraseLocationHistory": `{"pointCount":10,"visitCount":2,"placeCount":1}`,
 		"ListSharedLocations":  `[{"userId":"u-ben","username":"ben","name":"Ben","shareLevel":"history"},{"userId":"u-cleo","username":"cleo","name":"Cleo","shareLevel":"current"}]`,
 		"ListLocationPoints":   `[{"latitudeDegrees":40.0005,"longitudeDegrees":-75.0003,"accuracyMeters":12,"measuredAt":"2026-10-17T10:00:00Z","locationSource":"phone"}]`,
+	}
+	for operation, answer := range replacements {
+		answers[operation] = answer
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		var document struct {
@@ -500,5 +509,35 @@ func TestLocationSaveAddressTakesTheFirstMatch(test *testing.T) {
 		if _, err := runLocationCommand(test, server, arguments...); err == nil {
 			test.Errorf("%v should be refused", arguments)
 		}
+	}
+}
+
+// A typed address shows after save, also when it was given with --address-text
+// alone, and in the places table.
+func TestLocationShowsATypedAddress(test *testing.T) {
+	typedPlace := `{"id":"p2","userId":"u-ada","placeName":"12 Lane Example","placeLabel":"home","addressText":"12 Lane Example, Exampleton","isAddressTyped":true,"radiusMeters":75,"visitCount":0}`
+	server, _ := locationServerAnswering(test, map[string]string{"SavePlace": typedPlace, "ListPlaces": `{"places":[` + typedPlace + `]}`})
+	output, err := runLocationCommand(test, server, "save", "p2", "--address-text", "12 Lane Example, Exampleton")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(output, "address: 12 Lane Example, Exampleton (typed)") {
+		test.Errorf("save did not say the address was typed: %q", output)
+	}
+	output, err = runLocationCommand(test, server, "places")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if !strings.Contains(output, "12 Lane Example, Exampleton (typed)") {
+		test.Errorf("places did not mark the typed address: %q", output)
+	}
+	// An address the map gave is not marked.
+	server, _ = locationServer(test)
+	output, err = runLocationCommand(test, server, "save", "p1", "--label", "none")
+	if err != nil {
+		test.Fatal(err)
+	}
+	if strings.Contains(output, "(typed)") {
+		test.Errorf("a place without a typed address: %q", output)
 	}
 }

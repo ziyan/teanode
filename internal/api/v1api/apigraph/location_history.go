@@ -1653,7 +1653,7 @@ func (self *graph) SavePlace(ctx context.Context, arguments SavePlaceArguments) 
 		// there, since that would replace the address the person chose.
 		if addressText != "" {
 			now := time.Now()
-			made.AddressText, made.NamedAt = addressText, &now
+			made.AddressText, made.IsAddressTyped, made.NamedAt = addressText, true, &now
 			if !made.IsNamedByPerson {
 				made.PlaceName = strings.TrimSpace(strings.SplitN(addressText, ",", 2)[0])
 			}

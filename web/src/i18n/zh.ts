@@ -5874,4 +5874,5 @@ export const zh: Catalog = {
   'location.keepAddressTypedNote': '把“{address}”保留为地址，不移动地点。',
   'location.addressKept': '已保留地址 {address}',
   'location.placeMapHint': '拖动图钉或点击地图，把地点放在它的准确位置。保存后生效。',
+  'location.saveBeforeAddress': '请先保存你的更改：更改地址会关闭此窗口。',
 }

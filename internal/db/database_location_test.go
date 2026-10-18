@@ -1287,8 +1287,8 @@ func TestAPlaceSavedWithATypedAddressKeepsItAndIsNotNamedAgain(t *testing.T) {
 			t.Errorf("a nudge to an address kept the old object: %+v, %v", nudged, err)
 		}
 
-		// With no position the place stays and keeps what the provider said about
-		// it, but takes the address and is not named again.
+		// With no position the place stays where it is and takes the address, but
+		// what the provider said about the spot goes, and it is not named again.
 		unmoved, err := tx.SavePlace(userId, near.ID, db.PlaceChanges{AddressText: &typed})
 		if err != nil || unmoved.AddressText != typed || unmoved.LatitudeDegrees != nudged.LatitudeDegrees || unmoved.NamedAt == nil {
 			t.Errorf("an address with no position: %+v, %v", unmoved, err)
@@ -1298,8 +1298,8 @@ func TestAPlaceSavedWithATypedAddressKeepsItAndIsNotNamedAgain(t *testing.T) {
 			t.Fatalf("SetPlaceNamed: %s", err)
 		}
 		stayed, err := tx.SavePlace(userId, kept.ID, db.PlaceChanges{AddressText: &typed})
-		if err != nil || stayed.OSMID != 44 || stayed.OSMName != "Third Park" || stayed.AddressText != typed || stayed.PlaceName != "12 Lane Example" {
-			t.Errorf("the provider's object stays when only the address is typed: %+v, %v", stayed, err)
+		if err != nil || stayed.OSMID != 0 || stayed.OSMName != "" || stayed.OSMType != "" || stayed.OSMCategory != "" || stayed.LatitudeDegrees != kept.LatitudeDegrees || stayed.LongitudeDegrees != kept.LongitudeDegrees || stayed.AddressText != typed || stayed.PlaceName != "12 Lane Example" {
+			t.Errorf("the provider's object goes and the position stays when only the address is typed: %+v, %v", stayed, err)
 		}
 		if !unmoved.IsAddressTyped {
 			t.Errorf("an address that was typed says so: %+v", unmoved)
@@ -1329,7 +1329,7 @@ func TestATypedAddressSurvivesMovingThePlaceAndABlankOneTakesItAway(t *testing.T
 
 		typed := "12 Lane Example, Exampleton"
 		kept, err := tx.SavePlace(userId, place.ID, db.PlaceChanges{AddressText: &typed})
-		if err != nil || !kept.IsAddressTyped || kept.AddressText != typed || kept.PlaceName != "12 Lane Example" || kept.OSMID != 42 {
+		if err != nil || !kept.IsAddressTyped || kept.AddressText != typed || kept.PlaceName != "12 Lane Example" || kept.OSMID != 0 || kept.OSMName != "" || kept.OSMCategory != "" {
 			t.Fatalf("an address kept as typed: %+v, %v", kept, err)
 		}
 

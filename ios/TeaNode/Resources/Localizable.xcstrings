@@ -60742,6 +60742,38 @@
         }
       }
     },
+    "Your iPhone can only place you within %@ right now. Try again outside, or tap the map where the place is.": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone は今、%@ 以内までしか現在地を特定できません。屋外でもう一度試すか、地図で場所をタップしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone 目前只能把你定位在 %@ 范围内。请到室外再试一次，或在地图上点按该地点的位置。"
+          }
+        }
+      }
+    },
+    "an unknown distance": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明な距離"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的距离"
+          }
+        }
+      }
+    },
     "The server did not take what this phone noticed, so recording has stopped: %@": {
       "localizations": {
         "ja": {

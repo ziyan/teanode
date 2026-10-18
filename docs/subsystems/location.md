@@ -139,17 +139,20 @@ the position. The person picks a match, and `SavePlace` takes its
 there, keeps its label and any name the person gave it, and keeps that address:
 it is marked as named at once (`named_at`), so the naming job does not ask the
 provider what is there and replace it, and the OpenStreetMap name, object and
-kind of the old position are dropped, even for a move within the place's radius.
+kind of the old position are dropped, even for a move within the place's radius,
+and also when the place does not move: the map's name for the spot is not the
+place the person described.
 A place the person did not name is called by the first part of the address.
 An address without a position is refused only when there is no `placeId`: with
-one, the place stays where it is, keeps what OpenStreetMap said about it, and
-takes the address exactly as typed, for an address the map does not know. The
+one, the place stays where it is, loses what OpenStreetMap said about the spot
+(object, name, kind), and takes the address exactly as typed, for an address
+the map does not know. The
 address is then marked as typed (`is_address_typed`, migration
 `0241_place_address_typed.sql`), so moving the place afterwards (to put its pin
-on the house) keeps it and the place stays named; only the object, name and kind
-of the old position are dropped, and the naming job never replaces it. An empty
-`addressText` with a `placeId` takes the typed address away, and the place is
-named from OpenStreetMap again. Without a `placeId`, the same call
+on the house) keeps it and the place stays named, and the naming job never
+replaces it. An empty `addressText` with a `placeId` takes the typed address
+away (the CLI's and dashboard's "use the map's address"), and the place is named
+from OpenStreetMap again from its position. Without a `placeId`, the same call
 makes the place, or changes the person's own place whose radius holds the
 position (as a check-in does), so typing an address for home never leaves two
 places at one address. The words the person typed leave the server for the
