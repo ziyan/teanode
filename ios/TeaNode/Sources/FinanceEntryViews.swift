@@ -341,6 +341,7 @@ struct ReceiptEntryView: View {
                                 draft.receiptLines.removeAll { $0.id == line.id }
                             }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                         }
                     } header: {
                         Text("Line \(lineNumber(of: line))")
@@ -543,6 +544,7 @@ struct PaystubEntryView: View {
                                 draft.paystubLines.removeAll { $0.id == line.id }
                             }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                         }
                     } header: {
                         Text("Line \(lineNumber(of: line))")
@@ -698,6 +700,7 @@ struct TaxFormEntryView: View {
                                 draft.taxFormEntries.removeAll { $0.id == entry.id }
                             }
                             .tint(.red)
+                            .actionColor(isDestructive: true)
                         }
                     } header: {
                         Text("Box \(entryNumber(of: entry))")
