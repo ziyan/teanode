@@ -420,7 +420,7 @@ jobs:
           # The library narrowed to the photos taken near a place, with the chip that takes it off.
           shoot photos-near-light light large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-near
           shoot photos-near-dark dark large -TeaNodeDemo -TeaNodeTab photos -TeaNodeScreen photos-near
-          # A picture the agent sent, with Save to my library (opened from Settings).
+          # A picture the agent sent and a document, as cards with no buttons: their actions are in the long-press menu (opened from Settings).
           shoot photos-conversation-card-light light large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-dark dark large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card
           shoot photos-conversation-card-largest-text light accessibility-extra-extra-extra-large -TeaNodeDemo -TeaNodeTab settings -TeaNodeScreen photos-conversation-card

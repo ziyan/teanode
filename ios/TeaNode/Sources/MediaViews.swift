@@ -11,11 +11,15 @@ extension EnvironmentValues {
 }
 
 /// RemotePicture is a picture the server keeps, read with the app's sign-in;
-/// tapping it opens it in Quick Look, to zoom and share.
+/// tapping it opens it full screen, to zoom and share, unless the card around
+/// it says what a tap does instead.
 struct RemotePicture: View {
     let path: String
     var name = "picture.jpg"
     var maxHeight: CGFloat = 360
+    /// What a tap does in place of the full-screen view: a card whose picture
+    /// opens somewhere better than the lightbox (a photo in the library).
+    var onOpen: (() -> Void)?
     @Environment(AppModel.self) private var app
     @State private var picture: UIImage?
     @State private var isMissing = false
@@ -24,7 +28,11 @@ struct RemotePicture: View {
         Group {
             if let picture {
                 Button {
-                    LightboxPresenter.present(picture, name: name)
+                    if let onOpen {
+                        onOpen()
+                    } else {
+                        LightboxPresenter.present(picture, name: name)
+                    }
                 } label: {
                     Image(uiImage: picture)
                         .resizable()
@@ -249,6 +257,24 @@ struct AttachmentView: View {
 
     private var path: String { "/api/v1/agent/attachments/\(attachment.id)" }
 
+    private var openButton: some View {
+        Button {
+            Task { await app.preview(path, name: attachment.name) }
+        } label: {
+            Label("Open", systemImage: "arrow.up.forward.app")
+        }
+    }
+
+    /// Offered for a sound or a video when the person has recordings.
+    @ViewBuilder
+    private var saveAsRecordingButton: some View {
+        if app.account?.cachedRecordingUserId != nil,
+            attachment.contentType.hasPrefix("audio/") || attachment.contentType.hasPrefix("video/")
+        {
+            Button { isImportingRecording = true } label: { Label("Save as recording", systemImage: "waveform") }
+        }
+    }
+
     var body: some View {
         if attachment.isRemoved == true {
             // The message is kept and its file went with the account.
@@ -277,10 +303,11 @@ struct AttachmentView: View {
             }
             .buttonStyle(.plain)
             .contextMenu {
-                if app.account?.cachedRecordingUserId != nil,
-                    attachment.contentType.hasPrefix("audio/") || attachment.contentType.hasPrefix("video/") {
-                    Button { isImportingRecording = true } label: { Label("Save as recording", systemImage: "waveform") }
-                }
+                openButton
+                saveAsRecordingButton
+            }
+            .accessibilityActions {
+                saveAsRecordingButton
             }
             .sheet(isPresented: $isImportingRecording) {
                 if let connection = app.connection { RecordingAttachmentImportView(connection: connection, attachment: attachment) }
@@ -290,7 +317,10 @@ struct AttachmentView: View {
 }
 
 /// FileCard is a file the agent handed over: a picture, a video or a sound to
-/// play, or any other file to open.
+/// play, or any other file to open. The card is the file's name and size, the
+/// file and its caption, and no buttons: a tap on the picture (or on the card
+/// of a file with nothing to look at) opens it, and everything else it offers
+/// is in the long-press menu, which VoiceOver reaches as the header's actions.
 struct FileCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
@@ -301,6 +331,9 @@ struct FileCard: View {
     @State private var savedPhotoId: String?
     @State private var isSavingToLibrary = false
     @State private var savingProblemText: String?
+    /// The picture, once read, which is what Share and Copy hand on. The app
+    /// keeps what it read, so this is not a second download.
+    @State private var loadedPicture: UIImage?
 
     /// The photo this file is: the one the photo tool showed, or the copy the
     /// person just kept.
@@ -308,6 +341,10 @@ struct FileCard: View {
 
     /// Whether the file is a picture or video that can be kept as a photo.
     private var canBeKept: Bool { photoId == nil && (file.isImage || file.isVideo) && !file.isArtifact && app.isPhotosOffered }
+
+    /// Whether a tap anywhere on the card opens the file: when there is no
+    /// picture to tap and no player whose controls the tap would take.
+    private var isCardOpenedByTap: Bool { !file.isImage && !file.isVideo && !file.isAudio }
 
     /// The file's name, and its size when the server says it. The name is cut in the middle when
     /// it does not fit, so that the extension stays visible; it is never wrapped, since a name
@@ -329,77 +366,103 @@ struct FileCard: View {
                     .foregroundStyle(.secondary)
                     .fixedSize()
             }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    /// What can be done with the file, one full-width button each, the main
-    /// one first: keeping a picture or video in the library when that is
-    /// offered, otherwise opening it.
-    private var actionButtons: some View {
-        VStack(spacing: 10) {
-            if canBeKept {
-                keepButton
-                    .buttonStyle(.borderedProminent)
-                openButton
-                    .buttonStyle(.bordered)
-            } else {
-                openButton
-                    .buttonStyle(.borderedProminent)
+            if isCardOpenedByTap, !dynamicTypeSize.isAccessibilitySize {
+                // A card that is a button as a whole says so, as a row that opens something does.
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
-        .buttonBorderShape(.capsule)
-        .controlSize(.large)
+        .accessibilityElement(children: .combine)
+        .accessibilityActions { accessibilityActionButtons }
     }
 
-    @ViewBuilder
-    private var openButton: some View {
+    /// What a tap on the picture, or on a card with nothing else to tap, does.
+    private func openMainFile() {
         if let photoId {
             // A photo the agent showed opens in the app's photo viewer, where
             // it can be favorited, saved or shared.
-            Button {
-                openedPhotoId = OpenedPhoto(id: photoId)
-            } label: {
-                Text("Open in Photos")
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            }
+            openedPhotoId = OpenedPhoto(id: photoId)
         } else {
-            Button {
-                Task { await app.preview(file.path, name: file.name) }
-            } label: {
-                Text("Open")
-                    .frame(maxWidth: .infinity)
+            Task { await app.preview(file.path, name: file.name) }
+        }
+    }
+
+    /// The main action, which is the first row of the menu.
+    private var openButton: some View {
+        Button(action: openMainFile) {
+            if photoId != nil {
+                Label("Open in Photos", systemImage: "photo.on.rectangle")
+            } else {
+                Label("Open", systemImage: "arrow.up.forward.app")
             }
         }
     }
 
-    /// Keeps the picture or video as a photo in TeaNode's library.
+    /// Keeps the picture or video as a photo in TeaNode's library, when that is offered.
+    @ViewBuilder
     private var keepButton: some View {
-        Button {
-            Task { await keepInLibrary() }
-        } label: {
-            Group {
-                if isSavingToLibrary {
-                    ProgressView()
-                } else {
-                    Label("Save to my library", systemImage: "photo.badge.plus")
-                        .multilineTextAlignment(.center)
-                }
+        if canBeKept {
+            Button {
+                Task { await keepInLibrary() }
+            } label: {
+                Label("Save to my library", systemImage: "photo.badge.plus")
             }
-            .frame(maxWidth: .infinity)
+            .disabled(isSavingToLibrary)
         }
-        .disabled(isSavingToLibrary)
     }
 
-    var body: some View {
-        // The cards' shared surface, as wide as the other cards in the conversation, with the
-        // actions below the file as full-width buttons rather than small capsules beside its name.
+    @ViewBuilder
+    private var copyButton: some View {
+        if let loadedPicture {
+            Button {
+                UIPasteboard.general.image = loadedPicture
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
+    /// The long-press menu, the main action first. Share is the system's own
+    /// ShareLink here.
+    @ViewBuilder
+    private var menuItems: some View {
+        openButton
+        keepButton
+        if let loadedPicture {
+            ShareLink(item: Image(uiImage: loadedPicture), preview: SharePreview(file.name, image: Image(uiImage: loadedPicture))) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+        copyButton
+    }
+
+    /// The same actions for VoiceOver, which cannot long press a menu open.
+    /// A ShareLink cannot be run from an accessibility action, so Share
+    /// opens the system's share sheet itself.
+    @ViewBuilder
+    private var accessibilityActionButtons: some View {
+        openButton
+        keepButton
+        if let loadedPicture {
+            Button {
+                ShareSheetPresenter.present(loadedPicture)
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+        }
+        copyButton
+    }
+
+    private var card: some View {
+        // The cards' shared surface, as wide as the other cards in the conversation.
         CardSurface {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 if file.isImage {
-                    RemotePicture(path: file.path, name: file.name)
+                    RemotePicture(path: file.path, name: file.name, onOpen: openMainFile)
                 } else if file.isVideo || file.isAudio {
                     if let shareAddress {
                         VideoPlayer(player: AVPlayer(url: shareAddress))
@@ -414,27 +477,93 @@ struct FileCard: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                actionButtons
             }
         }
-        .sensoryFeedback(.success, trigger: savedPhotoId)
-        .alert("Cannot save to my library", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { text in
-            Text(text)
-        }
-        .fullScreenCover(item: $openedPhotoId) { opened in
-            if let connection = app.connection {
-                AgentPhotoViewer(photoId: opened.id, connection: connection)
+        .overlay(alignment: .topTrailing) {
+            if isSavingToLibrary {
+                ProgressView().padding(16)
             }
         }
-        .task(id: file.attachmentId) {
-            // A player cannot send the app's sign-in, so it is given an
-            // address that opens without one, for a few hours.
-            if file.isVideo || file.isAudio, let connection = app.connection {
-                shareAddress = try? await connection.shareAddress(attachmentId: file.attachmentId)
-            }
+    }
+
+    /// The card, a button as a whole when it has nothing else to tap.
+    @ViewBuilder
+    private var tappableCard: some View {
+        if isCardOpenedByTap {
+            Button(action: openMainFile) { card }
+                .buttonStyle(.plain)
+        } else {
+            card
         }
+    }
+
+    /// The card with its long-press menu; a picture's menu shows the picture
+    /// itself as its preview.
+    @ViewBuilder
+    private var cardWithMenu: some View {
+        if file.isImage {
+            tappableCard.contextMenu {
+                menuItems
+            } preview: {
+                if let loadedPicture {
+                    Image(uiImage: loadedPicture)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    ProgressView().padding()
+                }
+            }
+        } else {
+            tappableCard.contextMenu { menuItems }
+        }
+    }
+
+    var body: some View {
+        cardWithMenu
+            .sensoryFeedback(.success, trigger: savedPhotoId)
+            .alert("Cannot save to my library", isPresented: Binding(get: { savingProblemText != nil }, set: { if !$0 { savingProblemText = nil } }), presenting: savingProblemText) { _ in
+                Button("OK", role: .cancel) {}
+            } message: { text in
+                Text(text)
+            }
+            .fullScreenCover(item: $openedPhotoId) { opened in
+                if let connection = app.connection {
+                    AgentPhotoViewer(photoId: opened.id, connection: connection)
+                }
+            }
+            .task(id: file.attachmentId) {
+                if file.isImage {
+                    loadedPicture = await app.picture(file.path)
+                }
+                // A player cannot send the app's sign-in, so it is given an
+                // address that opens without one, for a few hours.
+                if file.isVideo || file.isAudio, let connection = app.connection {
+                    shareAddress = try? await connection.shareAddress(attachmentId: file.attachmentId)
+                }
+            }
+    }
+}
+
+/// ShareSheetPresenter opens the system's share sheet from the top of the
+/// window, for the places where an accessibility action has to share and a
+/// ShareLink cannot be run from code.
+@MainActor
+enum ShareSheetPresenter {
+    static func present(_ item: Any) {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        guard let top else { return }
+        let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        // An iPad shows the sheet as a popover, which needs somewhere to point.
+        controller.popoverPresentationController?.sourceView = top.view
+        controller.popoverPresentationController?.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+        top.present(controller, animated: true)
     }
 }
 
@@ -503,7 +632,10 @@ struct AgentPhotoViewer: View {
 }
 
 /// ArtifactCard is something the agent made: a page, a picture drawn in SVG,
-/// or a Markdown document, shown in place and opened whole on a tap.
+/// or a Markdown document, shown in place. Its name opens it whole on a tap;
+/// that and what else it offers are in the long-press menu too, which VoiceOver
+/// reaches as the name's actions. A long press on a page that is running is
+/// the page's own, so the name is where the menu is sure to open.
 struct ArtifactCard: View {
     let file: AgentFile
     @Environment(AppModel.self) private var app
@@ -512,18 +644,60 @@ struct ArtifactCard: View {
     @State private var markdown: String?
     @State private var isOpen = false
 
+    private var isReady: Bool { address != nil || markdown != nil }
+
+    private var openButton: some View {
+        Button {
+            isOpen = true
+        } label: {
+            Label("Open", systemImage: "arrow.up.forward.app")
+        }
+        .disabled(!isReady)
+    }
+
+    /// Copy and Share are for a document, whose words can go elsewhere; a
+    /// page or a drawing has no text to hand on.
+    @ViewBuilder
+    private var copyButton: some View {
+        if let markdown {
+            Button {
+                UIPasteboard.general.string = markdown
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+    }
+
     var body: some View {
         AgentBubble {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label(file.name.isEmpty ? String(localized: "Untitled") : file.name, systemImage: "sparkles")
-                        .font(.subheadline.bold())
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    Button("Open") { isOpen = true }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .disabled(address == nil && markdown == nil)
+                Button {
+                    isOpen = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Label(file.name.isEmpty ? String(localized: "Untitled") : file.name, systemImage: "sparkles")
+                            .font(.subheadline.bold())
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(!isReady)
+                .accessibilityActions {
+                    openButton
+                    if let markdown {
+                        Button {
+                            ShareSheetPresenter.present(markdown)
+                        } label: {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    copyButton
                 }
                 Group {
                     if let markdown {
@@ -537,6 +711,15 @@ struct ArtifactCard: View {
                 .frame(height: 320)
                 .clipShape(.rect(cornerRadius: 12, style: .continuous))
             }
+        }
+        .contextMenu {
+            openButton
+            if let markdown {
+                ShareLink(item: markdown) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+            }
+            copyButton
         }
         .sheet(isPresented: $isOpen) {
             NavigationStack {

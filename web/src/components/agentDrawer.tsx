@@ -1866,14 +1866,16 @@ export function FileCard({ file }: { file: SharedFile }) {
       setIsSaving(false)
     }
   }
-  const picture = signed ? <img src={signed} alt={file.name} className="agent-file-media" /> : null
+  // A click on the picture opens it: the photo page for a photo of the
+  // library, otherwise the lightbox, as for the pictures attached to a
+  // message. The head's icons are the card's other actions, and stay icons.
   const media = !signed ? null : isImage(type) ? (
     photoAddress ? (
       <Link to={photoAddress} aria-label={t('agentDrawer.openPhoto')}>
-        {picture}
+        <img src={signed} alt={file.name} className="agent-file-media" />
       </Link>
     ) : (
-      picture
+      <ZoomablePicture source={signed} name={file.name} imageClassName="agent-file-media" openTitle={file.name} />
     )
   ) : type.startsWith('video/') ? (
     <video src={signed} controls preload="metadata" className="agent-file-media" />

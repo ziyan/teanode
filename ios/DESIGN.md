@@ -91,6 +91,12 @@ its pull request is opened.
   a hairline edge. A small secondary header says what the card is; answers
   are rows with a radio or a check, not buttons of their own; actions are
   standard capsule buttons of equal width, the prominent one first.
+- A card that only shows something (a file, a picture, a page the agent made)
+  has no buttons. A tap on its picture, or on the card when it has nothing
+  else to tap, does the main thing (open it); the rest (Save, Share, Copy)
+  are in its long-press menu, the main action first, and are also its
+  accessibility actions so VoiceOver does not need a long press. Buttons stay
+  on a card only when answering is its point: an approval, a question.
 - The composer is one rounded field with its buttons inside it: the words on
   top, adding files at the bottom left, calling and sending at the bottom
   right.
