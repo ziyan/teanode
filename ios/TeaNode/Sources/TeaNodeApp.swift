@@ -221,7 +221,10 @@ struct ConversationsSheet: View {
             .overlay {
                 if let problemText {
                     ContentUnavailableView("Cannot load conversations", systemImage: "wifi.exclamationmark", description: Text(problemText))
-                } else if !isLoaded {
+                } else if !isLoaded, !isPanel {
+                    // In the side menu nothing turns while the chats are read:
+                    // the parts above them are there at once, and a spinner in
+                    // the middle of the menu only drew the eye.
                     ProgressView()
                 }
             }

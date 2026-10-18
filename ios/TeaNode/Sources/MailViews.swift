@@ -111,7 +111,9 @@ struct MailboxesList: View {
         .overlay {
             if mail.isLoaded, mail.entries.isEmpty {
                 ContentUnavailableView("No mailbox yet", systemImage: "tray", description: Text("A mailbox is made when an address is given to you on your server."))
-            } else if !mail.isLoaded {
+            } else if !mail.isLoaded, leading == nil {
+                // Not in the side menu, whose parts are there while the
+                // folders are read, as the chats' list does.
                 ProgressView()
             }
         }
